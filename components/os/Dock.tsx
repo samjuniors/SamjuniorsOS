@@ -32,7 +32,7 @@ export const Dock: React.FC<DockProps> = ({
   };
 
   // Primary apps to highlight on compact mobile dock
-  const PRIMARY_MOBILE_APP_IDS: AppId[] = ['workforce', 'research', 'products', 'finance'];
+  const PRIMARY_MOBILE_APP_IDS: AppId[] = ['messages', 'advisor', 'workforce', 'research', 'products', 'finance'];
 
   return (
     <div className="fixed bottom-2.5 sm:bottom-3 left-0 right-0 flex justify-center items-end z-40 pointer-events-none px-2">

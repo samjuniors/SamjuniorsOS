@@ -19,8 +19,9 @@ import {
   Database,
   ArrowUpRight,
 } from 'lucide-react';
-import { OrchestrationRun, ExecutionDeliverable } from '@/types/os';
+import { OrchestrationRun, ExecutionDeliverable, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { BrainCircuit } from 'lucide-react';
 
 interface ExecutiveResultCardProps {
   run: OrchestrationRun;
@@ -28,6 +29,7 @@ interface ExecutiveResultCardProps {
   onViewDeliverables: () => void;
   onApproveDecision?: (decisionTitle?: string) => void;
   onRejectDecision?: (decisionTitle?: string) => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
@@ -36,6 +38,7 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
   onViewDeliverables,
   onApproveDecision,
   onRejectDecision,
+  onAskAdvisor,
 }) => {
   const [decisionState, setDecisionState] = useState<'pending' | 'approved' | 'rejected'>('pending');
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
@@ -141,6 +144,36 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center space-x-2 shrink-0">
+          {onAskAdvisor && (
+            <button
+              onClick={() =>
+                onAskAdvisor({
+                  section: 'hq_council_result',
+                  title: run.title || run.directive,
+                  category: 'Strategy',
+                  sourceEntityId: run.id,
+                  sourceEntityName: res?.preparedBy.name || 'Executive Council',
+                  recommendation: recommendation,
+                  whyItMatters: decisionWhy,
+                  risk: risks.join('; '),
+                  resultSnippet: keyFindings.join('; '),
+                  evidenceBasis: 'model_reasoning',
+                  suggestedQuestions: [
+                    'Is this recommendation actually correct?',
+                    'Why is this happening?',
+                    'What should I do?',
+                    'What am I missing?',
+                  ],
+                })
+              }
+              className="px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-sm"
+              title="Ask Founder Intelligence to challenge or analyze this recommendation"
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Ask Advisor</span>
+            </button>
+          )}
+
           <button
             onClick={() => setIsEvidenceModalOpen(true)}
             className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 text-xs font-medium flex items-center space-x-1.5 transition-colors"
@@ -185,16 +218,46 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
       )}
 
       {/* Executive Recommendation Box */}
-      <div className="p-4.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-2">
+      <div className="p-4.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest flex items-center gap-1.5">
             <Award className="w-4 h-4 text-indigo-400" />
             Executive Recommendation for Founder
           </span>
-          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/70 px-2.5 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-            Verified by Operations
-          </span>
+          <div className="flex items-center space-x-2">
+            {onAskAdvisor && (
+              <button
+                onClick={() =>
+                  onAskAdvisor({
+                    section: 'hq_council_result',
+                    title: run.title || run.directive,
+                    category: 'Strategy',
+                    sourceEntityId: run.id,
+                    sourceEntityName: res?.preparedBy.name || 'Executive Council',
+                    recommendation: recommendation,
+                    whyItMatters: decisionWhy,
+                    risk: risks.join('; '),
+                    resultSnippet: keyFindings.join('; '),
+                    evidenceBasis: 'model_reasoning',
+                    suggestedQuestions: [
+                      'Is this recommendation actually correct?',
+                      'What am I missing?',
+                      'Why is this happening?',
+                      'What should I do next?',
+                    ],
+                  })
+                }
+                className="text-[10px] text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 px-2 py-0.5 rounded flex items-center gap-1 transition-colors"
+              >
+                <BrainCircuit className="w-3 h-3" />
+                <span>Ask Advisor: Is this correct?</span>
+              </button>
+            )}
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/70 px-2.5 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              Verified by Operations
+            </span>
+          </div>
         </div>
         <p className="text-xs md:text-sm text-indigo-100 font-medium leading-relaxed">{recommendation}</p>
       </div>

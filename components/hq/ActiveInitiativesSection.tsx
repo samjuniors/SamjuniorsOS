@@ -1,17 +1,19 @@
 'use client';
 
 import React from 'react';
-import { Target, Users, AlertTriangle, ArrowRight, CheckCircle2, FileText, Layers } from 'lucide-react';
-import { CompanyInitiative } from '@/types/os';
+import { Target, Users, AlertTriangle, ArrowRight, CheckCircle2, FileText, Layers, BrainCircuit } from 'lucide-react';
+import { CompanyInitiative, AdvisorTargetContext } from '@/types/os';
 
 interface ActiveInitiativesProps {
   initiatives: CompanyInitiative[];
   onViewWork: () => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const ActiveInitiativesSection: React.FC<ActiveInitiativesProps> = ({
   initiatives,
   onViewWork,
+  onAskAdvisor,
 }) => {
   return (
     <div className="space-y-4">
@@ -83,7 +85,7 @@ export const ActiveInitiativesSection: React.FC<ActiveInitiativesProps> = ({
               <p className="text-[11px] text-blue-100 leading-relaxed">{init.nextRecommendedAction}</p>
             </div>
 
-            {/* Contributors & Risks */}
+            {/* Contributors, Risks & Advisor Button */}
             <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
               {/* Contributors */}
               <div className="flex items-center space-x-1.5">
@@ -101,13 +103,45 @@ export const ActiveInitiativesSection: React.FC<ActiveInitiativesProps> = ({
                 </div>
               </div>
 
-              {/* Risks Count */}
-              {init.risks.length > 0 && (
-                <div className="text-[10px] text-amber-400/90 flex items-center gap-1 font-mono">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>{init.risks.length} Risk Flagged</span>
-                </div>
-              )}
+              <div className="flex items-center space-x-2">
+                {/* Risks Count */}
+                {init.risks.length > 0 && (
+                  <div className="text-[10px] text-amber-400/90 flex items-center gap-1 font-mono">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>{init.risks.length} Risk Flagged</span>
+                  </div>
+                )}
+
+                {onAskAdvisor && (
+                  <button
+                    onClick={() =>
+                      onAskAdvisor({
+                        section: 'hq_initiatives',
+                        title: init.title,
+                        category: init.codeName || 'Initiative',
+                        sourceEntityId: init.id,
+                        sourceEntityName: init.contributors.map((c) => c.name).join(', '),
+                        recommendation: init.nextRecommendedAction,
+                        whyItMatters: init.currentObjective,
+                        resultSnippet: init.latestResult,
+                        risk: init.risks.join('; '),
+                        evidenceBasis: 'empirical_analysis',
+                        suggestedQuestions: [
+                          'What should I do next on this initiative?',
+                          'Is this recommendation actually correct?',
+                          'What am I missing?',
+                          'Why is this happening?',
+                        ],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-[10px] font-medium transition-colors flex items-center space-x-1"
+                    title="Ask Founder Intelligence about this initiative"
+                  >
+                    <BrainCircuit className="w-3 h-3 text-indigo-400" />
+                    <span>Ask Advisor</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

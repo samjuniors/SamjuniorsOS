@@ -12,6 +12,7 @@ import {
   AttentionItem,
   CompanyInitiative,
   CompanyDecision,
+  AdvisorTargetContext,
 } from '@/types/os';
 import {
   INITIAL_AGENTS,
@@ -59,12 +60,14 @@ interface WorkforceAppProps {
   soundEnabled: boolean;
   initialDirective?: string;
   onClearInitialDirective?: () => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   soundEnabled,
   initialDirective,
   onClearInitialDirective,
+  onAskAdvisor,
 }) => {
   // Main Tab State: Default is Company HQ
   const [activeTab, setActiveTab] = useState<'hq' | 'employees' | 'work' | 'decisions' | 'audit'>('hq');
@@ -475,6 +478,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                 run={currentRun}
                 onInspectWork={() => setActiveTab('audit')}
                 onViewDeliverables={() => setActiveTab('work')}
+                onAskAdvisor={onAskAdvisor}
                 onApproveDecision={(title) => {
                   if (soundEnabled) playOSSound('notification');
                   setDecisions((prev) =>
@@ -517,6 +521,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               items={attentionItems}
               onApproveItem={handleApproveAttention}
               onDismissItem={handleDismissAttention}
+              onAskAdvisor={onAskAdvisor}
             />
 
             {/* SECTION B: COMPANY PULSE */}
@@ -533,12 +538,13 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             />
 
             {/* SECTION C: RECENT INTELLIGENCE */}
-            <RecentIntelligenceSection researchTopics={INITIAL_RESEARCH} />
+            <RecentIntelligenceSection researchTopics={INITIAL_RESEARCH} onAskAdvisor={onAskAdvisor} />
 
             {/* SECTION D: ACTIVE COMPANY INITIATIVES */}
             <ActiveInitiativesSection
               initiatives={initiatives}
               onViewWork={() => setActiveTab('work')}
+              onAskAdvisor={onAskAdvisor}
             />
           </div>
         )}
@@ -556,6 +562,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                 setSelectedDeliverableDoc(doc);
                 setActiveTab('work');
               }}
+              onAskAdvisor={onAskAdvisor}
             />
           </div>
         )}
@@ -566,6 +573,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             <DeliverablesView
               deliverables={currentRun.deliverables}
               selectedDeliverableId={selectedDeliverableDoc?.id}
+              onAskAdvisor={onAskAdvisor}
             />
           </div>
         )}
@@ -576,6 +584,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             <DecisionsView
               decisions={decisions}
               onApproveDecision={handleApproveDecision}
+              onAskAdvisor={onAskAdvisor}
             />
           </div>
         )}

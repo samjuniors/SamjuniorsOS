@@ -101,6 +101,16 @@ export const INITIAL_WINDOWS: WindowState[] = [
     size: { width: 720, height: 480 },
   },
   {
+    id: 'advisor',
+    title: 'Founder Intelligence',
+    isOpen: false,
+    isMinimized: false,
+    isMaximized: false,
+    zIndex: 11,
+    position: { x: 100, y: 70 },
+    size: { width: 960, height: 640 },
+  },
+  {
     id: 'notes',
     title: 'Founder Scratchpad',
     isOpen: false,
@@ -110,9 +120,39 @@ export const INITIAL_WINDOWS: WindowState[] = [
     position: { x: 260, y: 150 },
     size: { width: 680, height: 460 },
   },
+  {
+    id: 'messages',
+    title: 'Messages',
+    isOpen: false,
+    isMinimized: false,
+    isMaximized: false,
+    zIndex: 12,
+    position: { x: 130, y: 75 },
+    size: { width: 880, height: 580 },
+  },
 ];
 
 export const APPS_CONFIG: AppMetadata[] = [
+  {
+    id: 'messages',
+    name: 'Messages',
+    category: 'Direct Comms',
+    description: 'Instant direct messaging with AI Officers & Founder Intelligence',
+    iconName: 'MessageSquare',
+    color: 'from-emerald-500 via-teal-500 to-cyan-600',
+    badge: 'Direct DM',
+    defaultSize: { width: 880, height: 580 },
+  },
+  {
+    id: 'advisor',
+    name: 'Founder Intelligence',
+    category: 'Strategic Co-Pilot',
+    description: 'Cognitive advisor grounded in company state, unit economics & governance',
+    iconName: 'BrainCircuit',
+    color: 'from-purple-500 via-indigo-500 to-pink-500',
+    badge: 'Grounded AI',
+    defaultSize: { width: 960, height: 640 },
+  },
   {
     id: 'workforce',
     name: 'Company HQ',

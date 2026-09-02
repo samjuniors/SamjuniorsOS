@@ -2,15 +2,16 @@
 
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Compass, ExternalLink, ShieldCheck, Sparkles, TrendingUp, Search } from 'lucide-react';
-import { ResearchTopic } from '@/types/os';
+import { Compass, ExternalLink, ShieldCheck, Sparkles, TrendingUp, Search, BrainCircuit } from 'lucide-react';
+import { ResearchTopic, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
 
 interface RecentIntelligenceProps {
   researchTopics: ResearchTopic[];
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
-export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ researchTopics }) => {
+export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ researchTopics, onAskAdvisor }) => {
   const [selectedTopic, setSelectedTopic] = useState<ResearchTopic | null>(null);
 
   return (
@@ -53,13 +54,42 @@ export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ r
                 Author: <strong className="text-slate-200">{topic.author.split('&')[0]}</strong>
               </span>
 
-              <button
-                onClick={() => setSelectedTopic(topic)}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-medium transition-colors flex items-center space-x-1"
-              >
-                <span>View Evidence</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </button>
+              <div className="flex items-center space-x-1.5">
+                {onAskAdvisor && (
+                  <button
+                    onClick={() =>
+                      onAskAdvisor({
+                        section: 'hq_intelligence',
+                        title: topic.title,
+                        category: topic.category,
+                        sourceEntityId: topic.id,
+                        sourceEntityName: topic.author,
+                        resultSnippet: topic.summary,
+                        evidenceBasis: 'external_evidence',
+                        suggestedQuestions: [
+                          'How does this intelligence affect our roadmap?',
+                          'What should we do in response to this finding?',
+                          'What am I missing?',
+                          'Why is this happening?',
+                        ],
+                      })
+                    }
+                    className="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-[11px] font-medium transition-colors flex items-center space-x-1"
+                    title="Ask Founder Intelligence about this intelligence"
+                  >
+                    <BrainCircuit className="w-3 h-3 text-indigo-400" />
+                    <span>Ask Advisor</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setSelectedTopic(topic)}
+                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-medium transition-colors flex items-center space-x-1"
+                >
+                  <span>Evidence</span>
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </button>
+              </div>
             </div>
           </div>
         ))}

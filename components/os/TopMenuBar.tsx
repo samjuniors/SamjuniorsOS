@@ -133,6 +133,17 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                       <span>About SamJuniors OS</span>
                     </button>
                     <button
+                      id="menu-item-messages"
+                      onClick={() => {
+                        openApp('messages');
+                        setIsSystemMenuOpen(false);
+                      }}
+                      className="w-full flex items-center px-2.5 py-1.5 text-left rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 mr-2 text-emerald-400" />
+                      <span>Direct Messages (DMs)</span>
+                    </button>
+                    <button
                       id="menu-item-workforce"
                       onClick={() => {
                         openApp('workforce');
@@ -200,6 +211,21 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             <span className="font-semibold text-white cursor-default">
               {activeAppTitle}
             </span>
+            <button
+              id="topbar-action-messages"
+              onClick={() => openApp('messages')}
+              className="hover:text-emerald-300 text-emerald-400 font-semibold transition-colors px-1 py-0.5 rounded hover:bg-white/5 flex items-center space-x-1"
+            >
+              <span>Messages</span>
+            </button>
+            <button
+              id="topbar-action-advisor"
+              onClick={() => openApp('advisor')}
+              className="hover:text-indigo-300 text-indigo-400 font-semibold transition-colors px-1 py-0.5 rounded hover:bg-white/5 flex items-center space-x-1"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>Advisor</span>
+            </button>
             <button
               id="topbar-action-dispatch"
               onClick={() => openApp('workforce')}

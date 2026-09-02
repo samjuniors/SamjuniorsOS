@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AppId, OSNotification, WindowState } from '@/types/os';
+import { AppId, OSNotification, WindowState, AdvisorTargetContext } from '@/types/os';
 import { INITIAL_WINDOWS, NOTIFICATIONS, WALLPAPERS } from '@/lib/os-data';
 import { TopMenuBar } from '@/components/os/TopMenuBar';
 import { Dock } from '@/components/os/Dock';
@@ -15,6 +15,7 @@ import { playOSSound } from '@/components/os/IconHelper';
 
 // Apps
 import { WorkforceApp } from '@/components/apps/WorkforceApp';
+import { AdvisorApp } from '@/components/apps/AdvisorApp';
 import { CompanyApp } from '@/components/apps/CompanyApp';
 import { CustomersApp } from '@/components/apps/CustomersApp';
 import { ResearchApp } from '@/components/apps/ResearchApp';
@@ -23,6 +24,7 @@ import { FinanceApp } from '@/components/apps/FinanceApp';
 import { SettingsApp } from '@/components/apps/SettingsApp';
 import { TerminalApp } from '@/components/apps/TerminalApp';
 import { NotesApp } from '@/components/apps/NotesApp';
+import { MessagesApp, ParticipantId } from '@/components/apps/MessagesApp';
 
 export default function SamJuniorsOSPage() {
   // Windows state
@@ -43,6 +45,7 @@ export default function SamJuniorsOSPage() {
 
   // Directives passed to Workforce
   const [pendingDirective, setPendingDirective] = useState<string>('');
+  const [advisorTargetContext, setAdvisorTargetContext] = useState<AdvisorTargetContext | null>(null);
 
   // Active wallpaper object
   const activeWallpaper = WALLPAPERS.find((w) => w.id === wallpaperId) || WALLPAPERS[0];
@@ -62,9 +65,12 @@ export default function SamJuniorsOSPage() {
   );
 
   const openApp = useCallback(
-    (id: AppId, directive?: string) => {
+    (id: AppId, directive?: string, targetContext?: AdvisorTargetContext) => {
       if (directive) {
         setPendingDirective(directive);
+      }
+      if (targetContext) {
+        setAdvisorTargetContext(targetContext);
       }
 
       setWindows((prevWindows) => {
@@ -82,7 +88,11 @@ export default function SamJuniorsOSPage() {
 
         // Fallback default window geometry if not in initial list
         const defaultTitle =
-          id === 'workforce'
+          id === 'messages'
+            ? 'Messages'
+            : id === 'advisor'
+            ? 'Founder Intelligence'
+            : id === 'workforce'
             ? 'Executive AI Workforce'
             : id === 'company'
             ? 'Company Governance & OKRs'
@@ -160,12 +170,29 @@ export default function SamJuniorsOSPage() {
 
   const renderAppContent = (id: AppId) => {
     switch (id) {
+      case 'messages':
+        return (
+          <MessagesApp
+            soundEnabled={soundEnabled}
+            onOpenApp={openApp}
+          />
+        );
+      case 'advisor':
+        return (
+          <AdvisorApp
+            soundEnabled={soundEnabled}
+            onOpenApp={openApp}
+            targetContext={advisorTargetContext}
+            onClearTargetContext={() => setAdvisorTargetContext(null)}
+          />
+        );
       case 'workforce':
         return (
           <WorkforceApp
             soundEnabled={soundEnabled}
             initialDirective={pendingDirective}
             onClearInitialDirective={() => setPendingDirective('')}
+            onAskAdvisor={(ctx) => openApp('advisor', undefined, ctx)}
           />
         );
       case 'company':

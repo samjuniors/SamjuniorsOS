@@ -19,8 +19,9 @@ import {
   Sparkles,
   ArrowRight,
 } from 'lucide-react';
-import { AIAgent, ExecutionDeliverable, OutputProvenance } from '@/types/os';
+import { AIAgent, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { BrainCircuit } from 'lucide-react';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -29,6 +30,7 @@ interface EmployeeProfileViewProps {
   deliverables: ExecutionDeliverable[];
   onSendMessage: (message: string) => Promise<string>;
   onInspectDeliverable: (d: ExecutionDeliverable) => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
@@ -38,6 +40,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   deliverables,
   onSendMessage,
   onInspectDeliverable,
+  onAskAdvisor,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'chat' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
   const [chatInput, setChatInput] = useState('');
@@ -145,6 +148,34 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {onAskAdvisor && (
+              <button
+                onClick={() =>
+                  onAskAdvisor({
+                    section: 'hq_employees',
+                    title: `${agent.name} (${agent.role})`,
+                    category: agent.department,
+                    sourceEntityId: agent.id,
+                    sourceEntityName: agent.name,
+                    whyItMatters: `Department: ${agent.department} • Status: ${agent.status}`,
+                    resultSnippet: `Bio: ${agent.bio} | Current Task: ${agent.currentTask}`,
+                    evidenceBasis: 'empirical_analysis',
+                    suggestedQuestions: [
+                      'How effectively is this specialist allocated?',
+                      'What should I direct this employee to do next?',
+                      'What am I missing about their current output?',
+                      'Why is this initiative their primary focus?',
+                    ],
+                  })
+                }
+                className="px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-sm"
+                title="Ask Founder Intelligence about this officer"
+              >
+                <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Ask Advisor</span>
+              </button>
+            )}
+
             <button
               onClick={() => setActiveSubTab('chat')}
               className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md transition-all"

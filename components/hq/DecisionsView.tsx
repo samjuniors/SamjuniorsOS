@@ -13,15 +13,17 @@ import {
   ExternalLink,
   ChevronRight,
 } from 'lucide-react';
-import { CompanyDecision } from '@/types/os';
+import { CompanyDecision, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { BrainCircuit } from 'lucide-react';
 
 interface DecisionsViewProps {
   decisions: CompanyDecision[];
   onApproveDecision: (id: string) => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
-export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onApproveDecision }) => {
+export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onApproveDecision, onAskAdvisor }) => {
   const [selectedEvidenceDecision, setSelectedEvidenceDecision] = useState<CompanyDecision | null>(null);
 
   const pendingDecisions = decisions.filter((d) => d.status === 'pending_approval');
@@ -97,13 +99,44 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onAppro
                     <span className="text-blue-300 font-semibold">{dec.recommendedBy}</span>
                   </div>
 
-                  <button
-                    onClick={() => setSelectedEvidenceDecision(dec)}
-                    className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
-                  >
-                    <span>View Evidence</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {onAskAdvisor && (
+                      <button
+                        onClick={() =>
+                          onAskAdvisor({
+                            section: 'hq_decisions',
+                            title: dec.title,
+                            category: dec.category,
+                            sourceEntityId: dec.id,
+                            sourceEntityName: dec.recommendedBy,
+                            recommendation: dec.recommendation,
+                            whyItMatters: dec.businessImpact,
+                            resultSnippet: dec.evidenceSummary,
+                            evidenceBasis: 'model_reasoning',
+                            suggestedQuestions: [
+                              'Is this recommendation actually correct?',
+                              'What should I do?',
+                              'What am I missing?',
+                              'Why is this happening now?',
+                            ],
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-[11px] font-medium transition-colors flex items-center space-x-1"
+                        title="Ask Founder Intelligence about this decision"
+                      >
+                        <BrainCircuit className="w-3 h-3 text-indigo-400" />
+                        <span>Ask Advisor</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setSelectedEvidenceDecision(dec)}
+                      className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1"
+                    >
+                      <span>View Evidence</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="pt-2 border-t border-white/10 flex justify-end">
@@ -151,13 +184,41 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onAppro
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-white/5">
                 <span>Recommended by {dec.recommendedBy}</span>
-                <button
-                  onClick={() => setSelectedEvidenceDecision(dec)}
-                  className="hover:text-slate-300 flex items-center gap-1 font-mono"
-                >
-                  <span>Inspect Audit Proof</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  {onAskAdvisor && (
+                    <button
+                      onClick={() =>
+                        onAskAdvisor({
+                          section: 'hq_decisions',
+                          title: dec.title,
+                          category: dec.category,
+                          sourceEntityId: dec.id,
+                          sourceEntityName: dec.recommendedBy,
+                          recommendation: dec.recommendation,
+                          whyItMatters: dec.businessImpact,
+                          resultSnippet: dec.evidenceSummary,
+                          evidenceBasis: 'model_reasoning',
+                          suggestedQuestions: [
+                            'What should I monitor following this ratified decision?',
+                            'What am I missing?',
+                            'Why did we prioritize this decision?',
+                          ],
+                        })
+                      }
+                      className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono"
+                    >
+                      <BrainCircuit className="w-3 h-3" />
+                      <span>Ask Advisor</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedEvidenceDecision(dec)}
+                    className="hover:text-slate-300 flex items-center gap-1 font-mono"
+                  >
+                    <span>Inspect Audit Proof</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

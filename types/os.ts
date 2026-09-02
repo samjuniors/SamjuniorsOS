@@ -31,7 +31,9 @@ export type AppId =
   | 'finance'
   | 'settings'
   | 'terminal'
-  | 'notes';
+  | 'notes'
+  | 'advisor'
+  | 'messages';
 
 export interface AppMetadata {
   id: AppId;
@@ -461,3 +463,128 @@ export interface ResearchTopic {
   summary: string;
   tags: string[];
 }
+
+// ----------------------------------------------------------------------------
+// 10. DIRECT MESSAGES FOUNDATION (Founder <-> Employee Direct Communication)
+// ----------------------------------------------------------------------------
+
+export interface EmployeeDirectMessage {
+  id: string;
+  conversationId: string;
+  sender: 'founder' | AgentRole;
+  senderName: string;
+  recipient: 'founder' | AgentRole;
+  recipientName: string;
+  text: string;
+  timestamp: string;
+  status: 'sent' | 'delivered' | 'read';
+  taskReferenceId?: string;
+  deliverableReferenceId?: string;
+  isLiveAi?: boolean;
+  provenance?: OutputProvenance;
+}
+
+export interface EmployeeConversationThread {
+  id: string;
+  agentId: AgentRole;
+  agentName: string;
+  agentRole: string;
+  department: string;
+  avatarColor: string;
+  status: 'active' | 'idle' | 'busy';
+  lastMessageText?: string;
+  lastMessageTimestamp?: string;
+  unreadCount: number;
+  messages: EmployeeDirectMessage[];
+  pinnedContextIds?: string[];
+}
+
+// ----------------------------------------------------------------------------
+// 11. FOUNDER ADVISOR & FOUNDER INTELLIGENCE FOUNDATION
+// ----------------------------------------------------------------------------
+
+export interface AdvisorStrategicInsight {
+  id: string;
+  title: string;
+  summary: string;
+  category: 'Strategy' | 'Risk' | 'Opportunity' | 'Governance' | 'Economics';
+  severity: 'Critical' | 'High' | 'Medium' | 'Info';
+  primaryAgentSource?: AgentRole;
+  suggestedAction: string;
+  timestamp: string;
+  evidenceBasis: EvidenceBasis;
+}
+
+export interface AdvisorQueryContext {
+  activeInitiativesCount: number;
+  pendingApprovalsCount: number;
+  criticalRisksCount: number;
+  activeAgents: AgentRole[];
+  latestDeliverablesSummary?: string;
+  financialMetricsSnapshot?: FinanceMetric;
+  attentionItemsSnapshot?: AttentionItem[];
+}
+
+export interface AdvisorTargetContext {
+  section:
+    | 'hq_attention'
+    | 'hq_initiatives'
+    | 'hq_decisions'
+    | 'hq_deliverables'
+    | 'hq_employees'
+    | 'hq_intelligence'
+    | 'hq_council_result';
+  title: string;
+  category?: string;
+  sourceEntityId?: string;
+  sourceEntityName?: string;
+  recommendation?: string;
+  whyItMatters?: string;
+  risk?: string;
+  resultSnippet?: string;
+  evidenceBasis?: string;
+  suggestedQuestions?: string[];
+  metadata?: Record<string, string | number | boolean | undefined>;
+}
+
+export interface EpistemicKnowledgeBreakdown {
+  facts: string[];
+  inferences: string[];
+  recommendations: string[];
+  unknowns: string[];
+}
+
+export interface FounderAdvisorResponse {
+  success: boolean;
+  question: string;
+  summary: string;
+  analysisMarkdown: string;
+  epistemicBreakdown: EpistemicKnowledgeBreakdown;
+  strategicInsights: AdvisorStrategicInsight[];
+  suggestedFollowUpPrompts: string[];
+  contextAttachment?: AdvisorTargetContext;
+  referencedInitiatives?: string[];
+  referencedAgents?: AgentRole[];
+  referencedDecisions?: string[];
+  liveAi: boolean;
+  modelUsed?: string;
+  timestamp: string;
+  executionOutcome?: 'live_ai' | 'unconfigured' | 'error';
+  error?: string;
+}
+
+// ----------------------------------------------------------------------------
+// 12. SHARED COMPANY CONTEXT SNAPSHOT
+// ----------------------------------------------------------------------------
+
+export interface CompanyExecutiveContextSnapshot {
+  initiatives: CompanyInitiative[];
+  decisions: CompanyDecision[];
+  attentionItems: AttentionItem[];
+  agents: AIAgent[];
+  recentIntelligence: ResearchTopic[];
+  financialModel: FinanceMetric;
+  orchestrationHistory: OrchestrationRun[];
+  lastUpdated: string;
+}
+

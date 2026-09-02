@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Bot,
+  BrainCircuit,
   Building2,
   Users,
   Compass,
@@ -53,6 +54,7 @@ import {
 
 const ICON_MAP: Record<string, LucideIcon> = {
   Bot,
+  BrainCircuit,
   Building2,
   Users,
   Compass,

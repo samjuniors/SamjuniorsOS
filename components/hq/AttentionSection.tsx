@@ -15,14 +15,16 @@ import {
   Sparkles,
   Search,
 } from 'lucide-react';
-import { AttentionItem } from '@/types/os';
+import { AttentionItem, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { BrainCircuit } from 'lucide-react';
 
 interface AttentionSectionProps {
   items: AttentionItem[];
   onApproveItem: (id: string) => void;
   onDismissItem: (id: string) => void;
   onInspectItem?: (item: AttentionItem) => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const AttentionSection: React.FC<AttentionSectionProps> = ({
@@ -30,6 +32,7 @@ export const AttentionSection: React.FC<AttentionSectionProps> = ({
   onApproveItem,
   onDismissItem,
   onInspectItem,
+  onAskAdvisor,
 }) => {
   const [selectedEvidenceItem, setSelectedEvidenceItem] = useState<AttentionItem | null>(null);
 
@@ -167,6 +170,35 @@ export const AttentionSection: React.FC<AttentionSectionProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-1.5">
+                  {onAskAdvisor && (
+                    <button
+                      onClick={() =>
+                        onAskAdvisor({
+                          section: 'hq_attention',
+                          title: item.title,
+                          category: item.type,
+                          sourceEntityId: item.id,
+                          sourceEntityName: item.authorName,
+                          recommendation: item.recommendedAction,
+                          whyItMatters: item.whyItMatters,
+                          resultSnippet: item.whatHappened,
+                          evidenceBasis: item.evidence?.basis || 'empirical_analysis',
+                          suggestedQuestions: [
+                            'Why is this happening?',
+                            'What should I do?',
+                            'What am I missing?',
+                            'Is this recommendation actually correct?',
+                          ],
+                        })
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-[11px] font-medium transition-colors flex items-center space-x-1"
+                      title="Ask Founder Intelligence about this item"
+                    >
+                      <BrainCircuit className="w-3 h-3 text-indigo-400" />
+                      <span>Ask Advisor</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setSelectedEvidenceItem(item)}
                     className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-[11px] font-medium transition-colors flex items-center space-x-1"

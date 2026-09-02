@@ -16,19 +16,22 @@ import {
   Search,
   CheckCircle2,
 } from 'lucide-react';
-import { ExecutionDeliverable } from '@/types/os';
+import { ExecutionDeliverable, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { BrainCircuit } from 'lucide-react';
 
 interface DeliverablesViewProps {
   deliverables: ExecutionDeliverable[];
   selectedDeliverableId?: string;
   onSelectDeliverable?: (d: ExecutionDeliverable) => void;
+  onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
 export const DeliverablesView: React.FC<DeliverablesViewProps> = ({
   deliverables,
   selectedDeliverableId,
   onSelectDeliverable,
+  onAskAdvisor,
 }) => {
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [selectedDoc, setSelectedDoc] = useState<ExecutionDeliverable>(
@@ -149,9 +152,37 @@ export const DeliverablesView: React.FC<DeliverablesViewProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-2">
+                  {onAskAdvisor && (
+                    <button
+                      onClick={() =>
+                        onAskAdvisor({
+                          section: 'hq_deliverables',
+                          title: selectedDoc.name,
+                          category: selectedDoc.type,
+                          sourceEntityId: selectedDoc.id,
+                          sourceEntityName: selectedDoc.authorName || selectedDoc.owner,
+                          resultSnippet: selectedDoc.content.slice(0, 1000),
+                          evidenceBasis: selectedDoc.provenance?.evidenceBasis || 'empirical_analysis',
+                          suggestedQuestions: [
+                            'What am I missing from this deliverable?',
+                            'Is this recommendation actually correct?',
+                            'What should my next decision be based on this document?',
+                            'How does this align with our unit economics?',
+                          ],
+                        })
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 text-xs font-semibold flex items-center space-x-1 transition-colors"
+                      title="Ask Founder Intelligence to challenge or analyze this deliverable"
+                    >
+                      <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Ask Advisor</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setIsEvidenceOpen(true)}
                     className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-medium flex items-center space-x-1 transition-colors"
+                    title="Inspect Provenance & Evidence Basis"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                     <span>Provenance</span>
