@@ -62,7 +62,10 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   const [directiveInput, setDirectiveInput] = useState(initialDirective || '');
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentRun, setCurrentRun] = useState<OrchestrationRun>(INITIAL_ORCHESTRATION);
-  const [selectedAgent, setSelectedAgent] = useState<AIAgent>(INITIAL_AGENTS[0]);
+  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AGENTS);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('coo');
+  const selectedAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
+  const [statusFilter, setStatusFilter] = useState<'all' | 'processing' | 'standby' | 'idle' | 'active'>('all');
   const [agentDetailTab, setAgentDetailTab] = useState<'overview' | 'tasks' | 'history' | 'permissions' | 'chat'>('overview');
   const [selectedProtocolStep, setSelectedProtocolStep] = useState<AgentWorkProtocolStep>('understand');
   const [agentChatInput, setAgentChatInput] = useState('');
@@ -75,6 +78,99 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   ]);
   const [copiedDeliverable, setCopiedDeliverable] = useState<string | null>(null);
   const [selectedDeliverableIndex, setSelectedDeliverableIndex] = useState(0);
+
+  // Helper to compute visual status info (dots, colors, labels)
+  const getAgentStatusInfo = useCallback(
+    (agent: AIAgent) => {
+      if (isExecuting) {
+        const activeStage = currentRun.plan.find((p) => p.status === 'in_progress');
+        const isCurrentAgentWorking =
+          activeStage?.agentId === agent.id ||
+          (agent.id === 'coo' && currentRun.currentProtocolStep === 'understand');
+
+        if (isCurrentAgentWorking) {
+          return {
+            state: 'processing' as const,
+            label: 'PROCESSING',
+            dotColor: 'bg-emerald-400',
+            pingClass: 'animate-ping bg-emerald-400 opacity-75',
+            badgeBg: 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300',
+            ringColor: 'ring-emerald-400/50',
+            isPulsing: true,
+            description: 'Actively processing current protocol stage',
+          };
+        }
+
+        return {
+          state: 'standby' as const,
+          label: 'STANDBY',
+          dotColor: 'bg-sky-400',
+          pingClass: '',
+          badgeBg: 'bg-sky-950/70 border-sky-500/40 text-sky-300',
+          ringColor: 'ring-sky-400/40',
+          isPulsing: false,
+          description: 'Standing by on neural bus for pipeline delegation',
+        };
+      }
+
+      const s = agent.status.toLowerCase();
+      if (s === 'processing' || s === 'executing') {
+        return {
+          state: 'processing' as const,
+          label: 'PROCESSING',
+          dotColor: 'bg-emerald-400',
+          pingClass: 'animate-ping bg-emerald-400 opacity-75',
+          badgeBg: 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300',
+          ringColor: 'ring-emerald-400/50',
+          isPulsing: true,
+          description: 'Actively executing autonomous tasks',
+        };
+      }
+      if (s === 'active' || s === 'reporting') {
+        return {
+          state: 'active' as const,
+          label: 'ACTIVE',
+          dotColor: 'bg-emerald-400',
+          pingClass: '',
+          badgeBg: 'bg-emerald-950/70 border-emerald-500/30 text-emerald-300',
+          ringColor: 'ring-emerald-400/30',
+          isPulsing: false,
+          description: 'Online and ready to accept directives',
+        };
+      }
+      if (s === 'standby' || s === 'analyzing' || s === 'researching' || s === 'planning' || s === 'testing' || s === 'verifying' || s === 'reviewing' || s === 'understanding') {
+        return {
+          state: 'standby' as const,
+          label: s === 'standby' ? 'STANDBY' : s.toUpperCase(),
+          dotColor: 'bg-sky-400',
+          pingClass: '',
+          badgeBg: 'bg-sky-950/70 border-sky-500/30 text-sky-300',
+          ringColor: 'ring-sky-400/30',
+          isPulsing: false,
+          description: 'Listening on neural bus for pipeline handoff',
+        };
+      }
+
+      return {
+        state: 'idle' as const,
+        label: 'IDLE',
+        dotColor: 'bg-slate-400',
+        pingClass: '',
+        badgeBg: 'bg-slate-900/80 border-slate-700 text-slate-300',
+        ringColor: 'ring-slate-500/30',
+        isPulsing: false,
+        description: 'Idle and awaiting founder directives',
+      };
+    },
+    [isExecuting, currentRun]
+  );
+
+  const handleUpdateAgentStatus = (agentId: string, newStatus: AIAgent['status']) => {
+    if (soundEnabled) playOSSound('click');
+    setAgents((prev) =>
+      prev.map((a) => (a.id === agentId ? { ...a, status: newStatus } : a))
+    );
+  };
 
   const presetDirectives = [
     'Evaluate launching a self-serve tier for enterprise AI agents with unit economics & operational roadmap',
@@ -520,7 +616,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                       className={`p-3 rounded-xl border ${senderInfo.bg} text-xs space-y-1`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className={`font-bold ${senderInfo.color} flex items-center gap-1.5`}>
                             <span className="w-1.5 h-1.5 rounded-full bg-current" />
                             {senderInfo.name}
@@ -528,6 +624,11 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                           {msg.protocolStep && (
                             <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/10 text-slate-300 font-mono uppercase">
                               {msg.protocolStep}
+                            </span>
+                          )}
+                          {msg.provenance && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-mono border border-emerald-500/20">
+                              Verified • {msg.provenance.evidenceBasis}
                             </span>
                           )}
                         </div>
@@ -619,58 +720,158 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
         <div className="flex-1 overflow-auto p-4 md:p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
           {/* Left Col (4 cols): Agent Selection Cards */}
           <div className="md:col-span-4 space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center justify-between">
-              <span>Executive AI Roster</span>
-              <span className="text-indigo-400 font-mono text-[11px]">4 Agents</span>
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Bot className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Executive AI Roster</span>
+              </h4>
+              <span className="text-indigo-400 font-mono text-[11px] bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                {agents.length} Agents
+              </span>
+            </div>
 
-            {INITIAL_AGENTS.map((agent) => (
+            {/* Quick Status Legend / Filter */}
+            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between text-[10px]">
               <button
-                key={agent.id}
-                id={`agent-card-${agent.id}`}
-                onClick={() => {
-                  if (soundEnabled) playOSSound('click');
-                  setSelectedAgent(agent);
-                  setAgentChatHistory([
-                    {
-                      sender: 'agent',
-                      text: `Hello Founder. I'm ${agent.name}, ${agent.role}. I am operating under the 9-step Agent Work Protocol. My current queue has ${agent.taskQueue.length} items. How can I assist?`,
-                      time: 'Just now',
-                    },
-                  ]);
-                }}
-                className={`w-full text-left p-3.5 rounded-2xl border transition-all ${
-                  selectedAgent.id === agent.id
-                    ? 'os-glass-card-active border-indigo-500/60 ring-1 ring-indigo-500/40 shadow-xl'
-                    : 'os-glass-card border-white/10 hover:border-white/20'
+                onClick={() => setStatusFilter('all')}
+                className={`px-2 py-1 rounded-lg font-mono transition-all ${
+                  statusFilter === 'all'
+                    ? 'bg-indigo-600 text-white font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`w-11 h-11 rounded-xl bg-gradient-to-tr ${agent.avatarColor} flex items-center justify-center text-sm font-bold text-white shadow-md`}
+                All ({agents.length})
+              </button>
+
+              <button
+                onClick={() => setStatusFilter('processing')}
+                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-mono transition-all ${
+                  statusFilter === 'processing'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold'
+                    : 'text-slate-400 hover:text-emerald-400'
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>Active</span>
+              </button>
+
+              <button
+                onClick={() => setStatusFilter('standby')}
+                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-mono transition-all ${
+                  statusFilter === 'standby'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-bold'
+                    : 'text-slate-400 hover:text-sky-400'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full bg-sky-400"></span>
+                <span>Standby</span>
+              </button>
+
+              <button
+                onClick={() => setStatusFilter('idle')}
+                className={`px-2 py-1 rounded-lg flex items-center gap-1 font-mono transition-all ${
+                  statusFilter === 'idle'
+                    ? 'bg-slate-700/60 text-slate-200 border border-slate-600 font-bold'
+                    : 'text-slate-400 hover:text-slate-300'
+                }`}
+              >
+                <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                <span>Idle</span>
+              </button>
+            </div>
+
+            {agents
+              .filter((agent) => {
+                if (statusFilter === 'all') return true;
+                const info = getAgentStatusInfo(agent);
+                if (statusFilter === 'processing') return info.state === 'processing' || info.state === 'active';
+                if (statusFilter === 'standby') return info.state === 'standby';
+                if (statusFilter === 'idle') return info.state === 'idle';
+                return true;
+              })
+              .map((agent) => {
+                const statusInfo = getAgentStatusInfo(agent);
+                const isSelected = selectedAgent.id === agent.id;
+
+                return (
+                  <button
+                    key={agent.id}
+                    id={`agent-card-${agent.id}`}
+                    onClick={() => {
+                      if (soundEnabled) playOSSound('click');
+                      setSelectedAgentId(agent.id);
+                      setAgentChatHistory([
+                        {
+                          sender: 'agent',
+                          text: `Hello Founder. I'm ${agent.name}, ${agent.role}. I am operating under the 9-step Agent Work Protocol. My current queue has ${agent.taskQueue.length} items. How can I assist?`,
+                          time: 'Just now',
+                        },
+                      ]);
+                    }}
+                    className={`w-full text-left p-3.5 rounded-2xl border transition-all ${
+                      isSelected
+                        ? 'os-glass-card-active border-indigo-500/60 ring-1 ring-indigo-500/40 shadow-xl'
+                        : 'os-glass-card border-white/10 hover:border-white/20'
+                    }`}
                   >
-                    {agent.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-white truncate">{agent.name}</span>
-                      <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                        {agent.status.toUpperCase()}
+                    <div className="flex items-center space-x-3">
+                      {/* Avatar with small visual status indicator dot in corner */}
+                      <div className="relative shrink-0">
+                        <div
+                          className={`w-11 h-11 rounded-xl bg-gradient-to-tr ${agent.avatarColor} flex items-center justify-center text-sm font-bold text-white shadow-md`}
+                        >
+                          {agent.name
+                            .split(' ')
+                            .map((n) => n[0])
+                            .join('')}
+                        </div>
+
+                        {/* Status Dot Indicator Badge */}
+                        <span
+                          className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5"
+                          title={`Status: ${statusInfo.label} (${statusInfo.description})`}
+                        >
+                          {statusInfo.isPulsing && (
+                            <span
+                              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${statusInfo.dotColor} opacity-75`}
+                            />
+                          )}
+                          <span
+                            className={`relative inline-flex rounded-full h-3.5 w-3.5 ${statusInfo.dotColor} ring-2 ring-slate-900 shadow-sm`}
+                          />
+                        </span>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="font-bold text-xs text-white truncate">{agent.name}</span>
+                          <span
+                            className={`text-[9px] font-mono px-2 py-0.5 rounded-full border flex items-center gap-1.5 shrink-0 ${statusInfo.badgeBg}`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotColor} ${
+                                statusInfo.isPulsing ? 'animate-pulse' : ''
+                              }`}
+                            />
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate mt-0.5">{agent.role}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 pt-2 border-t border-white/5 text-[10px] text-slate-300 flex items-center justify-between">
+                      <span className="text-slate-400 truncate max-w-[150px]">{agent.department}</span>
+                      <span className="font-mono text-indigo-300 shrink-0">
+                        {agent.taskQueue.length} Queued
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400 truncate">{agent.role}</div>
-                  </div>
-                </div>
-
-                <div className="mt-2.5 pt-2 border-t border-white/5 text-[10px] text-slate-300 flex items-center justify-between">
-                  <span className="text-slate-400">Department: {agent.department}</span>
-                  <span className="font-mono text-indigo-300">{agent.taskQueue.length} Queued Tasks</span>
-                </div>
-              </button>
-            ))}
+                  </button>
+                );
+              })}
           </div>
 
           {/* Right Col (8 cols): Selected Agent Full Management Center */}
@@ -679,14 +880,36 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               {/* Agent Header Banner */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                 <div className="flex items-center space-x-3.5">
-                  <div
-                    className={`w-12 h-12 rounded-xl bg-gradient-to-tr ${selectedAgent.avatarColor} flex items-center justify-center text-lg font-bold text-white shadow-lg`}
-                  >
-                    {selectedAgent.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')}
+                  <div className="relative shrink-0">
+                    <div
+                      className={`w-12 h-12 rounded-xl bg-gradient-to-tr ${selectedAgent.avatarColor} flex items-center justify-center text-lg font-bold text-white shadow-lg`}
+                    >
+                      {selectedAgent.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')}
+                    </div>
+                    {/* Header Status Indicator Dot */}
+                    {(() => {
+                      const currentInfo = getAgentStatusInfo(selectedAgent);
+                      return (
+                        <span
+                          className="absolute -bottom-1 -right-1 flex h-4 w-4"
+                          title={`Status: ${currentInfo.label}`}
+                        >
+                          {currentInfo.isPulsing && (
+                            <span
+                              className={`animate-ping absolute inline-flex h-full w-full rounded-full ${currentInfo.dotColor} opacity-75`}
+                            />
+                          )}
+                          <span
+                            className={`relative inline-flex rounded-full h-4 w-4 ${currentInfo.dotColor} ring-2 ring-slate-900 shadow-md`}
+                          />
+                        </span>
+                      );
+                    })()}
                   </div>
+
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-white">{selectedAgent.name}</h3>
@@ -701,6 +924,54 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-4 text-xs font-mono">
+                  {/* Status Toggle / Override */}
+                  <div className="text-left bg-black/40 p-1.5 rounded-xl border border-white/10">
+                    <div className="text-[9px] text-slate-400 mb-1 flex items-center justify-between gap-2">
+                      <span>Live State:</span>
+                      <span className="text-indigo-300 uppercase">{getAgentStatusInfo(selectedAgent).label}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleUpdateAgentStatus(selectedAgent.id, 'idle')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all ${
+                          selectedAgent.status === 'idle'
+                            ? 'bg-slate-700 text-white font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                        title="Set agent to Idle"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        Idle
+                      </button>
+
+                      <button
+                        onClick={() => handleUpdateAgentStatus(selectedAgent.id, 'standby')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all ${
+                          selectedAgent.status === 'standby'
+                            ? 'bg-sky-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-sky-300'
+                        }`}
+                        title="Set agent to Standby"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                        Standby
+                      </button>
+
+                      <button
+                        onClick={() => handleUpdateAgentStatus(selectedAgent.id, 'processing')}
+                        className={`px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all ${
+                          selectedAgent.status === 'processing'
+                            ? 'bg-emerald-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-emerald-300'
+                        }`}
+                        title="Set agent to Processing"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        Active
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="text-right">
                     <div className="text-[10px] text-slate-400">Tasks Completed</div>
                     <div className="font-bold text-emerald-400">{selectedAgent.tasksCompleted}</div>
@@ -1070,9 +1341,16 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                     <h3 className="text-sm font-bold text-white">
                       {currentRun.deliverables[selectedDeliverableIndex].name}
                     </h3>
-                    <p className="text-xs text-indigo-400">
-                      Owner: {currentRun.deliverables[selectedDeliverableIndex].owner}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap text-xs">
+                      <span className="text-indigo-400">
+                        Owner: {currentRun.deliverables[selectedDeliverableIndex].owner}
+                      </span>
+                      {currentRun.deliverables[selectedDeliverableIndex].provenance && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono border border-emerald-500/30">
+                          Basis: {currentRun.deliverables[selectedDeliverableIndex].provenance?.evidenceBasis} • {currentRun.deliverables[selectedDeliverableIndex].provenance?.modelUsed || 'live-orchestration'}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <button
@@ -1083,7 +1361,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                         currentRun.deliverables[selectedDeliverableIndex].name
                       )
                     }
-                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200 hover:text-white flex items-center space-x-1.5 transition-colors border border-white/10"
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200 hover:text-white flex items-center space-x-1.5 transition-colors border border-white/10 shrink-0 ml-2"
                   >
                     {copiedDeliverable === currentRun.deliverables[selectedDeliverableIndex].name ? (
                       <>
@@ -1103,11 +1381,15 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                   {currentRun.deliverables[selectedDeliverableIndex].content}
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-slate-400">
+                <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-slate-400 flex-wrap gap-2">
                   <span className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Verified by COO Sophia Vance
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Verified by COO Sophia Vance (Constitutional Invariants Enforced)
                   </span>
-                  <span className="text-slate-400 font-mono">Status: Safe Mock Verified</span>
+                  <span className="text-slate-400 font-mono text-[11px]">
+                    {currentRun.deliverables[selectedDeliverableIndex].provenance?.timestamp
+                      ? new Date(currentRun.deliverables[selectedDeliverableIndex].provenance!.timestamp).toLocaleTimeString()
+                      : 'Safe Mock Verified'}
+                  </span>
                 </div>
               </>
             ) : (

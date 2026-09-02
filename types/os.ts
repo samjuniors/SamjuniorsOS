@@ -82,6 +82,9 @@ export interface AIAgent {
   accentColor: string;
   status:
     | 'idle'
+    | 'processing'
+    | 'standby'
+    | 'active'
     | 'understanding'
     | 'researching'
     | 'analyzing'
@@ -90,8 +93,7 @@ export interface AIAgent {
     | 'testing'
     | 'verifying'
     | 'reviewing'
-    | 'reporting'
-    | 'active';
+    | 'reporting';
   currentTask: string;
   uptime: string;
   tasksCompleted: number;
@@ -107,6 +109,40 @@ export interface AIAgent {
   recentActivity: Array<{ time: string; action: string; badge?: string }>;
 }
 
+export type ExecutionState =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'requires_approval';
+
+export type EvidenceBasis =
+  | 'external_evidence'
+  | 'calculation'
+  | 'model_reasoning'
+  | 'unverified';
+
+export interface OutputProvenance {
+  agentId: AgentRole;
+  agentName: string;
+  taskId: string;
+  protocolStep: AgentWorkProtocolStep;
+  timestamp: string;
+  isVerified: boolean;
+  evidenceBasis: EvidenceBasis;
+  modelUsed?: string;
+}
+
+export interface VerificationResult {
+  isCompliant: boolean;
+  checksPassed: string[];
+  checksFailed: string[];
+  safeMockEnforced: boolean;
+  notes: string;
+  verifiedAt: string;
+}
+
 export interface ExecutionMessage {
   id: string;
   sender: 'orchestrator' | 'coo' | 'researcher' | 'pm' | 'finance' | 'founder';
@@ -115,6 +151,7 @@ export interface ExecutionMessage {
   type: 'status' | 'finding' | 'critique' | 'artifact' | 'approval_request';
   protocolStep?: AgentWorkProtocolStep;
   artifactData?: any;
+  provenance?: OutputProvenance;
 }
 
 export interface ExecutionDeliverable {
@@ -122,6 +159,7 @@ export interface ExecutionDeliverable {
   owner: string;
   protocolStep?: AgentWorkProtocolStep;
   content: string;
+  provenance?: OutputProvenance;
 }
 
 export interface ExecutionPlanItem {
@@ -129,15 +167,16 @@ export interface ExecutionPlanItem {
   title: string;
   agentId: AgentRole;
   protocolStep: AgentWorkProtocolStep;
-  status: 'pending' | 'in_progress' | 'done';
+  status: 'pending' | 'in_progress' | 'done' | 'failed' | 'blocked' | 'requires_approval';
   outputSnippet?: string;
+  provenance?: OutputProvenance;
 }
 
 export interface OrchestrationRun {
   id: string;
   directive: string;
   timestamp: string;
-  status: 'planning' | 'running' | 'synthesizing' | 'completed' | 'paused';
+  status: 'planning' | 'running' | 'synthesizing' | 'completed' | 'paused' | 'failed' | 'requires_approval';
   currentProtocolStep?: AgentWorkProtocolStep;
   protocolProgress?: Record<AgentWorkProtocolStep, 'pending' | 'active' | 'completed'>;
   liveAi?: boolean;
@@ -148,6 +187,13 @@ export interface OrchestrationRun {
   messages: ExecutionMessage[];
   deliverables: ExecutionDeliverable[];
   finalExecutiveReport?: string;
+  verificationResult?: VerificationResult;
+  executionSummary?: {
+    totalAgentsInvoked: number;
+    agentsInvoked: AgentRole[];
+    totalTasksExecuted: number;
+    executionMode: 'multi_agent_orchestrated' | 'direct_agent' | 'unconfigured';
+  };
 }
 
 export interface OSNotification {
