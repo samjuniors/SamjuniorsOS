@@ -219,4 +219,100 @@ export class CompanyContextProvider {
 
     return lines.join('\n');
   }
+
+  /**
+   * Generates strictly scoped, role-appropriate domain context for direct employee conversation
+   * Enforces least-privilege context isolation across COO, Research, Product, Finance, and Advisor.
+   */
+  public static formatForEmployeeRoleContext(
+    role: AgentRole | 'advisor',
+    context: FullCompanyContext
+  ): string {
+    const lines: string[] = [];
+
+    if (role === 'advisor') {
+      return this.formatForAdvisorPrompt(context);
+    }
+
+    if (role === 'coo') {
+      // Sophia Vance: Operations, coordination, initiatives, governance decisions, attention queue
+      lines.push('=== EXECUTIVE OPERATIONS CONTEXT (SOPHIA VANCE • COO) ===');
+      lines.push(`Company: ${context.constitution.name}`);
+      lines.push(`Mission: ${context.constitution.mission}`);
+      lines.push('Active Initiatives:');
+      context.initiatives.forEach((init) => {
+        lines.push(`  - [${init.codeName}] "${init.title}" (${init.status}): ${init.currentObjective}`);
+        lines.push(`    Latest Result: ${init.latestResult}`);
+      });
+      lines.push('Pending Governance Approvals & Attention:');
+      context.attentionItems.forEach((att) => {
+        lines.push(`  - [${att.type}] "${att.title}" (Status: ${att.status}) -> ${att.recommendedAction}`);
+      });
+      lines.push('Active Agent Roster:');
+      context.agents.forEach((ag) => {
+        lines.push(`  - ${ag.name} (${ag.role}) | Status: ${ag.status} | Current: ${ag.currentTask || 'Idle'}`);
+      });
+      lines.push('Operating Guardrails: Safe mock operations only; no unauthorized external mutations.');
+      return lines.join('\n');
+    }
+
+    if (role === 'researcher') {
+      // Dr. Aris Thorne: Market research, intelligence, competitive landscape, tech benchmarks
+      lines.push('=== MARKET & TECHNICAL RESEARCH CONTEXT (DR. ARIS THORNE • RESEARCH) ===');
+      lines.push('Market Intelligence & Tech Radars:');
+      context.recentIntelligence.forEach((res) => {
+        lines.push(`  - [${res.category.toUpperCase()}] "${res.title}" (Confidence: ${res.confidence}%): ${res.summary}`);
+      });
+      lines.push('Active Research Tracks:');
+      context.initiatives
+        .filter((init) => init.contributors.some((c) => c.agentId === 'researcher'))
+        .forEach((init) => {
+          lines.push(`  - "${init.title}": ${init.currentObjective}`);
+        });
+      lines.push('Scope Guardrails: No access to internal financial ledgers or unredacted system keys; empirical analysis only.');
+      return lines.join('\n');
+    }
+
+    if (role === 'pm') {
+      // Maya Lin: Product specifications, PRDs, UX workflows, feature backlogs, acceptance criteria
+      lines.push('=== PRODUCT ARCHITECTURE & PRD CONTEXT (MAYA LIN • PM) ===');
+      lines.push('Active Product Roadmaps & Initiatives:');
+      context.initiatives
+        .filter((init) => init.contributors.some((c) => c.agentId === 'pm'))
+        .forEach((init) => {
+          lines.push(`  - [${init.codeName}] "${init.title}" (${init.status}): ${init.currentObjective}`);
+          if (init.deliverableIds && init.deliverableIds.length > 0) {
+            lines.push(`    Deliverables: ${init.deliverableIds.join(', ')}`);
+          }
+        });
+      lines.push('Product Specs & Specifications:');
+      context.attentionItems
+        .filter((att) => att.type === 'product_decision' || att.authorAgentId === 'pm')
+        .forEach((att) => {
+          lines.push(`  - "${att.title}": ${att.whatHappened} -> Recommended: ${att.recommendedAction}`);
+        });
+      lines.push('Scope Guardrails: Product design and specification modeling only; no direct server deployment or live mutations.');
+      return lines.join('\n');
+    }
+
+    if (role === 'finance') {
+      // Julian Cruz: Financial modeling, unit economics, compute burn, pricing tiers, gross margin
+      lines.push('=== FINANCIAL ANALYSIS & UNIT ECONOMICS CONTEXT (JULIAN CRUZ • FINANCE) ===');
+      const fin = context.financialModel;
+      lines.push(`MRR: $${fin.mrr.toLocaleString()} | Gross Margin: ${fin.grossMargin}% (Target Floor: 80%)`);
+      lines.push(`Monthly Burn Rate: $${fin.burnRate.toLocaleString()} | Runway: ${fin.runwayMonths} months`);
+      lines.push(`Compute Expenditure: $${fin.computeSpend.toLocaleString()} | Token Volume: ${fin.tokenUsageMillions}M tokens`);
+      lines.push('Financial Initiatives & Margin Safeguards:');
+      context.initiatives
+        .filter((init) => init.contributors.some((c) => c.agentId === 'finance'))
+        .forEach((init) => {
+          lines.push(`  - "${init.title}" (${init.status}): ${init.currentObjective}`);
+          lines.push(`    Result: ${init.latestResult}`);
+        });
+      lines.push('Scope Guardrails: Computational financial modeling & simulation only; live banking transfers and payment mutations disabled.');
+      return lines.join('\n');
+    }
+
+    return '';
+  }
 }

@@ -43,7 +43,7 @@ import {
   RefreshCw,
   Terminal,
 } from 'lucide-react';
-import { playOSSound } from '../os/IconHelper';
+import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
 
 // Sub components
 import { AttentionSection } from '../hq/AttentionSection';
@@ -55,6 +55,7 @@ import { EmployeeProfileView } from '../hq/EmployeeProfileView';
 import { DeliverablesView } from '../hq/DeliverablesView';
 import { DecisionsView } from '../hq/DecisionsView';
 import { ExecutionAuditView } from '../hq/ExecutionAuditView';
+import { GovernanceStore, GovernanceEventDetail } from '@/lib/governance-store';
 
 interface WorkforceAppProps {
   soundEnabled: boolean;
@@ -78,15 +79,70 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   const [executionMessage, setExecutionMessage] = useState('Sophia Vance is coordinating with Research, Product, and Finance...');
   const [currentRun, setCurrentRun] = useState<OrchestrationRun>(INITIAL_ORCHESTRATION);
 
-  // Entities State
+  // Entities State synced with GovernanceStore
   const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AGENTS);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('coo');
-  const [attentionItems, setAttentionItems] = useState<AttentionItem[]>(INITIAL_ATTENTION_ITEMS);
+  const [attentionItems, setAttentionItems] = useState<AttentionItem[]>(() => GovernanceStore.getAttentionItems());
   const [initiatives, setInitiatives] = useState<CompanyInitiative[]>(INITIAL_INITIATIVES);
-  const [decisions, setDecisions] = useState<CompanyDecision[]>(INITIAL_COMPANY_DECISIONS);
+  const [decisions, setDecisions] = useState<CompanyDecision[]>(() => GovernanceStore.getDecisions());
   const [selectedDeliverableDoc, setSelectedDeliverableDoc] = useState<ExecutionDeliverable | undefined>(undefined);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
+
+  // Subscribe to GovernanceStore updates
+  useEffect(() => {
+    const unsubscribe = GovernanceStore.subscribe(() => {
+      setDecisions(GovernanceStore.getDecisions());
+      setAttentionItems(GovernanceStore.getAttentionItems());
+    });
+
+    const handleGovernanceEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<GovernanceEventDetail>;
+      if (!customEvent.detail) return;
+      setDecisions(GovernanceStore.getDecisions());
+      setAttentionItems(GovernanceStore.getAttentionItems());
+    };
+
+    window.addEventListener('samjuniors-governance-updated', handleGovernanceEvent);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('samjuniors-governance-updated', handleGovernanceEvent);
+    };
+  }, []);
+
+  // Synchronize externally orchestrated directives (e.g. from MessagesApp) with Company HQ
+  useEffect(() => {
+    const handleDirectiveEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        run: OrchestrationRun;
+        decision?: CompanyDecision;
+        attentionItem?: AttentionItem;
+        activateTab?: 'hq' | 'work' | 'decisions';
+      }>;
+
+      if (!customEvent.detail || !customEvent.detail.run) return;
+
+      const { run, decision, attentionItem, activateTab } = customEvent.detail;
+      setCurrentRun(run);
+
+      if (decision) {
+        GovernanceStore.addDecision(decision);
+      }
+
+      if (attentionItem) {
+        GovernanceStore.addAttentionItem(attentionItem);
+      }
+
+      if (activateTab) {
+        setActiveTab(activateTab);
+      }
+    };
+
+    window.addEventListener('samjuniors-directive-orchestrated', handleDirectiveEvent);
+    return () => {
+      window.removeEventListener('samjuniors-directive-orchestrated', handleDirectiveEvent);
+    };
+  }, []);
 
   // Preset executive commands
   const presetCommands = [
@@ -231,7 +287,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               date: 'Today',
               founderApprovalRequired: true,
             };
-            setDecisions((prev) => [newDecision, ...prev]);
+            GovernanceStore.addDecision(newDecision);
 
             const newAttentionItem: AttentionItem = {
               id: `att-run-${Date.now()}`,
@@ -251,8 +307,15 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
                 details: 'Full deliverables and verification details available in Founder HQ.',
               },
             };
-            setAttentionItems((prev) => [newAttentionItem, ...prev]);
+            GovernanceStore.addAttentionItem(newAttentionItem);
           }
+
+          dispatchOSNotification({
+            title: 'Execution Completed',
+            message: `Strategic Package: ${finalizedRun.title.slice(0, 40)}...`,
+            type: 'system',
+            agent: 'Workforce Engine'
+          });
 
           if (soundEnabled) playOSSound('notification');
         } else {
@@ -302,25 +365,41 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
     return data.reply || data.text || 'Acknowledged.';
   };
 
-  // Attention item handlers
+  // Attention item handlers routed via GovernanceStore
   const handleApproveAttention = (id: string) => {
     if (soundEnabled) playOSSound('click');
-    setAttentionItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'approved', founderActionRequired: false } : item))
-    );
+    GovernanceStore.handleAttentionAction(id, 'approve');
   };
 
   const handleDismissAttention = (id: string) => {
     if (soundEnabled) playOSSound('click');
-    setAttentionItems((prev) => prev.filter((item) => item.id !== id));
+    GovernanceStore.handleAttentionAction(id, 'dismiss');
   };
 
-  // Decision approval handler
+  const handleRejectAttention = (id: string, reason?: string) => {
+    if (soundEnabled) playOSSound('click');
+    GovernanceStore.handleAttentionAction(id, 'reject', reason);
+  };
+
+  const handleRequestRevisionAttention = (id: string, note?: string) => {
+    if (soundEnabled) playOSSound('click');
+    GovernanceStore.handleAttentionAction(id, 'request_revision', note);
+  };
+
+  // Decision governance handlers routed via GovernanceStore
   const handleApproveDecision = (id: string) => {
     if (soundEnabled) playOSSound('notification');
-    setDecisions((prev) =>
-      prev.map((dec) => (dec.id === id ? { ...dec, status: 'approved', founderApprovalRequired: false } : dec))
-    );
+    GovernanceStore.handleDecisionAction(id, 'approve');
+  };
+
+  const handleRejectDecision = (id: string, reason?: string) => {
+    if (soundEnabled) playOSSound('click');
+    GovernanceStore.handleDecisionAction(id, 'reject', reason);
+  };
+
+  const handleRequestRevisionDecision = (id: string, note?: string) => {
+    if (soundEnabled) playOSSound('click');
+    GovernanceStore.handleDecisionAction(id, 'request_revision', note);
   };
 
   // Navigation tabs
@@ -584,6 +663,8 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             <DecisionsView
               decisions={decisions}
               onApproveDecision={handleApproveDecision}
+              onRejectDecision={handleRejectDecision}
+              onRequestRevision={handleRequestRevisionDecision}
               onAskAdvisor={onAskAdvisor}
             />
           </div>

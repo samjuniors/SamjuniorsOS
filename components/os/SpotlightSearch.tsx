@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Sparkles, Bot, Building2, Users, Compass, Boxes, TrendingUp, Sliders, ArrowRight } from 'lucide-react';
 import { AppId } from '@/types/os';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
+import { GovernanceStore } from '@/lib/governance-store';
 import { playOSSound } from './IconHelper';
 
 interface SpotlightSearchProps {
@@ -40,6 +41,14 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
 
   const filteredAgents = INITIAL_AGENTS.filter((ag) =>
     ag.name.toLowerCase().includes(query.toLowerCase()) || ag.role.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const filteredDecisions = GovernanceStore.getDecisions().filter((d) =>
+    d.title.toLowerCase().includes(query.toLowerCase()) || d.category.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const filteredAttention = GovernanceStore.getAttentionItems().filter((a) =>
+    a.title.toLowerCase().includes(query.toLowerCase()) || a.type.toLowerCase().includes(query.toLowerCase())
   );
 
   const handleSelectApp = (id: AppId) => {
@@ -140,33 +149,72 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
           </div>
 
           {/* AI Executives */}
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block px-2 mb-1">
-              AI Executives
-            </span>
-            <div className="space-y-1">
-              {filteredAgents.map((agent) => (
-                <button
-                  key={agent.id}
-                  onClick={() => {
-                    handleSelectApp('workforce');
-                  }}
-                  className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center justify-between transition-colors"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <div className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${agent.avatarColor} flex items-center justify-center text-[10px] font-bold text-white`}>
-                      {agent.name[0]}
+          {filteredAgents.length > 0 && (
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block px-2 mb-1">
+                AI Executives (Conversations)
+              </span>
+              <div className="space-y-1">
+                {filteredAgents.map((agent) => (
+                  <button
+                    key={agent.id}
+                    onClick={() => {
+                      handleSelectApp('messages');
+                    }}
+                    className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-center space-x-2.5">
+                      <div className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${agent.avatarColor} flex items-center justify-center text-[10px] font-bold text-white`}>
+                        {agent.name[0]}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-white text-xs">{agent.name}</span>
+                        <span className="text-[10px] text-indigo-400 ml-1.5">{agent.role}</span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="font-semibold text-white text-xs">{agent.name}</span>
-                      <span className="text-[10px] text-indigo-400 ml-1.5">{agent.role}</span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-emerald-400 capitalize">{agent.status || 'Active'}</span>
-                </button>
-              ))}
+                    <span className="text-[10px] font-mono text-emerald-400 capitalize">{agent.status || 'Active'}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Company Items */}
+          {(filteredDecisions.length > 0 || filteredAttention.length > 0) && (
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block px-2 mb-1">
+                Company Items (HQ)
+              </span>
+              <div className="space-y-1">
+                {filteredDecisions.slice(0, 3).map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => handleSelectApp('company')}
+                    className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center space-x-2.5 transition-colors"
+                  >
+                    <Building2 className="w-4 h-4 text-emerald-400" />
+                    <div className="truncate">
+                      <div className="font-semibold text-white text-xs truncate">{d.title}</div>
+                      <div className="text-[10px] text-slate-400">Decision • {d.status}</div>
+                    </div>
+                  </button>
+                ))}
+                {filteredAttention.slice(0, 3).map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => handleSelectApp('company')}
+                    className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center space-x-2.5 transition-colors"
+                  >
+                    <Search className="w-4 h-4 text-amber-400" />
+                    <div className="truncate">
+                      <div className="font-semibold text-white text-xs truncate">{a.title}</div>
+                      <div className="text-[10px] text-slate-400">Attention Item • {a.status}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

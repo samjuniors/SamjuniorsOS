@@ -152,6 +152,18 @@ export default function SamJuniorsOSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    const handleOSNotification = (e: Event) => {
+      const customEvent = e as CustomEvent<OSNotification>;
+      if (customEvent.detail) {
+        setNotifications((prev) => [customEvent.detail, ...prev]);
+        if (soundEnabled) playOSSound('notification');
+      }
+    };
+    window.addEventListener('samjuniors-os-notification', handleOSNotification);
+    return () => window.removeEventListener('samjuniors-os-notification', handleOSNotification);
+  }, [soundEnabled]);
+
   const handleDismissNotification = (id: string) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };

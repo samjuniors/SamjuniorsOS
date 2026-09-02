@@ -1,17 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Scale,
   CheckCircle2,
   AlertTriangle,
   Clock,
   Check,
+  X,
+  RotateCcw,
   ShieldCheck,
   Award,
   ExternalLink,
   ChevronRight,
+  FileEdit,
+  MessageSquare,
 } from 'lucide-react';
 import { CompanyDecision, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
@@ -20,14 +24,29 @@ import { BrainCircuit } from 'lucide-react';
 interface DecisionsViewProps {
   decisions: CompanyDecision[];
   onApproveDecision: (id: string) => void;
+  onRejectDecision?: (id: string, reason?: string) => void;
+  onRequestRevision?: (id: string, note?: string) => void;
   onAskAdvisor?: (context: AdvisorTargetContext) => void;
 }
 
-export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onApproveDecision, onAskAdvisor }) => {
+export const DecisionsView: React.FC<DecisionsViewProps> = ({
+  decisions,
+  onApproveDecision,
+  onRejectDecision,
+  onRequestRevision,
+  onAskAdvisor,
+}) => {
   const [selectedEvidenceDecision, setSelectedEvidenceDecision] = useState<CompanyDecision | null>(null);
+  const [revisionModalDecision, setRevisionModalDecision] = useState<CompanyDecision | null>(null);
+  const [revisionNote, setRevisionNote] = useState('');
 
-  const pendingDecisions = decisions.filter((d) => d.status === 'pending_approval');
+  const pendingDecisions = decisions.filter(
+    (d) => d.status === 'pending_approval' || d.founderApprovalRequired
+  );
   const ratifiedDecisions = decisions.filter((d) => d.status === 'approved');
+  const otherDecisions = decisions.filter(
+    (d) => d.status === 'rejected' || d.status === 'revision_requested'
+  );
 
   return (
     <div className="space-y-6">
@@ -139,14 +158,47 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onAppro
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-white/10 flex justify-end">
-                  <button
-                    onClick={() => onApproveDecision(dec.id)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold shadow-lg transition-all flex items-center space-x-1.5"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Authorize & Ratify Decision</span>
-                  </button>
+                <div className="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Requires Explicit Founder Authorization</span>
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    {onRequestRevision && (
+                      <button
+                        id={`btn-decision-revision-${dec.id}`}
+                        onClick={() => {
+                          setRevisionModalDecision(dec);
+                          setRevisionNote('');
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-300 hover:text-amber-200 text-xs font-semibold border border-amber-500/30 transition-all flex items-center space-x-1.5"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Request Revision</span>
+                      </button>
+                    )}
+
+                    {onRejectDecision && (
+                      <button
+                        id={`btn-decision-reject-${dec.id}`}
+                        onClick={() => onRejectDecision(dec.id, 'Rejected by Founder from Decisions View.')}
+                        className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 hover:text-rose-200 text-xs font-semibold border border-rose-500/30 transition-all flex items-center space-x-1.5"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>Reject</span>
+                      </button>
+                    )}
+
+                    <button
+                      id={`btn-decision-approve-${dec.id}`}
+                      onClick={() => onApproveDecision(dec.id)}
+                      className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold shadow-lg transition-all flex items-center space-x-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Approve Decision</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -154,7 +206,72 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onAppro
         </div>
       )}
 
-      {/* Section 2: Ratified Decisions & Governance Log */}
+      {/* Section 2: Rejected & Revision Requested Decisions Log */}
+      {otherDecisions.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
+            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+            Active Revision & Rejected Governance Log ({otherDecisions.length})
+          </h3>
+
+          <div className="space-y-2">
+            {otherDecisions.map((dec) => {
+              const isRevision = dec.status === 'revision_requested';
+              return (
+                <div
+                  key={dec.id}
+                  className={`border rounded-xl p-3.5 space-y-2 text-xs transition-all ${
+                    isRevision
+                      ? 'bg-amber-950/20 border-amber-500/30'
+                      : 'bg-rose-950/20 border-rose-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 uppercase">
+                        {dec.category}
+                      </span>
+                      <h4 className="font-bold text-white">{dec.title}</h4>
+                    </div>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded border flex items-center gap-1 ${
+                        isRevision
+                          ? 'text-amber-300 bg-amber-950/40 border-amber-500/30'
+                          : 'text-rose-300 bg-rose-950/40 border-rose-500/30'
+                      }`}
+                    >
+                      {isRevision ? <RotateCcw className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                      {isRevision ? 'Revision Requested' : 'Rejected'}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 leading-relaxed">{dec.recommendation}</p>
+
+                  {dec.resolutionNote && (
+                    <div className="p-2 rounded-lg bg-black/40 border border-white/5 text-[11px] text-slate-300">
+                      <span className="text-slate-400 font-semibold font-mono">Founder Feedback: </span>
+                      {dec.resolutionNote}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-white/5">
+                    <span>Proposed by {dec.recommendedBy} • Logged {dec.date}</span>
+                    <button
+                      onClick={() => setSelectedEvidenceDecision(dec)}
+                      className="hover:text-slate-300 flex items-center gap-1 font-mono"
+                    >
+                      <span>Inspect Audit Trail</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Section 3: Ratified Decisions & Governance Log */}
       <div className="space-y-3">
         <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
@@ -235,6 +352,80 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({ decisions, onAppro
           details={`Evidence Summary: ${selectedEvidenceDecision.evidenceSummary}. Recommended by ${selectedEvidenceDecision.recommendedBy}.`}
         />
       )}
+
+      {/* Revision Request Feedback Modal */}
+      <AnimatePresence>
+        {revisionModalDecision && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#12131c] border border-white/15 rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                    <RotateCcw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Request Decision Revision</h3>
+                    <p className="text-[11px] text-slate-400 truncate max-w-xs">{revisionModalDecision.title}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setRevisionModalDecision(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/5"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-300 block">
+                  Founder Instructions / Specific Changes Needed
+                </label>
+                <textarea
+                  value={revisionNote}
+                  onChange={(e) => setRevisionNote(e.target.value)}
+                  placeholder="e.g., Reduce target compute allocation to 10%, verify enterprise SLA terms, or benchmark with European data privacy rules..."
+                  rows={3}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 custom-scrollbar"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Routes back to {revisionModalDecision.recommendedBy}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setRevisionModalDecision(null)}
+                    className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (onRequestRevision) {
+                        onRequestRevision(
+                          revisionModalDecision.id,
+                          revisionNote.trim() || 'Please revise scope, pricing assumptions, or operational safety constraints.'
+                        );
+                      }
+                      setRevisionModalDecision(null);
+                    }}
+                    className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-md transition-all flex items-center space-x-1.5"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Send Revision Request</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

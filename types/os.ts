@@ -348,7 +348,7 @@ export interface CompanyInitiative {
 export interface CompanyDecision {
   id: string;
   title: string;
-  status: 'pending_approval' | 'approved' | 'rejected' | 'in_review' | 'resolved';
+  status: 'pending_approval' | 'approved' | 'rejected' | 'revision_requested' | 'in_review' | 'resolved';
   category: 'Strategic' | 'Financial' | 'Product' | 'Governance';
   recommendedBy: string;
   agentId: AgentRole;
@@ -357,6 +357,9 @@ export interface CompanyDecision {
   evidenceSummary: string;
   date: string;
   founderApprovalRequired: boolean;
+  resolutionNote?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 export interface AttentionItem {
@@ -376,8 +379,11 @@ export interface AttentionItem {
   authorAgentId: AgentRole;
   authorName: string;
   founderActionRequired: boolean;
-  status: 'pending' | 'approved' | 'rejected' | 'dismissed' | 'resolved';
+  status: 'pending' | 'approved' | 'rejected' | 'revision_requested' | 'dismissed' | 'resolved';
   timestamp: string;
+  resolutionNote?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
   evidence?: {
     basis: EvidenceBasis;
     source: string;

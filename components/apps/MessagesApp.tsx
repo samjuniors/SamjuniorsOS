@@ -18,13 +18,32 @@ import {
   Clock,
   AlertCircle,
   ExternalLink,
-  MessageSquare
+  MessageSquare,
+  Play,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  Layers,
+  FileCheck,
+  TrendingUp,
+  HelpCircle,
+  Briefcase,
+  X,
+  FileCode
 } from 'lucide-react';
-import { AppId, AgentRole } from '@/types/os';
-import { INITIAL_AGENTS } from '@/lib/os-data';
-import { playOSSound } from '../os/IconHelper';
+import {
+  AppId,
+  AgentRole,
+  OrchestrationRun,
+  ExecutionDeliverable,
+  CompanyDecision,
+  AttentionItem,
+} from '@/types/os';
+import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
+import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
 
 export type ParticipantId = 'advisor' | AgentRole;
+export type MessageIntent = 'conversation' | 'information_request' | 'directive' | 'ambiguous';
 
 export interface MessageParticipant {
   id: ParticipantId;
@@ -47,6 +66,16 @@ export interface DirectMessage {
   liveAi?: boolean;
   modelUsed?: string;
   errorMessage?: string;
+  intent?: MessageIntent;
+  directiveProposal?: {
+    title?: string;
+    suggestedScope?: string;
+    reason?: string;
+  };
+  isDirectiveExecuting?: boolean;
+  directiveProgressStep?: string;
+  orchestrationRun?: OrchestrationRun;
+  isDismissedProposal?: boolean;
 }
 
 const PARTICIPANTS: MessageParticipant[] = [
@@ -78,8 +107,8 @@ const PARTICIPANTS: MessageParticipant[] = [
       'Executive Operations online. Let me know if you need to coordinate cross-agent work, check task SLAs, or audit protocol compliance.',
     starterPrompts: [
       'What is the current bottleneck in our task queue?',
-      'Coordinate a rapid review across Research and Product.',
-      'Check SLA adherence for active deliverables.',
+      'Research the European market and give me a recommendation.',
+      'Can you look into our API compute latency?',
     ],
   },
   {
@@ -93,9 +122,9 @@ const PARTICIPANTS: MessageParticipant[] = [
     welcomeMessage:
       'Market Intelligence desk ready. I can provide competitor landscape analysis, model architecture benchmarks, or tech radar updates.',
     starterPrompts: [
-      'What recent frontier model releases should we track?',
-      'Analyze competitor agent pricing and monetization models.',
-      'What are the key technical moat opportunities for our OS?',
+      'What did you find about the European market?',
+      'Research competitor agent frameworks and synthesize a moat report.',
+      'Check this out maybe regarding open weights models?',
     ],
   },
   {
@@ -109,9 +138,9 @@ const PARTICIPANTS: MessageParticipant[] = [
     welcomeMessage:
       'Product specs and PRDs ready. Message me with feature ideas, UX edge cases, or roadmap sequencing questions.',
     starterPrompts: [
-      'How should we spec the enterprise audit log feature?',
-      'What are the core acceptance criteria for self-serve sign-up?',
-      'Review the UX friction points in our onboarding flow.',
+      'What is the status of Project Lumora?',
+      'Draft a PRD for 3-click enterprise developer onboarding with acceptance criteria.',
+      'Can you look into our user activation friction?',
     ],
   },
   {
@@ -125,9 +154,9 @@ const PARTICIPANTS: MessageParticipant[] = [
     welcomeMessage:
       'Financial desk open. I can stress-test token unit economics, model compute infrastructure costs, or project operational runway.',
     starterPrompts: [
-      'What is our projected compute cost per active user session?',
-      'Stress-test gross margins if model inference latency drops 50%.',
-      'How does the $149/mo Pro tier affect our unit economics?',
+      'What is our current MRR and gross margin?',
+      'Model pricing strategy for 250 enterprise autonomous agent seats with 85%+ gross margin.',
+      'Look into pricing adjustments for Q4.',
     ],
   },
 ];
@@ -164,6 +193,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
         timestamp: '10:30 AM',
         status: 'delivered',
         liveAi: false,
+        intent: 'conversation',
       },
     ],
     coo: [
@@ -174,6 +204,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
         timestamp: '10:32 AM',
         status: 'delivered',
         liveAi: false,
+        intent: 'conversation',
       },
     ],
     researcher: [],
@@ -183,6 +214,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
 
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [selectedDeliverableModal, setSelectedDeliverableModal] = useState<ExecutionDeliverable | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<ParticipantId, number>>({
     advisor: 0,
     coo: 0,
@@ -207,6 +239,182 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
     setSelectedId(id);
     setUnreadCounts((prev) => ({ ...prev, [id]: 0 }));
     setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  // Execute directive through the existing orchestration architecture
+  const handleExecuteDirective = async (directiveText: string, messageId: string) => {
+    if (soundEnabled) playOSSound('execute');
+
+    // Update message state to show executing
+    setMessagesByParticipant((prev) => {
+      const thread = prev[selectedId] || [];
+      return {
+        ...prev,
+        [selectedId]: thread.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                isDirectiveExecuting: true,
+                directiveProgressStep: 'Sophia Vance deconstructing directive into 9-step Council protocol...',
+              }
+            : m
+        ),
+      };
+    });
+
+    const progressSteps = [
+      'Sophia Vance is deconstructing directive into 9-step Agent Protocol...',
+      'Dr. Aris Thorne conducting market dynamics and technical feasibility recon...',
+      'Maya Lin drafting Product Requirements Document (PRD) & user flows...',
+      'Julian Cruz stress-testing compute burn, pricing tiers & unit economics...',
+      'Sophia Vance verifying constitutional SLA & safe sandbox compliance...',
+      'Executive Council synthesizing final recommendations for Founder HQ...',
+    ];
+
+    let stepIdx = 0;
+    const interval = setInterval(() => {
+      stepIdx = (stepIdx + 1) % progressSteps.length;
+      setMessagesByParticipant((prev) => {
+        const thread = prev[selectedId] || [];
+        return {
+          ...prev,
+          [selectedId]: thread.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  directiveProgressStep: progressSteps[stepIdx],
+                }
+              : m
+          ),
+        };
+      });
+    }, 1300);
+
+    try {
+      const res = await fetch('/api/orchestrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          directive: directiveText,
+          agents: ['coo', 'researcher', 'pm', 'finance'],
+        }),
+      });
+
+      clearInterval(interval);
+      const data = await res.json();
+
+      if (res.ok && data.success && data.data) {
+        if (soundEnabled) playOSSound('notification');
+
+        const payload = data.data;
+        const finalizedRun: OrchestrationRun = {
+          id: payload.id || `run-${Date.now()}`,
+          directive: directiveText,
+          timestamp: payload.timestamp || getFormattedTime(),
+          status: payload.status || 'completed',
+          liveAi: data.liveAi,
+          currentProtocolStep: 'report',
+          title: payload.title || `Directive: ${directiveText.slice(0, 48)}`,
+          summary: payload.summary || 'Executive Council completed multi-agent strategic package.',
+          plan: payload.plan || [],
+          messages: payload.messages || [],
+          deliverables: payload.deliverables || [],
+          finalExecutiveReport: payload.finalExecutiveReport,
+          executiveResult: payload.executiveResult,
+          verificationResult: payload.verificationResult,
+          executionSummary: payload.executionSummary,
+        };
+
+        // Decision / Attention items creation for Company HQ
+        const decisionDetails = payload.executiveResult?.founderDecision;
+        let newDecision: CompanyDecision | undefined;
+        let newAttentionItem: AttentionItem | undefined;
+
+        if (decisionDetails?.required) {
+          newDecision = {
+            id: `dec-${Date.now()}`,
+            title: decisionDetails.title || `Ratify Directive: ${finalizedRun.title}`,
+            status: 'pending_approval',
+            category: 'Strategic',
+            recommendedBy: 'Executive Council (COO, Research, PM, Finance)',
+            agentId: 'coo',
+            recommendation: decisionDetails.recommendation || finalizedRun.summary,
+            businessImpact: decisionDetails.impact || 'Authorizes executive workforce to proceed under Safe Mock constraints.',
+            evidenceSummary: 'Synthesized and audited across Research, Product, and Finance specialists.',
+            date: 'Today',
+            founderApprovalRequired: true,
+          };
+
+          newAttentionItem = {
+            id: `att-run-${Date.now()}`,
+            type: 'approval_required',
+            title: `Decision Required: ${newDecision.title}`,
+            whatHappened: `Executive Council produced verified deliverables for "${directiveText.slice(0, 60)}...".`,
+            whyItMatters: decisionDetails.why || 'Requires Founder sign-off before allocating execution capacity.',
+            recommendedAction: 'Review Executive Recommendation in Company HQ.',
+            authorAgentId: 'coo',
+            authorName: 'Sophia Vance (COO)',
+            founderActionRequired: true,
+            status: 'pending',
+            timestamp: getFormattedTime(),
+            evidence: {
+              basis: (payload.executiveResult?.evidenceAvailability?.primaryBasis as any) || 'model_reasoning',
+              source: 'Multi-Agent Council Protocol',
+              details: 'Synthesized across Research, Product Architecture, and Financial Modeling under 9-step governance.',
+            },
+          };
+        }
+
+        // Synchronize with Company HQ via CustomEvent
+        window.dispatchEvent(
+          new CustomEvent('samjuniors-directive-orchestrated', {
+            detail: {
+              run: finalizedRun,
+              decision: newDecision,
+              attentionItem: newAttentionItem,
+            },
+          })
+        );
+
+        // Update message with finalized run
+        setMessagesByParticipant((prev) => {
+          const thread = prev[selectedId] || [];
+          return {
+            ...prev,
+            [selectedId]: thread.map((m) =>
+              m.id === messageId
+                ? {
+                    ...m,
+                    isDirectiveExecuting: false,
+                    orchestrationRun: finalizedRun,
+                    text: `${m.text}\n\n✅ [Executive Council Deliverables Generated]\nStrategic Package: "${finalizedRun.title}"\nStatus: Completed & Verified across Research, Product, and Finance.`,
+                  }
+                : m
+            ),
+          };
+        });
+      } else {
+        throw new Error(data.error || 'Failed to complete directive execution');
+      }
+    } catch (err: any) {
+      clearInterval(interval);
+      setMessagesByParticipant((prev) => {
+        const thread = prev[selectedId] || [];
+        return {
+          ...prev,
+          [selectedId]: thread.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  isDirectiveExecuting: false,
+                  status: 'error',
+                  errorMessage: err.message || 'Directive execution failed.',
+                }
+              : m
+          ),
+        };
+      });
+    }
   };
 
   const handleSendMessage = async (customText?: string) => {
@@ -269,6 +477,15 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           status: 'delivered',
           liveAi: data.liveAi,
           modelUsed: data.modelUsed,
+          intent: data.intent,
+          directiveProposal:
+            data.classification?.intent === 'directive' || data.classification?.intent === 'ambiguous'
+              ? {
+                  title: data.classification.directiveTitle || textToSend,
+                  suggestedScope: data.classification.suggestedScope,
+                  reason: data.classification.reason,
+                }
+              : undefined,
         };
 
         setMessagesByParticipant((prev) => ({
@@ -282,6 +499,14 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
             ...prev,
             [targetParticipantId]: (prev[targetParticipantId] || 0) + 1,
           }));
+          
+          const agentName = INITIAL_AGENTS.find((a) => a.id === targetParticipantId)?.name || 'Advisor';
+          dispatchOSNotification({
+            title: 'New Message',
+            message: `${agentName}: ${data.reply.slice(0, 40)}...`,
+            type: 'agent',
+            agent: agentName,
+          });
         }
       } else {
         throw new Error(data.error || 'Failed to receive response');
@@ -321,7 +546,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
   const currentMessages = messagesByParticipant[selectedId] || [];
 
   return (
-    <div className="h-full w-full flex bg-[#0c0d12] text-slate-200 overflow-hidden select-text text-xs">
+    <div className="h-full w-full flex bg-[#0c0d12] text-slate-200 overflow-hidden select-text text-xs relative">
       {/* LEFT COLUMN: Conversations List */}
       <div className="w-72 sm:w-80 flex flex-col border-r border-white/10 bg-[#0f1017]/90 shrink-0">
         {/* Header */}
@@ -334,7 +559,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               <h1 className="text-sm font-bold text-white tracking-tight">Messages</h1>
               <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>5 Participants Active</span>
+                <span>5 Direct Channels</span>
               </div>
             </div>
           </div>
@@ -434,7 +659,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
         {/* Footer info pill */}
         <div className="p-2.5 border-t border-white/5 bg-black/40 text-[10px] text-slate-500 flex items-center justify-between">
           <span>End-to-end Sandbox DM</span>
-          <span className="text-emerald-400 font-mono">Neural Bus Active</span>
+          <span className="text-emerald-400 font-mono">Orchestration Active</span>
         </div>
       </div>
 
@@ -481,6 +706,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           <div className="flex items-center space-x-2">
             {selectedParticipant.isAdvisor ? (
               <button
+                id="messages-btn-open-advisor"
                 onClick={() => onOpenApp?.('advisor')}
                 className="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
                 title="Open deep strategic advisor"
@@ -490,6 +716,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               </button>
             ) : (
               <button
+                id="messages-btn-open-workforce"
                 onClick={() => onOpenApp?.('workforce')}
                 className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
                 title="View in Company Headquarters"
@@ -500,6 +727,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
             )}
 
             <button
+              id="messages-btn-clear-history"
               onClick={handleClearHistory}
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
               title="Clear message thread"
@@ -533,7 +761,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               {/* Starter Quick Actions */}
               <div className="w-full space-y-2 pt-2 text-left">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block px-1">
-                  Quick Topics
+                  Quick Directives & Inquiries
                 </span>
                 {selectedParticipant.starterPrompts.map((prompt, idx) => (
                   <button
@@ -555,7 +783,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               return (
                 <div
                   key={msg.id}
-                  className={`flex flex-col ${isFounder ? 'items-end' : 'items-start'} space-y-1`}
+                  className={`flex flex-col ${isFounder ? 'items-end' : 'items-start'} space-y-1.5`}
                 >
                   {/* Sender Name & Meta */}
                   <div className="flex items-center space-x-2 text-[10px] px-1 text-slate-400">
@@ -563,6 +791,26 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                       {isFounder ? 'Founder' : selectedParticipant.name}
                     </span>
                     <span>{msg.timestamp}</span>
+
+                    {/* Intent Badges */}
+                    {!isFounder && msg.intent === 'directive' && (
+                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono border border-amber-500/30 flex items-center gap-1">
+                        <Briefcase className="w-2.5 h-2.5" />
+                        Directive
+                      </span>
+                    )}
+                    {!isFounder && msg.intent === 'information_request' && (
+                      <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-mono border border-cyan-500/30">
+                        Info Request
+                      </span>
+                    )}
+                    {!isFounder && msg.intent === 'ambiguous' && (
+                      <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[9px] font-mono border border-purple-500/30 flex items-center gap-1">
+                        <HelpCircle className="w-2.5 h-2.5" />
+                        Clarification
+                      </span>
+                    )}
+
                     {msg.liveAi && (
                       <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono">
                         Live AI ({msg.modelUsed || 'Gemini'})
@@ -582,6 +830,162 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                   >
                     <p className="whitespace-pre-wrap">{msg.text}</p>
 
+                    {/* AMBIGUOUS CLARIFICATION CARD */}
+                    {!isFounder && msg.intent === 'ambiguous' && !msg.isDismissedProposal && !msg.orchestrationRun && (
+                      <div className="mt-3 p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2">
+                        <div className="flex items-center space-x-2 text-purple-300 font-semibold text-[11px]">
+                          <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Clarification Required (Ambiguous Intent)</span>
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          This query was identified as open-ended. To protect execution bounds, would you like to launch a structured Multi-Agent Task or keep this conversational?
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={() => {
+                              const targetText = msg.directiveProposal?.title || msg.text;
+                              handleExecuteDirective(targetText, msg.id);
+                            }}
+                            disabled={msg.isDirectiveExecuting}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow transition-all"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Launch Multi-Agent Task</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setMessagesByParticipant((prev) => {
+                                const thread = prev[selectedId] || [];
+                                return {
+                                  ...prev,
+                                  [selectedId]: thread.map((m) =>
+                                    m.id === msg.id ? { ...m, isDismissedProposal: true } : m
+                                  ),
+                                };
+                              });
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[11px] transition-colors"
+                          >
+                            Keep Conversational
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* EXPLICIT DIRECTIVE EXECUTION PROPOSAL CARD */}
+                    {!isFounder &&
+                      msg.intent === 'directive' &&
+                      !msg.orchestrationRun &&
+                      !msg.isDirectiveExecuting && (
+                        <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2 text-amber-300 font-semibold text-[11px]">
+                              <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Work Directive Detected</span>
+                            </div>
+                            <span className="text-[10px] text-amber-400 font-mono">9-Step Council Ready</span>
+                          </div>
+                          <p className="text-slate-300 text-[11px] leading-relaxed">
+                            {msg.directiveProposal?.suggestedScope ||
+                              'Ready to coordinate Research, Product Architecture, and Financial Modeling under safe sandbox invariants.'}
+                          </p>
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              id={`btn-execute-directive-${msg.id}`}
+                              onClick={() => {
+                                const targetDirective = msg.directiveProposal?.title || msg.text;
+                                handleExecuteDirective(targetDirective, msg.id);
+                              }}
+                              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Execute Directive via Council</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    {/* REAL-TIME DIRECTIVE EXECUTION PROGRESS */}
+                    {msg.isDirectiveExecuting && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-xs space-y-2.5 animate-pulse">
+                        <div className="flex items-center justify-between text-indigo-300 font-semibold text-[11px]">
+                          <div className="flex items-center space-x-2">
+                            <Layers className="w-4 h-4 text-indigo-400 animate-spin" />
+                            <span>Executive Council Multi-Agent Execution</span>
+                          </div>
+                          <span className="text-[10px] text-indigo-400 font-mono">Live Orchestration</span>
+                        </div>
+                        <p className="text-slate-200 text-xs font-mono">
+                          {msg.directiveProgressStep || 'Ingesting scope across Sophia, Dr. Thorne, Maya, and Julian...'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* COMPLETED ORCHESTRATION RESULT & DELIVERABLES CARD */}
+                    {msg.orchestrationRun && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-[#0e1017] border border-emerald-500/30 text-xs space-y-3 shadow-lg">
+                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                          <div className="flex items-center space-x-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            <span className="font-bold text-white text-xs">
+                              {msg.orchestrationRun.title}
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30 font-semibold">
+                            Completed & Verified
+                          </span>
+                        </div>
+
+                        {/* Executive Summary */}
+                        <p className="text-slate-300 text-xs leading-relaxed">
+                          {msg.orchestrationRun.summary}
+                        </p>
+
+                        {/* Generated Deliverables */}
+                        {msg.orchestrationRun.deliverables && msg.orchestrationRun.deliverables.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                              Generated Deliverables ({msg.orchestrationRun.deliverables.length})
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {msg.orchestrationRun.deliverables.map((deliv, idx) => (
+                                <button
+                                  key={deliv.id || idx}
+                                  onClick={() => setSelectedDeliverableModal(deliv)}
+                                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/40 text-left transition-colors flex items-start space-x-2 group"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[11px] font-semibold text-slate-200 truncate group-hover:text-white">
+                                      {deliv.name}
+                                    </div>
+                                    <div className="text-[9px] text-slate-500 font-mono truncate">
+                                      {(deliv.authorName || deliv.owner || 'AI Specialist').toUpperCase()} • {deliv.type || 'Deliverable'}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Synchronization Footer & Jump to Company HQ */}
+                        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px]">
+                          <span className="text-slate-400 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            Synced to Company HQ (0 duplicate tasks)
+                          </span>
+                          <button
+                            onClick={() => onOpenApp?.('workforce')}
+                            className="px-2.5 py-1 rounded-md bg-indigo-600/80 hover:bg-indigo-600 text-white font-medium flex items-center gap-1 transition-colors"
+                          >
+                            <span>View in Company HQ</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Error / Retry banner if failure */}
                     {msg.status === 'error' && (
                       <div className="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-rose-300 text-xs">
@@ -590,7 +994,13 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                           <span>{msg.errorMessage || 'Failed to deliver message.'}</span>
                         </div>
                         <button
-                          onClick={() => handleSendMessage(msg.text)}
+                          onClick={() => {
+                            if (msg.intent === 'directive') {
+                              handleExecuteDirective(msg.text, msg.id);
+                            } else {
+                              handleSendMessage(msg.text);
+                            }
+                          }}
                           className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-white font-medium text-[10px] transition-colors"
                         >
                           Retry
@@ -653,7 +1063,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               }}
               disabled={isSending}
               rows={1}
-              placeholder={`Direct message ${selectedParticipant.name}... (Enter to send, Shift+Enter for new line)`}
+              placeholder={`Direct message ${selectedParticipant.name}... (e.g., questions, status check, or work directives)`}
               className="flex-1 bg-transparent border-none text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32 min-h-[42px] px-3 py-2.5 custom-scrollbar"
             />
 
@@ -669,11 +1079,72 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </form>
 
           <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 px-1">
-            <span>Direct agent link • Sandboxed session</span>
-            <span>Gemini Neural Mesh Active</span>
+            <span>Direct conversation & work directive bridge</span>
+            <span>Gemini Multi-Agent Mesh Active</span>
           </div>
         </div>
       </div>
+
+      {/* DELIVERABLE DOCUMENT MODAL PREVIEW */}
+      <AnimatePresence>
+        {selectedDeliverableModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#12131c] border border-white/15 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#161824]">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">
+                      {selectedDeliverableModal.name}
+                    </h3>
+                    <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                      <span>Authored by {(selectedDeliverableModal.authorName || selectedDeliverableModal.owner || 'AI Specialist').toUpperCase()}</span>
+                      <span>•</span>
+                      <span>Category: {selectedDeliverableModal.type || 'Deliverable'}</span>
+                      <span>•</span>
+                      <span className="text-emerald-400">Status: Verified Artifact</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedDeliverableModal(null)}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-5 overflow-y-auto custom-scrollbar flex-1 text-xs text-slate-200 leading-relaxed font-mono whitespace-pre-wrap bg-black/30">
+                {selectedDeliverableModal.content}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3 border-t border-white/10 bg-[#161824] flex items-center justify-between">
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Verified Executive Artifact
+                </span>
+                <button
+                  onClick={() => setSelectedDeliverableModal(null)}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition-colors"
+                >
+                  Close Document
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
+

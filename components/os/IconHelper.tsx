@@ -159,3 +159,17 @@ export function playOSSound(type: 'click' | 'open' | 'notification' | 'execute' 
     // Audio context may be restricted before user gesture
   }
 }
+
+import { OSNotification } from '@/types/os';
+
+export function dispatchOSNotification(notification: Omit<OSNotification, 'id' | 'time' | 'read'>) {
+  if (typeof window !== 'undefined') {
+    const detail: OSNotification = {
+      ...notification,
+      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      read: false,
+    };
+    window.dispatchEvent(new CustomEvent('samjuniors-os-notification', { detail }));
+  }
+}
