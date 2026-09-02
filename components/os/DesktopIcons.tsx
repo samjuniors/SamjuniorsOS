@@ -33,7 +33,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
       {/* Top / Main Section */}
       <div className="w-full flex flex-col lg:flex-row items-center lg:items-start justify-between gap-4 sm:gap-6 pointer-events-auto">
         
-        {/* Mobile-Only Top Compact Autonomous Vitals Widget */}
+        {/* Mobile-Only Top Compact Company Pulse Widget */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -47,11 +47,11 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
               <div className="flex items-center space-x-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-[11px] font-bold text-white tracking-wide">
-                  Autonomous Run Rate
+                  Company Headquarters
                 </span>
               </div>
               <div className="text-xs font-mono text-emerald-400 font-bold">
-                ${(INITIAL_FINANCIALS.arr / 1000000).toFixed(2)}M <span className="text-[9px] text-slate-400 font-normal">ARR (+22%)</span>
+                4 Executive Officers <span className="text-[9px] text-slate-400 font-normal">Active & Online</span>
               </div>
             </div>
           </div>
@@ -60,7 +60,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
             onClick={() => openApp('workforce')}
             className="px-2.5 py-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] font-semibold flex items-center space-x-1 hover:bg-indigo-500/30 active:scale-95 transition-all"
           >
-            <span>Council (4)</span>
+            <span>Open HQ</span>
             <ArrowRight className="w-3 h-3" />
           </button>
         </motion.div>
@@ -111,7 +111,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
           })}
         </div>
 
-        {/* Desktop-Only Executive Hub & Live Vitals Widget */}
+        {/* Desktop-Only Executive Hub & Live Company Pulse Widget */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -122,36 +122,36 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-widest">
-                Autonomous Vitals
+                Company Pulse
               </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20">
-              Zero-Human Pipeline
+              Safe Sandboxing Enforced
             </span>
           </div>
 
-          {/* Key Metrics row */}
+          {/* Key Status row */}
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="p-3 bg-white/5 rounded-lg border border-white/5">
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Annual Run Rate</span>
+                <span>Active Initiatives</span>
                 <TrendingUp className="w-3 h-3 text-emerald-400" />
               </div>
               <div className="text-base font-mono font-bold text-white mt-1">
-                ${(INITIAL_FINANCIALS.arr / 1000000).toFixed(2)}M
+                4 Projects
               </div>
-              <div className="text-[9px] text-emerald-400 mt-0.5">+22.4% MoM growth</div>
+              <div className="text-[9px] text-emerald-400 mt-0.5">All Streams Nominal</div>
             </div>
 
             <div className="p-3 bg-white/5 rounded-lg border border-white/5">
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Executive AI Roster</span>
+                <span>Executive Team</span>
                 <Zap className="w-3 h-3 text-indigo-400" />
               </div>
               <div className="text-base font-mono font-bold text-indigo-300 mt-1">
-                4 Agents
+                4 Officers
               </div>
-              <div className="text-[9px] text-indigo-300 mt-0.5">100% SLA Active</div>
+              <div className="text-[9px] text-indigo-300 mt-0.5">Online & Coordinated</div>
             </div>
           </div>
 
@@ -159,13 +159,13 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
           <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-semibold text-indigo-200">
-                Core Workforce Council
+                Executive Leadership
               </span>
               <button
                 onClick={() => openApp('workforce')}
                 className="text-[10px] text-indigo-400 hover:text-indigo-200 flex items-center gap-0.5 font-medium"
               >
-                Open <ArrowRight className="w-2.5 h-2.5" />
+                Open HQ <ArrowRight className="w-2.5 h-2.5" />
               </button>
             </div>
             <div className="flex items-center space-x-2">
@@ -176,7 +176,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
                   className="flex-1 p-1.5 rounded-md bg-black/40 border border-white/5 text-center"
                 >
                   <div className="text-[9px] font-bold text-slate-300 truncate">
-                    {agent.role.split(' ')[0]}
+                    {agent.name.split(' ')[0]}
                   </div>
                   <div className="text-[8px] text-emerald-400 flex items-center justify-center gap-0.5 mt-0.5">
                     <span className="w-1 h-1 rounded-full bg-emerald-400" />

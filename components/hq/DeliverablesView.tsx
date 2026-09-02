@@ -1,0 +1,202 @@
+'use client';
+
+import React, { useState } from 'react';
+import { motion } from 'motion/react';
+import {
+  FileText,
+  FileCheck,
+  Copy,
+  Check,
+  Download,
+  ShieldCheck,
+  ExternalLink,
+  ChevronRight,
+  Sparkles,
+  TrendingUp,
+  Search,
+  CheckCircle2,
+} from 'lucide-react';
+import { ExecutionDeliverable } from '@/types/os';
+import { EvidenceModal } from './EvidenceModal';
+
+interface DeliverablesViewProps {
+  deliverables: ExecutionDeliverable[];
+  selectedDeliverableId?: string;
+  onSelectDeliverable?: (d: ExecutionDeliverable) => void;
+}
+
+export const DeliverablesView: React.FC<DeliverablesViewProps> = ({
+  deliverables,
+  selectedDeliverableId,
+  onSelectDeliverable,
+}) => {
+  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [selectedDoc, setSelectedDoc] = useState<ExecutionDeliverable>(
+    deliverables.find((d) => d.id === selectedDeliverableId) || deliverables[0]
+  );
+  const [copied, setCopied] = useState(false);
+  const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
+
+  const handleCopy = () => {
+    if (!selectedDoc) return;
+    navigator.clipboard.writeText(selectedDoc.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const filteredDocs = deliverables.filter((d) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'report') return d.type === 'report' || d.name.toLowerCase().includes('report');
+    if (activeFilter === 'spec') return d.type === 'spec' || d.name.toLowerCase().includes('prd');
+    if (activeFilter === 'research') return d.type === 'research' || d.name.toLowerCase().includes('analysis') || d.name.toLowerCase().includes('moat');
+    if (activeFilter === 'financial') return d.type === 'financial' || d.name.toLowerCase().includes('unit') || d.name.toLowerCase().includes('model');
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      {/* Header & Category Filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
+        <div>
+          <h2 className="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+            <FileCheck className="w-4 h-4 text-emerald-400" />
+            Company Work & Deliverables
+          </h2>
+          <p className="text-xs text-slate-400">
+            Verified reports, product specifications, and financial models authored by your executive team.
+          </p>
+        </div>
+
+        <div className="flex items-center space-x-1 overflow-x-auto pb-1">
+          {[
+            { id: 'all', label: 'All Documents' },
+            { id: 'report', label: 'Executive Reports' },
+            { id: 'spec', label: 'PRDs & Specs' },
+            { id: 'research', label: 'Market Intel' },
+            { id: 'financial', label: 'Financial Models' },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setActiveFilter(cat.id)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                activeFilter === cat.id
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Split Layout: Sidebar + Document Reader */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Document List Sidebar */}
+        <div className="space-y-2 lg:max-h-[600px] overflow-y-auto pr-1">
+          {filteredDocs.map((doc, idx) => {
+            const isSelected = (selectedDoc?.id || selectedDoc?.name) === (doc.id || doc.name);
+            return (
+              <div
+                key={doc.id || `${doc.name}-${idx}`}
+                onClick={() => {
+                  setSelectedDoc(doc);
+                  if (onSelectDeliverable) onSelectDeliverable(doc);
+                }}
+                className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${
+                  isSelected
+                    ? 'bg-blue-950/40 border-blue-500/50 shadow-lg'
+                    : 'bg-slate-900/80 border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-300 uppercase">
+                    {doc.type || 'Deliverable'}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">{doc.updatedAt || 'Today'}</span>
+                </div>
+
+                <h4 className="text-xs font-bold text-white leading-snug">{doc.name}</h4>
+                <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                  {doc.content.slice(0, 100)}...
+                </p>
+
+                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                  <span className="text-slate-300">By {doc.authorName || doc.owner}</span>
+                  <span className="text-emerald-400 font-mono">Verified</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Document Viewer */}
+        <div className="lg:col-span-2 bg-slate-900/90 border border-white/15 rounded-2xl p-5 shadow-2xl flex flex-col justify-between space-y-4 max-h-[650px] overflow-hidden">
+          {selectedDoc ? (
+            <>
+              {/* Document Header */}
+              <div className="pb-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-semibold uppercase">
+                      {selectedDoc.type}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Author: <strong className="text-slate-200">{selectedDoc.authorName || selectedDoc.owner}</strong>
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-white mt-1">{selectedDoc.name}</h3>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setIsEvidenceOpen(true)}
+                    className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-medium flex items-center space-x-1 transition-colors"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Provenance</span>
+                  </button>
+
+                  <button
+                    onClick={handleCopy}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Document Content View */}
+              <div className="overflow-y-auto flex-1 p-4 rounded-xl bg-black/40 border border-white/10 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+                {selectedDoc.content}
+              </div>
+
+              {/* Document Footer */}
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
+                <span className="flex items-center gap-1.5 text-emerald-400 font-mono">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Deterministic Empirical Verification Passed
+                </span>
+                <span>Deterministic Safe Mock Mode</span>
+              </div>
+            </>
+          ) : (
+            <div className="p-12 text-center text-slate-500 text-xs">Select a document to read.</div>
+          )}
+        </div>
+      </div>
+
+      {selectedDoc && (
+        <EvidenceModal
+          isOpen={isEvidenceOpen}
+          onClose={() => setIsEvidenceOpen(false)}
+          title={selectedDoc.name}
+          provenance={selectedDoc.provenance}
+          sourceText={selectedDoc.content}
+          details={`Authored by ${selectedDoc.authorName}. Verified against hallucination rules and empirical grounding criteria.`}
+        />
+      )}
+    </div>
+  );
+};

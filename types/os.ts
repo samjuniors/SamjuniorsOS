@@ -95,18 +95,22 @@ export interface AIAgent {
     | 'reviewing'
     | 'reporting';
   currentTask: string;
-  uptime: string;
-  tasksCompleted: number;
-  accuracyScore: string;
-  tokenEfficiency: string;
+  uptime?: string;
+  tasksCompleted?: number;
+  accuracyScore?: string;
+  tokenEfficiency?: string;
   bio: string;
-  goals: string[];
-  instructions: string;
-  capabilities: string[];
-  permissions: AgentPermission[];
-  taskQueue: AgentTask[];
-  activityHistory: AgentActivity[];
-  recentActivity: Array<{ time: string; action: string; badge?: string }>;
+  goals?: string[];
+  responsibilities?: string[];
+  skills?: string[];
+  instructions?: string;
+  capabilities?: string[];
+  permissions?: AgentPermission[];
+  taskQueue?: AgentTask[];
+  tasks?: Array<{ id: string; title: string; priority: string; description: string; status: string; completedAt?: string }>;
+  activityHistory?: AgentActivity[];
+  recentActivity?: Array<{ time: string; action: string; badge?: string }>;
+  model?: string;
 }
 
 export type ExecutionState =
@@ -155,10 +159,15 @@ export interface ExecutionMessage {
 }
 
 export interface ExecutionDeliverable {
+  id?: string;
   name: string;
   owner: string;
+  authorAgentId?: string;
+  authorName?: string;
+  type?: 'report' | 'spec' | 'research' | 'financial' | 'general' | string;
   protocolStep?: AgentWorkProtocolStep;
   content: string;
+  updatedAt?: string;
   provenance?: OutputProvenance;
 }
 
@@ -254,4 +263,72 @@ export interface FinanceMetric {
   burnRate: number;
   netIncome: number;
   tokenUsageMillions: number;
+}
+
+export interface AttentionItem {
+  id: string;
+  type:
+    | 'approval_required'
+    | 'decision_required'
+    | 'blocked_work'
+    | 'financial_warning'
+    | 'customer_issue'
+    | 'product_decision'
+    | 'research_finding';
+  title: string;
+  whatHappened: string;
+  whyItMatters: string;
+  recommendedAction: string;
+  authorAgentId: AgentRole;
+  authorName: string;
+  founderActionRequired: boolean;
+  status: 'pending' | 'approved' | 'dismissed' | 'resolved';
+  timestamp: string;
+  evidence?: {
+    basis: EvidenceBasis;
+    source: string;
+    details: string;
+  };
+}
+
+export interface CompanyInitiative {
+  id: string;
+  title: string;
+  codeName?: string;
+  status: 'Active' | 'Validating' | 'In Progress' | 'Review' | 'Shipped' | 'Paused';
+  currentObjective: string;
+  contributors: Array<{
+    agentId: AgentRole;
+    name: string;
+    role: string;
+  }>;
+  latestResult: string;
+  nextRecommendedAction: string;
+  risks: string[];
+  deliverableIds?: string[];
+  updatedAt: string;
+}
+
+export interface CompanyDecision {
+  id: string;
+  title: string;
+  status: 'pending_approval' | 'approved' | 'in_review' | 'resolved';
+  category: 'Strategic' | 'Financial' | 'Product' | 'Governance';
+  recommendedBy: string;
+  agentId: AgentRole;
+  recommendation: string;
+  businessImpact: string;
+  evidenceSummary: string;
+  date: string;
+  founderApprovalRequired: boolean;
+}
+
+export interface ExecutiveResultSummary {
+  recommendation: string;
+  keyFindings: string[];
+  businessImplications: string[];
+  risksAndUnknowns: string[];
+  recommendedNextActions: string[];
+  founderDecisionRequired?: string;
+  preparedBy: string;
 }
