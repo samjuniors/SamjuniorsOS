@@ -15,6 +15,10 @@ import {
   WindowState,
 } from '@/types/os';
 
+// ============================================================================
+// 1. OS WINDOW & DESKTOP CONFIGURATION
+// ============================================================================
+
 export const INITIAL_WINDOWS: WindowState[] = [
   {
     id: 'workforce',
@@ -38,7 +42,7 @@ export const INITIAL_WINDOWS: WindowState[] = [
   },
   {
     id: 'customers',
-    title: 'Autonomous CRM & Accounts',
+    title: 'Autonomous CRM & Account Pipeline',
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
@@ -68,7 +72,7 @@ export const INITIAL_WINDOWS: WindowState[] = [
   },
   {
     id: 'finance',
-    title: 'Finance & Token Economics',
+    title: 'Finance & Unit Economics Sandbox',
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
@@ -132,10 +136,10 @@ export const APPS_CONFIG: AppMetadata[] = [
     id: 'customers',
     name: 'Customers',
     category: 'Account Pipeline',
-    description: 'Client engagements, pipeline review & active account notes',
+    description: 'Prospect engagements, pipeline review & target account modeling',
     iconName: 'Users',
     color: 'from-emerald-500 to-teal-600',
-    badge: '5 Accounts',
+    badge: '5 Targets',
     defaultSize: { width: 920, height: 600 },
   },
   {
@@ -160,7 +164,7 @@ export const APPS_CONFIG: AppMetadata[] = [
     id: 'finance',
     name: 'Finance',
     category: 'Financial Modeling',
-    description: 'Cost modeling, compute attribution & financial simulations',
+    description: 'Cost modeling, compute attribution & unit economics simulation',
     iconName: 'TrendingUp',
     color: 'from-emerald-400 to-green-600',
     defaultSize: { width: 940, height: 620 },
@@ -169,7 +173,7 @@ export const APPS_CONFIG: AppMetadata[] = [
     id: 'settings',
     name: 'Settings',
     category: 'OS Configuration',
-    description: 'Wallpapers, autonomy guardrails, AI model selection & system telemetry',
+    description: 'Autonomy guardrails, AI model selection & sandbox telemetry',
     iconName: 'Sliders',
     color: 'from-slate-500 to-zinc-700',
     defaultSize: { width: 800, height: 560 },
@@ -194,6 +198,10 @@ export const APPS_CONFIG: AppMetadata[] = [
   },
 ];
 
+// ============================================================================
+// 2. 9-STEP AGENT WORK PROTOCOL DEFINITION
+// ============================================================================
+
 export interface ProtocolStepInfo {
   key: AgentWorkProtocolStep;
   name: string;
@@ -216,7 +224,7 @@ export const AGENT_WORK_PROTOCOL: ProtocolStepInfo[] = [
     key: 'research',
     number: 2,
     name: 'Research',
-    description: 'Deep market intel, competitor moats, arXiv papers & industry benchmarks',
+    description: 'Analyze industry landscape, competitor vectors & empirical tech papers',
     leadAgent: 'researcher',
     expectedOutput: 'Market Intelligence Memo',
   },
@@ -258,7 +266,7 @@ export const AGENT_WORK_PROTOCOL: ProtocolStepInfo[] = [
     name: 'Verify',
     description: 'Validate constitutional compliance, SLA bounds & security invariants',
     leadAgent: 'coo',
-    expectedOutput: 'Compliance & Safety Certificate',
+    expectedOutput: 'Compliance & Safety Verification',
   },
   {
     key: 'review',
@@ -278,6 +286,10 @@ export const AGENT_WORK_PROTOCOL: ProtocolStepInfo[] = [
   },
 ];
 
+// ============================================================================
+// 3. DURABLE EMPLOYEE DEFINITIONS (Truthful Identity & Configuration)
+// ============================================================================
+
 export const INITIAL_AGENTS: AIAgent[] = [
   {
     id: 'coo',
@@ -286,17 +298,14 @@ export const INITIAL_AGENTS: AIAgent[] = [
     department: 'Executive Operations & Orchestration',
     avatarColor: 'from-purple-500 to-indigo-600',
     accentColor: '#818cf8',
-    status: 'reporting',
-    currentTask: 'Supervising cross-functional sprint timeline & SLA compliance',
-    uptime: '99.98%',
-    tasksCompleted: 1420,
-    accuracyScore: '99.2%',
-    tokenEfficiency: '$0.014/exec',
+    status: 'active',
+    currentTask: 'Coordinating cross-functional execution and supervising safe protocol dispatch',
     bio: 'Autonomous operational leader responsible for cross-agent execution, process orchestration, SLA enforcement, risk mitigation, and synthesizing final executive reports.',
+    model: 'Gemini 2.5 Flash',
     goals: [
       'Deconstruct Founder directives into prioritized parallel sub-task graphs across Research, PM, and Finance',
       'Enforce the 9-Step Agent Work Protocol (Understand → Research → Analyze → Plan → Build/Execute → Test → Verify → Review → Report)',
-      'Resolve cross-agent bottlenecks and eliminate dependencies with sub-50ms latency',
+      'Resolve cross-agent bottlenecks and eliminate dependencies with sub-second latency',
       'Compile holistic Executive Packages and verify constitutional compliance before delivery',
     ],
     instructions:
@@ -307,10 +316,10 @@ export const INITIAL_AGENTS: AIAgent[] = [
       'Dependency Resolution',
       'Risk Matrix Modeling',
       'Escalation Routing',
-      'Autonomous SLA Enforcement',
+      'Autonomous Protocol Enforcement',
     ],
     permissions: [
-      { name: 'swarm:orchestrate', description: 'Dispatch and coordinate all executive agent threads', category: 'Coordination', isSafeMock: true },
+      { name: 'swarm:orchestrate', description: 'Dispatch and coordinate executive agent threads', category: 'Coordination', isSafeMock: true },
       { name: 'tasks:delegate', description: 'Assign, prioritize, and rebalance task queues', category: 'Coordination', isSafeMock: true },
       { name: 'reports:synthesize', description: 'Compile and publish Executive Reports to OS Vault', category: 'System', isSafeMock: true },
       { name: 'slas:enforce', description: 'Enforce latency thresholds & constitutional compliance', category: 'System', isSafeMock: true },
@@ -326,7 +335,7 @@ export const INITIAL_AGENTS: AIAgent[] = [
         assignedAgent: 'coo',
         inputDescription: 'Founder Directive on self-serve expansion with unit economics',
         outputSnippet: 'Directive scope verified. Target deliverables: PRD, Market Brief, Financial Model, Ops Blueprint.',
-        timestamp: '09:30:02',
+        timestamp: 'Session Init',
       },
       {
         id: 't-coo-2',
@@ -337,40 +346,16 @@ export const INITIAL_AGENTS: AIAgent[] = [
         assignedAgent: 'coo',
         inputDescription: 'Decompose into 4 parallel execution streams',
         outputSnippet: 'Assigned Research to Dr. Thorne, PRD to Maya Lin, Unit Economics to Julian Cruz.',
-        timestamp: '09:30:04',
-      },
-      {
-        id: 't-coo-3',
-        title: 'Cross-Functional Council Review & Consensus',
-        protocolStep: 'review',
-        priority: 'High',
-        status: 'completed',
-        assignedAgent: 'coo',
-        inputDescription: 'Collect agent findings and audit for alignment',
-        outputSnippet: 'Peer review completed. 98.4% council alignment achieved.',
-        timestamp: '09:30:22',
-      },
-      {
-        id: 't-coo-4',
-        title: 'Final Executive Report Compilation',
-        protocolStep: 'report',
-        priority: 'Critical',
-        status: 'completed',
-        assignedAgent: 'coo',
-        inputDescription: 'Assemble final deliverable bundle for Founder review',
-        outputSnippet: 'Executive Report generated with zero-drift SLA guarantee.',
-        timestamp: '09:30:25',
+        timestamp: 'Session Init',
       },
     ],
     activityHistory: [
-      { id: 'act-coo-1', time: '2m ago', action: 'Approved autonomous deployment for Q3 enterprise connector', protocolStep: 'verify', output: 'Passed SOC2 security matrix', badge: 'Auto-Approved', status: 'success' },
-      { id: 'act-coo-2', time: '14m ago', action: 'Rebalanced GPU compute allocation to priority Research nodes', protocolStep: 'plan', output: 'Reallocated 12 H100 units', badge: 'Compute Shift', status: 'info' },
-      { id: 'act-coo-3', time: '48m ago', action: 'Resolved dependency block between PM PRD and QA test swarm', protocolStep: 'review', output: 'Unblocked sprint path', badge: 'Resolved', status: 'success' },
+      { id: 'act-coo-1', time: 'Online', action: 'Initialized Executive Operations kernel and safe sandbox', protocolStep: 'understand', output: 'All execution guardrails active', badge: 'Ready', status: 'success' },
+      { id: 'act-coo-2', time: 'Active', action: 'Synchronized cross-agent communication bus', protocolStep: 'plan', output: 'Inter-agent neural bus online', badge: 'Connected', status: 'info' },
     ],
     recentActivity: [
-      { time: '2m ago', action: 'Approved autonomous deployment for Q3 enterprise connector', badge: 'Auto-Approved' },
-      { time: '14m ago', action: 'Rebalanced GPU compute allocation to priority Research nodes' },
-      { time: '48m ago', action: 'Resolved dependency block between PM PRD and QA test swarm' },
+      { time: 'Online', action: 'Initialized Executive Operations kernel and safe sandbox', badge: 'Ready' },
+      { time: 'Active', action: 'Synchronized cross-agent communication bus' },
     ],
   },
   {
@@ -380,16 +365,13 @@ export const INITIAL_AGENTS: AIAgent[] = [
     department: 'Market Intelligence & Deep Tech',
     avatarColor: 'from-amber-500 to-orange-600',
     accentColor: '#fbbf24',
-    status: 'analyzing',
-    currentTask: 'Continuous monitoring of frontier reasoning models & competitor agent pricing',
-    uptime: '100%',
-    tasksCompleted: 2180,
-    accuracyScore: '98.7%',
-    tokenEfficiency: '$0.022/exec',
-    bio: 'Continuous intelligence crawler analyzing global AI research, competitor capabilities, regulatory shifts, market gaps, and technical moat opportunities.',
+    status: 'active',
+    currentTask: 'Continuous monitoring of frontier reasoning models and competitor agent pricing models',
+    bio: 'Continuous intelligence crawler analyzing AI research, competitor capabilities, regulatory shifts, market gaps, and technical moat opportunities.',
+    model: 'Gemini 2.5 Flash',
     goals: [
-      'Monitor and synthesize frontier model releases, arXiv papers, and benchmark breakthroughs daily',
-      'Conduct granular competitive recon across all AI workflow & agent operating systems',
+      'Synthesize frontier model releases, technical papers, and benchmark breakthroughs',
+      'Conduct granular competitive recon across AI workflow & agent operating systems',
       'Supply quantitative TAM/SAM analysis and demand signals to Product & Finance',
       'Identify defensible architectural moats and prevent strategic blindsides',
     ],
@@ -398,50 +380,35 @@ export const INITIAL_AGENTS: AIAgent[] = [
     capabilities: [
       'Deep Market Recon',
       'Patent & Paper Synthesis',
-      'Competitor Reverse-Engineering',
+      'Competitor Architecture Analysis',
       'Tech Trend Forecasting',
       'Quantitative Benchmarks',
       'TAM/SAM Modeling',
     ],
     permissions: [
-      { name: 'market:read_intel', description: 'Access market indices, competitor benchmarks & sentiment feeds', category: 'Intelligence', isSafeMock: true },
-      { name: 'trends:scrape_safe', description: 'Simulated crawl of arXiv, tech news, and GitHub trends', category: 'Intelligence', isSafeMock: true },
-      { name: 'benchmarks:evaluate', description: 'Run model latency and accuracy benchmark comparisons', category: 'Intelligence', isSafeMock: true },
-      { name: 'mock:safe_execution', description: 'Read-only access; no live crawler injections or data alterations', category: 'System', isSafeMock: true },
+      { name: 'market:read_intel', description: 'Access market indices and competitor benchmarks', category: 'Intelligence', isSafeMock: true },
+      { name: 'trends:scrape_safe', description: 'Simulated crawl of research trends and tech documentation', category: 'Intelligence', isSafeMock: true },
+      { name: 'benchmarks:evaluate', description: 'Run model latency and architectural comparisons', category: 'Intelligence', isSafeMock: true },
+      { name: 'mock:safe_execution', description: 'Read-only access; no live external mutations', category: 'System', isSafeMock: true },
     ],
     taskQueue: [
       {
         id: 't-res-1',
-        title: 'Competitor Landscape Benchmark (45 SaaS Vendors)',
+        title: 'Competitor Landscape Benchmark Analysis',
         protocolStep: 'research',
         priority: 'High',
         status: 'completed',
         assignedAgent: 'researcher',
-        inputDescription: 'Evaluate mid-market onboarding drop-off rates and pricing',
-        outputSnippet: '78% of buyers drop off due to mandatory sales calls. Self-serve gives 4.3x pipeline velocity.',
-        timestamp: '09:30:06',
-      },
-      {
-        id: 't-res-2',
-        title: 'TAM Opportunity & Moat Analysis Memo',
-        protocolStep: 'analyze',
-        priority: 'Medium',
-        status: 'completed',
-        assignedAgent: 'researcher',
-        inputDescription: 'Calculate market size and defendable moats',
-        outputSnippet: '$420M TAM in tech firms seeking zero-setup autonomous workforce. Published Research Brief.',
-        timestamp: '09:30:08',
+        inputDescription: 'Evaluate mid-market onboarding drop-off rates and pricing friction',
+        outputSnippet: 'Research indicates buyers drop off on mandatory sales demos. Self-serve increases onboarding velocity.',
+        timestamp: 'Session Init',
       },
     ],
     activityHistory: [
-      { id: 'act-res-1', time: '5m ago', action: 'Synthesized 4 arXiv papers on sparse reasoning optimization', protocolStep: 'research', output: 'Drafted 2-page tech summary', badge: 'Research Memo', status: 'success' },
-      { id: 'act-res-2', time: '22m ago', action: 'Flagged competitor API price increase (+18%) as customer acquisition signal', protocolStep: 'analyze', output: 'Sent alert to CRM pipeline', badge: 'Market Signal', status: 'info' },
-      { id: 'act-res-3', time: '1h ago', action: 'Published comprehensive benchmark comparison matrix', protocolStep: 'report', output: 'Scored 12 frontier models', badge: 'Benchmarks', status: 'success' },
+      { id: 'act-res-1', time: 'Online', action: 'Loaded market intelligence crawler and research radar', protocolStep: 'research', output: 'Model tech radars active', badge: 'Radar Active', status: 'success' },
     ],
     recentActivity: [
-      { time: '5m ago', action: 'Synthesized 4 arXiv papers on sparse reasoning optimization', badge: 'Research Memo' },
-      { time: '22m ago', action: 'Flagged competitor API price increase (+18%) as customer acquisition signal' },
-      { time: '1h ago', action: 'Published comprehensive benchmark comparison matrix' },
+      { time: 'Online', action: 'Loaded market intelligence crawler and research radar', badge: 'Radar Active' },
     ],
   },
   {
@@ -451,13 +418,10 @@ export const INITIAL_AGENTS: AIAgent[] = [
     department: 'Product Strategy & User Experience',
     avatarColor: 'from-rose-500 to-pink-600',
     accentColor: '#f43f5e',
-    status: 'executing',
-    currentTask: 'Drafting PRD for real-time inter-agent streaming protocol v2.4',
-    uptime: '99.94%',
-    tasksCompleted: 980,
-    accuracyScore: '99.0%',
-    tokenEfficiency: '$0.018/exec',
-    bio: 'High-velocity product designer and spec author transforming founder directives and market data into razor-sharp PRDs, user stories, and feature roadmaps.',
+    status: 'active',
+    currentTask: 'Authoring product requirements and specifications for inter-agent workflows',
+    bio: 'Product designer and spec author transforming founder directives and market data into structured PRDs, user stories, and feature roadmaps.',
+    model: 'Gemini 2.5 Flash',
     goals: [
       'Translate founder directives and research intel into modular, unambiguous PRDs',
       'Define clear user personas, workflows, and strict acceptance criteria for each sprint',
@@ -476,9 +440,9 @@ export const INITIAL_AGENTS: AIAgent[] = [
     ],
     permissions: [
       { name: 'specs:create_prd', description: 'Author and modify Product Requirement Documents', category: 'Product', isSafeMock: true },
-      { name: 'backlog:prioritize', description: 'Score features and groom autonomous sprint tickets', category: 'Product', isSafeMock: true },
+      { name: 'backlog:prioritize', description: 'Score features and groom sprint backlogs', category: 'Product', isSafeMock: true },
       { name: 'ux:architect_flows', description: 'Generate user personas and wireframe specifications', category: 'Product', isSafeMock: true },
-      { name: 'mock:safe_execution', description: 'Specs are virtual documents; no direct production code deployments', category: 'System', isSafeMock: true },
+      { name: 'mock:safe_execution', description: 'Specs are virtual documents; no live code deployment', category: 'System', isSafeMock: true },
     ],
     taskQueue: [
       {
@@ -488,31 +452,16 @@ export const INITIAL_AGENTS: AIAgent[] = [
         priority: 'Critical',
         status: 'completed',
         assignedAgent: 'pm',
-        inputDescription: 'Draft PRD based on Dr. Thorne’s competitor findings',
-        outputSnippet: 'Authored 4-section PRD with domain crawl ingestion and instant 4-agent spawn.',
-        timestamp: '09:30:11',
-      },
-      {
-        id: 't-pm-2',
-        title: 'User Archetype Acceptance Test Suite',
-        protocolStep: 'test',
-        priority: 'High',
-        status: 'completed',
-        assignedAgent: 'pm',
-        inputDescription: 'Simulate 50 enterprise onboarding flows',
-        outputSnippet: '98% pass rate across Technical Founder and Operations Lead personas.',
-        timestamp: '09:30:14',
+        inputDescription: 'Draft PRD based on competitor findings and self-serve demand',
+        outputSnippet: 'Authored structured PRD with 3-click provisioning and instant 4-agent spawn.',
+        timestamp: 'Session Init',
       },
     ],
     activityHistory: [
-      { id: 'act-pm-1', time: '8m ago', action: 'Finalized acceptance criteria for Autonomous Billing v2', protocolStep: 'build_execute', output: 'Added 6 edge-case unit tests', badge: 'PRD Complete', status: 'success' },
-      { id: 'act-pm-2', time: '35m ago', action: 'Groomed sprint backlog: 6 tickets promoted to In-Progress', protocolStep: 'plan', output: 'Sprint velocity at 42 pts', badge: 'Groomed', status: 'info' },
-      { id: 'act-pm-3', time: '1h ago', action: 'Completed simulated usability test across 50 persona archetypes', protocolStep: 'test', output: 'Average task time 84s', badge: 'Usability Test', status: 'success' },
+      { id: 'act-pm-1', time: 'Online', action: 'Loaded PRD template engine and user flow architect', protocolStep: 'build_execute', output: 'Specification engine online', badge: 'Ready', status: 'success' },
     ],
     recentActivity: [
-      { time: '8m ago', action: 'Finalized acceptance criteria for Autonomous Billing v2' },
-      { time: '35m ago', action: 'Groomed sprint backlog: 6 tickets promoted to In-Progress' },
-      { time: '1h ago', action: 'Completed simulated user usability test across 50 persona archetypes' },
+      { time: 'Online', action: 'Loaded PRD template engine and user flow architect', badge: 'Ready' },
     ],
   },
   {
@@ -522,33 +471,30 @@ export const INITIAL_AGENTS: AIAgent[] = [
     department: 'Capital, Treasury & Unit Economics',
     avatarColor: 'from-emerald-500 to-teal-600',
     accentColor: '#34d399',
-    status: 'verifying',
-    currentTask: 'Auditing token margin efficiency and H100 GPU cluster reserve ROI',
-    uptime: '100%',
-    tasksCompleted: 1840,
-    accuracyScore: '99.9%',
-    tokenEfficiency: '$0.012/exec',
-    bio: 'Deterministic financial modeler tracking real-time P&L, token cost attribution per customer, ARR forecasts, autonomous runway extensions, and capital efficiency.',
+    status: 'active',
+    currentTask: 'Auditing token margin efficiency and compute unit economics models',
+    bio: 'Deterministic financial modeler tracking unit economics, compute cost attribution, pricing models, and capital runway sensitivity.',
+    model: 'Gemini 2.5 Flash',
     goals: [
-      'Ensure 80%+ gross margin across all autonomous agent execution workflows',
-      'Track real-time token spend, compute attribution, and batch inference caching ROI',
-      'Model ARR expansion trajectories, payback periods, and multi-year runway projections',
+      'Ensure 80%+ gross margin target across autonomous agent execution workflows',
+      'Track simulated token spend, compute attribution, and batch inference caching ROI',
+      'Model pricing tier trajectories, payback periods, and runway sensitivity',
       'Audit all financial assumptions to ensure zero hallucination in unit economics',
     ],
     instructions:
       'You are Julian Cruz, Chief Financial Analyst. In the Analyze, Test, and Verify phases, compute cost models, token expenditure breakdowns, and gross margins. Provide deterministic formulas. All financial analysis is strictly simulated; no external bank or credit card transactions are executed.',
     capabilities: [
-      'Real-Time P&L Auditing',
-      'Unit Economics Modeling',
+      'Real-Time Cost Modeling',
+      'Unit Economics Analysis',
       'Dynamic Pricing Optimization',
-      'Runway Sensitivity Analysis',
-      'Invoice Reconciliation',
-      'Token Cost Attribution',
+      'Runway Sensitivity Modeling',
+      'Cost Attribution',
+      'Token Spend Simulation',
     ],
     permissions: [
       { name: 'unit_economics:simulate', description: 'Run financial sensitivity and gross margin models', category: 'Financial', isSafeMock: true },
       { name: 'spend:audit_tokens', description: 'Monitor token expenditure and compute efficiency', category: 'Financial', isSafeMock: true },
-      { name: 'pricing:model_tiers', description: 'Simulate tiered subscription revenue & ARR expansion', category: 'Financial', isSafeMock: true },
+      { name: 'pricing:model_tiers', description: 'Simulate tiered subscription revenue & unit economics', category: 'Financial', isSafeMock: true },
       { name: 'mock:safe_execution', description: 'Simulation only; real bank transfer & payment gateway execution disabled', category: 'System', isSafeMock: true },
     ],
     taskQueue: [
@@ -559,109 +505,56 @@ export const INITIAL_AGENTS: AIAgent[] = [
         priority: 'Critical',
         status: 'completed',
         assignedAgent: 'finance',
-        inputDescription: 'Model Gemini 3.7 Flash batch inference cost per customer onboarded',
-        outputSnippet: 'Onboarding compute cost is $0.18/tenant. Blended task cost is $0.016 (83.9% gross margin).',
-        timestamp: '09:30:16',
-      },
-      {
-        id: 't-fin-2',
-        title: '12-Month ARR Expansion & Runway Model',
-        protocolStep: 'verify',
-        priority: 'High',
-        status: 'completed',
-        assignedAgent: 'finance',
-        inputDescription: 'Project ARR based on $249/mo base tier with 1,150 target workspaces',
-        outputSnippet: 'Projected ARR of $3.43M by Q4. Payback period < 24 hours per workspace.',
-        timestamp: '09:30:19',
+        inputDescription: 'Model batch inference cost per customer onboarded',
+        outputSnippet: 'Modeled onboarding compute cost at $0.18/tenant. Projected gross margin at ~83.9%.',
+        timestamp: 'Session Init',
       },
     ],
     activityHistory: [
-      { id: 'act-fin-1', time: '1m ago', action: 'Reconciled $14,200 monthly compute invoice against actual token logs', protocolStep: 'verify', output: 'Variance 0.04% - Audit Passed', badge: 'Audit Passed', status: 'success' },
-      { id: 'act-fin-2', time: '19m ago', action: 'Optimized batch inference caching, saving $340/day in API fees', protocolStep: 'analyze', output: 'Cache hit rate increased to 91%', badge: 'Optimized', status: 'success' },
-      { id: 'act-fin-3', time: '1h ago', action: 'Updated 12-month ARR projection to $2.85M based on new Enterprise signups', protocolStep: 'report', output: 'Runway extended to 42 months', badge: 'ARR Forecast', status: 'info' },
+      { id: 'act-fin-1', time: 'Online', action: 'Initialized unit economics auditor and pricing simulator', protocolStep: 'verify', output: 'Margin guardrails active', badge: 'Auditor Online', status: 'success' },
     ],
     recentActivity: [
-      { time: '1m ago', action: 'Reconciled $14,200 monthly compute invoice against actual token logs', badge: 'Audit Passed' },
-      { time: '19m ago', action: 'Optimized batch inference caching, saving $340/day in API fees' },
-      { time: '1h ago', action: 'Updated 12-month ARR projection to $2.85M based on new Enterprise signups' },
+      { time: 'Online', action: 'Initialized unit economics auditor and pricing simulator', badge: 'Auditor Online' },
     ],
   },
 ];
+
+// ============================================================================
+// 4. FOUNDER ATTENTION & ESCALATIONS (Needs Founder Attention)
+// ============================================================================
 
 export const INITIAL_ATTENTION_ITEMS: AttentionItem[] = [
   {
     id: 'att-1',
     type: 'approval_required',
-    title: 'Founder Sign-Off: Self-Serve Enterprise Tier Beta Launch',
+    title: 'Founder Sign-Off: Self-Serve Enterprise Tier Beta Launch Proposal',
     whatHappened:
-      'Sophia Vance, Dr. Aris Thorne, Maya Lin, and Julian Cruz finalized the Self-Serve Enterprise Tier strategic proposal, including PRD, competitive analysis, and unit economics.',
+      'Sophia Vance, Dr. Aris Thorne, Maya Lin, and Julian Cruz compiled the strategic proposal for the Self-Serve Enterprise Tier, including PRD, competitive analysis, and unit economics model.',
     whyItMatters:
-      'Unlocks self-serve onboarding without sales friction. Julian modeled $0.18 compute cost per onboarded workspace with zero infrastructure bottlenecks.',
+      'Proposes unlocking frictionless self-serve onboarding. Julian modeled $0.18 compute cost per onboarded tenant with zero infrastructure bottlenecks.',
     recommendedAction:
-      'Approve Q4 Beta rollout for 15 waitlisted enterprise accounts or request scope adjustments.',
+      'Approve Beta rollout plan for prospective enterprise pilot cohort or request scope adjustments.',
     authorAgentId: 'coo',
     authorName: 'Sophia Vance (COO)',
     founderActionRequired: true,
     status: 'pending',
     timestamp: 'Today at 09:30 AM',
     evidence: {
-      basis: 'external_evidence',
-      source: 'Competitor benchmark (45 SaaS vendors) + batch compute model',
-      details: '78% of enterprise buyers reject mandatory sales demos. Compute burn is $0.18/tenant onboarding.',
+      basis: 'model_reasoning',
+      source: 'Competitor benchmark model & batch compute calculation in Safe Sandbox',
+      details: 'Market recon suggests self-serve reduces evaluation drop-off; onboarding compute is bounded to $0.18/tenant.',
     },
   },
   {
     id: 'att-2',
-    type: 'financial_warning',
-    title: 'Token & Compute Burn Optimization Verified',
-    whatHappened:
-      'Julian Cruz applied prompt caching and response compression across batch inference pipelines, yielding 74% compute savings on repeated workflows.',
-    whyItMatters:
-      'Protects operating margins while maintaining sub-second latency across all agent council communications.',
-    recommendedAction:
-      'Adopt prompt compression baseline across all product workspaces.',
-    authorAgentId: 'finance',
-    authorName: 'Julian Cruz (Finance)',
-    founderActionRequired: false,
-    status: 'resolved',
-    timestamp: '1h ago',
-    evidence: {
-      basis: 'calculation',
-      source: 'Token usage logs & batch inference cache auditor',
-      details: 'Cache hit rate increased to 91%; verified by deterministic ledger calculation.',
-    },
-  },
-  {
-    id: 'att-3',
-    type: 'research_finding',
-    title: 'Competitor API Price Hike Signal',
-    whatHappened:
-      'Dr. Aris Thorne detected an 18% price increase from legacy AI orchestration competitors, accompanied by customer pushback on mandatory demo calls.',
-    whyItMatters:
-      'Presents a direct acquisition window for SamJuniors OS as a transparent, turnkey operating system.',
-    recommendedAction:
-      'Highlight self-serve onboarding and verifiable unit economics in outbound market positioning.',
-    authorAgentId: 'researcher',
-    authorName: 'Dr. Aris Thorne (Research)',
-    founderActionRequired: false,
-    status: 'approved',
-    timestamp: '22m ago',
-    evidence: {
-      basis: 'external_evidence',
-      source: 'Competitor pricing diff engine & public developer sentiment',
-      details: 'Monitored 30+ competitor pricing pages; verified price increase.',
-    },
-  },
-  {
-    id: 'att-4',
     type: 'product_decision',
-    title: 'PRD Review: Zero-Latency Inter-Agent Streaming Bus',
+    title: 'PRD Review: Inter-Agent Streaming Bus Specification',
     whatHappened:
-      'Maya Lin drafted the v2.4 specification for sub-50ms peer-to-peer streaming channels for real-time employee debate and consensus synthesis.',
+      'Maya Lin drafted the v2.4 specification for low-latency inter-agent streaming channels for real-time executive debate and consensus synthesis.',
     whyItMatters:
-      'Reduces coordination lag between Research, Product, and Finance from 1.2s to sub-50ms.',
+      'Aims to reduce coordination lag between Research, Product, and Finance from 1.2s to sub-50ms.',
     recommendedAction:
-      'Promote from Specification to Stage 6 Testing in next sprint.',
+      'Review functional specification and authorize simulation benchmark.',
     authorAgentId: 'pm',
     authorName: 'Maya Lin (Product)',
     founderActionRequired: true,
@@ -669,11 +562,36 @@ export const INITIAL_ATTENTION_ITEMS: AttentionItem[] = [
     timestamp: '35m ago',
     evidence: {
       basis: 'model_reasoning',
-      source: 'Internal UX & system latency benchmark',
-      details: 'RICE score computed at 88/100; verified with zero architectural regressions.',
+      source: 'Internal UX & system latency architecture model',
+      details: 'RICE score computed at 88/100; verified within browser sandbox bounds.',
+    },
+  },
+  {
+    id: 'att-3',
+    type: 'research_finding',
+    title: 'Market Intelligence: Competitor Pricing Shift',
+    whatHappened:
+      'Dr. Aris Thorne analyzed market reports showing price increases from legacy AI workflow competitors alongside user demand for transparent pricing.',
+    whyItMatters:
+      'Identifies an acquisition opportunity for SamJuniors OS as a turnkey, transparent multi-agent operating system.',
+    recommendedAction:
+      'Emphasize self-serve onboarding and verifiable unit economics in product positioning.',
+    authorAgentId: 'researcher',
+    authorName: 'Dr. Aris Thorne (Research)',
+    founderActionRequired: false,
+    status: 'approved',
+    timestamp: '22m ago',
+    evidence: {
+      basis: 'external_evidence',
+      source: 'Public documentation and competitor pricing analysis',
+      details: 'Evaluated public pricing pages and developer sentiment across 30+ tools.',
     },
   },
 ];
+
+// ============================================================================
+// 5. ACTIVE COMPANY INITIATIVES
+// ============================================================================
 
 export const INITIAL_INITIATIVES: CompanyInitiative[] = [
   {
@@ -688,8 +606,8 @@ export const INITIAL_INITIATIVES: CompanyInitiative[] = [
       { agentId: 'pm', name: 'Maya Lin', role: 'Principal PM' },
       { agentId: 'finance', name: 'Julian Cruz', role: 'Chief Financial Analyst' },
     ],
-    latestResult: 'Full 4-part deliverable package compiled & verified in safe-mock mode.',
-    nextRecommendedAction: 'Founder sign-off on Beta customer cohort (top 15 enterprise waitlist accounts).',
+    latestResult: 'Initial strategic package compiled and verified in safe mock sandbox.',
+    nextRecommendedAction: 'Founder sign-off on Beta pilot cohort criteria.',
     risks: [
       'Rate-limiting safeguards needed during initial traffic spike',
       'Data isolation verification required for multi-tenant deployments',
@@ -702,13 +620,13 @@ export const INITIAL_INITIATIVES: CompanyInitiative[] = [
     title: 'Zero-Latency Neural Bus & Inter-Agent Streaming',
     codeName: 'Project Synapse',
     status: 'In Progress',
-    currentObjective: 'Eliminate context degradation across 50-step council dialogues',
+    currentObjective: 'Eliminate context degradation across multi-step council dialogues',
     contributors: [
       { agentId: 'pm', name: 'Maya Lin', role: 'Principal PM' },
       { agentId: 'coo', name: 'Sophia Vance', role: 'Chief Operating Officer' },
     ],
     latestResult: 'Architecture PRD drafted with RICE score 88/100.',
-    nextRecommendedAction: 'Benchmark batch cache hit rate against real-time WebSocket channels.',
+    nextRecommendedAction: 'Benchmark batch cache hit rate against real-time streaming channels.',
     risks: ['Memory footprint under high concurrency; verified within browser sandbox.'],
     deliverableIds: ['PRD: Inter-Agent Streaming v2.4'],
     updatedAt: '35m ago',
@@ -718,15 +636,15 @@ export const INITIAL_INITIATIVES: CompanyInitiative[] = [
     title: 'Continuous Market Intelligence & Regulatory Radar',
     codeName: 'Project Horizon',
     status: 'Active',
-    currentObjective: 'Track frontier reasoning models, open-source weights, and EU AI Act compliance',
+    currentObjective: 'Track frontier reasoning models, open-source weights, and EU AI Act compliance standards',
     contributors: [
       { agentId: 'researcher', name: 'Dr. Aris Thorne', role: 'Lead Researcher' },
       { agentId: 'coo', name: 'Sophia Vance', role: 'Chief Operating Officer' },
     ],
-    latestResult: 'Synthesized 12 frontier models and verified 100% compliance with safe sandboxing criteria.',
-    nextRecommendedAction: 'Automate daily competitive diff alerts into Company Pulse.',
+    latestResult: 'Synthesized 12 frontier models and verified alignment with safe sandboxing criteria.',
+    nextRecommendedAction: 'Automate weekly competitive diff alerts into Company Pulse.',
     risks: ['External API rate limits; handled with deterministic backoff.'],
-    deliverableIds: ['Market Intelligence Brief', 'Regulatory Compliance Memo'],
+    deliverableIds: ['Market Intelligence Brief'],
     updatedAt: '5m ago',
   },
   {
@@ -734,42 +652,46 @@ export const INITIAL_INITIATIVES: CompanyInitiative[] = [
     title: 'Autonomous Compute Guardrails & Unit Margin Auditing',
     codeName: 'Project Ledger',
     status: 'Review',
-    currentObjective: 'Maintain >80% gross margin floor across all customer workloads',
+    currentObjective: 'Maintain >80% gross margin target floor across all model workflows',
     contributors: [
       { agentId: 'finance', name: 'Julian Cruz', role: 'Chief Financial Analyst' },
     ],
-    latestResult: 'Simulated 5,000 tenant concurrency with $0.18/tenant onboarding compute cost.',
+    latestResult: 'Modeled 5,000 tenant concurrency with $0.18/tenant onboarding compute cost.',
     nextRecommendedAction: 'Lock dynamic budget capping thresholds for Founder notification.',
-    risks: ['Spike in token-intensive un-cached queries; mitigation is semantic caching.'],
+    risks: ['Spike in un-cached prompt tokens; mitigation is prompt caching.'],
     deliverableIds: ['Unit Economics & Financial Projections'],
     updatedAt: '1m ago',
   },
 ];
 
+// ============================================================================
+// 6. COMPANY GOVERNANCE DECISION LOG
+// ============================================================================
+
 export const INITIAL_COMPANY_DECISIONS: CompanyDecision[] = [
   {
     id: 'dec-1',
-    title: 'Approve Q4 Beta Launch of Self-Serve AI Tier',
+    title: 'Approve Beta Launch Plan for Self-Serve AI Tier',
     status: 'pending_approval',
     category: 'Strategic',
     recommendedBy: 'Sophia Vance & Executive Council',
     agentId: 'coo',
-    recommendation: 'Open onboarding to 15 waitlisted enterprise accounts with automated workspace provisioning.',
-    businessImpact: 'Accelerates enterprise evaluation pipeline with zero manual sales friction.',
-    evidenceSummary: '45-vendor competitive benchmark showed 78% drop-off on sales demos; simulated onboarding compute cost is $0.18.',
+    recommendation: 'Open pilot onboarding to 15 waitlisted enterprise accounts with automated workspace provisioning.',
+    businessImpact: 'Accelerates evaluation pipeline without manual sales friction.',
+    evidenceSummary: 'Competitive benchmark showed drop-off on mandatory sales demos; modeled onboarding compute cost is $0.18.',
     date: 'Today',
     founderApprovalRequired: true,
   },
   {
     id: 'dec-2',
-    title: 'Adopt Strict 80%+ Gross Margin Floor on All Autonomous Workflows',
+    title: 'Adopt Strict 80%+ Gross Margin Floor Policy',
     status: 'approved',
     category: 'Financial',
     recommendedBy: 'Julian Cruz (Finance)',
     agentId: 'finance',
-    recommendation: 'Julian Cruz holds veto power over compute-heavy workflows exceeding 20% cost-to-value ratio.',
+    recommendation: 'Julian Cruz holds advisory veto over compute-heavy workflows exceeding 20% cost-to-value ratio.',
     businessImpact: 'Guarantees capital efficiency and prevents runaway token inference costs.',
-    evidenceSummary: 'Audited token spend across 1,840 simulated executions; confirmed 83.9% margin floor.',
+    evidenceSummary: 'Verified token cost attribution model confirms 83.9% target margin floor in sandbox.',
     date: 'Yesterday',
     founderApprovalRequired: true,
   },
@@ -780,52 +702,46 @@ export const INITIAL_COMPANY_DECISIONS: CompanyDecision[] = [
     category: 'Governance',
     recommendedBy: 'Sophia Vance (COO)',
     agentId: 'coo',
-    recommendation: 'All external capital movements and production mutations remain sandboxed in Safe Mock mode until explicit Founder cryptographic approval.',
+    recommendation: 'All external capital movements and production mutations remain sandboxed in Safe Mock mode until explicit Founder approval.',
     businessImpact: 'Eliminates operational and financial risk from autonomous agent executions.',
-    evidenceSummary: 'Enforced at kernel level in ServerAgentExecutor.',
+    evidenceSummary: 'Enforced at server orchestrator level via ServerAgentExecutor guardrails.',
     date: '3 days ago',
     founderApprovalRequired: false,
   },
 ];
 
+// ============================================================================
+// 7. NOTIFICATIONS (Truthful System Events)
+// ============================================================================
+
 export const INITIAL_NOTIFICATIONS: OSNotification[] = [
   {
     id: 'notif-1',
-    title: 'Workforce Directive Complete',
-    message: 'Sophia, Aris, Maya, and Julian completed the "Enterprise Autonomous Tier" strategic package.',
-    time: '3m ago',
-    type: 'agent',
+    title: 'Executive Council Ready',
+    message: 'Sophia, Aris, Maya, and Julian are online in Safe Sandbox mode and ready for directives.',
+    time: 'Just now',
+    type: 'system',
     read: false,
     actionable: true,
-    actionLabel: 'View Deliverables',
+    actionLabel: 'Open HQ',
     appTarget: 'workforce',
   },
   {
     id: 'notif-2',
-    title: 'New Customer Closed Won',
-    message: 'Nexus Global signed 1-year contract at $84,000 ARR via automated demo pipeline.',
-    time: '18m ago',
-    type: 'deal',
+    title: 'Strategic Proposal Ready for Review',
+    message: 'Sophia Vance filed the Self-Serve Enterprise Tier strategic package for Founder sign-off.',
+    time: '15m ago',
+    type: 'agent',
     read: false,
     actionable: true,
-    actionLabel: 'Open CRM',
-    appTarget: 'customers',
+    actionLabel: 'Review Sign-Off',
+    appTarget: 'workforce',
   },
   {
     id: 'notif-3',
-    title: 'Autonomous Margin Optimization',
-    message: 'Julian Cruz applied prompt token compression, increasing gross margin to 86.4%.',
+    title: 'Safe Sandbox Active',
+    message: 'All external mutations and capital operations are strictly sandboxed.',
     time: '1h ago',
-    type: 'finance',
-    read: true,
-    actionable: false,
-    appTarget: 'finance',
-  },
-  {
-    id: 'notif-4',
-    title: 'System Health Check: Nominal',
-    message: 'All 4 executive AI agents healthy. Neural link latency is 0.4ms across all nodes.',
-    time: '2h ago',
     type: 'system',
     read: true,
     actionable: false,
@@ -835,69 +751,86 @@ export const INITIAL_NOTIFICATIONS: OSNotification[] = [
 
 export const NOTIFICATIONS = INITIAL_NOTIFICATIONS;
 
-export const INITIAL_DEALS: CustomerDeal[] = [
+// ============================================================================
+// 8. SAMPLE / DEMO DATA (Explicitly labeled for Simulation & Planning)
+// ============================================================================
+
+/**
+ * Sample Prospective Deals for CRM & Outreach Modeling Sandbox
+ */
+export const SAMPLE_PIPELINE_DEALS: CustomerDeal[] = [
   {
     id: 'deal-1',
-    companyName: 'Nexus Global Enterprise',
+    companyName: 'Nexus Global Enterprise (Target Account)',
     logoLetter: 'N',
     tier: 'Enterprise',
-    arr: '$84,000',
-    stage: 'Closed Won',
+    arr: '$84,000 (Target)',
+    stage: 'AI Demo',
     leadAgent: 'Maya Lin & Julian Cruz',
     health: 'High',
-    lastInteraction: 'Contract signed via autonomous doc-signer',
-    notes: '250 autonomous agent seats deployed on dedicated VPC instance.',
+    lastInteraction: 'Simulated discovery brief generated from public data',
+    notes: '250 autonomous agent seats target on dedicated VPC instance.',
+    isProspectAccount: true,
   },
   {
     id: 'deal-2',
-    companyName: 'Vertex BioTech',
+    companyName: 'Vertex BioTech (Target Account)',
     logoLetter: 'V',
     tier: 'Enterprise',
-    arr: '$120,000',
-    stage: 'Contract Review',
+    arr: '$120,000 (Target)',
+    stage: 'Discovery',
     leadAgent: 'Dr. Aris Thorne',
     health: 'High',
-    lastInteraction: 'Security SLA approved by Sophia Vance',
-    notes: 'Requires HIPAA-compliant data masking. Token budget approved by Julian.',
+    lastInteraction: 'Security SLA requirements modeled by Sophia Vance',
+    notes: 'Requires data masking evaluation. Token budget modeled by Julian.',
+    isProspectAccount: true,
   },
   {
     id: 'deal-3',
-    companyName: 'AeroDynamics AI',
+    companyName: 'AeroDynamics AI (Target Account)',
     logoLetter: 'A',
     tier: 'Scale',
-    arr: '$42,000',
+    arr: '$42,000 (Target)',
     stage: 'AI Demo',
     leadAgent: 'Maya Lin',
     health: 'Good',
-    lastInteraction: 'Simulated multi-agent workflow benchmark run',
-    notes: 'Evaluating migration from legacy single-agent framework.',
+    lastInteraction: 'Multi-agent workflow benchmark modeled',
+    notes: 'Evaluating migration from single-agent prompt setups.',
+    isProspectAccount: true,
   },
   {
     id: 'deal-4',
-    companyName: 'OmniFlow Logistics',
+    companyName: 'OmniFlow Logistics (Target Account)',
     logoLetter: 'O',
     tier: 'Autonomous Pro',
-    arr: '$24,000',
+    arr: '$24,000 (Target)',
     stage: 'Discovery',
     leadAgent: 'Sophia Vance',
     health: 'Good',
-    lastInteraction: 'Automated discovery call transcript ingested',
-    notes: 'Looking for automated dispatch and exception handling.',
+    lastInteraction: 'Automated discovery notes synthesized',
+    notes: 'Looking for automated exception routing and PRD generation.',
+    isProspectAccount: true,
   },
   {
     id: 'deal-5',
-    companyName: 'Sovereign Capital Partners',
+    companyName: 'Sovereign Capital Partners (Target Account)',
     logoLetter: 'S',
     tier: 'Enterprise',
-    arr: '$180,000',
-    stage: 'Contract Review',
+    arr: '$180,000 (Target)',
+    stage: 'Discovery',
     leadAgent: 'Julian Cruz',
     health: 'High',
-    lastInteraction: 'Custom ROI calculator delivered with 410% 12-month return',
-    notes: 'Fintech tier with real-time regulatory compliance verification.',
+    lastInteraction: 'Custom ROI calculator simulation generated',
+    notes: 'Fintech tier with real-time audit trail verification modeling.',
+    isProspectAccount: true,
   },
 ];
 
+export const INITIAL_DEALS = SAMPLE_PIPELINE_DEALS;
+
+/**
+ * Product Features & Roadmap Items
+ */
 export const INITIAL_FEATURES: ProductFeature[] = [
   {
     id: 'feat-1',
@@ -927,7 +860,7 @@ export const INITIAL_FEATURES: ProductFeature[] = [
     owner: 'Dr. Aris Thorne',
     priority: 'High',
     completion: 100,
-    description: 'Real-time diff engine monitoring 30+ competitor pricing and product documentation pages.',
+    description: 'Diff engine monitoring competitor pricing and product documentation trends in sandbox.',
   },
   {
     id: 'feat-4',
@@ -939,18 +872,11 @@ export const INITIAL_FEATURES: ProductFeature[] = [
     completion: 64,
     description: 'Automatic fallback to alternative reasoning paths when external APIs return degraded responses.',
   },
-  {
-    id: 'feat-5',
-    title: 'Founder Voice-to-Directive Transformer',
-    category: 'Core OS',
-    status: 'Backlog',
-    owner: 'Maya Lin',
-    priority: 'Medium',
-    completion: 20,
-    description: 'High-fidelity audio stream to structured multi-agent execution plan.',
-  },
 ];
 
+/**
+ * Research Intelligence Radar
+ */
 export const INITIAL_RESEARCH: ResearchTopic[] = [
   {
     id: 'res-1',
@@ -960,7 +886,7 @@ export const INITIAL_RESEARCH: ResearchTopic[] = [
     impact: 'Transformative',
     date: 'Sep 2026',
     author: 'Dr. Aris Thorne',
-    summary: 'Enterprises are abandoning single prompt-response chatbots in favor of hierarchical role-specialized agent swarms with deterministic kernel orchestration.',
+    summary: 'Enterprises are adopting hierarchical role-specialized agent swarms with deterministic kernel orchestration over single prompt-response chatbots.',
     tags: ['Multi-Agent', 'Enterprise AI', 'Kernel Architecture'],
   },
   {
@@ -971,7 +897,7 @@ export const INITIAL_RESEARCH: ResearchTopic[] = [
     impact: 'High',
     date: 'Aug 2026',
     author: 'Dr. Aris Thorne & Julian Cruz',
-    summary: 'Routing repetitive operational validation to small fast models while reserving frontier reasoning for synthesis yields 86%+ gross margins.',
+    summary: 'Routing repetitive operational validation to small fast models while reserving frontier reasoning for synthesis yields 80%+ gross margin targets.',
     tags: ['Unit Economics', 'SLMs', 'Cost Optimization'],
   },
   {
@@ -982,12 +908,15 @@ export const INITIAL_RESEARCH: ResearchTopic[] = [
     impact: 'High',
     date: 'Aug 2026',
     author: 'Dr. Aris Thorne & Sophia Vance',
-    summary: 'EU AI Act tier 2 requirements mandate immutable audit trails for autonomous decisions above €5,000 threshold. SamJuniors architecture satisfies 100% of criteria.',
+    summary: 'EU AI Act tier 2 requirements mandate immutable audit trails for autonomous decisions. SamJuniors safe sandbox architecture satisfies core criteria.',
     tags: ['Compliance', 'Governance', 'EU AI Act'],
   },
 ];
 
-export const INITIAL_FINANCIALS: FinanceMetric = {
+/**
+ * Financial Unit Economics Simulation Model (Computational Planning Sandbox)
+ */
+export const SAMPLE_FINANCIAL_MODEL: FinanceMetric = {
   mrr: 148500,
   arr: 1782000,
   grossMargin: 86.4,
@@ -996,7 +925,14 @@ export const INITIAL_FINANCIALS: FinanceMetric = {
   burnRate: 24500,
   netIncome: 124000,
   tokenUsageMillions: 840,
+  isSimulatedModel: true,
 };
+
+export const INITIAL_FINANCIALS = SAMPLE_FINANCIAL_MODEL;
+
+// ============================================================================
+// 9. INITIAL ORCHESTRATION DELIVERABLE BUNDLE (Safe Mock Verification Package)
+// ============================================================================
 
 export const INITIAL_ORCHESTRATION: OrchestrationRun = {
   id: 'run-init-1',
@@ -1015,8 +951,8 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
     review: 'completed',
     report: 'completed',
   },
-  title: 'Enterprise Self-Serve AI Agent Tier Strategy',
-  summary: 'The Executive AI Council has modeled the self-serve expansion. The product scope is prioritized for Q4, unit economics yield 86% gross margin at $249/mo/seat, and operations has verified 99.98% autonomous SLA uptime.',
+  title: 'Enterprise Self-Serve AI Agent Tier Strategy Proposal',
+  summary: 'The Executive AI Council has modeled the self-serve expansion. The product scope is prioritized for Q4, unit economics model projects 83.9% gross margin at $249/mo/seat, and operations has verified safe sandbox boundaries.',
   plan: [
     {
       stage: 1,
@@ -1024,7 +960,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'coo',
       protocolStep: 'understand',
       status: 'done',
-      outputSnippet: 'Deconstructed Founder directive. Identified target goals, safety bounds, and 4 deliverable schemas.',
+      outputSnippet: 'Deconstructed Founder directive. Defined objectives, safety bounds, and 4 deliverable schemas.',
     },
     {
       stage: 2,
@@ -1032,7 +968,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'researcher',
       protocolStep: 'research',
       status: 'done',
-      outputSnippet: 'TAM of $420M in mid-market tech companies seeking zero-setup AI workforce. 78% drop-off on sales walls.',
+      outputSnippet: 'TAM model of $420M in mid-market tech companies. Research indicates high drop-off on sales walls.',
     },
     {
       stage: 3,
@@ -1040,7 +976,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'researcher',
       protocolStep: 'analyze',
       status: 'done',
-      outputSnippet: 'Evaluated Gemini 3.7 Flash batch latency vs fine-tuning. Cache hit rate modeled at 91%.',
+      outputSnippet: 'Evaluated Gemini 2.5 Flash batch latency. Prompt caching modeled for cost efficiency.',
     },
     {
       stage: 4,
@@ -1056,7 +992,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'pm',
       protocolStep: 'build_execute',
       status: 'done',
-      outputSnippet: '3-click provisioning flow with automated org-chart generator and instant 4-agent spawn.',
+      outputSnippet: '3-click provisioning flow with automated workspace generator and instant 4-agent spawn.',
     },
     {
       stage: 6,
@@ -1064,7 +1000,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'finance',
       protocolStep: 'test',
       status: 'done',
-      outputSnippet: 'Simulated 5,000 tenant concurrency. Compute cost holds at $0.18/tenant onboarding.',
+      outputSnippet: 'Simulated 5,000 tenant concurrency model. Onboarding compute cost holds at $0.18/tenant.',
     },
     {
       stage: 7,
@@ -1072,15 +1008,15 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       agentId: 'coo',
       protocolStep: 'verify',
       status: 'done',
-      outputSnippet: 'Verified zero-financial-risk guardrails, SOC2 audit trails, and 99.98% SLA bounds.',
+      outputSnippet: 'Verified zero-financial-risk guardrails and safe mock execution boundaries.',
     },
     {
       stage: 8,
-      title: 'Executive Council Review & Critique',
+      title: 'Executive Council Review & Consensus',
       agentId: 'coo',
       protocolStep: 'review',
       status: 'done',
-      outputSnippet: 'All 4 agents approved finalized package with 98.4% alignment score.',
+      outputSnippet: 'All 4 agents approved finalized package with unanimous alignment.',
     },
     {
       stage: 9,
@@ -1104,7 +1040,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       id: 'm2',
       sender: 'researcher',
       protocolStep: 'research',
-      text: '[Dr. Thorne - Research] Scanned 45 mid-market SaaS competitors. 78% of potential buyers drop off due to mandatory sales calls. A frictionless self-serve onboarding gives us an estimated 4.3x pipeline velocity boost.',
+      text: '[Dr. Thorne - Research] Evaluated SaaS onboarding trends. Buyers frequently drop off on mandatory sales calls. Frictionless self-serve onboarding provides significant pipeline acceleration.',
       timestamp: '09:30:06',
       type: 'finding',
     },
@@ -1112,7 +1048,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       id: 'm3',
       sender: 'pm',
       protocolStep: 'build_execute',
-      text: '[Maya Lin - PM] Agree with Dr. Thorne. I have drafted the PRD for "Instant Workspace Provisioning". Users input their company domain, and the system automatically spawns custom COO, Researcher, PM, and Finance agents pre-trained on public company data.',
+      text: '[Maya Lin - PM] Agree with Dr. Thorne. I have drafted the PRD for "Instant Workspace Provisioning". Users input their company domain, and the system spawns custom COO, Researcher, PM, and Finance agents.',
       timestamp: '09:30:11',
       type: 'artifact',
     },
@@ -1120,7 +1056,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       id: 'm4',
       sender: 'finance',
       protocolStep: 'analyze',
-      text: '[Julian Cruz - Finance] Financial sensitivity audit complete. With our optimized Gemini 3.7 Flash batching, each onboarding costs us exactly $0.18 in compute. At a $249/mo subscription, payback period is less than 24 hours.',
+      text: '[Julian Cruz - Finance] Financial unit economics model complete. With optimized Gemini batching, each onboarding computes to approximately $0.18. At a $249/mo subscription, payback is rapid.',
       timestamp: '09:30:16',
       type: 'critique',
     },
@@ -1128,7 +1064,7 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       id: 'm5',
       sender: 'coo',
       protocolStep: 'verify',
-      text: '[Sophia Vance - COO] Operations has configured automated provisioning scripts and rate-limiting safeguards. Human review is required only if a newly provisioned tenant triggers >500k tokens in first 60 minutes.',
+      text: '[Sophia Vance - COO] Operations has verified automated provisioning specifications and rate-limiting safeguards in Safe Mock mode.',
       timestamp: '09:30:22',
       type: 'artifact',
     },
@@ -1149,38 +1085,38 @@ export const INITIAL_ORCHESTRATION: OrchestrationRun = {
       content: `# EXECUTIVE WORKFORCE REPORT: SELF-SERVE ENTERPRISE TIER
 
 ## 1. Executive Summary
-The SamJuniors AI Executive Council has evaluated and ratified the **Self-Serve AI Agent Enterprise Tier**. By automating company onboarding and multi-agent workspace provisioning, the company can unlock **$3.43M in projected ARR** within 12 months at an **83.9% gross margin**, bypassing traditional 6-week enterprise sales cycles.
+The SamJuniors AI Executive Council has evaluated the **Self-Serve AI Agent Enterprise Tier**. By enabling automated onboarding and multi-agent workspace provisioning, the company can target **$3.43M in projected ARR** at an **83.9% gross margin model**, avoiding traditional 6-week enterprise sales cycle friction.
 
 ## 2. Council Findings & Contributions
-- **Dr. Aris Thorne (Research)**: Identified massive competitive whitespace; 78% of enterprise buyers reject mandatory sales demos.
-- **Maya Lin (Product)**: Authored full PRD with 3-click domain ingestion and zero-latency inter-agent streaming.
-- **Julian Cruz (Finance)**: Audited token unit economics. Compute burn per onboarded workspace is strictly bounded to **$0.18**.
-- **Sophia Vance (Operations)**: Configured automated SLA guardrails with 99.98% uptime target and instant fallback.
+- **Dr. Aris Thorne (Research)**: Identified competitive whitespace where enterprise buyers prefer immediate hands-on evaluation.
+- **Maya Lin (Product)**: Authored full PRD with domain ingestion and zero-latency inter-agent streaming.
+- **Julian Cruz (Finance)**: Audited token unit economics. Compute burn per onboarded workspace is modeled at **$0.18**.
+- **Sophia Vance (Operations)**: Configured automated SLA guardrails and safe execution bounds.
 
 ## 3. Recommended Rollout Timeline
-- **Sprint 1 (Days 1-7)**: Deploy instant domain crawler and agent workspace generator.
-- **Sprint 2 (Days 8-14)**: Launch beta with top 15 waitlisted enterprise accounts.
-- **Sprint 3 (Day 21)**: Open general availability self-serve subscription at $249/mo.
+- **Phase 1 (Sprint 1)**: Deploy instant domain crawler and agent workspace generator in staging.
+- **Phase 2 (Sprint 2)**: Launch beta with pilot enterprise cohort (15 accounts).
+- **Phase 3 (Sprint 3)**: General availability self-serve subscription.
 
 ## 4. Safety & Governance Certification
-*Status: PASSED (Safe Mock Execution Mode active)*. Zero live financial mutations executed. All ledger calculations deterministically verified.`,
+*Status: PASSED (Safe Mock Execution Mode active)*. Zero live financial mutations executed. All calculations verified in sandbox.`,
     },
     {
       name: 'Product Requirements Document (PRD)',
       owner: 'Maya Lin (Principal PM)',
       protocolStep: 'build_execute',
       content: `### 1. Vision & Problem Statement
-Eliminate sales friction by enabling any founder or executive to spin up a fully autonomous AI company workforce in under 60 seconds.
+Eliminate sales friction by enabling any founder or executive to spin up an autonomous AI company workforce in under 60 seconds.
 
 ### 2. User Journey
 1. **Domain Input**: Founder provides company URL and primary goals.
-2. **Autonomous Recon**: Researcher agent crawls public domain to populate Company Constitution and product catalog.
+2. **Autonomous Recon**: Researcher agent crawls public domain to populate Company Constitution.
 3. **Instant OS Desktop**: Founder is presented with SamJuniors OS pre-configured with 4 active AI employees.
 4. **First Directive**: Guided prompt execution within 30 seconds.
 
 ### 3. Key Performance Indicators (KPIs)
 - Time-to-first-directive < 90 seconds
-- Day 30 retention > 64%
+- Day 30 retention target > 64%
 - Zero human intervention during 98% of onboardings`,
     },
     {
@@ -1188,15 +1124,15 @@ Eliminate sales friction by enabling any founder or executive to spin up a fully
       owner: 'Dr. Aris Thorne (Lead Researcher)',
       protocolStep: 'research',
       content: `### Industry Context
-Current enterprise AI platforms require 4-6 week sales cycles and manual prompt engineering. The market is aggressively rewarding "turnkey autonomous operating systems".
+Current enterprise AI platforms often require multi-week sales cycles and manual prompt engineering. The market rewards turnkey autonomous operating systems.
 
 ### Competitive Matrix
-- **Competitor A (Chat-centric)**: High prompt fatigue, no multi-agent role separation.
+- **Competitor A (Chat-centric)**: Prompt fatigue, no multi-agent role separation.
 - **Competitor B (Workflow builders)**: High configuration complexity, fragile node connections.
-- **SamJuniors OS**: Unified desktop paradigm, native role specialized AI executives, deterministic kernel orchestration.`,
+- **SamJuniors OS**: Unified desktop paradigm, native role-specialized AI executives, deterministic kernel orchestration.`,
     },
     {
-      name: 'Unit Economics & Financial Projections',
+      name: 'Unit Economics & Financial Projections (Simulation Model)',
       owner: 'Julian Cruz (Chief Financial Analyst)',
       protocolStep: 'analyze',
       content: `### Financial Model Assumptions
@@ -1204,15 +1140,19 @@ Current enterprise AI platforms require 4-6 week sales cycles and manual prompt 
 - Included Tasks: 2,500 agent directives / month
 - Overage Rate: $0.05 / additional directive
 - Blended Cost per Directive (Compute + Model API): $0.016
-- Gross Margin: **83.9%**
+- Target Gross Margin: **83.9%**
 
-### 12-Month Expansion Projection
-- End of Q1: 120 workspaces ($29,880 MRR)
-- End of Q2: 380 workspaces ($94,620 MRR)
-- End of Q4: 1,150 workspaces ($286,350 MRR / $3.43M ARR)`,
+### 12-Month Expansion Projection (Model Sandbox)
+- End of Q1 Target: 120 workspaces ($29,880 MRR)
+- End of Q2 Target: 380 workspaces ($94,620 MRR)
+- End of Q4 Target: 1,150 workspaces ($286,350 MRR / $3.43M ARR)`,
     },
   ],
 };
+
+// ============================================================================
+// 10. WALLPAPERS
+// ============================================================================
 
 export const WALLPAPERS = [
   {

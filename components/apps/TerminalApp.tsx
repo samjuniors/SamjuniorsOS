@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Terminal as TermIcon, CornerDownLeft, Sparkles } from 'lucide-react';
-import { INITIAL_AGENTS, INITIAL_FINANCIALS } from '@/lib/os-data';
+import { INITIAL_AGENTS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
 import { playOSSound } from '../os/IconHelper';
 
 interface TerminalAppProps {
@@ -38,9 +38,9 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ onDispatchDirective, s
       case 'help':
         newHistory.push({
           text: `Available SamJuniors OS commands:
-  agents          List all 4 autonomous AI executives and their uptime
-  status          Kernel telemetry and compute health
-  pnl             Display real-time income statement & margin
+  agents          List all 4 autonomous AI executives and current status
+  status          Kernel telemetry and sandbox health
+  pnl             Display unit economics simulation model
   dispatch <text> Dispatch strategic directive directly to AI swarm
   clear           Clear terminal history
   version         Show OS version & kernel build`,
@@ -51,7 +51,7 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ onDispatchDirective, s
       case 'agents':
         newHistory.push({
           text: INITIAL_AGENTS.map(
-            (a) => `• [${a.id.toUpperCase()}] ${a.name} (${a.role}) -> Uptime: ${a.uptime} | Tasks: ${a.tasksCompleted}`
+            (a) => `• [${a.id.toUpperCase()}] ${a.name} (${a.role}) -> Status: ${a.status} | Model: ${a.model || 'Gemini 2.5 Flash'}`
           ).join('\n'),
           type: 'success',
         });
@@ -59,14 +59,14 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ onDispatchDirective, s
 
       case 'status':
         newHistory.push({
-          text: `[SYSTEM OK] Swarm Health: 100% | Latency: 0.4ms | Active Subscriptions: 18 | Margin: 86.4%`,
+          text: `[SYSTEM OK] Safe Sandbox: Active | Council: Coordinated | Model: Gemini 2.5 Flash | Hallucination Guard: Active`,
           type: 'success',
         });
         break;
 
       case 'pnl':
         newHistory.push({
-          text: `MRR: $${INITIAL_FINANCIALS.mrr.toLocaleString()} | ARR: $${(INITIAL_FINANCIALS.mrr * 12).toLocaleString()} | Gross Margin: ${INITIAL_FINANCIALS.grossMargin}% | Runway: ${INITIAL_FINANCIALS.runwayMonths}mo`,
+          text: `[SIMULATION MODEL] Target MRR: $${SAMPLE_FINANCIAL_MODEL.mrr.toLocaleString()} | Target ARR: $${(SAMPLE_FINANCIAL_MODEL.mrr * 12).toLocaleString()} | Target Margin: ${SAMPLE_FINANCIAL_MODEL.grossMargin}% | Modeled Runway: ${SAMPLE_FINANCIAL_MODEL.runwayMonths}mo`,
           type: 'output',
         });
         break;
@@ -90,7 +90,8 @@ export const TerminalApp: React.FC<TerminalAppProps> = ({ onDispatchDirective, s
         newHistory.push({
           text: `SamJuniors OS 2.4.0 (Enterprise AI Swarm Edition)
 Kernel: sj-orchestrator-6.11
-Model Backend: Google Gemini 3.7 Flash`,
+Model Backend: Google Gemini 2.5 Flash
+Execution Mode: Deterministic Safe Mock Sandbox`,
           type: 'output',
         });
         break;

@@ -1,3 +1,27 @@
+// ============================================================================
+// SAMJUNIORS OS — DATA ARCHITECTURE & DOMAIN MODEL
+// ============================================================================
+// Core Rule:
+// A dashboard must never imply that SamJuniors has achieved a business result,
+// financial result, security certification, customer result, or operational action
+// unless the system has actual evidence for it.
+//
+// Clear Separation of Concerns:
+// 1. Company State: Organizational context, governance policies, active initiatives.
+// 2. Employee Definitions (AIAgent): Durable identity, role configuration, permissions.
+// 3. Agent Runtime / Executions: Live multi-agent orchestration passes, execution graphs.
+// 4. Tasks: Discrete work units assigned, queued, or completed in session.
+// 5. Deliverables: Structured business/technical documents authored by agents.
+// 6. Decisions: Governance proposals requiring Founder ratification.
+// 7. Evidence & Provenance: Grounding basis and author verification.
+// 8. Verification: Compliance and sandbox safety checks.
+// 9. Simulation & Planning Models: Computational models and sample data for planning.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. OS WINDOW & APP METADATA
+// ----------------------------------------------------------------------------
+
 export type AppId =
   | 'workforce'
   | 'company'
@@ -31,7 +55,80 @@ export interface WindowState {
   size: { width: number; height: number };
 }
 
+// ----------------------------------------------------------------------------
+// 2. EMPLOYEE ROLES & DEFINITIONS (Durable Employee Identity)
+// ----------------------------------------------------------------------------
+
 export type AgentRole = 'coo' | 'researcher' | 'pm' | 'finance';
+
+export interface AgentPermission {
+  name: string;
+  description: string;
+  category: 'Coordination' | 'Intelligence' | 'Product' | 'Financial' | 'System';
+  isSafeMock: boolean;
+}
+
+/**
+ * AIAgent represents durable employee identity, configuration, and capabilities.
+ * It does NOT contain fabricated runtime statistics (e.g. fake uptime or fake accuracy).
+ */
+export interface AIAgent {
+  id: AgentRole;
+  name: string;
+  role: string;
+  department: string;
+  avatarColor: string;
+  accentColor: string;
+  status:
+    | 'idle'
+    | 'processing'
+    | 'standby'
+    | 'active'
+    | 'understanding'
+    | 'researching'
+    | 'analyzing'
+    | 'planning'
+    | 'executing'
+    | 'testing'
+    | 'verifying'
+    | 'reviewing'
+    | 'reporting';
+  currentTask: string;
+  bio: string;
+  goals?: string[];
+  responsibilities?: string[];
+  skills?: string[];
+  instructions?: string;
+  capabilities?: string[];
+  permissions?: AgentPermission[];
+  model?: string;
+  taskQueue?: AgentTask[];
+  tasks?: Array<{
+    id: string;
+    title: string;
+    priority: string;
+    description: string;
+    status: string;
+    completedAt?: string;
+  }>;
+  activityHistory?: AgentActivity[];
+  recentActivity?: Array<{ time: string; action: string; badge?: string }>;
+}
+
+/**
+ * AgentRuntimeStats represents stats derived from actual runtime execution/task data.
+ */
+export interface AgentRuntimeStats {
+  agentId: AgentRole;
+  deliverablesAuthored: number;
+  activeTasks: number;
+  completedTasks: number;
+  lastActiveTime?: string;
+}
+
+// ----------------------------------------------------------------------------
+// 3. 9-STEP AGENT WORK PROTOCOL & TASK PIPELINE
+// ----------------------------------------------------------------------------
 
 export type AgentWorkProtocolStep =
   | 'understand'
@@ -66,60 +163,9 @@ export interface AgentActivity {
   status: 'success' | 'info' | 'warning';
 }
 
-export interface AgentPermission {
-  name: string;
-  description: string;
-  category: 'Coordination' | 'Intelligence' | 'Product' | 'Financial' | 'System';
-  isSafeMock: boolean;
-}
-
-export interface AIAgent {
-  id: AgentRole;
-  name: string;
-  role: string;
-  department: string;
-  avatarColor: string;
-  accentColor: string;
-  status:
-    | 'idle'
-    | 'processing'
-    | 'standby'
-    | 'active'
-    | 'understanding'
-    | 'researching'
-    | 'analyzing'
-    | 'planning'
-    | 'executing'
-    | 'testing'
-    | 'verifying'
-    | 'reviewing'
-    | 'reporting';
-  currentTask: string;
-  uptime?: string;
-  tasksCompleted?: number;
-  accuracyScore?: string;
-  tokenEfficiency?: string;
-  bio: string;
-  goals?: string[];
-  responsibilities?: string[];
-  skills?: string[];
-  instructions?: string;
-  capabilities?: string[];
-  permissions?: AgentPermission[];
-  taskQueue?: AgentTask[];
-  tasks?: Array<{ id: string; title: string; priority: string; description: string; status: string; completedAt?: string }>;
-  activityHistory?: AgentActivity[];
-  recentActivity?: Array<{ time: string; action: string; badge?: string }>;
-  model?: string;
-}
-
-export type ExecutionState =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'blocked'
-  | 'requires_approval';
+// ----------------------------------------------------------------------------
+// 4. EVIDENCE & PROVENANCE (Truth Tracking)
+// ----------------------------------------------------------------------------
 
 export type EvidenceBasis =
   | 'external_evidence'
@@ -138,6 +184,10 @@ export interface OutputProvenance {
   modelUsed?: string;
 }
 
+// ----------------------------------------------------------------------------
+// 5. VERIFICATION & SAFETY BOUNDS
+// ----------------------------------------------------------------------------
+
 export interface VerificationResult {
   isCompliant: boolean;
   checksPassed: string[];
@@ -147,6 +197,18 @@ export interface VerificationResult {
   verifiedAt: string;
 }
 
+// ----------------------------------------------------------------------------
+// 6. RUNTIME ORCHESTRATION & EXECUTION STATE
+// ----------------------------------------------------------------------------
+
+export type ExecutionState =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+  | 'requires_approval';
+
 export interface ExecutionMessage {
   id: string;
   sender: 'orchestrator' | 'coo' | 'researcher' | 'pm' | 'finance' | 'founder';
@@ -155,19 +217,6 @@ export interface ExecutionMessage {
   type: 'status' | 'finding' | 'critique' | 'artifact' | 'approval_request';
   protocolStep?: AgentWorkProtocolStep;
   artifactData?: any;
-  provenance?: OutputProvenance;
-}
-
-export interface ExecutionDeliverable {
-  id?: string;
-  name: string;
-  owner: string;
-  authorAgentId?: string;
-  authorName?: string;
-  type?: 'report' | 'spec' | 'research' | 'financial' | 'general' | string;
-  protocolStep?: AgentWorkProtocolStep;
-  content: string;
-  updatedAt?: string;
   provenance?: OutputProvenance;
 }
 
@@ -205,91 +254,26 @@ export interface OrchestrationRun {
   };
 }
 
-export interface OSNotification {
-  id: string;
-  title: string;
-  message: string;
-  time: string;
-  type: 'agent' | 'system' | 'finance' | 'deal';
-  agent?: string;
-  read: boolean;
-  actionable?: boolean;
-  actionLabel?: string;
-  appTarget?: AppId;
-}
+// ----------------------------------------------------------------------------
+// 7. COMPANY WORK DELIVERABLES
+// ----------------------------------------------------------------------------
 
-export interface CustomerDeal {
-  id: string;
-  companyName: string;
-  logoLetter: string;
-  tier: 'Enterprise' | 'Scale' | 'Autonomous Pro';
-  arr: string;
-  stage: 'Discovery' | 'AI Demo' | 'Contract Review' | 'Closed Won';
-  leadAgent: string;
-  health: 'High' | 'Good' | 'At Risk';
-  lastInteraction: string;
-  notes: string;
-}
-
-export interface ProductFeature {
-  id: string;
-  title: string;
-  category: 'Core OS' | 'Agent Swarm' | 'Security' | 'Billing';
-  status: 'In Progress' | 'In Review' | 'Shipped' | 'Backlog';
+export interface ExecutionDeliverable {
+  id?: string;
+  name: string;
   owner: string;
-  priority: 'Critical' | 'High' | 'Medium';
-  completion: number;
-  description: string;
+  authorAgentId?: string;
+  authorName?: string;
+  type?: 'report' | 'spec' | 'research' | 'financial' | 'general' | string;
+  protocolStep?: AgentWorkProtocolStep;
+  content: string;
+  updatedAt?: string;
+  provenance?: OutputProvenance;
 }
 
-export interface ResearchTopic {
-  id: string;
-  title: string;
-  category: 'Model Tech' | 'Market Intel' | 'Competitor Threat' | 'Regulatory';
-  confidence: number;
-  impact: 'Transformative' | 'High' | 'Moderate';
-  date: string;
-  author: string;
-  summary: string;
-  tags: string[];
-}
-
-export interface FinanceMetric {
-  mrr: number;
-  arr: number;
-  grossMargin: number;
-  computeSpend: number;
-  runwayMonths: number;
-  burnRate: number;
-  netIncome: number;
-  tokenUsageMillions: number;
-}
-
-export interface AttentionItem {
-  id: string;
-  type:
-    | 'approval_required'
-    | 'decision_required'
-    | 'blocked_work'
-    | 'financial_warning'
-    | 'customer_issue'
-    | 'product_decision'
-    | 'research_finding';
-  title: string;
-  whatHappened: string;
-  whyItMatters: string;
-  recommendedAction: string;
-  authorAgentId: AgentRole;
-  authorName: string;
-  founderActionRequired: boolean;
-  status: 'pending' | 'approved' | 'dismissed' | 'resolved';
-  timestamp: string;
-  evidence?: {
-    basis: EvidenceBasis;
-    source: string;
-    details: string;
-  };
-}
+// ----------------------------------------------------------------------------
+// 8. COMPANY STATE, INITIATIVES & GOVERNANCE DECISIONS
+// ----------------------------------------------------------------------------
 
 export interface CompanyInitiative {
   id: string;
@@ -323,12 +307,107 @@ export interface CompanyDecision {
   founderApprovalRequired: boolean;
 }
 
-export interface ExecutiveResultSummary {
-  recommendation: string;
-  keyFindings: string[];
-  businessImplications: string[];
-  risksAndUnknowns: string[];
-  recommendedNextActions: string[];
-  founderDecisionRequired?: string;
-  preparedBy: string;
+export interface AttentionItem {
+  id: string;
+  type:
+    | 'approval_required'
+    | 'decision_required'
+    | 'blocked_work'
+    | 'financial_warning'
+    | 'customer_issue'
+    | 'product_decision'
+    | 'research_finding';
+  title: string;
+  whatHappened: string;
+  whyItMatters: string;
+  recommendedAction: string;
+  authorAgentId: AgentRole;
+  authorName: string;
+  founderActionRequired: boolean;
+  status: 'pending' | 'approved' | 'dismissed' | 'resolved';
+  timestamp: string;
+  evidence?: {
+    basis: EvidenceBasis;
+    source: string;
+    details: string;
+  };
+}
+
+export interface OSNotification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  type: 'agent' | 'system' | 'finance' | 'deal';
+  agent?: string;
+  read: boolean;
+  actionable?: boolean;
+  actionLabel?: string;
+  appTarget?: AppId;
+}
+
+// ----------------------------------------------------------------------------
+// 9. SIMULATION & PLANNING MODELS (Explicitly marked as Planning / Simulation)
+// ----------------------------------------------------------------------------
+
+/**
+ * Computational Unit Economics & Financial Simulation Model
+ * Used for pricing stress-tests and cost planning sandbox.
+ */
+export interface FinanceMetric {
+  mrr: number;
+  arr: number;
+  grossMargin: number;
+  computeSpend: number;
+  runwayMonths: number;
+  burnRate: number;
+  netIncome: number;
+  tokenUsageMillions: number;
+  isSimulatedModel?: boolean;
+}
+
+/**
+ * Prospective Account Deal for CRM and Outreach Modeling
+ */
+export interface CustomerDeal {
+  id: string;
+  companyName: string;
+  logoLetter: string;
+  tier: 'Enterprise' | 'Scale' | 'Autonomous Pro';
+  arr: string;
+  stage: 'Discovery' | 'AI Demo' | 'Contract Review' | 'Closed Won';
+  leadAgent: string;
+  health: 'High' | 'Good' | 'At Risk';
+  lastInteraction: string;
+  notes: string;
+  isProspectAccount?: boolean;
+}
+
+/**
+ * Product Specification & Roadmap Item
+ */
+export interface ProductFeature {
+  id: string;
+  title: string;
+  category: 'Core OS' | 'Agent Swarm' | 'Security' | 'Billing';
+  status: 'In Progress' | 'In Review' | 'Shipped' | 'Backlog';
+  owner: string;
+  priority: 'Critical' | 'High' | 'Medium';
+  completion: number;
+  description: string;
+}
+
+/**
+ * Research Intelligence Brief
+ */
+export interface ResearchTopic {
+  id: string;
+  title: string;
+  category: 'Model Tech' | 'Market Intel' | 'Competitor Threat' | 'Regulatory';
+  confidence: number;
+  impact: 'Transformative' | 'High' | 'Moderate';
+  date: string;
+  author: string;
+  summary: string;
+  tags: string[];
 }

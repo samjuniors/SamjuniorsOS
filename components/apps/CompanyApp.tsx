@@ -15,7 +15,7 @@ import {
   ChevronRight,
   ExternalLink,
 } from 'lucide-react';
-import { INITIAL_AGENTS, INITIAL_FINANCIALS } from '@/lib/os-data';
+import { INITIAL_AGENTS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
 
 export const CompanyApp: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'constitution' | 'okrs' | 'org' | 'board'>('constitution');
@@ -30,19 +30,19 @@ export const CompanyApp: React.FC = () => {
     {
       id: 'rule-2',
       title: 'Article II: Financial Sovereignty & Unit Economics',
-      description: 'Julian Cruz (Finance) holds veto power over any workflow exceeding 20% compute-to-revenue ratio. All initiatives must maintain an 80%+ gross margin floor.',
+      description: 'Julian Cruz (Finance) holds advisory veto over any workflow exceeding 20% compute-to-revenue ratio. All initiatives must maintain an 80%+ gross margin floor.',
       severity: 'Enforced',
     },
     {
       id: 'rule-3',
-      title: 'Article III: Zero Hallucination SLA',
-      description: 'Dr. Aris Thorne (Research) must ground all competitive claims in empirical data. Sophia Vance (COO) verifies SLA uptime thresholds before approving automated deployments.',
+      title: 'Article III: Empirical Grounding & Truthful SLA',
+      description: 'Dr. Aris Thorne (Research) must ground all market claims in verifiable data. Sophia Vance (COO) verifies protocol compliance before delivering final executive reports.',
       severity: 'Enforced',
     },
     {
       id: 'rule-4',
       title: 'Article IV: Founder Escalation Threshold',
-      description: 'Expenditures over $5,000, major legal contractual modifications, and breaking schema changes require explicit Founder sign-off via SamJuniors OS notifications.',
+      description: 'Irreversible financial transfers, live production code deployments, and breaking schema changes require explicit Founder sign-off via SamJuniors OS notifications.',
       severity: 'Safeguard',
     },
   ];
@@ -50,14 +50,14 @@ export const CompanyApp: React.FC = () => {
   const okrs = [
     {
       id: 'okr-1',
-      objective: 'Scale Autonomous Enterprise ARR to $3.0M',
-      progress: 68,
+      objective: 'Target Scale: Autonomous Enterprise Tier Modeling',
+      progress: 75,
       owner: 'Julian Cruz & Sophia Vance',
-      status: 'On Track',
+      status: 'Active Planning',
       keyResults: [
-        'Close 25 new Enterprise accounts (Current: 18)',
-        'Maintain gross margin above 85% (Current: 86.4%)',
-        'Reduce blended compute cost per customer to <$18/mo',
+        'Model pricing for 25 pilot Enterprise accounts',
+        'Simulate unit economics with >80% gross margin target floor',
+        'Model blended compute cost per tenant to <$0.20 onboarding burn',
       ],
     },
     {
@@ -65,23 +65,23 @@ export const CompanyApp: React.FC = () => {
       objective: 'Achieve Sub-50ms Multi-Agent Orchestration Latency',
       progress: 88,
       owner: 'Maya Lin & Dr. Aris Thorne',
-      status: 'Ahead',
+      status: 'In Sandbox',
       keyResults: [
-        'Deploy peer-to-peer neural message streaming',
-        'Eliminate context degradation across 50-step conversations',
-        'Automate 95% of routine PRD & research generation',
+        'Architect peer-to-peer neural message streaming PRD',
+        'Eliminate context degradation across 9-step work protocol',
+        'Automate 100% of routine PRD & research generation in safe sandbox',
       ],
     },
     {
       id: 'okr-3',
       objective: 'Zero-Downtime Autonomous Self-Healing Infrastructure',
-      progress: 94,
+      progress: 90,
       owner: 'Sophia Vance (COO)',
-      status: 'Target Met',
+      status: 'Verified',
       keyResults: [
-        '99.98% SLA across all worker clusters',
+        'Maintain deterministic safe sandbox boundaries for all agent executions',
         'Automatic failover routing for rate-limited API calls',
-        'Automated real-time anomaly detection in customer billing',
+        'Automated anomaly detection in simulated unit economics',
       ],
     },
   ];
@@ -113,7 +113,7 @@ export const CompanyApp: React.FC = () => {
           }`}
         >
           <Target className="w-3.5 h-3.5" />
-          <span>Strategic OKRs (Q3/Q4)</span>
+          <span>Strategic Objectives & OKRs</span>
         </button>
 
         <button
@@ -158,7 +158,7 @@ export const CompanyApp: React.FC = () => {
                 </p>
               </div>
               <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-500/30">
-                Ratified by Founder
+                Constitution Active
               </span>
             </div>
 
@@ -166,11 +166,19 @@ export const CompanyApp: React.FC = () => {
               {constitutionRules.map((rule) => (
                 <div
                   key={rule.id}
-                  className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-2 hover:border-blue-500/40 transition-all"
+                  className="os-glass-card rounded-2xl p-4.5 border border-white/10 space-y-2 hover:border-blue-500/30 transition-all"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-white">{rule.title}</span>
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    <span className="text-xs font-bold text-white">{rule.title}</span>
+                    <span
+                      className={`text-[9px] font-mono px-2 py-0.5 rounded uppercase font-semibold ${
+                        rule.severity === 'Foundational'
+                          ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20'
+                          : rule.severity === 'Enforced'
+                          ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                          : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                      }`}
+                    >
                       {rule.severity}
                     </span>
                   </div>
@@ -183,16 +191,14 @@ export const CompanyApp: React.FC = () => {
 
         {activeSection === 'okrs' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Target className="w-4 h-4 text-indigo-400" />
-                  Autonomous Strategic Objectives (OKRs)
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Real-time objective tracking driven by AI workforce telemetry and financial ledger feeds.
-                </p>
-              </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Target className="w-4 h-4 text-indigo-400" />
+                Strategic Objectives & Target OKRs
+              </h3>
+              <p className="text-xs text-slate-400">
+                Core roadmap deliverables tracked across the 4 executive AI leads.
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -297,45 +303,45 @@ export const CompanyApp: React.FC = () => {
             <div>
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Award className="w-4 h-4 text-amber-400" />
-                Autonomous Board of Directors Executive Briefing
+                Autonomous Executive Council Board Briefing
               </h3>
               <p className="text-xs text-slate-400">
-                Synthesized quarterly board report auto-generated by the Executive AI Council.
+                Synthesized strategic briefing auto-generated by the Executive AI Council based on simulation modeling.
               </p>
             </div>
 
             <div className="os-glass-card rounded-2xl p-6 border border-white/10 space-y-4 text-xs leading-relaxed text-slate-200">
               <div className="border-b border-white/10 pb-3 flex items-center justify-between">
                 <div>
-                  <span className="font-bold text-sm text-white">Q3 Executive Performance Briefing</span>
-                  <p className="text-[10px] text-slate-400">Prepared for: Founder & Advisory Board</p>
+                  <span className="font-bold text-sm text-white">Executive Strategic Briefing</span>
+                  <p className="text-[10px] text-slate-400">Prepared for: Founder & Strategic Planning</p>
                 </div>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2.5 py-1 rounded border border-emerald-500/30">
-                  Audited Clean
+                  Safe Sandbox Validated
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Annualized Revenue</div>
-                  <div className="text-base font-mono font-bold text-white mt-1">$1.78M ARR</div>
+                  <div className="text-[10px] text-slate-400">Projected Target ARR</div>
+                  <div className="text-base font-mono font-bold text-white mt-1">$1.78M Target</div>
                 </div>
                 <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Blended Gross Margin</div>
-                  <div className="text-base font-mono font-bold text-emerald-400 mt-1">86.4%</div>
+                  <div className="text-[10px] text-slate-400">Target Gross Margin</div>
+                  <div className="text-base font-mono font-bold text-emerald-400 mt-1">86.4% Floor</div>
                 </div>
                 <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Operational Runway</div>
+                  <div className="text-[10px] text-slate-400">Modeled Runway</div>
                   <div className="text-base font-mono font-bold text-indigo-300 mt-1">42 Months</div>
                 </div>
               </div>
 
               <div className="space-y-2 pt-2">
-                <h5 className="font-bold text-white">Executive Summary Highlights:</h5>
+                <h5 className="font-bold text-white">Executive Strategy Highlights:</h5>
                 <ul className="list-disc pl-5 space-y-1 text-slate-300">
-                  <li>Zero payroll burn: Company functions on 4 autonomous AI executive leaders, reducing overhead by 92% compared to human-equivalent leadership teams.</li>
-                  <li>Multi-Agent throughput exceeded 2,100 automated directives processed with a 99.2% accuracy score.</li>
-                  <li>Enterprise self-serve tier is positioned for Q4 release, targeting $3.4M ARR by end of FY2027.</li>
+                  <li>Autonomous Workforce Model: Company functions on 4 specialized AI executive leads with zero payroll overhead.</li>
+                  <li>Protocol Reliability: Strict 9-step Agent Work Protocol enforces empirical grounding, risk modeling, and multi-agent peer reviews.</li>
+                  <li>Enterprise self-serve tier is positioned for Q4 release, targeting frictionless onboarding with $0.18 compute burn per tenant.</li>
                 </ul>
               </div>
             </div>

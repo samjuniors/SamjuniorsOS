@@ -14,10 +14,10 @@ import {
   ArrowDownRight,
   ShieldCheck,
 } from 'lucide-react';
-import { INITIAL_FINANCIALS } from '@/lib/os-data';
+import { SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
 
 export const FinanceApp: React.FC = () => {
-  const [financials, setFinancials] = useState(INITIAL_FINANCIALS);
+  const [financials, setFinancials] = useState(SAMPLE_FINANCIAL_MODEL);
   const [activeTab, setActiveTab] = useState<'pnl' | 'compute' | 'simulator' | 'invoices'>('pnl');
 
   // Simulator Sliders
@@ -30,10 +30,10 @@ export const FinanceApp: React.FC = () => {
   const calculatedComputeBurn = calculatedMRR * (simTokenCostRatio / 100);
   const calculatedNetMargin = 100 - simTokenCostRatio;
 
-  const invoices = [
-    { id: 'inv-892', vendor: 'Google Cloud Platform (Vertex/TPU)', amount: '$14,820.00', status: 'Auto-Reconciled', date: 'Sep 1, 2026', auditor: 'Julian Cruz' },
-    { id: 'inv-891', vendor: 'Anthropic Claude 3.5 API Tier', amount: '$3,420.00', status: 'Auto-Reconciled', date: 'Aug 28, 2026', auditor: 'Julian Cruz' },
-    { id: 'inv-890', vendor: 'Stripe Merchant Payout Net', amount: '+$142,000.00', status: 'Deposited', date: 'Aug 25, 2026', auditor: 'Julian Cruz' },
+  const simulatedInvoices = [
+    { id: 'sim-inv-892', vendor: 'Google Cloud Platform (Vertex/TPU - Projected)', amount: '$14,820.00', status: 'Model Estimate', date: 'Sep 1, 2026', auditor: 'Julian Cruz' },
+    { id: 'sim-inv-891', vendor: 'Anthropic Claude 3.5 API Tier (Projected)', amount: '$3,420.00', status: 'Model Estimate', date: 'Aug 28, 2026', auditor: 'Julian Cruz' },
+    { id: 'sim-inv-890', vendor: 'Target Customer Net Inflow (Projected)', amount: '+$142,000.00', status: 'Model Estimate', date: 'Aug 25, 2026', auditor: 'Julian Cruz' },
   ];
 
   return (
@@ -50,7 +50,7 @@ export const FinanceApp: React.FC = () => {
             }`}
           >
             <DollarSign className="w-3.5 h-3.5" />
-            <span>P&L & Unit Economics</span>
+            <span>Unit Economics Model</span>
           </button>
 
           <button
@@ -62,7 +62,7 @@ export const FinanceApp: React.FC = () => {
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
-            <span>Token & GPU Cost Attribution</span>
+            <span>Token & Compute Cost Attribution</span>
           </button>
 
           <button
@@ -74,7 +74,7 @@ export const FinanceApp: React.FC = () => {
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
-            <span>Runway & ARR Simulator</span>
+            <span>Runway & Pricing Simulator</span>
           </button>
 
           <button
@@ -86,13 +86,22 @@ export const FinanceApp: React.FC = () => {
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Autonomous Invoices</span>
+            <span>Simulated Cost Invoices</span>
           </button>
         </div>
 
         <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/20">
-          Chief Auditor: Julian Cruz
+          Financial Sandbox • Julian Cruz
         </span>
+      </div>
+
+      {/* Simulation Banner Notice */}
+      <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-1.5 flex items-center justify-between text-[11px] text-emerald-300">
+        <span className="flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <strong>Financial Sandbox & Planning Mode:</strong> All figures represent computational unit models, pricing stress-tests, and compute attribution.
+        </span>
+        <span className="font-mono text-[10px] text-emerald-400">Deterministic Formula Model</span>
       </div>
 
       {/* Main Tab View */}
@@ -102,42 +111,42 @@ export const FinanceApp: React.FC = () => {
             {/* Top 4 Big Stat Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="os-glass-card rounded-2xl p-4 border border-white/10">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Monthly Run Rate (MRR)</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Target Run Rate (Model MRR)</div>
                 <div className="text-xl font-mono font-bold text-white mt-1.5">
-                  ${(financials.mrr).toLocaleString()}
+                  ${financials.mrr.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-emerald-400 mt-1 flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3 h-3" /> +18.4% this month
+                  <ArrowUpRight className="w-3 h-3" /> Target Scenario: 600 seats
                 </div>
               </div>
 
               <div className="os-glass-card rounded-2xl p-4 border border-white/10">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Gross Margin</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Target Gross Margin</div>
                 <div className="text-xl font-mono font-bold text-emerald-400 mt-1.5">
                   {financials.grossMargin}%
                 </div>
                 <div className="text-[10px] text-emerald-400 mt-1 flex items-center gap-0.5">
-                  <ShieldCheck className="w-3 h-3" /> Zero human payroll drag
+                  <ShieldCheck className="w-3 h-3" /> Minimum 80% margin floor
                 </div>
               </div>
 
               <div className="os-glass-card rounded-2xl p-4 border border-white/10">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Compute & Token Spend</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Projected Compute Burn</div>
                 <div className="text-xl font-mono font-bold text-indigo-300 mt-1.5">
                   ${financials.computeSpend.toLocaleString()}
                 </div>
                 <div className="text-[10px] text-slate-400 mt-1">
-                  13.6% of monthly revenue
+                  13.6% of simulated revenue
                 </div>
               </div>
 
               <div className="os-glass-card rounded-2xl p-4 border border-white/10">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Operational Runway</div>
+                <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Modeled Runway</div>
                 <div className="text-xl font-mono font-bold text-cyan-300 mt-1.5">
                   {financials.runwayMonths} Months
                 </div>
                 <div className="text-[10px] text-cyan-400 mt-1">
-                  Profitable & self-sustaining
+                  Capital-efficient model
                 </div>
               </div>
             </div>
@@ -145,28 +154,28 @@ export const FinanceApp: React.FC = () => {
             {/* Detailed P&L Breakdown */}
             <div className="os-glass-card rounded-2xl p-5 border border-white/10 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                Autonomous Income Statement (P&L Breakdown)
+                Simulated Income Statement (P&L Model)
               </h3>
 
               <div className="space-y-2 text-xs font-mono">
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-200">
-                  <span>Gross B2B Enterprise Subscriptions</span>
+                  <span>Gross Target Subscriptions (Simulated)</span>
                   <span className="text-emerald-400 font-bold">$148,500.00</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Gemini 3.7 Flash & Vertex AI Token Burn</span>
+                  <span>(-) Gemini 2.5 Flash Batch Token Cost Estimate</span>
                   <span className="text-rose-400">-$12,400.00</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Dedicated Cloud Run & VPC Infrastructure</span>
+                  <span>(-) Dedicated Cloud Run & VPC Infrastructure Estimate</span>
                   <span className="text-rose-400">-$7,000.00</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Payment Processing (Stripe 2.9%)</span>
+                  <span>(-) Payment Gateway Fee Estimate (2.9%)</span>
                   <span className="text-rose-400">-$4,306.50</span>
                 </div>
                 <div className="flex justify-between py-2 text-white font-bold text-sm bg-white/5 px-3 rounded-lg">
-                  <span>Net Operating Income (EBITDA)</span>
+                  <span>Projected Net Operating Income (Model EBITDA)</span>
                   <span className="text-emerald-400">$124,793.50 (84.0% Net Margin)</span>
                 </div>
               </div>
@@ -178,15 +187,15 @@ export const FinanceApp: React.FC = () => {
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Cpu className="w-4 h-4 text-emerald-400" />
-              Token & GPU Cost Attribution Matrix
+              Token & Compute Cost Attribution Matrix (Model Breakdown)
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-3">
-                <h4 className="text-xs font-bold text-white">Spend by Executive AI Agent</h4>
+                <h4 className="text-xs font-bold text-white">Estimated Spend Attribution by Agent</h4>
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between">
-                    <span>Dr. Aris Thorne (Continuous Research Crawl)</span>
+                    <span>Dr. Aris Thorne (Research Radar & Benchmarks)</span>
                     <span className="font-mono text-amber-400 font-bold">$5,820 (41%)</span>
                   </div>
                   <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -202,7 +211,7 @@ export const FinanceApp: React.FC = () => {
                   </div>
 
                   <div className="flex justify-between pt-1">
-                    <span>Maya Lin (PRD & Spec Generation)</span>
+                    <span>Maya Lin (PRD & Architecture Specifications)</span>
                     <span className="font-mono text-rose-400 font-bold">$2,380 (17%)</span>
                   </div>
                   <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -220,15 +229,15 @@ export const FinanceApp: React.FC = () => {
               </div>
 
               <div className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-3">
-                <h4 className="text-xs font-bold text-white">Efficiency Optimization Highlights</h4>
+                <h4 className="text-xs font-bold text-white">Efficiency Optimization Guardrails</h4>
                 <ul className="text-xs space-y-2 text-slate-300">
                   <li className="p-2 rounded-lg bg-black/40 border border-white/5 flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                    <span><strong>Prompt Caching:</strong> Saved $4,850 this month on repetitive constitution validation tokens.</span>
+                    <span><strong>Prompt Caching:</strong> Modeled to reduce token cost by up to 74% on repetitive constitutional validation.</span>
                   </li>
                   <li className="p-2 rounded-lg bg-black/40 border border-white/5 flex items-start gap-2">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                    <span><strong>Flash Batching:</strong> Compressed 65% of offline research summaries into low-cost off-peak inference windows.</span>
+                    <span><strong>Flash Batching:</strong> Routes offline market summaries into low-cost non-blocking inference windows.</span>
                   </li>
                 </ul>
               </div>
@@ -324,18 +333,18 @@ export const FinanceApp: React.FC = () => {
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <FileText className="w-4 h-4 text-emerald-400" />
-              Autonomous Invoice & Treasury Ledger
+              Simulated Invoice & Cost Estimates Ledger
             </h3>
 
             <div className="space-y-2">
-              {invoices.map((inv) => (
+              {simulatedInvoices.map((inv) => (
                 <div
                   key={inv.id}
                   className="os-glass-card rounded-xl p-3.5 border border-white/10 flex items-center justify-between text-xs"
                 >
                   <div className="space-y-0.5">
                     <div className="font-bold text-white">{inv.vendor}</div>
-                    <div className="text-[10px] text-slate-400 font-mono">Invoice ID: {inv.id} • {inv.date}</div>
+                    <div className="text-[10px] text-slate-400 font-mono">Simulated ID: {inv.id} • {inv.date}</div>
                   </div>
 
                   <div className="text-right space-y-0.5">

@@ -162,7 +162,7 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
                       <span className="text-[10px] text-indigo-400 ml-1.5">{agent.role}</span>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono text-emerald-400">{agent.uptime}</span>
+                  <span className="text-[10px] font-mono text-emerald-400 capitalize">{agent.status || 'Active'}</span>
                 </button>
               ))}
             </div>

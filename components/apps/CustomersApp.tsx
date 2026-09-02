@@ -27,7 +27,7 @@ export const CustomersApp: React.FC = () => {
   const [isNewDealModalOpen, setIsNewDealModalOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newTier, setNewTier] = useState<'Enterprise' | 'Scale' | 'Autonomous Pro'>('Enterprise');
-  const [newArr, setNewArr] = useState('$65,000');
+  const [newArr, setNewArr] = useState('$65,000 (Target)');
 
   const filteredDeals = deals.filter((deal) => {
     const matchesSearch =
@@ -48,15 +48,16 @@ export const CustomersApp: React.FC = () => {
 
     const newDealItem: CustomerDeal = {
       id: `deal-${Date.now()}`,
-      companyName: newCompanyName.trim(),
+      companyName: `${newCompanyName.trim()} (Target Account)`,
       logoLetter: newCompanyName.trim()[0].toUpperCase(),
       tier: newTier,
-      arr: newArr,
-      stage: 'AI Demo',
+      arr: newArr.includes('Target') ? newArr : `${newArr} (Target)`,
+      stage: 'Discovery',
       leadAgent: 'Maya Lin & Sophia Vance',
       health: 'High',
-      lastInteraction: 'Autonomous discovery synthesis dispatched to prospect',
+      lastInteraction: 'Autonomous discovery brief generated in sandbox',
       notes: 'Ingested public data to generate personalized AI company workspace demo.',
+      isProspectAccount: true,
     };
 
     setDeals([newDealItem, ...deals]);
@@ -72,11 +73,11 @@ export const CustomersApp: React.FC = () => {
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1.5">
             <Users className="w-4 h-4 text-emerald-400" />
-            <span className="text-xs font-bold text-white">Autonomous B2B CRM</span>
+            <span className="text-xs font-bold text-white">Target Account Pipeline (Prospective CRM)</span>
           </div>
 
           <span className="hidden sm:inline text-xs text-slate-400 font-mono">
-            Pipeline ARR: <strong className="text-emerald-400 font-bold">${(totalPipelineARR / 1000).toFixed(0)}k</strong>
+            Modeled Pipeline: <strong className="text-emerald-400 font-bold">${(totalPipelineARR / 1000).toFixed(0)}k Target</strong>
           </span>
         </div>
 
@@ -88,7 +89,7 @@ export const CustomersApp: React.FC = () => {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search accounts..."
+              placeholder="Search target accounts..."
               className="pl-8 pr-3 py-1 rounded-lg bg-black/50 border border-white/10 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -99,154 +100,131 @@ export const CustomersApp: React.FC = () => {
             className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-md transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Add Account</span>
+            <span className="hidden sm:inline">Add Target Account</span>
           </button>
         </div>
       </div>
 
-      {/* Main Split View */}
-      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
-        {/* Left Col: Deals List */}
-        <div className="border-r border-white/10 overflow-y-auto p-3 space-y-2 bg-slate-950/50">
-          {/* Stage Filter Buttons */}
-          <div className="flex flex-wrap gap-1 pb-2 border-b border-white/10">
-            {['All', 'Discovery', 'AI Demo', 'Contract Review', 'Closed Won'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setStageFilter(st)}
-                className={`text-[10px] px-2 py-0.5 rounded-md font-medium transition-colors ${
-                  stageFilter === st
-                    ? 'bg-emerald-600 text-white font-bold'
-                    : 'bg-white/5 text-slate-400 hover:text-white'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
+      {/* Prospective Notice */}
+      <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-1.5 flex items-center justify-between text-[11px] text-emerald-300">
+        <span className="flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <strong>Prospective Account Sandbox:</strong> Evaluates enterprise account fit, customized agent configurations, and token budgets.
+        </span>
+        <span className="font-mono text-[10px] text-emerald-400">Target Accounts</span>
+      </div>
 
-          {filteredDeals.map((deal) => (
-            <button
-              key={deal.id}
-              id={`customer-deal-${deal.id}`}
-              onClick={() => setSelectedDeal(deal)}
-              className={`w-full text-left p-3 rounded-xl border transition-all ${
-                selectedDeal.id === deal.id
-                  ? 'os-glass-card-active border-emerald-500/60 shadow-lg ring-1 ring-emerald-500/30'
-                  : 'os-glass-card border-white/10 hover:border-white/20'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs text-white truncate">{deal.companyName}</span>
-                <span className="text-xs font-mono font-bold text-emerald-400">{deal.arr}</span>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
-                <span>{deal.tier}</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded font-mono ${
-                    deal.stage === 'Closed Won'
-                      ? 'bg-emerald-500/20 text-emerald-300'
-                      : deal.stage === 'Contract Review'
-                      ? 'bg-indigo-500/20 text-indigo-300'
-                      : 'bg-amber-500/20 text-amber-300'
+      {/* Main Body: 2-Column Split View */}
+      <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-12">
+        {/* Left Column: Accounts List */}
+        <div className="md:col-span-5 border-r border-white/10 overflow-y-auto p-3 space-y-2">
+          <div className="flex items-center justify-between pb-1 text-xs text-slate-400">
+            <span>{filteredDeals.length} Target Accounts</span>
+            <div className="flex space-x-1 text-[11px]">
+              {['All', 'Discovery', 'AI Demo'].map((stage) => (
+                <button
+                  key={stage}
+                  onClick={() => setStageFilter(stage)}
+                  className={`px-2 py-0.5 rounded ${
+                    stageFilter === stage
+                      ? 'bg-white/20 text-white'
+                      : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {deal.stage}
-                </span>
-              </div>
+                  {stage}
+                </button>
+              ))}
+            </div>
+          </div>
 
-              <div className="mt-2 text-[9px] text-slate-400 border-t border-white/5 pt-1 truncate">
-                Lead: <strong className="text-slate-300">{deal.leadAgent}</strong>
+          {filteredDeals.map((deal) => {
+            const isSelected = selectedDeal.id === deal.id;
+            return (
+              <div
+                key={deal.id}
+                onClick={() => setSelectedDeal(deal)}
+                className={`p-3.5 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                  isSelected
+                    ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg'
+                    : 'bg-slate-900/60 border-white/5 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 flex items-center justify-center font-bold text-white text-xs">
+                      {deal.logoLetter}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">{deal.companyName}</div>
+                      <div className="text-[10px] text-slate-400">{deal.tier}</div>
+                    </div>
+                  </div>
+
+                  <span className="font-mono text-xs font-bold text-emerald-400">{deal.arr}</span>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                  <span className="px-2 py-0.5 rounded bg-white/5 text-slate-300 font-mono">
+                    {deal.stage}
+                  </span>
+                  <span>Lead: {deal.leadAgent.split(' ')[0]}</span>
+                </div>
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Right 2 Cols: Selected Account Detail & Interaction Log */}
-        <div className="md:col-span-2 overflow-y-auto p-5 space-y-5 bg-slate-950/80">
+        {/* Right Column: Account Detail & Autonomous Actions */}
+        <div className="md:col-span-7 overflow-y-auto p-4 md:p-6 space-y-5 bg-slate-950/50">
           {selectedDeal ? (
             <>
               {/* Account Header */}
-              <div className="flex items-start justify-between pb-4 border-b border-white/10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
                 <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-lg font-bold text-white shadow-lg">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-800 flex items-center justify-center font-bold text-white text-xl shadow-lg">
                     {selectedDeal.logoLetter}
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">{selectedDeal.companyName}</h3>
-                    <p className="text-xs text-emerald-400">{selectedDeal.tier} Plan • {selectedDeal.stage}</p>
+                    <h3 className="text-base font-bold text-white">{selectedDeal.companyName}</h3>
+                    <div className="flex items-center space-x-2 mt-0.5">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                        {selectedDeal.tier}
+                      </span>
+                      <span className="text-xs text-slate-400">Target Pipeline Model</span>
+                    </div>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider font-mono">Contract ARR</div>
-                  <div className="text-base font-mono font-bold text-emerald-400">{selectedDeal.arr}</div>
+                  <div className="text-xs text-slate-400">Target Annual Contract</div>
+                  <div className="text-lg font-mono font-bold text-emerald-400">{selectedDeal.arr}</div>
                 </div>
               </div>
 
-              {/* Status Metrics Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Account Health</div>
-                  <div className="text-xs font-mono font-bold text-emerald-400 mt-1 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                    {selectedDeal.health}
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Lead AI Handler</div>
-                  <div className="text-xs font-mono font-bold text-indigo-300 mt-1 truncate">
-                    {selectedDeal.leadAgent}
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                  <div className="text-[10px] text-slate-400">Autonomous SLA</div>
-                  <div className="text-xs font-mono font-bold text-cyan-300 mt-1">
-                    99.98% Monitored
-                  </div>
+              {/* Account Strategic Recon */}
+              <div className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Autonomous Account Recon & Strategy
+                </span>
+                <p className="text-xs text-slate-200 leading-relaxed">{selectedDeal.notes}</p>
+                <div className="text-[10px] text-slate-400 pt-1">
+                  Last Agent Interaction: <strong className="text-slate-300">{selectedDeal.lastInteraction}</strong>
                 </div>
               </div>
 
-              {/* Notes & Specs */}
-              <div className="os-glass-card rounded-xl p-4 border border-white/10 space-y-2">
-                <h4 className="text-xs font-bold text-white">Autonomous Account Notes & Scope</h4>
-                <p className="text-xs text-slate-300 leading-relaxed">{selectedDeal.notes}</p>
-                <div className="text-[10px] text-slate-400 pt-2 border-t border-white/5">
-                  Last Activity: <strong className="text-slate-200">{selectedDeal.lastInteraction}</strong>
+              {/* Lead Agent Assignment */}
+              <div className="os-glass-card rounded-2xl p-4 border border-white/10 flex items-center justify-between text-xs">
+                <div>
+                  <div className="text-[10px] text-slate-400">Designated Executive Leads</div>
+                  <div className="font-bold text-white mt-0.5">{selectedDeal.leadAgent}</div>
                 </div>
-              </div>
-
-              {/* Autonomous AI Action Logs */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
-                  Live AI Engagement Log
-                </h4>
-                <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2 text-xs">
-                  <div className="flex items-center justify-between text-slate-400 text-[10px]">
-                    <span className="font-mono text-indigo-400">Sophia Vance (COO)</span>
-                    <span>1 hour ago</span>
-                  </div>
-                  <p className="text-slate-300">
-                    Auto-generated security posture document and token usage bounds. Sent confirmation to client technical contact.
-                  </p>
-                </div>
-                <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2 text-xs">
-                  <div className="flex items-center justify-between text-slate-400 text-[10px]">
-                    <span className="font-mono text-emerald-400">Julian Cruz (Finance)</span>
-                    <span>4 hours ago</span>
-                  </div>
-                  <p className="text-slate-300">
-                    Reconciled credit limits and configured Stripe billing webhook with 86% margin floor guardrail.
-                  </p>
-                </div>
+                <span className="px-2.5 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 text-[10px] font-mono">
+                  Sandbox Active
+                </span>
               </div>
             </>
           ) : (
-            <div className="p-8 text-center text-slate-400 text-xs">
+            <div className="h-full flex items-center justify-center text-xs text-slate-500">
               Select an account to view CRM history and autonomous actions.
             </div>
           )}
@@ -259,7 +237,7 @@ export const CustomersApp: React.FC = () => {
           <div className="w-full max-w-md os-glass rounded-2xl p-5 border border-white/20 shadow-2xl space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Plus className="w-4 h-4 text-emerald-400" />
-              Provision New Autonomous Account
+              Add Target Account
             </h3>
 
             <form onSubmit={handleAddDeal} className="space-y-3">
@@ -318,7 +296,7 @@ export const CustomersApp: React.FC = () => {
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg transition-colors"
                 >
-                  Provision Account
+                  Save Target Account
                 </button>
               </div>
             </form>
