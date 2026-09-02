@@ -148,6 +148,22 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
       };
       setCurrentRun(optimisticRun);
 
+      // Execution progress simulation messages
+      const progressSteps = [
+        'Sophia Vance is deconstructing Founder directive into 9-step Agent Protocol...',
+        'Dr. Aris Thorne conducting market dynamics and technical feasibility recon...',
+        'Maya Lin drafting Product Requirements Document (PRD) & user flows...',
+        'Julian Cruz stress-testing compute burn, pricing tiers & unit economics...',
+        'Sophia Vance verifying constitutional SLA & safe sandbox compliance...',
+        'Executive Council synthesizing final recommendations for Founder HQ...',
+      ];
+
+      let stepIndex = 0;
+      const progressInterval = setInterval(() => {
+        stepIndex = (stepIndex + 1) % progressSteps.length;
+        setExecutionMessage(progressSteps[stepIndex]);
+      }, 1400);
+
       try {
         const res = await fetch('/api/orchestrate', {
           method: 'POST',
@@ -159,13 +175,15 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
         });
 
         const data = await res.json();
+        clearInterval(progressInterval);
+
         if (data.success && data.data) {
           const payload = data.data;
           const finalizedRun: OrchestrationRun = {
-            id: `run-${Date.now()}`,
+            id: payload.id || `run-${Date.now()}`,
             directive: textToRun,
-            timestamp: 'Just now',
-            status: 'completed',
+            timestamp: payload.timestamp || 'Just now',
+            status: payload.status || 'completed',
             liveAi: data.liveAi,
             currentProtocolStep: payload.currentProtocolStep || 'report',
             protocolProgress: payload.protocolProgress || {
@@ -184,30 +202,68 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             plan: payload.plan || optimisticRun.plan.map((p) => ({ ...p, status: 'done' })),
             messages: payload.messages || optimisticRun.messages,
             deliverables: payload.deliverables || [],
+            finalExecutiveReport: payload.finalExecutiveReport,
+            executiveResult: payload.executiveResult,
+            verificationResult: payload.verificationResult,
+            executionSummary: payload.executionSummary,
           };
           setCurrentRun(finalizedRun);
 
-          // Add as a new Attention item if decision needed
-          const newAttentionItem: AttentionItem = {
-            id: `att-run-${Date.now()}`,
-            type: 'approval_required',
-            title: `Founder Decision: ${finalizedRun.title}`,
-            whatHappened: `Sophia Vance, Dr. Aris Thorne, Maya Lin, and Julian Cruz synthesized verified deliverables for "${textToRun.slice(0, 60)}...".`,
-            whyItMatters: 'Requires Founder sign-off before allocating execution capacity.',
-            recommendedAction: 'Review Executive Recommendation and ratify decision.',
-            authorAgentId: 'coo',
-            authorName: 'Sophia Vance (COO)',
-            founderActionRequired: true,
-            status: 'pending',
-            timestamp: 'Just now',
-          };
-          setAttentionItems((prev) => [newAttentionItem, ...prev]);
+          // If decision is required, add a Governance Decision and Attention item
+          const decisionDetails = payload.executiveResult?.founderDecision;
+          const decisionId = `dec-${Date.now()}`;
+          const decisionTitle = decisionDetails?.title || `Approve Strategic Initiative: ${finalizedRun.title}`;
+
+          if (decisionDetails?.required) {
+            const newDecision: CompanyDecision = {
+              id: decisionId,
+              title: decisionTitle,
+              status: 'pending_approval',
+              category: 'Strategic',
+              recommendedBy: 'Sophia Vance & Executive Council',
+              agentId: 'coo',
+              recommendation: decisionDetails.recommendation || finalizedRun.summary,
+              businessImpact: decisionDetails.impact || 'Authorizes executive workforce to proceed under Safe Mock constraints.',
+              evidenceSummary: 'Synthesized and audited across Research, Product, and Finance specialists.',
+              date: 'Today',
+              founderApprovalRequired: true,
+            };
+            setDecisions((prev) => [newDecision, ...prev]);
+
+            const newAttentionItem: AttentionItem = {
+              id: `att-run-${Date.now()}`,
+              type: 'approval_required',
+              title: `Founder Decision: ${decisionTitle}`,
+              whatHappened: `Sophia Vance, Dr. Aris Thorne, Maya Lin, and Julian Cruz synthesized verified deliverables for "${textToRun.slice(0, 60)}...".`,
+              whyItMatters: decisionDetails.why || 'Requires Founder sign-off before allocating execution capacity.',
+              recommendedAction: 'Review Executive Recommendation and ratify decision.',
+              authorAgentId: 'coo',
+              authorName: 'Sophia Vance (COO)',
+              founderActionRequired: true,
+              status: 'pending',
+              timestamp: 'Just now',
+              evidence: {
+                basis: payload.executiveResult?.evidenceAvailability?.primaryBasis || 'model_reasoning',
+                source: 'Multi-Agent Executive Council Protocol',
+                details: 'Full deliverables and verification details available in Founder HQ.',
+              },
+            };
+            setAttentionItems((prev) => [newAttentionItem, ...prev]);
+          }
 
           if (soundEnabled) playOSSound('notification');
+        } else {
+          // Handle truthful error/unconfigured response
+          clearInterval(progressInterval);
+          if (data.data) {
+            setCurrentRun(data.data);
+          }
         }
       } catch (err) {
+        clearInterval(progressInterval);
         console.error('Orchestration error:', err);
       } finally {
+        clearInterval(progressInterval);
         setIsExecuting(false);
       }
     },
@@ -413,14 +469,45 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               )}
             </div>
 
-            {/* If completed run exists: RESULT-FIRST EXECUTIVE PRESENTATION */}
-            {currentRun && currentRun.status === 'completed' && (
+            {/* If run exists (completed, unconfigured, or initial): RESULT-FIRST EXECUTIVE PRESENTATION */}
+            {currentRun && currentRun.status !== 'running' && (
               <ExecutiveResultCard
                 run={currentRun}
                 onInspectWork={() => setActiveTab('audit')}
                 onViewDeliverables={() => setActiveTab('work')}
-                onApproveDecision={() => {
-                  handleApproveDecision('dec-1');
+                onApproveDecision={(title) => {
+                  if (soundEnabled) playOSSound('notification');
+                  setDecisions((prev) =>
+                    prev.map((dec) =>
+                      dec.title === title || dec.id === 'dec-1' || dec.status === 'pending_approval'
+                        ? { ...dec, status: 'approved', founderApprovalRequired: false }
+                        : dec
+                    )
+                  );
+                  setAttentionItems((prev) =>
+                    prev.map((att) =>
+                      att.type === 'approval_required'
+                        ? { ...att, status: 'approved', founderActionRequired: false }
+                        : att
+                    )
+                  );
+                }}
+                onRejectDecision={(title) => {
+                  if (soundEnabled) playOSSound('click');
+                  setDecisions((prev) =>
+                    prev.map((dec) =>
+                      dec.title === title || dec.id === 'dec-1' || dec.status === 'pending_approval'
+                        ? { ...dec, status: 'rejected', founderApprovalRequired: false }
+                        : dec
+                    )
+                  );
+                  setAttentionItems((prev) =>
+                    prev.map((att) =>
+                      att.type === 'approval_required'
+                        ? { ...att, status: 'rejected', founderActionRequired: false }
+                        : att
+                    )
+                  );
                 }}
               />
             )}

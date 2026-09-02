@@ -230,6 +230,55 @@ export interface ExecutionPlanItem {
   provenance?: OutputProvenance;
 }
 
+export interface ParticipatingEmployee {
+  agentId: AgentRole;
+  name: string;
+  role: string;
+  department: string;
+  status: 'completed' | 'failed' | 'partial';
+  contribution: string;
+}
+
+export interface FounderDecisionDetails {
+  required: boolean;
+  title: string;
+  recommendation: string;
+  why: string;
+  impact: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedAt?: string;
+}
+
+export interface FounderExecutiveResult {
+  recommendation: string;
+  keyFindings: string[];
+  businessImplications: string[];
+  risks: string[];
+  recommendedNextActions: string[];
+  founderDecision?: FounderDecisionDetails;
+  preparedBy: {
+    name: string;
+    role: string;
+    agentId: AgentRole;
+  };
+  participatingEmployees: ParticipatingEmployee[];
+  verificationStatus: 'verified' | 'pending' | 'failed' | 'insufficient_evidence';
+  verificationDetails?: {
+    isCompliant: boolean;
+    checksPassed: string[];
+    checksFailed: string[];
+    notes: string;
+  };
+  evidenceAvailability: {
+    hasProvenance: boolean;
+    evidenceCount: number;
+    primaryBasis: EvidenceBasis;
+    deliverableIds?: string[];
+  };
+  executionOutcome: 'success' | 'partial' | 'failed' | 'unconfigured';
+  failureReason?: string;
+}
+
 export interface OrchestrationRun {
   id: string;
   directive: string;
@@ -245,6 +294,7 @@ export interface OrchestrationRun {
   messages: ExecutionMessage[];
   deliverables: ExecutionDeliverable[];
   finalExecutiveReport?: string;
+  executiveResult?: FounderExecutiveResult;
   verificationResult?: VerificationResult;
   executionSummary?: {
     totalAgentsInvoked: number;
@@ -296,7 +346,7 @@ export interface CompanyInitiative {
 export interface CompanyDecision {
   id: string;
   title: string;
-  status: 'pending_approval' | 'approved' | 'in_review' | 'resolved';
+  status: 'pending_approval' | 'approved' | 'rejected' | 'in_review' | 'resolved';
   category: 'Strategic' | 'Financial' | 'Product' | 'Governance';
   recommendedBy: string;
   agentId: AgentRole;
@@ -324,7 +374,7 @@ export interface AttentionItem {
   authorAgentId: AgentRole;
   authorName: string;
   founderActionRequired: boolean;
-  status: 'pending' | 'approved' | 'dismissed' | 'resolved';
+  status: 'pending' | 'approved' | 'rejected' | 'dismissed' | 'resolved';
   timestamp: string;
   evidence?: {
     basis: EvidenceBasis;
