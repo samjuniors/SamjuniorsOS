@@ -78,7 +78,7 @@ export interface PermissionPolicy {
 // ----------------------------------------------------------------------------
 // 4. EVIDENCE BOUNDARY
 // ----------------------------------------------------------------------------
-export type ExecutionStatus = 'success' | 'failed' | 'pending_approval' | 'denied' | 'error';
+export type ExecutionStatus = 'success' | 'failed' | 'pending_approval' | 'denied' | 'error' | 'not_executed';
 export type VerificationState = 'unverified' | 'verified_safe' | 'verification_failed';
 
 export interface ToolExecutionEvidence {

@@ -13,6 +13,59 @@ import {
 } from '@/types/os';
 import { ServerAgentExecutor } from '../agents/executor';
 import { SERVER_AGENTS } from '../agents/definitions';
+import { selectTools } from '../tools/selector';
+import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence } from '@/types/capabilities';
+
+const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
+  {
+    id: 'web_search',
+    name: 'Web Search',
+    description: 'Searches the web',
+    category: 'Research',
+    capabilities: ['web_research', 'competitor_research'],
+    inputSchema: {},
+    outputSchema: {},
+    riskLevel: 'low',
+    requiresApproval: false,
+    mutationClass: 'read',
+    availability: 'available',
+    provider: 'internal'
+  },
+  {
+    id: 'finance_transfer',
+    name: 'Finance Transfer',
+    description: 'Transfers money',
+    category: 'Finance',
+    capabilities: ['execution_monitoring'], 
+    inputSchema: {},
+    outputSchema: {},
+    riskLevel: 'high',
+    requiresApproval: true,
+    mutationClass: 'execute',
+    availability: 'available',
+    provider: 'internal'
+  },
+  {
+    id: 'github_issue_create',
+    name: 'Create GitHub Issue',
+    description: 'Creates a ticket',
+    category: 'Product',
+    capabilities: ['prd_creation'],
+    inputSchema: {},
+    outputSchema: {},
+    riskLevel: 'medium',
+    requiresApproval: true,
+    mutationClass: 'write',
+    availability: 'unconfigured',
+    provider: 'github'
+  }
+];
+
+const ORCHESTRATION_PERMISSIONS: PermissionPolicy[] = [
+  { toolId: 'web_search', effect: 'allowed' },
+  { toolId: 'finance_transfer', effect: 'allowed' },
+  { toolId: 'github_issue_create', effect: 'allowed' }
+];
 
 export interface OrchestrationRequest {
   directive: string;
@@ -138,6 +191,30 @@ Focus on:
       provenance: researcherResult.provenance,
     });
 
+    const researchContext: ToolSelectionContext = {
+      employeeRole: 'researcher',
+      taskObjective: 'Market Dynamics, Competitor Landscape & Technical Reconnaissance',
+      requiredSkills: ['web_research', 'competitor_research'],
+      availableTools: ORCHESTRATION_AVAILABLE_TOOLS,
+      permissions: ORCHESTRATION_PERMISSIONS
+    };
+    
+    const researchToolSelection = selectTools(researchContext);
+    
+    let researchToolEvidence: ToolExecutionEvidence | undefined = undefined;
+    if (researchToolSelection.selectedToolId && researcherResult.provenance) {
+      researchToolEvidence = {
+        toolId: researchToolSelection.selectedToolId,
+        toolName: ORCHESTRATION_AVAILABLE_TOOLS.find(t => t.id === researchToolSelection.selectedToolId)?.name || 'Unknown',
+        status: 'not_executed',
+        timestamp: new Date().toISOString(),
+        inputSummary: `Intent evaluated for objective: ${researchContext.taskObjective}`,
+        outputSummary: 'No external execution occurred. Tool evaluated for intent only.',
+        provenance: researcherResult.provenance,
+        verificationState: 'verified_safe',
+      };
+    }
+
     planItems.push({
       stage: 2,
       title: 'Market & Technical Reconnaissance',
@@ -146,6 +223,8 @@ Focus on:
       status: researcherResult.success ? 'done' : 'failed',
       outputSnippet: researcherResult.structuredData?.summary || 'Market dynamics and technical feasibility evaluated.',
       provenance: researcherResult.provenance,
+      toolSelection: researchToolSelection,
+      toolEvidence: researchToolEvidence,
     });
 
     planItems.push({

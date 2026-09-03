@@ -230,6 +230,8 @@ export interface ExecutionPlanItem {
   status: 'pending' | 'in_progress' | 'done' | 'failed' | 'blocked' | 'requires_approval';
   outputSnippet?: string;
   provenance?: OutputProvenance;
+  toolSelection?: import('./capabilities').ToolSelectionResult;
+  toolEvidence?: import('./capabilities').ToolExecutionEvidence;
 }
 
 export interface ParticipatingEmployee {
