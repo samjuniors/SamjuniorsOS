@@ -31,7 +31,7 @@ export interface SkillDefinition {
 // 2. TOOLS
 // ----------------------------------------------------------------------------
 export type ToolId = 
-  | 'web_search'
+  | 'web_research'
   | 'browser'
   | 'calendar_read'
   | 'calendar_create'

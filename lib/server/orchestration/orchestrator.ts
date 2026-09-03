@@ -14,11 +14,12 @@ import {
 import { ServerAgentExecutor } from '../agents/executor';
 import { SERVER_AGENTS } from '../agents/definitions';
 import { selectTools } from '../tools/selector';
+import { executeWebResearch } from '../tools/providers/web_research';
 import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence } from '@/types/capabilities';
 
 const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
   {
-    id: 'web_search',
+    id: 'web_research',
     name: 'Web Search',
     description: 'Searches the web',
     category: 'Research',
@@ -62,7 +63,7 @@ const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
 ];
 
 const ORCHESTRATION_PERMISSIONS: PermissionPolicy[] = [
-  { toolId: 'web_search', effect: 'allowed' },
+  { toolId: 'web_research', effect: 'allowed' },
   { toolId: 'finance_transfer', effect: 'allowed' },
   { toolId: 'github_issue_create', effect: 'allowed' }
 ];
@@ -203,16 +204,53 @@ Focus on:
     
     let researchToolEvidence: ToolExecutionEvidence | undefined = undefined;
     if (researchToolSelection.selectedToolId && researcherResult.provenance) {
-      researchToolEvidence = {
-        toolId: researchToolSelection.selectedToolId,
-        toolName: ORCHESTRATION_AVAILABLE_TOOLS.find(t => t.id === researchToolSelection.selectedToolId)?.name || 'Unknown',
-        status: 'not_executed',
-        timestamp: new Date().toISOString(),
-        inputSummary: `Intent evaluated for objective: ${researchContext.taskObjective}`,
-        outputSummary: 'No external execution occurred. Tool evaluated for intent only.',
-        provenance: researcherResult.provenance,
-        verificationState: 'verified_safe',
-      };
+      if (researchToolSelection.selectedToolId === 'web_research') {
+        try {
+          const searchInput = { query: `Competitor landscape and market dynamics for: ${directive}` };
+          const result = await executeWebResearch(searchInput);
+          
+          researchToolEvidence = {
+            toolId: 'web_research',
+            toolName: 'Web Research',
+            status: 'success',
+            timestamp: result.timestamp,
+            inputSummary: `Query: ${searchInput.query}`,
+            outputSummary: `Successfully retrieved ${result.sources.length} sources.`,
+            sourceReferences: result.sources.map(s => s.url),
+            provenance: researcherResult.provenance,
+            verificationState: result.sources.length > 0 ? 'verified_safe' : 'unverified'
+          };
+          
+          // Inject the real summary into the result snippet if available
+          if (result.summary && result.summary.length > 10) {
+            researcherResult.structuredData = researcherResult.structuredData || {};
+            researcherResult.structuredData.summary = result.summary.slice(0, 150) + '... (via external research)';
+          }
+        } catch (error: any) {
+          researchToolEvidence = {
+            toolId: 'web_research',
+            toolName: 'Web Research',
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            inputSummary: `Query: Competitor landscape and market dynamics for: ${directive}`,
+            outputSummary: 'Execution failed: Provider Error',
+            errorMessage: error.message || 'Execution failed',
+            provenance: researcherResult.provenance,
+            verificationState: 'verification_failed'
+          };
+        }
+      } else {
+        researchToolEvidence = {
+          toolId: researchToolSelection.selectedToolId,
+          toolName: ORCHESTRATION_AVAILABLE_TOOLS.find(t => t.id === researchToolSelection.selectedToolId)?.name || 'Unknown',
+          status: 'not_executed',
+          timestamp: new Date().toISOString(),
+          inputSummary: `Intent evaluated for objective: ${researchContext.taskObjective}`,
+          outputSummary: 'No external execution occurred. Tool evaluated for intent only.',
+          provenance: researcherResult.provenance,
+          verificationState: 'verified_safe',
+        };
+      }
     }
 
     planItems.push({

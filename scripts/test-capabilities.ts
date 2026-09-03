@@ -13,7 +13,7 @@ console.log('Running capability architecture tests...');
 // ----------------------------------------------------------------------------
 const mockTools: ToolDefinition[] = [
   {
-    id: 'web_search',
+    id: 'web_research',
     name: 'Web Search',
     description: 'Searches the web',
     category: 'Research',
@@ -59,7 +59,7 @@ const mockTools: ToolDefinition[] = [
 // Test 3, 4, 5, 6, 7: Tool selection and Permission logic
 {
   const permissions: PermissionPolicy[] = [
-    { toolId: 'web_search', effect: 'allowed' }
+    { toolId: 'web_research', effect: 'allowed' }
   ];
 
   const ctx: ToolSelectionContext = {
@@ -71,15 +71,15 @@ const mockTools: ToolDefinition[] = [
   };
 
   const res = selectTools(ctx);
-  assert.deepStrictEqual(res.candidateTools, ['web_search'], 'Candidate should be web_search based on skill');
-  assert.deepStrictEqual(res.allowedTools, ['web_search'], 'web_search is allowed');
-  assert.strictEqual(res.selectedToolId, 'web_search', 'Tool selection based on skill & allowed permission');
+  assert.deepStrictEqual(res.candidateTools, ['web_research'], 'Candidate should be web_search based on skill');
+  assert.deepStrictEqual(res.allowedTools, ['web_research'], 'web_search is allowed');
+  assert.strictEqual(res.selectedToolId, 'web_research', 'Tool selection based on skill & allowed permission');
 }
 
 // Test 4: Denied permission
 {
   const permissions: PermissionPolicy[] = [
-    { toolId: 'web_search', effect: 'denied' }
+    { toolId: 'web_research', effect: 'denied' }
   ];
   const ctx: ToolSelectionContext = {
     employeeRole: 'researcher',
@@ -90,7 +90,7 @@ const mockTools: ToolDefinition[] = [
   };
 
   const res = selectTools(ctx);
-  assert.deepStrictEqual(res.deniedTools, ['web_search'], 'web_search should be denied');
+  assert.deepStrictEqual(res.deniedTools, ['web_research'], 'web_search should be denied');
   assert.strictEqual(res.selectedToolId, undefined, 'No tool should be selected');
 }
 
@@ -123,7 +123,7 @@ const mockTools: ToolDefinition[] = [
   };
 
   const res = selectTools(ctx);
-  assert.deepStrictEqual(res.deniedTools, ['web_search'], 'Missing permission defaults to deny');
+  assert.deepStrictEqual(res.deniedTools, ['web_research'], 'Missing permission defaults to deny');
   assert.strictEqual(res.selectedToolId, undefined);
 }
 

@@ -47,20 +47,20 @@ async function runTests() {
   assert.ok(researchStage.toolSelection, 'toolSelection should be populated');
 
   // 2. A permitted tool appears in allowedTools
-  assert.ok(researchStage.toolSelection.allowedTools.includes('web_search'), 'web_search should be in allowedTools');
+  assert.ok(researchStage.toolSelection.allowedTools.includes('web_research'), 'web_search should be in allowedTools');
 
   // 3. A denied tool remains denied (We didn't define any denied tools explicitly, but unconfigured ones or unrequested might be)
   // 4. An unknown tool permission defaults to denied.
   // Wait, the orchestrator test defined web_search, finance_transfer, github_issue_create.
   // Since research only asked for web_research and competitor_research, only web_search is a candidate!
-  assert.ok(researchStage.toolSelection.candidateTools.includes('web_search'), 'web_search is a candidate');
+  assert.ok(researchStage.toolSelection.candidateTools.includes('web_research'), 'web_search is a candidate');
   assert.ok(!researchStage.toolSelection.candidateTools.includes('finance_transfer'), 'finance_transfer is NOT a candidate for researcher');
-  assert.strictEqual(researchStage.toolSelection.selectedToolId, 'web_search', 'web_search should be the selected tool');
+  assert.strictEqual(researchStage.toolSelection.selectedToolId, 'web_research', 'web_search should be the selected tool');
 
   // 9. ToolExecutionEvidence explicitly indicates NOT EXECUTED.
   assert.ok(researchStage.toolEvidence, 'toolEvidence should be populated');
   assert.strictEqual(researchStage.toolEvidence.status, 'not_executed', 'Tool execution status MUST be not_executed');
-  assert.strictEqual(researchStage.toolEvidence.toolId, 'web_search', 'Evidence toolId matches selectedToolId');
+  assert.strictEqual(researchStage.toolEvidence.toolId, 'web_research', 'Evidence toolId matches selectedToolId');
 
   // 10. No fake external execution result is generated.
   assert.ok(researchStage.toolEvidence.outputSummary?.includes('No external execution occurred'), 'Output summary MUST state no execution occurred');
