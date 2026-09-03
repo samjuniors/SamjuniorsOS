@@ -68,17 +68,16 @@ export function selectTools(context: ToolSelectionContext): ToolSelectionResult 
 
   // Enforce Employee Role constraints (Advisor cannot gain execution permissions)
   if (context.employeeRole === 'advisor') {
-     // If the selected tool performs any mutation, deny it.
-     const toolDef = context.availableTools.find(t => t.id === selectedToolId);
-     if (toolDef && toolDef.mutationClass !== 'read') {
-       if (selectedToolId) {
-         deniedTools.push(selectedToolId);
-         if (allowedTools.includes(selectedToolId)) allowedTools.splice(allowedTools.indexOf(selectedToolId), 1);
-         if (approvalRequiredTools.includes(selectedToolId)) approvalRequiredTools.splice(approvalRequiredTools.indexOf(selectedToolId), 1);
-       }
-       selectedToolId = undefined;
-       selectionReason = 'Advisor cannot execute mutation tools.';
-     }
+    // Advisor has no external tool execution authority. It may reason over evidence but cannot execute tools.
+    for (const toolId of [...allowedTools, ...approvalRequiredTools]) {
+      if (!deniedTools.includes(toolId)) {
+        deniedTools.push(toolId);
+      }
+    }
+    allowedTools.length = 0;
+    approvalRequiredTools.length = 0;
+    selectedToolId = undefined;
+    selectionReason = 'Advisor role has no external tool execution authority. Advisor may reason over evidence but cannot execute tools.';
   }
 
   return {

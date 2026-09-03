@@ -32,7 +32,37 @@ export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
 /**
  * Server-Side Single Source of Truth for Company Context
  */
+let serverRecentIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
+let serverEngineeringIntelligence: CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined = undefined;
+
 export class CompanyContextProvider {
+  /**
+   * Records a new research intelligence topic into server state
+   */
+  public static recordIntelligence(topic: ResearchTopic): void {
+    // Deduplicate by ID or title
+    serverRecentIntelligence = [
+      topic,
+      ...serverRecentIntelligence.filter(t => t.id !== topic.id && t.title !== topic.title)
+    ].slice(0, 15);
+  }
+
+  /**
+   * Records engineering/repository reconnaissance into server state
+   */
+  public static recordEngineeringIntelligence(intel: NonNullable<CompanyExecutiveContextSnapshot['engineeringIntelligence']>): void {
+    serverEngineeringIntelligence = intel;
+  }
+
+  public static getEngineeringIntelligence(): CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined {
+    return serverEngineeringIntelligence;
+  }
+
+  public static resetServerIntelligence(): void {
+    serverRecentIntelligence = [...INITIAL_RESEARCH];
+    serverEngineeringIntelligence = undefined;
+  }
+
   /**
    * Returns the canonical company context initialized on the server
    */
@@ -58,9 +88,10 @@ export class CompanyContextProvider {
       decisions: INITIAL_COMPANY_DECISIONS,
       attentionItems: INITIAL_ATTENTION_ITEMS,
       agents: INITIAL_AGENTS,
-      recentIntelligence: INITIAL_RESEARCH,
+      recentIntelligence: [...serverRecentIntelligence],
       financialModel: SAMPLE_FINANCIAL_MODEL,
       orchestrationHistory: [INITIAL_ORCHESTRATION],
+      engineeringIntelligence: serverEngineeringIntelligence,
       lastUpdated: new Date().toISOString(),
     };
   }
@@ -83,6 +114,7 @@ export class CompanyContextProvider {
       recentIntelligence: clientSnapshot.recentIntelligence && clientSnapshot.recentIntelligence.length > 0 ? clientSnapshot.recentIntelligence : canonical.recentIntelligence,
       financialModel: clientSnapshot.financialModel ? clientSnapshot.financialModel : canonical.financialModel,
       orchestrationHistory: clientSnapshot.orchestrationHistory && clientSnapshot.orchestrationHistory.length > 0 ? clientSnapshot.orchestrationHistory : canonical.orchestrationHistory,
+      engineeringIntelligence: clientSnapshot.engineeringIntelligence || canonical.engineeringIntelligence,
       lastUpdated: clientSnapshot.lastUpdated || canonical.lastUpdated,
     };
   }
@@ -203,6 +235,34 @@ export class CompanyContextProvider {
     });
     lines.push('');
 
+    if (context.engineeringIntelligence) {
+      const eng = context.engineeringIntelligence;
+      lines.push('=== ENGINEERING & REPOSITORY INTELLIGENCE (GROUNDED EVIDENCE) ===');
+      lines.push(`Target Repository: ${eng.repositoryTarget}`);
+      lines.push(`Reconnaissance Timestamp: ${eng.lastReconTimestamp}`);
+      lines.push(`Status: ${eng.status}`);
+      lines.push(`Summary: ${eng.findingsSummary}`);
+
+      const claims = eng.evidence?.claims || [];
+      const facts = claims.filter((c: any) => c.verificationState === 'claim_supported').map((c: any) => c.statement);
+      const inferences = claims.filter((c: any) => c.verificationState === 'unverified').map((c: any) => c.statement);
+      const uncertainties = eng.evidence?.limitations || eng.evidence?.uncertainties || [];
+
+      if (facts.length > 0) {
+        lines.push('Empirical Grounded Facts:');
+        facts.forEach((f: string) => lines.push(`  - ${f}`));
+      }
+      if (inferences.length > 0) {
+        lines.push('Specialist Inferences:');
+        inferences.forEach((inf: string) => lines.push(`  - ${inf}`));
+      }
+      if (uncertainties.length > 0) {
+        lines.push('Known Uncertainties & Bounds:');
+        uncertainties.forEach((unc: string) => lines.push(`  - ${unc}`));
+      }
+      lines.push('');
+    }
+
     lines.push('=== RECENT COUNCIL ORCHESTRATIONS & DELIVERABLES ===');
     context.orchestrationHistory.forEach((run) => {
       lines.push(`Run [${run.id}] Directive: "${run.directive}" | Status: ${run.status}`);
@@ -269,6 +329,11 @@ export class CompanyContextProvider {
         .forEach((init) => {
           lines.push(`  - "${init.title}": ${init.currentObjective}`);
         });
+      if (context.engineeringIntelligence) {
+        lines.push('Active Engineering & Repository Intelligence:');
+        lines.push(`  - Target: ${context.engineeringIntelligence.repositoryTarget} | Status: ${context.engineeringIntelligence.status}`);
+        lines.push(`  - Findings: ${context.engineeringIntelligence.findingsSummary}`);
+      }
       lines.push('Scope Guardrails: No access to internal financial ledgers or unredacted system keys; empirical analysis only.');
       return lines.join('\n');
     }

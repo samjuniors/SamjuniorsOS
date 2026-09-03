@@ -1,14 +1,14 @@
 'use client';
 
-import { CompanyDecision, AttentionItem } from '@/types/os';
-import { INITIAL_COMPANY_DECISIONS, INITIAL_ATTENTION_ITEMS } from '@/lib/os-data';
+import { CompanyDecision, AttentionItem, ResearchTopic } from '@/types/os';
+import { INITIAL_COMPANY_DECISIONS, INITIAL_ATTENTION_ITEMS, INITIAL_RESEARCH } from '@/lib/os-data';
 import { dispatchOSNotification } from '@/components/os/IconHelper';
 
 export type GovernanceActionType = 'approve' | 'reject' | 'request_revision';
 
 export interface GovernanceEventDetail {
-  action: GovernanceActionType;
-  entityType: 'decision' | 'attention_item';
+  action: GovernanceActionType | 'create';
+  entityType: 'decision' | 'attention_item' | 'intelligence';
   entityId: string;
   revisionNote?: string;
   resolvedBy?: string;
@@ -17,11 +17,13 @@ export interface GovernanceEventDetail {
 export interface GovernanceState {
   decisions: CompanyDecision[];
   attentionItems: AttentionItem[];
+  intelligence: ResearchTopic[];
 }
 
 // In-memory canonical cache for the active browser session
 let cachedDecisions: CompanyDecision[] = [...INITIAL_COMPANY_DECISIONS];
 let cachedAttentionItems: AttentionItem[] = [...INITIAL_ATTENTION_ITEMS];
+let cachedIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
 
 const listeners = new Set<() => void>();
 
@@ -42,6 +44,10 @@ export const GovernanceStore = {
 
   getAttentionItems(): AttentionItem[] {
     return [...cachedAttentionItems];
+  },
+
+  getIntelligence(): ResearchTopic[] {
+    return [...cachedIntelligence];
   },
 
   getPendingDecisionsCount(): number {
@@ -98,6 +104,27 @@ export const GovernanceStore = {
       message: `${item.title}`,
       type: 'system',
       agent: 'Company HQ'
+    });
+  },
+
+  /**
+   * Add a new research intelligence item to Company HQ
+   */
+  addIntelligence(topic: ResearchTopic): void {
+    if (cachedIntelligence.some((t) => t.id === topic.id || t.title === topic.title)) return;
+    cachedIntelligence = [topic, ...cachedIntelligence];
+    notifyListeners();
+    this.broadcastEvent({
+      action: 'create',
+      entityType: 'intelligence',
+      entityId: topic.id,
+    });
+
+    dispatchOSNotification({
+      title: 'Company Intelligence Synthesized',
+      message: `${topic.title}`,
+      type: 'agent',
+      agent: topic.author || 'Dr. Aris Thorne'
     });
   },
 

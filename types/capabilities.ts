@@ -7,6 +7,8 @@ export type SkillId =
   | 'web_research'
   | 'competitor_research'
   | 'market_research'
+  | 'software_repository_research'
+  | 'repository_research'
   | 'source_comparison'
   | 'evidence_synthesis'
   | 'prd_creation'
@@ -38,6 +40,8 @@ export type ToolId =
   | 'drive_read'
   | 'drive_create'
   | 'github_read'
+  | 'github_repository_read'
+  | 'github_issues_read'
   | 'github_issue_create'
   | 'gmail_read'
   | 'gmail_draft'
@@ -76,10 +80,57 @@ export interface PermissionPolicy {
 }
 
 // ----------------------------------------------------------------------------
-// 4. EVIDENCE BOUNDARY
+// 4. EVIDENCE & VERIFICATION BOUNDARY (Phase 11.4 Hardened)
 // ----------------------------------------------------------------------------
-export type ExecutionStatus = 'success' | 'failed' | 'pending_approval' | 'denied' | 'error' | 'not_executed';
-export type VerificationState = 'unverified' | 'verified_safe' | 'verification_failed';
+export type ExecutionStatus = 
+  | 'success' 
+  | 'failed' 
+  | 'pending_approval' 
+  | 'denied' 
+  | 'error' 
+  | 'not_executed'
+  | 'partial'
+  | 'no_results';
+
+export type VerificationState = 
+  | 'unverified' 
+  | 'verified_safe' 
+  | 'source_retrieved'
+  | 'evidence_extracted'
+  | 'claim_supported'
+  | 'verification_incomplete'
+  | 'verified'
+  | 'verification_failed'
+  | 'conflicting';
+
+export type SourceStatus = 'retrieved' | 'extracted' | 'invalid' | 'unreachable';
+
+export interface ResearchSource {
+  title: string;
+  url: string;
+  provider?: string;
+  retrievalTimestamp?: string;
+  excerpt?: string;
+  status?: SourceStatus;
+}
+
+export type ClaimVerificationState = 
+  | 'claim_supported'
+  | 'verification_incomplete'
+  | 'conflicting'
+  | 'unverified'
+  | 'verification_failed';
+
+export interface ResearchClaim {
+  id: string;
+  statement: string;
+  supportingSourceUrls: string[];
+  evidenceExcerpt?: string;
+  verificationState: ClaimVerificationState;
+  confidence?: 'high' | 'medium' | 'low';
+  notes?: string;
+  conflictDetected?: boolean;
+}
 
 export interface ToolExecutionEvidence {
   toolId: ToolId;
@@ -88,10 +139,15 @@ export interface ToolExecutionEvidence {
   timestamp: string;
   inputSummary: string;
   outputSummary?: string;
+  data?: any;
   sourceReferences?: string[];
+  sources?: ResearchSource[];
+  claims?: ResearchClaim[];
   provenance: OutputProvenance;
   verificationState: VerificationState;
+  executionSafetyState?: 'verified_safe' | 'unverified' | 'safety_violation';
   errorMessage?: string;
+  limitations?: string[];
 }
 
 // ----------------------------------------------------------------------------
@@ -112,4 +168,39 @@ export interface ToolSelectionResult {
   approvalRequiredTools: ToolId[];
   selectedToolId?: ToolId;
   reason: string;
+}
+
+// ----------------------------------------------------------------------------
+// 6. EXTERNAL PROVIDER & COMPOSIO BOUNDARY (Phase 11.5)
+// ----------------------------------------------------------------------------
+export type ProviderConfigStatus = 'configured' | 'unconfigured' | 'error';
+
+export interface ComposioToolMapping {
+  toolId: ToolId;
+  toolkit: string;
+  action: string;
+  description?: string;
+}
+
+export interface ComposioSessionScope {
+  userId: string;
+  employeeRole?: AgentRole | 'advisor';
+  permittedToolIds: ToolId[];
+  connectedAccountId?: string;
+}
+
+export interface ExternalExecutionRequest {
+  toolId: ToolId;
+  input: Record<string, any>;
+  sessionScope: ComposioSessionScope;
+  provenance: OutputProvenance;
+}
+
+export interface ExternalToolProvider {
+  providerId: string;
+  name: string;
+  getStatus(): ProviderConfigStatus;
+  isAvailable(): boolean;
+  createSession?(scope: ComposioSessionScope): Promise<any>;
+  executeTool(request: ExternalExecutionRequest): Promise<ToolExecutionEvidence>;
 }

@@ -13,6 +13,7 @@ import {
   CompanyInitiative,
   CompanyDecision,
   AdvisorTargetContext,
+  ResearchTopic,
 } from '@/types/os';
 import {
   INITIAL_AGENTS,
@@ -85,6 +86,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>(() => GovernanceStore.getAttentionItems());
   const [initiatives, setInitiatives] = useState<CompanyInitiative[]>(INITIAL_INITIATIVES);
   const [decisions, setDecisions] = useState<CompanyDecision[]>(() => GovernanceStore.getDecisions());
+  const [intelligence, setIntelligence] = useState<ResearchTopic[]>(() => GovernanceStore.getIntelligence());
   const [selectedDeliverableDoc, setSelectedDeliverableDoc] = useState<ExecutionDeliverable | undefined>(undefined);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
@@ -94,6 +96,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
     const unsubscribe = GovernanceStore.subscribe(() => {
       setDecisions(GovernanceStore.getDecisions());
       setAttentionItems(GovernanceStore.getAttentionItems());
+      setIntelligence(GovernanceStore.getIntelligence());
     });
 
     const handleGovernanceEvent = (event: Event) => {
@@ -101,6 +104,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
       if (!customEvent.detail) return;
       setDecisions(GovernanceStore.getDecisions());
       setAttentionItems(GovernanceStore.getAttentionItems());
+      setIntelligence(GovernanceStore.getIntelligence());
     };
 
     window.addEventListener('samjuniors-governance-updated', handleGovernanceEvent);
@@ -308,6 +312,46 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               },
             };
             GovernanceStore.addAttentionItem(newAttentionItem);
+          }
+
+          // If GitHub repository intelligence was produced, sync to intelligence store
+          const repoBrief = finalizedRun.deliverables.find(
+            (d) => d.name === 'Repository Intelligence & Technical Reconnaissance Brief'
+          );
+          if (repoBrief) {
+            const researcherPlan = finalizedRun.plan.find(
+              (p) => p.agentId === 'researcher' && p.toolEvidence
+            );
+            const toolEvidence = researcherPlan?.toolEvidence;
+            const targetName = (toolEvidence?.data?.fullName as string) || textToRun.slice(0, 35);
+            GovernanceStore.addIntelligence({
+              id: `intel-repo-${Date.now()}`,
+              title: `Repository Intelligence: ${targetName}`,
+              category: 'Engineering',
+              confidence: 98,
+              impact: 'High',
+              date: 'Today',
+              author: 'Dr. Aris Thorne (Lead Researcher)',
+              summary:
+                toolEvidence?.outputSummary ||
+                'Empirically grounded repository reconnaissance synthesized via Composio read-only integration.',
+              tags: ['GitHub', 'Engineering', 'Repository Recon'],
+              evidence: {
+                basis: 'external_evidence',
+                repositoryTarget: targetName,
+                facts: toolEvidence?.claims
+                  ?.filter((c) => c.verificationState === 'claim_supported')
+                  .map((c) => c.statement),
+                inferences: toolEvidence?.claims
+                  ?.filter((c) => c.verificationState === 'unverified')
+                  .map((c) => c.statement),
+                uncertainties: toolEvidence?.limitations,
+                claims: toolEvidence?.claims,
+                sources: toolEvidence?.sources,
+                limitations: toolEvidence?.limitations,
+                status: 'verified',
+              },
+            });
           }
 
           dispatchOSNotification({
@@ -617,7 +661,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
             />
 
             {/* SECTION C: RECENT INTELLIGENCE */}
-            <RecentIntelligenceSection researchTopics={INITIAL_RESEARCH} onAskAdvisor={onAskAdvisor} />
+            <RecentIntelligenceSection researchTopics={intelligence} onAskAdvisor={onAskAdvisor} />
 
             {/* SECTION D: ACTIVE COMPANY INITIATIVES */}
             <ActiveInitiativesSection

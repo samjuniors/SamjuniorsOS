@@ -14,6 +14,15 @@ interface EvidenceModalProps {
   sourceText?: string;
   evidenceBasis?: string;
   details?: string;
+  evidenceData?: {
+    facts?: string[];
+    inferences?: string[];
+    uncertainties?: string[];
+    sources?: Array<{ title?: string; url?: string; excerpt?: string }>;
+    claims?: Array<{ statement?: string; verificationState?: string }>;
+    limitations?: string[];
+    repositoryTarget?: string;
+  };
 }
 
 export const EvidenceModal: React.FC<EvidenceModalProps> = ({
@@ -25,6 +34,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   sourceText,
   evidenceBasis,
   details,
+  evidenceData,
 }) => {
   if (!isOpen) return null;
 
@@ -127,6 +137,91 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Epistemic Separation: Facts vs Inferences vs Uncertainties */}
+            {evidenceData && (
+              <div className="space-y-3">
+                {evidenceData.facts && evidenceData.facts.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Grounded Empirical Facts (Retrieved via Source API)
+                    </span>
+                    <ul className="space-y-1.5">
+                      {evidenceData.facts.map((fact, idx) => (
+                        <li key={idx} className="text-[11px] text-slate-200 flex items-start gap-1.5">
+                          <span className="text-emerald-400 font-mono select-none">•</span>
+                          <span>{fact}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {evidenceData.inferences && evidenceData.inferences.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-500/30 space-y-2">
+                    <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5" />
+                      Specialist Technical Inferences (Dr. Aris Thorne)
+                    </span>
+                    <ul className="space-y-1.5">
+                      {evidenceData.inferences.map((inf, idx) => (
+                        <li key={idx} className="text-[11px] text-slate-200 flex items-start gap-1.5">
+                          <span className="text-amber-400 font-mono select-none">•</span>
+                          <span>{inf}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[10px] text-amber-300/80 italic pt-1 border-t border-amber-500/20">
+                      * Inferences represent specialist analytical deductions and are strictly distinguished from external facts.
+                    </p>
+                  </div>
+                )}
+
+                {evidenceData.uncertainties && evidenceData.uncertainties.length > 0 && (
+                  <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700 space-y-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />
+                      Known Uncertainties & Capability Boundaries
+                    </span>
+                    <ul className="space-y-1.5">
+                      {evidenceData.uncertainties.map((unc, idx) => (
+                        <li key={idx} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                          <span className="text-slate-500 font-mono select-none">•</span>
+                          <span>{unc}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {evidenceData.sources && evidenceData.sources.length > 0 && (
+                  <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Verified Provenance & Sources
+                    </span>
+                    <div className="space-y-1 font-mono text-[11px]">
+                      {evidenceData.sources.map((src, idx) => (
+                        <div key={idx} className="flex items-center justify-between py-0.5">
+                          <span className="text-slate-300 truncate max-w-xs">{src.title || 'Source'}</span>
+                          {src.url && (
+                            <a
+                              href={src.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 text-[10px]"
+                            >
+                              <span>Inspect Source</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {sourceText && (
               <div className="p-3 rounded-xl bg-black/60 border border-white/10 space-y-1">

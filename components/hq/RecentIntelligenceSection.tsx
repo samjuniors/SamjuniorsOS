@@ -102,7 +102,8 @@ export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ r
           title={selectedTopic.title}
           evidenceBasis="external_evidence"
           sourceText={selectedTopic.summary}
-          details={`Synthesized by ${selectedTopic.author} based on continuous market monitoring and empirical competitor benchmarks. Tags: ${selectedTopic.tags.join(', ')}.`}
+          details={`Synthesized by ${selectedTopic.author} based on continuous empirical monitoring. Tags: ${selectedTopic.tags.join(', ')}.`}
+          evidenceData={selectedTopic.evidence}
         />
       )}
     </div>

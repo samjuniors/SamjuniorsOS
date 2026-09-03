@@ -354,9 +354,26 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
           `Company state includes ${context.initiatives.length} initiatives and ${context.agents.length} executive specialists.`,
           `Runway is verified at ${context.financialModel.runwayMonths} months with a ${context.financialModel.grossMargin}% gross margin floor.`,
           `Safe Mock Sandboxing is active across all agent tools.`,
+          ...(context.engineeringIntelligence
+            ? [
+                `Engineering intelligence recorded for repository: ${context.engineeringIntelligence.repositoryTarget}.`,
+                ...(context.engineeringIntelligence.evidence?.claims
+                  ?.filter((c: any) => c.verificationState === 'claim_supported')
+                  .map((c: any) => c.statement) ||
+                  context.engineeringIntelligence.evidence?.facts ||
+                  []).slice(0, 3),
+              ]
+            : []),
         ],
         inferences: [
           `Pending governance items (${pendingDecisionsCount}) represent the primary gating factor for company execution velocity.`,
+          ...(context.engineeringIntelligence
+            ? (context.engineeringIntelligence.evidence?.claims
+                ?.filter((c: any) => c.verificationState === 'unverified')
+                .map((c: any) => c.statement) ||
+                context.engineeringIntelligence.evidence?.inferences ||
+                []).slice(0, 2)
+            : []),
         ],
         recommendations: [
           `Configure GEMINI_API_KEY on the server for full generative analysis.`,

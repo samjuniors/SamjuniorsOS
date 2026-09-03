@@ -463,13 +463,24 @@ export interface ProductFeature {
 export interface ResearchTopic {
   id: string;
   title: string;
-  category: 'Model Tech' | 'Market Intel' | 'Competitor Threat' | 'Regulatory';
+  category: 'Model Tech' | 'Market Intel' | 'Competitor Threat' | 'Regulatory' | 'Engineering' | 'Repository Recon' | string;
   confidence: number;
   impact: 'Transformative' | 'High' | 'Moderate';
   date: string;
   author: string;
   summary: string;
   tags: string[];
+  evidence?: {
+    basis?: EvidenceBasis;
+    repositoryTarget?: string;
+    facts?: string[];
+    inferences?: string[];
+    uncertainties?: string[];
+    claims?: any[];
+    sources?: any[];
+    limitations?: string[];
+    status?: string;
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -593,6 +604,13 @@ export interface CompanyExecutiveContextSnapshot {
   recentIntelligence: ResearchTopic[];
   financialModel: FinanceMetric;
   orchestrationHistory: OrchestrationRun[];
+  engineeringIntelligence?: {
+    repositoryTarget: string;
+    lastReconTimestamp: string;
+    status: string;
+    findingsSummary: string;
+    evidence?: any;
+  };
   lastUpdated: string;
 }
 
