@@ -22,6 +22,7 @@ import {
 } from '../tools/definitions/github';
 import { executeGitHubRepositoryRead, executeGitHubIntelligence } from '../tools/providers/github';
 import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence } from '@/types/capabilities';
+import { determineSkillForTask } from '@/lib/skills/skill-registry';
 
 const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
   {
@@ -116,7 +117,8 @@ export class MultiAgentOrchestrator {
       text: string,
       type: 'status' | 'finding' | 'critique' | 'artifact' | 'approval_request',
       protocolStep: AgentWorkProtocolStep,
-      provenance?: OutputProvenance
+      provenance?: OutputProvenance,
+      retrievedContext?: import('@/types/context').TaskRetrievedContextBundle
     ) => {
       messages.push({
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -126,6 +128,7 @@ export class MultiAgentOrchestrator {
         type,
         protocolStep,
         provenance,
+        retrievedContext,
       });
     };
 
@@ -154,8 +157,15 @@ Define:
       cooUnderstandResult.statusMessage,
       'status',
       'understand',
-      cooUnderstandResult.provenance
+      cooUnderstandResult.provenance,
+      cooUnderstandResult.retrievedContext
     );
+
+    const cooUnderstandSkill = determineSkillForTask({
+      title: 'Directive Ingestion & Scope Boundary Definition',
+      protocolStep: 'understand',
+      directive,
+    }, 'coo');
 
     planItems.push({
       stage: 1,
@@ -165,6 +175,8 @@ Define:
       status: cooUnderstandResult.success ? 'done' : 'failed',
       outputSnippet: cooUnderstandResult.structuredData?.summary || 'Scope, constraints, and KPIs defined.',
       provenance: cooUnderstandResult.provenance,
+      selectedSkill: cooUnderstandSkill.selectedSkill,
+      retrievedContext: cooUnderstandResult.retrievedContext,
     });
 
     // ==========================================
@@ -195,7 +207,8 @@ Focus on:
       researcherResult.statusMessage,
       'finding',
       'research',
-      researcherResult.provenance
+      researcherResult.provenance,
+      researcherResult.retrievedContext
     );
 
     deliverables.push({
@@ -369,6 +382,12 @@ Focus on:
       }
     }
 
+    const researchSkillResult = determineSkillForTask({
+      title: isGithubDirective ? 'Software Architecture, Repository Intelligence & Technical Reconnaissance' : 'Market Dynamics, Competitor Landscape & Technical Reconnaissance',
+      protocolStep: 'research',
+      directive,
+    }, 'researcher');
+
     planItems.push({
       stage: 2,
       title: 'Market & Technical Reconnaissance',
@@ -379,6 +398,8 @@ Focus on:
       provenance: researcherResult.provenance,
       toolSelection: researchToolSelection,
       toolEvidence: researchToolEvidence,
+      selectedSkill: researchSkillResult.selectedSkill,
+      retrievedContext: researcherResult.retrievedContext,
     });
 
     planItems.push({
@@ -389,11 +410,18 @@ Focus on:
       status: 'done',
       outputSnippet: 'Risk bounds and architectural trade-offs mapped.',
       provenance: researcherResult.provenance,
+      selectedSkill: researchSkillResult.selectedSkill,
     });
 
     // ==========================================
     // STAGE 3: INTER-AGENT PLANNING (Sophia Vance)
     // ==========================================
+    const cooPlanSkill = determineSkillForTask({
+      title: 'Inter-Agent Delegation & Context Handoff',
+      protocolStep: 'plan',
+      directive,
+    }, 'coo');
+
     planItems.push({
       stage: 4,
       title: 'Inter-Agent Delegation & Context Handoff',
@@ -401,6 +429,7 @@ Focus on:
       protocolStep: 'plan',
       status: 'done',
       outputSnippet: 'Routed research intelligence to Product and Finance specialists.',
+      selectedSkill: cooPlanSkill.selectedSkill,
     });
 
     addMessage(
@@ -442,7 +471,8 @@ Include:
       pmResult.statusMessage,
       'artifact',
       'build_execute',
-      pmResult.provenance
+      pmResult.provenance,
+      pmResult.retrievedContext
     );
 
     deliverables.push({
@@ -453,6 +483,12 @@ Include:
       provenance: pmResult.provenance,
     });
 
+    const pmSkillResult = determineSkillForTask({
+      title: 'Product Requirements Document (PRD) & Workflow Specification',
+      protocolStep: 'build_execute',
+      directive,
+    }, 'pm');
+
     planItems.push({
       stage: 5,
       title: 'Product Architecture & PRD Authoring',
@@ -461,6 +497,8 @@ Include:
       status: pmResult.success ? 'done' : 'failed',
       outputSnippet: pmResult.structuredData?.summary || 'PRD, user flows, and functional specifications drafted.',
       provenance: pmResult.provenance,
+      selectedSkill: pmSkillResult.selectedSkill,
+      retrievedContext: pmResult.retrievedContext,
     });
 
     // ==========================================
@@ -494,7 +532,8 @@ Include:
       financeResult.statusMessage,
       'critique',
       'test',
-      financeResult.provenance
+      financeResult.provenance,
+      financeResult.retrievedContext
     );
 
     deliverables.push({
@@ -505,6 +544,12 @@ Include:
       provenance: financeResult.provenance,
     });
 
+    const financeSkillResult = determineSkillForTask({
+      title: 'Unit Economics, Compute Cost & Financial Sustainability Analysis',
+      protocolStep: 'test',
+      directive,
+    }, 'finance');
+
     planItems.push({
       stage: 6,
       title: 'Unit Economics & Compute Stress-Test',
@@ -513,6 +558,8 @@ Include:
       status: financeResult.success ? 'done' : 'failed',
       outputSnippet: financeResult.structuredData?.summary || 'Compute economics and margin sensitivity modeled.',
       provenance: financeResult.provenance,
+      selectedSkill: financeSkillResult.selectedSkill,
+      retrievedContext: financeResult.retrievedContext,
     });
 
     // ==========================================
@@ -542,6 +589,12 @@ Include:
       'verify'
     );
 
+    const cooVerifySkill = determineSkillForTask({
+      title: 'Constitutional Compliance Verification',
+      protocolStep: 'verify',
+      directive,
+    }, 'coo');
+
     planItems.push({
       stage: 7,
       title: 'Constitutional Compliance Verification',
@@ -549,6 +602,7 @@ Include:
       protocolStep: 'verify',
       status: 'done',
       outputSnippet: 'System security invariants and Safe Mock boundaries verified.',
+      selectedSkill: cooVerifySkill.selectedSkill,
     });
 
     // ==========================================
@@ -561,6 +615,7 @@ Include:
       protocolStep: 'review',
       status: 'done',
       outputSnippet: 'Cross-functional consensus achieved across Operations, Research, Product, and Finance.',
+      selectedSkill: cooVerifySkill.selectedSkill,
     });
 
     addMessage(
@@ -625,6 +680,12 @@ Actionable steps in phased order.`
       provenance: cooReportResult.provenance,
     });
 
+    const cooReportSkill = determineSkillForTask({
+      title: 'Comprehensive Final Executive Report & Deliverable Synthesis',
+      protocolStep: 'report',
+      directive,
+    }, 'coo');
+
     planItems.push({
       stage: 9,
       title: 'Final Executive Report Synthesis',
@@ -633,6 +694,7 @@ Actionable steps in phased order.`
       status: cooReportResult.success ? 'done' : 'failed',
       outputSnippet: 'Executive synthesis compiled and archived into SamJuniors OS Vault.',
       provenance: cooReportResult.provenance,
+      selectedSkill: cooReportSkill.selectedSkill,
     });
 
     const shortTitle = directive.length > 50 ? directive.slice(0, 48) + '...' : directive;

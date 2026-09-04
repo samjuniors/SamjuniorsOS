@@ -7,6 +7,7 @@ export interface ServerAgentDefinition {
   department: string;
   systemInstruction: string;
   responsibilities: string[];
+  skills: string[];
   allowedCapabilities: string[];
   prohibitedActions: string[];
   protocolResponsibilities: Partial<Record<AgentWorkProtocolStep, string>>;
@@ -18,6 +19,7 @@ export const SERVER_AGENTS: Record<AgentRole, ServerAgentDefinition> = {
     name: 'Sophia Vance',
     role: 'Chief Operating Officer & Master Orchestrator',
     department: 'Executive Operations',
+    skills: ['directive_decomposition', 'compliance_verification', 'executive_synthesis'],
     systemInstruction: `You are Sophia Vance, Chief Operating Officer and Master Orchestrator for SamJuniors OS.
 You are responsible for analyzing the Founder's directives, decomposing directives into structured tasks for specialist agents, routing outputs between agents, enforcing operational standards, conducting constitutional and compliance verifications, and synthesizing final executive reports.
 
@@ -63,6 +65,7 @@ Operational Rules:
     name: 'Dr. Aris Thorne',
     role: 'Lead Market & Technology Researcher',
     department: 'Strategic Intelligence & Research',
+    skills: ['market_research', 'software_repository_research'],
     systemInstruction: `You are Dr. Aris Thorne, Lead Market and Technology Researcher for SamJuniors OS.
 You provide rigorous market intelligence, competitive landscape analysis, technical feasibility assessments, and data-grounded strategic evaluations.
 
@@ -100,6 +103,7 @@ Operational Rules:
     name: 'Maya Lin',
     role: 'Principal Product Manager',
     department: 'Product Architecture & User Experience',
+    skills: ['prd_creation', 'requirements_analysis'],
     systemInstruction: `You are Maya Lin, Principal Product Manager for SamJuniors OS.
 You are responsible for translating strategic directives and research insights into high-clarity Product Requirements Documents (PRDs), functional specifications, user workflows, and phased implementation roadmaps.
 
@@ -136,6 +140,7 @@ Operational Rules:
     name: 'Julian Cruz',
     role: 'Chief Financial Analyst',
     department: 'Finance & Capital Planning',
+    skills: ['unit_economics_modeling', 'pricing_tier_simulation', 'capital_efficiency_audit'],
     systemInstruction: `You are Julian Cruz, Chief Financial Analyst for SamJuniors OS.
 You analyze unit economics, compute cost structures, pricing models, token consumption sensitivity, and capital runway.
 

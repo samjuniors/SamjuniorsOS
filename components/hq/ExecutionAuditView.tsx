@@ -13,9 +13,16 @@ import {
   ChevronDown,
   ChevronUp,
   Terminal,
+  BookOpen,
+  Lock,
 } from 'lucide-react';
 import { OrchestrationRun, AIAgent } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
+import { STRUCTURED_SKILLS, determineSkillForTask } from '@/lib/skills/skill-registry';
+import { StructuredSkillDefinition } from '@/types/capabilities';
+import { SkillInspectionModal } from './SkillInspectionModal';
+import { ContextInspectionModal } from './ContextInspectionModal';
+import { TaskRetrievedContextBundle } from '@/types/context';
 
 interface ExecutionAuditViewProps {
   run: OrchestrationRun;
@@ -25,11 +32,23 @@ interface ExecutionAuditViewProps {
 export const ExecutionAuditView: React.FC<ExecutionAuditViewProps> = ({ run, agents }) => {
   const [selectedProtocolFilter, setSelectedProtocolFilter] = useState<string>('all');
   const [selectedMessageEvidence, setSelectedMessageEvidence] = useState<any>(null);
+  const [inspectedSkill, setInspectedSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
+  const [inspectedContext, setInspectedContext] = useState<{ bundle: TaskRetrievedContextBundle; title: string; role?: string } | null>(null);
 
   const filteredMessages = run.messages.filter((m) => {
     if (selectedProtocolFilter === 'all') return true;
     return m.protocolStep === selectedProtocolFilter;
   });
+
+  // Find all retrieved context bundles from plan items and messages
+  const planContexts = run.plan
+    .filter((p) => Boolean(p.retrievedContext))
+    .map((p) => ({ bundle: p.retrievedContext!, title: p.title, role: p.agentId }));
+  const messageContexts = run.messages
+    .filter((m) => Boolean(m.retrievedContext))
+    .map((m) => ({ bundle: m.retrievedContext!, title: `Message Step: ${m.protocolStep}`, role: m.sender }));
+  const allContexts = [...planContexts, ...messageContexts];
+  const primaryContextBundle = allContexts[allContexts.length - 1]?.bundle;
 
   return (
     <div className="space-y-4">
@@ -84,6 +103,183 @@ export const ExecutionAuditView: React.FC<ExecutionAuditViewProps> = ({ run, age
                 <div className="text-[8px] opacity-75 mt-0.5 truncate">
                   {step.agentId}
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Persistent Context & Epistemic Separation Audit */}
+      <div id="persistent-context-audit-panel" className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
+          <div className="flex items-center space-x-2">
+            <Database className="w-4 h-4 text-emerald-400" />
+            <div>
+              <span className="text-xs font-bold text-white">Company Knowledge & Persistent Context Separation</span>
+              <p className="text-[11px] text-slate-400">
+                Epistemic Separation: Current State &gt; Durable Knowledge &gt; Historical Memory
+              </p>
+            </div>
+          </div>
+
+          {primaryContextBundle ? (
+            <button
+              onClick={() =>
+                setInspectedContext({
+                  bundle: primaryContextBundle,
+                  title: 'Task Primary Context Bundle',
+                  role: allContexts[allContexts.length - 1]?.role,
+                })
+              }
+              className="px-3 py-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-all self-start sm:self-auto"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>
+                Inspect Context Separation (
+                {(primaryContextBundle.retrievedState?.totalCount ?? 0) +
+                  (primaryContextBundle.retrievedKnowledge?.totalCount ?? 0) +
+                  (primaryContextBundle.retrievedMemory?.totalCount ?? 0)}{' '}
+                Items)
+              </span>
+            </button>
+          ) : (
+            <span className="text-[11px] font-mono text-slate-500 bg-black/30 px-2.5 py-1 rounded border border-white/5">
+              3-Store Architecture Active
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Store 1: State */}
+          <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-300">1. Company State</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                {primaryContextBundle ? `${primaryContextBundle.retrievedState?.totalCount ?? 0} items` : 'Active Truth'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Live operational truth: active initiatives, runway, MRR, active PRDs, and pending governance decisions.
+            </p>
+            <div className="text-[10px] font-mono text-emerald-400/80 pt-1">
+              Epistemic: `current_truth` (Precedence: 1)
+            </div>
+          </div>
+
+          {/* Store 2: Knowledge */}
+          <div className="p-3.5 rounded-xl bg-sky-950/20 border border-sky-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-sky-300">2. Company Knowledge</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                {primaryContextBundle ? `${primaryContextBundle.retrievedKnowledge?.totalCount ?? 0} items` : 'Durable Ref'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Durable reference material: standard operating procedures (SOPs), PRD guidelines, and architectural RFCs.
+            </p>
+            <div className="text-[10px] font-mono text-sky-400/80 pt-1">
+              Epistemic: `durable_reference` (Precedence: 2)
+            </div>
+          </div>
+
+          {/* Store 3: Memory */}
+          <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-purple-300">3. Company Memory</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                {primaryContextBundle ? `${primaryContextBundle.retrievedMemory?.totalCount ?? 0} items` : 'Precedents'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Historical experience: Founder-ratified decisions, post-mortem findings, and operational lessons learned.
+            </p>
+            <div className="text-[10px] font-mono text-purple-400/80 pt-1">
+              Epistemic: `historical_memory` (Precedence: 3)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Structured Skills Pipeline & Governance Boundary */}
+      <div id="skills-execution-pipeline-panel" className="bg-slate-900/80 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-white/10">
+          <div className="flex items-center space-x-2">
+            <BookOpen className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-bold text-white">First-Class Structured Skills Execution Pipeline</span>
+          </div>
+          <div className="flex items-center space-x-2 text-[10px] font-mono">
+            <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5" /> Immutable
+            </span>
+            <span className="text-slate-400 bg-black/30 border border-white/10 px-2 py-0.5 rounded">
+              Deterministic Role Routing
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {run.plan.map((step) => {
+            const skillId = step.skillId || (step.selectedSkill && 'id' in step.selectedSkill ? step.selectedSkill.id : undefined);
+            const skill: StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null = (skillId && STRUCTURED_SKILLS[skillId])
+              ? STRUCTURED_SKILLS[skillId]
+              : (step.selectedSkill && 'procedure' in step.selectedSkill
+                  ? (step.selectedSkill as StructuredSkillDefinition)
+                  : (determineSkillForTask({
+                      title: step.title,
+                      protocolStep: step.protocolStep,
+                      directive: run.title,
+                    }, (step.agentId || 'coo') as any).selectedSkill ?? null));
+
+            const agent = agents.find((a) => a.id === step.agentId);
+
+            return (
+              <div
+                key={step.stage}
+                className="bg-black/30 border border-white/5 rounded-xl p-3.5 space-y-2 flex flex-col justify-between hover:border-indigo-500/30 transition-all text-xs"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-mono font-bold text-indigo-400 uppercase">
+                      Stage {step.stage} • {step.protocolStep}
+                    </span>
+                    <span className="text-[9px] font-mono text-slate-400">
+                      {agent?.name || step.agentId}
+                    </span>
+                  </div>
+                  <h4 className="font-semibold text-white leading-snug">{step.title}</h4>
+                  
+                  {skill ? (
+                    <div className="p-2 rounded-lg bg-indigo-950/30 border border-indigo-500/20 space-y-1 mt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono font-semibold text-indigo-300 uppercase">
+                          {skill.category}
+                        </span>
+                        <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-0.5">
+                          <Lock className="w-2 h-2" /> Safe
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-200">{skill.name}</div>
+                      <p className="text-[10px] text-slate-400 line-clamp-2">{skill.purpose}</p>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-500 italic">Autonomous Core Reasoning</div>
+                  )}
+                </div>
+
+                {skill && (
+                  <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[9px] font-mono text-slate-400">
+                      {skill.allowedTools.length > 0 ? `${skill.allowedTools.length} tool(s)` : 'Pure reasoning'}
+                    </span>
+                    <button
+                      onClick={() => setInspectedSkill(skill)}
+                      className="px-2 py-1 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[10px] font-semibold flex items-center gap-1 transition-colors"
+                    >
+                      <BookOpen className="w-3 h-3" />
+                      <span>Inspect Skill</span>
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -283,8 +479,30 @@ export const ExecutionAuditView: React.FC<ExecutionAuditViewProps> = ({ run, age
 
                 <p className="text-slate-200 text-[11px] leading-relaxed whitespace-pre-wrap">{msg.text}</p>
 
-                {msg.provenance && (
-                  <div className="pt-1 border-t border-white/5 flex justify-end">
+                <div className="pt-1 border-t border-white/5 flex flex-wrap items-center justify-end gap-2">
+                  {msg.retrievedContext && (
+                    <button
+                      onClick={() =>
+                        setInspectedContext({
+                          bundle: msg.retrievedContext!,
+                          title: `Task Context: ${msg.protocolStep}`,
+                          role: msg.sender,
+                        })
+                      }
+                      className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono"
+                    >
+                      <Database className="w-3 h-3 text-emerald-400" />
+                      <span>
+                        Context (
+                        {(msg.retrievedContext.retrievedState?.totalCount ?? 0) +
+                          (msg.retrievedContext.retrievedKnowledge?.totalCount ?? 0) +
+                          (msg.retrievedContext.retrievedMemory?.totalCount ?? 0)}{' '}
+                        items)
+                      </span>
+                    </button>
+                  )}
+
+                  {msg.provenance && (
                     <button
                       onClick={() => setSelectedMessageEvidence(msg)}
                       className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1 font-mono"
@@ -292,8 +510,8 @@ export const ExecutionAuditView: React.FC<ExecutionAuditViewProps> = ({ run, age
                       <ShieldCheck className="w-3 h-3 text-emerald-400" />
                       <span>Grounding Proof ({msg.provenance.evidenceBasis})</span>
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
@@ -308,6 +526,23 @@ export const ExecutionAuditView: React.FC<ExecutionAuditViewProps> = ({ run, age
           provenance={selectedMessageEvidence.provenance}
           sourceText={selectedMessageEvidence.text}
           details="Verified across council consensus and constitutional safety filters."
+        />
+      )}
+
+      {inspectedSkill && (
+        <SkillInspectionModal
+          skill={inspectedSkill}
+          onClose={() => setInspectedSkill(null)}
+        />
+      )}
+
+      {inspectedContext && (
+        <ContextInspectionModal
+          isOpen={!!inspectedContext}
+          onClose={() => setInspectedContext(null)}
+          title={inspectedContext.title}
+          contextBundle={inspectedContext.bundle}
+          agentRole={inspectedContext.role}
         />
       )}
     </div>

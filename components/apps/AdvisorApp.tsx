@@ -35,6 +35,8 @@ import {
 } from '@/types/os';
 import { playOSSound } from '../os/IconHelper';
 import { INITIAL_INITIATIVES, INITIAL_COMPANY_DECISIONS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
+import { ContextInspectionModal } from '../hq/ContextInspectionModal';
+import { TaskRetrievedContextBundle } from '@/types/context';
 
 export interface ChatMessage {
   id: string;
@@ -91,6 +93,7 @@ export const AdvisorApp: React.FC<AdvisorAppProps> = ({
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showContextInspector, setShowContextInspector] = useState(false);
+  const [inspectedContextBundle, setInspectedContextBundle] = useState<TaskRetrievedContextBundle | null>(null);
   const [activeEpistemicTab, setActiveEpistemicTab] = useState<Record<string, 'all' | 'facts' | 'inferences' | 'recommendations' | 'unknowns'>>({});
   const [activeContext, setActiveContext] = useState<AdvisorTargetContext | null>(targetContext);
 
@@ -481,16 +484,34 @@ export const AdvisorApp: React.FC<AdvisorAppProps> = ({
                         {/* Epistemic Knowledge Breakdown */}
                         {msg.responsePayload?.epistemicBreakdown && (
                           <div className="space-y-3 pt-1">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <div className="flex items-center space-x-2">
                                 <Shield className="w-3.5 h-3.5 text-slate-400" />
                                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                                   Epistemic Knowledge Taxonomy
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-500">
-                                Grounded Separation of Truth
-                              </span>
+                              
+                              <div className="flex items-center gap-2">
+                                {msg.responsePayload.retrievedContext && (
+                                  <button
+                                    onClick={() => setInspectedContextBundle(msg.responsePayload!.retrievedContext!)}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono transition-colors"
+                                  >
+                                    <Database className="w-2.5 h-2.5 text-emerald-400" />
+                                    <span>
+                                      Audit Context (
+                                      {(msg.responsePayload.retrievedContext.retrievedState?.totalCount ?? 0) +
+                                        (msg.responsePayload.retrievedContext.retrievedKnowledge?.totalCount ?? 0) +
+                                        (msg.responsePayload.retrievedContext.retrievedMemory?.totalCount ?? 0)}{' '}
+                                      items)
+                                    </span>
+                                  </button>
+                                )}
+                                <span className="text-[10px] text-slate-500">
+                                  Grounded Separation of Truth
+                                </span>
+                              </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -803,6 +824,16 @@ export const AdvisorApp: React.FC<AdvisorAppProps> = ({
           <span>Epistemic Grounding Model Active</span>
         </div>
       </div>
+
+      {inspectedContextBundle && (
+        <ContextInspectionModal
+          isOpen={!!inspectedContextBundle}
+          onClose={() => setInspectedContextBundle(null)}
+          title="Founder Intelligence & Advisory Context Audit"
+          contextBundle={inspectedContextBundle}
+          agentRole="advisor"
+        />
+      )}
     </div>
   );
 };

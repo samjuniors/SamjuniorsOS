@@ -100,6 +100,7 @@ export interface AIAgent {
   goals?: string[];
   responsibilities?: string[];
   skills?: string[];
+  assignedSkills?: import('./capabilities').StructuredSkillDefinition[];
   instructions?: string;
   capabilities?: string[];
   permissions?: AgentPermission[];
@@ -111,6 +112,8 @@ export interface AIAgent {
     priority: string;
     description: string;
     status: string;
+    skillId?: string;
+    skillName?: string;
     completedAt?: string;
   }>;
   activityHistory?: AgentActivity[];
@@ -153,6 +156,8 @@ export interface AgentTask {
   inputDescription: string;
   outputSnippet?: string;
   timestamp: string;
+  skillId?: string;
+  skillName?: string;
 }
 
 export interface AgentActivity {
@@ -220,6 +225,7 @@ export interface ExecutionMessage {
   protocolStep?: AgentWorkProtocolStep;
   artifactData?: any;
   provenance?: OutputProvenance;
+  retrievedContext?: import('./context').TaskRetrievedContextBundle;
 }
 
 export interface ExecutionPlanItem {
@@ -232,6 +238,11 @@ export interface ExecutionPlanItem {
   provenance?: OutputProvenance;
   toolSelection?: import('./capabilities').ToolSelectionResult;
   toolEvidence?: import('./capabilities').ToolExecutionEvidence;
+  skillId?: string;
+  skillName?: string;
+  selectedSkill?: import('./capabilities').StructuredSkillDefinition | { id: string; name: string; allowedTools?: string[] };
+  skillExecutionResult?: import('./capabilities').SkillExecutionResult;
+  retrievedContext?: import('./context').TaskRetrievedContextBundle;
 }
 
 export interface ParticipatingEmployee {
@@ -369,6 +380,17 @@ export interface RetrievedHistoricalMemory {
         precedenceResolution: string;
       }
     | string;
+  provenance?: {
+    sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory';
+    sourceId: string;
+    sourceTitle: string;
+    epistemicType: string;
+    authority: string;
+    timestamp: string;
+    confidence: string;
+    immutablePrecedent?: boolean;
+    notes?: string;
+  };
 }
 
 export type OperationalEvidenceField =
@@ -632,6 +654,7 @@ export interface FounderAdvisorResponse {
   referencedInitiatives?: string[];
   referencedAgents?: AgentRole[];
   referencedDecisions?: string[];
+  retrievedContext?: import('./context').TaskRetrievedContextBundle;
   liveAi: boolean;
   modelUsed?: string;
   timestamp: string;

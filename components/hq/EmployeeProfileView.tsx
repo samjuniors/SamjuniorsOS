@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 import { AIAgent, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit } from 'lucide-react';
+import { BrainCircuit, BookOpen } from 'lucide-react';
+import { STRUCTURED_SKILLS, getSkillsForRole } from '@/lib/skills/skill-registry';
+import { StructuredSkillDefinition } from '@/types/capabilities';
+import { SkillInspectionModal } from './SkillInspectionModal';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -42,7 +45,9 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   onInspectDeliverable,
   onAskAdvisor,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'chat' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'chat' | 'skills' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
+  const [inspectingSkill, setInspectingSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
+  const structuredSkills = getSkillsForRole(agent.id as any);
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'agent'; text: string; time: string }>>([
     {
@@ -191,6 +196,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
           {[
             { id: 'overview', label: 'Executive Overview', icon: User },
             { id: 'chat', label: 'Direct Chat', icon: MessageSquare },
+            { id: 'skills', label: `Skills (${structuredSkills.length})`, icon: BookOpen },
             { id: 'tasks', label: 'Work & Tasks', icon: Target },
             { id: 'deliverables', label: `Deliverables (${agentDeliverables.length})`, icon: FileText },
             { id: 'permissions', label: 'Capability Boundaries', icon: Lock },
@@ -254,18 +260,52 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
               </div>
 
               {/* Skills & Tools */}
-              <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-2">
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  Domain Specializations & Reasoning Modules
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {(agent.skills || agent.capabilities || []).map((skill, i) => (
-                    <span
-                      key={i}
-                      className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-mono"
+              <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                    Structured First-Class Employee Skills ({structuredSkills.length})
+                  </span>
+                  <button
+                    onClick={() => setActiveSubTab('skills')}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1"
+                  >
+                    <span>View All Specifications</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {structuredSkills.map((sk) => (
+                    <div
+                      key={sk.id}
+                      className="p-3 rounded-xl bg-slate-900/60 border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col justify-between space-y-2"
                     >
-                      {skill}
-                    </span>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 uppercase font-semibold">
+                            {sk.category}
+                          </span>
+                          <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> Immutable
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-white leading-snug">{sk.name}</h4>
+                        <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">{sk.purpose}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5">
+                        <span className="text-[10px] font-mono text-slate-400">
+                          {sk.allowedTools.length > 0 ? `${sk.allowedTools.length} tool(s)` : 'Pure reasoning'}
+                        </span>
+                        <button
+                          onClick={() => setInspectingSkill(sk)}
+                          className="px-2 py-1 rounded bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 text-[10px] font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          <BookOpen className="w-3 h-3" />
+                          <span>Inspect Skill</span>
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -320,6 +360,75 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
             </div>
           )}
 
+          {activeSubTab === 'skills' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center space-x-2">
+                  <BookOpen className="w-4 h-4 text-indigo-400" />
+                  <span className="font-semibold text-white">First-Class Structured Skills ({structuredSkills.length})</span>
+                </div>
+                <div className="flex items-center space-x-2 text-[10px] font-mono">
+                  <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5" /> Immutable Runtime
+                  </span>
+                  <span className="text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
+                    Auto-Determined by Context
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {structuredSkills.map((sk) => (
+                  <div
+                    key={sk.id}
+                    className="p-4 rounded-xl bg-slate-900/80 border border-white/10 hover:border-indigo-500/40 transition-all flex flex-col justify-between space-y-3"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 uppercase font-semibold">
+                          {sk.category}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-500">{sk.id}</span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white">{sk.name}</h3>
+                      <p className="text-xs text-slate-300 leading-relaxed">{sk.purpose}</p>
+
+                      <div className="pt-2 border-t border-white/5 space-y-1.5 text-[11px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">Allowed Tools:</span>
+                          <span className="font-mono text-sky-300">
+                            {sk.allowedTools.length > 0 ? sk.allowedTools.join(', ') : 'None (Pure Reasoning)'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">Inputs:</span>
+                          <span className="text-slate-300">{sk.requiredInputs.length} required field(s)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">Procedure:</span>
+                          <span className="text-slate-300">{sk.procedure.length} sequential step(s)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3" /> Audited & Governed
+                      </span>
+                      <button
+                        onClick={() => setInspectingSkill(sk)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>Inspect Full Skill</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeSubTab === 'tasks' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-slate-400">
@@ -335,36 +444,66 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                     priority: t.priority.toLowerCase(),
                     description: t.inputDescription,
                     status: t.status,
+                    skillId: t.skillId,
+                    skillName: t.skillName,
                   })) ||
                   []
-                ).map((task) => (
-                  <div
-                    key={task.id}
-                    className="bg-black/30 border border-white/5 rounded-xl p-3 flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-white">{task.title}</span>
-                        <span
-                          className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-semibold ${
-                            task.priority === 'urgent' || task.priority === 'critical'
-                              ? 'bg-rose-500/20 text-rose-300'
-                              : task.priority === 'high'
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : 'bg-blue-500/20 text-blue-300'
-                          }`}
-                        >
-                          {task.priority.toUpperCase()}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">{task.description}</p>
-                    </div>
+                ).map((task) => {
+                  const resolvedSkill = task.skillId
+                    ? STRUCTURED_SKILLS[task.skillId]
+                    : structuredSkills.find((s) => s.name.toLowerCase().includes(task.title.toLowerCase().slice(0, 10))) || structuredSkills[0];
 
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
-                      {task.status.replace('_', ' ').toUpperCase()}
-                    </span>
-                  </div>
-                ))}
+                  return (
+                    <div
+                      key={task.id}
+                      className="bg-black/30 border border-white/5 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-white/10 transition-all"
+                    >
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-white">{task.title}</span>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-semibold ${
+                              task.priority === 'urgent' || task.priority === 'critical'
+                                ? 'bg-rose-500/20 text-rose-300'
+                                : task.priority === 'high'
+                                ? 'bg-amber-500/20 text-amber-300'
+                                : 'bg-blue-500/20 text-blue-300'
+                            }`}
+                          >
+                            {task.priority.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">{task.description}</p>
+
+                        {/* Skill Used Display */}
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[10px] text-slate-400">Skill:</span>
+                          <button
+                            onClick={() => resolvedSkill && setInspectingSkill(resolvedSkill)}
+                            className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/20 transition-colors flex items-center gap-1"
+                          >
+                            <BookOpen className="w-2.5 h-2.5" />
+                            <span>{task.skillName || resolvedSkill?.name || 'Autonomous Specialist Reasoning'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex sm:flex-col items-end justify-between sm:justify-center gap-1.5 flex-shrink-0">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+                          {task.status.replace('_', ' ').toUpperCase()}
+                        </span>
+                        {resolvedSkill && (
+                          <button
+                            onClick={() => setInspectingSkill(resolvedSkill)}
+                            className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium"
+                          >
+                            Inspect Skill
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -497,6 +636,15 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
           provenance={selectedEvidenceDeliverable.provenance}
           sourceText={selectedEvidenceDeliverable.content}
           details={`Authored by ${agent.name} as part of Company Deliverables.`}
+        />
+      )}
+
+      {inspectingSkill && (
+        <SkillInspectionModal
+          skill={inspectingSkill}
+          onClose={() => setInspectingSkill(null)}
+          assignedRoleName={agent.role}
+          assignedEmployeeName={agent.name}
         />
       )}
     </div>

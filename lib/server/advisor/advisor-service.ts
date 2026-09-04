@@ -7,6 +7,8 @@ import {
   FounderAdvisorResponse,
 } from '@/types/os';
 import { CompanyContextProvider, FullCompanyContext } from '@/lib/server/context/company-context';
+import { ContextualRetrievalService } from '@/lib/server/context/context-retrieval';
+import { TaskRetrievedContextBundle } from '@/types/context';
 
 export interface AdvisorQueryOptions {
   history?: Array<{ sender: 'founder' | 'advisor'; text: string }>;
@@ -72,20 +74,29 @@ export class FounderAdvisorService {
       };
     }
 
-    // 1. Load and merge server-authoritative company context
+    // 1. Retrieve persistent contextual bundle (State, Knowledge, Memory)
+    const retrievedContext = await ContextualRetrievalService.getInstance().retrieveForAdvisor(
+      cleanQuestion,
+      {
+        targetContext: options.contextAttachment,
+      }
+    );
+
+    // 2. Load and merge server-authoritative company context
     const fullContext = CompanyContextProvider.getMergedContext(options.clientContextSnapshot);
     const contextPromptText = CompanyContextProvider.formatForAdvisorPrompt(
       fullContext,
       options.contextAttachment
     );
 
-    // 2. If GEMINI_API_KEY is not configured, return truthful unconfigured advisor response
+    // 3. If GEMINI_API_KEY is not configured, return truthful unconfigured advisor response
     if (!this.aiClient) {
       return this.buildTruthfulUnconfiguredResponse(
         cleanQuestion,
         fullContext,
         timestamp,
-        options.contextAttachment
+        options.contextAttachment,
+        retrievedContext
       );
     }
 
@@ -150,14 +161,16 @@ Respond ONLY with raw JSON. No markdown code blocks, no preamble.`;
           .join('\n') + '\n';
     }
 
-    const userPrompt = `${contextPromptText}
+    const userPrompt = `${retrievedContext.formattedSeparatedPrompt}
+
+${contextPromptText}
 ${historyText}
 === FOUNDER QUESTION ===
 "${cleanQuestion}"
 
 Analyze the company context thoroughly, respect the Epistemic Knowledge Model, and provide your structured response in JSON format.`;
 
-    const candidateModels = ['gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.5-pro'];
     let lastError: any = null;
 
     for (const model of candidateModels) {
@@ -216,6 +229,7 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
           referencedInitiatives: Array.isArray(parsed.referencedInitiatives) ? parsed.referencedInitiatives : undefined,
           referencedAgents: Array.isArray(parsed.referencedAgents) ? parsed.referencedAgents : undefined,
           referencedDecisions: Array.isArray(parsed.referencedDecisions) ? parsed.referencedDecisions : undefined,
+          retrievedContext,
           liveAi: true,
           modelUsed: model,
           timestamp,
@@ -223,38 +237,20 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
         };
       } catch (err: any) {
         lastError = err;
-        const isHighDemand =
-          err?.status === 503 ||
-          err?.code === 503 ||
-          err?.message?.includes('high demand') ||
-          err?.message?.includes('UNAVAILABLE') ||
-          err?.message?.includes('RESOURCE_EXHAUSTED');
-        if (isHighDemand) {
-          continue;
-        }
         break;
       }
     }
 
-    return {
-      success: false,
-      question: cleanQuestion,
-      summary: `Advisor execution encountered an API communication error: ${lastError?.message || 'Unknown error'}`,
-      analysisMarkdown: `### Model Error\n\nFounder Intelligence was unable to connect to the Gemini API due to a temporary service error (${lastError?.message || 'Connection failed'}). Please verify server connectivity or retry in a few moments.`,
-      epistemicBreakdown: {
-        facts: [`Company has ${fullContext.initiatives.length} active initiatives and ${fullContext.decisions.length} recorded decisions.`],
-        inferences: ['Live AI reasoning failed during upstream inference call.'],
-        recommendations: ['Retry the question once API connectivity stabilizes.'],
-        unknowns: ['Upstream model response is currently unavailable.'],
-      },
-      strategicInsights: [],
-      suggestedFollowUpPrompts: ['Retry strategic analysis query'],
-      contextAttachment: options.contextAttachment,
-      liveAi: false,
+    // Return truthful deterministic fallback with retrieved context if upstream model is unavailable
+    const unconfiguredFallback = this.buildTruthfulUnconfiguredResponse(
+      cleanQuestion,
+      fullContext,
       timestamp,
-      executionOutcome: 'error',
-      error: lastError?.message || 'MODEL_CALL_FAILED',
-    };
+      options.contextAttachment,
+      retrievedContext
+    );
+    unconfiguredFallback.error = lastError?.message || 'API_UNAVAILABLE';
+    return unconfiguredFallback;
   }
 
   /**
@@ -264,7 +260,8 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
     question: string,
     context: FullCompanyContext,
     timestamp: string,
-    target?: AdvisorTargetContext
+    target?: AdvisorTargetContext,
+    retrievedContext?: TaskRetrievedContextBundle
   ): FounderAdvisorResponse {
     const pendingDecisionsCount = context.decisions.filter((d) => d.status === 'pending_approval').length;
     const attentionItemsCount = context.attentionItems.filter((a) => a.status === 'pending').length;
@@ -338,6 +335,7 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
         referencedInitiatives: context.initiatives.map((i) => i.id),
         referencedAgents: ['coo', 'finance', 'pm', 'researcher'],
         referencedDecisions: context.decisions.map((d) => d.id),
+        retrievedContext,
         liveAi: false,
         timestamp,
         executionOutcome: 'unconfigured',
@@ -404,9 +402,12 @@ Analyze the company context thoroughly, respect the Epistemic Knowledge Model, a
       referencedInitiatives: context.initiatives.map((i) => i.id),
       referencedAgents: ['coo', 'finance', 'pm', 'researcher'],
       referencedDecisions: context.decisions.map((d) => d.id),
+      retrievedContext,
       liveAi: false,
       timestamp,
       executionOutcome: 'unconfigured',
     };
   }
 }
+
+export const AdvisorService = new FounderAdvisorService();

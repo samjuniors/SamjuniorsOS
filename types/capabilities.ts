@@ -1,7 +1,7 @@
 import { AgentRole, OutputProvenance } from './os';
 
 // ----------------------------------------------------------------------------
-// 1. SKILLS
+// 1. SKILLS (Phase 11.11 Structured Reusable Skill Architecture)
 // ----------------------------------------------------------------------------
 export type SkillId = 
   | 'web_research'
@@ -17,16 +17,81 @@ export type SkillId =
   | 'roadmap_analysis'
   | 'financial_modeling'
   | 'unit_economics'
+  | 'unit_economics_modeling'
+  | 'pricing_tier_simulation'
+  | 'capital_efficiency_audit'
   | 'scenario_analysis'
   | 'task_coordination'
   | 'workflow_planning'
+  | 'directive_decomposition'
+  | 'compliance_verification'
+  | 'executive_synthesis'
   | 'execution_monitoring';
 
-export interface SkillDefinition {
-  id: SkillId;
+export interface SkillRequiredInput {
   name: string;
   description: string;
-  category: 'Research' | 'Product' | 'Finance' | 'Operations';
+  required: boolean;
+  type?: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  defaultValue?: any;
+}
+
+export interface StructuredSkillDefinition {
+  id: string;
+  name: string;
+  purpose: string;
+  category: 'Operations' | 'Research' | 'Product' | 'Finance';
+  requiredInputs: SkillRequiredInput[];
+  procedure: string[];
+  allowedTools: ToolId[];
+  evidenceRequirements: string[];
+  verificationRequirements: string[];
+  outputFormat: string;
+  escalationConditions: string[];
+  description?: string;
+}
+
+export type SkillDefinition = StructuredSkillDefinition;
+
+export interface SkillSelectionContext {
+  taskTitle: string;
+  taskDescription?: string;
+  protocolStep?: import('./os').AgentWorkProtocolStep;
+  employeeRole: AgentRole | 'advisor';
+  directive?: string;
+}
+
+export interface SkillSelectionResult {
+  selectedSkill?: StructuredSkillDefinition;
+  reason: string;
+  allowedTools: ToolId[];
+}
+
+export interface SkillExecutionRequest {
+  skillId: string;
+  employeeRole: AgentRole | 'advisor';
+  taskTitle: string;
+  taskDescription?: string;
+  inputs: Record<string, any>;
+  protocolStep?: import('./os').AgentWorkProtocolStep;
+  provenance?: OutputProvenance;
+}
+
+export interface SkillExecutionResult {
+  skillId: string;
+  skillName: string;
+  employeeRole: AgentRole | 'advisor';
+  status: ExecutionStatus;
+  selectedToolId?: ToolId;
+  toolEvidence?: ToolExecutionEvidence;
+  evidenceBasis: string;
+  verificationPassed: boolean;
+  verificationNotes: string;
+  escalationRequired: boolean;
+  escalationReason?: string;
+  outputSummary: string;
+  outputContent?: string;
+  timestamp: string;
 }
 
 // ----------------------------------------------------------------------------

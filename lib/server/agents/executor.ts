@@ -1,5 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { AgentRole, AgentWorkProtocolStep, EvidenceBasis, OutputProvenance } from '@/types/os';
+import { TaskRetrievedContextBundle } from '@/types/context';
+import { ContextualRetrievalService } from '../context/context-retrieval';
 import { SERVER_AGENTS, ServerAgentDefinition } from './definitions';
 
 export interface AgentExecutionContext {
@@ -7,6 +9,7 @@ export interface AgentExecutionContext {
   protocolStep: AgentWorkProtocolStep;
   taskTitle: string;
   taskDescription: string;
+  retrievedContext?: TaskRetrievedContextBundle;
   upstreamContext?: {
     cooScope?: string;
     researchFindings?: string;
@@ -25,6 +28,7 @@ export interface AgentExecutionResult {
   outputContent: string;
   structuredData?: Record<string, any>;
   provenance: OutputProvenance;
+  retrievedContext?: TaskRetrievedContextBundle;
   error?: string;
 }
 
@@ -63,6 +67,16 @@ export class ServerAgentExecutor {
     const timestamp = new Date().toISOString();
     const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+    // PHASE 11.12: Automatic Contextual Retrieval for assigned task
+    // Employees receive relevant context automatically; Founder does not manually assemble prompts.
+    const retrievedContext = context.retrievedContext || await ContextualRetrievalService.getInstance().retrieveContextForTask({
+      taskId: `task-${context.protocolStep}-${agentId}`,
+      role: agentId,
+      taskTitle: context.taskTitle,
+      taskDescription: context.taskDescription,
+      directive: context.directive,
+    });
+
     if (!this.aiClient) {
       return {
         success: false,
@@ -71,6 +85,7 @@ export class ServerAgentExecutor {
         protocolStep: context.protocolStep,
         statusMessage: `[${agentDef.name}] Execution halted: GEMINI_API_KEY is not configured on the server.`,
         outputContent: `**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.`,
+        retrievedContext,
         provenance: {
           agentId,
           agentName: agentDef.name,
@@ -103,7 +118,9 @@ Do not fabricate specific unverifiable numbers, fake revenue, imaginary customer
       if (up.financeAssessment) upstreamInfo += `\n[Financial Assessment from Julian Cruz]:\n${up.financeAssessment}\n`;
     }
 
-    const fullPrompt = `${upstreamInfo}
+    const fullPrompt = `${retrievedContext.formattedSeparatedPrompt}
+
+${upstreamInfo}
 Directive: "${context.directive}"
 Current Assigned Task: "${context.taskTitle}"
 
@@ -160,6 +177,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
             evidenceBasis: basis,
             modelUsed: model,
           },
+          retrievedContext,
         };
       } catch (err: any) {
         lastError = err;
@@ -183,6 +201,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       protocolStep: context.protocolStep,
       statusMessage: `[${agentDef.name}] Task execution failed due to API communication error: ${lastError?.message || 'Unknown error'}.`,
       outputContent: `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`,
+      retrievedContext,
       provenance: {
         agentId,
         agentName: agentDef.name,
