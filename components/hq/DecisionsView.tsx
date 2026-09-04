@@ -16,10 +16,11 @@ import {
   ChevronRight,
   FileEdit,
   MessageSquare,
+  History,
+  BrainCircuit,
 } from 'lucide-react';
 import { CompanyDecision, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit } from 'lucide-react';
 
 interface DecisionsViewProps {
   decisions: CompanyDecision[];
@@ -96,19 +97,82 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* 4-Way Separation */}
+                <div className="space-y-2.5 text-xs">
+                  {/* 1. Current Evidence */}
                   <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                      Recommendation
+                    <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider block">
+                      1. Current Verified Evidence
                     </span>
-                    <p className="text-[11px] text-slate-200 leading-relaxed">{dec.recommendation}</p>
+                    <p className="text-[11px] text-slate-200 leading-relaxed">
+                      {typeof dec.currentEvidence === 'string'
+                        ? dec.currentEvidence
+                        : dec.currentEvidence?.summary || dec.evidenceSummary}
+                    </p>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                      Business Impact & Unit Economics
-                    </span>
-                    <p className="text-[11px] text-slate-200 leading-relaxed">{dec.businessImpact}</p>
+                  {/* 2. Historical Memory (Context Only) */}
+                  {dec.historicalMemories && dec.historicalMemories.length > 0 && (
+                    <div className="p-3 rounded-xl bg-purple-950/20 border border-purple-500/20 space-y-2">
+                      <span className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-1">
+                        <History className="w-3 h-3 text-purple-400" />
+                        2. Historical Memory (Context Only • Not New Evidence)
+                      </span>
+                      {dec.historicalMemories.map((mem) => {
+                        const isConflicting = mem.isConflicting || mem.conflictWithCurrentEvidence;
+                        const conflictDesc = typeof mem.conflictDetails === 'object'
+                          ? mem.conflictDetails.precedenceResolution
+                          : mem.conflictDetails || 'Historical assumption conflict';
+
+                        return (
+                          <div key={mem.id || mem.memoryId} className="p-2 rounded-lg bg-black/20 border border-purple-500/10 space-y-1 text-[11px]">
+                            <p className="text-slate-200">
+                              <span className="text-purple-300 font-semibold">Precedent:</span> {mem.approvedAction || mem.pastAction}
+                            </p>
+                            <p className="text-slate-400 text-[10px]">
+                              <span className="text-purple-400 font-medium">Relevance:</span> {mem.relevanceExplanation || mem.whyRelevant}
+                            </p>
+                            {isConflicting && (
+                              <div className="p-1.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[10px] flex items-start gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                                <span>
+                                  <strong>Precedence Rule:</strong> Current verified evidence supersedes historical memory ({conflictDesc}).
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <span className="text-[9px] text-slate-500 italic block">
+                        *Memory provides organizational learning but cannot override current verified evidence or auto-approve actions.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 3. AI Inference / Recommendation & Business Impact */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/15 space-y-1">
+                      <span className="text-[10px] font-semibold text-blue-300 uppercase tracking-wider block">
+                        3. AI Inference & Recommendation
+                      </span>
+                      <p className="text-[11px] text-blue-100 font-medium leading-relaxed">
+                        {typeof dec.aiInference === 'string'
+                          ? dec.aiInference
+                          : dec.aiInference?.recommendation || dec.recommendation}
+                      </p>
+                      {typeof dec.aiInference === 'object' && dec.aiInference?.reasoning && (
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Reasoning: {dec.aiInference.reasoning}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-black/30 border border-white/5 space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                        Projected Business Impact
+                      </span>
+                      <p className="text-[11px] text-slate-200 leading-relaxed">{dec.businessImpact}</p>
+                    </div>
                   </div>
                 </div>
 

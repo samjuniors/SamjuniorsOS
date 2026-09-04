@@ -11,6 +11,7 @@ import {
 } from '@/types/os';
 import { GovernanceStore } from '@/lib/governance-store';
 import { dispatchOSNotification, playOSSound } from '@/components/os/IconHelper';
+import { SystemActivityStore } from '@/lib/system-activity-store';
 
 // Default initial artifacts produced by the collaboration
 const DEFAULT_ARTIFACTS = {
@@ -404,6 +405,7 @@ export const CollaborationStore = {
       allDialogues: [],
       artifacts: DEFAULT_ARTIFACTS,
     };
+    SystemActivityStore.endTask('collab-sim');
     notify();
   },
 
@@ -411,7 +413,10 @@ export const CollaborationStore = {
    * Step forward by 1 step
    */
   stepForward(): void {
-    if (collaborationState.status === 'completed') return;
+    if (collaborationState.status === 'completed') {
+      SystemActivityStore.endTask('collab-sim');
+      return;
+    }
 
     if (collaborationState.status === 'idle') {
       collaborationState.status = 'running';
@@ -422,6 +427,14 @@ export const CollaborationStore = {
     const currentStep = collaborationState.steps[currentIndex];
 
     if (!currentStep) return;
+
+    // Track in live heartbeat telemetry
+    SystemActivityStore.startTask(
+      'collab-sim',
+      currentStep.initiatingAgent,
+      currentStep.dialogue.fromName,
+      currentStep.title
+    );
 
     // Mark current step completed
     currentStep.status = 'completed';
@@ -445,6 +458,7 @@ export const CollaborationStore = {
       // Completed all steps!
       collaborationState.status = 'completed';
       collaborationState.completedAt = new Date().toLocaleTimeString();
+      SystemActivityStore.endTask('collab-sim');
 
       // Commit artifacts to Company Governance
       GovernanceStore.addDecision(collaborationState.artifacts.decision);
@@ -490,6 +504,7 @@ export const CollaborationStore = {
     collaborationState.allDialogues = collaborationState.steps.map((s) => s.dialogue);
     collaborationState.currentStepIndex = collaborationState.steps.length - 1;
     collaborationState.completedAt = new Date().toLocaleTimeString();
+    SystemActivityStore.endTask('collab-sim');
 
     GovernanceStore.addDecision(collaborationState.artifacts.decision);
     GovernanceStore.addIntelligence(collaborationState.artifacts.researchTopic);

@@ -294,11 +294,16 @@ export class CompanyContextProvider {
     });
     lines.push('');
 
-    lines.push('=== DURABLE ORGANIZATIONAL MEMORY ===');
+    lines.push('=== DURABLE ORGANIZATIONAL MEMORY & HISTORICAL CONTEXT ===');
+    lines.push('OPERATIONAL LEARNING & GROUNDING RULES:');
+    lines.push('1. The following memory records represent completed past organizational actions and historical outcomes.');
+    lines.push('2. Historical memory must NEVER be presented as new or current empirical evidence.');
+    lines.push('3. If historical memory contradicts current verified evidence, current verified evidence takes absolute precedence.');
+    lines.push('4. Historical memory cannot automatically approve, execute, change permissions, or become policy without explicit Founder ratification.');
     if (context.companyMemory && context.companyMemory.length > 0) {
       context.companyMemory.forEach((mem) => {
         lines.push(`[${mem.id}] Decision: ${mem.decisionId} | Timestamp: ${mem.timestamp}`);
-        lines.push(`  Approved Action: ${mem.approvedAction}`);
+        lines.push(`  Past Approved Action: ${mem.approvedAction}`);
         lines.push(`  Execution Outcome: ${mem.executionOutcome}`);
         lines.push(`  Epistemic Confidence: ${mem.epistemicConfidence}`);
         if (mem.evidenceReferences && mem.evidenceReferences.length > 0) {
@@ -403,14 +408,17 @@ export class CompanyContextProvider {
     }
 
     lines.push('');
-    lines.push('=== COMPANY MEMORY (APPROVED & COMPLETED STRATEGIES) ===');
+    lines.push('=== COMPANY MEMORY & OPERATIONAL LEARNING (HISTORICAL CONTEXT ONLY) ===');
+    lines.push('GOVERNANCE & GROUNDING BOUNDARIES FOR EMPLOYEES:');
+    lines.push('- Historical memories provide organizational context and consistency; NEVER treat them as current empirical evidence.');
+    lines.push('- If historical memory conflicts with current verified evidence, current verified evidence takes absolute precedence.');
+    lines.push('- Historical memory cannot automatically approve initiatives, bypass permissions, execute tasks, or become binding policy without Founder approval.');
     if (context.companyMemory && context.companyMemory.length > 0) {
       context.companyMemory.forEach((mem) => {
-        lines.push(`[${mem.id}] Action: ${mem.approvedAction}`);
-        lines.push(`  Outcome: ${mem.executionOutcome}`);
-        lines.push(`  Confidence: ${mem.epistemicConfidence}`);
+        lines.push(`[${mem.id}] Past Action: ${mem.approvedAction}`);
+        lines.push(`  Execution Outcome: ${mem.executionOutcome}`);
+        lines.push(`  Epistemic Confidence: ${mem.epistemicConfidence}`);
       });
-      lines.push('Note: Employees may use these memories for contextual grounding, but cannot unilaterally alter them or create binding company policies.');
     } else {
       lines.push('No memories established yet.');
     }

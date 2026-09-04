@@ -58,6 +58,7 @@ import { DecisionsView } from '../hq/DecisionsView';
 import { ExecutionAuditView } from '../hq/ExecutionAuditView';
 import { CollaborationWorkflowView } from '../hq/CollaborationWorkflowView';
 import { GovernanceStore, GovernanceEventDetail } from '@/lib/governance-store';
+import { SystemActivityStore } from '@/lib/system-activity-store';
 import { CollaborationStore } from '@/lib/collaboration-store';
 import { AppId } from '@/types/os';
 
@@ -187,6 +188,14 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
       if (soundEnabled) playOSSound('execute');
       setIsExecuting(true);
       setExecutionMessage('Sophia Vance is decomposing company objective and coordinating with Research, Product, and Finance...');
+
+      const taskId = `task-${Date.now()}`;
+      SystemActivityStore.startTask(
+        taskId,
+        'coo',
+        'Sophia Vance (COO) + Executive Council',
+        textToRun.slice(0, 50)
+      );
 
       // Optimistic Run
       const optimisticRun: OrchestrationRun = {
@@ -397,6 +406,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
       } finally {
         clearInterval(progressInterval);
         setIsExecuting(false);
+        SystemActivityStore.endTask(taskId);
       }
     },
     [directiveInput, isExecuting, soundEnabled]

@@ -584,6 +584,26 @@ export const INITIAL_ATTENTION_ITEMS: AttentionItem[] = [
       source: 'Competitor benchmark model & batch compute calculation in Safe Sandbox',
       details: 'Market recon suggests self-serve reduces evaluation drop-off; onboarding compute is bounded to $0.18/tenant.',
     },
+    currentEvidence: {
+      summary: 'Empirical benchmark model indicates 78% drop-off on sales-gated demos; validated onboarding compute burn strictly held at $0.18/tenant.',
+      source: 'Internal audit & market recon sandbox',
+      confidence: 94,
+    },
+    historicalMemories: [
+      {
+        id: 'mem-1',
+        pastDecisionId: 'dec-2',
+        pastAction: 'Enforce strict 80%+ gross margin floor across all tier packaging and compute operations.',
+        executionOutcome: 'Preserved 83.9% gross margin during high-load stress testing.',
+        whyRelevant: 'Self-serve onboarding token usage must comply with the historical 80% gross margin mandate.',
+        conflictWithCurrentEvidence: false,
+        epistemicConfidence: 'verified_fact',
+      },
+    ],
+    aiInference: {
+      recommendation: 'Authorize 15-account pilot cohort with automated workspace provisioning and telemetry metering.',
+      reasoning: 'Verified $0.18/tenant compute spend yields 88.2% gross margin, satisfying historical policy without violating unit economics.',
+    },
   },
   {
     id: 'att-2',
@@ -721,6 +741,26 @@ export const INITIAL_COMPANY_DECISIONS: CompanyDecision[] = [
     evidenceSummary: 'Competitive benchmark showed drop-off on mandatory sales demos; modeled onboarding compute cost is $0.18.',
     date: 'Today',
     founderApprovalRequired: true,
+    currentEvidence: {
+      summary: 'Empirical benchmark model indicates 78% drop-off on sales-gated demos; validated onboarding compute burn strictly held at $0.18/tenant.',
+      source: 'Internal audit & market recon sandbox',
+      confidence: 94,
+    },
+    historicalMemories: [
+      {
+        id: 'mem-1',
+        pastDecisionId: 'dec-2',
+        pastAction: 'Enforce strict 80%+ gross margin floor across all tier packaging and compute operations.',
+        executionOutcome: 'Preserved 83.9% gross margin during high-load stress testing.',
+        whyRelevant: 'Self-serve onboarding token usage must comply with the historical 80% gross margin mandate.',
+        conflictWithCurrentEvidence: false,
+        epistemicConfidence: 'verified_fact',
+      },
+    ],
+    aiInference: {
+      recommendation: 'Authorize 15-account pilot cohort with automated workspace provisioning and telemetry metering.',
+      reasoning: 'Verified $0.18/tenant compute spend yields 88.2% gross margin, satisfying historical policy without violating unit economics.',
+    },
   },
   {
     id: 'dec-2',

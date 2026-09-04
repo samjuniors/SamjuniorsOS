@@ -14,10 +14,12 @@ import {
   X,
   Sparkles,
   Search,
+  History,
+  BookOpen,
+  BrainCircuit,
 } from 'lucide-react';
 import { AttentionItem, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit } from 'lucide-react';
 
 interface AttentionSectionProps {
   items: AttentionItem[];
@@ -130,29 +132,98 @@ export const AttentionSection: React.FC<AttentionSectionProps> = ({
                 {/* Title */}
                 <h3 className="text-xs font-bold text-white leading-snug">{item.title}</h3>
 
-                {/* What Happened & Why It Matters */}
+                {/* 4-Way Separation: Current Evidence | Historical Memory | AI Inference | Founder Action */}
                 <div className="space-y-2 text-xs text-slate-300">
+                  {/* 1. Current Evidence */}
                   <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                      Context
-                    </span>
-                    <p className="text-[11px] leading-relaxed text-slate-200">{item.whatHappened}</p>
-                  </div>
-
-                  <div className="bg-black/30 rounded-xl p-2.5 border border-white/5 space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                      Why It Matters
-                    </span>
-                    <p className="text-[11px] leading-relaxed text-slate-300">{item.whyItMatters}</p>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-blue-500/5 border border-blue-500/15 space-y-1">
-                    <span className="text-[10px] font-semibold text-blue-300 uppercase tracking-wider block">
-                      Recommended Action
-                    </span>
-                    <p className="text-[11px] leading-relaxed text-blue-100 font-medium">
-                      {item.recommendedAction}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider block">
+                        1. Current Verified Evidence
+                      </span>
+                      {typeof item.currentEvidence === 'object' && item.currentEvidence?.confidence && (
+                        <span className="text-[9px] font-mono text-emerald-300 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                          Confidence: {item.currentEvidence.confidence}%
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-200">
+                      {typeof item.currentEvidence === 'string'
+                        ? item.currentEvidence
+                        : item.currentEvidence?.summary || item.whatHappened}
                     </p>
+                  </div>
+
+                  {/* 2. Historical Memory (Context Only) */}
+                  {item.historicalMemories && item.historicalMemories.length > 0 ? (
+                    <div className="bg-purple-950/20 rounded-xl p-2.5 border border-purple-500/20 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-1">
+                          <History className="w-3 h-3 text-purple-400" />
+                          2. Historical Memory (Context Only • Not New Evidence)
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400">Past Precedent</span>
+                      </div>
+
+                      {item.historicalMemories.map((mem) => {
+                        const isConflicting = mem.isConflicting || mem.conflictWithCurrentEvidence;
+                        const conflictDesc = typeof mem.conflictDetails === 'object'
+                          ? mem.conflictDetails.precedenceResolution
+                          : mem.conflictDetails || 'Historical assumption conflict';
+
+                        return (
+                          <div key={mem.id || mem.memoryId} className="space-y-1 text-[11px] bg-black/20 p-2 rounded-lg border border-purple-500/10">
+                            <p className="text-slate-300">
+                              <span className="text-purple-300 font-semibold">Precedent:</span> {mem.approvedAction || mem.pastAction}
+                            </p>
+                            <p className="text-slate-400 text-[10px]">
+                              <span className="text-purple-400 font-medium">Relevance:</span> {mem.relevanceExplanation || mem.whyRelevant}
+                            </p>
+                            {isConflicting && (
+                              <div className="p-1.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[10px] flex items-start gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
+                                <span>
+                                  <strong>Precedence Rule:</strong> Current verified evidence supersedes historical memory ({conflictDesc}).
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <span className="text-[9px] text-slate-500 italic block">
+                        *Memory informs strategy but cannot auto-approve expenditures or override current verified evidence.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* 3. AI Inference / Recommendation */}
+                  <div className="p-2.5 rounded-xl bg-blue-500/5 border border-blue-500/15 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-blue-300 uppercase tracking-wider block">
+                        3. AI Inference & Recommendation
+                      </span>
+                      <span className="text-[9px] font-mono text-blue-400">Advisory Synthesis</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-blue-100 font-medium">
+                      {typeof item.aiInference === 'string'
+                        ? item.aiInference
+                        : item.aiInference?.recommendation || item.recommendedAction}
+                    </p>
+                    {typeof item.aiInference === 'object' && item.aiInference?.reasoning && (
+                      <p className="text-[10px] leading-relaxed text-slate-400">
+                        Reasoning: {item.aiInference.reasoning}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 4. Founder Decision / Action */}
+                  <div className="p-2 rounded-xl bg-amber-500/5 border border-amber-500/15 flex items-center justify-between text-[11px]">
+                    <span className="text-amber-300 font-medium flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-amber-400" />
+                      4. Founder Decision Required
+                    </span>
+                    <span className="text-slate-400 text-[10px]">
+                      {isResolved ? 'Authorized by Founder' : 'Awaiting Founder Ratification'}
+                    </span>
                   </div>
                 </div>
               </div>

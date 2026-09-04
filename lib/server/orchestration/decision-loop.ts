@@ -1,8 +1,9 @@
-import { CompanyDecision, AttentionItem, ResearchTopic, OrchestrationRun, CompanyMemory } from '@/types/os';
+import { CompanyDecision, AttentionItem, ResearchTopic, OrchestrationRun, CompanyMemory, EvidenceBasis } from '@/types/os';
 import { CompanyContextProvider } from '../context/company-context';
 import { MultiAgentOrchestrator } from './orchestrator';
 import { GovernanceStore } from '@/lib/governance-store';
 import { ServerAgentExecutor } from '../agents/executor';
+import { OperationalLearningLoop } from '../memory/learning-loop';
 
 export async function generateRecommendationFromFinding(
   findingId: string,
@@ -17,19 +18,41 @@ export async function generateRecommendationFromFinding(
     throw new Error(`Finding with ID ${findingId} not found in Company Context.`);
   }
 
+  // PHASE 11.10: Retrieve only relevant existing Company Memory as clearly labeled historical context
+  const allMemories = CompanyContextProvider.getCompanyMemory();
+  const relevantMemories = OperationalLearningLoop.retrieveRelevantMemories(
+    {
+      title: finding.title,
+      summary: finding.summary,
+      category: finding.category,
+      evidenceBasis: finding.evidence?.basis || finding.evidence?.repositoryTarget,
+      currentFacts: finding.evidence?.facts || [finding.summary],
+      tags: [finding.category || 'Engineering'],
+    },
+    allMemories
+  );
+
+  const historicalPromptContext = OperationalLearningLoop.formatForPromptInjection(relevantMemories);
+
   // Use existing AI executor to analyze the finding and generate a structured recommendation
   const executor = new ServerAgentExecutor();
   const prompt = `
 Analyze the following Research Finding and propose a clear, actionable recommendation for the Founder.
+
+=== CURRENT VERIFIED EVIDENCE ===
 Title: ${finding.title}
 Summary: ${finding.summary}
-Evidence Basis: ${finding.evidence?.repositoryTarget || 'External Data'}
+Evidence Basis: ${finding.evidence?.repositoryTarget || (finding.evidence?.sources && finding.evidence.sources.length > 0 ? finding.evidence.sources.join(', ') : 'External Empirical Data')}
+Facts: ${JSON.stringify(finding.evidence?.facts || [finding.summary])}
+
+${historicalPromptContext}
 
 Output a JSON object with these keys:
 - recommendation (string): The actionable proposal (e.g. "Migrate to Next.js 15")
 - businessImpact (string): Why this matters to the company
 - category (string): Must be one of: Strategic, Financial, Product, Governance
 - whatHappened (string): Brief summary of the triggering finding
+- aiInference (string): Clear statement of AI analytical inference separating it from raw facts and historical memory
 `;
 
   let parsed: any = {};
@@ -58,18 +81,33 @@ Output a JSON object with these keys:
   }
 
   const decisionId = `dec-${Date.now()}`;
+  const currentEvidenceStr = `Empirical evidence from ${finding.evidence?.repositoryTarget || (finding.evidence?.sources && finding.evidence.sources.length > 0 ? finding.evidence.sources.join(', ') : 'canonical finding')}: ${finding.summary}`;
+  const aiInferenceStr = parsed.aiInference || `AI Specialist (${authorId}) infers high probability of operational improvement from addressing: ${finding.title}.`;
+
+  // Apply strict 4-way separation
+  const separation = OperationalLearningLoop.separateOperationalComponents({
+    currentEvidence: currentEvidenceStr,
+    historicalMemories: relevantMemories,
+    aiInference: aiInferenceStr,
+    recommendationTitle: finding.title,
+  });
+
   const decision: CompanyDecision = {
     id: decisionId,
     title: `Action: ${finding.title}`,
-    status: 'pending_approval',
+    status: separation.founderDecision.status,
     category: parsed.category || 'Product',
     recommendedBy: authorId,
     agentId: authorId as any,
     recommendation: parsed.recommendation || `Address the findings from ${finding.title}. Specifically: ${finding.summary}`,
     businessImpact: parsed.businessImpact || 'High potential for optimization and strategic alignment.',
-    evidenceSummary: `Based on repository evidence: ${finding.evidence?.repositoryTarget || 'External Data'}`,
+    evidenceSummary: currentEvidenceStr,
     date: new Date().toISOString(),
-    founderApprovalRequired: true
+    founderApprovalRequired: separation.founderDecision.founderApprovalRequired,
+    // Phase 11.10 fields
+    currentEvidence: separation.currentEvidence,
+    historicalMemories: separation.historicalMemories,
+    aiInference: separation.aiInference,
   };
 
   const attentionItem: AttentionItem = {
@@ -78,12 +116,23 @@ Output a JSON object with these keys:
     title: `Recommendation: ${finding.title}`,
     whatHappened: parsed.whatHappened || `Research completed by ${authorId} generating new empirical findings.`,
     whyItMatters: decision.businessImpact,
-    recommendedAction: 'Review and approve the proposed directive.',
+    recommendedAction: separation.hasConflicts
+      ? `Review proposed directive. Note: ${separation.conflictNotice || 'Historical precedent conflict detected; verified evidence takes precedence.'}`
+      : 'Review and approve the proposed directive.',
     status: 'pending',
     timestamp: new Date().toISOString(),
     authorAgentId: authorId as any,
     authorName: authorId,
     founderActionRequired: true,
+    evidence: {
+      basis: (finding.evidence?.basis as EvidenceBasis) || 'external_evidence',
+      source: finding.evidence?.repositoryTarget || (finding.evidence?.sources && finding.evidence.sources.length > 0 ? finding.evidence.sources.join(', ') : 'Verified Finding'),
+      details: finding.summary,
+    },
+    // Phase 11.10 fields
+    currentEvidence: separation.currentEvidence,
+    historicalMemories: separation.historicalMemories,
+    aiInference: separation.aiInference,
   };
 
   // Persist into Governance Store

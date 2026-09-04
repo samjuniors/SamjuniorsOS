@@ -347,6 +347,45 @@ export interface CompanyInitiative {
   updatedAt: string;
 }
 
+export interface RetrievedHistoricalMemory {
+  id?: string;
+  memoryId?: string;
+  sourceDecisionId?: string;
+  pastDecisionId?: string;
+  approvedAction?: string;
+  pastAction?: string;
+  executionOutcome?: string;
+  epistemicConfidence?: 'verified_fact' | 'high_confidence' | 'unverified';
+  evidenceReferences?: string[];
+  relevanceScore?: number;
+  relevanceExplanation?: string;
+  whyRelevant?: string;
+  isConflicting?: boolean;
+  conflictWithCurrentEvidence?: boolean;
+  conflictDetails?:
+    | {
+        memoryPremise: string;
+        currentEvidence: string;
+        precedenceResolution: string;
+      }
+    | string;
+}
+
+export type OperationalEvidenceField =
+  | string
+  | {
+      summary: string;
+      source?: string;
+      confidence?: number;
+    };
+
+export type OperationalInferenceField =
+  | string
+  | {
+      recommendation?: string;
+      reasoning?: string;
+    };
+
 export interface CompanyDecision {
   id: string;
   title: string;
@@ -362,6 +401,10 @@ export interface CompanyDecision {
   resolutionNote?: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  // Phase 11.10: Operational Learning Loop & 4-way Separation
+  currentEvidence?: OperationalEvidenceField;
+  historicalMemories?: RetrievedHistoricalMemory[];
+  aiInference?: OperationalInferenceField;
 }
 
 export interface AttentionItem {
@@ -391,6 +434,10 @@ export interface AttentionItem {
     source: string;
     details: string;
   };
+  // Phase 11.10: Operational Learning Loop & 4-way Separation
+  currentEvidence?: OperationalEvidenceField;
+  historicalMemories?: RetrievedHistoricalMemory[];
+  aiInference?: OperationalInferenceField;
 }
 
 export interface OSNotification {
@@ -600,6 +647,7 @@ export interface CompanyMemory {
   evidenceReferences: string[];
   epistemicConfidence: 'verified_fact' | 'high_confidence' | 'unverified';
   timestamp: string;
+  recordedAt?: string;
 }
 
 // ----------------------------------------------------------------------------

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { AppId, OSNotification } from '@/types/os';
 import { playOSSound } from './IconHelper';
+import { SystemActivityStore, SystemActivityState } from '@/lib/system-activity-store';
 
 interface TopMenuBarProps {
   activeAppTitle?: string;
@@ -60,6 +61,17 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   const [isSystemMenuOpen, setIsSystemMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
+  const [activity, setActivity] = useState<SystemActivityState>(SystemActivityStore.getState());
+  const [isHeartbeatPopoverOpen, setIsHeartbeatPopoverOpen] = useState(false);
+
+  useEffect(() => {
+    const unsub = SystemActivityStore.subscribe(() => {
+      setActivity(SystemActivityStore.getState());
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -257,9 +269,123 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           </div>
         </div>
 
-        {/* Center: Live Autonomous Company Telemetry */}
-        <div className="hidden lg:flex items-center space-x-3 text-[11px] text-slate-400">
-          <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
+        {/* Center: Live Autonomous Company Telemetry & Agent Heartbeat */}
+        <div className="hidden md:flex items-center space-x-2.5 text-[11px] text-slate-400">
+          {/* Visual Heartbeat Status Indicator (Pulses when agents are actively processing tasks) */}
+          <div className="relative">
+            <button
+              id="topbar-agent-heartbeat"
+              onClick={() => {
+                if (soundEnabled) playOSSound('click');
+                setIsHeartbeatPopoverOpen(!isHeartbeatPopoverOpen);
+              }}
+              title={
+                activity.isProcessing
+                  ? `Active Processing: ${activity.activeTasks.map((t) => t.agentName).join(', ')} (${activity.pulseRateBpm} bpm)`
+                  : 'Agent Heartbeat: Idle Standby (68 bpm)'
+              }
+              className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full border transition-all cursor-pointer ${
+                activity.isProcessing
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.35)] animate-pulse'
+                  : 'bg-white/5 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
+              }`}
+            >
+              <span className="relative flex h-2 w-2">
+                {activity.isProcessing ? (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </>
+                ) : (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-500" />
+                )}
+              </span>
+              <Activity
+                className={`w-3.5 h-3.5 transition-transform ${
+                  activity.isProcessing ? 'text-emerald-400 animate-pulse' : 'text-slate-400'
+                }`}
+              />
+              <span className="font-mono text-[10px] font-semibold tracking-tight whitespace-nowrap">
+                {activity.isProcessing ? (
+                  <span className="text-emerald-300">
+                    HEARTBEAT: <span className="text-white font-bold">{activity.pulseRateBpm} BPM</span> • PROCESSING
+                  </span>
+                ) : (
+                  <span>HEARTBEAT: 68 BPM</span>
+                )}
+              </span>
+            </button>
+
+            {/* Heartbeat Telemetry Details Popover */}
+            <AnimatePresence>
+              {isHeartbeatPopoverOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsHeartbeatPopoverOpen(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute left-1/2 -translate-x-1/2 mt-2 w-72 os-glass rounded-2xl shadow-2xl p-3.5 z-50 border border-white/15 text-slate-200 space-y-3"
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div className="flex items-center space-x-1.5">
+                        <Activity className={`w-4 h-4 ${activity.isProcessing ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+                        <span className="text-xs font-bold text-white">Autonomous Agent Heartbeat</span>
+                      </div>
+                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-semibold ${
+                        activity.isProcessing
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : 'bg-white/10 text-slate-400'
+                      }`}>
+                        {activity.isProcessing ? 'ACTIVE PROCESSING' : 'STANDBY'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Pulse Frequency:</span>
+                        <span className="font-mono text-white font-semibold">{activity.pulseRateBpm} BPM</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Active Concurrent Tasks:</span>
+                        <span className="font-mono text-white font-semibold">{activity.activeTasks.length}</span>
+                      </div>
+                    </div>
+
+                    {activity.activeTasks.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                          Executing Agent Tasks:
+                        </span>
+                        {activity.activeTasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="p-2 rounded-xl bg-black/40 border border-white/5 space-y-0.5"
+                          >
+                            <div className="flex justify-between items-center text-[10px]">
+                              <span className="font-bold text-emerald-400">{task.agentName}</span>
+                              <span className="text-slate-500 font-mono">Running</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 truncate">{task.taskDescription}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-black/30 border border-white/5 text-center text-[11px] text-slate-400">
+                        All 4 executive AI agents idle & synchronized in memory.
+                      </div>
+                    )}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="hidden xl:flex items-center space-x-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             <span className="text-slate-300 font-medium">Autonomy:</span>
             <span className="text-emerald-400 uppercase font-mono tracking-wider font-semibold">
@@ -267,13 +393,7 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
-            <Activity className="w-3 h-3 text-indigo-400" />
-            <span>Neural Load:</span>
-            <span className="text-indigo-300 font-mono">34%</span>
-          </div>
-
-          <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
+          <div className="hidden xl:flex items-center space-x-1 px-2 py-0.5 rounded-full bg-white/5 border border-white/5">
             <Shield className="w-3 h-3 text-cyan-400" />
             <span>4 Agents Synced</span>
           </div>
