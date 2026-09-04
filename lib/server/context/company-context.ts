@@ -9,6 +9,7 @@ import {
   CompanyExecutiveContextSnapshot,
   AgentRole,
   AdvisorTargetContext,
+  CompanyMemory,
 } from '@/types/os';
 import {
   INITIAL_AGENTS,
@@ -35,6 +36,7 @@ export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
 let serverRecentIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
 let serverEngineeringIntelligence: CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined = undefined;
 let serverOrchestrationHistory: OrchestrationRun[] = [INITIAL_ORCHESTRATION];
+let serverCompanyMemory: CompanyMemory[] = [];
 
 export class CompanyContextProvider {
   /**
@@ -68,6 +70,14 @@ export class CompanyContextProvider {
     serverOrchestrationHistory.unshift(run);
   }
 
+  public static recordCompanyMemory(memory: CompanyMemory): void {
+    serverCompanyMemory.unshift(memory);
+  }
+
+  public static getCompanyMemory(): CompanyMemory[] {
+    return serverCompanyMemory;
+  }
+
   /**
    * Returns the canonical company context initialized on the server
    */
@@ -96,6 +106,7 @@ export class CompanyContextProvider {
       recentIntelligence: [...serverRecentIntelligence],
       financialModel: SAMPLE_FINANCIAL_MODEL,
       orchestrationHistory: [...serverOrchestrationHistory],
+      companyMemory: [...serverCompanyMemory],
       engineeringIntelligence: serverEngineeringIntelligence,
       lastUpdated: new Date().toISOString(),
     };
@@ -281,6 +292,22 @@ export class CompanyContextProvider {
       }
       lines.push(`  Deliverables Count: ${run.deliverables.length}`);
     });
+    lines.push('');
+
+    lines.push('=== DURABLE ORGANIZATIONAL MEMORY ===');
+    if (context.companyMemory && context.companyMemory.length > 0) {
+      context.companyMemory.forEach((mem) => {
+        lines.push(`[${mem.id}] Decision: ${mem.decisionId} | Timestamp: ${mem.timestamp}`);
+        lines.push(`  Approved Action: ${mem.approvedAction}`);
+        lines.push(`  Execution Outcome: ${mem.executionOutcome}`);
+        lines.push(`  Epistemic Confidence: ${mem.epistemicConfidence}`);
+        if (mem.evidenceReferences && mem.evidenceReferences.length > 0) {
+          lines.push(`  Evidence References: ${mem.evidenceReferences.join('; ')}`);
+        }
+      });
+    } else {
+      lines.push('No memory records established yet.');
+    }
 
     return lines.join('\n');
   }
@@ -318,10 +345,7 @@ export class CompanyContextProvider {
         lines.push(`  - ${ag.name} (${ag.role}) | Status: ${ag.status} | Current: ${ag.currentTask || 'Idle'}`);
       });
       lines.push('Operating Guardrails: Safe mock operations only; no unauthorized external mutations.');
-      return lines.join('\n');
-    }
-
-    if (role === 'researcher') {
+    } else if (role === 'researcher') {
       // Dr. Aris Thorne: Market research, intelligence, competitive landscape, tech benchmarks
       lines.push('=== MARKET & TECHNICAL RESEARCH CONTEXT (DR. ARIS THORNE • RESEARCH) ===');
       lines.push('Market Intelligence & Tech Radars:');
@@ -340,10 +364,7 @@ export class CompanyContextProvider {
         lines.push(`  - Findings: ${context.engineeringIntelligence.findingsSummary}`);
       }
       lines.push('Scope Guardrails: No access to internal financial ledgers or unredacted system keys; empirical analysis only.');
-      return lines.join('\n');
-    }
-
-    if (role === 'pm') {
+    } else if (role === 'pm') {
       // Maya Lin: Product specifications, PRDs, UX workflows, feature backlogs, acceptance criteria
       lines.push('=== PRODUCT ARCHITECTURE & PRD CONTEXT (MAYA LIN • PM) ===');
       lines.push('Active Product Roadmaps & Initiatives:');
@@ -362,10 +383,7 @@ export class CompanyContextProvider {
           lines.push(`  - "${att.title}": ${att.whatHappened} -> Recommended: ${att.recommendedAction}`);
         });
       lines.push('Scope Guardrails: Product design and specification modeling only; no direct server deployment or live mutations.');
-      return lines.join('\n');
-    }
-
-    if (role === 'finance') {
+    } else if (role === 'finance') {
       // Julian Cruz: Financial modeling, unit economics, compute burn, pricing tiers, gross margin
       lines.push('=== FINANCIAL ANALYSIS & UNIT ECONOMICS CONTEXT (JULIAN CRUZ • FINANCE) ===');
       const fin = context.financialModel;
@@ -380,9 +398,23 @@ export class CompanyContextProvider {
           lines.push(`    Result: ${init.latestResult}`);
         });
       lines.push('Scope Guardrails: Computational financial modeling & simulation only; live banking transfers and payment mutations disabled.');
-      return lines.join('\n');
+    } else {
+      return '';
     }
 
-    return '';
+    lines.push('');
+    lines.push('=== COMPANY MEMORY (APPROVED & COMPLETED STRATEGIES) ===');
+    if (context.companyMemory && context.companyMemory.length > 0) {
+      context.companyMemory.forEach((mem) => {
+        lines.push(`[${mem.id}] Action: ${mem.approvedAction}`);
+        lines.push(`  Outcome: ${mem.executionOutcome}`);
+        lines.push(`  Confidence: ${mem.epistemicConfidence}`);
+      });
+      lines.push('Note: Employees may use these memories for contextual grounding, but cannot unilaterally alter them or create binding company policies.');
+    } else {
+      lines.push('No memories established yet.');
+    }
+
+    return lines.join('\n');
   }
 }

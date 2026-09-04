@@ -1,4 +1,4 @@
-import { CompanyDecision, AttentionItem, ResearchTopic, OrchestrationRun } from '@/types/os';
+import { CompanyDecision, AttentionItem, ResearchTopic, OrchestrationRun, CompanyMemory } from '@/types/os';
 import { CompanyContextProvider } from '../context/company-context';
 import { MultiAgentOrchestrator } from './orchestrator';
 import { GovernanceStore } from '@/lib/governance-store';
@@ -115,6 +115,20 @@ export async function executeApprovedDecision(decisionId: string): Promise<Orche
 
   // Record into company context
   CompanyContextProvider.recordOrchestration(run);
+
+  // Phase 11.9: Create a structured Company Memory record from completed decision
+  if (run.status === 'completed' || run.status === 'failed' || run.status === 'paused') {
+    const memory: CompanyMemory = {
+      id: `mem-${Date.now()}`,
+      decisionId: decision.id,
+      approvedAction: decision.recommendation,
+      executionOutcome: run.status,
+      evidenceReferences: [decision.evidenceSummary],
+      epistemicConfidence: 'verified_fact', // We treat executed outcomes natively as verified facts
+      timestamp: new Date().toISOString()
+    };
+    CompanyContextProvider.recordCompanyMemory(memory);
+  }
 
   return run;
 }

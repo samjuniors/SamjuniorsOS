@@ -302,6 +302,10 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({
               <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-white/5">
                 <span>Recommended by {dec.recommendedBy}</span>
                 <div className="flex items-center space-x-2">
+                  <span className="flex items-center text-blue-400 bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-500/20 mr-2">
+                    <BrainCircuit className="w-3 h-3 mr-1" />
+                    Memory Established
+                  </span>
                   {onAskAdvisor && (
                     <button
                       onClick={() =>

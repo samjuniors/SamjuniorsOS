@@ -592,6 +592,16 @@ export interface FounderAdvisorResponse {
   error?: string;
 }
 
+export interface CompanyMemory {
+  id: string;
+  decisionId: string;
+  approvedAction: string;
+  executionOutcome: string;
+  evidenceReferences: string[];
+  epistemicConfidence: 'verified_fact' | 'high_confidence' | 'unverified';
+  timestamp: string;
+}
+
 // ----------------------------------------------------------------------------
 // 12. SHARED COMPANY CONTEXT SNAPSHOT
 // ----------------------------------------------------------------------------
@@ -604,6 +614,7 @@ export interface CompanyExecutiveContextSnapshot {
   recentIntelligence: ResearchTopic[];
   financialModel: FinanceMetric;
   orchestrationHistory: OrchestrationRun[];
+  companyMemory: CompanyMemory[];
   engineeringIntelligence?: {
     repositoryTarget: string;
     lastReconTimestamp: string;
