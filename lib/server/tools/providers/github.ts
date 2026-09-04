@@ -29,13 +29,17 @@ export function resolveTargetRepository(directive: string): { owner: string; rep
   // 1. Check for github.com URL pattern
   const urlMatch = directive.match(/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)/i);
   if (urlMatch) {
-    return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/i, '') };
+    let repo = urlMatch[2].replace(/\.git$/i, '');
+    repo = repo.replace(/\.+$/, '');
+    return { owner: urlMatch[1], repo };
   }
 
   // 2. Check for standard owner/repo pattern
   const repoMatch = directive.match(/(?:^|[\s"'(])([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)(?:[\s"')\],.]|$)/);
   if (repoMatch) {
-    return { owner: repoMatch[1], repo: repoMatch[2].replace(/\.git$/i, '') };
+    let repo = repoMatch[2].replace(/\.git$/i, '');
+    repo = repo.replace(/\.+$/, '');
+    return { owner: repoMatch[1], repo };
   }
 
   const clean = directive.toLowerCase();

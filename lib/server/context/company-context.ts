@@ -34,6 +34,7 @@ export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
  */
 let serverRecentIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
 let serverEngineeringIntelligence: CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined = undefined;
+let serverOrchestrationHistory: OrchestrationRun[] = [INITIAL_ORCHESTRATION];
 
 export class CompanyContextProvider {
   /**
@@ -63,6 +64,10 @@ export class CompanyContextProvider {
     serverEngineeringIntelligence = undefined;
   }
 
+  public static recordOrchestration(run: OrchestrationRun): void {
+    serverOrchestrationHistory.unshift(run);
+  }
+
   /**
    * Returns the canonical company context initialized on the server
    */
@@ -90,7 +95,7 @@ export class CompanyContextProvider {
       agents: INITIAL_AGENTS,
       recentIntelligence: [...serverRecentIntelligence],
       financialModel: SAMPLE_FINANCIAL_MODEL,
-      orchestrationHistory: [INITIAL_ORCHESTRATION],
+      orchestrationHistory: [...serverOrchestrationHistory],
       engineeringIntelligence: serverEngineeringIntelligence,
       lastUpdated: new Date().toISOString(),
     };
