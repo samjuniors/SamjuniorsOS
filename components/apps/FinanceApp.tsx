@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
   DollarSign,
@@ -13,12 +13,47 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   ShieldCheck,
+  Play,
+  RotateCcw,
+  ArrowRight,
+  Sparkles,
+  ExternalLink,
+  Boxes,
+  Compass,
+  BrainCircuit,
 } from 'lucide-react';
 import { SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
+import { AppId } from '@/types/os';
+import { CollaborationStore } from '@/lib/collaboration-store';
+import { playOSSound } from '../os/IconHelper';
 
-export const FinanceApp: React.FC = () => {
+interface FinanceAppProps {
+  onOpenApp?: (appId: AppId) => void;
+  soundEnabled?: boolean;
+}
+
+export const FinanceApp: React.FC<FinanceAppProps> = ({ onOpenApp, soundEnabled }) => {
   const [financials, setFinancials] = useState(SAMPLE_FINANCIAL_MODEL);
-  const [activeTab, setActiveTab] = useState<'pnl' | 'compute' | 'simulator' | 'invoices'>('pnl');
+  const [activeTab, setActiveTab] = useState<'pnl' | 'compute' | 'guardrails' | 'simulator' | 'invoices'>('pnl');
+  const [collabState, setCollabState] = useState(() => CollaborationStore.getState());
+
+  useEffect(() => {
+    const unsub = CollaborationStore.subscribe(() => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+    });
+
+    const handleCollabEvent = () => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+    };
+
+    window.addEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    return () => {
+      unsub();
+      window.removeEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    };
+  }, []);
 
   // Simulator Sliders
   const [simAccounts, setSimAccounts] = useState(45);
@@ -62,7 +97,24 @@ export const FinanceApp: React.FC = () => {
             }`}
           >
             <Cpu className="w-3.5 h-3.5" />
-            <span>Token & Compute Cost Attribution</span>
+            <span>Token & Compute Cost</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('guardrails')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+              activeTab === 'guardrails'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span className="flex items-center gap-1">
+              Budget Guardrails
+              {(collabState.currentStepIndex >= 3 || collabState.status === 'completed') && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </span>
           </button>
 
           <button
@@ -91,21 +143,170 @@ export const FinanceApp: React.FC = () => {
         </div>
 
         <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/20">
-          Financial Sandbox • Julian Cruz
+          Financial Desk • Julian Cruz
         </span>
       </div>
 
-      {/* Simulation Banner Notice */}
-      <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 py-1.5 flex items-center justify-between text-[11px] text-emerald-300">
-        <span className="flex items-center gap-1.5">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <strong>Financial Sandbox & Planning Mode:</strong> All figures represent computational unit models, pricing stress-tests, and compute attribution.
-        </span>
-        <span className="font-mono text-[10px] text-emerald-400">Deterministic Formula Model</span>
+      {/* AI Employee Collaboration Workflow Banner */}
+      <div className="bg-gradient-to-r from-emerald-950/40 via-purple-950/40 to-slate-900 border-b border-emerald-500/20 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+          </div>
+          <div>
+            <span className="font-bold text-white text-xs">
+              Cross-Functional Consultation: Julian Cruz ↔ Dr. Thorne (Research) ↔ Maya Lin (PM)
+            </span>
+            <span className="text-[10px] text-slate-400 ml-2">
+              {collabState.status === 'completed'
+                ? 'Julian Cruz audited and enforced $0.038 compute cap and 84.2% margin for Real-Time Memory Tier.'
+                : collabState.status === 'running'
+                ? `Current Step: ${collabState.steps[collabState.currentStepIndex]?.title}`
+                : 'Simulate Julian setting financial guardrails when Dr. Thorne requests budget approval.'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {collabState.status === 'idle' && (
+            <button
+              onClick={() => CollaborationStore.runFullSimulation(1400)}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-md"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Simulate Workflow</span>
+            </button>
+          )}
+
+          {collabState.status === 'running' && (
+            <button
+              onClick={() => CollaborationStore.stepForward()}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-xs font-semibold flex items-center space-x-1"
+            >
+              <span>Next Step ({collabState.currentStepIndex + 1}/7)</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
+
+          {collabState.status === 'completed' && onOpenApp && (
+            <>
+              <button
+                onClick={() => onOpenApp('research')}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[11px] font-medium flex items-center space-x-1"
+              >
+                <Compass className="w-3 h-3" />
+                <span>View Research Memo</span>
+              </button>
+              <button
+                onClick={() => onOpenApp('products')}
+                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px] font-medium flex items-center space-x-1"
+              >
+                <Boxes className="w-3 h-3" />
+                <span>View Maya Lin&apos;s PRD</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Main Tab View */}
       <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
+        {activeTab === 'guardrails' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  Inter-Agent Financial Guardrails & Initiative Allocations
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Julian Cruz actively reviews technical initiatives dispatched by Dr. Thorne and Maya Lin before capital deployment.
+                </p>
+              </div>
+            </div>
+
+            {/* Collaborative Initiative Card */}
+            <div className="os-glass-card rounded-2xl p-5 border border-emerald-500/50 bg-gradient-to-br from-emerald-950/30 via-slate-900 to-black space-y-4 shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                    <DollarSign className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-white">
+                      Initiative: Autonomous Real-Time Memory Tier
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Multi-Agent Collaboration: Dr. Aris Thorne (Research) ➔ Julian Cruz (Finance) ➔ Maya Lin (PM)
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Audited & Approved
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block font-mono">Max Compute Cap</span>
+                  <strong className="text-sm font-mono text-emerald-400">$0.038 / 1k queries</strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Strict execution limit</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block font-mono">Target Gross Margin</span>
+                  <strong className="text-sm font-mono text-emerald-400">84.2% Floor</strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">+4.2% above baseline</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block font-mono">Incremental ARR</span>
+                  <strong className="text-sm font-mono text-white">+$380,000</strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Projected annual expansion</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-black/40 border border-white/5">
+                  <span className="text-[10px] text-slate-400 block font-mono">Architecture Constraint</span>
+                  <strong className="text-xs font-mono text-cyan-400">LRU + Batch Embeddings</strong>
+                  <span className="text-[10px] text-slate-400 block mt-0.5">Caches 70%+ lookups</span>
+                </div>
+              </div>
+
+              {/* Consultation Transcript snippet */}
+              <div className="p-3.5 rounded-xl bg-black/50 border border-white/5 text-xs text-slate-300 space-y-2">
+                <div className="font-semibold text-white flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Julian Cruz&apos;s Consultation Audit Note:</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed font-mono">
+                  &ldquo;I have audited Dr. Thorne&apos;s market proposal for the Real-Time Memory Tier. Uncontrolled embedding updates could push compute burn to $0.09/task, eroding margins to 67%. I established a non-negotiable compute ceiling of $0.038 per 1,000 operations, requiring Maya Lin&apos;s PRD to mandate a 2-tier LRU cache. Under these terms, the feature generates 84.2% gross margin and adds ~$380k ARR. Approved.&rdquo;
+                </p>
+              </div>
+
+              {onOpenApp && (
+                <div className="flex items-center gap-3 pt-2 border-t border-white/10 text-xs">
+                  <button
+                    onClick={() => onOpenApp('research')}
+                    className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium"
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>View Dr. Thorne&apos;s Market Memo</span>
+                  </button>
+                  <span className="text-slate-600">•</span>
+                  <button
+                    onClick={() => onOpenApp('products')}
+                    className="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-medium"
+                  >
+                    <Boxes className="w-3.5 h-3.5" />
+                    <span>View Maya Lin&apos;s Ratified PRD</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {activeTab === 'pnl' && (
           <div className="space-y-5">
             {/* Top 4 Big Stat Cards */}

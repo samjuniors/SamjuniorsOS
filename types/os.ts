@@ -625,3 +625,66 @@ export interface CompanyExecutiveContextSnapshot {
   lastUpdated: string;
 }
 
+// ----------------------------------------------------------------------------
+// 13. AI EMPLOYEE COLLABORATION WORKFLOW
+// ----------------------------------------------------------------------------
+
+export interface CollaborationDialogue {
+  id: string;
+  from: AgentRole;
+  fromName: string;
+  to: AgentRole | 'council';
+  toName: string;
+  message: string;
+  timestamp: string;
+  protocolStep: AgentWorkProtocolStep;
+  attachment?: {
+    title: string;
+    type: 'prd' | 'research_brief' | 'budget_constraint' | 'governance_record';
+    appTarget: AppId;
+    snippet: string;
+  };
+}
+
+export interface CollaborationStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  protocolStep: AgentWorkProtocolStep;
+  initiatingAgent: AgentRole;
+  targetAgent: AgentRole | 'council';
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  timestamp: string;
+  dialogue: CollaborationDialogue;
+  affectedApp: AppId;
+  outputArtifact: string;
+}
+
+export interface EmployeeCollaborationState {
+  id: string;
+  title: string;
+  directive: string;
+  status: 'idle' | 'running' | 'completed';
+  currentStepIndex: number;
+  steps: CollaborationStep[];
+  allDialogues: CollaborationDialogue[];
+  artifacts: {
+    feature: ProductFeature;
+    prdSnippet: string;
+    researchTopic: ResearchTopic;
+    financialGuardrail: {
+      initiative: string;
+      maxComputeCostPer1kOps: string;
+      targetGrossMargin: string;
+      projectedAnnualArr: string;
+      cachingStrategy: string;
+      signOffDate: string;
+    };
+    decision: CompanyDecision;
+    companyMemory: CompanyMemory;
+  };
+  startedAt?: string;
+  completedAt?: string;
+}
+

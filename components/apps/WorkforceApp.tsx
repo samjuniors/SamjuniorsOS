@@ -56,13 +56,17 @@ import { EmployeeProfileView } from '../hq/EmployeeProfileView';
 import { DeliverablesView } from '../hq/DeliverablesView';
 import { DecisionsView } from '../hq/DecisionsView';
 import { ExecutionAuditView } from '../hq/ExecutionAuditView';
+import { CollaborationWorkflowView } from '../hq/CollaborationWorkflowView';
 import { GovernanceStore, GovernanceEventDetail } from '@/lib/governance-store';
+import { CollaborationStore } from '@/lib/collaboration-store';
+import { AppId } from '@/types/os';
 
 interface WorkforceAppProps {
   soundEnabled: boolean;
   initialDirective?: string;
   onClearInitialDirective?: () => void;
   onAskAdvisor?: (context: AdvisorTargetContext) => void;
+  onOpenApp?: (appId: AppId, directive?: string) => void;
 }
 
 export const WorkforceApp: React.FC<WorkforceAppProps> = ({
@@ -70,9 +74,10 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   initialDirective,
   onClearInitialDirective,
   onAskAdvisor,
+  onOpenApp,
 }) => {
   // Main Tab State: Default is Company HQ
-  const [activeTab, setActiveTab] = useState<'hq' | 'employees' | 'work' | 'decisions' | 'audit'>('hq');
+  const [activeTab, setActiveTab] = useState<'hq' | 'employees' | 'work' | 'collaboration' | 'decisions' | 'audit'>('hq');
 
   // Operational State
   const [directiveInput, setDirectiveInput] = useState(initialDirective || '');
@@ -88,6 +93,23 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   const [decisions, setDecisions] = useState<CompanyDecision[]>(() => GovernanceStore.getDecisions());
   const [intelligence, setIntelligence] = useState<ResearchTopic[]>(() => GovernanceStore.getIntelligence());
   const [selectedDeliverableDoc, setSelectedDeliverableDoc] = useState<ExecutionDeliverable | undefined>(undefined);
+  const [collabState, setCollabState] = useState(() => CollaborationStore.getState());
+
+  useEffect(() => {
+    const unsub = CollaborationStore.subscribe(() => {
+      setCollabState({ ...CollaborationStore.getState() });
+    });
+
+    const handleCollabEvent = () => {
+      setCollabState({ ...CollaborationStore.getState() });
+    };
+
+    window.addEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    return () => {
+      unsub();
+      window.removeEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    };
+  }, []);
 
   const selectedAgent = agents.find((a) => a.id === selectedAgentId) || agents[0];
 
@@ -449,6 +471,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   // Navigation tabs
   const navTabs = [
     { id: 'hq', label: 'Company HQ', icon: Building2, badge: attentionItems.filter((i) => i.status === 'pending').length },
+    { id: 'collaboration', label: 'AI Collaboration', icon: Zap, badge: collabState.status === 'running' ? 1 : undefined },
     { id: 'employees', label: 'Executive Team', icon: Users, badge: agents.length },
     { id: 'work', label: 'Company Work', icon: Briefcase, badge: currentRun.deliverables.length },
     { id: 'decisions', label: 'Decisions', icon: Scale, badge: decisions.filter((d) => d.status === 'pending_approval').length },
@@ -639,6 +662,39 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               />
             )}
 
+            {/* COLLABORATION WORKFLOW HIGHLIGHT */}
+            <div className="os-glass-card rounded-2xl p-4 border border-purple-500/30 bg-gradient-to-r from-purple-950/30 via-slate-900 to-indigo-950/30 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center shrink-0">
+                  <Zap className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-white">AI Employee Collaboration Protocol</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      Product ↔ Research ↔ Finance
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Simulate Maya Lin requesting market research from Dr. Aris Thorne, who consults Julian Cruz for compute budget constraints before delivering verified findings.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('click');
+                    setActiveTab('collaboration');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow transition-all"
+                >
+                  <span>Open Collaboration View</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
             {/* SECTION A: NEEDS FOUNDER ATTENTION */}
             <AttentionSection
               items={attentionItems}
@@ -669,6 +725,13 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
               onViewWork={() => setActiveTab('work')}
               onAskAdvisor={onAskAdvisor}
             />
+          </div>
+        )}
+
+        {/* TAB: AI EMPLOYEE COLLABORATION WORKFLOW */}
+        {activeTab === 'collaboration' && (
+          <div className="max-w-6xl mx-auto">
+            <CollaborationWorkflowView soundEnabled={soundEnabled} onOpenApp={onOpenApp} />
           </div>
         )}
 

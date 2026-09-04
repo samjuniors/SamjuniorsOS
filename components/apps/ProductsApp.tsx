@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Boxes,
   Plus,
@@ -13,25 +13,75 @@ import {
   Tag,
   Kanban,
   Sliders,
+  Play,
+  RotateCcw,
+  ExternalLink,
+  ShieldCheck,
+  TrendingUp,
+  BrainCircuit,
+  DollarSign,
 } from 'lucide-react';
-import { ProductFeature } from '@/types/os';
+import { ProductFeature, AppId } from '@/types/os';
 import { INITIAL_FEATURES } from '@/lib/os-data';
 import { playOSSound } from '../os/IconHelper';
+import { CollaborationStore } from '@/lib/collaboration-store';
 
-export const ProductsApp: React.FC = () => {
+interface ProductsAppProps {
+  onOpenApp?: (appId: AppId) => void;
+  soundEnabled?: boolean;
+}
+
+export const ProductsApp: React.FC<ProductsAppProps> = ({ onOpenApp, soundEnabled }) => {
   const [features, setFeatures] = useState<ProductFeature[]>(INITIAL_FEATURES);
   const [activeTab, setActiveTab] = useState<'roadmap' | 'sprint' | 'prd'>('roadmap');
   const [selectedFeature, setSelectedFeature] = useState<ProductFeature>(INITIAL_FEATURES[0]);
   const [prdPrompt, setPrdPrompt] = useState('');
   const [generatedPrd, setGeneratedPrd] = useState<string | null>(null);
   const [isGeneratingPrd, setIsGeneratingPrd] = useState(false);
+  const [collabState, setCollabState] = useState(() => CollaborationStore.getState());
+
+  useEffect(() => {
+    const unsub = CollaborationStore.subscribe(() => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+
+      // If step 6 or completed, ensure feature is in features list
+      if (state.currentStepIndex >= 5 || state.status === 'completed') {
+        setFeatures((prev) => {
+          if (prev.some((f) => f.id === state.artifacts.feature.id)) return prev;
+          return [state.artifacts.feature, ...prev];
+        });
+        if (!generatedPrd) {
+          setGeneratedPrd(state.artifacts.prdSnippet);
+        }
+      }
+    });
+
+    const handleCollabEvent = () => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+      if (state.currentStepIndex >= 5 || state.status === 'completed') {
+        setFeatures((prev) => {
+          if (prev.some((f) => f.id === state.artifacts.feature.id)) return prev;
+          return [state.artifacts.feature, ...prev];
+        });
+        setGeneratedPrd(state.artifacts.prdSnippet);
+      }
+    };
+
+    window.addEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    return () => {
+      unsub();
+      window.removeEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    };
+  }, [generatedPrd]);
 
   const handleGeneratePrd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!prdPrompt.trim() || isGeneratingPrd) return;
 
     setIsGeneratingPrd(true);
-    playOSSound('execute');
+    if (soundEnabled) playOSSound('execute');
 
     setTimeout(() => {
       setGeneratedPrd(`## Product Requirements Document (PRD): ${prdPrompt.trim()}
@@ -51,7 +101,7 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
 - Automatic fallback if external API exceeds 5,000ms latency.
 - Strict token spend cap of $0.05 per task execution.`);
       setIsGeneratingPrd(false);
-      playOSSound('notification');
+      if (soundEnabled) playOSSound('notification');
     }, 1000);
   };
 
@@ -102,6 +152,123 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
         </span>
       </div>
 
+      {/* AI Employee Collaboration Workflow Banner */}
+      <div className="bg-gradient-to-r from-rose-950/40 via-purple-950/40 to-slate-900 border-b border-rose-500/20 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center space-x-3">
+          <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center shadow-md">
+            <Sparkles className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="font-bold text-white text-xs">
+                AI Employee Collaboration: PM ↔ Researcher ↔ Finance
+              </span>
+              <span
+                className={`text-[9px] font-mono px-2 py-0.5 rounded-full ${
+                  collabState.status === 'completed'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : collabState.status === 'running'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse'
+                    : 'bg-slate-800 text-slate-400 border border-white/10'
+                }`}
+              >
+                {collabState.status === 'completed'
+                  ? 'Completed & Synced'
+                  : collabState.status === 'running'
+                  ? `Step ${collabState.currentStepIndex + 1}/7 Running`
+                  : 'Ready to Simulate'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {collabState.status === 'completed'
+                ? 'Maya Lin (PM) authored PRD after consulting Dr. Thorne (Market) & Julian Cruz ($0.038 compute cap).'
+                : collabState.status === 'running'
+                ? collabState.steps[collabState.currentStepIndex]?.title
+                : 'Simulate Maya Lin requesting market research, Dr. Thorne consulting Finance for budget caps, and delivering findings.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center space-x-2">
+          {collabState.status === 'idle' && (
+            <>
+              <button
+                onClick={() => CollaborationStore.runFullSimulation(1400)}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs flex items-center space-x-1.5 shadow-md transition-all"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Simulate Collaboration</span>
+              </button>
+              <button
+                onClick={() => CollaborationStore.stepForward()}
+                className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-slate-200 text-xs font-semibold transition-all"
+              >
+                Step 1
+              </button>
+            </>
+          )}
+
+          {collabState.status === 'running' && (
+            <>
+              <button
+                onClick={() => CollaborationStore.stepForward()}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs flex items-center space-x-1.5 shadow-md transition-all"
+              >
+                <span>Next Step ({collabState.currentStepIndex + 1}/7)</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => CollaborationStore.completeInstantly()}
+                className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-slate-300 text-xs transition-all"
+              >
+                Fast-Forward
+              </button>
+            </>
+          )}
+
+          {collabState.status === 'completed' && (
+            <>
+              {onOpenApp && (
+                <>
+                  <button
+                    onClick={() => onOpenApp('research')}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-[11px] font-medium flex items-center space-x-1 transition-all"
+                    title="View Dr. Thorne's Market Memo"
+                  >
+                    <TrendingUp className="w-3 h-3" />
+                    <span>View in Research</span>
+                  </button>
+                  <button
+                    onClick={() => onOpenApp('finance')}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium flex items-center space-x-1 transition-all"
+                    title="View Julian Cruz's Financial Constraints"
+                  >
+                    <DollarSign className="w-3 h-3" />
+                    <span>View in Finance</span>
+                  </button>
+                  <button
+                    onClick={() => onOpenApp('workforce')}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-medium flex items-center space-x-1 transition-all"
+                    title="View Orchestration Run"
+                  >
+                    <BrainCircuit className="w-3 h-3" />
+                    <span>Orchestrator</span>
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => CollaborationStore.reset()}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 text-xs transition-all"
+                title="Reset simulation"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Main Tab Content */}
       <div className="flex-1 overflow-auto p-4 md:p-6 space-y-6">
         {activeTab === 'roadmap' && (
@@ -119,42 +286,84 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {features.map((feat) => (
-                <div
-                  key={feat.id}
-                  className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-2.5 hover:border-rose-500/40 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-white">{feat.title}</span>
-                    <span
-                      className={`text-[9px] font-mono px-2 py-0.5 rounded-full ${
-                        feat.status === 'Shipped'
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : feat.status === 'In Progress'
-                          ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}
-                    >
-                      {feat.status}
-                    </span>
-                  </div>
+              {features.map((feat) => {
+                const isCollabFeature = feat.id === 'feat-collab-mem-1';
+                return (
+                  <div
+                    key={feat.id}
+                    className={`os-glass-card rounded-2xl p-4 border transition-all ${
+                      isCollabFeature
+                        ? 'border-rose-500/60 bg-gradient-to-b from-rose-950/30 to-slate-900 ring-1 ring-rose-500/30'
+                        : 'border-white/10 hover:border-rose-500/40'
+                    } space-y-2.5`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-xs text-white">{feat.title}</span>
+                        {isCollabFeature && (
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                            Multi-Agent Collab
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={`text-[9px] font-mono px-2 py-0.5 rounded-full ${
+                          feat.status === 'Shipped'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : feat.status === 'In Progress'
+                            ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}
+                      >
+                        {feat.status}
+                      </span>
+                    </div>
 
-                  <p className="text-xs text-slate-300 leading-relaxed">{feat.description}</p>
+                    <p className="text-xs text-slate-300 leading-relaxed">{feat.description}</p>
 
-                  <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400">
-                    <span>Owner: <strong className="text-slate-200">{feat.owner}</strong></span>
-                    <span className="font-mono text-rose-400">{feat.completion}% Complete</span>
-                  </div>
+                    {isCollabFeature && (
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-[11px]">
+                        <div className="flex items-center justify-between text-slate-300 font-mono text-[10px]">
+                          <span>Market Validation: <strong className="text-amber-400">Dr. Thorne (98%)</strong></span>
+                          <span>Compute Cap: <strong className="text-emerald-400">$0.038 / 1k ops</strong></span>
+                        </div>
+                        {onOpenApp && (
+                          <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                            <button
+                              onClick={() => onOpenApp('research')}
+                              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5"
+                            >
+                              <span>Inspect Market Memo</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                            <span className="text-slate-600">•</span>
+                            <button
+                              onClick={() => onOpenApp('finance')}
+                              className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5"
+                            >
+                              <span>Inspect Financial Guardrail</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-                  {/* Mini Progress */}
-                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full"
-                      style={{ width: `${feat.completion}%` }}
-                    />
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400">
+                      <span>Owner: <strong className="text-slate-200">{feat.owner}</strong></span>
+                      <span className="font-mono text-rose-400">{feat.completion}% Complete</span>
+                    </div>
+
+                    {/* Mini Progress */}
+                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full"
+                        style={{ width: `${feat.completion}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -185,8 +394,22 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
               {/* In Progress */}
               <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
-                  In Progress (2)
+                  In Progress ({collabState.currentStepIndex >= 5 || collabState.status === 'completed' ? 3 : 2})
                 </span>
+                {(collabState.currentStepIndex >= 5 || collabState.status === 'completed') && (
+                  <div className="p-3 rounded-xl bg-gradient-to-br from-rose-950/40 to-slate-900 border border-rose-500/40 text-xs space-y-1.5 shadow-md">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-white">Autonomous Real-Time Memory Tier</span>
+                      <span className="text-[9px] font-mono text-rose-400 px-1.5 py-0.5 bg-rose-500/20 rounded">Collab</span>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      100% Scoped • Maya Lin, Dr. Thorne & Julian Cruz
+                    </div>
+                    <div className="text-[10px] text-emerald-400 font-mono">
+                      Budget Cap: $0.038/1k ops • Margin: 84.2%
+                    </div>
+                  </div>
+                )}
                 <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-xs space-y-1">
                   <div className="font-semibold text-white">Zero-Latency Inter-Agent Neural Bus</div>
                   <div className="text-[10px] text-indigo-300">82% • Sophia & Maya</div>
@@ -213,10 +436,21 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
 
         {activeTab === 'prd' && (
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-rose-400" />
-              Automated PRD (Product Requirements Document) Generator
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-rose-400" />
+                Automated PRD (Product Requirements Document) Generator
+              </h3>
+              {(collabState.currentStepIndex >= 5 || collabState.status === 'completed') && (
+                <button
+                  onClick={() => setGeneratedPrd(collabState.artifacts.prdSnippet)}
+                  className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center space-x-1 transition-all"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Load Ratified Collab PRD (Memory Tier)</span>
+                </button>
+              )}
+            </div>
 
             <form onSubmit={handleGeneratePrd} className="flex gap-2">
               <input

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass,
   Sparkles,
@@ -16,17 +16,67 @@ import {
   Cpu,
   Flame,
   Globe,
+  Play,
+  RotateCcw,
+  TrendingUp,
+  BrainCircuit,
+  DollarSign,
+  ShieldAlert,
+  Boxes,
 } from 'lucide-react';
-import { ResearchTopic } from '@/types/os';
+import { ResearchTopic, AppId } from '@/types/os';
 import { INITIAL_RESEARCH } from '@/lib/os-data';
 import { playOSSound } from '../os/IconHelper';
+import { CollaborationStore } from '@/lib/collaboration-store';
 
-export const ResearchApp: React.FC = () => {
+interface ResearchAppProps {
+  onOpenApp?: (appId: AppId) => void;
+  soundEnabled?: boolean;
+}
+
+export const ResearchApp: React.FC<ResearchAppProps> = ({ onOpenApp, soundEnabled }) => {
   const [researchList, setResearchList] = useState<ResearchTopic[]>(INITIAL_RESEARCH);
   const [selectedTopic, setSelectedTopic] = useState<ResearchTopic>(INITIAL_RESEARCH[0]);
   const [customQuery, setCustomQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [collabState, setCollabState] = useState(() => CollaborationStore.getState());
+
+  useEffect(() => {
+    const unsub = CollaborationStore.subscribe(() => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+
+      // If step 3+ or completed, include collab topic
+      if (state.currentStepIndex >= 2 || state.status === 'completed') {
+        const collabTopic = state.artifacts.researchTopic;
+        setResearchList((prev) => {
+          if (prev.some((t) => t.id === collabTopic.id)) return prev;
+          return [collabTopic, ...prev];
+        });
+        setSelectedTopic(collabTopic);
+      }
+    });
+
+    const handleCollabEvent = () => {
+      const state = CollaborationStore.getState();
+      setCollabState({ ...state });
+      if (state.currentStepIndex >= 2 || state.status === 'completed') {
+        const collabTopic = state.artifacts.researchTopic;
+        setResearchList((prev) => {
+          if (prev.some((t) => t.id === collabTopic.id)) return prev;
+          return [collabTopic, ...prev];
+        });
+        setSelectedTopic(collabTopic);
+      }
+    };
+
+    window.addEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    return () => {
+      unsub();
+      window.removeEventListener('samjuniors-collaboration-updated', handleCollabEvent);
+    };
+  }, []);
 
   const trendRadar = [
     { name: 'Hierarchical Multi-Agent OS', stage: 'Mainstream Adoption', impact: 'Transformative', score: 98 },
@@ -40,7 +90,7 @@ export const ResearchApp: React.FC = () => {
     if (!customQuery.trim() || isGenerating) return;
 
     setIsGenerating(true);
-    playOSSound('execute');
+    if (soundEnabled) playOSSound('execute');
 
     const newTopic: ResearchTopic = {
       id: `res-${Date.now()}`,
@@ -59,7 +109,7 @@ export const ResearchApp: React.FC = () => {
       setSelectedTopic(newTopic);
       setIsGenerating(false);
       setCustomQuery('');
-      playOSSound('notification');
+      if (soundEnabled) playOSSound('notification');
     }, 1200);
   };
 
@@ -68,6 +118,8 @@ export const ResearchApp: React.FC = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const isCollabTopic = selectedTopic?.id === 'res-collab-mem-1';
 
   return (
     <div className="h-full flex flex-col bg-slate-950 text-slate-100">
@@ -101,6 +153,68 @@ export const ResearchApp: React.FC = () => {
         </form>
       </div>
 
+      {/* AI Employee Collaboration Workflow Banner */}
+      <div className="bg-gradient-to-r from-amber-950/40 via-purple-950/40 to-slate-900 border-b border-amber-500/20 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center space-x-2.5">
+          <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          </div>
+          <div>
+            <span className="font-bold text-white text-xs">
+              Cross-Agent Collaboration: PM (Maya) ↔ Research (Dr. Thorne) ↔ Finance (Julian Cruz)
+            </span>
+            <span className="text-[10px] text-slate-400 ml-2">
+              {collabState.status === 'completed'
+                ? 'Research completed after consulting Finance for unit economics & delivered to PM.'
+                : collabState.status === 'running'
+                ? `Active: ${collabState.steps[collabState.currentStepIndex]?.title}`
+                : 'Simulate Dr. Thorne consulting Julian Cruz before briefing Maya Lin.'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          {collabState.status === 'idle' && (
+            <button
+              onClick={() => CollaborationStore.runFullSimulation(1400)}
+              className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center space-x-1 shadow-md"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Simulate Workflow</span>
+            </button>
+          )}
+
+          {collabState.status === 'running' && (
+            <button
+              onClick={() => CollaborationStore.stepForward()}
+              className="px-2.5 py-1 rounded-lg bg-amber-600 text-white text-xs font-semibold flex items-center space-x-1"
+            >
+              <span>Next Step ({collabState.currentStepIndex + 1}/7)</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
+
+          {collabState.status === 'completed' && onOpenApp && (
+            <>
+              <button
+                onClick={() => onOpenApp('products')}
+                className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px] font-medium flex items-center space-x-1"
+              >
+                <Boxes className="w-3 h-3" />
+                <span>View Maya Lin&apos;s PRD</span>
+              </button>
+              <button
+                onClick={() => onOpenApp('finance')}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-medium flex items-center space-x-1"
+              >
+                <DollarSign className="w-3 h-3" />
+                <span>View Julian&apos;s Budget</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
       {/* Main Split Grid */}
       <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3">
         {/* Left Col: Research Repository & Trend Radar */}
@@ -111,30 +225,42 @@ export const ResearchApp: React.FC = () => {
             </span>
 
             <div className="space-y-2">
-              {researchList.map((topic) => (
-                <button
-                  key={topic.id}
-                  id={`research-topic-${topic.id}`}
-                  onClick={() => setSelectedTopic(topic)}
-                  className={`w-full text-left p-3 rounded-xl border transition-all ${
-                    selectedTopic.id === topic.id
-                      ? 'os-glass-card-active border-amber-500/60 shadow-lg ring-1 ring-amber-500/30'
-                      : 'os-glass-card border-white/10 hover:border-white/20'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-[10px] text-amber-400 font-mono mb-1">
-                    <span>{topic.category}</span>
-                    <span>{topic.date}</span>
-                  </div>
+              {researchList.map((topic) => {
+                const isCollab = topic.id === 'res-collab-mem-1';
+                return (
+                  <button
+                    key={topic.id}
+                    id={`research-topic-${topic.id}`}
+                    onClick={() => setSelectedTopic(topic)}
+                    className={`w-full text-left p-3 rounded-xl border transition-all ${
+                      selectedTopic.id === topic.id
+                        ? 'os-glass-card-active border-amber-500/60 shadow-lg ring-1 ring-amber-500/30'
+                        : isCollab
+                        ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-500/60'
+                        : 'os-glass-card border-white/10 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] text-amber-400 font-mono mb-1">
+                      <span>{topic.category}</span>
+                      <div className="flex items-center space-x-1">
+                        {isCollab && (
+                          <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] border border-amber-500/30">
+                            Collab
+                          </span>
+                        )}
+                        <span>{topic.date}</span>
+                      </div>
+                    </div>
 
-                  <h4 className="text-xs font-bold text-white line-clamp-2">{topic.title}</h4>
+                    <h4 className="text-xs font-bold text-white line-clamp-2">{topic.title}</h4>
 
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-white/5">
-                    <span>Confidence: {topic.confidence}%</span>
-                    <span className="text-emerald-400 font-mono">{topic.impact}</span>
-                  </div>
-                </button>
-              ))}
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-white/5">
+                      <span>Confidence: {topic.confidence}%</span>
+                      <span className="text-emerald-400 font-mono">{topic.impact}</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -207,6 +333,58 @@ export const ResearchApp: React.FC = () => {
                 ))}
               </div>
 
+              {/* Special Inter-Agent Consultation Callout if Collab topic */}
+              {isCollabTopic && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-emerald-950/30 to-slate-900 border border-emerald-500/40 space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <DollarSign className="w-4 h-4 text-emerald-400" />
+                      Inter-Agent Consultation Record: Julian Cruz (Finance)
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400 px-2 py-0.5 bg-emerald-500/20 rounded-full border border-emerald-500/30">
+                      Budget Cap Enforced
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    During Step 3 of the feasibility study, Dr. Thorne identified that uncapped real-time vector indexing could trigger exponential token inflation. Dr. Thorne halted to consult <strong>Julian Cruz (Finance)</strong>, who stress-tested the unit economics and established:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                    <div className="p-2.5 rounded-xl bg-black/50 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-mono">Max Compute Ceiling</span>
+                      <strong className="text-emerald-400 font-mono text-sm">$0.038 / 1k ops</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-black/50 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-mono">Target Gross Margin</span>
+                      <strong className="text-emerald-400 font-mono text-sm">84.2% Floor</strong>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-black/50 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-mono">Mandatory Mitigation</span>
+                      <strong className="text-cyan-400 text-xs">Two-tier LRU Cache</strong>
+                    </div>
+                  </div>
+
+                  {onOpenApp && (
+                    <div className="flex items-center gap-3 pt-2 border-t border-white/10 text-xs">
+                      <button
+                        onClick={() => onOpenApp('products')}
+                        className="text-rose-400 hover:text-rose-300 flex items-center gap-1 font-medium"
+                      >
+                        <Boxes className="w-3.5 h-3.5" />
+                        <span>Inspect Maya Lin&apos;s Final PRD</span>
+                      </button>
+                      <span className="text-slate-600">•</span>
+                      <button
+                        onClick={() => onOpenApp('finance')}
+                        className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-medium"
+                      >
+                        <DollarSign className="w-3.5 h-3.5" />
+                        <span>Inspect Financial Model</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Executive Analysis */}
               <div className="os-glass-card rounded-2xl p-5 border border-white/10 space-y-3">
                 <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -234,7 +412,7 @@ export const ResearchApp: React.FC = () => {
                 </div>
               </div>
 
-              {/* Recommendations for Other Agents */}
+              {/* Downstream Hand-offs */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
                   Downstream Action Items Dispatched by Research
@@ -242,11 +420,11 @@ export const ResearchApp: React.FC = () => {
                 <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-xs text-slate-300 space-y-1.5">
                   <div className="flex items-center space-x-2 text-indigo-400 font-semibold">
                     <ArrowRight className="w-3 h-3" />
-                    <span>To Maya Lin (PM): Integrate sparse prompt compression into Sprint 14 specs.</span>
+                    <span>To Maya Lin (PM): PRD for Autonomous Memory Tier scoped and accepted.</span>
                   </div>
                   <div className="flex items-center space-x-2 text-emerald-400 font-semibold">
                     <ArrowRight className="w-3 h-3" />
-                    <span>To Julian Cruz (Finance): Adjust blended compute unit economics down to $0.016/task.</span>
+                    <span>To Julian Cruz (Finance): Unit economics validated under $0.038 budget cap.</span>
                   </div>
                 </div>
               </div>
