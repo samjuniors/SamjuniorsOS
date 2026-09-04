@@ -1,7 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
 import { AgentRole, AgentWorkProtocolStep, EvidenceBasis, OutputProvenance } from '@/types/os';
-import { TaskRetrievedContextBundle } from '@/types/context';
+import { AssembledEmployeeContext, TaskRetrievedContextBundle } from '@/types/context';
 import { ContextualRetrievalService } from '../context/context-retrieval';
+import { ContextAssemblyService } from '../context/context-assembly';
 import { SERVER_AGENTS, ServerAgentDefinition } from './definitions';
 
 export interface AgentExecutionContext {
@@ -10,6 +11,8 @@ export interface AgentExecutionContext {
   taskTitle: string;
   taskDescription: string;
   retrievedContext?: TaskRetrievedContextBundle;
+  assembledContext?: AssembledEmployeeContext;
+  currentEvidence?: import('@/types/context').CurrentEvidenceInput[];
   upstreamContext?: {
     cooScope?: string;
     researchFindings?: string;
@@ -29,6 +32,7 @@ export interface AgentExecutionResult {
   structuredData?: Record<string, any>;
   provenance: OutputProvenance;
   retrievedContext?: TaskRetrievedContextBundle;
+  assembledContext?: AssembledEmployeeContext;
   error?: string;
 }
 
@@ -67,15 +71,83 @@ export class ServerAgentExecutor {
     const timestamp = new Date().toISOString();
     const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // PHASE 11.12: Automatic Contextual Retrieval for assigned task
-    // Employees receive relevant context automatically; Founder does not manually assemble prompts.
-    const retrievedContext = context.retrievedContext || await ContextualRetrievalService.getInstance().retrieveContextForTask({
+    // PHASE 11.13: Deterministic Context Assembly Pipeline
+    // Task → Employee Role → Skill → relevant State/Knowledge/Memory → current evidence → final employee context
+    const assembledContext = context.assembledContext || await ContextAssemblyService.getInstance().assembleContextForTask({
       taskId: `task-${context.protocolStep}-${agentId}`,
       role: agentId,
       taskTitle: context.taskTitle,
       taskDescription: context.taskDescription,
       directive: context.directive,
+      protocolStep: context.protocolStep,
+      currentEvidence: context.currentEvidence,
+      upstreamContext: context.upstreamContext,
     });
+
+    // Also populate legacy bundle for compatibility
+    const retrievedContext = context.retrievedContext || {
+      taskId: assembledContext.taskId,
+      role: assembledContext.employeeRole,
+      taskTitle: assembledContext.taskTitle,
+      timestamp: assembledContext.timestamp,
+      retrievedState: {
+        items: assembledContext.companyState.map((s) => ({
+          entityType: 'initiative' as const,
+          id: s.sourceId,
+          title: s.title,
+          summary: s.content,
+          data: {},
+          relevanceScore: s.relevanceScore,
+          matchReason: s.matchReason,
+          provenance: s.provenance,
+        })),
+        totalCount: assembledContext.companyState.length,
+        byEntityType: {},
+      },
+      retrievedKnowledge: {
+        items: assembledContext.companyKnowledge.map((k) => ({
+          knowledgeId: k.sourceId,
+          documentId: k.sourceId,
+          title: k.title,
+          category: 'sop' as const,
+          version: '1.0',
+          summary: k.title,
+          contentSnippet: k.content,
+          fullContent: k.content,
+          applicableDepartments: [agentId],
+          relevanceScore: k.relevanceScore,
+          matchReason: k.matchReason,
+          provenance: k.provenance,
+        })),
+        totalCount: assembledContext.companyKnowledge.length,
+        byCategory: {},
+      },
+      retrievedMemory: {
+        items: assembledContext.historicalMemory.map((m) => ({
+          memoryId: m.sourceId,
+          sourceDecisionId: m.sourceId,
+          approvedAction: m.title,
+          executionOutcome: 'verified_complete',
+          keyLearnings: [],
+          tags: [],
+          timestamp: m.timestamp,
+          epistemicConfidence: 'verified_fact' as const,
+          relevanceExplanation: m.matchReason,
+          isConflicting: m.isConflicting,
+          provenance: m.provenance,
+        })),
+        totalCount: assembledContext.historicalMemory.length,
+        hasHistoricalPrecedents: assembledContext.historicalMemory.length > 0,
+      },
+      conflicts: assembledContext.conflicts,
+      excludedNoise: {
+        stateItemsExcludedCount: assembledContext.excludedNoise.stateItemsExcludedCount,
+        knowledgeItemsExcludedCount: assembledContext.excludedNoise.knowledgeItemsExcludedCount,
+        memoryItemsExcludedCount: assembledContext.excludedNoise.memoryItemsExcludedCount,
+        sampleExcludedTitles: assembledContext.excludedNoise.sampleExcludedTitles,
+      },
+      formattedSeparatedPrompt: assembledContext.formattedPrompt,
+    };
 
     if (!this.aiClient) {
       return {
@@ -86,6 +158,7 @@ export class ServerAgentExecutor {
         statusMessage: `[${agentDef.name}] Execution halted: GEMINI_API_KEY is not configured on the server.`,
         outputContent: `**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.`,
         retrievedContext,
+        assembledContext,
         provenance: {
           agentId,
           agentName: agentDef.name,
@@ -178,6 +251,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
             modelUsed: model,
           },
           retrievedContext,
+          assembledContext,
         };
       } catch (err: any) {
         lastError = err;
@@ -202,6 +276,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       statusMessage: `[${agentDef.name}] Task execution failed due to API communication error: ${lastError?.message || 'Unknown error'}.`,
       outputContent: `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`,
       retrievedContext,
+      assembledContext,
       provenance: {
         agentId,
         agentName: agentDef.name,

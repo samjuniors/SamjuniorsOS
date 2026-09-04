@@ -381,7 +381,7 @@ export interface RetrievedHistoricalMemory {
       }
     | string;
   provenance?: {
-    sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory';
+    sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
     sourceId: string;
     sourceTitle: string;
     epistemicType: string;
@@ -655,6 +655,7 @@ export interface FounderAdvisorResponse {
   referencedAgents?: AgentRole[];
   referencedDecisions?: string[];
   retrievedContext?: import('./context').TaskRetrievedContextBundle;
+  assembledContext?: import('./context').AssembledEmployeeContext;
   liveAi: boolean;
   modelUsed?: string;
   timestamp: string;

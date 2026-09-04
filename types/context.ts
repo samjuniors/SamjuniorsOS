@@ -23,14 +23,33 @@ export type EpistemicClassification =
   | 'ai_inference'; // Derived specialist analysis or recommendation
 
 /**
+ * Standardized Phase 11.13 Epistemic Human-Readable Labels
+ */
+export type EpistemicLabel =
+  | 'current verified evidence'
+  | 'company state'
+  | 'company knowledge'
+  | 'historical memory'
+  | 'AI inference';
+
+export const EPISTEMIC_LABELS: Record<EpistemicClassification, EpistemicLabel> = {
+  current_evidence: 'current verified evidence',
+  current_truth: 'company state',
+  durable_reference: 'company knowledge',
+  historical_memory: 'historical memory',
+  ai_inference: 'AI inference',
+};
+
+/**
  * Mandatory Provenance Metadata for every retrieved item
  */
 export interface ContextItemProvenance {
-  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory';
+  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
   sourceId: string;
   sourceTitle: string;
   epistemicType: EpistemicClassification;
-  authority: string; // e.g. "Operational System Truth", "Executive SOP Mandate", "Founder-Approved Precedent"
+  epistemicLabel?: EpistemicLabel;
+  authority: string; // e.g. "Operational System Truth", "Executive SOP Mandate", "Founder-Approved Precedent", "Empirical Tool Verification"
   timestamp: string;
   confidence: 'verified_fact' | 'high_confidence' | 'reference_standard' | 'unverified';
   immutablePrecedent?: boolean; // true for historical memory
@@ -200,4 +219,143 @@ export interface ICompanyMemoryStore {
   getMemoryById(id: string): Promise<CompanyMemory | null>;
   recordMemory(memory: CompanyMemory): Promise<void>;
   queryMemories(params: MemoryQueryParams): Promise<RetrievedHistoricalMemory[]>;
+}
+
+// ============================================================================
+// PHASE 11.13: DETERMINISTIC EMPLOYEE CONTEXT ASSEMBLY PIPELINE
+// Task → Employee Role → Skill → relevant State/Knowledge/Memory → current evidence → final employee context
+// ============================================================================
+
+export interface CurrentEvidenceInput {
+  id: string;
+  sourceToolOrTest: string;
+  evidenceType: 'tool_output' | 'telemetry' | 'test_verification' | 'user_input' | 'system_check';
+  title: string;
+  summary: string;
+  data?: any;
+  timestamp?: string;
+  relevanceScore?: number;
+  matchReason?: string;
+  selectionReason?: string;
+}
+
+export interface InjectedContextItem {
+  id: string;
+  title: string;
+  epistemicClassification: EpistemicClassification;
+  epistemicLabel: EpistemicLabel;
+  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
+  sourceId: string;
+  authority: string;
+  relevanceScore: number;
+  matchReason: string;
+  selectionReason: string; // Explains why this specific item was chosen for the task & skill
+  characterCount: number;
+  content: string;
+  timestamp: string;
+  isConflicting?: boolean;
+  conflictResolutionNote?: string;
+  provenance: ContextItemProvenance;
+}
+
+export interface EmployeeContextBudget {
+  maxTotalCharacters: number;
+  maxItemsPerCategory: {
+    evidence: number;
+    state: number;
+    knowledge: number;
+    memory: number;
+  };
+  totalCharactersUsed: number;
+  budgetUtilizationPct: number;
+  isTruncated: boolean;
+  truncatedItemCount: number;
+}
+
+export interface ContextAssemblyPipelineStep {
+  stage:
+    | 'task_intake'
+    | 'role_resolution'
+    | 'skill_binding'
+    | 'retrieval'
+    | 'evidence_injection'
+    | 'conflict_arbitration'
+    | 'budget_enforcement'
+    | 'final_assembly';
+  description: string;
+  status: 'completed' | 'skipped' | 'flagged';
+  timestamp: string;
+  details?: Record<string, any>;
+}
+
+export interface ContextAssemblyRequest {
+  taskId?: string;
+  taskTitle: string;
+  taskDescription?: string;
+  directive?: string;
+  role: AgentRole | 'advisor' | 'orchestrator' | 'council';
+  protocolStep?: import('./os').AgentWorkProtocolStep;
+  explicitSkillId?: string;
+  currentEvidence?: CurrentEvidenceInput[];
+  currentFacts?: string[];
+  tags?: string[];
+  keywords?: string[];
+  maxBudgetChars?: number;
+  upstreamContext?: {
+    cooScope?: string;
+    researchFindings?: string;
+    productSpecs?: string;
+    financeAssessment?: string;
+    verificationNotes?: string;
+  };
+}
+
+export interface AssembledEmployeeContext {
+  contextId: string;
+  taskId: string;
+  taskTitle: string;
+  taskDescription: string;
+  directive?: string;
+  employeeRole: AgentRole | 'advisor' | 'orchestrator' | 'council';
+  employeeName: string;
+  skillId: string;
+  skillName: string;
+  skillPurpose: string;
+  timestamp: string;
+  
+  // Pipeline tracking
+  pipelineStages: ContextAssemblyPipelineStep[];
+
+  // Categorized Injected Items
+  currentEvidence: InjectedContextItem[];
+  companyState: InjectedContextItem[];
+  companyKnowledge: InjectedContextItem[];
+  historicalMemory: InjectedContextItem[];
+
+  // Consolidated & Audit
+  allInjectedItems: InjectedContextItem[];
+  totalInjectedItems: number;
+  conflicts: ContextConflict[];
+  budget: EmployeeContextBudget;
+  excludedNoise: {
+    stateItemsExcludedCount: number;
+    knowledgeItemsExcludedCount: number;
+    memoryItemsExcludedCount: number;
+    sampleExcludedTitles: string[];
+    rejectionReason: string;
+  };
+
+  // Immutability & Access Control
+  isReadOnly: true;
+  immutableSnapshotHash: string;
+
+  // Formatted Prompts
+  formattedPrompt: string;
+  formattedSeparatedSections: {
+    evidenceSection: string;
+    stateSection: string;
+    knowledgeSection: string;
+    memorySection: string;
+    conflictsSection: string;
+  };
 }
