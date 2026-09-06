@@ -5,17 +5,21 @@ import {
   WorkflowStepStatus,
   WorkflowInstanceStatus
 } from '../../../types/workflow';
+import { SideEffectClassification, AuthorizationEvaluationRequest } from '@/types/authorization';
 import { InMemoryWorkflowStore } from './store';
 import { ServerAgentExecutor } from '../agents/executor';
+import { SideEffectAuthorizationGate } from '../authorization/gate';
 import { v4 as uuidv4 } from 'uuid';
 
 export class WorkflowRuntime {
   private store: InMemoryWorkflowStore;
   private executor: ServerAgentExecutor;
+  private gate: SideEffectAuthorizationGate;
 
   constructor() {
     this.store = InMemoryWorkflowStore.getInstance();
     this.executor = new ServerAgentExecutor();
+    this.gate = SideEffectAuthorizationGate.getInstance();
   }
 
   /**
@@ -47,6 +51,7 @@ export class WorkflowRuntime {
         outputs: {},
         evidenceReferences: [],
         retryCount: 0,
+        sideEffectClassification: step.sideEffectClassification,
       };
       
       // If step has no dependencies, it might be ready. We evaluate readiness later.
@@ -142,6 +147,7 @@ export class WorkflowRuntime {
 
   /**
    * Evaluates and updates the readiness of all pending steps in an instance.
+   * Enforces centralized Side-Effect Gate authorization policies before advancing to ready.
    */
   async evaluateReadiness(instanceId: string): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
@@ -173,15 +179,17 @@ export class WorkflowRuntime {
       }
 
       // Check inputs existing (simulated for now by checking previous outputs if specified in dependencies)
-      // For a rigorous check, we'd look at def.inputReferences vs instance.outputs
       let inputsMet = true;
       for (const inputKey of stepDef.inputReferences) {
-        // Find if inputKey exists in any completed step's outputs
         let found = false;
-        for (const s of Object.values(instance.stepStates)) {
-          if (s.status === 'completed' && s.outputs && s.outputs[inputKey] !== undefined) {
-            found = true;
-            break;
+        if (instance.outputs && instance.outputs[inputKey] !== undefined) {
+          found = true;
+        } else {
+          for (const s of Object.values(instance.stepStates)) {
+            if (s.status === 'completed' && s.outputs && (s.outputs[inputKey] !== undefined || s.outputs['result'] !== undefined)) {
+              found = true;
+              break;
+            }
           }
         }
         if (!found) {
@@ -191,14 +199,68 @@ export class WorkflowRuntime {
       }
 
       if (dependenciesMet && inputsMet) {
-        if (stepDef.requiresApproval && stepState.approvalState !== 'approved') {
-          if (stepState.status !== 'awaiting_approval') {
+        // Classify step side-effects
+        let classification: SideEffectClassification = stepDef.sideEffectClassification || 'read_only';
+        if (!stepDef.sideEffectClassification && stepDef.requiresApproval) {
+          classification = 'external_communication';
+        }
+
+        const authRequest: AuthorizationEvaluationRequest = {
+          employeeRole: stepDef.assignedRole,
+          skillId: stepDef.skill,
+          actionName: stepDef.name,
+          classification,
+          workflowContext: {
+            workflowId: instance.workflowId,
+            workflowInstanceId: instance.instanceId,
+            stepId: stepDef.id,
+            objective: def.objective,
+          },
+          target: stepDef.targetContext,
+        };
+
+        const decision = await this.gate.evaluateAuthorization(authRequest);
+        stepState.authorizationReasonCode = decision.reasonCode;
+
+        if (decision.effect === 'denied') {
+          stepState.status = 'blocked';
+          stepState.blockedReason = decision.reason;
+          if (decision.approvalId) stepState.approvalId = decision.approvalId;
+          instanceChanged = true;
+        } else if (decision.effect === 'approval_required') {
+          // If requires approval and not approved, create or link approval request
+          if (stepState.approvalState !== 'approved') {
+            const approvalRecord = await this.gate.requestApproval({
+              actionName: stepDef.name,
+              classification,
+              workflowInstanceId: instance.instanceId,
+              stepId: stepDef.id,
+              employeeRole: stepDef.assignedRole,
+              scope: stepDef.approvalScope,
+              notes: stepDef.description,
+              target: stepDef.targetContext,
+              requestedBy: stepDef.assignedRole,
+            });
+
+            stepState.approvalId = approvalRecord.id;
             stepState.status = 'awaiting_approval';
+            stepState.blockedReason = decision.reason;
+            instanceChanged = true;
+          } else {
+            stepState.status = 'ready';
             instanceChanged = true;
           }
-        } else {
-          stepState.status = 'ready';
-          instanceChanged = true;
+        } else if (decision.effect === 'allowed') {
+          if (stepDef.requiresApproval && stepState.approvalState !== 'approved') {
+            stepState.status = 'awaiting_approval';
+            instanceChanged = true;
+          } else {
+            stepState.status = 'ready';
+            stepState.approvalState = 'approved';
+            if (decision.approvalId) stepState.approvalId = decision.approvalId;
+            stepState.blockedReason = undefined;
+            instanceChanged = true;
+          }
         }
       }
     }
@@ -210,9 +272,14 @@ export class WorkflowRuntime {
   }
 
   /**
-   * Approves a step that is awaiting approval.
+   * Approves a step that is awaiting approval by the Founder.
    */
-  async approveStep(instanceId: string, stepId: string): Promise<WorkflowInstanceState> {
+  async approveStep(
+    instanceId: string, 
+    stepId: string, 
+    decidedBy: string = 'founder', 
+    reason?: string
+  ): Promise<WorkflowInstanceState> {
     const instance = await this.store.getInstance(instanceId);
     if (!instance) throw new Error(`Instance not found: ${instanceId}`);
     
@@ -223,8 +290,42 @@ export class WorkflowRuntime {
       throw new Error(`Step is not awaiting approval.`);
     }
 
+    // Record decision in SideEffectAuthorizationGate
+    if (step.approvalId) {
+      await this.gate.decideApproval({
+        approvalId: step.approvalId,
+        decision: 'approved',
+        decidedBy,
+        reason: reason || 'Approved by Founder',
+      });
+    } else {
+      // Create and immediately approve a new FounderApprovalRecord
+      const def = await this.store.getDefinition(instance.workflowId, instance.version);
+      const stepDef = def?.steps.find(s => s.id === stepId);
+      const classification: SideEffectClassification = stepDef?.sideEffectClassification || 'external_communication';
+      
+      const record = await this.gate.requestApproval({
+        actionName: stepDef?.name || stepId,
+        classification,
+        workflowInstanceId: instanceId,
+        stepId,
+        employeeRole: step.assignedRole,
+        scope: stepDef?.approvalScope,
+        requestedBy: step.assignedRole,
+      });
+
+      await this.gate.decideApproval({
+        approvalId: record.id,
+        decision: 'approved',
+        decidedBy,
+        reason: reason || 'Approved by Founder',
+      });
+      step.approvalId = record.id;
+    }
+
     step.approvalState = 'approved';
     step.status = 'ready';
+    step.blockedReason = undefined;
     instance.updatedAt = new Date().toISOString();
     
     await this.store.saveInstance(instance);
@@ -267,7 +368,7 @@ export class WorkflowRuntime {
   }
 
   /**
-   * Execute a Ready step via existing orchestration.
+   * Execute a Ready step via SideEffectAuthorizationGate and existing orchestration.
    */
   async executeReadyStep(instanceId: string, stepId: string): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
@@ -285,26 +386,78 @@ export class WorkflowRuntime {
       throw new Error(`Step is not ready for execution. Current status: ${step.status}`);
     }
 
+    // Side-Effect Gate Authorization Check prior to execution
+    let classification: SideEffectClassification = stepDef.sideEffectClassification || 'read_only';
+    if (!stepDef.sideEffectClassification && stepDef.requiresApproval) {
+      classification = 'external_communication';
+    }
+
+    const authRequest: AuthorizationEvaluationRequest = {
+      employeeRole: step.assignedRole,
+      skillId: step.skill,
+      actionName: stepDef.name,
+      classification,
+      workflowContext: {
+        workflowId: instance.workflowId,
+        workflowInstanceId: instance.instanceId,
+        stepId: stepDef.id,
+        objective: def.objective,
+      },
+      target: stepDef.targetContext,
+      requestedBy: step.assignedRole,
+    };
+
+    const gateEvaluation = await this.gate.evaluateAuthorization(authRequest);
+    if (gateEvaluation.effect !== 'allowed') {
+      if (gateEvaluation.effect === 'denied') {
+        await this.transitionStep(instanceId, stepId, 'blocked');
+      } else if (gateEvaluation.effect === 'approval_required') {
+        await this.transitionStep(instanceId, stepId, 'awaiting_approval');
+      }
+      throw new Error(`Side-effect execution prevented by authorization gate: ${gateEvaluation.reason}`);
+    }
+
     // Transition to running
     await this.transitionStep(instanceId, stepId, 'running');
 
     try {
-      // Delegate to existing ServerAgentExecutor
-      const result = await this.executor.executeAgentTask(
-        step.assignedRole,
-        {
-          directive: def.objective,
-          protocolStep: step.skill,
-          taskTitle: stepDef.name,
-          taskDescription: stepDef.description,
-        },
-        `Execute workflow step: ${stepDef.name}`
-      );
+      const executionRef = `exec-${instanceId}-${stepId}-${Date.now()}`;
+      
+      // Execute through the SideEffectAuthorizationGate wrapper
+      const gateResult = await this.gate.executeWithGate({
+        request: authRequest,
+        executionRef,
+        executeFn: async () => {
+          return this.executor.executeAgentTask(
+            step.assignedRole,
+            {
+              directive: def.objective,
+              protocolStep: step.skill,
+              taskTitle: stepDef.name,
+              taskDescription: stepDef.description,
+            },
+            `Execute workflow step: ${stepDef.name}`
+          );
+        }
+      });
+
+      if (!gateResult.allowed) {
+        throw new Error(gateResult.error || 'Execution not authorized');
+      }
+
+      const agentResult = gateResult.result!;
+
+      const stepOutputs: Record<string, any> = { result: agentResult.outputContent };
+      if (stepDef.outputReferences) {
+        for (const k of stepDef.outputReferences) {
+          stepOutputs[k] = agentResult.outputContent;
+        }
+      }
 
       // Transition to completed on success
       await this.transitionStep(instanceId, stepId, 'completed', {
-        outputs: { result: result.outputContent },
-        evidenceReferences: result.provenance ? [result.provenance.agentId] : [], // Simplification for evidence
+        outputs: stepOutputs,
+        evidenceReferences: [gateResult.auditId, ...(agentResult.provenance ? [agentResult.provenance.agentId] : [])],
       });
 
     } catch (error: any) {
@@ -314,4 +467,9 @@ export class WorkflowRuntime {
       });
     }
   }
+
+  public getGate(): SideEffectAuthorizationGate {
+    return this.gate;
+  }
 }
+

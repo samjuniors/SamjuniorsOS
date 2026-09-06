@@ -247,14 +247,42 @@ export class WorkflowScheduler {
           scheduleId: item.id,
           occurrenceId,
           status: 'skipped',
-          error: `Step dependencies not fulfilled (status: ${recheckedStepState.status})`,
+          error: recheckedStepState.blockedReason || `Step dependencies not fulfilled (status: ${recheckedStepState.status})`,
         });
         continue;
       }
 
-      // 8. Strict Governance & Approval Check
+      // 8. Re-evaluate Side-Effect Authorization at Wake Time (Defense-in-depth)
+      let classification = stepDef.sideEffectClassification || (stepDef.requiresApproval ? 'external_communication' : 'read_only');
+      const wakeAuth = await this.runtime.getGate().evaluateAuthorization({
+        employeeRole: stepDef.assignedRole,
+        skillId: stepDef.skill,
+        actionName: stepDef.name,
+        classification,
+        workflowContext: {
+          workflowId: workflow.workflowId,
+          workflowInstanceId: item.workflowInstanceId,
+          stepId: item.stepId,
+          objective: def.objective,
+        },
+        target: stepDef.targetContext,
+        requestedBy: stepDef.assignedRole,
+      });
+
+      if (wakeAuth.effect === 'denied') {
+        await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'blocked');
+        evaluationResult.results.push({
+          scheduleId: item.id,
+          occurrenceId,
+          status: 'skipped',
+          error: `Side-effect authorization denied on wake: ${wakeAuth.reason}`,
+        });
+        continue;
+      }
+
+      // Strict Governance & Approval Check
       // If step requires approval and approval has NOT been granted:
-      if (stepDef.requiresApproval && recheckedStepState.approvalState !== 'approved') {
+      if ((stepDef.requiresApproval || wakeAuth.effect === 'approval_required') && recheckedStepState.approvalState !== 'approved') {
         // Transition step to awaiting_approval if not already
         if (recheckedStepState.status !== 'awaiting_approval') {
           await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'awaiting_approval');

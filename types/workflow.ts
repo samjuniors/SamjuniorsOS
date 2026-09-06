@@ -1,5 +1,6 @@
 import { AgentRole, AgentWorkProtocolStep } from './os';
 import { ContextItemProvenance } from './context';
+import { SideEffectClassification, ActionTargetContext, ApprovalScope } from './authorization';
 
 export type WorkflowStepStatus =
   | 'pending'
@@ -45,6 +46,9 @@ export interface WorkflowStepDefinition {
     backoffMs: number;
   };
   escalationCondition?: WorkflowCondition;
+  sideEffectClassification?: SideEffectClassification;
+  targetContext?: ActionTargetContext;
+  approvalScope?: ApprovalScope;
 }
 
 export interface WorkflowDefinition {
@@ -76,6 +80,9 @@ export interface WorkflowStepState {
   retryCount: number;
   approvalState?: 'pending' | 'approved' | 'rejected';
   blockedReason?: string;
+  sideEffectClassification?: SideEffectClassification;
+  approvalId?: string;
+  authorizationReasonCode?: string;
 }
 
 export interface WorkflowInstanceState {
