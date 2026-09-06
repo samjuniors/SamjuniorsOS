@@ -28,7 +28,12 @@ import {
   Shield,
   Trash2,
   Pin,
-  Check
+  Check,
+  Mic,
+  MicOff,
+  PhoneCall,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
   AppId,
@@ -43,6 +48,7 @@ import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
 import { AgentAvatar } from '@/components/os/AgentAvatar';
 import { ContextMenu, ContextMenuState } from '@/components/os/ContextMenu';
 import { MarkdownMessage } from '@/components/os/MarkdownMessage';
+import { VoiceCallModal } from '@/components/os/VoiceCallModal';
 
 export type ParticipantId = 'advisor' | AgentRole;
 export type MessageIntent = 'conversation' | 'information_request' | 'directive' | 'ambiguous';
@@ -249,11 +255,126 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
     items: [],
   });
 
+  // Real Voice Interaction & Calling State
+  const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
+  const [isDictatingInput, setIsDictatingInput] = useState(false);
+  const [activeSpeakingMsgId, setActiveSpeakingMsgId] = useState<string | null>(null);
+  const dictationRecRef = useRef<any>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedParticipant = PARTICIPANTS.find((p) => p.id === selectedId) || PARTICIPANTS[0];
   const isCurrentParticipantTyping = Boolean(typingMap[selectedId]);
+
+  // Voice Speech Synthesis Handler
+  const handleSpeakMessage = (msgId: string, text: string, senderId: ParticipantId | 'founder') => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    if (activeSpeakingMsgId === msgId) {
+      window.speechSynthesis.cancel();
+      setActiveSpeakingMsgId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/\[.*?\]/g, '').replace(/[*#_`~]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+
+    // Persona voice matching
+    if (senderId === 'coo') {
+      utterance.pitch = 1.05;
+      utterance.rate = 1.02;
+    } else if (senderId === 'researcher') {
+      utterance.pitch = 0.9;
+      utterance.rate = 0.98;
+    } else if (senderId === 'pm') {
+      utterance.pitch = 1.15;
+      utterance.rate = 1.05;
+    } else if (senderId === 'finance') {
+      utterance.pitch = 0.95;
+      utterance.rate = 1.08;
+    } else if (senderId === 'advisor') {
+      utterance.pitch = 0.85;
+      utterance.rate = 0.96;
+    }
+
+    utterance.onstart = () => {
+      setActiveSpeakingMsgId(msgId);
+      if (soundEnabled) playOSSound('pop');
+    };
+
+    utterance.onend = () => {
+      setActiveSpeakingMsgId(null);
+    };
+
+    utterance.onerror = () => {
+      setActiveSpeakingMsgId(null);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // In-Chat Speech-to-Text Input Dictation
+  const handleToggleDictation = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      dispatchOSNotification({
+        title: 'Microphone Notice',
+        message: 'Speech recognition is not supported in this browser. Please use text input or open Voice Call.',
+        type: 'system',
+      });
+      return;
+    }
+
+    if (isDictatingInput) {
+      if (dictationRecRef.current) {
+        try {
+          dictationRecRef.current.stop();
+        } catch {}
+      }
+      setIsDictatingInput(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsDictatingInput(true);
+        if (soundEnabled) playOSSound('click');
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInputMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        }
+      };
+
+      recognition.onend = () => {
+        setIsDictatingInput(false);
+      };
+
+      recognition.onerror = () => {
+        setIsDictatingInput(false);
+      };
+
+      dictationRecRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn('Dictation failed:', err);
+      setIsDictatingInput(false);
+    }
+  };
 
   // Auto-scroll on new message
   useEffect(() => {
@@ -927,17 +1048,31 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Live Voice Call Button */}
+            <button
+              id="messages-voice-call-btn"
+              onClick={() => {
+                if (soundEnabled) playOSSound('open');
+                setIsVoiceCallOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600/30 via-indigo-600/30 to-sky-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 border border-indigo-500/40 text-indigo-200 hover:text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-all hover:scale-[1.02] active:scale-95 group"
+              title={`Start real-time encrypted voice call with ${selectedParticipant.name}`}
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-indigo-400 group-hover:animate-pulse" />
+              <span className="hidden xs:inline">Voice Call</span>
+            </button>
+
             <button
               onClick={() => onOpenApp?.('workforce')}
-              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs flex items-center space-x-1.5 transition-colors hidden sm:flex"
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs flex items-center space-x-1.5 transition-colors hidden sm:flex"
             >
-              <span>View Profile</span>
+              <span>Profile</span>
               <ExternalLink className="w-3 h-3 text-slate-400" />
             </button>
 
             <button
               onClick={handleClearHistory}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors"
+              className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors"
               title="Clear Thread History"
             >
               <Trash2 className="w-4 h-4" />
@@ -1067,6 +1202,16 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                         title="React 💡"
                       >
                         💡
+                      </button>
+                      {/* Read Aloud TTS Button */}
+                      <button
+                        onClick={() => handleSpeakMessage(msg.id, msg.text, msg.sender)}
+                        className={`p-1 hover:bg-white/10 rounded-full transition-colors ${
+                          activeSpeakingMsgId === msg.id ? 'text-indigo-400 bg-indigo-500/20 animate-pulse' : 'text-slate-400 hover:text-white'
+                        }`}
+                        title={activeSpeakingMsgId === msg.id ? 'Stop reading' : 'Read message aloud (TTS)'}
+                      >
+                        {activeSpeakingMsgId === msg.id ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
                       </button>
                       <div className="w-px h-3 bg-white/15 mx-0.5" />
                       <button
@@ -1361,6 +1506,20 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               className="flex-1 bg-transparent border-none text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32 min-h-[42px] px-3 py-2.5 custom-scrollbar"
             />
 
+            {/* Speech Dictation Button */}
+            <button
+              type="button"
+              onClick={handleToggleDictation}
+              className={`p-2.5 rounded-xl border transition-all active:scale-95 shrink-0 ${
+                isDictatingInput
+                  ? 'bg-rose-600 border-rose-500 text-white animate-pulse shadow-lg shadow-rose-600/30'
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-400 hover:text-white'
+              }`}
+              title={isDictatingInput ? 'Stop Dictating' : 'Voice Dictate into Input (STT)'}
+            >
+              {isDictatingInput ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+
             <button
               id="messages-send-btn"
               type="submit"
@@ -1524,6 +1683,20 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Real-time Voice Call Modal with Gemini Live Architecture */}
+      <VoiceCallModal
+        isOpen={isVoiceCallOpen}
+        onClose={() => setIsVoiceCallOpen(false)}
+        initialAgentId={selectedParticipant.id}
+        onSendToChat={(agentId, msg) => {
+          setSelectedId(agentId);
+          handleSendMessage(msg);
+        }}
+        onLaunchDirective={(topic) => {
+          handleExecuteDirective(topic, `voice-${Date.now()}`);
+        }}
+      />
     </div>
   );
 };

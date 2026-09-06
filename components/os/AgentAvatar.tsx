@@ -3,7 +3,7 @@
 import React from 'react';
 import { AgentRole } from '@/types/os';
 
-export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'hero';
+export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'hero' | 'call';
 
 interface AgentAvatarProps {
   roleOrId?: AgentRole | 'advisor' | 'founder' | string;
@@ -16,6 +16,9 @@ interface AgentAvatarProps {
   interactive?: boolean;
   showBadge?: boolean;
   badgeLabel?: string;
+  mode?: 'photo' | 'vector';
+  isSpeaking?: boolean;
+  audioLevel?: number;
   onClick?: () => void;
 }
 
@@ -27,6 +30,54 @@ const SIZE_MAP: Record<AvatarSize, { container: string; iconSize: number; status
   xl: { container: 'w-20 h-20 rounded-3xl', iconSize: 44, statusDot: 'w-3.5 h-3.5 bottom-0.5 right-0.5', badgeText: 'text-xs' },
   '2xl': { container: 'w-28 h-28 rounded-3xl', iconSize: 60, statusDot: 'w-4 h-4 bottom-1 right-1', badgeText: 'text-sm' },
   hero: { container: 'w-36 h-36 rounded-3xl', iconSize: 80, statusDot: 'w-5 h-5 bottom-1.5 right-1.5', badgeText: 'text-sm' },
+  call: { container: 'w-44 h-44 rounded-full', iconSize: 96, statusDot: 'w-6 h-6 bottom-2 right-2', badgeText: 'text-sm' },
+};
+
+export const AGENT_REAL_PORTRAITS: Record<
+  string,
+  {
+    photoUrl: string;
+    fallbackPhotoUrl: string;
+    name: string;
+    title: string;
+  }
+> = {
+  coo: {
+    photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Sophia Vance',
+    title: 'Chief Operating Officer & Orchestrator',
+  },
+  researcher: {
+    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Dr. Aris Thorne',
+    title: 'Lead Market & Intelligence Researcher',
+  },
+  pm: {
+    photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Maya Lin',
+    title: 'Principal Product Manager',
+  },
+  finance: {
+    photoUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Julian Cruz',
+    title: 'Chief Financial Analyst',
+  },
+  advisor: {
+    photoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Founder Intelligence',
+    title: 'Strategic Advisor & Co-Pilot',
+  },
+  founder: {
+    photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Founder',
+    title: 'Chief Executive Authority',
+  },
 };
 
 export const AGENT_AVATAR_THEMES: Record<
@@ -616,13 +667,20 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   interactive = false,
   showBadge = false,
   badgeLabel,
+  mode = 'photo',
+  isSpeaking = false,
+  audioLevel = 0,
   onClick,
 }) => {
   const normalizedKey = normalizeRole(roleOrId || name);
   const theme = AGENT_AVATAR_THEMES[normalizedKey] || AGENT_AVATAR_THEMES.coo;
+  const portrait = AGENT_REAL_PORTRAITS[normalizedKey] || AGENT_REAL_PORTRAITS.coo;
   const sizeConfig = SIZE_MAP[size] || SIZE_MAP.md;
 
+  const [imageFailed, setImageFailed] = React.useState(false);
   const isOnline = status === 'active' || status === 'processing' || status === 'in_progress';
+
+  const shouldUsePhoto = mode === 'photo' && !imageFailed && portrait?.photoUrl;
 
   const renderSvg = () => {
     switch (normalizedKey) {
@@ -650,38 +708,87 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         interactive ? 'cursor-pointer hover:scale-105 transition-all duration-200' : ''
       } ${className}`}
       style={{
-        boxShadow: showGlow ? `0 0 16px ${theme.glowColor}` : undefined,
+        boxShadow: showGlow || isSpeaking ? `0 0 20px ${theme.glowColor}` : undefined,
       }}
       title={name ? `${name} — ${theme.roleTitle}` : theme.roleTitle}
       role={onClick ? 'button' : 'img'}
       aria-label={name ? `${name} avatar` : `${theme.roleTitle} avatar`}
     >
+      {/* Speaking Audio Ripple Ring (When AI is speaking aloud) */}
+      {isSpeaking && (
+        <>
+          <div
+            className="absolute -inset-2.5 rounded-inherit animate-ping opacity-40 pointer-events-none"
+            style={{
+              border: `2px solid ${theme.primaryColor}`,
+              animationDuration: '1.4s',
+            }}
+          />
+          <div
+            className="absolute -inset-1 rounded-inherit opacity-75 pointer-events-none transition-all duration-150"
+            style={{
+              boxShadow: `0 0 ${12 + (audioLevel || 0.5) * 16}px ${theme.primaryColor}`,
+              border: `1.5px solid ${theme.secondaryColor}`,
+            }}
+          />
+        </>
+      )}
+
       {/* Outer Glow Halo on hover/active */}
-      {showGlow && (
+      {showGlow && !isSpeaking && (
         <div
           className="absolute inset-0 rounded-inherit opacity-40 blur-md pointer-events-none"
           style={{ background: theme.primaryColor }}
         />
       )}
 
-      {/* Futuristic Chassis Container */}
+      {/* Avatar Container: Photo or Cybernetic Vector Artwork */}
       <div
-        className={`w-full h-full rounded-inherit overflow-hidden bg-gradient-to-br ${theme.bgGradient} border ${theme.borderGradient} shadow-inner flex items-center justify-center relative p-[5%]`}
+        className={`w-full h-full rounded-inherit overflow-hidden bg-gradient-to-br ${theme.bgGradient} border ${
+          isSpeaking ? 'border-indigo-400 ring-2 ring-indigo-500/50' : theme.borderGradient
+        } shadow-inner flex items-center justify-center relative ${shouldUsePhoto ? 'p-0' : 'p-[5%]'}`}
         style={{
           backgroundColor: theme.darkBg,
         }}
       >
-        {/* Futuristic Grid / Scanlines Overlay */}
-        <div
-          className="absolute inset-0 opacity-15 pointer-events-none"
-          style={{
-            backgroundImage: `linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)`,
-            backgroundSize: '100% 4px',
-          }}
-        />
+        {shouldUsePhoto ? (
+          <div className="w-full h-full relative overflow-hidden rounded-inherit group">
+            {/* Real Executive Photographic Portrait */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={portrait.photoUrl}
+              alt={name || portrait.name}
+              referrerPolicy="no-referrer"
+              onError={() => setImageFailed(true)}
+              className="w-full h-full object-cover object-center filter brightness-105 contrast-[1.03] transition-transform duration-300 group-hover:scale-105"
+            />
 
-        {/* Vector Artwork */}
-        {renderSvg()}
+            {/* Subtle Futuristic Holographic Rim Overlay */}
+            <div
+              className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30 bg-gradient-to-tr"
+              style={{
+                backgroundImage: `linear-gradient(135deg, ${theme.primaryColor}22 0%, transparent 60%, ${theme.secondaryColor}33 100%)`,
+              }}
+            />
+
+            {/* Inner Vignette / Rim Shadow */}
+            <div className="absolute inset-0 pointer-events-none rounded-inherit shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]" />
+          </div>
+        ) : (
+          <>
+            {/* Futuristic Grid / Scanlines Overlay */}
+            <div
+              className="absolute inset-0 opacity-15 pointer-events-none"
+              style={{
+                backgroundImage: `linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px)`,
+                backgroundSize: '100% 4px',
+              }}
+            />
+
+            {/* Vector Artwork */}
+            {renderSvg()}
+          </>
+        )}
       </div>
 
       {/* Status Dot */}
@@ -700,7 +807,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       {/* Role Badge Chip (Optional) */}
       {showBadge && (
         <span
-          className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 py-0.2 rounded font-mono font-bold uppercase tracking-wider bg-black/80 text-white border border-white/20 whitespace-nowrap shadow-sm ${sizeConfig.badgeText}`}
+          className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 py-0.2 rounded font-mono font-bold uppercase tracking-wider bg-black/85 text-white border border-white/20 whitespace-nowrap shadow-sm ${sizeConfig.badgeText}`}
         >
           {badgeLabel || normalizedKey.toUpperCase()}
         </span>

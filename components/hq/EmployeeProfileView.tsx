@@ -20,6 +20,8 @@ import {
   ArrowRight,
   Cpu,
   Terminal,
+  PhoneCall,
+  Volume2,
 } from 'lucide-react';
 import { AIAgent, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
@@ -29,6 +31,7 @@ import { StructuredSkillDefinition } from '@/types/capabilities';
 import { SkillInspectionModal } from './SkillInspectionModal';
 import { AgentAvatar, AGENT_AVATAR_THEMES } from '@/components/os/AgentAvatar';
 import { MarkdownMessage } from '@/components/os/MarkdownMessage';
+import { VoiceCallModal } from '@/components/os/VoiceCallModal';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -53,6 +56,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   const [inspectingSkill, setInspectingSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
   const structuredSkills = getSkillsForRole(agent.id as any);
   const [chatInput, setChatInput] = useState('');
+  const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
   
   // Isolated per-agent chat history
   const [chatByAgent, setChatByAgent] = useState<Record<string, Array<{ sender: 'user' | 'agent'; text: string; time: string }>>>({});
@@ -213,6 +217,15 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                 <span>Ask Advisor</span>
               </button>
             )}
+
+            <button
+              onClick={() => setIsVoiceCallOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600/30 via-indigo-600/30 to-sky-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 border border-indigo-500/40 text-indigo-200 hover:text-white text-xs font-semibold flex items-center space-x-1.5 shadow-sm transition-all active:scale-95 group"
+              title={`Initiate voice call with ${agent.name}`}
+            >
+              <PhoneCall className="w-3.5 h-3.5 text-indigo-400 group-hover:animate-pulse" />
+              <span>Voice Call</span>
+            </button>
 
             <button
               onClick={() => setActiveSubTab('chat')}
@@ -738,6 +751,13 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
           assignedEmployeeName={agent.name}
         />
       )}
+
+      {/* Direct Voice Call Modal */}
+      <VoiceCallModal
+        isOpen={isVoiceCallOpen}
+        onClose={() => setIsVoiceCallOpen(false)}
+        initialAgentId={agent.id as any}
+      />
     </div>
   );
 };
