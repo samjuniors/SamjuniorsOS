@@ -13,35 +13,50 @@ import {
 
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.text();
     const config = getResendConfig();
+
+    // 1. Fail closed if webhook secret is not configured
+    if (!config.webhookSecret) {
+      return NextResponse.json(
+        { error: 'WEBHOOK_SECRET_MISSING: RESEND_WEBHOOK_SECRET is not configured on the server.' },
+        { status: 401 }
+      );
+    }
 
     const svixId = req.headers.get('svix-id') || undefined;
     const svixTimestamp = req.headers.get('svix-timestamp') || undefined;
     const svixSignature = req.headers.get('svix-signature') || undefined;
 
-    // If webhook secret is configured, strictly enforce signature verification
-    if (config.webhookSecret) {
-      const isValid = verifyResendWebhookSignature({
-        rawBody,
-        svixId,
-        svixTimestamp,
-        svixSignature,
-        secret: config.webhookSecret,
-      });
-
-      if (!isValid) {
-        return NextResponse.json(
-          { error: 'INVALID_SIGNATURE: Svix webhook signature verification failed.' },
-          { status: 401 }
-        );
-      }
+    // 2. Reject missing Svix headers
+    if (!svixId || !svixTimestamp || !svixSignature) {
+      return NextResponse.json(
+        { error: 'MISSING_SVIX_HEADERS: Required Svix headers (svix-id, svix-timestamp, svix-signature) are missing.' },
+        { status: 401 }
+      );
     }
+
+    const rawBody = await req.text();
 
     if (!rawBody || rawBody.trim().length === 0) {
       return NextResponse.json(
         { error: 'EMPTY_PAYLOAD: Webhook request body is empty.' },
         { status: 400 }
+      );
+    }
+
+    // 3. Strictly enforce Svix signature verification
+    const isValid = verifyResendWebhookSignature({
+      rawBody,
+      svixId,
+      svixTimestamp,
+      svixSignature,
+      secret: config.webhookSecret,
+    });
+
+    if (!isValid) {
+      return NextResponse.json(
+        { error: 'INVALID_SIGNATURE: Svix webhook signature verification failed or timestamp expired.' },
+        { status: 401 }
       );
     }
 
@@ -58,7 +73,7 @@ export async function POST(req: NextRequest) {
     const eventType = payload.type;
     const eventData = payload.data || {};
     const externalMessageId = eventData.email_id || eventData.id || payload.id;
-    const eventId = svixId || payload.id || `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const eventId = svixId || payload.id;
 
     if (!eventType || !externalMessageId) {
       return NextResponse.json(

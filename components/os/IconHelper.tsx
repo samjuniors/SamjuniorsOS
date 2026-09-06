@@ -161,15 +161,21 @@ export function playOSSound(type: 'click' | 'open' | 'notification' | 'execute' 
 }
 
 import { OSNotification } from '@/types/os';
+import { NotificationStore } from '@/lib/notification-center';
 
 export function dispatchOSNotification(notification: Omit<OSNotification, 'id' | 'time' | 'read'>) {
   if (typeof window !== 'undefined') {
-    const detail: OSNotification = {
-      ...notification,
-      id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      read: false,
-    };
-    window.dispatchEvent(new CustomEvent('samjuniors-os-notification', { detail }));
+    return NotificationStore.dispatch({
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      category: notification.category,
+      priority: notification.priority,
+      agent: notification.agent,
+      actionable: notification.actionable,
+      actionLabel: notification.actionLabel,
+      appTarget: notification.appTarget,
+      metadata: notification.metadata,
+    });
   }
 }

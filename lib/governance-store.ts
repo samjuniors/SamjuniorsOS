@@ -81,8 +81,13 @@ export const GovernanceStore = {
     dispatchOSNotification({
       title: 'New Decision Requires Approval',
       message: `${decision.title}`,
-      type: 'system',
-      agent: 'Executive Council'
+      type: 'company',
+      category: 'company_update',
+      priority: 'high',
+      agent: 'Executive Council',
+      actionable: true,
+      actionLabel: 'Review Sign-Off',
+      appTarget: 'company',
     });
   },
 
@@ -100,10 +105,15 @@ export const GovernanceStore = {
     });
     
     dispatchOSNotification({
-      title: 'Action Required',
+      title: 'Critical Attention Required',
       message: `${item.title}`,
       type: 'system',
-      agent: 'Company HQ'
+      category: 'system_event',
+      priority: 'critical',
+      agent: 'Company HQ',
+      actionable: true,
+      actionLabel: 'Inspect Incident',
+      appTarget: 'company',
     });
   },
 
@@ -124,7 +134,12 @@ export const GovernanceStore = {
       title: 'Company Intelligence Synthesized',
       message: `${topic.title}`,
       type: 'agent',
-      agent: topic.author || 'Dr. Aris Thorne'
+      category: 'ai_employee',
+      priority: 'normal',
+      agent: topic.author || 'Dr. Aris Thorne (Research)',
+      actionable: true,
+      actionLabel: 'View Intelligence',
+      appTarget: 'research',
     });
   },
 

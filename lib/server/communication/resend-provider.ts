@@ -258,6 +258,8 @@ export function verifyResendWebhookSignature(params: {
   svixTimestamp?: string;
   svixSignature?: string;
   secret?: string;
+  toleranceSeconds?: number;
+  currentTimestampSec?: number;
 }): boolean {
   const secret = params.secret || process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) {
@@ -270,14 +272,15 @@ export function verifyResendWebhookSignature(params: {
     return false;
   }
 
-  // Svix timestamp tolerance check (5 minutes = 300 seconds)
+  // Svix timestamp tolerance check (5 minutes = 300 seconds default)
   const timestampNum = parseInt(svixTimestamp, 10);
   if (isNaN(timestampNum)) {
     return false;
   }
 
-  const nowSec = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSec - timestampNum) > 300) {
+  const nowSec = params.currentTimestampSec !== undefined ? params.currentTimestampSec : Math.floor(Date.now() / 1000);
+  const tolerance = params.toleranceSeconds !== undefined ? params.toleranceSeconds : 300;
+  if (Math.abs(nowSec - timestampNum) > tolerance) {
     return false;
   }
 
@@ -301,11 +304,10 @@ export function verifyResendWebhookSignature(params: {
       const parts = item.split(',');
       if (parts.length === 2 && parts[0] === 'v1') {
         const signatureToCompare = parts[1];
-        if (signatureToCompare.length === calculatedSignature.length) {
-          const isMatch = crypto.timingSafeEqual(
-            Buffer.from(signatureToCompare),
-            Buffer.from(calculatedSignature)
-          );
+        const sigBuf = Buffer.from(signatureToCompare);
+        const calcBuf = Buffer.from(calculatedSignature);
+        if (sigBuf.length === calcBuf.length) {
+          const isMatch = crypto.timingSafeEqual(sigBuf, calcBuf);
           if (isMatch) return true;
         }
       }

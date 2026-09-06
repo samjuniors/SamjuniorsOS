@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sliders,
   Image as ImageIcon,
@@ -14,10 +14,16 @@ import {
   Zap,
   BookOpen,
   ShieldCheck,
+  Bell,
+  BellOff,
+  Bot,
+  Building2,
+  Sparkles,
 } from 'lucide-react';
 import { WALLPAPERS } from '@/lib/os-data';
 import { playOSSound } from '../os/IconHelper';
 import { SkillExplorerView } from './SkillExplorerView';
+import { NotificationStore } from '@/lib/notification-center';
 
 interface SettingsAppProps {
   currentWallpaper: string;
@@ -41,6 +47,13 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
   initialTab = 'skills',
 }) => {
   const [activeTab, setActiveTab] = useState<'skills' | 'preferences'>(initialTab);
+  const [toastsEnabled, setToastsEnabled] = useState(() => NotificationStore.getState().toastsEnabled);
+
+  useEffect(() => {
+    return NotificationStore.subscribe(() => {
+      setToastsEnabled(NotificationStore.getState().toastsEnabled);
+    });
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-slate-950 text-slate-100 p-6 overflow-y-auto space-y-6">
@@ -193,7 +206,101 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Audio & Sound FX */}
+          {/* Section 3: Notification System & Real-Time Alerts */}
+          <div className="os-glass-card rounded-2xl p-5 border border-white/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5 uppercase tracking-wider">
+                  <Bell className="w-3.5 h-3.5 text-indigo-400" />
+                  Real-Time Notification System & Swarm Telemetry
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Configure subtle popup banners, top system bar indicators, and test multi-agent event triggers.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  id="settings-toggle-toasts-btn"
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('click');
+                    NotificationStore.setToastsEnabled(!toastsEnabled);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    toastsEnabled
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {toastsEnabled ? <Bell className="w-3 h-3" /> : <BellOff className="w-3 h-3" />}
+                  <span>Popup Toasts {toastsEnabled ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Test Trigger Simulator */}
+            <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  Trigger Test Notification Event:
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">Simulate real-time OS events</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <button
+                  id="settings-sim-ai-action"
+                  onClick={() => {
+                    NotificationStore.simulateAIEmployeeAction();
+                  }}
+                  className="p-2.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-left transition-all group"
+                >
+                  <div className="flex items-center space-x-1.5 text-indigo-300 font-bold text-xs mb-1">
+                    <Bot className="w-3.5 h-3.5" />
+                    <span>AI Employee Action</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 group-hover:text-slate-300">
+                    Directives completed by Sophia, Aris, Maya, or Julian
+                  </p>
+                </button>
+
+                <button
+                  id="settings-sim-system-event"
+                  onClick={() => {
+                    NotificationStore.simulateSystemEvent();
+                  }}
+                  className="p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-left transition-all group"
+                >
+                  <div className="flex items-center space-x-1.5 text-amber-300 font-bold text-xs mb-1">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>System Event</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 group-hover:text-slate-300">
+                    Side-effect gates, heartbeat sync, and security audits
+                  </p>
+                </button>
+
+                <button
+                  id="settings-sim-company-update"
+                  onClick={() => {
+                    NotificationStore.simulateCompanyUpdate();
+                  }}
+                  className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-left transition-all group"
+                >
+                  <div className="flex items-center space-x-1.5 text-rose-300 font-bold text-xs mb-1">
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>Company Update</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 group-hover:text-slate-300">
+                    Governance decisions, OKR milestones, and deals
+                  </p>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Audio & Sound FX */}
           <div className="os-glass-card rounded-2xl p-5 border border-white/10 flex items-center justify-between">
             <div>
               <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -218,7 +325,7 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
             </button>
           </div>
 
-          {/* Section 4: System Reset */}
+          {/* Section 5: System Reset */}
           <div className="os-glass-card rounded-2xl p-5 border border-white/10 flex items-center justify-between">
             <div>
               <h4 className="text-xs font-bold text-white flex items-center gap-1.5">

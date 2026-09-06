@@ -446,7 +446,11 @@ export const CollaborationStore = {
       title: `Collaboration: Step ${currentStep.stepNumber}/7`,
       message: `${currentStep.dialogue.fromName}: "${currentStep.title}"`,
       type: 'agent',
+      category: 'ai_employee',
+      priority: 'normal',
       agent: currentStep.dialogue.fromName,
+      actionable: true,
+      actionLabel: `Open ${currentStep.affectedApp}`,
       appTarget: currentStep.affectedApp,
     });
 
@@ -466,10 +470,14 @@ export const CollaborationStore = {
 
       playOSSound('notification');
       dispatchOSNotification({
-        title: 'AI Collaboration Completed',
+        title: 'AI Multi-Agent Collaboration Completed',
         message: 'Product Roadmap, Research Radar, and Unit Economics synchronized.',
-        type: 'system',
+        type: 'agent',
+        category: 'ai_employee',
+        priority: 'high',
         agent: 'Executive Orchestrator',
+        actionable: true,
+        actionLabel: 'Inspect Results',
         appTarget: 'workforce',
       });
     }

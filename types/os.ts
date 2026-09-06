@@ -467,12 +467,16 @@ export interface OSNotification {
   title: string;
   message: string;
   time: string;
-  type: 'agent' | 'system' | 'finance' | 'deal';
+  type: 'agent' | 'system' | 'finance' | 'deal' | 'company' | 'governance' | 'security';
+  category?: 'ai_employee' | 'system_event' | 'company_update';
+  priority?: 'critical' | 'high' | 'normal' | 'low';
   agent?: string;
   read: boolean;
   actionable?: boolean;
   actionLabel?: string;
   appTarget?: AppId;
+  metadata?: Record<string, any>;
+  createdAt?: number;
 }
 
 // ----------------------------------------------------------------------------

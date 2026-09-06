@@ -386,10 +386,15 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
           }
 
           dispatchOSNotification({
-            title: 'Execution Completed',
-            message: `Strategic Package: ${finalizedRun.title.slice(0, 40)}...`,
-            type: 'system',
-            agent: 'Workforce Engine'
+            title: 'AI Directive Execution Completed',
+            message: `Strategic Package: ${finalizedRun.title.slice(0, 50)}`,
+            type: 'agent',
+            category: 'ai_employee',
+            priority: 'high',
+            agent: 'Sophia Vance (COO)',
+            actionable: true,
+            actionLabel: 'Inspect Deliverables',
+            appTarget: 'workforce',
           });
 
           if (soundEnabled) playOSSound('notification');

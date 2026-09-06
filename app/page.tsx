@@ -11,7 +11,9 @@ import { SpotlightSearch } from '@/components/os/SpotlightSearch';
 import { ControlCenter } from '@/components/os/ControlCenter';
 import { CalendarModal } from '@/components/os/CalendarModal';
 import { NotificationsDrawer } from '@/components/os/NotificationsDrawer';
+import { NotificationToasts } from '@/components/os/NotificationToasts';
 import { playOSSound } from '@/components/os/IconHelper';
+import { NotificationStore, ToastItem } from '@/lib/notification-center';
 
 // Apps
 import { WorkforceApp } from '@/components/apps/WorkforceApp';
@@ -41,7 +43,8 @@ export default function SamJuniorsOSPage() {
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<OSNotification[]>(NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<OSNotification[]>(() => NotificationStore.getState().notifications);
+  const [activeToasts, setActiveToasts] = useState<ToastItem[]>(() => NotificationStore.getState().activeToasts);
 
   // Directives passed to Workforce
   const [pendingDirective, setPendingDirective] = useState<string>('');
@@ -152,24 +155,25 @@ export default function SamJuniorsOSPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Subscribe to NotificationStore updates (notifications list & active toast popups)
   useEffect(() => {
-    const handleOSNotification = (e: Event) => {
-      const customEvent = e as CustomEvent<OSNotification>;
-      if (customEvent.detail) {
-        setNotifications((prev) => [customEvent.detail, ...prev]);
-        if (soundEnabled) playOSSound('notification');
-      }
+    NotificationStore.setSoundEnabled(soundEnabled);
+    const syncState = () => {
+      const state = NotificationStore.getState();
+      setNotifications([...state.notifications]);
+      setActiveToasts([...state.activeToasts]);
     };
-    window.addEventListener('samjuniors-os-notification', handleOSNotification);
-    return () => window.removeEventListener('samjuniors-os-notification', handleOSNotification);
+
+    const unsubscribe = NotificationStore.subscribe(syncState);
+    return () => unsubscribe();
   }, [soundEnabled]);
 
   const handleDismissNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    NotificationStore.dismissNotification(id);
   };
 
   const handleClearAllNotifications = () => {
-    setNotifications([]);
+    NotificationStore.clearAll();
   };
 
   const handleResetOS = () => {
@@ -177,7 +181,7 @@ export default function SamJuniorsOSPage() {
     setWindows(INITIAL_WINDOWS);
     setWallpaperId('obsidian-aurora');
     setAutonomyMode('Fully Autonomous');
-    setNotifications(NOTIFICATIONS);
+    NotificationStore.resetToDefaults();
   };
 
   const renderAppContent = (id: AppId) => {
@@ -359,6 +363,14 @@ export default function SamJuniorsOSPage() {
         notifications={notifications}
         onDismiss={handleDismissNotification}
         onClearAll={handleClearAllNotifications}
+        onOpenApp={openApp}
+        soundEnabled={soundEnabled}
+      />
+
+      {/* 6. Real-Time Subtle Toast Pop-ups */}
+      <NotificationToasts
+        toasts={activeToasts}
+        onOpenApp={openApp}
         soundEnabled={soundEnabled}
       />
     </main>

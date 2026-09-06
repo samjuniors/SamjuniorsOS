@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Wifi,
@@ -14,8 +14,12 @@ import {
   Zap,
   Sliders,
   Sparkles,
+  Bell,
+  BellOff,
+  Bot,
 } from 'lucide-react';
 import { playOSSound } from './IconHelper';
+import { NotificationStore } from '@/lib/notification-center';
 
 interface ControlCenterProps {
   isOpen: boolean;
@@ -36,6 +40,14 @@ export const ControlCenter: React.FC<ControlCenterProps> = ({
   onToggleSound,
   onOpenSettings,
 }) => {
+  const [toastsEnabled, setToastsEnabled] = useState(() => NotificationStore.getState().toastsEnabled);
+
+  useEffect(() => {
+    return NotificationStore.subscribe(() => {
+      setToastsEnabled(NotificationStore.getState().toastsEnabled);
+    });
+  }, []);
+
   if (!isOpen) return null;
 
   return (
@@ -86,12 +98,12 @@ export const ControlCenter: React.FC<ControlCenterProps> = ({
           </button>
         </div>
 
-        {/* Audio Toggle */}
-        <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-1.5">
+        {/* Audio & Notification Toggles */}
+        <div className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-2.5">
           <div className="flex items-center justify-between text-slate-300">
             <span className="flex items-center gap-1.5">
               {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-indigo-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-500" />}
-              Sound Effects
+              Sound Feedback
             </span>
             <button
               onClick={onToggleSound}
@@ -102,8 +114,23 @@ export const ControlCenter: React.FC<ControlCenterProps> = ({
               {soundEnabled ? 'ON' : 'OFF'}
             </button>
           </div>
-          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-            <div className={`h-full bg-indigo-500 ${soundEnabled ? 'w-3/4' : 'w-0'}`} />
+
+          <div className="flex items-center justify-between text-slate-300 pt-1 border-t border-white/5">
+            <span className="flex items-center gap-1.5">
+              {toastsEnabled ? <Bell className="w-3.5 h-3.5 text-indigo-400" /> : <BellOff className="w-3.5 h-3.5 text-slate-500" />}
+              Popup Toasts
+            </span>
+            <button
+              onClick={() => {
+                if (soundEnabled) playOSSound('click');
+                NotificationStore.setToastsEnabled(!toastsEnabled);
+              }}
+              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                toastsEnabled ? 'bg-indigo-600 text-white' : 'bg-white/10 text-slate-400'
+              }`}
+            >
+              {toastsEnabled ? 'ON' : 'OFF'}
+            </button>
           </div>
         </div>
 
