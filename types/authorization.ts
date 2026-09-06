@@ -109,6 +109,7 @@ export interface AuthorizationEvaluationRequest {
   };
   target?: ActionTargetContext;
   requestedBy?: string;
+  approvalId?: string;
 }
 
 export interface AuthorizationDecision {
