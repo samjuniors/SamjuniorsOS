@@ -11,12 +11,14 @@ interface DesktopIconsProps {
   openApp: (id: AppId) => void;
   soundEnabled: boolean;
   onQuickDirective: (directive: string) => void;
+  onAppContextMenu?: (e: React.MouseEvent, app: any) => void;
 }
 
 export const DesktopIcons: React.FC<DesktopIconsProps> = ({
   openApp,
   soundEnabled,
   onQuickDirective,
+  onAppContextMenu,
 }) => {
   const [quickInput, setQuickInput] = React.useState('');
 
@@ -82,6 +84,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
                   if (soundEnabled) playOSSound('open');
                   openApp(app.id);
                 }}
+                onContextMenu={(e) => onAppContextMenu?.(e, app)}
                 className="group flex flex-col items-center text-center p-1.5 sm:p-2 rounded-2xl hover:bg-white/5 active:bg-white/10 backdrop-blur-sm transition-all cursor-pointer focus:outline-none"
               >
                 <div

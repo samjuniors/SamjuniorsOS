@@ -16,6 +16,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { INITIAL_AGENTS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
+import { AgentAvatar } from '@/components/os/AgentAvatar';
 
 export const CompanyApp: React.FC = () => {
   const [activeSection, setActiveSection] = useState<'constitution' | 'okrs' | 'org' | 'board'>('constitution');
@@ -259,12 +260,20 @@ export const CompanyApp: React.FC = () => {
 
             {/* Top: Founder */}
             <div className="flex justify-center">
-              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950 to-slate-900 border border-indigo-500/40 text-center shadow-xl w-64">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 mx-auto flex items-center justify-center font-bold text-white text-xs mb-1.5">
-                  F
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950 via-[#131326] to-slate-900 border border-indigo-500/40 text-center shadow-xl w-72 space-y-2">
+                <AgentAvatar
+                  roleOrId="founder"
+                  name="Founder"
+                  size="lg"
+                  showStatus
+                  status="active"
+                  showGlow
+                  className="mx-auto"
+                />
+                <div>
+                  <div className="font-bold text-xs text-white">Founder (Human-in-the-Loop)</div>
+                  <div className="text-[10px] text-indigo-400 font-mono">Chief Executive Authority</div>
                 </div>
-                <div className="font-bold text-xs text-white">Founder (Human-in-the-Loop)</div>
-                <div className="text-[10px] text-indigo-400">Chief Executive Authority</div>
               </div>
             </div>
 
@@ -276,15 +285,24 @@ export const CompanyApp: React.FC = () => {
               {INITIAL_AGENTS.map((agent) => (
                 <div
                   key={agent.id}
-                  className="os-glass-card rounded-2xl p-4 border border-white/10 text-center space-y-2 hover:border-indigo-500/40 transition-all"
+                  className="os-glass-card rounded-2xl p-4 border border-white/10 text-center space-y-2.5 hover:border-indigo-500/50 hover:bg-white/[0.04] transition-all group"
                 >
-                  <div
-                    className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${agent.avatarColor} mx-auto flex items-center justify-center text-xs font-bold text-white shadow-md`}
-                  >
-                    {agent.role.split(' ')[0]}
+                  <AgentAvatar
+                    roleOrId={agent.id}
+                    name={agent.name}
+                    size="lg"
+                    showStatus
+                    status={agent.status}
+                    interactive
+                    showGlow
+                    className="mx-auto"
+                  />
+                  <div>
+                    <div className="font-bold text-xs text-white group-hover:text-indigo-300 transition-colors">
+                      {agent.name}
+                    </div>
+                    <div className="text-[10px] text-indigo-400 font-medium">{agent.role}</div>
                   </div>
-                  <div className="font-bold text-xs text-white">{agent.name}</div>
-                  <div className="text-[10px] text-indigo-400">{agent.role}</div>
                   <div className="text-[9px] text-slate-400 border-t border-white/5 pt-2">
                     {agent.department}
                   </div>

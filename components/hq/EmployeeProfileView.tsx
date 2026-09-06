@@ -18,6 +18,8 @@ import {
   Award,
   Sparkles,
   ArrowRight,
+  Cpu,
+  Terminal,
 } from 'lucide-react';
 import { AIAgent, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
@@ -25,6 +27,8 @@ import { BrainCircuit, BookOpen } from 'lucide-react';
 import { STRUCTURED_SKILLS, getSkillsForRole } from '@/lib/skills/skill-registry';
 import { StructuredSkillDefinition } from '@/types/capabilities';
 import { SkillInspectionModal } from './SkillInspectionModal';
+import { AgentAvatar, AGENT_AVATAR_THEMES } from '@/components/os/AgentAvatar';
+import { MarkdownMessage } from '@/components/os/MarkdownMessage';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -49,47 +53,72 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   const [inspectingSkill, setInspectingSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
   const structuredSkills = getSkillsForRole(agent.id as any);
   const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'agent'; text: string; time: string }>>([
+  
+  // Isolated per-agent chat history
+  const [chatByAgent, setChatByAgent] = useState<Record<string, Array<{ sender: 'user' | 'agent'; text: string; time: string }>>>({});
+  // Isolated per-agent sending state
+  const [sendingByAgent, setSendingByAgent] = useState<Record<string, boolean>>({});
+  
+  const [selectedEvidenceDeliverable, setSelectedEvidenceDeliverable] = useState<ExecutionDeliverable | null>(null);
+
+  const currentAgentMessages = chatByAgent[agent.id] || [
     {
       sender: 'agent',
       text: `Hello Founder, I am ${agent.name}, your ${agent.role}. I am currently focused on "${agent.currentTask}". How can I support our company objectives today?`,
       time: 'Just now',
     },
-  ]);
-  const [isSending, setIsSending] = useState(false);
-  const [selectedEvidenceDeliverable, setSelectedEvidenceDeliverable] = useState<ExecutionDeliverable | null>(null);
+  ];
+  const isAgentSending = Boolean(sendingByAgent[agent.id]);
 
   const handleSendChat = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || isSending) return;
+    if (!chatInput.trim() || isAgentSending) return;
 
     const userText = chatInput.trim();
+    const currentAgentId = agent.id;
     setChatInput('');
     const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setChatMessages((prev) => [...prev, { sender: 'user', text: userText, time: timeNow }]);
-    setIsSending(true);
+
+    setChatByAgent((prev) => ({
+      ...prev,
+      [currentAgentId]: [...(prev[currentAgentId] || currentAgentMessages), { sender: 'user', text: userText, time: timeNow }],
+    }));
+
+    setSendingByAgent((prev) => ({
+      ...prev,
+      [currentAgentId]: true,
+    }));
 
     try {
       const reply = await onSendMessage(userText);
-      setChatMessages((prev) => [
+      setChatByAgent((prev) => ({
         ...prev,
-        {
-          sender: 'agent',
-          text: reply || `Acknowledged. I have recorded your directive and will coordinate with the council.`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
+        [currentAgentId]: [
+          ...(prev[currentAgentId] || []),
+          {
+            sender: 'agent',
+            text: reply || `Acknowledged. I have recorded your directive and will coordinate with the council.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ],
+      }));
     } catch (err) {
-      setChatMessages((prev) => [
+      setChatByAgent((prev) => ({
         ...prev,
-        {
-          sender: 'agent',
-          text: `I received your message. I am synthesizing the recommendation based on verified data.`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
+        [currentAgentId]: [
+          ...(prev[currentAgentId] || []),
+          {
+            sender: 'agent',
+            text: `I received your message. I am synthesizing the recommendation based on verified data.`,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ],
+      }));
     } finally {
-      setIsSending(false);
+      setSendingByAgent((prev) => ({
+        ...prev,
+        [currentAgentId]: false,
+      }));
     }
   };
 
@@ -113,15 +142,11 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
               onClick={() => onSelectAgent(a.id)}
               className={`flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all ${
                 isSelected
-                  ? 'bg-blue-600 text-white border-blue-500 shadow-md scale-105'
+                  ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg scale-105'
                   : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-white/10'
               }`}
             >
-              <div
-                className={`w-5 h-5 rounded-md bg-gradient-to-br ${a.avatarColor} flex items-center justify-center text-white text-[10px]`}
-              >
-                {a.name.charAt(0)}
-              </div>
+              <AgentAvatar roleOrId={a.id} name={a.name} size="xs" showGlow={isSelected} />
               <span>{a.name}</span>
               <span className="text-[10px] opacity-75 font-normal">({a.role.split(' ')[0]})</span>
             </button>
@@ -133,18 +158,26 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
       <div className="bg-slate-900/90 border border-white/15 rounded-2xl overflow-hidden shadow-2xl">
         {/* Profile Header */}
         <div className="p-5 bg-gradient-to-r from-slate-800/80 to-slate-900/80 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center space-x-3.5">
-            <div
-              className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${agent.avatarColor} flex items-center justify-center text-white font-bold text-2xl shadow-xl border border-white/20`}
-            >
-              {agent.name.charAt(0)}
-            </div>
+          <div className="flex items-center space-x-4">
+            <AgentAvatar
+              roleOrId={agent.id}
+              name={agent.name}
+              size="lg"
+              showStatus
+              status={agent.status}
+              showGlow
+              showBadge
+              badgeLabel={agent.id.toUpperCase()}
+            />
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-base font-bold text-white">{agent.name}</h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   Active Officer
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  Autonomous Authority
                 </span>
               </div>
               <p className="text-xs text-slate-300 font-medium">{agent.role}</p>
@@ -228,6 +261,44 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
               {/* Bio & Focus */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="md:col-span-2 space-y-3">
+                  {/* Cybernetic Identity Spec Card */}
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900/90 via-[#121324] to-slate-900/90 border border-indigo-500/25 flex items-center justify-between gap-4 shadow-lg">
+                    <div className="flex items-center space-x-4 min-w-0">
+                      <AgentAvatar
+                        roleOrId={agent.id}
+                        name={agent.name}
+                        size="xl"
+                        showStatus
+                        status={agent.status}
+                        showGlow
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase font-bold">
+                            Cybernetic Core {agent.id.toUpperCase()}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            Neural Sync: 100%
+                          </span>
+                        </div>
+                        <h3 className="text-sm font-bold text-white mt-1 truncate">{agent.name}</h3>
+                        <p className="text-[11px] text-slate-300 font-medium">{agent.role}</p>
+                        <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          Department: {agent.department} • Model: {agent.model || 'Gemini 2.5 Flash'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="hidden sm:flex flex-col items-end shrink-0 space-y-1 text-right">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Clearance</span>
+                      <span className="text-xs font-mono font-bold text-indigo-300 px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/30">
+                        LEVEL 5 CONSTITUTIONAL
+                      </span>
+                      <span className="text-[9px] text-emerald-400 font-mono">Safe Mock Guard Active</span>
+                    </div>
+                  </div>
+
                   <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2">
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
                       Executive Mandate
@@ -235,27 +306,36 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                     <p className="text-xs text-slate-200 leading-relaxed">{agent.bio}</p>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/15 space-y-2">
-                    <span className="text-[10px] font-semibold text-blue-300 uppercase tracking-wider block">
+                  <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/15 space-y-2">
+                    <span className="text-[10px] font-semibold text-indigo-300 uppercase tracking-wider block">
                       Current Operational Focus
                     </span>
-                    <p className="text-xs text-blue-100 font-medium leading-relaxed">{agent.currentTask}</p>
+                    <p className="text-xs text-indigo-100 font-medium leading-relaxed">{agent.currentTask}</p>
                   </div>
                 </div>
 
                 {/* Core Responsibilities */}
-                <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2">
-                  <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                    Core Responsibilities
-                  </span>
-                  <ul className="space-y-1.5 text-xs text-slate-300">
-                    {(agent.responsibilities || agent.goals || []).map((r, i) => (
-                      <li key={i} className="flex items-start gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                        <span className="leading-snug">{r}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                      Core Responsibilities
+                    </span>
+                    <ul className="space-y-2 text-xs text-slate-300">
+                      {(agent.responsibilities || agent.goals || []).map((r, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                          <span className="leading-snug">{r}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-white/5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="text-slate-400">Autonomous Gate:</span>
+                      <span className="font-mono text-emerald-400 font-semibold">Verified</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -314,27 +394,38 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
 
           {activeSubTab === 'chat' && (
             <div className="space-y-3">
-              <div className="h-72 overflow-y-auto rounded-xl bg-black/40 border border-white/10 p-4 space-y-3">
-                {chatMessages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                  >
+              <div className="h-80 overflow-y-auto rounded-xl bg-black/40 border border-white/10 p-4 space-y-4 custom-scrollbar">
+                {currentAgentMessages.map((msg, i) => {
+                  const isUser = msg.sender === 'user';
+                  return (
                     <div
-                      className={`max-w-[80%] rounded-2xl p-3 text-xs leading-relaxed ${
-                        msg.sender === 'user'
-                          ? 'bg-blue-600 text-white rounded-tr-none'
-                          : 'bg-slate-800 text-slate-200 border border-white/10 rounded-tl-none'
-                      }`}
+                      key={i}
+                      className={`flex items-start gap-2.5 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
                     >
-                      {msg.text}
+                      {isUser ? (
+                        <AgentAvatar roleOrId="founder" size="xs" />
+                      ) : (
+                        <AgentAvatar roleOrId={agent.id} name={agent.name} size="xs" />
+                      )}
+                      <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[85%]`}>
+                        <div
+                          className={`rounded-2xl p-3 text-xs leading-relaxed shadow-md ${
+                            isUser
+                              ? 'bg-indigo-600 text-white rounded-tr-none'
+                              : 'bg-slate-800/95 text-slate-200 border border-white/10 rounded-tl-none'
+                          }`}
+                        >
+                          <MarkdownMessage content={msg.text} isFounder={isUser} />
+                        </div>
+                        <span className="text-[9px] text-slate-500 mt-1 px-1 font-mono">{msg.time}</span>
+                      </div>
                     </div>
-                    <span className="text-[9px] text-slate-500 mt-1 px-1">{msg.time}</span>
-                  </div>
-                ))}
-                {isSending && (
-                  <div className="flex items-center space-x-2 text-xs text-slate-400 italic">
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                  );
+                })}
+                {isAgentSending && (
+                  <div className="flex items-center space-x-2.5 text-xs text-slate-400 italic pl-1">
+                    <AgentAvatar roleOrId={agent.id} name={agent.name} size="xs" showGlow />
+                    <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
                     <span>{agent.name} is synthesizing response...</span>
                   </div>
                 )}
@@ -346,12 +437,12 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder={`Ask ${agent.name.split(' ')[0]} for strategic analysis, updates, or clarifications...`}
-                  className="flex-1 bg-black/40 border border-white/15 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  className="flex-1 bg-black/40 border border-white/15 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                 />
                 <button
                   type="submit"
-                  disabled={isSending || !chatInput.trim()}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                  disabled={isAgentSending || !chatInput.trim()}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-md"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>Send</span>

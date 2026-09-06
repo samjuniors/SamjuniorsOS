@@ -16,6 +16,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { AIAgent, CompanyInitiative } from '@/types/os';
+import { AgentAvatar } from '@/components/os/AgentAvatar';
 
 interface CompanyPulseSectionProps {
   agents: AIAgent[];
@@ -133,16 +134,21 @@ export const CompanyPulseSection: React.FC<CompanyPulseSectionProps> = ({
             <div
               key={agent.id}
               onClick={() => onSelectAgent(agent.id)}
-              className="bg-black/30 hover:bg-white/5 border border-white/5 hover:border-white/15 rounded-xl p-3 cursor-pointer transition-all space-y-2 group"
+              className="bg-black/30 hover:bg-white/5 border border-white/5 hover:border-indigo-500/30 rounded-xl p-3 cursor-pointer transition-all space-y-2.5 group"
             >
               <div className="flex items-center space-x-2.5">
-                <div
-                  className={`w-8 h-8 rounded-xl bg-gradient-to-br ${agent.avatarColor} flex items-center justify-center text-white font-bold text-xs shadow-md group-hover:scale-105 transition-transform`}
-                >
-                  {agent.name.charAt(0)}
-                </div>
+                <AgentAvatar
+                  roleOrId={agent.id}
+                  name={agent.name}
+                  size="md"
+                  showStatus
+                  status={agent.status}
+                  interactive
+                />
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-white truncate">{agent.name}</h4>
+                  <h4 className="text-xs font-bold text-white truncate group-hover:text-indigo-300 transition-colors">
+                    {agent.name}
+                  </h4>
                   <p className="text-[10px] text-slate-400 truncate">{agent.role}</p>
                 </div>
               </div>

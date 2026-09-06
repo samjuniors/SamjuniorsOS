@@ -25,6 +25,7 @@ import {
 import { AppId } from '@/types/os';
 import { CollaborationStore } from '@/lib/collaboration-store';
 import { playOSSound } from '../os/IconHelper';
+import { AgentAvatar } from '@/components/os/AgentAvatar';
 
 interface CollaborationWorkflowViewProps {
   soundEnabled?: boolean;
@@ -320,10 +321,8 @@ export const CollaborationWorkflowView: React.FC<CollaborationWorkflowViewProps>
                   className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-2.5 hover:border-white/20 transition-all"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center font-bold text-[10px] text-white">
-                        {meta.name.slice(0, 1)}
-                      </div>
+                    <div className="flex items-center space-x-2.5">
+                      <AgentAvatar roleOrId={senderKey} name={meta.name} size="xs" />
                       <div>
                         <span className={`font-bold text-xs ${meta.color}`}>{meta.name}</span>
                         <span className="text-[10px] text-slate-400 ml-2">➔ {msg.toName}</span>

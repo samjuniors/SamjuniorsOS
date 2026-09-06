@@ -14,6 +14,21 @@ import { NotificationsDrawer } from '@/components/os/NotificationsDrawer';
 import { NotificationToasts } from '@/components/os/NotificationToasts';
 import { playOSSound } from '@/components/os/IconHelper';
 import { NotificationStore, ToastItem } from '@/lib/notification-center';
+import { ContextMenu, ContextMenuState } from '@/components/os/ContextMenu';
+import {
+  Sparkles,
+  MessageSquare,
+  Terminal as TerminalIcon,
+  Minimize2,
+  Volume2,
+  VolumeX,
+  Shield,
+  Activity,
+  Zap,
+  RotateCcw,
+  Search as SearchIcon,
+  Play
+} from 'lucide-react';
 
 // Apps
 import { WorkforceApp } from '@/components/apps/WorkforceApp';
@@ -37,6 +52,14 @@ export default function SamJuniorsOSPage() {
   const [wallpaperId, setWallpaperId] = useState('elegant-dark');
   const [autonomyMode, setAutonomyMode] = useState('Fully Autonomous');
   const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Context Menu State
+  const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    items: [],
+  });
 
   // Modals & Drawers
   const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
@@ -256,14 +279,131 @@ export default function SamJuniorsOSPage() {
   const activeAppTitle = activeWindow ? activeWindow.title : 'SamJuniors OS';
   const activeAppId = activeWindow ? activeWindow.id : 'workforce';
 
+  // Desktop Wallpaper Right-Click Context Menu
+  const handleDesktopContextMenu = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('.os-window')) {
+      return;
+    }
+
+    e.preventDefault();
+    setContextMenuState({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      title: 'SamJuniors OS',
+      items: [
+        {
+          id: 'launch-directive',
+          label: 'Dispatch Executive Directive',
+          icon: Zap,
+          shortcut: '⌘N',
+          onClick: () => openApp('workforce'),
+        },
+        {
+          id: 'open-spotlight',
+          label: 'Spotlight Search',
+          icon: SearchIcon,
+          shortcut: '⌘K',
+          onClick: () => setIsSpotlightOpen(true),
+        },
+        {
+          id: 'open-messages',
+          label: 'Direct Messages',
+          icon: MessageSquare,
+          onClick: () => openApp('messages'),
+        },
+        {
+          id: 'open-terminal',
+          label: 'Command Terminal',
+          icon: TerminalIcon,
+          onClick: () => openApp('terminal'),
+        },
+        { id: 'sep-desk-1', label: '', isSeparator: true },
+        {
+          id: 'minimize-all',
+          label: 'Minimize All Windows',
+          icon: Minimize2,
+          shortcut: '⌘M',
+          onClick: () => {
+            setWindows((wins) => wins.map((w) => ({ ...w, isMinimized: true })));
+            if (soundEnabled) playOSSound('minimize');
+          },
+        },
+        {
+          id: 'toggle-sound',
+          label: soundEnabled ? 'Mute System Audio' : 'Unmute System Audio',
+          icon: soundEnabled ? VolumeX : Volume2,
+          onClick: () => {
+            setSoundEnabled((prev) => !prev);
+            if (!soundEnabled) playOSSound('pop');
+          },
+        },
+        { id: 'sep-desk-2', label: '', isSeparator: true },
+        {
+          id: 'clean-restart',
+          label: 'Reset Workspace Windows',
+          icon: RotateCcw,
+          onClick: () => {
+            setWindows(INITIAL_WINDOWS);
+            if (soundEnabled) playOSSound('startup');
+          },
+        },
+      ],
+    });
+  };
+
+  // App Icon Right-Click Menu
+  const handleAppContextMenu = (e: React.MouseEvent, app: any) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setContextMenuState({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      title: app.name,
+      items: [
+        {
+          id: 'open-app',
+          label: `Open ${app.name}`,
+          icon: Play,
+          shortcut: '↵',
+          onClick: () => openApp(app.id),
+        },
+        {
+          id: 'app-directive',
+          label: 'Execute App Directive',
+          icon: Zap,
+          onClick: () => openApp(app.id),
+        },
+        { id: 'sep-app-1', label: '', isSeparator: true },
+        {
+          id: 'app-inspect',
+          label: `Inspect ${app.category}`,
+          icon: Activity,
+          onClick: () => openApp('settings'),
+        },
+      ],
+    });
+  };
+
   return (
     <main
       id="os-desktop-root"
+      onContextMenu={handleDesktopContextMenu}
       className="relative w-screen h-screen overflow-hidden select-none font-sans text-slate-200"
       style={{
         background: activeWallpaper.preview,
       }}
     >
+      {/* Universal Desktop Context Menu */}
+      <ContextMenu
+        state={contextMenuState}
+        onClose={() => setContextMenuState((prev) => ({ ...prev, isOpen: false }))}
+        soundEnabled={soundEnabled}
+      />
+
       {/* Background Ambient Subtle Overlay Pattern & Deep Glow */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] pointer-events-none" />
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -307,6 +447,7 @@ export default function SamJuniorsOSPage() {
         openApp={openApp}
         onQuickDirective={(dir) => openApp('workforce', dir)}
         soundEnabled={soundEnabled}
+        onAppContextMenu={handleAppContextMenu}
       />
 
       {/* 3. Window Manager & Open Windows */}

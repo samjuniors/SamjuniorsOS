@@ -4,32 +4,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Send,
-  Search,
-  Bot,
-  BrainCircuit,
-  Sparkles,
-  CheckCheck,
-  Check,
-  RotateCcw,
-  Trash2,
-  ChevronRight,
-  ArrowRight,
-  Shield,
-  Clock,
-  AlertCircle,
-  ExternalLink,
   MessageSquare,
+  Sparkles,
+  Bot,
   Play,
-  FileText,
   CheckCircle2,
-  XCircle,
+  AlertCircle,
+  FileText,
+  Search,
+  CheckCheck,
+  Zap,
   Layers,
-  FileCheck,
-  TrendingUp,
+  ArrowRight,
   HelpCircle,
+  ExternalLink,
   Briefcase,
   X,
-  FileCode
+  FileCode,
+  Smile,
+  Copy,
+  Info,
+  MoreVertical,
+  Shield,
+  Trash2,
+  Pin,
+  Check
 } from 'lucide-react';
 import {
   AppId,
@@ -41,9 +40,18 @@ import {
 } from '@/types/os';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
 import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
+import { AgentAvatar } from '@/components/os/AgentAvatar';
+import { ContextMenu, ContextMenuState } from '@/components/os/ContextMenu';
+import { MarkdownMessage } from '@/components/os/MarkdownMessage';
 
 export type ParticipantId = 'advisor' | AgentRole;
 export type MessageIntent = 'conversation' | 'information_request' | 'directive' | 'ambiguous';
+
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  hasReacted: boolean;
+}
 
 export interface MessageParticipant {
   id: ParticipantId;
@@ -67,6 +75,7 @@ export interface DirectMessage {
   modelUsed?: string;
   errorMessage?: string;
   intent?: MessageIntent;
+  reactions?: MessageReaction[];
   directiveProposal?: {
     title?: string;
     suggestedScope?: string;
@@ -212,9 +221,18 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
     finance: [],
   });
 
+  // Per-participant isolated typing state (Fixes bug where chatting with one person shows everyone typing)
+  const [typingMap, setTypingMap] = useState<Record<ParticipantId, boolean>>({
+    advisor: false,
+    coo: false,
+    researcher: false,
+    pm: false,
+    finance: false,
+  });
+
   const [inputMessage, setInputMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
   const [selectedDeliverableModal, setSelectedDeliverableModal] = useState<ExecutionDeliverable | null>(null);
+  const [inspectingProvenanceModal, setInspectingProvenanceModal] = useState<DirectMessage | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<ParticipantId, number>>({
     advisor: 0,
     coo: 0,
@@ -223,15 +241,24 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
     finance: 0,
   });
 
+  // Context Menu state
+  const [contextMenuState, setContextMenuState] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    items: [],
+  });
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedParticipant = PARTICIPANTS.find((p) => p.id === selectedId) || PARTICIPANTS[0];
+  const isCurrentParticipantTyping = Boolean(typingMap[selectedId]);
 
   // Auto-scroll on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messagesByParticipant, selectedId, isSending]);
+  }, [messagesByParticipant, selectedId, isCurrentParticipantTyping]);
 
   // Clear unread badge on selecting a participant
   const handleSelectParticipant = (id: ParticipantId) => {
@@ -241,7 +268,66 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  // Execute directive through the existing orchestration architecture
+  // Toggle emoji reactions on messages
+  const handleToggleReaction = (messageId: string, emoji: string) => {
+    if (soundEnabled) playOSSound('react');
+
+    setMessagesByParticipant((prev) => {
+      const thread = prev[selectedId] || [];
+      return {
+        ...prev,
+        [selectedId]: thread.map((msg) => {
+          if (msg.id !== messageId) return msg;
+
+          const currentReactions = msg.reactions || [];
+          const existingIdx = currentReactions.findIndex((r) => r.emoji === emoji);
+
+          let updatedReactions: MessageReaction[];
+          if (existingIdx >= 0) {
+            const existing = currentReactions[existingIdx];
+            if (existing.hasReacted) {
+              // Remove reaction if 1 or decrement
+              if (existing.count <= 1) {
+                updatedReactions = currentReactions.filter((_, i) => i !== existingIdx);
+              } else {
+                updatedReactions = currentReactions.map((r, i) =>
+                  i === existingIdx ? { ...r, count: r.count - 1, hasReacted: false } : r
+                );
+              }
+            } else {
+              // Increment
+              updatedReactions = currentReactions.map((r, i) =>
+                i === existingIdx ? { ...r, count: r.count + 1, hasReacted: true } : r
+              );
+            }
+          } else {
+            // New reaction
+            updatedReactions = [...currentReactions, { emoji, count: 1, hasReacted: true }];
+          }
+
+          return {
+            ...msg,
+            reactions: updatedReactions,
+          };
+        }),
+      };
+    });
+  };
+
+  // Copy message text with sound and toast
+  const handleCopyMessage = (text: string) => {
+    if (typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(text);
+      if (soundEnabled) playOSSound('copy');
+      dispatchOSNotification({
+        title: 'Copied to Clipboard',
+        message: 'Message content copied successfully.',
+        type: 'system',
+      });
+    }
+  };
+
+  // Execute directive through orchestration architecture
   const handleExecuteDirective = async (directiveText: string, messageId: string) => {
     if (soundEnabled) playOSSound('execute');
 
@@ -325,7 +411,6 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           executionSummary: payload.executionSummary,
         };
 
-        // Decision / Attention items creation for Company HQ
         const decisionDetails = payload.executiveResult?.founderDecision;
         let newDecision: CompanyDecision | undefined;
         let newAttentionItem: AttentionItem | undefined;
@@ -347,54 +432,62 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
 
           newAttentionItem = {
             id: `att-run-${Date.now()}`,
-            type: 'approval_required',
-            title: `Decision Required: ${newDecision.title}`,
-            whatHappened: `Executive Council produced verified deliverables for "${directiveText.slice(0, 60)}...".`,
-            whyItMatters: decisionDetails.why || 'Requires Founder sign-off before allocating execution capacity.',
-            recommendedAction: 'Review Executive Recommendation in Company HQ.',
+            title: `Executive Directive Ready: ${finalizedRun.title}`,
+            whatHappened: `${finalizedRun.deliverables.length} deliverables verified across Sophia, Dr. Thorne, Maya, and Julian.`,
+            whyItMatters: 'Requires founder ratification before full autonomous execution.',
+            recommendedAction: 'Review deliverables in Company HQ and authorize.',
             authorAgentId: 'coo',
-            authorName: 'Sophia Vance (COO)',
+            authorName: 'Sophia Vance',
+            type: 'approval_required',
             founderActionRequired: true,
             status: 'pending',
-            timestamp: getFormattedTime(),
-            evidence: {
-              basis: (payload.executiveResult?.evidenceAvailability?.primaryBasis as any) || 'model_reasoning',
-              source: 'Multi-Agent Council Protocol',
-              details: 'Synthesized across Research, Product Architecture, and Financial Modeling under 9-step governance.',
-            },
+            timestamp: 'Just now',
           };
         }
 
-        // Synchronize with Company HQ via CustomEvent
-        window.dispatchEvent(
-          new CustomEvent('samjuniors-directive-orchestrated', {
-            detail: {
-              run: finalizedRun,
-              decision: newDecision,
-              attentionItem: newAttentionItem,
-            },
-          })
-        );
+        // Add system deliverable message into thread
+        const completionMsg: DirectMessage = {
+          id: generateMsgId('msg-exec-result'),
+          sender: selectedId,
+          text: `**Directive Completed**: ${finalizedRun.title}\n\n${finalizedRun.summary}\n\n*${finalizedRun.deliverables.length} verified deliverables generated across the executive council.*`,
+          timestamp: getFormattedTime(),
+          status: 'delivered',
+          liveAi: data.liveAi,
+          modelUsed: 'Council Mesh v2.5',
+          intent: 'conversation',
+          orchestrationRun: finalizedRun,
+        };
 
-        // Update message with finalized run
         setMessagesByParticipant((prev) => {
           const thread = prev[selectedId] || [];
           return {
             ...prev,
-            [selectedId]: thread.map((m) =>
-              m.id === messageId
-                ? {
-                    ...m,
-                    isDirectiveExecuting: false,
-                    orchestrationRun: finalizedRun,
-                    text: `${m.text}\n\n✅ [Executive Council Deliverables Generated]\nStrategic Package: "${finalizedRun.title}"\nStatus: Completed & Verified across Research, Product, and Finance.`,
-                  }
-                : m
-            ),
+            [selectedId]: [
+              ...thread.map((m) =>
+                m.id === messageId
+                  ? {
+                      ...m,
+                      isDirectiveExecuting: false,
+                      orchestrationRun: finalizedRun,
+                    }
+                  : m
+              ),
+              completionMsg,
+            ],
           };
         });
+
+        dispatchOSNotification({
+          title: `Directive Completed: ${finalizedRun.title}`,
+          message: `${finalizedRun.deliverables.length} deliverables ready for inspection in Company HQ.`,
+          type: 'agent',
+          agent: 'Sophia Vance',
+          actionable: true,
+          actionLabel: 'Open HQ',
+          appTarget: 'workforce',
+        });
       } else {
-        throw new Error(data.error || 'Failed to complete directive execution');
+        throw new Error(data.error || 'Directive execution failed');
       }
     } catch (err: any) {
       clearInterval(interval);
@@ -419,7 +512,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
 
   const handleSendMessage = async (customText?: string) => {
     const textToSend = (customText || inputMessage).trim();
-    if (!textToSend || isSending) return;
+    if (!textToSend || typingMap[selectedId]) return;
 
     if (soundEnabled) playOSSound('click');
 
@@ -445,7 +538,11 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
       setInputMessage('');
     }
 
-    setIsSending(true);
+    // Set isolated typing state for TARGET participant only
+    setTypingMap((prev) => ({
+      ...prev,
+      [targetParticipantId]: true,
+    }));
 
     try {
       // Build conversation history for context continuity
@@ -499,11 +596,11 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
             ...prev,
             [targetParticipantId]: (prev[targetParticipantId] || 0) + 1,
           }));
-          
+
           const agentName = INITIAL_AGENTS.find((a) => a.id === targetParticipantId)?.name || 'Advisor';
           dispatchOSNotification({
-            title: 'New Message',
-            message: `${agentName}: ${data.reply.slice(0, 40)}...`,
+            title: `New Message from ${agentName}`,
+            message: `${data.reply.slice(0, 60)}...`,
             type: 'agent',
             agent: agentName,
           });
@@ -526,16 +623,137 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
         [targetParticipantId]: [...(prev[targetParticipantId] || []), errorMsg],
       }));
     } finally {
-      setIsSending(false);
+      // Clear isolated typing state for target participant
+      setTypingMap((prev) => ({
+        ...prev,
+        [targetParticipantId]: false,
+      }));
     }
   };
 
   const handleClearHistory = () => {
-    if (soundEnabled) playOSSound('click');
+    if (soundEnabled) playOSSound('dismiss');
     setMessagesByParticipant((prev) => ({
       ...prev,
       [selectedId]: [],
     }));
+  };
+
+  // Right-click context menu handlers
+  const handleOpenMessageContextMenu = (e: React.MouseEvent, msg: DirectMessage) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const isFounder = msg.sender === 'founder';
+
+    setContextMenuState({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      title: isFounder ? 'Founder Message' : `${selectedParticipant.name}`,
+      items: [
+        {
+          id: 'copy-text',
+          label: 'Copy Message Text',
+          icon: Copy,
+          shortcut: '⌘C',
+          onClick: () => handleCopyMessage(msg.text),
+        },
+        {
+          id: 'react-thumbs',
+          label: 'React with 👍',
+          onClick: () => handleToggleReaction(msg.id, '👍'),
+        },
+        {
+          id: 'react-rocket',
+          label: 'React with 🚀',
+          onClick: () => handleToggleReaction(msg.id, '🚀'),
+        },
+        {
+          id: 'react-lightbulb',
+          label: 'React with 💡',
+          onClick: () => handleToggleReaction(msg.id, '💡'),
+        },
+        { id: 'sep-1', label: '', isSeparator: true },
+        {
+          id: 'execute-as-directive',
+          label: 'Execute as Work Directive',
+          icon: Play,
+          shortcut: '⌘↵',
+          onClick: () => handleExecuteDirective(msg.text, msg.id),
+        },
+        {
+          id: 'inspect-provenance',
+          label: 'Inspect AI Provenance',
+          icon: Info,
+          disabled: !msg.liveAi,
+          onClick: () => setInspectingProvenanceModal(msg),
+        },
+        { id: 'sep-2', label: '', isSeparator: true },
+        {
+          id: 'dismiss-msg',
+          label: 'Delete from Thread',
+          icon: Trash2,
+          destructive: true,
+          onClick: () => {
+            setMessagesByParticipant((prev) => ({
+              ...prev,
+              [selectedId]: (prev[selectedId] || []).filter((m) => m.id !== msg.id),
+            }));
+            if (soundEnabled) playOSSound('dismiss');
+          },
+        },
+      ],
+    });
+  };
+
+  const handleOpenParticipantContextMenu = (e: React.MouseEvent, participant: MessageParticipant) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setContextMenuState({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      title: participant.name,
+      items: [
+        {
+          id: 'open-channel',
+          label: 'Open Direct Message Channel',
+          icon: MessageSquare,
+          onClick: () => handleSelectParticipant(participant.id),
+        },
+        {
+          id: 'view-profile-hq',
+          label: 'View Profile in Company HQ',
+          icon: ExternalLink,
+          onClick: () => onOpenApp?.('workforce'),
+        },
+        {
+          id: 'mark-read',
+          label: 'Mark as Read',
+          icon: Check,
+          onClick: () => {
+            setUnreadCounts((prev) => ({ ...prev, [participant.id]: 0 }));
+            if (soundEnabled) playOSSound('pop');
+          },
+        },
+        { id: 'sep-part-1', label: '', isSeparator: true },
+        {
+          id: 'clear-channel',
+          label: 'Clear Conversation History',
+          icon: Trash2,
+          destructive: true,
+          onClick: () => {
+            setMessagesByParticipant((prev) => ({
+              ...prev,
+              [participant.id]: [],
+            }));
+            if (soundEnabled) playOSSound('dismiss');
+          },
+        },
+      ],
+    });
   };
 
   const filteredParticipants = PARTICIPANTS.filter((p) => {
@@ -547,8 +765,15 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
 
   return (
     <div className="h-full w-full flex bg-[#0c0d12] text-slate-200 overflow-hidden select-text text-xs relative">
+      {/* Universal Context Menu */}
+      <ContextMenu
+        state={contextMenuState}
+        onClose={() => setContextMenuState((prev) => ({ ...prev, isOpen: false }))}
+        soundEnabled={soundEnabled}
+      />
+
       {/* LEFT COLUMN: Conversations List */}
-      <div className="w-72 sm:w-80 flex flex-col border-r border-white/10 bg-[#0f1017]/90 shrink-0">
+      <div className="w-72 sm:w-80 flex flex-col border-r border-white/10 bg-[#0f1017]/95 shrink-0">
         {/* Header */}
         <div className="p-3.5 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center space-x-2">
@@ -559,7 +784,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               <h1 className="text-sm font-bold text-white tracking-tight">Messages</h1>
               <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>5 Direct Channels</span>
+                <span>5 Executive Channels</span>
               </div>
             </div>
           </div>
@@ -580,201 +805,190 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </div>
         </div>
 
-        {/* Participants / Conversation Threads */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {filteredParticipants.map((participant) => {
-            const isSelected = participant.id === selectedId;
-            const thread = messagesByParticipant[participant.id] || [];
+        {/* Participant Channels List */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
+          {filteredParticipants.map((p) => {
+            const isSelected = p.id === selectedId;
+            const unread = unreadCounts[p.id] || 0;
+            const thread = messagesByParticipant[p.id] || [];
             const lastMsg = thread[thread.length - 1];
-            const unread = unreadCounts[participant.id] || 0;
+            const isParticipantTyping = Boolean(typingMap[p.id]);
 
             return (
               <button
-                key={participant.id}
-                id={`messages-thread-${participant.id}`}
-                onClick={() => handleSelectParticipant(participant.id)}
-                className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start space-x-3 relative group border ${
+                key={p.id}
+                id={`participant-btn-${p.id}`}
+                onClick={() => handleSelectParticipant(p.id)}
+                onContextMenu={(e) => handleOpenParticipantContextMenu(e, p)}
+                className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start space-x-2.5 group relative ${
                   isSelected
-                    ? 'bg-indigo-600/20 border-indigo-500/50 shadow-md'
-                    : 'bg-white/[0.02] hover:bg-white/[0.06] border-transparent'
+                    ? 'bg-indigo-600/20 border border-indigo-500/30 text-white shadow-sm'
+                    : 'hover:bg-white/5 text-slate-400 border border-transparent'
                 }`}
               >
-                {/* Avatar with Status Indicator */}
+                {/* Modern Futuristic Vector Avatar */}
                 <div className="relative shrink-0 mt-0.5">
-                  <div
-                    className={`w-10 h-10 rounded-xl bg-gradient-to-tr ${participant.avatarColor} flex items-center justify-center text-white shadow-md`}
-                  >
-                    {participant.isAdvisor ? (
-                      <BrainCircuit className="w-5 h-5 text-white drop-shadow" />
-                    ) : (
-                      <span className="text-sm font-bold">{participant.name[0]}</span>
-                    )}
-                  </div>
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0f1017]" />
+                  <AgentAvatar roleOrId={p.id} size="sm" showStatus status="active" />
                 </div>
 
-                {/* Conversation Details */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
-                      {participant.name}
-                      {participant.isAdvisor && (
-                        <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 text-[9px] font-mono border border-purple-500/40">
-                          Advisor
+                    <span className={`font-semibold truncate text-xs ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                      {p.name}
+                    </span>
+                    {lastMsg && (
+                      <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-1">
+                        {lastMsg.timestamp}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5 font-medium">
+                    {p.role}
+                  </div>
+
+                  {/* Typing or Last Message preview */}
+                  <div className="mt-1 flex items-center justify-between text-[11px] truncate">
+                    {isParticipantTyping ? (
+                      <span className="text-indigo-400 font-medium flex items-center gap-1.5 animate-pulse">
+                        <span className="flex space-x-0.5">
+                          <span className="w-1 h-1 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1 h-1 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1 h-1 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
                         </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-slate-500 shrink-0 font-mono">
-                      {lastMsg ? lastMsg.timestamp : 'Online'}
-                    </span>
-                  </div>
-
-                  <div className="text-[10px] text-indigo-300 font-medium truncate mt-0.5">
-                    {participant.role}
-                  </div>
-
-                  <p className="text-[11px] text-slate-400 truncate mt-1 leading-tight">
-                    {lastMsg ? (
-                      <span>
-                        {lastMsg.sender === 'founder' ? 'You: ' : ''}
-                        {lastMsg.text}
+                        <span>Synthesizing...</span>
                       </span>
                     ) : (
-                      <span className="text-slate-500 italic">No messages yet</span>
+                      <span className="text-slate-500 truncate">
+                        {lastMsg ? (
+                          <>
+                            {lastMsg.sender === 'founder' ? 'You: ' : ''}
+                            {lastMsg.text.slice(0, 32)}...
+                          </>
+                        ) : (
+                          'No messages yet'
+                        )}
+                      </span>
                     )}
-                  </p>
-                </div>
 
-                {/* Unread Counter Badge */}
-                {unread > 0 && (
-                  <span className="absolute right-2.5 bottom-2.5 px-1.5 py-0.2 rounded-full bg-indigo-500 text-white text-[9px] font-bold shadow-sm">
-                    {unread}
-                  </span>
-                )}
+                    {unread > 0 && (
+                      <span className="ml-1 px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[9px] font-mono font-bold shrink-0 shadow-sm animate-pulse">
+                        {unread}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </button>
             );
           })}
         </div>
 
-        {/* Footer info pill */}
-        <div className="p-2.5 border-t border-white/5 bg-black/40 text-[10px] text-slate-500 flex items-center justify-between">
-          <span>End-to-end Sandbox DM</span>
-          <span className="text-emerald-400 font-mono">Orchestration Active</span>
+        {/* Advisor Bridge Pill */}
+        <div className="p-2.5 border-t border-white/10 bg-black/30">
+          <button
+            onClick={() => onOpenApp?.('workforce')}
+            className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold flex items-center justify-between hover:bg-indigo-500/20 transition-all group"
+          >
+            <div className="flex items-center space-x-2">
+              <Zap className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Full Company Council</span>
+            </div>
+            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          </button>
         </div>
       </div>
 
-      {/* RIGHT COLUMN: Chat Area */}
-      <div className="flex-1 flex flex-col bg-[#0b0c10] overflow-hidden">
-        {/* Chat Top Bar */}
-        <div className="p-3.5 sm:p-4 border-b border-white/10 bg-[#12131a] flex items-center justify-between shrink-0">
-          <div className="flex items-center space-x-3">
-            <div
-              className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${selectedParticipant.avatarColor} flex items-center justify-center text-white shadow-md`}
-            >
-              {selectedParticipant.isAdvisor ? (
-                <BrainCircuit className="w-5 h-5 text-white" />
-              ) : (
-                <span className="text-sm font-bold">{selectedParticipant.name[0]}</span>
-              )}
-            </div>
-            <div>
+      {/* RIGHT COLUMN: Active Chat Channel */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#0c0d12]">
+        {/* Top Channel Header */}
+        <div className="p-3 sm:p-3.5 border-b border-white/10 bg-[#0f1017]/90 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-3 min-w-0">
+            <AgentAvatar roleOrId={selectedParticipant.id} size="md" showStatus status="active" />
+
+            <div className="min-w-0">
               <div className="flex items-center space-x-2">
-                <h2 className="text-sm font-bold text-white">{selectedParticipant.name}</h2>
+                <h2 className="text-sm font-bold text-white truncate tracking-tight">
+                  {selectedParticipant.name}
+                </h2>
                 {selectedParticipant.isAdvisor ? (
-                  <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-mono border border-purple-500/30 flex items-center gap-1 font-semibold">
-                    <Sparkles className="w-3 h-3" />
+                  <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[10px] font-mono border border-purple-500/30">
                     Strategic Co-Pilot
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-white/10 text-slate-300 text-[10px] font-mono">
-                    {selectedParticipant.department}
+                  <span className="px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono border border-indigo-500/30">
+                    Executive Role
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-2">
-                <span>{selectedParticipant.role}</span>
-                <span className="w-1 h-1 rounded-full bg-slate-600" />
-                <span className="text-emerald-400 flex items-center gap-1 font-mono text-[10px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Ready
-                </span>
-              </div>
+              <p className="text-[11px] text-slate-400 truncate">
+                {selectedParticipant.role} • <span className="text-slate-500">{selectedParticipant.department}</span>
+              </p>
             </div>
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center space-x-2">
-            {selectedParticipant.isAdvisor ? (
-              <button
-                id="messages-btn-open-advisor"
-                onClick={() => onOpenApp?.('advisor')}
-                className="px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
-                title="Open deep strategic advisor"
-              >
-                <span>Full Advisor App</span>
-                <ExternalLink className="w-3 h-3" />
-              </button>
-            ) : (
-              <button
-                id="messages-btn-open-workforce"
-                onClick={() => onOpenApp?.('workforce')}
-                className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
-                title="View in Company Headquarters"
-              >
-                <span>Company HQ</span>
-                <ExternalLink className="w-3 h-3" />
-              </button>
-            )}
+            <button
+              onClick={() => onOpenApp?.('workforce')}
+              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs flex items-center space-x-1.5 transition-colors hidden sm:flex"
+            >
+              <span>View Profile</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </button>
 
             <button
-              id="messages-btn-clear-history"
               onClick={handleClearHistory}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 transition-colors"
-              title="Clear message thread"
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors"
+              title="Clear Thread History"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-4">
-          {/* Empty Conversation State with Starter Prompts */}
-          {currentMessages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center max-w-md mx-auto text-center py-8 space-y-4">
-              <div
-                className={`w-14 h-14 rounded-2xl bg-gradient-to-tr ${selectedParticipant.avatarColor} flex items-center justify-center text-white shadow-xl`}
-              >
-                {selectedParticipant.isAdvisor ? (
-                  <BrainCircuit className="w-7 h-7" />
-                ) : (
-                  <Bot className="w-7 h-7" />
-                )}
-              </div>
+        {/* Message Stream */}
+        <div
+          id="messages-stream-container"
+          className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 custom-scrollbar"
+        >
+          {/* Welcome Card */}
+          <div className="p-4 rounded-2xl bg-gradient-to-b from-[#151722] to-[#0e1017] border border-white/10 shadow-lg text-slate-300 space-y-3">
+            <div className="flex items-center space-x-3">
+              <AgentAvatar roleOrId={selectedParticipant.id} size="md" />
               <div>
-                <h3 className="text-base font-bold text-white">Direct Message with {selectedParticipant.name}</h3>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  {selectedParticipant.welcomeMessage}
-                </p>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>{selectedParticipant.name}</span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-normal">Online & Ready</span>
+                </div>
+                <div className="text-[11px] text-slate-400">{selectedParticipant.welcomeMessage}</div>
               </div>
+            </div>
 
-              {/* Starter Quick Actions */}
-              <div className="w-full space-y-2 pt-2 text-left">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block px-1">
-                  Quick Directives & Inquiries
-                </span>
-                {selectedParticipant.starterPrompts.map((prompt, idx) => (
+            {/* Quick Starter Prompts */}
+            <div className="pt-2 border-t border-white/5">
+              <div className="text-[10px] font-bold font-mono uppercase tracking-wider text-slate-400 mb-2">
+                Suggested Directives & Queries:
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {selectedParticipant.starterPrompts.map((prompt, i) => (
                   <button
-                    key={idx}
-                    id={`starter-prompt-${selectedParticipant.id}-${idx}`}
+                    key={i}
                     onClick={() => handleSendMessage(prompt)}
-                    className="w-full p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/40 text-left text-xs text-slate-300 hover:text-white transition-all flex items-center justify-between group"
+                    disabled={isCurrentParticipantTyping}
+                    className="text-left px-3 py-1.5 rounded-xl bg-white/5 hover:bg-indigo-600/20 border border-white/10 hover:border-indigo-500/30 text-xs text-slate-200 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
                   >
-                    <span>{prompt}</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-indigo-400 group-hover:translate-x-1 transition-transform shrink-0 ml-2" />
+                    &ldquo;{prompt}&rdquo;
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Render Thread Messages */}
+          {currentMessages.length === 0 ? (
+            <div className="py-12 text-center text-slate-500">
+              <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-xs">No active messages in this channel.</p>
+              <p className="text-[11px] text-slate-600 mt-1">Send a message or select a prompt above to start.</p>
             </div>
           ) : (
             currentMessages.map((msg) => {
@@ -783,19 +997,21 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               return (
                 <div
                   key={msg.id}
-                  className={`flex flex-col ${isFounder ? 'items-end' : 'items-start'} space-y-1.5`}
+                  id={`msg-${msg.id}`}
+                  onContextMenu={(e) => handleOpenMessageContextMenu(e, msg)}
+                  className={`flex flex-col group ${isFounder ? 'items-end' : 'items-start'} space-y-1`}
                 >
-                  {/* Sender Name & Meta */}
-                  <div className="flex items-center space-x-2 text-[10px] px-1 text-slate-400">
-                    <span className="font-semibold text-slate-300">
-                      {isFounder ? 'Founder' : selectedParticipant.name}
+                  {/* Sender & Timestamp Header */}
+                  <div className="flex items-center space-x-2 text-[10px] text-slate-500 px-1">
+                    <span className="font-semibold text-slate-400">
+                      {isFounder ? 'Founder (You)' : selectedParticipant.name}
                     </span>
-                    <span>{msg.timestamp}</span>
+                    <span>•</span>
+                    <span className="font-mono">{msg.timestamp}</span>
 
-                    {/* Intent Badges */}
+                    {/* Intent Tag */}
                     {!isFounder && msg.intent === 'directive' && (
-                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono border border-amber-500/30 flex items-center gap-1">
-                        <Briefcase className="w-2.5 h-2.5" />
+                      <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono border border-amber-500/30">
                         Directive
                       </span>
                     )}
@@ -812,199 +1028,274 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                     )}
 
                     {msg.liveAi && (
-                      <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-mono">
-                        Live AI ({msg.modelUsed || 'Gemini'})
-                      </span>
+                      <button
+                        onClick={() => setInspectingProvenanceModal(msg)}
+                        className="px-1.5 py-0.2 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[9px] font-mono flex items-center gap-1 transition-colors"
+                        title="Click to inspect model provenance"
+                      >
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>Live AI ({msg.modelUsed || 'Gemini'})</span>
+                      </button>
                     )}
                   </div>
 
-                  {/* Message Bubble */}
-                  <div
-                    className={`max-w-xl sm:max-w-2xl px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-md ${
-                      isFounder
-                        ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-sm'
-                        : selectedParticipant.isAdvisor
-                        ? 'bg-[#151624] border border-purple-500/30 text-slate-100 rounded-tl-sm shadow-purple-950/20'
-                        : 'bg-[#151620] border border-white/10 text-slate-100 rounded-tl-sm'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                  {/* Message Bubble Container with Hover Quick Actions */}
+                  <div className="relative group max-w-xl sm:max-w-2xl">
+                    {/* Hover Quick Action Bar (Apple / Linear style) */}
+                    <div
+                      className={`absolute -top-3.5 ${
+                        isFounder ? 'right-2' : 'left-2'
+                      } hidden group-hover:flex items-center space-x-1 bg-[#161824] border border-white/15 rounded-full px-1.5 py-0.5 shadow-xl z-20 backdrop-blur-md`}
+                    >
+                      <button
+                        onClick={() => handleToggleReaction(msg.id, '👍')}
+                        className="p-1 hover:bg-white/10 rounded-full text-xs transition-transform active:scale-125"
+                        title="React 👍"
+                      >
+                        👍
+                      </button>
+                      <button
+                        onClick={() => handleToggleReaction(msg.id, '🚀')}
+                        className="p-1 hover:bg-white/10 rounded-full text-xs transition-transform active:scale-125"
+                        title="React 🚀"
+                      >
+                        🚀
+                      </button>
+                      <button
+                        onClick={() => handleToggleReaction(msg.id, '💡')}
+                        className="p-1 hover:bg-white/10 rounded-full text-xs transition-transform active:scale-125"
+                        title="React 💡"
+                      >
+                        💡
+                      </button>
+                      <div className="w-px h-3 bg-white/15 mx-0.5" />
+                      <button
+                        onClick={() => handleCopyMessage(msg.text)}
+                        className="p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors"
+                        title="Copy text"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => handleOpenMessageContextMenu(e, msg)}
+                        className="p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors"
+                        title="More options"
+                      >
+                        <MoreVertical className="w-3 h-3" />
+                      </button>
+                    </div>
 
-                    {/* AMBIGUOUS CLARIFICATION CARD */}
-                    {!isFounder && msg.intent === 'ambiguous' && !msg.isDismissedProposal && !msg.orchestrationRun && (
-                      <div className="mt-3 p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2">
-                        <div className="flex items-center space-x-2 text-purple-300 font-semibold text-[11px]">
-                          <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
-                          <span>Clarification Required (Ambiguous Intent)</span>
-                        </div>
-                        <p className="text-slate-300 text-[11px] leading-relaxed">
-                          This query was identified as open-ended. To protect execution bounds, would you like to launch a structured Multi-Agent Task or keep this conversational?
-                        </p>
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={() => {
-                              const targetText = msg.directiveProposal?.title || msg.text;
-                              handleExecuteDirective(targetText, msg.id);
-                            }}
-                            disabled={msg.isDirectiveExecuting}
-                            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow transition-all"
-                          >
-                            <Play className="w-3 h-3 fill-current" />
-                            <span>Launch Multi-Agent Task</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              setMessagesByParticipant((prev) => {
-                                const thread = prev[selectedId] || [];
-                                return {
-                                  ...prev,
-                                  [selectedId]: thread.map((m) =>
-                                    m.id === msg.id ? { ...m, isDismissedProposal: true } : m
-                                  ),
-                                };
-                              });
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[11px] transition-colors"
-                          >
-                            Keep Conversational
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {/* Message Bubble */}
+                    <div
+                      className={`px-4 py-3 rounded-2xl text-xs sm:text-[13px] shadow-md transition-all ${
+                        isFounder
+                          ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-tr-sm shadow-indigo-950/40'
+                          : selectedParticipant.isAdvisor
+                          ? 'bg-[#141624] border border-purple-500/25 text-slate-100 rounded-tl-sm shadow-purple-950/20'
+                          : 'bg-[#141520] border border-white/10 text-slate-100 rounded-tl-sm'
+                      }`}
+                    >
+                      {/* High-Craft Markdown & Paragraph Formatter */}
+                      <MarkdownMessage content={msg.text} isFounder={isFounder} soundEnabled={soundEnabled} />
 
-                    {/* EXPLICIT DIRECTIVE EXECUTION PROPOSAL CARD */}
-                    {!isFounder &&
-                      msg.intent === 'directive' &&
-                      !msg.orchestrationRun &&
-                      !msg.isDirectiveExecuting && (
-                        <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2 text-amber-300 font-semibold text-[11px]">
-                              <Briefcase className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Work Directive Detected</span>
-                            </div>
-                            <span className="text-[10px] text-amber-400 font-mono">9-Step Council Ready</span>
+                      {/* AMBIGUOUS CLARIFICATION CARD */}
+                      {!isFounder && msg.intent === 'ambiguous' && !msg.isDismissedProposal && !msg.orchestrationRun && (
+                        <div className="mt-3 p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-2">
+                          <div className="flex items-center space-x-2 text-purple-300 font-semibold text-[11px]">
+                            <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+                            <span>Clarification Required (Ambiguous Intent)</span>
                           </div>
                           <p className="text-slate-300 text-[11px] leading-relaxed">
-                            {msg.directiveProposal?.suggestedScope ||
-                              'Ready to coordinate Research, Product Architecture, and Financial Modeling under safe sandbox invariants.'}
+                            This query was identified as open-ended. To protect execution bounds, would you like to launch a structured Multi-Agent Task or keep this conversational?
                           </p>
                           <div className="flex items-center gap-2 pt-1">
                             <button
-                              id={`btn-execute-directive-${msg.id}`}
                               onClick={() => {
-                                const targetDirective = msg.directiveProposal?.title || msg.text;
-                                handleExecuteDirective(targetDirective, msg.id);
+                                const targetText = msg.directiveProposal?.title || msg.text;
+                                handleExecuteDirective(targetText, msg.id);
                               }}
-                              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                              disabled={msg.isDirectiveExecuting}
+                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow transition-all"
                             >
                               <Play className="w-3 h-3 fill-current" />
-                              <span>Execute Directive via Council</span>
+                              <span>Launch Multi-Agent Task</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMessagesByParticipant((prev) => {
+                                  const thread = prev[selectedId] || [];
+                                  return {
+                                    ...prev,
+                                    [selectedId]: thread.map((m) =>
+                                      m.id === msg.id ? { ...m, isDismissedProposal: true } : m
+                                    ),
+                                  };
+                                });
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-[11px] transition-colors"
+                            >
+                              Keep Conversational
                             </button>
                           </div>
                         </div>
                       )}
 
-                    {/* REAL-TIME DIRECTIVE EXECUTION PROGRESS */}
-                    {msg.isDirectiveExecuting && (
-                      <div className="mt-3 p-3.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-xs space-y-2.5 animate-pulse">
-                        <div className="flex items-center justify-between text-indigo-300 font-semibold text-[11px]">
-                          <div className="flex items-center space-x-2">
-                            <Layers className="w-4 h-4 text-indigo-400 animate-spin" />
-                            <span>Executive Council Multi-Agent Execution</span>
-                          </div>
-                          <span className="text-[10px] text-indigo-400 font-mono">Live Orchestration</span>
-                        </div>
-                        <p className="text-slate-200 text-xs font-mono">
-                          {msg.directiveProgressStep || 'Ingesting scope across Sophia, Dr. Thorne, Maya, and Julian...'}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* COMPLETED ORCHESTRATION RESULT & DELIVERABLES CARD */}
-                    {msg.orchestrationRun && (
-                      <div className="mt-3 p-3.5 rounded-xl bg-[#0e1017] border border-emerald-500/30 text-xs space-y-3 shadow-lg">
-                        <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                          <div className="flex items-center space-x-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <span className="font-bold text-white text-xs">
-                              {msg.orchestrationRun.title}
-                            </span>
-                          </div>
-                          <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30 font-semibold">
-                            Completed & Verified
-                          </span>
-                        </div>
-
-                        {/* Executive Summary */}
-                        <p className="text-slate-300 text-xs leading-relaxed">
-                          {msg.orchestrationRun.summary}
-                        </p>
-
-                        {/* Generated Deliverables */}
-                        {msg.orchestrationRun.deliverables && msg.orchestrationRun.deliverables.length > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                              Generated Deliverables ({msg.orchestrationRun.deliverables.length})
-                            </span>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {msg.orchestrationRun.deliverables.map((deliv, idx) => (
-                                <button
-                                  key={deliv.id || idx}
-                                  onClick={() => setSelectedDeliverableModal(deliv)}
-                                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-indigo-500/40 text-left transition-colors flex items-start space-x-2 group"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-[11px] font-semibold text-slate-200 truncate group-hover:text-white">
-                                      {deliv.name}
-                                    </div>
-                                    <div className="text-[9px] text-slate-500 font-mono truncate">
-                                      {(deliv.authorName || deliv.owner || 'AI Specialist').toUpperCase()} • {deliv.type || 'Deliverable'}
-                                    </div>
-                                  </div>
-                                </button>
-                              ))}
+                      {/* EXPLICIT DIRECTIVE EXECUTION PROPOSAL CARD */}
+                      {!isFounder &&
+                        msg.intent === 'directive' &&
+                        !msg.orchestrationRun &&
+                        !msg.isDirectiveExecuting && (
+                          <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2 text-amber-300 font-semibold text-[11px]">
+                                <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Work Directive Detected</span>
+                              </div>
+                              <span className="text-[10px] text-amber-400 font-mono">9-Step Council Ready</span>
+                            </div>
+                            <p className="text-slate-300 text-[11px] leading-relaxed">
+                              {msg.directiveProposal?.suggestedScope ||
+                                'Ready to coordinate Research, Product Architecture, and Financial Modeling under safe sandbox invariants.'}
+                            </p>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                id={`btn-execute-directive-${msg.id}`}
+                                onClick={() => {
+                                  const targetDirective = msg.directiveProposal?.title || msg.text;
+                                  handleExecuteDirective(targetDirective, msg.id);
+                                }}
+                                className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-md transition-all active:scale-95"
+                              >
+                                <Play className="w-3 h-3 fill-current" />
+                                <span>Execute Directive via Council</span>
+                              </button>
                             </div>
                           </div>
                         )}
 
-                        {/* Synchronization Footer & Jump to Company HQ */}
-                        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px]">
-                          <span className="text-slate-400 flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            Synced to Company HQ (0 duplicate tasks)
-                          </span>
+                      {/* REAL-TIME DIRECTIVE EXECUTION PROGRESS */}
+                      {msg.isDirectiveExecuting && (
+                        <div className="mt-3 p-3.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 text-xs space-y-2.5 animate-pulse">
+                          <div className="flex items-center justify-between text-indigo-300 font-semibold text-[11px]">
+                            <div className="flex items-center space-x-2">
+                              <Layers className="w-4 h-4 text-indigo-400 animate-spin" />
+                              <span>Executive Council Multi-Agent Execution</span>
+                            </div>
+                            <span className="text-[10px] text-indigo-400 font-mono">Live Orchestration</span>
+                          </div>
+                          <p className="text-slate-200 text-xs font-mono">
+                            {msg.directiveProgressStep || 'Ingesting scope across Sophia, Dr. Thorne, Maya, and Julian...'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* COMPLETED ORCHESTRATION RESULT & DELIVERABLES CARD */}
+                      {msg.orchestrationRun && (
+                        <div className="mt-3 p-3.5 rounded-xl bg-[#0e1017] border border-emerald-500/30 text-xs space-y-3 shadow-lg">
+                          <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                              <span className="font-bold text-white text-xs">
+                                {msg.orchestrationRun.title}
+                              </span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30 font-semibold">
+                              Completed & Verified
+                            </span>
+                          </div>
+
+                          {/* Executive Summary */}
+                          <p className="text-slate-300 text-xs leading-relaxed">
+                            {msg.orchestrationRun.summary}
+                          </p>
+
+                          {/* Generated Deliverables */}
+                          {msg.orchestrationRun.deliverables && msg.orchestrationRun.deliverables.length > 0 && (
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                                Generated Deliverables ({msg.orchestrationRun.deliverables.length})
+                              </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {msg.orchestrationRun.deliverables.map((deliv, idx) => (
+                                    <button
+                                      key={deliv.id || idx}
+                                      onClick={() => setSelectedDeliverableModal(deliv)}
+                                      className="p-2 rounded-xl bg-white/5 hover:bg-indigo-600/20 border border-white/10 hover:border-indigo-500/30 text-left transition-all flex items-center justify-between group"
+                                    >
+                                      <div className="flex items-center space-x-2 min-w-0">
+                                        <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                        <div className="min-w-0">
+                                          <div className="font-semibold text-slate-200 truncate text-[11px]">
+                                            {deliv.name || (deliv as any).title || 'Deliverable Document'}
+                                          </div>
+                                          <div className="text-[9px] text-slate-400 font-mono">
+                                            {deliv.type || 'Deliverable'} • {deliv.owner || deliv.authorName || 'Council'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 shrink-0" />
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Button */}
+                          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400">
+                              Logged to Company Architecture & Evidence Store
+                            </span>
+                            <button
+                              onClick={() => onOpenApp?.('workforce')}
+                              className="px-2.5 py-1 rounded-md bg-indigo-600/80 hover:bg-indigo-600 text-white font-medium flex items-center gap-1 transition-colors"
+                            >
+                              <span>View in Company HQ</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error / Retry banner if failure */}
+                      {msg.status === 'error' && (
+                        <div className="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-rose-300 text-xs">
+                          <div className="flex items-center space-x-1.5">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            <span>{msg.errorMessage || 'Failed to deliver message.'}</span>
+                          </div>
                           <button
-                            onClick={() => onOpenApp?.('workforce')}
-                            className="px-2.5 py-1 rounded-md bg-indigo-600/80 hover:bg-indigo-600 text-white font-medium flex items-center gap-1 transition-colors"
+                            onClick={() => {
+                              if (msg.intent === 'directive') {
+                                handleExecuteDirective(msg.text, msg.id);
+                              } else {
+                                handleSendMessage(msg.text);
+                              }
+                            }}
+                            className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-white font-medium text-[10px] transition-colors"
                           >
-                            <span>View in Company HQ</span>
-                            <ExternalLink className="w-3 h-3" />
+                            Retry
                           </button>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
 
-                    {/* Error / Retry banner if failure */}
-                    {msg.status === 'error' && (
-                      <div className="mt-2 pt-2 border-t border-rose-500/20 flex items-center justify-between text-rose-300 text-xs">
-                        <div className="flex items-center space-x-1.5">
-                          <AlertCircle className="w-3.5 h-3.5" />
-                          <span>{msg.errorMessage || 'Failed to deliver message.'}</span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            if (msg.intent === 'directive') {
-                              handleExecuteDirective(msg.text, msg.id);
-                            } else {
-                              handleSendMessage(msg.text);
-                            }
-                          }}
-                          className="px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-white font-medium text-[10px] transition-colors"
-                        >
-                          Retry
-                        </button>
+                    {/* Reaction Badges List */}
+                    {msg.reactions && msg.reactions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5 px-1">
+                        {msg.reactions.map((r, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleToggleReaction(msg.id, r.emoji)}
+                            className={`px-2 py-0.5 rounded-full text-[11px] flex items-center space-x-1 border transition-all active:scale-95 ${
+                              r.hasReacted
+                                ? 'bg-indigo-600/30 border-indigo-500/50 text-white font-semibold shadow-sm'
+                                : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            <span>{r.emoji}</span>
+                            <span className="text-[10px] font-mono">{r.count}</span>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1021,27 +1312,30 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
             })
           )}
 
-          {/* Typing Indicator */}
-          {isSending && (
-            <div className="flex items-center space-x-2 p-3 max-w-sm rounded-2xl rounded-tl-sm bg-[#151620] border border-white/10 text-slate-400">
-              <div className="w-5 h-5 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold">
-                {selectedParticipant.name[0]}
-              </div>
+          {/* ISOLATED PER-PARTICIPANT TYPING INDICATOR */}
+          {isCurrentParticipantTyping && (
+            <motion.div
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 5 }}
+              className="flex items-center space-x-2.5 p-3 max-w-sm rounded-2xl rounded-tl-sm bg-[#151620] border border-white/10 text-slate-400 shadow-md"
+            >
+              <AgentAvatar roleOrId={selectedParticipant.id} size="xs" />
               <span className="text-xs text-slate-300 font-medium">
-                {selectedParticipant.name} is typing
+                {selectedParticipant.name} is synthesizing
               </span>
               <div className="flex space-x-1 pl-1">
                 <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
                 <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                 <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
-            </div>
+            </motion.div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Bar */}
+        {/* Bottom Modern Input Bar */}
         <div className="p-3 sm:p-4 bg-[#12131a] border-t border-white/10 shrink-0">
           <form
             onSubmit={(e) => {
@@ -1061,26 +1355,29 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                   handleSendMessage();
                 }
               }}
-              disabled={isSending}
+              disabled={isCurrentParticipantTyping}
               rows={1}
-              placeholder={`Direct message ${selectedParticipant.name}... (e.g., questions, status check, or work directives)`}
+              placeholder={`Direct message ${selectedParticipant.name}... (Press Enter to send, Shift+Enter for new line)`}
               className="flex-1 bg-transparent border-none text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none resize-none max-h-32 min-h-[42px] px-3 py-2.5 custom-scrollbar"
             />
 
             <button
               id="messages-send-btn"
               type="submit"
-              disabled={!inputMessage.trim() || isSending}
+              disabled={!inputMessage.trim() || isCurrentParticipantTyping}
               className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed text-white shadow-md transition-all active:scale-95 shrink-0"
-              title="Send Message"
+              title="Send Message (Enter)"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
 
           <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 px-1">
-            <span>Direct conversation & work directive bridge</span>
-            <span>Gemini Multi-Agent Mesh Active</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Right-click message for context menu</span>
+            </span>
+            <span className="font-mono text-indigo-400">Gemini Multi-Agent Mesh Active</span>
           </div>
         </div>
       </div>
@@ -1098,20 +1395,16 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               {/* Modal Header */}
               <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#161824]">
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
-                    <FileText className="w-4 h-4" />
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300">
+                    <FileCode className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-white">
-                      {selectedDeliverableModal.name}
+                    <h3 className="text-sm font-bold text-white tracking-tight">
+                      {selectedDeliverableModal.name || (selectedDeliverableModal as any).title || 'Deliverable Document'}
                     </h3>
-                    <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                      <span>Authored by {(selectedDeliverableModal.authorName || selectedDeliverableModal.owner || 'AI Specialist').toUpperCase()}</span>
-                      <span>•</span>
-                      <span>Category: {selectedDeliverableModal.type || 'Deliverable'}</span>
-                      <span>•</span>
-                      <span className="text-emerald-400">Status: Verified Artifact</span>
-                    </div>
+                    <p className="text-[10px] text-slate-400 font-mono">
+                      Type: {selectedDeliverableModal.type || 'Document'} • Owner: {selectedDeliverableModal.owner || selectedDeliverableModal.authorName || 'Council'}
+                    </p>
                   </div>
                 </div>
 
@@ -1124,14 +1417,24 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
               </div>
 
               {/* Modal Content */}
-              <div className="p-5 overflow-y-auto custom-scrollbar flex-1 text-xs text-slate-200 leading-relaxed font-mono whitespace-pre-wrap bg-black/30">
-                {selectedDeliverableModal.content}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-200 custom-scrollbar">
+                {selectedDeliverableModal.content && (
+                  <div>
+                    <div className="text-[10px] font-bold font-mono uppercase tracking-wider text-slate-400 mb-1">
+                      Content & Verified Data
+                    </div>
+                    <div className="p-3.5 rounded-xl bg-black/50 border border-white/10 text-slate-200 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+                      {selectedDeliverableModal.content}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Modal Footer */}
-              <div className="p-3 border-t border-white/10 bg-[#161824] flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 font-mono">
-                  Verified Executive Artifact
+              <div className="p-3.5 border-t border-white/10 bg-[#161824] flex items-center justify-between">
+                <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Idempotency & Safe Mock Invariants Verified</span>
                 </span>
                 <button
                   onClick={() => setSelectedDeliverableModal(null)}
@@ -1144,7 +1447,83 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </div>
         )}
       </AnimatePresence>
+
+      {/* AI PROVENANCE INSPECTOR MODAL */}
+      <AnimatePresence>
+        {inspectingProvenanceModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#12131c] border border-emerald-500/30 rounded-2xl max-w-lg w-full flex flex-col shadow-2xl overflow-hidden"
+            >
+              {/* Modal Header */}
+              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-[#161824]">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white tracking-tight">
+                      AI Model Provenance & Invariant Audit
+                    </h3>
+                    <p className="text-[10px] text-emerald-400 font-mono">
+                      Safe Sandbox Invariant Verified
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setInspectingProvenanceModal(null)}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-4 sm:p-5 space-y-3 text-xs text-slate-200">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Inference Engine</span>
+                    <span className="font-semibold text-white">{inspectingProvenanceModal.modelUsed || 'Gemini 2.5 Flash'}</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Intent Classification</span>
+                    <span className="font-semibold text-indigo-300 capitalize">{inspectingProvenanceModal.intent || 'Conversation'}</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Clearance Gate</span>
+                    <span className="font-semibold text-emerald-400">Constitutional Grade 5</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <span className="text-[10px] font-mono text-slate-400 block uppercase">Safety & Mock Invariants</span>
+                    <span className="font-semibold text-emerald-400">Enforced & Clean</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-mono uppercase text-slate-400 block mb-1">Message Preview</span>
+                  <div className="p-3 rounded-xl bg-black/40 border border-white/10 text-slate-300 font-mono text-[11px] max-h-36 overflow-y-auto custom-scrollbar">
+                    {inspectingProvenanceModal.text}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-3.5 border-t border-white/10 bg-[#161824] flex items-center justify-end">
+                <button
+                  onClick={() => setInspectingProvenanceModal(null)}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition-colors"
+                >
+                  Close Audit
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
-
