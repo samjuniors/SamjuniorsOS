@@ -154,8 +154,13 @@ export class WorkflowRuntime {
 
     for (const stepDef of def.steps) {
       const stepState = instance.stepStates[stepDef.id];
-      if (stepState.status !== 'pending' && stepState.status !== 'blocked' && stepState.status !== 'awaiting_approval') {
-        continue; // Only pending, blocked, or awaiting_approval steps can become ready
+      if (
+        stepState.status !== 'pending' && 
+        stepState.status !== 'blocked' && 
+        stepState.status !== 'awaiting_approval' && 
+        stepState.status !== 'waiting'
+      ) {
+        continue; // Only pending, blocked, awaiting_approval, or waiting steps can become ready
       }
 
       let dependenciesMet = true;
