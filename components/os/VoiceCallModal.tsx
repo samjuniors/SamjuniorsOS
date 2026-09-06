@@ -127,6 +127,19 @@ const VOICE_PERSONAS: Record<ParticipantId, VoicePersonaProfile> = {
     themeColor: '#8b5cf6',
     bgGlow: 'from-violet-900/40 via-sky-950/50 to-[#0b0c12]',
   },
+  council: {
+    id: 'council',
+    name: 'Executive Council (AI Mesh)',
+    role: 'Autonomous AI-to-AI Mesh',
+    department: 'Executive Operations & Cross-Functional Council',
+    voiceGender: 'female',
+    preferredVoiceLang: 'en-GB',
+    pitch: 1.05,
+    rate: 1.02,
+    greeting: "Council session convened, Founder. Sophia Vance, Dr. Aris Thorne, Maya Lin, and Julian Cruz are synchronized in the inter-agent bus. What mission or cross-functional priority shall we coordinate?",
+    themeColor: '#3b82f6',
+    bgGlow: 'from-blue-900/40 via-indigo-950/50 to-[#0b0c12]',
+  },
 };
 
 export const VoiceCallModal: React.FC<VoiceCallModalProps> = ({

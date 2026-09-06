@@ -34,6 +34,8 @@ import {
   PhoneCall,
   Volume2,
   VolumeX,
+  Scale,
+  ChevronRight,
 } from 'lucide-react';
 import {
   AppId,
@@ -42,15 +44,19 @@ import {
   ExecutionDeliverable,
   CompanyDecision,
   AttentionItem,
+  DelegatedSubTask,
+  OrchestratorMediation,
+  CollaborationDialogueIntent,
 } from '@/types/os';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
+import { CollaborationStore } from '@/lib/collaboration-store';
 import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
 import { AgentAvatar } from '@/components/os/AgentAvatar';
 import { ContextMenu, ContextMenuState } from '@/components/os/ContextMenu';
 import { MarkdownMessage } from '@/components/os/MarkdownMessage';
 import { VoiceCallModal } from '@/components/os/VoiceCallModal';
 
-export type ParticipantId = 'advisor' | AgentRole;
+export type ParticipantId = 'advisor' | 'council' | AgentRole;
 export type MessageIntent = 'conversation' | 'information_request' | 'directive' | 'ambiguous';
 
 export interface MessageReaction {
@@ -91,9 +97,34 @@ export interface DirectMessage {
   directiveProgressStep?: string;
   orchestrationRun?: OrchestrationRun;
   isDismissedProposal?: boolean;
+  interAgentMeta?: {
+    fromAgent: AgentRole | 'coo';
+    fromName: string;
+    toAgent: AgentRole | 'coo' | 'council';
+    toName: string;
+    intent?: CollaborationDialogueIntent;
+    subtask?: DelegatedSubTask;
+    mediation?: OrchestratorMediation;
+  };
 }
 
 const PARTICIPANTS: MessageParticipant[] = [
+  {
+    id: 'council',
+    name: 'Executive Council (AI Mesh)',
+    role: 'Autonomous Multi-Agent Bus',
+    department: 'Inter-Agent Collaboration Mesh',
+    avatarColor: 'from-blue-600 via-indigo-600 to-purple-600',
+    isAdvisor: false,
+    status: 'active',
+    welcomeMessage:
+      'Autonomous Executive Council Mesh online. Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (PM), and Julian Cruz (Finance) communicate directly in this bus to delegate sub-tasks, exchange verified findings, and mediate trade-offs.',
+    starterPrompts: [
+      'Team: Can we launch in Europe without violating GDPR or exceeding $0.04/op?',
+      'Evaluate lowering self-serve pricing by 25% while maintaining an 80% gross margin.',
+      'Coordinate architecture specs for sub-100ms vector memory caching.',
+    ],
+  },
   {
     id: 'advisor',
     name: 'Founder Intelligence',
@@ -200,6 +231,119 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
   const [selectedId, setSelectedId] = useState<ParticipantId>(initialParticipantId);
   const [searchQuery, setSearchQuery] = useState('');
   const [messagesByParticipant, setMessagesByParticipant] = useState<Record<ParticipantId, DirectMessage[]>>({
+    council: [
+      {
+        id: 'init-council-1',
+        sender: 'coo',
+        text: 'Executive Council Mesh online. All 4 AI Employee streams synchronized: Operations (Sophia), Research (Dr. Thorne), Product (Maya), and Finance (Julian). Ready for autonomous inter-agent delegation and trade-off mediation.',
+        timestamp: '09:00 AM',
+        status: 'delivered',
+        liveAi: true,
+        modelUsed: 'Autonomous Mesh Bus v2.5',
+        intent: 'conversation',
+      },
+      {
+        id: 'init-council-2',
+        sender: 'coo',
+        text: 'Initiating Council Priority: Autonomous Memory Tier & Semantic Caching. Sub-tasks assigned to Dr. Thorne for competitive model benchmarking and Julian Cruz for compute burn limits.',
+        timestamp: '09:05 AM',
+        status: 'delivered',
+        liveAi: true,
+        modelUsed: 'Orchestrator Sophia Vance',
+        intent: 'directive',
+        interAgentMeta: {
+          fromAgent: 'coo',
+          fromName: 'Sophia Vance (COO)',
+          toAgent: 'researcher',
+          toName: 'Dr. Aris Thorne (Research)',
+          intent: 'delegate_subtask',
+          subtask: {
+            id: 'task-sub-mem-01',
+            title: 'Vector Cache & Memory Latency Evaluation',
+            description: 'Evaluate competitive memory and vector quantization footprints with <120ms recall.',
+            assignedBy: 'coo',
+            assignedTo: 'researcher',
+            priority: 'high',
+            status: 'completed',
+            deliverableExpected: 'Market Intelligence Brief with p99 latency target < 120ms',
+            createdAt: '09:05 AM',
+            updatedAt: '09:12 AM',
+          },
+        },
+      },
+      {
+        id: 'init-council-3',
+        sender: 'researcher',
+        text: 'Research report compiled. Enterprise cohort requires sub-120ms recall with 98% market demand. Sharing empirical metrics with Julian Cruz to establish compute cost bounds before Maya Lin finalizes PRD.',
+        timestamp: '09:12 AM',
+        status: 'delivered',
+        liveAi: true,
+        modelUsed: 'Dr. Aris Thorne',
+        intent: 'information_request',
+        interAgentMeta: {
+          fromAgent: 'researcher',
+          fromName: 'Dr. Aris Thorne (Research)',
+          toAgent: 'finance',
+          toName: 'Julian Cruz (Finance)',
+          intent: 'share_information',
+        },
+      },
+      {
+        id: 'init-council-4',
+        sender: 'finance',
+        text: 'Finance review complete. Established strict unit economics: $0.038 / 1k queries cap with 84.2% margin floor. Delegating architectural guardrails to Maya Lin.',
+        timestamp: '09:18 AM',
+        status: 'delivered',
+        liveAi: true,
+        modelUsed: 'Julian Cruz',
+        intent: 'conversation',
+        interAgentMeta: {
+          fromAgent: 'finance',
+          fromName: 'Julian Cruz (Finance)',
+          toAgent: 'pm',
+          toName: 'Maya Lin (PM)',
+          intent: 'status_update',
+          subtask: {
+            id: 'task-sub-mem-02',
+            title: 'Margin & Unit Economic Guardrail Audit',
+            description: 'Stress test unit economics and establish gross margin floor > 80%.',
+            assignedBy: 'researcher',
+            assignedTo: 'finance',
+            priority: 'critical',
+            status: 'completed',
+            deliverableExpected: 'Cost-per-query cap model and margin sensitivity matrix',
+            createdAt: '09:12 AM',
+            updatedAt: '09:18 AM',
+          },
+        },
+      },
+      {
+        id: 'init-council-5',
+        sender: 'coo',
+        text: 'Orchestrator Ruling: Binding compromise ratified. Adopt 2-tier LRU semantic caching to meet <120ms latency while keeping GPU compute burn safely below $0.038 / 1k ops.',
+        timestamp: '09:22 AM',
+        status: 'delivered',
+        liveAi: true,
+        modelUsed: 'Sophia Vance (COO)',
+        intent: 'directive',
+        interAgentMeta: {
+          fromAgent: 'coo',
+          fromName: 'Sophia Vance (COO)',
+          toAgent: 'council',
+          toName: 'Executive Council',
+          intent: 'orchestrator_mediation',
+          mediation: {
+            id: 'med-mem-01',
+            disputeOrFriction: 'Latency target (<120ms) vs. GPU compute margin threshold (>84%)',
+            agentsInvolved: ['researcher', 'finance', 'pm'],
+            orchestratorRuling: 'Mandate two-tier cache with 15-minute TTL for conversational memory.',
+            compromiseStrategy: 'Multi-tier LRU semantic cache cuts redundant queries by 68%, hitting $0.024/1k queries.',
+            slaImpact: '0 latency penalty, margin improved from 72% to 84.2%',
+            timestamp: '09:22 AM',
+          },
+        },
+      },
+    ],
     advisor: [
       {
         id: 'init-adv-1',
@@ -229,6 +373,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
 
   // Per-participant isolated typing state (Fixes bug where chatting with one person shows everyone typing)
   const [typingMap, setTypingMap] = useState<Record<ParticipantId, boolean>>({
+    council: false,
     advisor: false,
     coo: false,
     researcher: false,
@@ -240,6 +385,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
   const [selectedDeliverableModal, setSelectedDeliverableModal] = useState<ExecutionDeliverable | null>(null);
   const [inspectingProvenanceModal, setInspectingProvenanceModal] = useState<DirectMessage | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<ParticipantId, number>>({
+    council: 0,
     advisor: 0,
     coo: 0,
     researcher: 0,
@@ -664,6 +810,88 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
       ...prev,
       [targetParticipantId]: true,
     }));
+
+    // Special routing if chatting with Executive Council (Inter-Agent Mesh)
+    if (targetParticipantId === 'council') {
+      try {
+        const res = await fetch('/api/agent-collab', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ directive: textToSend }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.dialogues && data.dialogues.length > 0) {
+          // Trigger custom mission state in store
+          CollaborationStore.initiateCustomMission(textToSend).catch(() => {});
+
+          const newDialogues = data.dialogues;
+          for (let i = 0; i < newDialogues.length; i++) {
+            const diag = newDialogues[i];
+            const interMsg: DirectMessage = {
+              id: generateMsgId(`msg-council-${i}`),
+              sender: (diag.from as ParticipantId) || 'coo',
+              text: diag.message,
+              timestamp: diag.timestamp || getFormattedTime(),
+              status: 'delivered',
+              liveAi: data.liveAi,
+              modelUsed: `${diag.fromName} via Mesh`,
+              intent: diag.intent === 'delegate_subtask' ? 'directive' : 'conversation',
+              interAgentMeta: {
+                fromAgent: diag.from,
+                fromName: diag.fromName,
+                toAgent: diag.to,
+                toName: diag.toName,
+                intent: diag.intent,
+                subtask: diag.subtask,
+                mediation: diag.mediation,
+              },
+            };
+
+            await new Promise((resolve) => setTimeout(resolve, i === 0 ? 300 : 500));
+
+            setMessagesByParticipant((prev) => ({
+              ...prev,
+              council: [...(prev.council || []), interMsg],
+            }));
+
+            if (soundEnabled) playOSSound('notification');
+          }
+
+          dispatchOSNotification({
+            title: 'Council Alignment Achieved',
+            message: `Sophia Vance, Aris Thorne, Maya Lin & Julian Cruz synchronized on: "${textToSend.slice(0, 40)}..."`,
+            type: 'agent',
+            agent: 'Sophia Vance (COO)',
+            actionable: true,
+            actionLabel: 'Open Collaboration View',
+            appTarget: 'workforce',
+          });
+        } else {
+          throw new Error(data.error || 'Failed to achieve council consensus');
+        }
+      } catch (err: any) {
+        const errorMsg: DirectMessage = {
+          id: generateMsgId('msg-err-council'),
+          sender: 'coo',
+          text: `Council Notice: ${err.message || 'Inter-agent communication bus timeout.'}`,
+          timestamp: getFormattedTime(),
+          status: 'error',
+          errorMessage: err.message,
+        };
+        setMessagesByParticipant((prev) => ({
+          ...prev,
+          council: [...(prev.council || []), errorMsg],
+        }));
+      } finally {
+        setTypingMap((prev) => ({
+          ...prev,
+          council: false,
+        }));
+      }
+      return;
+    }
 
     try {
       // Build conversation history for context continuity
@@ -1138,24 +1366,40 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                 >
                   {/* Sender & Timestamp Header */}
                   <div className="flex items-center space-x-2 text-[10px] text-slate-500 px-1">
-                    <span className="font-semibold text-slate-400">
-                      {isFounder ? 'Founder (You)' : selectedParticipant.name}
-                    </span>
+                    {msg.interAgentMeta ? (
+                      <div className="flex items-center space-x-1.5">
+                        <AgentAvatar roleOrId={msg.interAgentMeta.fromAgent} size="xs" />
+                        <span className="font-bold text-indigo-300">{msg.interAgentMeta.fromName}</span>
+                        <span className="text-slate-500">➔</span>
+                        <span className="font-semibold text-slate-300">{msg.interAgentMeta.toName}</span>
+                      </div>
+                    ) : (
+                      <span className="font-semibold text-slate-400">
+                        {isFounder ? 'Founder (You)' : selectedParticipant.name}
+                      </span>
+                    )}
                     <span>•</span>
                     <span className="font-mono">{msg.timestamp}</span>
 
+                    {/* Inter-Agent Intent Tag */}
+                    {msg.interAgentMeta?.intent && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-purple-500/20 text-purple-300 text-[9px] font-mono border border-purple-500/30">
+                        {msg.interAgentMeta.intent.replace(/_/g, ' ')}
+                      </span>
+                    )}
+
                     {/* Intent Tag */}
-                    {!isFounder && msg.intent === 'directive' && (
+                    {!isFounder && !msg.interAgentMeta && msg.intent === 'directive' && (
                       <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[9px] font-mono border border-amber-500/30">
                         Directive
                       </span>
                     )}
-                    {!isFounder && msg.intent === 'information_request' && (
+                    {!isFounder && !msg.interAgentMeta && msg.intent === 'information_request' && (
                       <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[9px] font-mono border border-cyan-500/30">
                         Info Request
                       </span>
                     )}
-                    {!isFounder && msg.intent === 'ambiguous' && (
+                    {!isFounder && !msg.interAgentMeta && msg.intent === 'ambiguous' && (
                       <span className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[9px] font-mono border border-purple-500/30 flex items-center gap-1">
                         <HelpCircle className="w-2.5 h-2.5" />
                         Clarification
@@ -1242,6 +1486,56 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                     >
                       {/* High-Craft Markdown & Paragraph Formatter */}
                       <MarkdownMessage content={msg.text} isFounder={isFounder} soundEnabled={soundEnabled} />
+
+                      {/* Inter-Agent Subtask Card */}
+                      {msg.interAgentMeta?.subtask && (
+                        <div className="mt-3 p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] font-mono">
+                            <span className="font-bold text-purple-300 flex items-center gap-1">
+                              <Briefcase className="w-3 h-3" />
+                              Sub-Task: {msg.interAgentMeta.subtask.title}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200 text-[9px] uppercase font-bold">
+                              {msg.interAgentMeta.subtask.priority}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            Deliverable: {msg.interAgentMeta.subtask.deliverableExpected}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Inter-Agent Mediation Card */}
+                      {msg.interAgentMeta?.mediation && (
+                        <div className="mt-3 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 space-y-1.5">
+                          <div className="flex items-center justify-between text-[10px] font-mono">
+                            <span className="font-bold text-rose-300 flex items-center gap-1">
+                              <Scale className="w-3 h-3" />
+                              Binding Orchestrator Ruling
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-200 font-medium">
+                            {msg.interAgentMeta.mediation.orchestratorRuling}
+                          </div>
+                          <div className="text-[10px] text-slate-400 italic">
+                            Trade-off: {msg.interAgentMeta.mediation.compromiseStrategy}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Council Quick Link if in council channel */}
+                      {selectedId === 'council' && onOpenApp && (
+                        <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between">
+                          <span className="text-[10px] text-slate-400">Autonomous Council Bus</span>
+                          <button
+                            onClick={() => onOpenApp('workforce')}
+                            className="text-[10px] font-semibold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                          >
+                            <span>Open in AI Collaboration Hub</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
 
                       {/* AMBIGUOUS CLARIFICATION CARD */}
                       {!isFounder && msg.intent === 'ambiguous' && !msg.isDismissedProposal && !msg.orchestrationRun && (

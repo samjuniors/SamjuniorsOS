@@ -705,6 +705,47 @@ export interface CompanyExecutiveContextSnapshot {
 // 13. AI EMPLOYEE COLLABORATION WORKFLOW
 // ----------------------------------------------------------------------------
 
+export type CollaborationDialogueIntent =
+  | 'delegate_subtask'
+  | 'share_information'
+  | 'status_update'
+  | 'orchestrator_mediation'
+  | 'inquire'
+  | 'ratify';
+
+export interface DelegatedSubTask {
+  id: string;
+  title: string;
+  description: string;
+  assignedBy: AgentRole;
+  assignedTo: AgentRole;
+  status: 'pending' | 'in_progress' | 'completed' | 'blocked' | 'reviewed';
+  priority: 'critical' | 'high' | 'normal';
+  deliverableExpected?: string;
+  deliverableOutput?: string;
+  orchestratorNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SharedInformationPayload {
+  category: 'metric' | 'benchmark' | 'technical_constraint' | 'market_recon' | 'pricing_rule';
+  title: string;
+  summary: string;
+  dataPoints: { key: string; value: string }[];
+  confidenceScore?: number;
+}
+
+export interface OrchestratorMediation {
+  id: string;
+  disputeOrFriction: string;
+  agentsInvolved: AgentRole[];
+  orchestratorRuling: string;
+  compromiseStrategy: string;
+  slaImpact: string;
+  timestamp: string;
+}
+
 export interface CollaborationDialogue {
   id: string;
   from: AgentRole;
@@ -714,6 +755,10 @@ export interface CollaborationDialogue {
   message: string;
   timestamp: string;
   protocolStep: AgentWorkProtocolStep;
+  intent?: CollaborationDialogueIntent;
+  subtask?: DelegatedSubTask;
+  sharedPayload?: SharedInformationPayload;
+  mediation?: OrchestratorMediation;
   attachment?: {
     title: string;
     type: 'prd' | 'research_brief' | 'budget_constraint' | 'governance_record';
@@ -735,6 +780,17 @@ export interface CollaborationStep {
   dialogue: CollaborationDialogue;
   affectedApp: AppId;
   outputArtifact: string;
+  subtask?: DelegatedSubTask;
+  mediation?: OrchestratorMediation;
+}
+
+export interface CollaborationMissionPreset {
+  id: string;
+  title: string;
+  category: 'Architecture' | 'Expansion' | 'Pricing' | 'Growth';
+  directive: string;
+  initialLead: AgentRole;
+  description: string;
 }
 
 export interface EmployeeCollaborationState {
@@ -745,6 +801,8 @@ export interface EmployeeCollaborationState {
   currentStepIndex: number;
   steps: CollaborationStep[];
   allDialogues: CollaborationDialogue[];
+  delegatedTasks?: DelegatedSubTask[];
+  mediations?: OrchestratorMediation[];
   artifacts: {
     feature: ProductFeature;
     prdSnippet: string;

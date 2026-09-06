@@ -4,14 +4,113 @@ import {
   EmployeeCollaborationState,
   CollaborationStep,
   CollaborationDialogue,
+  DelegatedSubTask,
+  OrchestratorMediation,
+  CollaborationMissionPreset,
   ProductFeature,
   ResearchTopic,
   CompanyDecision,
   CompanyMemory,
+  AgentRole,
 } from '@/types/os';
 import { GovernanceStore } from '@/lib/governance-store';
 import { dispatchOSNotification, playOSSound } from '@/components/os/IconHelper';
 import { SystemActivityStore } from '@/lib/system-activity-store';
+
+export const COLLABORATION_PRESETS: CollaborationMissionPreset[] = [
+  {
+    id: 'memory-tier',
+    title: 'Autonomous Real-Time Memory Tier',
+    category: 'Architecture',
+    directive: 'Product Manager requests market analysis from Researcher, who consults Finance for unit economics budget constraints before delivering verified findings.',
+    initialLead: 'pm',
+    description: 'Deploys a sub-120ms neural context tier while locking compute burn under $0.038/op.',
+  },
+  {
+    id: 'eu-expansion',
+    title: 'European Enterprise Expansion & Data Residency',
+    category: 'Expansion',
+    directive: 'COO directs Researcher to map EU sovereign cloud compliance (GDPR/AI Act), Finance models local data center margins, and PM drafts localized deployment specs.',
+    initialLead: 'coo',
+    description: 'Cross-functional alignment on sovereign EU tenant isolation and latency SLAs.',
+  },
+  {
+    id: 'pricing-rebalance',
+    title: 'Self-Serve Pricing & Token Burn Optimization',
+    category: 'Pricing',
+    directive: 'Finance models tiered self-serve pricing for 250 enterprise seats; Researcher benchmarks competitor credit burns; PM specs billing enforcement UX.',
+    initialLead: 'finance',
+    description: 'Balances 84.2% gross margin targets with smooth, friction-free customer conversion.',
+  },
+  {
+    id: 'developer-onboarding',
+    title: 'Autonomous 3-Click Developer Onboarding Flow',
+    category: 'Growth',
+    directive: 'PM specs frictionless API key issuance and SDK sandboxes; Researcher evaluates developer drop-off; Finance models free-tier token allowances.',
+    initialLead: 'pm',
+    description: 'Eliminates developer friction while containing free-tier compute exposure.',
+  },
+];
+
+const DEFAULT_SUBTASKS: DelegatedSubTask[] = [
+  {
+    id: 'subtask-mem-1',
+    title: 'Empirical Latency Benchmarks & Competitor Moat Recon',
+    description: 'Measure memory retrieval latency across top agent frameworks and assess architectural moats.',
+    assignedBy: 'pm',
+    assignedTo: 'researcher',
+    status: 'completed',
+    priority: 'critical',
+    deliverableExpected: 'Market & Technical Recon Dossier',
+    deliverableOutput: 'Empirical validation: <120ms latency threshold with 98% market demand score.',
+    orchestratorNote: 'Validated under Safe Sandbox constraints.',
+    createdAt: '10:40 AM',
+    updatedAt: '10:42 AM',
+  },
+  {
+    id: 'subtask-mem-2',
+    title: 'Unit Economics & Compute Burn Ceiling Audit',
+    description: 'Stress-test pricing model across 250 seats; establish maximum allowable cost per 1,000 vector lookups.',
+    assignedBy: 'researcher',
+    assignedTo: 'finance',
+    status: 'completed',
+    priority: 'high',
+    deliverableExpected: 'Unit Economics Constraint Model',
+    deliverableOutput: 'Hard ceiling established at $0.038 per 1k operations; 84.2% gross margin floor.',
+    orchestratorNote: 'Requires two-tier LRU semantic cache in architecture.',
+    createdAt: '10:42 AM',
+    updatedAt: '10:43 AM',
+  },
+  {
+    id: 'subtask-mem-3',
+    title: 'PRD Specification & Sprint 15 Acceptance Criteria',
+    description: 'Synthesize research memo and financial guardrails into production-ready PRD.',
+    assignedBy: 'coo',
+    assignedTo: 'pm',
+    status: 'completed',
+    priority: 'critical',
+    deliverableExpected: 'Approved PRD (PRD-2026-MEM)',
+    deliverableOutput: 'Feature ratified with 100% specification readiness; added to Sprint 15 backlog.',
+    orchestratorNote: 'Reconciled UX latency requirements with financial margin constraints.',
+    createdAt: '10:44 AM',
+    updatedAt: '10:45 AM',
+  },
+];
+
+const DEFAULT_MEDIATIONS: OrchestratorMediation[] = [
+  {
+    id: 'med-mem-1',
+    disputeOrFriction:
+      'Product Manager requested unbounded real-time vector re-indexing for instantaneous user feel, while Finance Analyst enforced strict compute burn ceilings.',
+    agentsInvolved: ['pm', 'finance'],
+    orchestratorRuling:
+      'Sophia Vance arbitrated: Authorize two-tier LRU semantic caching with speculative pre-fetching. Preserves sub-100ms user responsiveness while keeping token spend capped at $0.038/op.',
+    compromiseStrategy:
+      'Tiered storage: Active session context kept in local memory; persistent retrieval routed via quantized embedding models.',
+    slaImpact: '0ms added latency; 84.2% gross margin guaranteed.',
+    timestamp: '10:43 AM',
+  },
+];
 
 // Default initial artifacts produced by the collaboration
 const DEFAULT_ARTIFACTS = {
@@ -128,6 +227,8 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Maya Lin (Principal PM)',
       to: 'researcher',
       toName: 'Dr. Aris Thorne (Lead Researcher)',
+      intent: 'delegate_subtask',
+      subtask: DEFAULT_SUBTASKS[0],
       message:
         'Dr. Thorne: We are scoping the Autonomous Real-Time Memory Tier for Sprint 15. Can you run competitive intelligence and technical feasibility recon? We need to know latency tolerances and architectural moats.',
       timestamp: '10:40 AM',
@@ -141,6 +242,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
     },
     affectedApp: 'products',
     outputArtifact: 'Initiative Brief registered in Product Strategy queue.',
+    subtask: DEFAULT_SUBTASKS[0],
   },
   {
     id: 'collab-step-2',
@@ -159,6 +261,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Sophia Vance (Chief Operating Officer)',
       to: 'researcher',
       toName: 'Dr. Aris Thorne (Lead Researcher)',
+      intent: 'delegate_subtask',
       message:
         '[Orchestration Kernel] Directive validated under Safe Sandbox constraints. Task assigned to Dr. Thorne with priority: Critical. Please coordinate with Julian Cruz (Finance) for unit economics before finalizing specs.',
       timestamp: '10:41 AM',
@@ -190,6 +293,8 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Dr. Aris Thorne (Lead Researcher)',
       to: 'finance',
       toName: 'Julian Cruz (Chief Financial Analyst)',
+      intent: 'share_information',
+      subtask: DEFAULT_SUBTASKS[1],
       message:
         'Julian: Market recon confirms massive enterprise demand (<120ms recall needed). However, continuous vector re-indexing risks ballooning our inference burn. What is our hard compute ceiling and gross margin floor for this feature?',
       timestamp: '10:42 AM',
@@ -203,6 +308,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
     },
     affectedApp: 'research',
     outputArtifact: 'Market analysis complete; financial audit requested.',
+    subtask: DEFAULT_SUBTASKS[1],
   },
   {
     id: 'collab-step-4',
@@ -221,6 +327,8 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Julian Cruz (Chief Financial Analyst)',
       to: 'researcher',
       toName: 'Dr. Aris Thorne (Lead Researcher)',
+      intent: 'status_update',
+      subtask: DEFAULT_SUBTASKS[1],
       message:
         'Dr. Thorne: I stress-tested our pricing model across 250 enterprise seats ($299/mo). To maintain our strict >80% gross margin target, compute cost MUST NOT exceed $0.038 per 1,000 operations. I mandate a two-tier LRU semantic cache to buffer vector queries.',
       timestamp: '10:43 AM',
@@ -234,6 +342,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
     },
     affectedApp: 'finance',
     outputArtifact: 'Financial unit economics constraints ratified.',
+    subtask: DEFAULT_SUBTASKS[1],
   },
   {
     id: 'collab-step-5',
@@ -252,6 +361,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Dr. Aris Thorne (Lead Researcher)',
       to: 'pm',
       toName: 'Maya Lin (Principal PM)',
+      intent: 'share_information',
       message:
         'Maya: Market reconnaissance and financial audit are complete! We validated high enterprise moat potential. We incorporated Julian\'s mandatory $0.038/op compute cap and two-tier caching architecture into the verified dossier.',
       timestamp: '10:44 AM',
@@ -283,6 +393,8 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Maya Lin (Principal PM)',
       to: 'council',
       toName: 'Executive Council & Founder',
+      intent: 'status_update',
+      subtask: DEFAULT_SUBTASKS[2],
       message:
         'Council & Founder: Formal PRD (PRD-2026-MEM) has been published! Feature added to Sprint 15 backlog with 100% specification readiness. All acceptance criteria reflect Dr. Thorne\'s latency benchmarks and Julian\'s $0.038 compute cap.',
       timestamp: '10:45 AM',
@@ -296,6 +408,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
     },
     affectedApp: 'products',
     outputArtifact: 'Feature added to Roadmap & Sprint Board; PRD generated.',
+    subtask: DEFAULT_SUBTASKS[2],
   },
   {
     id: 'collab-step-7',
@@ -314,8 +427,10 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
       fromName: 'Sophia Vance (Chief Operating Officer)',
       to: 'council',
       toName: 'Company HQ & Founder',
+      intent: 'orchestrator_mediation',
+      mediation: DEFAULT_MEDIATIONS[0],
       message:
-        '[Executive Council Ratification] The cross-functional initiative has been fully verified and executed across Product, Research, and Finance. Ratification recorded into Company Governance and durable organizational memory.',
+        '[Executive Council Ratification & Orchestrator Sign-off] The cross-functional initiative has been fully verified and executed across Product, Research, and Finance. Trade-offs between memory latency and compute burn reconciled via two-tier semantic caching. Ratification recorded into Company Governance and durable organizational memory.',
       timestamp: '10:46 AM',
       protocolStep: 'report',
       attachment: {
@@ -327,6 +442,7 @@ const COLLABORATION_STEPS: CollaborationStep[] = [
     },
     affectedApp: 'workforce',
     outputArtifact: 'Decision ratified, Company Memory established, Founder notified.',
+    mediation: DEFAULT_MEDIATIONS[0],
   },
 ];
 
@@ -339,6 +455,8 @@ let collaborationState: EmployeeCollaborationState = {
   currentStepIndex: 0,
   steps: JSON.parse(JSON.stringify(COLLABORATION_STEPS)),
   allDialogues: [],
+  delegatedTasks: JSON.parse(JSON.stringify(DEFAULT_SUBTASKS)),
+  mediations: JSON.parse(JSON.stringify(DEFAULT_MEDIATIONS)),
   artifacts: DEFAULT_ARTIFACTS,
 };
 
@@ -369,6 +487,14 @@ export const CollaborationStore = {
 
   getSteps(): CollaborationStep[] {
     return collaborationState.steps;
+  },
+
+  getDelegatedTasks(): DelegatedSubTask[] {
+    return collaborationState.delegatedTasks || [];
+  },
+
+  getMediations(): OrchestratorMediation[] {
+    return collaborationState.mediations || [];
   },
 
   getCurrentStep(): CollaborationStep | undefined {
@@ -403,9 +529,133 @@ export const CollaborationStore = {
       currentStepIndex: 0,
       steps: JSON.parse(JSON.stringify(COLLABORATION_STEPS)),
       allDialogues: [],
+      delegatedTasks: JSON.parse(JSON.stringify(DEFAULT_SUBTASKS)),
+      mediations: JSON.parse(JSON.stringify(DEFAULT_MEDIATIONS)),
       artifacts: DEFAULT_ARTIFACTS,
     };
     SystemActivityStore.endTask('collab-sim');
+    notify();
+  },
+
+  /**
+   * Load a preset collaboration mission
+   */
+  loadPreset(presetId: string): void {
+    const preset = COLLABORATION_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    this.reset();
+    collaborationState.title = preset.title;
+    collaborationState.directive = preset.directive;
+    notify();
+  },
+
+  /**
+   * Initiate dynamic custom collaboration mission via server API or local fallback
+   */
+  async initiateCustomMission(directive: string): Promise<void> {
+    const cleanDir = directive.trim();
+    if (!cleanDir) return;
+
+    collaborationState.status = 'running';
+    collaborationState.title = `Mission: ${cleanDir.slice(0, 48)}`;
+    collaborationState.directive = cleanDir;
+    collaborationState.startedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    collaborationState.allDialogues = [];
+    collaborationState.currentStepIndex = 0;
+    notify();
+
+    try {
+      const res = await fetch('/api/agent-collab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ directive: cleanDir }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.dialogues && data.dialogues.length > 0) {
+          const newSteps: CollaborationStep[] = data.dialogues.map((d: any, idx: number) => ({
+            id: `step-dyn-${idx + 1}`,
+            stepNumber: idx + 1,
+            title: d.outputArtifact || `${d.fromName} → ${d.toName}`,
+            protocolStep: d.protocolStep || 'analyze',
+            initiatingAgent: d.from,
+            targetAgent: d.to,
+            description: d.message.slice(0, 120) + '...',
+            status: 'pending' as const,
+            timestamp: d.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            dialogue: d,
+            affectedApp: d.from === 'pm' ? 'products' : d.from === 'finance' ? 'finance' : d.from === 'researcher' ? 'research' : 'workforce',
+            outputArtifact: d.outputArtifact || 'Execution milestone registered.',
+            subtask: d.subtask,
+            mediation: d.mediation,
+          }));
+
+          collaborationState.title = data.title || collaborationState.title;
+          collaborationState.steps = newSteps;
+          collaborationState.delegatedTasks = data.delegatedTasks || [];
+          collaborationState.mediations = data.mediations || [];
+          notify();
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[CollaborationStore] custom mission API error:', err);
+    }
+
+    // Fallback: Use standard steps tailored to directive
+    collaborationState.steps = JSON.parse(JSON.stringify(COLLABORATION_STEPS));
+    collaborationState.delegatedTasks = JSON.parse(JSON.stringify(DEFAULT_SUBTASKS));
+    collaborationState.mediations = JSON.parse(JSON.stringify(DEFAULT_MEDIATIONS));
+    notify();
+  },
+
+  /**
+   * Delegate a sub-task between agents
+   */
+  delegateSubTask(taskInput: Omit<DelegatedSubTask, 'id' | 'createdAt' | 'updatedAt'> & Partial<Pick<DelegatedSubTask, 'id' | 'createdAt' | 'updatedAt'>>): DelegatedSubTask {
+    if (!collaborationState.delegatedTasks) collaborationState.delegatedTasks = [];
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fullTask: DelegatedSubTask = {
+      id: taskInput.id || `task-sub-${Date.now().toString(36)}`,
+      createdAt: taskInput.createdAt || now,
+      updatedAt: taskInput.updatedAt || now,
+      ...taskInput,
+    };
+    collaborationState.delegatedTasks.push(fullTask);
+    notify();
+    return fullTask;
+  },
+
+  /**
+   * Update the status of an existing sub-task
+   */
+  updateSubTaskStatus(taskId: string, status: DelegatedSubTask['status'], note?: string): void {
+    if (!collaborationState.delegatedTasks) return;
+    const task = collaborationState.delegatedTasks.find((t) => t.id === taskId);
+    if (task) {
+      task.status = status;
+      task.updatedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (note) task.orchestratorNote = note;
+      notify();
+    }
+  },
+
+  /**
+   * Log an orchestrator mediation
+   */
+  addMediation(mediation: OrchestratorMediation): void {
+    if (!collaborationState.mediations) collaborationState.mediations = [];
+    collaborationState.mediations.unshift(mediation);
+    notify();
+  },
+
+  /**
+   * Post a direct inter-agent dialogue message
+   */
+  postInterAgentDialogue(dialogue: CollaborationDialogue): void {
+    collaborationState.allDialogues.push(dialogue);
     notify();
   },
 
@@ -440,10 +690,19 @@ export const CollaborationStore = {
     currentStep.status = 'completed';
     collaborationState.allDialogues.push(currentStep.dialogue);
 
+    // If step has a subtask, mark it completed or updated
+    if (currentStep.subtask && collaborationState.delegatedTasks) {
+      const existing = collaborationState.delegatedTasks.find((t) => t.id === currentStep.subtask?.id);
+      if (existing) {
+        existing.status = 'completed';
+        existing.updatedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    }
+
     // Play sound and trigger notification
     playOSSound('execute');
     dispatchOSNotification({
-      title: `Collaboration: Step ${currentStep.stepNumber}/7`,
+      title: `Collaboration: Step ${currentStep.stepNumber}/${collaborationState.steps.length}`,
       message: `${currentStep.dialogue.fromName}: "${currentStep.title}"`,
       type: 'agent',
       category: 'ai_employee',
@@ -494,7 +753,9 @@ export const CollaborationStore = {
     this.reset();
     collaborationState.status = 'running';
     collaborationState.startedAt = new Date().toLocaleTimeString();
-    collaborationState.steps[0].status = 'in_progress';
+    if (collaborationState.steps.length > 0) {
+      collaborationState.steps[0].status = 'in_progress';
+    }
     notify();
 
     for (let i = 0; i < collaborationState.steps.length; i++) {
@@ -510,7 +771,10 @@ export const CollaborationStore = {
     collaborationState.status = 'completed';
     collaborationState.steps.forEach((s) => (s.status = 'completed'));
     collaborationState.allDialogues = collaborationState.steps.map((s) => s.dialogue);
-    collaborationState.currentStepIndex = collaborationState.steps.length - 1;
+    if (collaborationState.delegatedTasks) {
+      collaborationState.delegatedTasks.forEach((t) => (t.status = 'completed'));
+    }
+    collaborationState.currentStepIndex = Math.max(0, collaborationState.steps.length - 1);
     collaborationState.completedAt = new Date().toLocaleTimeString();
     SystemActivityStore.endTask('collab-sim');
 

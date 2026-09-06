@@ -1,6 +1,6 @@
 {
   "name": "SamJuniors OS",
   "description": "An internal desktop operating system for an AI-run company featuring an autonomous multi-agent workforce, company vitals, and executive orchestrator.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

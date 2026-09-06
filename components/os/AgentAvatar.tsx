@@ -78,6 +78,12 @@ export const AGENT_REAL_PORTRAITS: Record<
     name: 'Founder',
     title: 'Chief Executive Authority',
   },
+  council: {
+    photoUrl: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=400&h=400&q=80',
+    fallbackPhotoUrl: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&w=400&h=400&q=80',
+    name: 'Executive Council (AI Mesh)',
+    title: 'Autonomous Multi-Agent Bus',
+  },
 };
 
 export const AGENT_AVATAR_THEMES: Record<
@@ -153,14 +159,27 @@ export const AGENT_AVATAR_THEMES: Record<
     borderGradient: 'border-indigo-500/40',
     darkBg: '#0f0e1d',
   },
+  council: {
+    roleTitle: 'Autonomous Multi-Agent Bus',
+    department: 'Inter-Agent Collaboration Mesh',
+    primaryColor: '#3b82f6',
+    secondaryColor: '#8b5cf6',
+    glowColor: 'rgba(59, 130, 246, 0.45)',
+    bgGradient: 'from-blue-950 via-[#0f172a] to-indigo-950',
+    borderGradient: 'border-blue-500/40',
+    darkBg: '#0b1120',
+  },
 };
 
 /**
  * Normalizes input role string to one of our standard keys.
  */
-function normalizeRole(roleOrId?: string): 'coo' | 'researcher' | 'pm' | 'finance' | 'advisor' | 'founder' {
+function normalizeRole(roleOrId?: string): 'coo' | 'researcher' | 'pm' | 'finance' | 'advisor' | 'founder' | 'council' {
   if (!roleOrId) return 'coo';
   const lower = roleOrId.toLowerCase();
+  if (lower.includes('council') || lower.includes('mesh') || lower.includes('collab') || lower.includes('multi')) {
+    return 'council';
+  }
   if (lower.includes('coo') || lower.includes('sophia') || lower.includes('orchestrat') || lower.includes('operations')) {
     return 'coo';
   }
