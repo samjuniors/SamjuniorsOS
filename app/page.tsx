@@ -235,7 +235,7 @@ export default function SamJuniorsOSPage() {
           />
         );
       case 'company':
-        return <CompanyApp />;
+        return <CompanyApp onOpenApp={openApp} soundEnabled={soundEnabled} />;
       case 'customers':
         return <CustomersApp />;
       case 'research':
@@ -254,6 +254,7 @@ export default function SamJuniorsOSPage() {
             soundEnabled={soundEnabled}
             onToggleSound={() => setSoundEnabled((p) => !p)}
             onResetOS={handleResetOS}
+            onOpenApp={openApp}
           />
         );
       case 'terminal':

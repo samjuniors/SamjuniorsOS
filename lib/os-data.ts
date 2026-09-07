@@ -32,13 +32,13 @@ export const INITIAL_WINDOWS: WindowState[] = [
   },
   {
     id: 'company',
-    title: 'Company Governance & OKRs',
+    title: 'Company Overview — Strategic Pulse & Status',
     isOpen: false,
     isMinimized: false,
     isMaximized: false,
     zIndex: 9,
     position: { x: 120, y: 80 },
-    size: { width: 880, height: 580 },
+    size: { width: 960, height: 640 },
   },
   {
     id: 'customers',
@@ -165,12 +165,12 @@ export const APPS_CONFIG: AppMetadata[] = [
   },
   {
     id: 'company',
-    name: 'Governance',
-    category: 'Constitution & OKRs',
-    description: 'Company constitution, strategic OKRs & executive board synthesis',
-    iconName: 'Shield',
+    name: 'Company',
+    category: 'Strategic Pulse & Governance',
+    description: 'High-level futuristic command dashboard: strategic goals, autonomous KPIs & executive status',
+    iconName: 'Building2',
     color: 'from-blue-500 to-cyan-600',
-    defaultSize: { width: 880, height: 600 },
+    defaultSize: { width: 960, height: 640 },
   },
   {
     id: 'customers',

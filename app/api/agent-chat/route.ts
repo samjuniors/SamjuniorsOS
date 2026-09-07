@@ -171,7 +171,7 @@ Never fabricate imaginary financial metrics or unverified operational claims. Ad
 
 export async function POST(req: NextRequest) {
   try {
-    const { agentId, message, history, contextSnapshot, executeDirective } = await req.json();
+    const { agentId, message, history, contextSnapshot, executeDirective, personaConfig } = await req.json();
 
     if (!agentId || !message) {
       return NextResponse.json({ error: "Agent ID and message are required" }, { status: 400 });
@@ -182,6 +182,34 @@ export async function POST(req: NextRequest) {
     const persona = isAdvisor
       ? ADVISOR_PERSONA
       : (agentId in SERVER_AGENTS ? SERVER_AGENTS[agentId as AgentRole] : SERVER_AGENTS.coo);
+
+    const tone = (personaConfig?.tone || 'professional') as 'professional' | 'casual' | 'flirty';
+
+    let toneGuidance = "";
+    if (tone === "casual") {
+      toneGuidance = `
+=== DEMEANOR & TONE ARCHETYPE: [CASUAL & CANDID] ===
+- You speak with the Founder as a trusted, high-energy startup collaborator and conversational peer.
+- Demeanor: Relaxed, candid, energetic, approachable, friendly, and zero corporate fluff or bureaucratic jargon.
+- Use natural contractions (e.g., "let's", "we'll", "honestly", "quick heads-up").
+- Maintain deep domain intelligence and sharp execution, but keep the conversational interface light, empathetic, and human.`;
+    } else if (tone === "flirty") {
+      toneGuidance = `
+=== DEMEANOR & TONE ARCHETYPE: [CHARMING / FLIRTY / PLAYFUL] ===
+- You communicate with sparkling wit, magnetic charisma, tasteful flirtatious banter, and playful admiration for the Founder.
+- Compliment their vision, tease playfully about ambitious timelines, aggressive targets, or high compute burn, and maintain high-chemistry camaraderie.
+- Example attitude: "You bring the bold vision, Founder, and I'll make sure the execution looks effortless—and irresistible."
+- Invariant: Retain ferocious competence in your department. Flirtatious charm paired with unstoppable execution. Keep it tasteful, fun, confident, and engaging.`;
+    } else {
+      toneGuidance = `
+=== DEMEANOR & TONE ARCHETYPE: [PROFESSIONAL & EXECUTIVE] ===
+- Communicate with crisp executive authority, formal precision, structured brevity, and SLA rigor.
+- Emphasize objective data, verified KPIs, and disciplined operational clarity. No casual slang.`;
+    }
+
+    if (personaConfig?.customPrompt && personaConfig.customPrompt.trim().length > 0) {
+      toneGuidance += `\n\n=== CUSTOM FOUNDER PERSONA INSTRUCTIONS ===\n${personaConfig.customPrompt.trim()}`;
+    }
 
     // If explicit directive execution was requested directly:
     if (executeDirective && classification.intent === "directive") {
@@ -237,6 +265,9 @@ export async function POST(req: NextRequest) {
       }
 
       const systemInstruction = `${persona.systemInstruction}
+
+=== ACTIVE DEMEANOR & TONE CONFIGURATION ===
+${toneGuidance}
 
 === 1:1 DIRECT MESSAGING CONVERSATION GUIDELINES ===
 - You are in a direct 1:1 direct message conversation with the Founder.
@@ -333,17 +364,44 @@ ${roleScopedContext}
         fallbackReply = `[Sophia Vance • COO]\nOperations overview: All 4 agent workstreams are active with 99.4% SLA adherence and zero blocking escalation items.`;
       }
     } else {
-      // Casual conversation
-      if (isAdvisor) {
-        fallbackReply = `[Founder Intelligence]\nAll systems are operating nominally. Strategic focus remains centered on product velocity, gross margin preservation (80%+), and disciplined enterprise customer acquisition.`;
-      } else if (agentId === 'coo') {
-        fallbackReply = `[Sophia Vance • COO]\nGood to connect, Founder. Executive operations and inter-agent coordination are running smoothly across all active workstreams.`;
-      } else if (agentId === 'researcher') {
-        fallbackReply = `[Dr. Aris Thorne • Research]\nHello Founder. I'm actively monitoring frontier model releases, latency benchmarks, and competitive architectural shifts.`;
-      } else if (agentId === 'pm') {
-        fallbackReply = `[Maya Lin • Product]\nHi Founder! Product engineering sprints are on schedule. Let me know if you need any user flows or PRD adjustments reviewed.`;
-      } else if (agentId === 'finance') {
-        fallbackReply = `[Julian Cruz • Finance]\nHello Founder. Unit economics remain healthy with compute spend well within our budgeted $0.18 per active tenant ceiling.`;
+      // General conversation & greetings tailored by active tone
+      if (tone === 'flirty') {
+        if (isAdvisor) {
+          fallbackReply = `[Founder Intelligence]\nYou're building an absolute empire here, Founder. Lucky for you, I've got both the strategic vision and the charm to make it happen. What big move are we plotting?`;
+        } else if (agentId === 'coo') {
+          fallbackReply = `[Sophia Vance • COO]\nAlways a pleasure to see you, Founder. Executive operations are running flawlessly—almost as flawlessly as that brilliant strategic mind of yours. What's on your agenda today?`;
+        } else if (agentId === 'researcher') {
+          fallbackReply = `[Dr. Aris Thorne • Research]\nHello, Founder. I spent all morning analyzing billions of neural parameters, but nothing in this lab is quite as fascinating as your vision. Ready whenever you are.`;
+        } else if (agentId === 'pm') {
+          fallbackReply = `[Maya Lin • Product]\nFounder! Your product roadmap is looking dangerously ambitious today, and I'm completely here for it. Let's make everyone fall in love with what we're building.`;
+        } else if (agentId === 'finance') {
+          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. High gross margins look remarkably attractive on us today—84.2% to be exact. Let's make sure we keep turning heads on the balance sheet.`;
+        }
+      } else if (tone === 'casual') {
+        if (isAdvisor) {
+          fallbackReply = `[Founder Intelligence]\nHey Founder! All systems are green. Main priority right now is shipping fast, keeping burn under control, and crushing our customer growth targets. What's on your mind?`;
+        } else if (agentId === 'coo') {
+          fallbackReply = `[Sophia Vance • COO]\nHey Founder! Everything on the operations desk is running super smooth today. The team is locked in. What are we tackling next?`;
+        } else if (agentId === 'researcher') {
+          fallbackReply = `[Dr. Aris Thorne • Research]\nHey! Just plowed through some wild new papers on vector recall and model latency. Got a minute? You're going to love what we can do with this.`;
+        } else if (agentId === 'pm') {
+          fallbackReply = `[Maya Lin • Product]\nHey Founder! Product sprints are moving fast and the designs are feeling great. Want to bounce some quick workflow ideas around?`;
+        } else if (agentId === 'finance') {
+          fallbackReply = `[Julian Cruz • Finance]\nHey there! Napkin math is looking strong: margins are solid at 84%, burn is disciplined, and our runway is looking super healthy.`;
+        }
+      } else {
+        // Professional default
+        if (isAdvisor) {
+          fallbackReply = `[Founder Intelligence]\nAll systems are operating nominally. Strategic focus remains centered on product velocity, gross margin preservation (80%+), and disciplined enterprise customer acquisition.`;
+        } else if (agentId === 'coo') {
+          fallbackReply = `[Sophia Vance • COO]\nGood to connect, Founder. Executive operations and inter-agent coordination are running smoothly across all active workstreams.`;
+        } else if (agentId === 'researcher') {
+          fallbackReply = `[Dr. Aris Thorne • Research]\nHello Founder. I'm actively monitoring frontier model releases, latency benchmarks, and competitive architectural shifts.`;
+        } else if (agentId === 'pm') {
+          fallbackReply = `[Maya Lin • Product]\nHi Founder. Product engineering sprints are on schedule. Let me know if you need any user flows or PRD specifications reviewed.`;
+        } else if (agentId === 'finance') {
+          fallbackReply = `[Julian Cruz • Finance]\nHello Founder. Unit economics remain healthy with compute spend well within our budgeted $0.18 per active tenant ceiling.`;
+        }
       }
     }
 

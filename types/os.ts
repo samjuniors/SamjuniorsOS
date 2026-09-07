@@ -63,6 +63,19 @@ export interface WindowState {
 
 export type AgentRole = 'coo' | 'researcher' | 'pm' | 'finance';
 
+export type PersonaTone = 'professional' | 'casual' | 'flirty';
+
+export interface EmployeePersonaConfig {
+  agentId: AgentRole | 'advisor';
+  tone: PersonaTone;
+  customPrompt?: string;
+  customNickname?: string;
+  formalityLevel?: number; // 1-5
+  warmthLevel?: number; // 1-5
+  humorLevel?: number; // 1-5
+  updatedAt?: string;
+}
+
 export interface AgentPermission {
   name: string;
   description: string;

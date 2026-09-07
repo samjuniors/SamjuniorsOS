@@ -36,6 +36,9 @@ import {
   VolumeX,
   Scale,
   ChevronRight,
+  Heart,
+  Coffee,
+  ChevronDown,
 } from 'lucide-react';
 import {
   AppId,
@@ -50,6 +53,7 @@ import {
 } from '@/types/os';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
 import { CollaborationStore } from '@/lib/collaboration-store';
+import { PersonaStore, PERSONA_ARCHETYPES, PersonaTone } from '@/lib/persona-store';
 import { playOSSound, dispatchOSNotification } from '../os/IconHelper';
 import { AgentAvatar } from '@/components/os/AgentAvatar';
 import { ContextMenu, ContextMenuState } from '@/components/os/ContextMenu';
@@ -407,6 +411,16 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
   const [activeSpeakingMsgId, setActiveSpeakingMsgId] = useState<string | null>(null);
   const dictationRecRef = useRef<any>(null);
 
+  // Active AI employee persona & tone tracking
+  const [agentPersonas, setAgentPersonas] = useState(() => PersonaStore.getAllPersonas());
+  const [isToneMenuOpen, setIsToneMenuOpen] = useState(false);
+
+  useEffect(() => {
+    return PersonaStore.subscribe(() => {
+      setAgentPersonas(PersonaStore.getAllPersonas());
+    });
+  }, []);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -531,6 +545,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
   const handleSelectParticipant = (id: ParticipantId) => {
     if (soundEnabled) playOSSound('click');
     setSelectedId(id);
+    setIsToneMenuOpen(false);
     setUnreadCounts((prev) => ({ ...prev, [id]: 0 }));
     setTimeout(() => inputRef.current?.focus(), 50);
   };
@@ -900,6 +915,12 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
         text: m.text,
       }));
 
+      // Pass active persona configuration for tone tuning
+      const personaConfig =
+        targetParticipantId !== 'council'
+          ? PersonaStore.getPersona(targetParticipantId as AgentRole | 'advisor')
+          : undefined;
+
       const res = await fetch('/api/agent-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -907,6 +928,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           agentId: targetParticipantId,
           message: textToSend,
           history,
+          personaConfig,
         }),
       });
 
@@ -1276,6 +1298,79 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Tone & Demeanor Quick Switcher */}
+            {selectedParticipant.id !== 'council' && (() => {
+              const currentConfig = agentPersonas[selectedParticipant.id as AgentRole | 'advisor'] || { tone: 'professional' };
+              const currentTone = currentConfig.tone;
+              const currentArch = PERSONA_ARCHETYPES[currentTone];
+              const ToneIcon = currentTone === 'professional' ? Briefcase : currentTone === 'casual' ? Coffee : Heart;
+
+              return (
+                <div className="relative">
+                  <button
+                    id={`messages-tone-switch-${selectedParticipant.id}`}
+                    onClick={() => {
+                      if (soundEnabled) playOSSound('click');
+                      setIsToneMenuOpen((prev) => !prev);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 border transition-all ${currentArch.badgeClass}`}
+                    title={`Active Demeanor: ${currentArch.label}. Click to switch.`}
+                  >
+                    <ToneIcon className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">{currentArch.shortLabel}</span>
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+
+                  {isToneMenuOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-56 p-2 rounded-2xl bg-[#141622] border border-white/15 shadow-2xl z-50 space-y-1 backdrop-blur-xl">
+                      <div className="px-2.5 py-1 text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                        Employee Demeanor
+                      </div>
+                      {(['professional', 'casual', 'flirty'] as PersonaTone[]).map((t) => {
+                        const arch = PERSONA_ARCHETYPES[t];
+                        const Icon = t === 'professional' ? Briefcase : t === 'casual' ? Coffee : Heart;
+                        const isSelected = currentTone === t;
+                        return (
+                          <button
+                            key={t}
+                            id={`messages-tone-opt-${t}`}
+                            onClick={() => {
+                              if (soundEnabled) playOSSound('click');
+                              PersonaStore.setTone(selectedParticipant.id as AgentRole | 'advisor', t, true);
+                              setIsToneMenuOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white font-bold shadow-md'
+                                : 'text-slate-300 hover:bg-white/10'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2">
+                              <Icon className="w-3.5 h-3.5" />
+                              <span>{arch.label}</span>
+                            </div>
+                            {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                          </button>
+                        );
+                      })}
+                      <div className="pt-1.5 border-t border-white/5 px-2">
+                        <button
+                          onClick={() => {
+                            setIsToneMenuOpen(false);
+                            onOpenApp?.('settings');
+                          }}
+                          className="text-[10px] text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1 py-1"
+                        >
+                          <span>Manage all personas in Settings</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Live Voice Call Button */}
             <button
               id="messages-voice-call-btn"
@@ -1323,6 +1418,24 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
                   <span className="text-[10px] text-emerald-400 font-mono font-normal">Online & Ready</span>
                 </div>
                 <div className="text-[11px] text-slate-400">{selectedParticipant.welcomeMessage}</div>
+
+                {selectedParticipant.id !== 'council' && (() => {
+                  const currentConfig = agentPersonas[selectedParticipant.id as AgentRole | 'advisor'] || { tone: 'professional' };
+                  const currentArch = PERSONA_ARCHETYPES[currentConfig.tone];
+                  const quote = currentArch.sampleQuotes[selectedParticipant.id];
+                  return (
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase border ${currentArch.badgeClass}`}>
+                        {currentArch.label}
+                      </span>
+                      {quote && (
+                        <span className="text-[10px] text-slate-400 italic truncate max-w-md">
+                          &ldquo;{quote}&rdquo;
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 

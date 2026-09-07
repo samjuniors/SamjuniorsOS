@@ -19,10 +19,12 @@ import {
   Bot,
   Building2,
   Sparkles,
+  Heart,
 } from 'lucide-react';
 import { WALLPAPERS } from '@/lib/os-data';
 import { playOSSound } from '../os/IconHelper';
 import { SkillExplorerView } from './SkillExplorerView';
+import { PersonaConfigView } from './PersonaConfigView';
 import { NotificationStore } from '@/lib/notification-center';
 
 interface SettingsAppProps {
@@ -33,7 +35,8 @@ interface SettingsAppProps {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onResetOS: () => void;
-  initialTab?: 'skills' | 'preferences';
+  onOpenApp?: (appId: string) => void;
+  initialTab?: 'skills' | 'personas' | 'preferences';
 }
 
 export const SettingsApp: React.FC<SettingsAppProps> = ({
@@ -44,9 +47,10 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
   soundEnabled,
   onToggleSound,
   onResetOS,
-  initialTab = 'skills',
+  onOpenApp,
+  initialTab = 'personas',
 }) => {
-  const [activeTab, setActiveTab] = useState<'skills' | 'preferences'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'skills' | 'personas' | 'preferences'>(initialTab);
   const [toastsEnabled, setToastsEnabled] = useState(() => NotificationStore.getState().toastsEnabled);
 
   useEffect(() => {
@@ -66,7 +70,7 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
               SamJuniors OS Configuration & Governance
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Explore departmental AI employee skills, system wallpapers, autonomy guardrails, and audio preferences.
+              Customize AI employee personas & demeanor (Professional, Casual, Charming/Flirty), skill matrix, wallpapers, and autonomy levels.
             </p>
           </div>
 
@@ -78,7 +82,26 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
         </div>
 
         {/* View Switcher Tabs */}
-        <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+        <div className="flex items-center gap-2 border-b border-white/10 pb-3 flex-wrap">
+          <button
+            id="settings-tab-personas"
+            onClick={() => {
+              if (soundEnabled) playOSSound('click');
+              setActiveTab('personas');
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all ${
+              activeTab === 'personas'
+                ? 'bg-gradient-to-r from-pink-600 to-indigo-600 text-white shadow-lg shadow-pink-600/25 ring-1 ring-pink-400/40'
+                : 'bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
+            }`}
+          >
+            <Heart className="w-4 h-4 text-pink-400" />
+            <span>AI Personas & Tone</span>
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-black/40 text-pink-300 border border-pink-400/30 font-bold">
+              3 Archetypes
+            </span>
+          </button>
+
           <button
             id="settings-tab-skills"
             onClick={() => {
@@ -115,6 +138,11 @@ export const SettingsApp: React.FC<SettingsAppProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Conditional View: AI Personas & Demeanor */}
+      {activeTab === 'personas' && (
+        <PersonaConfigView onOpenApp={onOpenApp} soundEnabled={soundEnabled} />
+      )}
 
       {/* Conditional View: Skill Explorer */}
       {activeTab === 'skills' && <SkillExplorerView />}
