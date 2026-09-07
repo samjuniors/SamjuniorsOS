@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { ApprovalStatus, SideEffectClassification } from '@/types/authorization';
 import { InMemoryWorkflowStore } from '@/lib/server/workflow/store';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * GET /api/workflow/approvals
@@ -68,21 +69,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const normalizedActor = (decidedBy || 'founder').toLowerCase().trim();
-    if (normalizedActor !== 'founder') {
+    // SECURITY ENFORCEMENT (Audit 07/11): Validate cryptographic session; reject unverified identity spoofing
+    const session = await getAuthenticatedFounder(req);
+    if (!session || session.role !== 'FOUNDER') {
       return NextResponse.json(
-        { error: `Unauthorized: Non-Founder identities ("${decidedBy}") cannot approve or revoke actions.` },
-        { status: 403 }
+        { error: 'Unauthorized: Cryptographically verified Founder session required.' },
+        { status: 401 }
       );
     }
 
+    const verifiedActor = session.email || session.userId || 'founder';
     const gate = SideEffectAuthorizationGate.getInstance();
 
     if (action === 'approve') {
       const record = await gate.decideApproval({
         approvalId,
         decision: 'approved',
-        decidedBy: 'founder',
+        decidedBy: verifiedActor,
         reason: reason || 'Approved by Founder',
         expiresAt,
       });
@@ -91,14 +94,14 @@ export async function POST(req: NextRequest) {
       const record = await gate.decideApproval({
         approvalId,
         decision: 'rejected',
-        decidedBy: 'founder',
+        decidedBy: verifiedActor,
         reason: reason || 'Rejected by Founder',
       });
       return NextResponse.json({ success: true, record });
     } else if (action === 'revoke') {
       const record = await gate.revokeApproval({
         approvalId,
-        revokedBy: 'founder',
+        revokedBy: verifiedActor,
         reason: reason || 'Revoked by Founder',
       });
       return NextResponse.json({ success: true, record });

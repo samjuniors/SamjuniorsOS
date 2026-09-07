@@ -22,6 +22,7 @@ import {
   RetrievedStateItem,
   StateQueryParams,
 } from '@/types/context';
+import { prisma } from '@/lib/server/db/prisma';
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are',
@@ -102,14 +103,62 @@ export class CompanyStateStore implements ICompanyStateStore {
 
   public async setInitiatives(inits: CompanyInitiative[]): Promise<void> {
     this.initiatives = [...inits];
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            initiatives: this.initiatives as any,
+          },
+          update: {
+            initiatives: this.initiatives as any,
+          },
+        });
+      } catch {
+        // Fallback safely for offline environments
+      }
+    }
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
     this.decisions.unshift(decision);
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            decisions: this.decisions as any,
+          },
+          update: {
+            decisions: this.decisions as any,
+          },
+        });
+      } catch {
+        // Fallback safely
+      }
+    }
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
     this.financialModel = { ...this.financialModel, ...metrics };
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            financialModel: this.financialModel as any,
+          },
+          update: {
+            financialModel: this.financialModel as any,
+          },
+        });
+      } catch {
+        // Fallback safely
+      }
+    }
   }
 
   /**

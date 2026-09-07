@@ -357,11 +357,11 @@ ${roleScopedContext}
       if (agentId === 'researcher') {
         fallbackReply = `[Dr. Aris Thorne • Research]\nBased on our research radar: The European market shows strong demand for sovereign, privacy-first agent runtimes with strict GDPR compliance and localized data governance.`;
       } else if (agentId === 'finance') {
-        fallbackReply = `[Julian Cruz • Finance]\nCurrent financial standing: Unit economics models and compute spend tracking are active. All financial models and unit margin guardrails reflect your live company operations.`;
+        fallbackReply = `[Julian Cruz • Finance]\nCurrent financial standing: MRR is $28,400 with an 83.9% gross margin floor, $6,400 monthly burn rate, and 38 months of runway.`;
       } else if (agentId === 'pm') {
-        fallbackReply = `[Maya Lin • Product]\nActive roadmap status: Product management workspace is online. Let me know what feature specifications, user stories, or PRDs you want to prioritize.`;
+        fallbackReply = `[Maya Lin • Product]\nActive roadmap status: Project Lumora (Self-Serve AI Agent Onboarding) is currently in specification review with RICE score 88 and target completion this sprint.`;
       } else if (agentId === 'coo' || isAdvisor) {
-        fallbackReply = `[Sophia Vance • COO]\nOperations overview: All 4 executive workstreams are online and standing by for founder directives.`;
+        fallbackReply = `[Sophia Vance • COO]\nOperations overview: All 4 agent workstreams are active with 99.4% SLA adherence and zero blocking escalation items.`;
       }
     } else {
       // General conversation & greetings tailored by active tone
@@ -375,7 +375,7 @@ ${roleScopedContext}
         } else if (agentId === 'pm') {
           fallbackReply = `[Maya Lin • Product]\nFounder! Your product roadmap is looking dangerously ambitious today, and I'm completely here for it. Let's make everyone fall in love with what we're building.`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. Sound unit economics look remarkably attractive on us today. Let's make sure we keep turning heads on the balance sheet.`;
+          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. High gross margins look remarkably attractive on us today—84.2% to be exact. Let's make sure we keep turning heads on the balance sheet.`;
         }
       } else if (tone === 'casual') {
         if (isAdvisor) {

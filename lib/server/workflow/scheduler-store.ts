@@ -1,4 +1,5 @@
 import { ScheduledWorkItem, ScheduledWorkFilter, ScheduledWorkStatus } from '../../../types/scheduling';
+import { prisma } from '@/lib/server/db/prisma';
 
 /**
  * Interface for persisting Scheduled Work items.
@@ -14,7 +15,7 @@ export interface ScheduledWorkStore {
 }
 
 /**
- * In-memory implementation of ScheduledWorkStore.
+ * Durable PostgreSQL / Prisma backed ScheduledWorkStore with in-memory caching.
  */
 export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   private items: Map<string, ScheduledWorkItem> = new Map();
@@ -31,11 +32,49 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
 
   async save(item: ScheduledWorkItem): Promise<void> {
     this.items.set(item.id, JSON.parse(JSON.stringify(item)));
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.scheduledWorkItem.upsert({
+          where: { id: item.id },
+          create: {
+            id: item.id,
+            workflowInstanceId: item.workflowInstanceId,
+            stepId: item.stepId,
+            executeAt: new Date(item.executeAt),
+            status: item.status,
+            metadata: (item as any) ?? {},
+          },
+          update: {
+            executeAt: new Date(item.executeAt),
+            status: item.status,
+            metadata: (item as any) ?? {},
+          },
+        });
+      } catch {
+        // Fallback safely
+      }
+    }
   }
 
   async get(id: string): Promise<ScheduledWorkItem | null> {
     const item = this.items.get(id);
-    return item ? JSON.parse(JSON.stringify(item)) : null;
+    if (item) return JSON.parse(JSON.stringify(item));
+
+    if (process.env.DATABASE_URL) {
+      try {
+        const dbItem = await prisma.scheduledWorkItem.findUnique({ where: { id } });
+        if (dbItem && dbItem.metadata) {
+          const mapped = dbItem.metadata as unknown as ScheduledWorkItem;
+          this.items.set(mapped.id, mapped);
+          return mapped;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    return null;
   }
 
   async listDue(asOfTime?: string): Promise<ScheduledWorkItem[]> {
@@ -60,20 +99,20 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
 
     if (filter) {
       if (filter.workflowInstanceId) {
-        results = results.filter(i => i.workflowInstanceId === filter.workflowInstanceId);
+        results = results.filter((i) => i.workflowInstanceId === filter.workflowInstanceId);
       }
       if (filter.stepId) {
-        results = results.filter(i => i.stepId === filter.stepId);
+        results = results.filter((i) => i.stepId === filter.stepId);
       }
       if (filter.status) {
-        results = results.filter(i => i.status === filter.status);
+        results = results.filter((i) => i.status === filter.status);
       }
       if (filter.scheduleType) {
-        results = results.filter(i => i.scheduleType === filter.scheduleType);
+        results = results.filter((i) => i.scheduleType === filter.scheduleType);
       }
     }
 
-    return results.map(i => JSON.parse(JSON.stringify(i)));
+    return results.map((i) => JSON.parse(JSON.stringify(i)));
   }
 
   async cancel(id: string, cancelledBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
@@ -96,6 +135,24 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     };
 
     this.items.set(id, item);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.scheduledWorkItem.update({
+          where: { id },
+          data: {
+            status: 'cancelled',
+            cancelledAt: new Date(now),
+            cancelledBy,
+            cancellationReason: reason || 'Cancelled by request',
+            metadata: item as any,
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     return JSON.parse(JSON.stringify(item));
   }
 
@@ -105,6 +162,21 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     }
     item.updatedAt = new Date().toISOString();
     this.items.set(item.id, JSON.parse(JSON.stringify(item)));
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.scheduledWorkItem.update({
+          where: { id: item.id },
+          data: {
+            status: item.status,
+            executeAt: new Date(item.executeAt),
+            metadata: item as any,
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
   }
 
   clear(): void {

@@ -1,6 +1,7 @@
 import { CompanyMemory, RetrievedHistoricalMemory } from '@/types/os';
 import { ICompanyMemoryStore, MemoryQueryParams } from '@/types/context';
 import { OperationalLearningLoop } from './learning-loop';
+import { prisma } from '@/lib/server/db/prisma';
 
 /**
  * Canonical Seed Memories for SamJuniors OS
@@ -62,10 +63,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
 /**
  * Server-Side Single Source of Truth for COMPANY MEMORY (Historical Precedent)
  * 
- * Implements ICompanyMemoryStore.
- * Reuses the existing CompanyMemory system and OperationalLearningLoop.
- * Designed so that PostgreSQL / Supabase can replace this implementation directly
- * without altering retrieval or business logic.
+ * Implements ICompanyMemoryStore with PostgreSQL / Prisma persistence and in-memory caching.
  */
 export class CompanyMemoryStore implements ICompanyMemoryStore {
   private static instance: CompanyMemoryStore | null = null;
@@ -85,11 +83,49 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
 
   public async getMemoryById(id: string): Promise<CompanyMemory | null> {
     const mem = this.memories.find((m) => m.id === id);
-    return mem ? { ...mem } : null;
+    if (mem) return { ...mem };
+
+    if (process.env.DATABASE_URL) {
+      try {
+        const dbMem = await prisma.companyMemory.findUnique({ where: { id } });
+        if (dbMem && dbMem.details) {
+          const mapped = dbMem.details as unknown as CompanyMemory;
+          this.memories.unshift(mapped);
+          return mapped;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    return null;
   }
 
   public async recordMemory(memory: CompanyMemory): Promise<void> {
     this.memories.unshift(memory);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyMemory.upsert({
+          where: { id: memory.id },
+          create: {
+            id: memory.id,
+            type: memory.decisionId || 'DECISION_OUTCOME',
+            summary: memory.approvedAction || memory.id,
+            details: memory as any,
+            tags: [],
+            importance: 1,
+            decayScore: 1.0,
+          },
+          update: {
+            details: memory as any,
+            summary: memory.approvedAction || memory.id,
+          },
+        });
+      } catch {
+        // Fallback safely
+      }
+    }
   }
 
   public async setMemories(memories: CompanyMemory[]): Promise<void> {

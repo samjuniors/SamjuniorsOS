@@ -158,8 +158,8 @@ model ScheduledWorkItem {
 
 model ApprovalRecord {
   id                 String            @id @default(uuid())
-  workflowInstanceId String
-  workflow           WorkflowInstance  @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  workflowInstanceId String?
+  workflow           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
   stepId             String
   campaignId         String?
   employeeRole       String
@@ -185,20 +185,20 @@ model ApprovalRecord {
 }
 
 model SideEffectAudit {
-  id                 String           @id @default(uuid())
+  id                 String            @id @default(uuid())
   approvalId         String?
-  workflowInstanceId String
-  workflow           WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
-  stepId             String
+  workflowInstanceId String?
+  workflow           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  stepId             String?
   employeeRole       String
   classification     String
   actionType         String
   targetSystem       String
-  payload            Json             @default("{}")
-  decisionOutcome    String           // "allowed_autonomous", "allowed_approved", "denied_policy", "denied_revoked", "denied_expired", "denied_unapproved"
+  payload            Json              @default("{}")
+  decisionOutcome    String            // "allowed_autonomous", "allowed_approved", "denied_policy", "denied_revoked", "denied_expired", "denied_unapproved"
   reason             String
   executionReference String?
-  timestamp          DateTime         @default(now())
+  timestamp          DateTime          @default(now())
 
   @@index([workflowInstanceId, stepId])
   @@index([targetSystem, timestamp])

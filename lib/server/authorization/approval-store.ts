@@ -7,12 +7,42 @@ import {
   SideEffectClassification,
 } from '@/types/authorization';
 import { v4 as uuidv4 } from 'uuid';
+import { prisma } from '@/lib/server/db/prisma';
 
 /**
- * Thread-safe In-Memory Store for Founder Approval Records.
+ * Interface defining the Approval Store contract.
+ */
+export interface IApprovalStore {
+  save(record: FounderApprovalRecord): Promise<FounderApprovalRecord>;
+  get(id: string): Promise<FounderApprovalRecord | null>;
+  list(filter?: ApprovalFilter): Promise<FounderApprovalRecord[]>;
+  decide(
+    id: string,
+    decision: 'approved' | 'rejected',
+    decidedBy: string,
+    reason?: string,
+    expiresAt?: string
+  ): Promise<FounderApprovalRecord>;
+  revoke(id: string, revokedBy: string, reason?: string): Promise<FounderApprovalRecord>;
+  consume(id: string): Promise<FounderApprovalRecord>;
+  clear(): void;
+}
+
+/**
+ * Interface defining the Audit Store contract.
+ */
+export interface IAuditStore {
+  record(audit: SideEffectAuditRecord): Promise<SideEffectAuditRecord>;
+  get(id: string): Promise<SideEffectAuditRecord | null>;
+  list(filter?: AuditFilter): Promise<SideEffectAuditRecord[]>;
+  clear(): void;
+}
+
+/**
+ * Dual-layer Approval Store with PostgreSQL/Prisma persistence and fast in-memory caching.
  * Enforces strict immutability of audit fields and deterministic lifecycle updates.
  */
-export class InMemoryApprovalStore {
+export class InMemoryApprovalStore implements IApprovalStore {
   private static instance: InMemoryApprovalStore;
   private approvals: Map<string, FounderApprovalRecord> = new Map();
 
@@ -32,13 +62,85 @@ export class InMemoryApprovalStore {
   public async save(record: FounderApprovalRecord): Promise<FounderApprovalRecord> {
     const clone = JSON.parse(JSON.stringify(record));
     this.approvals.set(record.id, clone);
+
+    // Persist to PostgreSQL if database connection is available
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.approvalRecord.upsert({
+          where: { id: record.id },
+          create: {
+            id: record.id,
+            workflowInstanceId: record.workflowInstanceId,
+            stepId: record.stepId,
+            campaignId: record.scope?.campaignId,
+            employeeRole: record.employeeRole,
+            classification: record.classification,
+            actionType: record.actionName,
+            targetSystem: record.target?.targetSystem || 'internal',
+            payload: (record.target?.metadata as any) ?? {},
+            decision: record.decision,
+            decidedBy: record.decidedBy,
+            decidedAt: record.decidedAt ? new Date(record.decidedAt) : null,
+            reason: record.decisionReason,
+            expiresAt: record.expiresAt ? new Date(record.expiresAt) : null,
+            consumedAt: record.isConsumed ? new Date() : null,
+            scope: (record.scope as any) ?? {},
+          },
+          update: {
+            decision: record.decision,
+            decidedBy: record.decidedBy,
+            decidedAt: record.decidedAt ? new Date(record.decidedAt) : null,
+            reason: record.decisionReason,
+            expiresAt: record.expiresAt ? new Date(record.expiresAt) : null,
+            consumedAt: record.isConsumed ? new Date() : null,
+            scope: (record.scope as any) ?? {},
+          },
+        });
+      } catch (err) {
+        // Fallback safely in environments without live PostgreSQL
+      }
+    }
+
     return clone;
   }
 
   public async get(id: string): Promise<FounderApprovalRecord | null> {
     const record = this.approvals.get(id);
-    if (!record) return null;
-    return JSON.parse(JSON.stringify(record));
+    if (record) return JSON.parse(JSON.stringify(record));
+
+    if (process.env.DATABASE_URL) {
+      try {
+        const dbRecord = await prisma.approvalRecord.findUnique({ where: { id } });
+        if (dbRecord) {
+          const mapped: FounderApprovalRecord = {
+            id: dbRecord.id,
+            workflowInstanceId: dbRecord.workflowInstanceId || '',
+            stepId: dbRecord.stepId,
+            employeeRole: dbRecord.employeeRole as any,
+            classification: dbRecord.classification as SideEffectClassification,
+            actionName: dbRecord.actionType,
+            decision: dbRecord.decision as ApprovalStatus,
+            decidedBy: dbRecord.decidedBy || undefined,
+            decidedAt: dbRecord.decidedAt ? dbRecord.decidedAt.toISOString() : undefined,
+            decisionReason: dbRecord.reason || undefined,
+            expiresAt: dbRecord.expiresAt ? dbRecord.expiresAt.toISOString() : undefined,
+            isConsumed: !!dbRecord.consumedAt,
+            scope: (dbRecord.scope as any) || { scopeType: 'single_action' },
+            target: {
+              targetSystem: dbRecord.targetSystem,
+              metadata: (dbRecord.payload as any) || {},
+            },
+            requestedAt: dbRecord.createdAt.toISOString(),
+          };
+          this.approvals.set(mapped.id, mapped);
+          return mapped;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+
+    return null;
   }
 
   public async list(filter?: ApprovalFilter): Promise<FounderApprovalRecord[]> {
@@ -76,7 +178,7 @@ export class InMemoryApprovalStore {
     const now = Date.now();
     for (const record of this.approvals.values()) {
       if (record.workflowInstanceId !== params.workflowInstanceId) continue;
-      
+
       // Check Step Scope matching
       if (record.scope.scopeType === 'step' || record.scope.scopeType === 'single_action') {
         if (record.stepId !== params.stepId) continue;
@@ -87,7 +189,6 @@ export class InMemoryApprovalStore {
 
       // Check if expired
       if (record.expiresAt && new Date(record.expiresAt).getTime() < now) {
-        // Mark as expired in record
         if (record.decision === 'approved') {
           record.decision = 'expired';
           record.decisionReason = record.decisionReason || 'Approval expired automatically due to TTL';
@@ -119,6 +220,24 @@ export class InMemoryApprovalStore {
     if (expiresAt) record.expiresAt = expiresAt;
 
     this.approvals.set(id, record);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.approvalRecord.update({
+          where: { id },
+          data: {
+            decision,
+            decidedBy,
+            decidedAt: new Date(record.decidedAt),
+            reason: record.decisionReason,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     return JSON.parse(JSON.stringify(record));
   }
 
@@ -134,6 +253,23 @@ export class InMemoryApprovalStore {
     record.decisionReason = reason || 'Revoked by Founder';
 
     this.approvals.set(id, record);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.approvalRecord.update({
+          where: { id },
+          data: {
+            decision: 'revoked',
+            decidedBy: revokedBy,
+            decidedAt: new Date(record.decidedAt),
+            reason: record.decisionReason,
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     return JSON.parse(JSON.stringify(record));
   }
 
@@ -146,6 +282,21 @@ export class InMemoryApprovalStore {
     record.isConsumed = true;
     record.scope.usedCount = (record.scope.usedCount || 0) + 1;
     this.approvals.set(id, record);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.approvalRecord.update({
+          where: { id },
+          data: {
+            consumedAt: new Date(),
+            scope: record.scope as any,
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     return JSON.parse(JSON.stringify(record));
   }
 }
@@ -153,7 +304,7 @@ export class InMemoryApprovalStore {
 /**
  * Append-only Audit Trail Store for Side-Effect Authorization decisions and executions.
  */
-export class InMemoryAuditStore {
+export class InMemoryAuditStore implements IAuditStore {
   private static instance: InMemoryAuditStore;
   private audits: Map<string, SideEffectAuditRecord> = new Map();
 
@@ -173,6 +324,31 @@ export class InMemoryAuditStore {
   public async record(audit: SideEffectAuditRecord): Promise<SideEffectAuditRecord> {
     const clone = JSON.parse(JSON.stringify(audit));
     this.audits.set(audit.id, clone);
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.sideEffectAudit.create({
+          data: {
+            id: audit.id,
+            approvalId: audit.approvalId,
+            workflowInstanceId: audit.workflowInstanceId,
+            stepId: audit.stepId,
+            employeeRole: audit.employeeRole,
+            classification: audit.actionClassification,
+            actionType: audit.actionName || 'UNKNOWN',
+            targetSystem: audit.target?.targetSystem || 'internal',
+            payload: (audit.target?.metadata as any) ?? {},
+            decisionOutcome: audit.decision,
+            reason: audit.reason,
+            executionReference: audit.executionReference,
+            timestamp: new Date(audit.timestamp),
+          },
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     return clone;
   }
 

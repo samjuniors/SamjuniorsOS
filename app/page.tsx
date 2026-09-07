@@ -42,8 +42,12 @@ import { SettingsApp } from '@/components/apps/SettingsApp';
 import { TerminalApp } from '@/components/apps/TerminalApp';
 import { NotesApp } from '@/components/apps/NotesApp';
 import { MessagesApp, ParticipantId } from '@/components/apps/MessagesApp';
+import { ExecutiveCockpit } from '@/components/cockpit/ExecutiveCockpit';
 
 export default function SamJuniorsOSPage() {
+  // Operational Mode State (Default: Executive Cockpit, with toggle to Classic Desktop)
+  const [viewMode, setViewMode] = useState<'cockpit' | 'classic'>('cockpit');
+
   // Windows state
   const [windows, setWindows] = useState<WindowState[]>(INITIAL_WINDOWS);
   const [topZIndex, setTopZIndex] = useState(20);
@@ -404,6 +408,22 @@ export default function SamJuniorsOSPage() {
     });
   };
 
+  if (viewMode === 'cockpit') {
+    return (
+      <ExecutiveCockpit
+        onSwitchToClassic={() => setViewMode('classic')}
+        onOpenApp={(appId) => {
+          setViewMode('classic');
+          openApp(appId as AppId);
+        }}
+        onDispatchDirective={(directive) => {
+          setPendingDirective(directive);
+          openApp('workforce', directive);
+        }}
+      />
+    );
+  }
+
   return (
     <main
       id="os-desktop-root"
@@ -413,6 +433,17 @@ export default function SamJuniorsOSPage() {
         background: activeWallpaper.preview,
       }}
     >
+      {/* Quick Return to Executive Cockpit */}
+      <div className="fixed top-9 right-4 z-50">
+        <button
+          onClick={() => setViewMode('cockpit')}
+          className="flex items-center space-x-1.5 px-3 py-1 bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold rounded-full shadow-lg border border-indigo-400/40 backdrop-blur-md transition"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Executive Cockpit</span>
+        </button>
+      </div>
+
       {/* Universal Desktop Context Menu */}
       <ContextMenu
         state={contextMenuState}
