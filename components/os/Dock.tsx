@@ -134,11 +134,7 @@ export const Dock: React.FC<DockProps> = ({
                 {app.id === 'workforce' && (
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-400 rounded-full border-2 border-slate-900 shadow-sm animate-pulse" />
                 )}
-                {app.id === 'customers' && (
-                  <span className="absolute -top-1.5 -right-1.5 px-1 sm:px-1.5 py-0.2 bg-indigo-500 text-[8px] sm:text-[9px] font-bold rounded-full border border-slate-900 shadow-sm">
-                    12
-                  </span>
-                )}
+
               </motion.button>
 
               {/* Running Dot Indicator */}

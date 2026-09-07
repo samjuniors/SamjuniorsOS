@@ -916,10 +916,7 @@ export const MessagesApp: React.FC<MessagesAppProps> = ({
       }));
 
       // Pass active persona configuration for tone tuning
-      const personaConfig =
-        targetParticipantId !== 'council'
-          ? PersonaStore.getPersona(targetParticipantId as AgentRole | 'advisor')
-          : undefined;
+      const personaConfig = PersonaStore.getPersona(targetParticipantId as AgentRole | 'advisor');
 
       const res = await fetch('/api/agent-chat', {
         method: 'POST',

@@ -79,4 +79,23 @@
   box-shadow: 0 0 20px -3px rgba(6, 182, 212, 0.25);
 }
 
+/* Accessibility: respect user's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .os-glass,
+  .os-glass-card,
+  .os-dock-glass,
+  .os-topbar-glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
 

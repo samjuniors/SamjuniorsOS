@@ -19,6 +19,8 @@ import {
   Terminal,
   FileEdit,
   ChevronLeft,
+  MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 
 interface OSWindowProps {
@@ -51,6 +53,10 @@ function WindowHeaderIcon({ id }: { id: AppId }) {
       return <Terminal className="w-4 h-4 text-emerald-400" />;
     case 'notes':
       return <FileEdit className="w-4 h-4 text-amber-300" />;
+    case 'messages':
+      return <MessageSquare className="w-4 h-4 text-sky-400" />;
+    case 'advisor':
+      return <Sparkles className="w-4 h-4 text-violet-400" />;
     default:
       return <Bot className="w-4 h-4 text-indigo-400" />;
   }
@@ -250,11 +256,7 @@ export const OSWindow: React.FC<OSWindowProps> = ({
               Council Active
             </span>
           )}
-          {win.id === 'finance' && (
-            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-[10px] font-mono hidden sm:inline-block">
-              86% Margin
-            </span>
-          )}
+
           {isMobile && (
             <button
               onClick={() => {

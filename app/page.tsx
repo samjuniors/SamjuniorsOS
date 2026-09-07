@@ -81,6 +81,21 @@ export default function SamJuniorsOSPage() {
     (id: AppId) => {
       setTopZIndex((prev) => {
         const nextZ = prev + 1;
+
+        // Normalize z-indices when they grow too large to prevent unbounded growth
+        if (nextZ > 500) {
+          setWindows((wins) => {
+            const sorted = [...wins].sort((a, b) => a.zIndex - b.zIndex);
+            return wins.map((w) => ({
+              ...w,
+              zIndex: w.id === id ? sorted.length + 20 : sorted.indexOf(w) + 20,
+              isMinimized: w.id === id ? false : w.isMinimized,
+            }));
+          });
+          // Reset counter — max possible z-index after normalization is windows.length + 20
+          return 30;
+        }
+
         setWindows((wins) =>
           wins.map((w) => (w.id === id ? { ...w, zIndex: nextZ, isMinimized: false } : w))
         );
@@ -91,7 +106,7 @@ export default function SamJuniorsOSPage() {
   );
 
   const openApp = useCallback(
-    (id: AppId, directive?: string, targetContext?: AdvisorTargetContext) => {
+    (id: AppId | string, directive?: string, targetContext?: AdvisorTargetContext) => {
       if (directive) {
         setPendingDirective(directive);
       }
@@ -137,7 +152,7 @@ export default function SamJuniorsOSPage() {
             : 'Founder Scratchpad';
 
         const newWin: WindowState = {
-          id,
+          id: id as AppId,
           title: defaultTitle,
           isOpen: true,
           isMinimized: false,
@@ -235,7 +250,7 @@ export default function SamJuniorsOSPage() {
           />
         );
       case 'company':
-        return <CompanyApp onOpenApp={openApp} soundEnabled={soundEnabled} />;
+        return <CompanyApp onOpenApp={(appId, param) => openApp(appId as AppId, param)} soundEnabled={soundEnabled} />;
       case 'customers':
         return <CustomersApp />;
       case 'research':

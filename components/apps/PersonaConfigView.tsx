@@ -23,7 +23,8 @@ import {
   PERSONA_ARCHETYPES,
   DEFAULT_EMPLOYEE_PERSONAS,
 } from '@/lib/persona-store';
-import { AgentAvatar, playOSSound } from '../os/IconHelper';
+import { playOSSound } from '../os/IconHelper';
+import { AgentAvatar } from '@/components/os/AgentAvatar';
 
 interface EmployeeMetadata {
   id: AgentRole | 'advisor';

@@ -1,6 +1,7 @@
 'use client';
 
 import { AgentRole, PersonaTone, EmployeePersonaConfig } from '@/types/os';
+export type { PersonaTone };
 import { dispatchOSNotification } from '@/components/os/IconHelper';
 
 export interface PersonaArchetypeInfo {
