@@ -110,7 +110,7 @@ const VOICE_PERSONAS: Record<ParticipantId, VoicePersonaProfile> = {
     preferredVoiceLang: 'en-US',
     pitch: 0.95,
     rate: 1.08,
-    greeting: "Hello Founder. Our unit economics are healthy at 83.9% gross margin. What financial models or compute spend projections shall we run?",
+    greeting: "Hello Founder. Capital telemetry and financial models are ready. What financial models or compute spend projections shall we run?",
     themeColor: '#10b981',
     bgGlow: 'from-emerald-900/40 via-teal-950/50 to-[#0b0c12]',
   },

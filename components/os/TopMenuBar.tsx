@@ -535,12 +535,12 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                         <span className="text-white font-mono font-semibold">4 Active</span>
                       </div>
                       <div className="flex justify-between py-1 text-slate-400">
-                        <span>Available Compute:</span>
-                        <span className="text-emerald-400 font-mono font-semibold">9.8k TFlops</span>
+                        <span>Executive Council:</span>
+                        <span className="text-emerald-400 font-mono font-semibold">Mesh Ready</span>
                       </div>
                       <div className="flex justify-between py-1 text-slate-400">
-                        <span>Monthly ARR:</span>
-                        <span className="text-indigo-300 font-mono font-semibold">$148,500</span>
+                        <span>System Status:</span>
+                        <span className="text-indigo-300 font-mono font-semibold">Operational</span>
                       </div>
                     </div>
 

@@ -99,20 +99,29 @@ export const AttentionSection: React.FC<AttentionSectionProps> = ({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {items.map((item) => {
-          const badge = getTypeBadge(item.type);
-          const Icon = badge.icon;
-          const isResolved = item.status === 'approved' || item.status === 'resolved';
+      {items.length === 0 ? (
+        <div className="os-glass-card rounded-2xl p-6 border border-white/10 text-center space-y-1.5">
+          <CheckCircle2 className="w-6 h-6 text-emerald-400 mx-auto" />
+          <h4 className="text-xs font-bold text-white">No Escalations Requiring Attention</h4>
+          <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+            All agent workflows are operating within constitutional safe boundaries. High-impact trade-offs or sign-offs will appear here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {items.map((item) => {
+            const badge = getTypeBadge(item.type);
+            const Icon = badge.icon;
+            const isResolved = item.status === 'approved' || item.status === 'resolved';
 
-          return (
-            <motion.div
-              key={item.id}
-              layout
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
-                isResolved
+            return (
+              <motion.div
+                key={item.id}
+                layout
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`rounded-2xl p-4 border transition-all flex flex-col justify-between ${
+                  isResolved
                   ? 'bg-slate-900/40 border-white/5 opacity-70'
                   : 'bg-slate-900/90 border-white/15 hover:border-blue-500/40 shadow-xl'
               }`}
@@ -299,6 +308,7 @@ export const AttentionSection: React.FC<AttentionSectionProps> = ({
           );
         })}
       </div>
+      )}
 
       {/* Evidence Modal */}
       {selectedEvidenceItem && (

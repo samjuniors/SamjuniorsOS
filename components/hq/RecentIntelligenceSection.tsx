@@ -31,8 +31,17 @@ export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ r
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {researchTopics.map((topic) => (
+      {researchTopics.length === 0 ? (
+        <div className="os-glass-card rounded-2xl p-6 border border-white/10 text-center space-y-1.5">
+          <Compass className="w-6 h-6 text-amber-400 mx-auto opacity-70" />
+          <h4 className="text-xs font-bold text-white">No Market Intelligence Memos Yet</h4>
+          <p className="text-[11px] text-slate-400 max-w-md mx-auto">
+            Direct Dr. Aris Thorne (Research) to crawl competitor pricing, AI reasoning benchmarks, or market opportunities to populate empirical intelligence here.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {researchTopics.map((topic) => (
           <div
             key={topic.id}
             className="bg-slate-900/80 border border-white/10 rounded-2xl p-4 hover:border-amber-500/30 transition-all flex flex-col justify-between space-y-3"
@@ -94,6 +103,7 @@ export const RecentIntelligenceSection: React.FC<RecentIntelligenceProps> = ({ r
           </div>
         ))}
       </div>
+      )}
 
       {selectedTopic && (
         <EvidenceModal

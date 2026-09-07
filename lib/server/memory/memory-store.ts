@@ -11,7 +11,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     id: 'mem-margin-1',
     decisionId: 'dec-margin-80',
     approvedAction: 'Enforce strict 80%+ gross margin floor across all customer tiers and token usage',
-    executionOutcome: 'Preserved 83.9% gross margin during high-load stress testing; prevented runaway LLM token costs',
+    executionOutcome: 'Preserved target gross margin floor during stress testing; prevented runaway LLM token costs',
     evidenceReferences: ['finance-model-audit', 'margin-verification', 'julian-margin-stress-test'],
     epistemicConfidence: 'verified_fact',
     timestamp: '2026-08-25T14:30:00Z',

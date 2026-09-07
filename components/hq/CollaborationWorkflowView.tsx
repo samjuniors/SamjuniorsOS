@@ -845,8 +845,7 @@ export const CollaborationWorkflowView: React.FC<CollaborationWorkflowViewProps>
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Julian Cruz locked compute unit economics at <strong>$0.038 / 1k queries cap</strong> and{' '}
-                  <strong>84.2% margin floor</strong>.
+                  Julian Cruz established compute unit economics and margin guardrails for sustainable operations.
                 </p>
                 {onOpenApp && (
                   <button

@@ -21,7 +21,7 @@ import { playOSSound } from '../os/IconHelper';
 
 export const CustomersApp: React.FC = () => {
   const [deals, setDeals] = useState<CustomerDeal[]>(INITIAL_DEALS);
-  const [selectedDeal, setSelectedDeal] = useState<CustomerDeal>(INITIAL_DEALS[0]);
+  const [selectedDeal, setSelectedDeal] = useState<CustomerDeal | null>(INITIAL_DEALS[0] || null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState<string>('All');
   const [isNewDealModalOpen, setIsNewDealModalOpen] = useState(false);
@@ -137,41 +137,51 @@ export const CustomersApp: React.FC = () => {
             </div>
           </div>
 
-          {filteredDeals.map((deal) => {
-            const isSelected = selectedDeal.id === deal.id;
-            return (
-              <div
-                key={deal.id}
-                onClick={() => setSelectedDeal(deal)}
-                className={`p-3.5 rounded-2xl border transition-all cursor-pointer space-y-2 ${
-                  isSelected
-                    ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg'
-                    : 'bg-slate-900/60 border-white/5 hover:border-white/20'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 flex items-center justify-center font-bold text-white text-xs">
-                      {deal.logoLetter}
+          {filteredDeals.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 space-y-2">
+              <Users className="w-8 h-8 mx-auto opacity-30" />
+              <p className="text-xs font-semibold text-slate-400">No Target Accounts</p>
+              <p className="text-[11px] text-slate-500">
+                Click &quot;New Account&quot; to add prospective enterprise accounts to the CRM pipeline.
+              </p>
+            </div>
+          ) : (
+            filteredDeals.map((deal) => {
+              const isSelected = selectedDeal?.id === deal.id;
+              return (
+                <div
+                  key={deal.id}
+                  onClick={() => setSelectedDeal(deal)}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                    isSelected
+                      ? 'bg-emerald-950/40 border-emerald-500/50 shadow-lg'
+                      : 'bg-slate-900/60 border-white/5 hover:border-white/20'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 border border-white/10 flex items-center justify-center font-bold text-white text-xs">
+                        {deal.logoLetter}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white">{deal.companyName}</div>
+                        <div className="text-[10px] text-slate-400">{deal.tier}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-xs font-bold text-white">{deal.companyName}</div>
-                      <div className="text-[10px] text-slate-400">{deal.tier}</div>
-                    </div>
+
+                    <span className="font-mono text-xs font-bold text-emerald-400">{deal.arr}</span>
                   </div>
 
-                  <span className="font-mono text-xs font-bold text-emerald-400">{deal.arr}</span>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+                    <span className="px-2 py-0.5 rounded bg-white/5 text-slate-300 font-mono">
+                      {deal.stage}
+                    </span>
+                    <span>Lead: {deal.leadAgent.split(' ')[0]}</span>
+                  </div>
                 </div>
-
-                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
-                  <span className="px-2 py-0.5 rounded bg-white/5 text-slate-300 font-mono">
-                    {deal.stage}
-                  </span>
-                  <span>Lead: {deal.leadAgent.split(' ')[0]}</span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
         {/* Right Column: Account Detail & Autonomous Actions */}
@@ -224,8 +234,23 @@ export const CustomersApp: React.FC = () => {
               </div>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-xs text-slate-500">
-              Select an account to view CRM history and autonomous actions.
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400">
+                <Users className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-300">No Target Account Selected</h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Add target enterprise accounts to model discovery briefs, pricing tiers, and executive assignments.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsNewDealModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Target Account</span>
+              </button>
             </div>
           )}
         </div>

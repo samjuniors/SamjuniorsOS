@@ -311,7 +311,7 @@ export interface OrchestrationRun {
   id: string;
   directive: string;
   timestamp: string;
-  status: 'planning' | 'running' | 'synthesizing' | 'completed' | 'paused' | 'failed' | 'requires_approval';
+  status: 'idle' | 'planning' | 'running' | 'synthesizing' | 'completed' | 'paused' | 'failed' | 'requires_approval';
   currentProtocolStep?: AgentWorkProtocolStep;
   protocolProgress?: Record<AgentWorkProtocolStep, 'pending' | 'active' | 'completed'>;
   liveAi?: boolean;

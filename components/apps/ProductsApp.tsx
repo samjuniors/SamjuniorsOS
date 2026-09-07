@@ -285,86 +285,96 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {features.map((feat) => {
-                const isCollabFeature = feat.id === 'feat-collab-mem-1';
-                return (
-                  <div
-                    key={feat.id}
-                    className={`os-glass-card rounded-2xl p-4 border transition-all ${
-                      isCollabFeature
-                        ? 'border-rose-500/60 bg-gradient-to-b from-rose-950/30 to-slate-900 ring-1 ring-rose-500/30'
-                        : 'border-white/10 hover:border-rose-500/40'
-                    } space-y-2.5`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-bold text-xs text-white">{feat.title}</span>
-                        {isCollabFeature && (
-                          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            Multi-Agent Collab
-                          </span>
-                        )}
-                      </div>
-                      <span
-                        className={`text-[9px] font-mono px-2 py-0.5 rounded-full ${
-                          feat.status === 'Shipped'
-                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : feat.status === 'In Progress'
-                            ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        }`}
-                      >
-                        {feat.status}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-300 leading-relaxed">{feat.description}</p>
-
-                    {isCollabFeature && (
-                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-[11px]">
-                        <div className="flex items-center justify-between text-slate-300 font-mono text-[10px]">
-                          <span>Market Validation: <strong className="text-amber-400">Dr. Thorne (98%)</strong></span>
-                          <span>Compute Cap: <strong className="text-emerald-400">$0.038 / 1k ops</strong></span>
+            {features.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 space-y-2 os-glass-card rounded-2xl border border-white/10">
+                <Boxes className="w-8 h-8 mx-auto opacity-30 text-rose-400" />
+                <p className="text-xs font-semibold text-slate-300">No Features in Roadmap</p>
+                <p className="text-[11px] text-slate-500">
+                  Switch to the PRD Generator tab or dispatch an initiative in Company HQ to author product specifications.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {features.map((feat) => {
+                  const isCollabFeature = feat.id === 'feat-collab-mem-1';
+                  return (
+                    <div
+                      key={feat.id}
+                      className={`os-glass-card rounded-2xl p-4 border transition-all ${
+                        isCollabFeature
+                          ? 'border-rose-500/60 bg-gradient-to-b from-rose-950/30 to-slate-900 ring-1 ring-rose-500/30'
+                          : 'border-white/10 hover:border-rose-500/40'
+                      } space-y-2.5`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-xs text-white">{feat.title}</span>
+                          {isCollabFeature && (
+                            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              Multi-Agent Collab
+                            </span>
+                          )}
                         </div>
-                        {onOpenApp && (
-                          <div className="flex items-center gap-2 pt-1 border-t border-white/5">
-                            <button
-                              onClick={() => onOpenApp('research')}
-                              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5"
-                            >
-                              <span>Inspect Market Memo</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
-                            <span className="text-slate-600">•</span>
-                            <button
-                              onClick={() => onOpenApp('finance')}
-                              className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5"
-                            >
-                              <span>Inspect Financial Guardrail</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        )}
+                        <span
+                          className={`text-[9px] font-mono px-2 py-0.5 rounded-full ${
+                            feat.status === 'Shipped'
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : feat.status === 'In Progress'
+                              ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          }`}
+                        >
+                          {feat.status}
+                        </span>
                       </div>
-                    )}
 
-                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400">
-                      <span>Owner: <strong className="text-slate-200">{feat.owner}</strong></span>
-                      <span className="font-mono text-rose-400">{feat.completion}% Complete</span>
-                    </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">{feat.description}</p>
 
-                    {/* Mini Progress */}
-                    <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full"
-                        style={{ width: `${feat.completion}%` }}
-                      />
+                      {isCollabFeature && (
+                        <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-[11px]">
+                          <div className="flex items-center justify-between text-slate-300 font-mono text-[10px]">
+                            <span>Market Validation: <strong className="text-amber-400">Dr. Thorne (98%)</strong></span>
+                            <span>Compute Cap: <strong className="text-emerald-400">$0.038 / 1k ops</strong></span>
+                          </div>
+                          {onOpenApp && (
+                            <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                              <button
+                                onClick={() => onOpenApp('research')}
+                                className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5"
+                              >
+                                <span>Inspect Market Memo</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </button>
+                              <span className="text-slate-600">•</span>
+                              <button
+                                onClick={() => onOpenApp('finance')}
+                                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5"
+                              >
+                                <span>Inspect Financial Guardrail</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-slate-400">
+                        <span>Owner: <strong className="text-slate-200">{feat.owner}</strong></span>
+                        <span className="font-mono text-rose-400">{feat.completion}% Complete</span>
+                      </div>
+
+                      {/* Mini Progress */}
+                      <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full"
+                          style={{ width: `${feat.completion}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -372,63 +382,59 @@ Users demand rapid autonomous execution for "${prdPrompt.trim()}" without managi
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <Kanban className="w-4 h-4 text-rose-400" />
-              Active Sprint 15: Autonomous Execution Board
+              Active Sprint: Autonomous Execution Board
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Backlog */}
               <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                  Backlog (2)
+                  Backlog ({features.filter((f) => f.status === 'Backlog').length})
                 </span>
-                <div className="p-3 rounded-xl bg-slate-900 border border-white/5 text-xs space-y-1">
-                  <div className="font-semibold text-white">Founder Voice-to-Directive Transformer</div>
-                  <div className="text-[10px] text-slate-400">Owner: Maya Lin (PM)</div>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900 border border-white/5 text-xs space-y-1">
-                  <div className="font-semibold text-white">Autonomous SQL Query Optimizer</div>
-                  <div className="text-[10px] text-slate-400">Owner: AI Data Swarm</div>
-                </div>
+                {features.filter((f) => f.status === 'Backlog').length === 0 ? (
+                  <p className="text-[11px] text-slate-500 italic p-2">No backlog items</p>
+                ) : (
+                  features.filter((f) => f.status === 'Backlog').map((f) => (
+                    <div key={f.id} className="p-3 rounded-xl bg-slate-900 border border-white/5 text-xs space-y-1">
+                      <div className="font-semibold text-white">{f.title}</div>
+                      <div className="text-[10px] text-slate-400">Owner: {f.owner}</div>
+                    </div>
+                  ))
+                )}
               </div>
 
               {/* In Progress */}
               <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
                 <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block">
-                  In Progress ({collabState.currentStepIndex >= 5 || collabState.status === 'completed' ? 3 : 2})
+                  In Progress ({features.filter((f) => f.status === 'In Progress' || f.status === 'In Review').length})
                 </span>
-                {(collabState.currentStepIndex >= 5 || collabState.status === 'completed') && (
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-rose-950/40 to-slate-900 border border-rose-500/40 text-xs space-y-1.5 shadow-md">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-white">Autonomous Real-Time Memory Tier</span>
-                      <span className="text-[9px] font-mono text-rose-400 px-1.5 py-0.5 bg-rose-500/20 rounded">Collab</span>
+                {features.filter((f) => f.status === 'In Progress' || f.status === 'In Review').length === 0 ? (
+                  <p className="text-[11px] text-slate-500 italic p-2">No active tasks in progress</p>
+                ) : (
+                  features.filter((f) => f.status === 'In Progress' || f.status === 'In Review').map((f) => (
+                    <div key={f.id} className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-xs space-y-1">
+                      <div className="font-semibold text-white">{f.title}</div>
+                      <div className="text-[10px] text-indigo-300">{f.completion}% • {f.owner}</div>
                     </div>
-                    <div className="text-[10px] text-slate-300">
-                      100% Scoped • Maya Lin, Dr. Thorne & Julian Cruz
-                    </div>
-                    <div className="text-[10px] text-emerald-400 font-mono">
-                      Budget Cap: $0.038/1k ops • Margin: 84.2%
-                    </div>
-                  </div>
+                  ))
                 )}
-                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-xs space-y-1">
-                  <div className="font-semibold text-white">Zero-Latency Inter-Agent Neural Bus</div>
-                  <div className="text-[10px] text-indigo-300">82% • Sophia & Maya</div>
-                </div>
-                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 text-xs space-y-1">
-                  <div className="font-semibold text-white">Self-Healing Workflow Exception Engine</div>
-                  <div className="text-[10px] text-indigo-300">64% • Sophia Vance</div>
-                </div>
               </div>
 
               {/* Shipped */}
               <div className="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2">
                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">
-                  Shipped (1)
+                  Shipped ({features.filter((f) => f.status === 'Shipped').length})
                 </span>
-                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-xs space-y-1">
-                  <div className="font-semibold text-white">Continuous Competitor Intel Crawler</div>
-                  <div className="text-[10px] text-emerald-300">100% • Dr. Aris Thorne</div>
-                </div>
+                {features.filter((f) => f.status === 'Shipped').length === 0 ? (
+                  <p className="text-[11px] text-slate-500 italic p-2">No completed features yet</p>
+                ) : (
+                  features.filter((f) => f.status === 'Shipped').map((f) => (
+                    <div key={f.id} className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-xs space-y-1">
+                      <div className="font-semibold text-white">{f.title}</div>
+                      <div className="text-[10px] text-emerald-300">100% • {f.owner}</div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>

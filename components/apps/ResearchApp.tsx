@@ -36,7 +36,7 @@ interface ResearchAppProps {
 
 export const ResearchApp: React.FC<ResearchAppProps> = ({ onOpenApp, soundEnabled }) => {
   const [researchList, setResearchList] = useState<ResearchTopic[]>(INITIAL_RESEARCH);
-  const [selectedTopic, setSelectedTopic] = useState<ResearchTopic>(INITIAL_RESEARCH[0]);
+  const [selectedTopic, setSelectedTopic] = useState<ResearchTopic | null>(INITIAL_RESEARCH[0] || null);
   const [customQuery, setCustomQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -114,6 +114,7 @@ export const ResearchApp: React.FC<ResearchAppProps> = ({ onOpenApp, soundEnable
   };
 
   const handleCopy = () => {
+    if (!selectedTopic) return;
     navigator.clipboard.writeText(selectedTopic.summary);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -224,44 +225,54 @@ export const ResearchApp: React.FC<ResearchAppProps> = ({ onOpenApp, soundEnable
               Synthesized Research Memos ({researchList.length})
             </span>
 
-            <div className="space-y-2">
-              {researchList.map((topic) => {
-                const isCollab = topic.id === 'res-collab-mem-1';
-                return (
-                  <button
-                    key={topic.id}
-                    id={`research-topic-${topic.id}`}
-                    onClick={() => setSelectedTopic(topic)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all ${
-                      selectedTopic.id === topic.id
-                        ? 'os-glass-card-active border-amber-500/60 shadow-lg ring-1 ring-amber-500/30'
-                        : isCollab
-                        ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-500/60'
-                        : 'os-glass-card border-white/10 hover:border-white/20'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[10px] text-amber-400 font-mono mb-1">
-                      <span>{topic.category}</span>
-                      <div className="flex items-center space-x-1">
-                        {isCollab && (
-                          <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] border border-amber-500/30">
-                            Collab
-                          </span>
-                        )}
-                        <span>{topic.date}</span>
+            {researchList.length === 0 ? (
+              <div className="p-6 text-center text-slate-500 space-y-2">
+                <Compass className="w-8 h-8 mx-auto opacity-30 text-amber-400" />
+                <p className="text-xs font-semibold text-slate-300">No Research Reports</p>
+                <p className="text-[11px] text-slate-500">
+                  Run a query above to dispatch Dr. Aris Thorne on frontier research recon.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {researchList.map((topic) => {
+                  const isCollab = topic.id === 'res-collab-mem-1';
+                  return (
+                    <button
+                      key={topic.id}
+                      id={`research-topic-${topic.id}`}
+                      onClick={() => setSelectedTopic(topic)}
+                      className={`w-full text-left p-3 rounded-xl border transition-all ${
+                        selectedTopic?.id === topic.id
+                          ? 'os-glass-card-active border-amber-500/60 shadow-lg ring-1 ring-amber-500/30'
+                          : isCollab
+                          ? 'border-amber-500/40 bg-amber-950/20 hover:border-amber-500/60'
+                          : 'os-glass-card border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[10px] text-amber-400 font-mono mb-1">
+                        <span>{topic.category}</span>
+                        <div className="flex items-center space-x-1">
+                          {isCollab && (
+                            <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 rounded text-[9px] border border-amber-500/30">
+                              Collab
+                            </span>
+                          )}
+                          <span>{topic.date}</span>
+                        </div>
                       </div>
-                    </div>
 
-                    <h4 className="text-xs font-bold text-white line-clamp-2">{topic.title}</h4>
+                      <h4 className="text-xs font-bold text-white line-clamp-2">{topic.title}</h4>
 
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-white/5">
-                      <span>Confidence: {topic.confidence}%</span>
-                      <span className="text-emerald-400 font-mono">{topic.impact}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 pt-1.5 border-t border-white/5">
+                        <span>Confidence: {topic.confidence}%</span>
+                        <span className="text-emerald-400 font-mono">{topic.impact}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* AI Tech Trend Radar */}
@@ -430,8 +441,16 @@ export const ResearchApp: React.FC<ResearchAppProps> = ({ onOpenApp, soundEnable
               </div>
             </>
           ) : (
-            <div className="p-8 text-center text-slate-400 text-xs">
-              Select a research memo on the left.
+            <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-500 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-amber-400">
+                <Compass className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-300">No Research Memo Selected</h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Run a research query above or select a memo on the left to inspect market trends and technical analyses.
+                </p>
+              </div>
             </div>
           )}
         </div>

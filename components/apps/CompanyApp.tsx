@@ -364,47 +364,47 @@ export const CompanyApp: React.FC<CompanyAppProps> = ({
               <div className="p-4 rounded-2xl bg-[#0c0e17] border border-white/10 hover:border-white/20 transition-all space-y-2 shadow-md">
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
                   <span className="uppercase tracking-wider">Capital Telemetry</span>
-                  <span className="text-emerald-400 font-bold">+18.2% MoM</span>
+                  <span className="text-emerald-400 font-bold">Baseline</span>
                 </div>
                 <div>
-                  <div className="text-xl font-bold font-mono text-white">$340,800</div>
+                  <div className="text-xl font-bold font-mono text-white">$0 ARR</div>
                   <div className="text-xs text-slate-400 mt-0.5">Annualized Run Rate (ARR)</div>
                 </div>
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-300">
-                  <span>MRR: $28,400</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Margin: 84.2%</span>
+                  <span>MRR: $0</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Margin: Live Tracked</span>
                 </div>
               </div>
 
               {/* Telemetry Tile 2: Swarm Execution Velocity */}
               <div className="p-4 rounded-2xl bg-[#0c0e17] border border-white/10 hover:border-white/20 transition-all space-y-2 shadow-md">
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <span className="uppercase tracking-wider">Swarm Velocity</span>
-                  <span className="text-indigo-400 font-bold">14.2s Median</span>
+                  <span className="uppercase tracking-wider">Swarm Mesh</span>
+                  <span className="text-indigo-400 font-bold">4 Leaders</span>
                 </div>
                 <div>
-                  <div className="text-xl font-bold font-mono text-white">42 Directives</div>
-                  <div className="text-xs text-slate-400 mt-0.5">Executed with 100% Verification</div>
+                  <div className="text-xl font-bold font-mono text-white">Council Online</div>
+                  <div className="text-xs text-slate-400 mt-0.5">Autonomous Executive Mesh Ready</div>
                 </div>
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-300">
                   <span>Protocol: 9-Step SLA</span>
-                  <span className="text-indigo-300 font-mono font-semibold">99.4% Adherence</span>
+                  <span className="text-indigo-300 font-mono font-semibold">100% Verification</span>
                 </div>
               </div>
 
               {/* Telemetry Tile 3: Operating Leverage */}
               <div className="p-4 rounded-2xl bg-[#0c0e17] border border-white/10 hover:border-white/20 transition-all space-y-2 shadow-md">
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <span className="uppercase tracking-wider">Human Leverage</span>
-                  <span className="text-purple-400 font-bold">Infinite Multiple</span>
+                  <span className="uppercase tracking-wider">Operating Leverage</span>
+                  <span className="text-purple-400 font-bold">Autonomous Swarm</span>
                 </div>
                 <div>
-                  <div className="text-xl font-bold font-mono text-white">$340.8K / Human</div>
-                  <div className="text-xs text-slate-400 mt-0.5">Revenue Per Human Employee</div>
+                  <div className="text-xl font-bold font-mono text-white">100% AI Executed</div>
+                  <div className="text-xs text-slate-400 mt-0.5">Specialist Cross-Functional Mesh</div>
                 </div>
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-300">
-                  <span>Traditional Burn: ~$45k</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Saved: $540K/yr</span>
+                  <span>Human Founders: 1</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Capital Preserved</span>
                 </div>
               </div>
 
@@ -419,7 +419,7 @@ export const CompanyApp: React.FC<CompanyAppProps> = ({
                   <div className="text-xs text-slate-400 mt-0.5">Constitutional Safeguards Active</div>
                 </div>
                 <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-300">
-                  <span>Grounding: 94.2%</span>
+                  <span>Zero Hallucination Rules</span>
                   <span className="text-cyan-300 font-mono font-semibold">Supervised Execution</span>
                 </div>
               </div>

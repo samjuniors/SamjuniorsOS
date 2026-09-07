@@ -65,11 +65,8 @@ export const FinanceApp: React.FC<FinanceAppProps> = ({ onOpenApp, soundEnabled 
   const calculatedComputeBurn = calculatedMRR * (simTokenCostRatio / 100);
   const calculatedNetMargin = 100 - simTokenCostRatio;
 
-  const simulatedInvoices = [
-    { id: 'sim-inv-892', vendor: 'Google Cloud Platform (Vertex/TPU - Projected)', amount: '$14,820.00', status: 'Model Estimate', date: 'Sep 1, 2026', auditor: 'Julian Cruz' },
-    { id: 'sim-inv-891', vendor: 'Anthropic Claude 3.5 API Tier (Projected)', amount: '$3,420.00', status: 'Model Estimate', date: 'Aug 28, 2026', auditor: 'Julian Cruz' },
-    { id: 'sim-inv-890', vendor: 'Target Customer Net Inflow (Projected)', amount: '+$142,000.00', status: 'Model Estimate', date: 'Aug 25, 2026', auditor: 'Julian Cruz' },
-  ];
+  // Invoices & Ledger
+  const [invoices, setInvoices] = useState<Array<{ id: string; vendor: string; amount: string; status: string; date: string; auditor: string }>>([]);
 
   return (
     <div className="h-full flex flex-col bg-slate-950 text-slate-100">
@@ -355,29 +352,31 @@ export const FinanceApp: React.FC<FinanceAppProps> = ({ onOpenApp, soundEnabled 
             {/* Detailed P&L Breakdown */}
             <div className="os-glass-card rounded-2xl p-5 border border-white/10 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                Simulated Income Statement (P&L Model)
+                Income Statement & Unit Economics
               </h3>
 
               <div className="space-y-2 text-xs font-mono">
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-200">
-                  <span>Gross Target Subscriptions (Simulated)</span>
-                  <span className="text-emerald-400 font-bold">$148,500.00</span>
+                  <span>Gross Subscriptions Revenue</span>
+                  <span className="text-emerald-400 font-bold">${financials.mrr.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Gemini 2.5 Flash Batch Token Cost Estimate</span>
-                  <span className="text-rose-400">-$12,400.00</span>
+                  <span>(-) Batch Token Compute Cost</span>
+                  <span className="text-rose-400">-${(financials.computeSpend * 0.6).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Dedicated Cloud Run & VPC Infrastructure Estimate</span>
-                  <span className="text-rose-400">-$7,000.00</span>
+                  <span>(-) Dedicated Infrastructure & Cloud Run</span>
+                  <span className="text-rose-400">-${(financials.computeSpend * 0.4).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-white/5 text-slate-400">
-                  <span>(-) Payment Gateway Fee Estimate (2.9%)</span>
-                  <span className="text-rose-400">-$4,306.50</span>
+                  <span>(-) Payment Gateway Fee (2.9%)</span>
+                  <span className="text-rose-400">-${(financials.mrr * 0.029).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                 </div>
                 <div className="flex justify-between py-2 text-white font-bold text-sm bg-white/5 px-3 rounded-lg">
-                  <span>Projected Net Operating Income (Model EBITDA)</span>
-                  <span className="text-emerald-400">$124,793.50 (84.0% Net Margin)</span>
+                  <span>Net Operating Income</span>
+                  <span className="text-emerald-400">
+                    ${financials.netIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({financials.grossMargin.toFixed(1)}% Gross Margin)
+                  </span>
                 </div>
               </div>
             </div>
@@ -394,39 +393,46 @@ export const FinanceApp: React.FC<FinanceAppProps> = ({ onOpenApp, soundEnabled 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-3">
                 <h4 className="text-xs font-bold text-white">Estimated Spend Attribution by Agent</h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span>Dr. Aris Thorne (Research Radar & Benchmarks)</span>
-                    <span className="font-mono text-amber-400 font-bold">$5,820 (41%)</span>
+                {financials.computeSpend === 0 ? (
+                  <div className="py-6 text-center text-slate-500 space-y-1">
+                    <p className="text-xs text-slate-400 font-semibold">Zero Compute Expenditure</p>
+                    <p className="text-[11px] text-slate-500">All agent processes are currently idle. Token burn will accrue upon active directive dispatch.</p>
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-400 w-[41%]" />
-                  </div>
+                ) : (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span>Dr. Aris Thorne (Research Radar & Benchmarks)</span>
+                      <span className="font-mono text-amber-400 font-bold">${(financials.computeSpend * 0.41).toFixed(0)} (41%)</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-amber-400 w-[41%]" />
+                    </div>
 
-                  <div className="flex justify-between pt-1">
-                    <span>Sophia Vance (Multi-Agent Swarm Orchestration)</span>
-                    <span className="font-mono text-purple-400 font-bold">$4,200 (30%)</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-purple-400 w-[30%]" />
-                  </div>
+                    <div className="flex justify-between pt-1">
+                      <span>Sophia Vance (Multi-Agent Swarm Orchestration)</span>
+                      <span className="font-mono text-purple-400 font-bold">${(financials.computeSpend * 0.30).toFixed(0)} (30%)</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-400 w-[30%]" />
+                    </div>
 
-                  <div className="flex justify-between pt-1">
-                    <span>Maya Lin (PRD & Architecture Specifications)</span>
-                    <span className="font-mono text-rose-400 font-bold">$2,380 (17%)</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-400 w-[17%]" />
-                  </div>
+                    <div className="flex justify-between pt-1">
+                      <span>Maya Lin (PRD & Architecture Specifications)</span>
+                      <span className="font-mono text-rose-400 font-bold">${(financials.computeSpend * 0.17).toFixed(0)} (17%)</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-rose-400 w-[17%]" />
+                    </div>
 
-                  <div className="flex justify-between pt-1">
-                    <span>Julian Cruz (Financial Audits & Ledger Sync)</span>
-                    <span className="font-mono text-emerald-400 font-bold">$1,600 (12%)</span>
+                    <div className="flex justify-between pt-1">
+                      <span>Julian Cruz (Financial Audits & Ledger Sync)</span>
+                      <span className="font-mono text-emerald-400 font-bold">${(financials.computeSpend * 0.12).toFixed(0)} (12%)</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-400 w-[12%]" />
+                    </div>
                   </div>
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-400 w-[12%]" />
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="os-glass-card rounded-2xl p-4 border border-white/10 space-y-3">
@@ -534,31 +540,41 @@ export const FinanceApp: React.FC<FinanceAppProps> = ({ onOpenApp, soundEnabled 
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
               <FileText className="w-4 h-4 text-emerald-400" />
-              Simulated Invoice & Cost Estimates Ledger
+              Invoices & Cost Ledger
             </h3>
 
-            <div className="space-y-2">
-              {simulatedInvoices.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="os-glass-card rounded-xl p-3.5 border border-white/10 flex items-center justify-between text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-white">{inv.vendor}</div>
-                    <div className="text-[10px] text-slate-400 font-mono">Simulated ID: {inv.id} • {inv.date}</div>
-                  </div>
+            {invoices.length === 0 ? (
+              <div className="os-glass-card rounded-2xl p-8 text-center text-slate-500 space-y-2">
+                <FileText className="w-8 h-8 mx-auto opacity-30 text-emerald-400" />
+                <p className="text-xs font-semibold text-slate-300">No Invoices or Ledger Entries</p>
+                <p className="text-[11px] text-slate-500">
+                  Infrastructure expenses, vendor compute statements, and customer payments will be logged here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="os-glass-card rounded-xl p-3.5 border border-white/10 flex items-center justify-between text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-white">{inv.vendor}</div>
+                      <div className="text-[10px] text-slate-400 font-mono">ID: {inv.id} • {inv.date}</div>
+                    </div>
 
-                  <div className="text-right space-y-0.5">
-                    <div className={`font-mono font-bold ${inv.amount.startsWith('+') ? 'text-emerald-400' : 'text-slate-100'}`}>
-                      {inv.amount}
-                    </div>
-                    <div className="text-[9px] text-emerald-400 font-mono flex items-center justify-end gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> {inv.status}
+                    <div className="text-right space-y-0.5">
+                      <div className={`font-mono font-bold ${inv.amount.startsWith('+') ? 'text-emerald-400' : 'text-slate-100'}`}>
+                        {inv.amount}
+                      </div>
+                      <div className="text-[9px] text-emerald-400 font-mono flex items-center justify-end gap-1">
+                        <CheckCircle2 className="w-2.5 h-2.5" /> {inv.status}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { motion } from 'motion/react';
-import { APPS_CONFIG, INITIAL_AGENTS, INITIAL_FINANCIALS } from '@/lib/os-data';
+import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
 import { AppId } from '@/types/os';
 import { getAppIcon, playOSSound } from './IconHelper';
 import { Sparkles, ArrowRight, Zap, TrendingUp, Send } from 'lucide-react';
@@ -137,13 +137,13 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="p-3 bg-white/5 rounded-lg border border-white/5">
               <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                <span>Active Initiatives</span>
+                <span>Executive Council</span>
                 <TrendingUp className="w-3 h-3 text-emerald-400" />
               </div>
               <div className="text-base font-mono font-bold text-white mt-1">
-                4 Projects
+                Mesh Ready
               </div>
-              <div className="text-[9px] text-emerald-400 mt-0.5">All Streams Nominal</div>
+              <div className="text-[9px] text-emerald-400 mt-0.5">Standing by for Directives</div>
             </div>
 
             <div className="p-3 bg-white/5 rounded-lg border border-white/5">

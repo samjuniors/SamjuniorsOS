@@ -67,13 +67,27 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({
         </span>
       </div>
 
-      {/* Section 1: Pending Approvals */}
-      {pendingDecisions.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            Action Required: Pending Founder Authorization
-          </h3>
+      {decisions.length === 0 ? (
+        <div className="bg-slate-900/60 border border-dashed border-white/10 rounded-2xl p-12 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto">
+            <Scale className="w-6 h-6 text-purple-400" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1">
+            <h3 className="text-sm font-bold text-white">No Governance Decisions Logged Yet</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              When the Executive Council generates proposals requiring Founder approval or ratifies strategic initiatives, they will be archived here in the permanent governance log.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Section 1: Pending Approvals */}
+          {pendingDecisions.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wider">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                Action Required: Pending Founder Authorization
+              </h3>
 
           <div className="space-y-3">
             {pendingDecisions.map((dec) => (
@@ -409,6 +423,8 @@ export const DecisionsView: React.FC<DecisionsViewProps> = ({
           ))}
         </div>
       </div>
+        </>
+      )}
 
       {selectedEvidenceDecision && (
         <EvidenceModal
