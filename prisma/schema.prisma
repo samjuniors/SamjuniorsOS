@@ -1,0 +1,222 @@
+// ============================================================================
+// SamJuniorsOS — AI-Native Company Operating System
+// Production PostgreSQL Prisma Schema
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------
+// 1. IDENTITY & GOVERNANCE
+// ---------------------------------------------------------
+
+enum UserRole {
+  FOUNDER
+  EXECUTIVE
+  AUDITOR
+}
+
+model User {
+  id            String           @id @default(uuid())
+  clerkId       String?          @unique
+  email         String           @unique
+  name          String
+  role          UserRole         @default(FOUNDER)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  approvals     ApprovalRecord[]
+  initiatedRuns WorkflowInstance[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------
+// 2. COMPANY OPERATIONAL STATE
+// ---------------------------------------------------------
+
+model CompanyState {
+  id             String   @id @default(uuid())
+  organizationId String   @unique @default("default")
+  name           String   @default("SamJuniors Ecosystem")
+  stage          String   @default("Seed")
+  products       Json     @default("[]")
+  initiatives    Json     @default("[]")
+  customers      Json     @default("[]")
+  employees      Json     @default("[]")
+  decisions      Json     @default("[]")
+  attentionItems Json     @default("[]")
+  financialModel Json     @default("{}")
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_state")
+}
+
+// ---------------------------------------------------------
+// 3. CANONICAL KNOWLEDGE (RAG & SPECS)
+// ---------------------------------------------------------
+
+model CompanyKnowledge {
+  id        String   @id @default(uuid())
+  category  String   // "PRD", "ARCHITECTURE", "SOP", "BRAND"
+  title     String
+  content   String   @db.Text
+  hash      String   @unique // SHA-256 for change detection
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("company_knowledge")
+}
+
+// ---------------------------------------------------------
+// 4. EPISODIC MEMORY
+// ---------------------------------------------------------
+
+model CompanyMemory {
+  id         String   @id @default(uuid())
+  type       String   // "DECISION_OUTCOME", "FOUNDER_PREFERENCE", "OPERATIONAL_INCIDENT", "STRATEGIC_PIVOT"
+  summary    String   @db.Text
+  details    Json     @default("{}")
+  category   String?
+  tags       Json     @default("[]")
+  importance Int      @default(1)
+  decayScore Float    @default(1.0)
+  createdAt  DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@map("company_memories")
+}
+
+// ---------------------------------------------------------
+// 5. DURABLE WORKFLOWS & DAG RUNTIME
+// ---------------------------------------------------------
+
+model WorkflowDefinition {
+  id          String   @id
+  version     String   @default("1.0.0")
+  name        String
+  description String?
+  steps       Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([id, version])
+  @@map("workflow_definitions")
+}
+
+model WorkflowInstance {
+  id            String            @id @default(uuid())
+  definitionId  String
+  version       String            @default("1.0.0")
+  status        String            @default("pending") // "pending", "running", "paused", "completed", "failed", "cancelled"
+  objective     String            @db.Text
+  stepStates    Json              @default("{}")
+  context       Json              @default("{}")
+  error         String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  initiatedById String?
+  initiatedBy   User?             @relation(fields: [initiatedById], references: [id])
+  approvals     ApprovalRecord[]
+  sideEffects   SideEffectAudit[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status])
+  @@map("workflow_instances")
+}
+
+model ScheduledWorkItem {
+  id                 String    @id @default(uuid())
+  workflowInstanceId String
+  stepId             String
+  executeAt          DateTime
+  status             String    @default("scheduled") // "scheduled", "executed", "cancelled", "failed"
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancellationReason String?
+  metadata           Json      @default("{}")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, executeAt])
+  @@index([workflowInstanceId, stepId])
+  @@map("scheduled_work_items")
+}
+
+// ---------------------------------------------------------
+// 6. GOVERNANCE, APPROVALS & AUDIT LEDGER
+// ---------------------------------------------------------
+
+model ApprovalRecord {
+  id                 String            @id @default(uuid())
+  workflowInstanceId String
+  workflow           WorkflowInstance  @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  stepId             String
+  campaignId         String?
+  employeeRole       String
+  classification     String            // "read_only", "internal_mutation", "external_communication", "financial_transaction", "infrastructure_change"
+  actionType         String
+  targetSystem       String
+  payload            Json              @default("{}")
+  decision           String            @default("pending") // "pending", "approved", "rejected", "revoked", "expired"
+  decidedBy          String?
+  decidedAt          DateTime?
+  reason             String?
+  expiresAt          DateTime?
+  consumedAt         DateTime?
+  scope              Json              @default("{}")
+  founderId          String?
+  founder            User?             @relation(fields: [founderId], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([decision])
+  @@index([workflowInstanceId, stepId])
+  @@map("approval_records")
+}
+
+model SideEffectAudit {
+  id                 String           @id @default(uuid())
+  approvalId         String?
+  workflowInstanceId String
+  workflow           WorkflowInstance @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  stepId             String
+  employeeRole       String
+  classification     String
+  actionType         String
+  targetSystem       String
+  payload            Json             @default("{}")
+  decisionOutcome    String           // "allowed_autonomous", "allowed_approved", "denied_policy", "denied_revoked", "denied_expired", "denied_unapproved"
+  reason             String
+  executionReference String?
+  timestamp          DateTime         @default(now())
+
+  @@index([workflowInstanceId, stepId])
+  @@index([targetSystem, timestamp])
+  @@map("side_effect_audits")
+}
+
+// ---------------------------------------------------------
+// 7. REALITY GROUNDING TELEMETRY
+// ---------------------------------------------------------
+
+model TelemetryMetric {
+  id         String   @id @default(uuid())
+  source     String   // "LUMORAGLM_PROD", "STRIPE_PROD"
+  metricKey  String   // "active_students", "monthly_revenue", "system_errors"
+  value      Decimal  @db.Decimal(14, 4)
+  metadata   Json?
+  recordedAt DateTime @default(now())
+
+  @@index([source, metricKey, recordedAt])
+  @@map("telemetry_metrics")
+}

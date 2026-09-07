@@ -113,26 +113,12 @@ export class CompanyContextProvider {
   }
 
   /**
-   * Merges server canonical context with any runtime client-side snapshot
+   * Returns server-side canonical context.
+   * SECURITY ENFORCEMENT (Audit 07/11): Client-side snapshot merging is permanently eliminated.
+   * The server database is the exclusive authority for company state.
    */
-  public static getMergedContext(clientSnapshot?: Partial<CompanyExecutiveContextSnapshot>): FullCompanyContext {
-    const canonical = this.getCanonicalContext();
-    if (!clientSnapshot) {
-      return canonical;
-    }
-
-    return {
-      ...canonical,
-      initiatives: clientSnapshot.initiatives && clientSnapshot.initiatives.length > 0 ? clientSnapshot.initiatives : canonical.initiatives,
-      decisions: clientSnapshot.decisions && clientSnapshot.decisions.length > 0 ? clientSnapshot.decisions : canonical.decisions,
-      attentionItems: clientSnapshot.attentionItems && clientSnapshot.attentionItems.length > 0 ? clientSnapshot.attentionItems : canonical.attentionItems,
-      agents: clientSnapshot.agents && clientSnapshot.agents.length > 0 ? clientSnapshot.agents : canonical.agents,
-      recentIntelligence: clientSnapshot.recentIntelligence && clientSnapshot.recentIntelligence.length > 0 ? clientSnapshot.recentIntelligence : canonical.recentIntelligence,
-      financialModel: clientSnapshot.financialModel ? clientSnapshot.financialModel : canonical.financialModel,
-      orchestrationHistory: clientSnapshot.orchestrationHistory && clientSnapshot.orchestrationHistory.length > 0 ? clientSnapshot.orchestrationHistory : canonical.orchestrationHistory,
-      engineeringIntelligence: clientSnapshot.engineeringIntelligence || canonical.engineeringIntelligence,
-      lastUpdated: clientSnapshot.lastUpdated || canonical.lastUpdated,
-    };
+  public static getMergedContext(_deprecatedClientSnapshot?: Partial<CompanyExecutiveContextSnapshot>): FullCompanyContext {
+    return this.getCanonicalContext();
   }
 
   /**

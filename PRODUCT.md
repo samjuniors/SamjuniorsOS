@@ -1,66 +1,76 @@
 # PRODUCT.md — Product Definition
+**Status:** Frozen for Phase 1 (Documentation). Repository-grounded as of commit `7154ffc` (2026-09-07).
+**Do not treat "frozen" as "static."** This freezes the *decisions*, not the document — it should still be corrected the moment repository evidence contradicts it. It should not be revised on preference or speculation.
 
-> Filled from codebase audit (2026-09-07). Fields marked [inferred] are educated guesses from code — correct anything wrong.
+---
 
-## Current phase
-Early build — core features being implemented
+## 1. What is SamJuniorsOS?
 
-## Problem
-Running an AI-powered company requires orchestrating multiple AI agents, tracking their work, making executive decisions, and managing company operations — all scattered across terminals, dashboards, and chat windows. There's no unified "operating system" that gives a solo founder a single cockpit for an autonomous AI workforce.
+An internal operating system that lets a solo founder direct a small set of AI "employees" to do real, verifiable work — research, product specs, technical analysis — under a founder-approval gate for anything that mutates state outside the system. The product bet is the **loop**, not the UI shell around it: founder intent → AI-produced work → deterministic check → founder decision → durable record. The Executive Cockpit is the UI expression of that loop, not the product itself.
 
-## Target users
-Solo founder (Sam) — internal tool for running an AI company where AI agents handle most of the operational work. The founder is the executive, the agents are the workforce.
+## 2. Who is it for?
 
-## Core idea (one paragraph)
-SamJuniors OS is a desktop-OS-style internal operating system for an AI-run company. It presents a macOS-inspired desktop environment where each "app" is a different aspect of running the company — a workforce app to manage AI agents, a messaging app to chat with agents (powered by Gemini), an advisor for strategic counsel, company HQ dashboards for vitals and intelligence, plus finance, research, products, and customers apps. The OS itself handles window management, notifications, context menus, spotlight search, voice calling, and multi-agent collaboration workflows with governance and authorization.
+Single founder (Sam), operating solo. No confirmed second user, team member, or customer today.
 
-## v1 scope
-- macOS-style desktop shell (windows, dock, top bar, spotlight, control center, notifications)
-- Workforce management — AI agent roster, roles, status, skill inspection
-- Agent messaging — real-time chat with individual agents and councils, powered by Gemini API
-- Advisor app — strategic AI advisor with context-aware reasoning
-- Company HQ — pulse dashboard, active initiatives, attention items, decisions, deliverables, execution audit
-- Collaboration workflows — multi-agent task orchestration, evidence modeling, context inspection
-- Persona system — customizable agent personalities and tones
-- Governance & authorization — side-effect authorization gate, workflow approvals
-- Communication infrastructure — contacts, conversations, drafts, intents, webhooks
-- Workflow engine — definitions, instances, scheduling, approvals
-- Settings, notes, terminal apps
-- Voice calling interface for agent interactions
+**Open, unresolved product-boundary question — not decided by this document:** is SamJuniorsOS strictly personal/internal tooling, or a product intended to eventually be used by other founders? These imply materially different architectures (see PRODUCT_ARCHITECTURE.md §Trust Boundaries) — internal-only tooling can defer multi-user auth indefinitely; a sellable product cannot. This document does not resolve that question because it isn't a repository or architecture fact — it's a business decision the founder has to make. Everything below is scoped to "internal, single-founder" as the current default, and should be revisited explicitly if that changes.
 
-## Explicitly out of scope (for now)
-- Real external communication (email, Slack integration) — [inferred] communication APIs exist but are internally-scoped
-- Multi-user / team support — single founder use only
-- Persistent database — [inferred] appears to use in-memory/client-side stores
-- Mobile support — desktop-first OS metaphor
-- Public deployment / auth — internal tool, no auth layer needed
-- Real payment processing — Finance app is informational
+## 3. What problem does it solve?
 
-## Constraints
-- Timeline: No fixed deadline — iterative build
-- Solo/team: Solo founder
-- Budget/hosting constraints: Gemini API (server-side), local-first development
-- Anything non-negotiable: macOS-style desktop metaphor; Gemini as the AI backbone; agent-first architecture where agents are "employees"
+Directing multiple AI agents currently means switching between terminals, chat windows, and ad hoc scripts, with no single durable record of what was asked, what was produced, what was approved, and what actually happened as a result. SamJuniorsOS's job is to make that loop legible and auditable in one place — not to make the AI agents smarter, and not to replace tools that already do their job well (GitHub, email, a CRM).
 
-## Stack
-- Next.js 15 / React 19 / TypeScript 5.9
-- TailwindCSS 4 with PostCSS
-- Framer Motion (via `motion` package)
-- Gemini API (`@google/genai`)
-- Composio (`@composio/core`) for tool integration
-- Lucide React for icons
-- React Markdown for rich content rendering
-- CVA + clsx + tailwind-merge for component styling
+## 4. What is the core product loop? (the thing that must work before anything else matters)
 
-## Success criteria for v1
-- All core apps functional and interconnected [inferred]
-- Agent messaging works end-to-end with Gemini
-- Collaboration workflows execute with proper authorization
-- OS shell feels cohesive — windows, notifications, dock, spotlight all working
-- Persona system lets founder customize agent behavior
+```
+Founder → Sophia (planner) → Thorne (worker) → structured artifact
+       → deterministic verification → authenticated Founder approval (where required)
+       → durable audit record → memory/outcome
+```
 
-## Open questions
-- Should agents persist memory across sessions? (currently appears ephemeral)
-- Is Composio actively used, or placeholder infrastructure?
-- What's the deployment target? (currently dev-only)
-- Should the communication/webhook APIs connect to real external services?
+Every other feature — additional employees, integrations, UI surfaces — is downstream of this loop being real and trustworthy. Right now it is not: see "Current Repository State" below.
+
+## 5. What is v1?
+
+The smallest version of the loop above, made real:
+- Founder directive, captured through the Executive Cockpit (stream / approval inbox / vitals wall / directive terminal) — UI already exists in the repo, see below.
+- Sophia (planner/COO) and Thorne (technical/research) — the only two agents v1 needs. Both already exist in code.
+- One structured, typed artifact produced by Thorne per directive (not a loose text blob).
+- One deterministic verification step that can actually reject an artifact and force a retry — not "the agent call didn't throw."
+- Founder approval on any step classified as a side effect, gated behind **server-established Founder identity** (see PRODUCT_ARCHITECTURE.md — this is the single hardest v1 requirement and the current repository does not meet it).
+- An audit record for every decision and every side effect that survives a process restart. The current repository does not meet this either — see below.
+
+## 6. What is explicitly deferred?
+
+Deferred until the v1 loop above is proven durable and secure, not on a calendar:
+- Maya Lin, Julian Cruz, and any employee beyond Sophia/Thorne (Maya and Julian exist in code already but are out of the v1 critical loop; Elena Rostova and Marcus Vance don't exist in code at all yet and shouldn't be built until there's a concrete task only they can do).
+- Broad Composio integrations beyond GitHub (Slack, Linear, Calendar).
+- pgvector / RAG retrieval over Canonical Knowledge — flat-table/full-injection is sufficient at current corpus size.
+- E2B sandbox, fine-tuning / eval "Horizon 3."
+- Multi-user RBAC (EXECUTIVE/AUDITOR roles) — no second user exists today.
+- Voice calling, persona customization system, multi-agent "council" collaboration workflows.
+- Any claim that this is a "commercially shippable" product — see the unresolved product-boundary question in §2. Nothing here should be built toward external users until that's explicitly decided.
+
+## 7. What are the success criteria (for v1, specifically)?
+
+- A real directive, given to Sophia, produces a Thorne artifact that passes a deterministic check or is rejected and retried — not silently accepted.
+- A side-effect step cannot be approved by anything other than a server-verified Founder identity — verified by attempting to approve one without that identity and confirming it's rejected.
+- A workflow's state and its audit trail survive an application restart (currently: **fails**, everything is in-memory).
+- No data presented to an agent or the founder as "verified fact" is actually placeholder/sample data (currently: **fails**, see PRODUCT_ARCHITECTURE.md §Memory/Knowledge/State Separation).
+
+## 8. Product boundary — what SamJuniorsOS is explicitly NOT (for now)
+
+- Not a multi-tenant SaaS product (no second user, no billing, no public signup).
+- Not a replacement for GitHub, Slack, email, or a CRM — it directs a narrow set of tools, it doesn't rebuild them.
+- Not an autonomous system — every side effect requires a founder decision; nothing here acts without that gate holding.
+- Not, today, a system whose "verified"/"audited"/"durable" claims can be trusted end to end — seven of them do not hold against the current repository (enumerated in PRODUCT_ARCHITECTURE.md). This document exists partly to stop describing those claims as already true.
+
+---
+
+## Current Repository State (verified against commit `7154ffc`, 2026-09-07)
+
+- **Stack, as installed:** Next.js 15 / React 19 / TypeScript 5.9, Tailwind 4, Framer Motion, `@google/genai` (Gemini), `@composio/core`. **Not installed, anywhere:** Prisma, any Postgres/DB driver, Clerk, pgvector, E2B. These are target-state only.
+- **Agents implemented in code:** Sophia Vance (COO/orchestrator), Dr. Aris Thorne (research — note: architecture doc previously said "Arthur," code says "Aris," corrected here), Maya Lin (PM), Julian Cruz (Finance). Elena Rostova and Marcus Vance are not implemented.
+- **Persistence:** every store (`CompanyStateStore`, `InMemoryWorkflowStore`, `InMemoryApprovalStore`, `InMemoryAuditStore`, memory store) is a JS singleton holding arrays in process memory. Nothing is durable. A restart or Cloud Run scale event erases all workflow, approval, and audit state.
+- **Authentication:** none. No `middleware.ts`, no Clerk/JWT/session code anywhere in the repository. `POST /api/workflow/approvals` treats a request as the Founder unless the request body explicitly says otherwise (`decidedBy` defaults to `'founder'` when omitted).
+- **Deployment target:** `metadata.json` (`MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`) and `.env.example` (`APP_URL` documented as a Cloud Run service URL) confirm this is built for a Google AI Studio / Cloud Run hosted deployment, i.e. a public URL — not a local-only prototype.
+- **Test suite:** `tests/*.test.ts` exist (3 files, `describe`/`it` style) but neither `jest` nor `vitest` is a dependency; `npm test` runs an unrelated script (`scripts/test-advisor.ts`). These tests do not currently run in any automated way.
+- **Seed data:** `lib/os-data.ts` and `lib/server/memory/memory-store.ts` contain fabricated sample customers, a fabricated financial model, and five fabricated "company memories" describing events that never occurred — all unconditionally tagged `verified_fact` in code.

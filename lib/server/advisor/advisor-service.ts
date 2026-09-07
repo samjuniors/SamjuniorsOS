@@ -82,8 +82,8 @@ export class FounderAdvisorService {
       }
     );
 
-    // 2. Load and merge server-authoritative company context
-    const fullContext = CompanyContextProvider.getMergedContext(options.clientContextSnapshot);
+    // 2. Load server-authoritative company context (clientContextSnapshot eliminated for security)
+    const fullContext = CompanyContextProvider.getMergedContext();
     const contextPromptText = CompanyContextProvider.formatForAdvisorPrompt(
       fullContext,
       options.contextAttachment

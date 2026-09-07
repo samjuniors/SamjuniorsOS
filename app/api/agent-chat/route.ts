@@ -234,8 +234,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Retrieve and isolate role-specific company context
-    const fullContext = CompanyContextProvider.getMergedContext(contextSnapshot);
+    // Retrieve and isolate role-specific company context from authoritative server state
+    const fullContext = CompanyContextProvider.getMergedContext();
     const roleScopedContext = CompanyContextProvider.formatForEmployeeRoleContext(
       agentId as AgentRole | 'advisor',
       fullContext

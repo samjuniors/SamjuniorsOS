@@ -1,656 +1,197 @@
 # SAMJUNIORS PRODUCT ARCHITECTURE SPECIFICATION
-**Version:** 1.0.0-PROD  
-**Status:** Approved Architectural Blueprint  
-**Reference Audits:** AUDIT 00 through AUDIT 11  
-**Target Systems:** `SamjuniorsOS`, `Lumoraglm`, `samjuniors_website`
+**Version:** 2.0.0 — Repository-grounded rewrite, Phase 1 (Documentation-only)
+**Status:** Frozen for implementation planning. Repository-grounded as of commit `7154ffc` (2026-09-07).
+**Reference Audits:** AUDIT 00–11 (`doc/`), plus this document's own repository inspection, which supersedes AUDIT 00–11 wherever they conflict with actual code.
+
+This document replaces v1.0.0/v1.0.1. It keeps every section that was already correct and rewrites every section that described target-state as if it were built. Four states are distinguished throughout, tagged inline:
+- **[PRINCIPLE]** — an invariant that must hold regardless of implementation details.
+- **[V1]** — required for the smallest working core loop.
+- **[TARGET]** — the direction the system should evolve toward; not required for v1, not yet built.
+- **[REPO STATE]** — a verified fact about what commit `7154ffc` actually contains today.
+
+No claim of "done," "immutable," "deterministic," "verified," or "cryptographic" appears below unless the repository or an explicit v1 design decision actually justifies it.
 
 ---
 
-## 1. Executive Summary & Core Mission
+## 1. Architectural Principles
 
-**SamJuniors** is an AI-native Company Operating System and Executive Cockpit designed for founders and leadership teams. It enables a founder to express strategic objectives, evaluate operational reality, and direct a specialized fleet of autonomous AI employees.
-
-### The Core Mandate
-Unlike toy multi-agent chat interfaces, roleplaying window managers, or unconstrained peer-to-peer swarms, SamJuniors operates on a fundamental principle:
-> **The Founder directs objectives and reviews synthesized outcomes, decisions, risks, and approvals. The system plans, decomposes, executes, verifies, and audits work deterministically.**
-
+**[PRINCIPLE]** The system exists to turn founder intent into verified work, not to look sophisticated. Every component must justify itself against the core loop:
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                             FOUNDER OBJECTIVE                               │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ (High-level directive via Cockpit)
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SOPHIA VANCE (CHIEF OF STAFF / COO)                      │
-│                  Deterministic Typed DAG Planning Engine                    │
-└──────┬───────────────────────────────┬───────────────────────────────┬──────┘
-       │ Task 1                        │ Task 2                        │ Task 3
-       ▼                               ▼                               ▼
-┌──────────────┐               ┌──────────────┐               ┌──────────────┐
-│  DR. THORNE  │               │   MAYA LIN   │               │ JULIAN CRUZ  │
-│  Technical & │               │   Product &  │               │ Financial &  │
-│   Research   │               │ Specification│               │  Economics   │
-└──────┬───────┘               └──────┬───────┘               └──────┬───────┘
-       │ Artifact                     │ Artifact                     │ Artifact
-       └───────────────────────┬──────┴──────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    INDEPENDENT CRITIC / VERIFICATION                        │
-│               Schema Validation, Reality Check, Unit Tests                  │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                     SIDE-EFFECT AUTHORIZATION GATE                          │
-│               Founder Review for Mutating External Actions                  │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ Approved
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│               EXTERNAL ACTION & IMMUTABLE BLACKBOARD UPDATE                 │
-│         GitHub / Google / Slack via Composio + PostgreSQL Storage           │
-└─────────────────────────────────────────────────────────────────────────────┘
+Founder → Sophia → Thorne → structured artifact → deterministic verification
+        → authenticated Founder approval → durable audit → memory/outcome
 ```
+
+**[PRINCIPLE] Trust boundary, precisely stated:** privileged actions — approving a side effect, modifying company state, dispatching an external mutation — require Founder authority that is *established server-side*, independent of anything the client sends. This is the actual invariant. **Clerk is one possible implementation of it, not the invariant itself** — see §7 for the current recommendation, which is not Clerk.
+
+**[REPO STATE]** This invariant does not currently hold. `app/api/workflow/approvals/route.ts` establishes Founder identity from a client-supplied JSON field (`decidedBy`) that defaults to `'founder'` when absent. No server-side session, token, or credential is checked anywhere in the repository (`grep` for Clerk/JWT/session/middleware across `app/`, `lib/`, `types/` returns nothing). This is the highest-priority gap in the entire system.
+
+**[REPO STATE]** The application is built for and documented as a hosted deployment (`metadata.json`'s `MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`, `.env.example`'s Cloud Run `APP_URL`), not a local-only prototype. This is decision-relevant: the trust-boundary gap above is a live-deployment risk, not a hypothetical future one.
 
 ---
 
-## 2. Architectural Principles & Golden Invariants
+## 2. Trust Boundaries
 
-### 2.1 The Five Golden Governance Invariants
-1. **Durability Invariant:** No state, workflow, memory, approval, or execution record may exist solely in ephemeral Node.js process memory. Every mutation must commit to PostgreSQL before external side effects are dispatched.
-2. **Authentication & Session Invariant:** Every incoming request to any API endpoint or server action must validate a cryptographically verified Founder session token. Zero client-supplied identity parameters (`decidedBy: 'founder'`) are trusted.
-3. **Blackboard Authority Invariant:** Client browsers and frontend runtimes are read-only display projections. The client cannot inject, merge, or overwrite company state, vitals, initiatives, or context snapshots (`clientSnapshot` injection is strictly prohibited).
-4. **Side-Effect Isolation Invariant:** Pure reasoning and internal document drafting may run autonomously. Any action that mutates an external system (sending an email, creating a pull request, modifying production data, spending funds) is intercepted by the Side-Effect Authorization Gate and paused until cryptographic Founder approval.
-5. **Epistemic Hygiene Invariant:** Structured state, canonical knowledge, and episodic memory are strictly partitioned. Unverified model outputs or conversational transcripts can never directly overwrite canonical ground truth without verification.
+**[PRINCIPLE]**
+- The client (browser) is a display and input surface only. It cannot establish who it is by simply saying so.
+- Any endpoint that lists or mutates approvals, workflow instances, or company state is privileged and must authenticate the caller server-side before doing anything else.
+- An external system (GitHub, Resend, any inbound webhook) is untrusted input and must be cryptographically verified before its payload is trusted — signature verification, not just "the request arrived."
 
----
+**[REPO STATE — negative]** `POST/GET /api/workflow/approvals`, `/api/workflow/instances`, `/api/workflow/definitions`, `/api/orchestrate`, and all `/api/communication/*` routes except the Resend webhook have no authentication of any kind. Anyone with the deployed URL can read all workflow/approval state and approve any pending action.
 
-## 3. System Architecture Topology
-
-The SamJuniors architecture is structured into six strictly separated tiers:
-
-```mermaid
-graph TB
-    subgraph Tier1["1. Client Tier (Executive Cockpit)"]
-        Stream["The Stream (Executive Briefings)"]
-        Inbox["Approval Inbox (Side-Effect Gating)"]
-        Radar["Company Vitals Wall (Live Telemetry)"]
-    end
-
-    subgraph Tier2["2. Security & Edge Tier"]
-        Middleware["Session Authentication (Clerk / JWT)"]
-        RateLimiter["Rate Limiting & Token Metering"]
-        RBAC["Role-Based Access Control Gate"]
-    end
-
-    subgraph Tier3["3. Orchestration & Supervisor Tier"]
-        Sophia["Sophia Vance (COO Supervisor)"]
-        DAGEngine["Typed DAG Compiler & Validator"]
-        Critic["Independent Critic & Verifier"]
-    end
-
-    subgraph Tier4["4. Autonomous Worker Fleet (Specialists)"]
-        Thorne["Dr. Thorne (Tech & Research)"]
-        Maya["Maya Lin (Product & Design)"]
-        Julian["Julian Cruz (Finance & Unit Economics)"]
-        Elena["Elena Rostova (Growth & Distribution)"]
-        Marcus["Marcus Vance (Ops & Compliance)"]
-    end
-
-    subgraph Tier5["5. Runtime & Integration Engine"]
-        WorkflowKernel["Durable Workflow Kernel (State Machine)"]
-        SideEffectGate["Side-Effect Authorization Gate"]
-        ComposioAdapter["Composio Tool Adapter (OAuth / Actions)"]
-        LumoraBridge["LumoraGLM Telemetry Bridge (Read-Only)"]
-        Sandbox["E2B Code Execution Sandbox"]
-    end
-
-    subgraph Tier6["6. Persistence & Epistemic Storage (PostgreSQL)"]
-        Prisma["Prisma ORM"]
-        DBState["Company State & Initiatives"]
-        DBKnowledge["Canonical Knowledge (pgvector)"]
-        DBMemory["Episodic Memory & Reflections"]
-        DBWorkflows["Durable Workflows & Steps"]
-        DBAudit["Immutable Audit Ledger"]
-    end
-
-    Tier1 --> Tier2
-    Tier2 --> Tier3
-    Tier3 --> Tier4
-    Tier4 --> Tier5
-    Tier5 --> Tier6
-    Tier3 -.-> Tier6
-    Tier5 -.-> Tier1
-```
+**[REPO STATE — positive, use as the template]** `app/api/communication/webhooks/resend/route.ts` does this correctly: it fails closed if `RESEND_WEBHOOK_SECRET` is unset, requires Svix signature headers, and rejects on invalid signature before touching the payload. `lib/server/tools/verification.ts` also does real, deterministic SSRF defense (blocks localhost, link-local/cloud-metadata IPs, private ranges) before treating any external URL as a valid research source. Both should be the pattern copied for the approvals route, not new infrastructure invented from scratch.
 
 ---
 
-## 4. AI Workforce Model: Hierarchical DAG Execution
+## 3. Deterministic vs. LLM-Driven
 
-### 4.1 Rejection of the Peer-to-Peer "Swarm"
-As proven in **AUDIT 02**, unconstrained peer-to-peer agent meshes produce quadratic token inflation ($O(N^2)$), conversational drift, mutual hallucination loops, and lack deterministic accountability. 
+**[PRINCIPLE]** Anything where a wrong answer is expensive, security-relevant, or needs to be provably true must be deterministic code, not an LLM's judgment call:
+- **Deterministic, always:** authorization decisions (allowed/requires-approval/denied), URL/input validation, workflow state transitions, approval-payload binding, audit record writing, idempotency-key computation.
+- **LLM-appropriate:** drafting a PRD, technical analysis, synthesizing a summary, proposing (not deciding) a plan.
+- **A gray zone requiring an explicit design decision, not yet made:** DAG/workflow planning. An LLM proposing which steps to run is reasonable; an LLM's output should still pass through a deterministic schema/dependency validator before a plan is allowed to execute — a malformed or cyclic plan must be rejected mechanically, not trusted because an LLM produced it.
 
-SamJuniors implements a **Hierarchical Supervisor with Typed DAG Decomposition and an Immutable Shared Blackboard**:
+**[V1]** A "verified" artifact means it has passed at least one deterministic, mechanically-checkable test relevant to its type (schema validity, compiles, matches an expected structure) — **not** that an LLM (including a "critic" agent) said it looks correct. An LLM stating "verified" is a claim to be checked, not a check.
 
-| Dimension | Peer-to-Peer Swarm (Rejected) | SamJuniors Hierarchical DAG (Adopted) |
-|---|---|---|
-| **Coordination** | Ad-hoc agent-to-agent chatter | Centralized Supervisor (Sophia Vance) |
-| **Execution Plan** | Emergent / non-deterministic | Strongly-typed directed acyclic graph (DAG) |
-| **Data Sharing** | Conversational context forwarding | Structured PostgreSQL Blackboard |
-| **Token Cost** | Unbounded exponential growth | Linear and predictable bounded cost |
-| **Accountability** | Undefined collective failure | Clear per-step attribution and logs |
-| **Side Effects** | Any agent can trigger tools | Intercepted by the Gatekeeper before execution |
-
-### 4.2 The Executive Roster & Roles
-Each AI employee is an autonomous specialist operating with tailored prompt contracts, domain tools, and strict evaluation rubrics:
-
-1. **Sophia Vance (Chief of Staff / COO)**
-   - *Primary Job:* Translates founder directives into structured DAG workflows. Assigns steps, verifies intermediate artifacts, synthesizes final executive briefings, and flags blockers.
-   - *Tool Access:* Workflow decomposition, artifact synthesizer, calendar inspector, task manager.
-2. **Dr. Arthur Thorne (VP of Research & Technical Strategy)**
-   - *Primary Job:* Architecture recon, code auditing, technical feasibility analysis, system design reviews, security vulnerability scanning.
-   - *Tool Access:* GitHub API, file system analyzer, sandbox test runner, web documentation retriever.
-3. **Maya Lin (Head of Product & UX)**
-   - *Primary Job:* PRD authoring, user journey definition, feature prioritization, UX critique, acceptance criteria formulation.
-   - *Tool Access:* PRD generator, competitive tear-down engine, design system auditor.
-4. **Julian Cruz (Head of Finance & Unit Economics)**
-   - *Primary Job:* Pricing model analysis, gross margin stress-testing, token infrastructure cost projection, runway calculation, financial risk audits.
-   - *Tool Access:* Financial model spreadsheet generator, Stripe/revenue analytics bridge, unit economics calculator.
-5. **Elena Rostova (Head of Growth & Communications)**
-   - *Primary Job:* GTM strategy, value proposition drafting, customer onboarding flow optimization, developer documentation review.
-   - *Tool Access:* SEO auditor, messaging tester, content formatter.
-6. **Marcus Vance (Head of Legal, Operations & Compliance)**
-   - *Primary Job:* Terms of service analysis, data privacy (GDPR/SOC2) compliance, SLA tracking, vendor risk assessment.
-   - *Tool Access:* Compliance checklist runner, policy auditor.
+**[REPO STATE]** No component in the repository currently rejects a worker's output based on content and forces a retry. `WorkflowRuntime.executeReadyStep` (`lib/server/workflow/runtime.ts`) treats any non-throwing agent call as a completed step. `lib/server/tools/verification.ts` contains real deterministic logic (SSRF checks, source-count-based confidence scoring) but it is not wired in as a gate on workflow-step completion.
 
 ---
 
-## 5. Epistemic Architecture: State, Knowledge, Memory & Context
+## 4. Workflow Runtime
 
-SamJuniors resolves the critical context pollution problem identified in **AUDIT 05** by maintaining an absolute four-layer epistemic boundary:
+**[V1]** A workflow instance is a directed sequence of steps with explicit dependencies. A step becomes `ready` only when its dependencies are `completed` and its declared inputs resolve to an actual prior output. A step that fails does not silently disappear — it is recorded as `failed` with an error, and advancing past it requires an explicit decision (retry or founder override), not automatic progression.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 1. WORKING CONTEXT (Transient / In-Flight Context Window)                   │
-│    - Active turn messages, tool call traces, immediate prompt scratchpad    │
-│    - Lifetime: Single step or subagent run (Discarded upon completion)      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 2. EPISODIC MEMORY (Historical Summaries & Past Decisions)                  │
-│    - Structured summaries of past workflow outcomes and founder feedback    │
-│    - Immutable log in PostgreSQL with confidence & decay scoring            │
-│    - Dynamically retrieved via vector similarity and recency filter         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 3. CANONICAL KNOWLEDGE (Authoritative Truth & System Specifications)        │
-│    - Verified PRDs, architecture specifications, API contracts, brand rules │
-│    - Embeddings stored in pgvector with strict source provenance (SHA-256)  │
-│    - Cannot be modified without explicit Founder / Supervisor sign-off      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 4. STRUCTURED COMPANY STATE (Deterministic Ground Truth)                    │
-│    - Relational tables: metrics, headcount, active initiatives, cash balance│
-│    - Direct SQL querying (Zero hallucination potential)                    │
-│    - Always injected deterministically as structured JSON                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**[REPO STATE]** This state machine exists and its transition-validity rules are sound (`transitionStep` in `lib/server/workflow/runtime.ts` correctly rejects invalid transitions like `completed → running`). What's missing: no automatic retry (a thrown error goes straight to `failed`; `WorkflowStepState.retryCount` exists as a field but is never incremented anywhere in the runtime), and the entire state machine lives in an in-memory singleton (`InMemoryWorkflowStore`), so it does not survive a process restart and does not stay consistent across more than one running instance of the app.
 
-### Context Injection Engine
-When an employee executes a step, their prompt context is assembled deterministically on the server:
-$$\text{Prompt Context} = \text{System Prompt} + \text{Injected State (SQL)} + \text{Retrieved Knowledge (RAG)} + \text{Task Input Artifact}$$
-
-No employee receives the entire raw history of the company. Context is scoped strictly to the task boundaries.
+**[V1 requirement, not yet met]** The runtime must persist instance/step state somewhere that survives a restart before it can be trusted for real directives. This does not require the full target-state Postgres/Prisma stack on day one — it requires *some* persistence beyond a JS array.
 
 ---
 
-## 6. Workflow Runtime & Execution Engine
+## 5. Blackboard / Artifact Model
 
-### 6.1 State Machine Lifecycle
-The runtime engine executes tasks as durable finite state machines:
+**[TARGET]** `Artifact` should be a first-class, typed, versioned entity: every worker output that another step or the founder will read is an Artifact with an id, a type, a version, a producing step reference, and a content payload — not a loose key inside a `Json` blob.
 
-```mermaid
-stateDiagram-v2
-    [*] --> PENDING: Founder Submits Directive
-    PENDING --> PLANNING: Sophia Decomposes DAG
-    PLANNING --> RUNNING: DAG Validated
-    
-    state RUNNING {
-        [*] --> STEP_DISPATCH: Check Dependencies
-        STEP_DISPATCH --> STEP_EXECUTING: Worker Assigned
-        STEP_EXECUTING --> STEP_VERIFYING: Artifact Emitted
-        STEP_VERIFYING --> STEP_COMPLETE: Critic Passes
-        STEP_VERIFYING --> STEP_RETRY: Critic Fails (<3 retries)
-        STEP_RETRY --> STEP_EXECUTING
-        STEP_COMPLETE --> [*]: Next Step Available
-    }
+**[REPO STATE]** No `Artifact` entity exists. Step outputs are stored as `Record<string, any>` on `WorkflowStepState.outputs`, referenced by string key convention (`outputReferences`/`inputReferences`). `evaluateReadiness`'s check for whether a step's inputs are satisfied is an existence check on a key name — it does not validate that the referenced output is the right type, the right version, or even non-stale. A wrong-shaped or outdated value can silently satisfy the check.
 
-    RUNNING --> PAUSED_FOR_APPROVAL: Mutating Step Encountered
-    PAUSED_FOR_APPROVAL --> RUNNING: Founder Approves
-    PAUSED_FOR_APPROVAL --> REJECTED: Founder Rejects
-
-    RUNNING --> COMPLETED: All Steps Finished & Briefing Synthesized
-    RUNNING --> FAILED: Max Retries Exceeded or Unrecoverable Error
-    
-    COMPLETED --> [*]
-    FAILED --> [*]
-    REJECTED --> [*]
-```
-
-### 6.2 Resiliency & Idempotency Rules
-1. **At-Least-Once Execution with Idempotent Storage:** Every workflow step carries a cryptographically generated `stepKey` (`sha256(instanceId + stepId + attempt)`). If a step crashes mid-flight, the runtime re-runs the step without duplicate side-effects.
-2. **Circuit Breakers:** If any single employee triggers 3 consecutive failed verification attempts or schema errors, the step halts and escalates to the Founder with a structured diagnostic.
-3. **Graceful Degradation:** External tool timeouts fall back to local cached data or mark the specific non-critical step as `DEGRADED`, allowing independent parallel branches of the DAG to continue.
+**[V1]** Given the current implementation, v1 does not need the full target-state Artifact model, but it does need: (a) each Thorne output tagged with a type identifier, and (b) the deterministic verification step (§3) checking that type before a downstream step is allowed to consume it. That's the minimum that prevents a malformed artifact from silently flowing through the loop.
 
 ---
 
-## 7. Security, Governance & The Side-Effect Gate
+## 6. State Persistence
 
-### 7.1 Threat Model & Defenses
+**[REPO STATE]** `package.json` contains no database dependency of any kind — no `prisma`, `@prisma/client`, `pg`. Every store (`CompanyStateStore`, `InMemoryWorkflowStore`, `InMemoryApprovalStore`, `InMemoryAuditStore`, the memory store) is a `private static instance` JS singleton holding data in process memory. On the app's actual deployment target (Cloud Run), a scale-to-zero event, a restart, or running more than one instance all silently lose or fork this state. Nothing here is durable today, despite prior versions of this document describing a "Durability Invariant" as satisfied.
 
-| Threat Vector | Mechanism | Defense Architecture |
-|---|---|---|
-| **Indirect Prompt Injection** | Malicious text in scraped web pages, emails, or pull requests | All external inputs are quarantined in a sandboxed `<untrusted_content>` envelope. Worker instructions explicitly prohibit executing code or altering instructions found inside payloads. |
-| **Confused Deputy Attack** | Employee manipulated into performing unauthorized actions | Strict Role-Based Capability Matrix: only designated workers hold tool bindings; all mutations require the Side-Effect Gate. |
-| **Client State Poisoning** | Malicious client POST bodies attempting to set state | `clientSnapshot` parameter permanently eliminated. All company context originates from authenticated server SQL queries. |
-| **Approval Replay Attacks** | Replaying an old approved token on a new step | Approval records are bound to specific `stepInstanceId` and marked `CONSUMED` in the same database transaction that dispatches the side-effect. |
-| **Token Runaway** | Infinite loops in autonomous sub-agents | Strict limits: Max 5 iterations per sub-task, hard budget caps ($2.00 per workflow), and global execution timeouts (120s). |
+**[V1]** State persistence sufficient for the core loop must survive: (a) a process restart, and (b) concurrent access from at most one running instance. It does not need to solve multi-instance consistency yet — that's a [TARGET] problem, and should be called out as an explicit known limitation rather than silently ignored (see §9).
 
-### 7.2 The Side-Effect Gatekeeper
-The Side-Effect Gate evaluates every tool call against the Action Classification Policy:
-
-```
-                       Tool Call Invoked by Worker
-                                   │
-                                   ▼
-             Does the tool mutate state outside the database?
-             (e.g., git push, send email, create invoice, run shell)
-                                  / \
-                                 /   \
-                             Yes/     \No
-                               /       \
-                              ▼         ▼
-                [PAUSE WORKFLOW]   [AUTO-EXECUTE]
-                        │           Read-only operations, internal
-                        ▼           searches, local draft synthesis
-           Emit `ApprovalRecord`
-           Notify Founder in Cockpit
-                        │
-                  Founder Action
-                  /            \
-          Approve/              \Reject
-                /                \
-               ▼                  ▼
-     [DISPATCH MUTATION]    [HALT STEP & NOTIFY]
-     Log to Audit Ledger    Record Rejection Reason
-```
+**[TARGET]** Full relational persistence (Postgres via Prisma or an equivalent) for `CompanyState`, `WorkflowInstance`/`WorkflowStep`, `ApprovalRecord`, `SideEffectAudit`, `Artifact`, and `CompanyMemory`, sized for concurrent multi-instance access. Not required for v1; required before this system runs on more than one instance at a time or holds state anyone other than the founder depends on.
 
 ---
 
-## 8. Data Architecture & Database Schema (PostgreSQL + Prisma)
+## 7. Authorization (Founder Identity & the Side-Effect Gate)
 
-The relational schema strictly enforces the governance invariants and provides permanent durability:
+**[PRINCIPLE]** Restated precisely: privileged actions require Founder authority established server-side, verified independently of any client-supplied field, before the action is evaluated — not after.
 
-```prisma
-datasource db {
-  provider   = "postgresql"
-  url        = env("DATABASE_URL")
-  directUrl  = env("DIRECT_URL")
-}
+**[REPO STATE — the core finding of this review]** `SideEffectAuthorizationGate.decideApproval` (`lib/server/authorization/gate.ts`) checks only that `params.decidedBy?.toLowerCase()?.trim() === 'founder'` — a string comparison against a value the caller provides. `app/api/workflow/approvals/route.ts` defaults that value to `'founder'` when the client omits it. There is no session, token, cookie, or credential involved anywhere in this path. Given the app's public deployment target (§1), this means any request to this endpoint is currently treated as the Founder by default.
 
-generator client {
-  provider = "prisma-client-js"
-}
+**[V1 — the smallest sufficient fix]** Do **not** default to introducing Clerk. The actual requirement is narrower: a single, server-side-verified secret that the client must present and the server must check, on every privileged route, deny-by-default. Concretely, for a single-founder, no-second-user deployment:
+- A high-entropy secret (generated once, stored only as a server environment variable, never in client code or a default value).
+- A `middleware.ts` (or equivalent per-route check) that requires this secret on every route under `/api/workflow/*`, `/api/orchestrate`, `/api/communication/*` (except the already-correct Resend webhook, which authenticates differently and correctly), and rejects with 401 if missing or wrong — using a constant-time comparison, not `===`, to avoid timing side-channels.
+- No default-to-authorized behavior anywhere: a missing or malformed credential must fail closed, exactly like the Resend webhook already does.
 
-// ---------------------------------------------------------
-// 1. IDENTITY & GOVERNANCE
-// ---------------------------------------------------------
+This is deliberately smaller than Clerk: no user database, no session lifecycle, no OAuth — because there is exactly one user. **The moment a second human needs access, this must be upgraded to real session-based auth** (Clerk or otherwise) — a shared secret does not scale past one trusted party and should not be stretched to pretend it does.
 
-enum UserRole {
-  FOUNDER
-  EXECUTIVE
-  AUDITOR
-}
+**[V1] Approval-payload binding — not currently implemented, required before founder approval can be trusted:** an approval record must be bound to the *exact* action, target, and payload being approved — not just an approval ID that a step can later execute against different arguments. Concretely: at approval-request time, compute and store a hash of the canonicalized `{actionName, target, payload}` tuple on the `ApprovalRecord`; at dispatch time, recompute that hash from what's about to be executed and refuse to proceed unless it matches exactly and the approval is still `pending→approved` and unconsumed. This is what "cryptographically bound" should mean here — a hash comparison the code actually performs, not a description in a document.
 
-model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  name          String
-  role          UserRole       @default(FOUNDER)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  approvals     ApprovalRecord[]
-  initiatedRuns WorkflowInstance[]
-
-  @@map("users")
-}
-
-// ---------------------------------------------------------
-// 2. COMPANY OPERATIONAL STATE
-// ---------------------------------------------------------
-
-model CompanyState {
-  id              String   @id @default(uuid())
-  organizationId  String   @unique @default("default")
-  name            String
-  stage           String   // e.g., "Pre-Seed", "Series A"
-  burnRateMonthly Decimal  @db.Decimal(12, 2)
-  cashBalance     Decimal  @db.Decimal(12, 2)
-  runwayMonths    Int
-  activeEmployees Json     // Structured employee registry & status
-  initiatives     Json     // Active strategic bets & progress
-  updatedAt       DateTime @updatedAt
-
-  @@map("company_state")
-}
-
-// ---------------------------------------------------------
-// 3. CANONICAL KNOWLEDGE (RAG & SPECS)
-// ---------------------------------------------------------
-
-model CompanyKnowledge {
-  id          String   @id @default(uuid())
-  category    String   // "PRD", "ARCHITECTURE", "SOP", "BRAND"
-  title       String
-  content     String   @db.Text
-  hash        String   @unique // SHA-256 for change detection
-  metadata    Json     // Author, tags, version, verified status
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([category])
-  @@map("company_knowledge")
-}
-
-// ---------------------------------------------------------
-// 4. EPISODIC MEMORY
-// ---------------------------------------------------------
-
-enum MemoryType {
-  DECISION_OUTCOME
-  FOUNDER_PREFERENCE
-  OPERATIONAL_INCIDENT
-  STRATEGIC_PIVOT
-}
-
-model CompanyMemory {
-  id          String     @id @default(uuid())
-  type        MemoryType
-  summary     String     @db.Text
-  details     Json       // Context, evidence, affected systems
-  importance  Int        @default(1) // 1 to 5 scale
-  decayScore  Float      @default(1.0)
-  createdAt   DateTime   @default(now())
-
-  @@index([type, createdAt])
-  @@map("company_memories")
-}
-
-// ---------------------------------------------------------
-// 5. DURABLE WORKFLOWS & DAG RUNTIME
-// ---------------------------------------------------------
-
-enum WorkflowStatus {
-  PENDING
-  RUNNING
-  PAUSED_FOR_APPROVAL
-  COMPLETED
-  FAILED
-  REJECTED
-}
-
-model WorkflowInstance {
-  id           String           @id @default(uuid())
-  title        String
-  directive    String           @db.Text
-  status       WorkflowStatus   @default(PENDING)
-  totalCostUsd Decimal          @default(0.0) @db.Decimal(6, 4)
-  dagTopology  Json             // Nodes, dependencies, edges
-  resultData   Json?            // Final executive outcome
-  initiatedById String
-  initiatedBy  User             @relation(fields: [initiatedById], references: [id])
-  steps        WorkflowStep[]
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  @@map("workflow_instances")
-}
-
-enum StepStatus {
-  PENDING
-  READY
-  RUNNING
-  PAUSED_APPROVAL
-  COMPLETED
-  FAILED
-  SKIPPED
-}
-
-model WorkflowStep {
-  id             String           @id @default(uuid())
-  workflowId     String
-  workflow       WorkflowInstance @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  stepKey        String           // Unique step identifier within the DAG
-  employeeRole   String           // "Dr. Thorne", "Maya Lin", etc.
-  title          String
-  status         StepStatus       @default(PENDING)
-  inputPayload   Json
-  outputArtifact Json?
-  errorMessage   String?
-  retryCount     Int              @default(0)
-  startedAt      DateTime?
-  completedAt    DateTime?
-  approvals      ApprovalRecord[]
-  sideEffects    SideEffectAudit[]
-
-  @@unique([workflowId, stepKey])
-  @@map("workflow_steps")
-}
-
-// ---------------------------------------------------------
-// 6. GOVERNANCE, APPROVALS & AUDIT LOGS
-// ---------------------------------------------------------
-
-enum ApprovalStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  EXPIRED
-}
-
-enum RiskTier {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-model ApprovalRecord {
-  id           String         @id @default(uuid())
-  stepId       String
-  step         WorkflowStep   @relation(fields: [stepId], references: [id], onDelete: Cascade)
-  actionType   String         // e.g., "DEPLOY_CODE", "SEND_EMAIL", "DISBURSE_FUNDS"
-  riskLevel    RiskTier       @default(HIGH)
-  description  String         @db.Text
-  payload      Json           // The exact payload to be dispatched
-  status       ApprovalStatus @default(PENDING)
-  decisionNote String?
-  decidedById  String?
-  decidedBy    User?          @relation(fields: [decidedById], references: [id])
-  decidedAt    DateTime?
-  createdAt    DateTime       @default(now())
-
-  @@index([status])
-  @@map("approval_records")
-}
-
-model SideEffectAudit {
-  id             String       @id @default(uuid())
-  stepId         String
-  step           WorkflowStep @relation(fields: [stepId], references: [id])
-  integration    String       // "GITHUB", "RESEND", "SLACK", "STRIPE"
-  action         String
-  requestPayload Json
-  responseStatus Int
-  responseBody   Json?
-  executedAt     DateTime     @default(now())
-
-  @@index([integration, executedAt])
-  @@map("side_effect_audits")
-}
-
-// ---------------------------------------------------------
-// 7. REALITY GROUNDING TELEMETRY (LUMORAGLM BRIDGE)
-// ---------------------------------------------------------
-
-model TelemetryMetric {
-  id         String   @id @default(uuid())
-  source     String   // "LUMORAGLM_PROD", "STRIPE_PROD"
-  metricKey  String   // "active_students", "monthly_revenue", "system_errors"
-  value      Decimal  @db.Decimal(14, 4)
-  metadata   Json?
-  recordedAt DateTime @default(now())
-
-  @@index([source, metricKey, recordedAt])
-  @@map("telemetry_metrics")
-}
-```
+**[REPO STATE]** No such binding exists today. `ApprovalRecord.scope` in the type definitions carries a loose `operationPattern`/`maxUses`, and `executeWithGate` consumes a `single_action`-scoped approval by ID, but nothing recomputes or compares a payload hash at dispatch time — an approval could in principle be granted for one payload and consumed against a different one if the calling code changed the payload between request and dispatch.
 
 ---
 
-## 9. Integration & Telemetry Architecture
+## 8. Side-Effect Failure Semantics
 
-### 9.1 The Integration Strategy: Zero Commodity Re-invention
-In alignment with **AUDIT 08**, SamJuniors does not rebuild standard business tools. It interfaces through standard infrastructure:
+**[PRINCIPLE]** None of the following may be waved away with the word "idempotent" without saying exactly which mechanism enforces it:
+- **DB commit before dispatch:** the intent to perform a side effect must be durably recorded *before* the external call is made, so a crash mid-dispatch leaves a recoverable trail instead of silence. **[REPO STATE: not possible today — there is no durable store to commit to before dispatch; `executeWithGate` records the audit entry in-memory, in the same process, with no ordering guarantee against the external call surviving a crash.]**
+- **External action succeeds, DB update fails:** requires either a two-phase reconciliation step or relying on the external system's own idempotency key so a safe retry doesn't double-execute. **[Not implemented. No side-effect provider call in the repo passes an idempotency key.]**
+- **Timeout after unknown execution state:** must not blindly retry; must either check the external system's state first or use a provider-supported idempotency key. **[Not implemented — a timeout is currently indistinguishable from a clean failure in the runtime's error handling.]**
+- **Duplicate retry:** only safe where the external provider supports idempotency keys (GitHub, Resend, and Stripe all do, when used correctly) and the system actually sends one. **[Not currently sent by any integration in the repo.]**
+- **Provider outage:** should degrade a specific step to a `degraded`/blocked status and stop, not retry indefinitely or silently drop the step. **[No such status/circuit-breaker exists in the current step-status enum or runtime.]**
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          SAMJUNIORS CORE RUNTIME                            │
-└──────┬───────────────────────────────┬───────────────────────────────┬──────┘
-       │                               │                               │
-       ▼                               ▼                               ▼
-┌──────────────┐               ┌──────────────┐               ┌──────────────┐
-│ DIRECT APIS  │               │   COMPOSIO   │               │ LUMORAGLM    │
-│ Core Infra   │               │ Integrations │               │ Telemetry    │
-├──────────────┤               ├──────────────┤               ├──────────────┤
-│ - Clerk Auth │               │ - GitHub PRs │               │ - Live Users │
-│ - PostgreSQL │               │ - Google Cal │               │ - Course KPI │
-│ - Resend SES │               │ - Slack Bot  │               │ - Error Logs │
-│ - Stripe Sub │               │ - Linear App │               │ (Read-Only)  │
-└──────────────┘               └──────────────┘               └──────────────┘
-```
-
-### 9.2 The LumoraGLM Live Telemetry Bridge
-To ground the AI workforce in empirical reality rather than synthetic assumptions:
-- A secure, read-only database connection pool queries the live `Lumoraglm` database.
-- Runs an asynchronous telemetry cron (`0 * * * *`) that records real student signups, lesson completions, and operational errors into `TelemetryMetric`.
-- Dr. Thorne and Julian Cruz access real conversion rates and system health during planning.
+**[V1]** At minimum, v1 must generate and pass an idempotency key to any external side-effect call that supports one, and must surface — not silently swallow — any case where dispatch outcome is unknown (timeout, ambiguous response) so the founder sees "unknown, needs manual check" rather than a false "completed" or false "failed."
 
 ---
 
-## 10. Evaluation & Continuous Learning Engine (MVEI)
+## 9. Concurrency
 
-Adopting the **Prime Intellect** paradigm evaluated in **AUDIT 10**, agent performance is grounded in **verifiable environment feedback**:
+**[REPO STATE]** The current implementation does not support more than one concurrently-running instance of the application holding consistent state — each `InMemoryWorkflowStore`/`InMemoryApprovalStore` singleton is process-local. If the deployment ever runs more than one instance (Cloud Run can do this automatically under load), two instances can hold diverging copies of "the same" workflow with no reconciliation.
 
-```
-                         Worker Produces Artifact
-                                    │
-                                    ▼
-                     [DETERMINISTIC VERIFICATION]
-                     ├─ TypeScript Compilation Check (tsc)
-                     ├─ JSON Schema Validation (Zod)
-                     ├─ Unit Test Execution (Vitest)
-                     └─ Financial Formula Integrity Check
-                                    │
-                                   / \
-                                  /   \
-                             Pass/     \Fail
-                                /       \
-                               ▼         ▼
-                     [OUTCOME RECORDED]  [FEEDBACK RE-INJECTION]
-                     Trajectory stored    Error trace passed back
-                     in Database for      to worker for self-repair
-                     benchmarking         (up to 3 attempts)
-```
+**[V1]** State this as an explicit, documented limitation: **v1 must run as a single instance** (Cloud Run min/max instance count pinned to 1) until durable, shared persistence exists. This is a real constraint on the current deployment, not a hypothetical.
 
-### The Three Learning Horizons
-1. **Horizon 1 (Immediate / Operational):** Self-repair within the workflow loop via compiler errors and schema mismatches.
-2. **Horizon 2 (Mid-Term / Tactical):** Successful workflow trajectories are synthesized into reusable SOPs and added to `CompanyKnowledge`.
-3. **Horizon 3 (Long-Term / Strategic):** Fine-tuning and evaluation benchmarks derived from real founder approval/rejection decisions.
+**[TARGET]** Once shared durable persistence exists, workflow-step execution needs actual concurrency control — a claim/lock per step (e.g., a conditional update keyed on current status, or a real DB transaction) so two workers can't both pick up the same `ready` step.
 
 ---
 
-## 11. Frontend Architecture: The Executive Cockpit
+## 10. AI Output Verification
 
-The toy desktop metaphor (movable macOS windows, wallpaper switchers, dock animations) is replaced with the high-density **Executive Cockpit**:
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  SAMJUNIORS COCKPIT  │  Org: Lumora Labs  │  Runway: 18.4 Mo  │  Auth: Founder│
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌────────────────────────┐  ┌───────────────────────────────────────────┐  │
-│  │   THE EXECUTIVE STREAM │  │           ACTION REQUIRED (INBOX)         │  │
-│  │                        │  │                                           │  │
-│  │ [10:42 AM] Sophia      │  │ ⚠️ APPROVAL REQUIRED: GitHub Release v1.4 │  │
-│  │ "PRD complete for      │  │ Employee: Dr. Thorne (VP Tech)             │  │
-│  │ Student Analytics.     │  │ Risk Tier: HIGH                            │  │
-│  │ Thorne passed tests.   │  │ Diff: 14 files, 480 additions             │  │
-│  │ Julian confirmed       │  │                                           │  │
-│  │ unit margins at 84%."  │  │ [ APPROVE & DEPLOY ]    [ REJECT / EDIT ] │  │
-│  │                        │  └───────────────────────────────────────────┘  │
-│  │ [10:30 AM] System      │  ┌───────────────────────────────────────────┐  │
-│  │ Ingested 142 new       │  │            COMPANY VITALS RADAR           │  │
-│  │ student enrollments.   │  │                                           │  │
-│  │                        │  │ ARR: $418,200 (+12%)   Active Users: 3,420│  │
-│  │                        │  │ Infrastructure: $142   LCP Avg: 840ms     │  │
-│  └────────────────────────┘  └───────────────────────────────────────────┘  │
-│                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │ > Direct Workforce: "Audit LumoraGLM checkout drop-off and draft fix" │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key UI Subsystems
-1. **The Executive Stream:** Real-time chronological timeline of milestone completions, synthesized executive summaries, and system alerts.
-2. **The Approval Inbox:** A focused decision queue displaying pending mutating side-effects with full risk assessments and diff previews.
-3. **The Vitals Wall:** High-fidelity operational metrics directly pulled from PostgreSQL and the LumoraGLM telemetry bridge.
-4. **The Directive Terminal:** A distraction-free input bar where the founder issues high-level strategic objectives.
+Restated from §3 for completeness: a "verified" artifact is one that has passed a specific, named, mechanically-checkable test. Examples appropriate to this system's actual work (PRD/spec drafting, technical research): structural schema validation of the artifact's shape, a compile/lint check for anything code-shaped, a source-count-based confidence score for research claims (`verification.ts` already does the last one correctly). **An LLM's self-report that its own output is correct is never sufficient on its own and must not be logged with the same confidence label as a mechanically verified fact.**
 
 ---
 
-## 12. Implementation Roadmap & Milestones
+## 11. Memory / Knowledge / State Separation
 
-```mermaid
-gantt
-    title SamJuniors Implementation Roadmap
-    dateFormat  YYYY-MM-DD
-    section Milestone 1: Persistence & Hardening
-    Prisma & Postgres Setup           :done, m1_1, 2026-09-08, 2d
-    Replace In-Memory Stores          :active, m1_2, after m1_1, 2d
-    Clerk Route Auth & Session Gate   :m1_3, after m1_2, 2d
-    Purge Client State Injection      :m1_4, after m1_3, 1d
-    Executive Cockpit UI Migration    :m1_5, after m1_4, 3d
-    
-    section Milestone 2: Autonomous DAG
-    Promote WorkflowRuntime to Kernel :m2_1, after m1_5, 3d
-    Sophia Vance DAG Planner          :m2_2, after m2_1, 3d
-    Independent Critic Engine         :m2_3, after m2_2, 2d
-    Side-Effect Gatekeeper            :m2_4, after m2_3, 2d
-    
-    section Milestone 3: Ecosystem Grounding
-    LumoraGLM Telemetry Bridge        :m3_1, after m2_4, 3d
-    pgvector Canonical Knowledge RAG   :m3_2, after m3_1, 2d
-    Composio GitHub/Workspace Setup   :m3_3, after m3_2, 2d
-    
-    section Milestone 4: Evaluation & Hardening
-    MVEI Tracing & Cost Metering      :m4_1, after m3_3, 3d
-    E2B Isolated Code Sandbox         :m4_2, after m4_1, 2d
-    Production Security Audit Pass    :m4_3, after m4_2, 2d
-```
+**[PRINCIPLE]** Real company state, real historical outcomes, and example/seed data used for development must never share a label that claims they're all equally authoritative.
+
+**[REPO STATE — second-highest-priority finding of this review]** `lib/server/state/state-store.ts`'s `queryState` tags every result — including entirely synthetic sample customers and a synthetic financial model (`lib/os-data.ts`'s `SAMPLE_PIPELINE_DEALS`, `SAMPLE_FINANCIAL_MODEL`) — with `epistemicType: 'current_truth'` and `confidence: 'verified_fact'`, unconditionally. `lib/server/memory/memory-store.ts`'s `INITIAL_COMPANY_MEMORIES` hardcodes five fabricated historical events (a fictional "9-step executive council debate reduced hallucinated specifications by 92%," a fictional monitor purchase) also tagged `epistemicConfidence: 'verified_fact'`. Any agent querying state or memory today cannot distinguish real founder-approved history from placeholder fiction — both carry the system's highest confidence label.
+
+**[V1 requirement]** Every state and memory record must carry an explicit provenance flag distinguishing at minimum: `real` vs. `synthetic/seed`. Synthetic data may remain in the codebase for development/demo purposes, but must never be labeled `verified_fact` or `current_truth`. This is a small schema change with a large trust impact and should be done before any other memory/state work.
+
+**Correcting prior document language:** earlier versions of this document described structured state injection as having "zero hallucination potential." That claim is not justified and is removed. Structured, deterministically-queried state reduces the chance of an LLM *fabricating* a fact, because the fact itself doesn't come from the LLM — but the LLM can still misread, misquote, or misapply a correctly-retrieved fact. The accurate claim is: **authoritative state is kept deterministic and non-LLM-generated, which reduces (not eliminates) fabrication risk.**
 
 ---
 
-## 13. Architectural Sign-Off & Verification
+## 12. V1 Architecture (build this)
 
-This Product Architecture document formally consolidates the research, findings, and decisions across all 12 Audits into a single operational engineering standard.
+```
+Founder (server-verified via §7's minimal secret mechanism — NOT client-supplied identity)
+ ↓
+Executive Cockpit (already implemented)
+ ↓
+Directive
+ ↓
+Sophia — planner (already implemented)
+ ↓
+Workflow Kernel — persisted beyond process memory (NOT YET IMPLEMENTED — highest-priority build item after auth)
+ ↓
+Thorne — worker (already implemented)
+ ↓
+Artifact — minimally typed, not yet a first-class entity (partial — see §5)
+ ↓
+Verification — a real deterministic check that can reject (NOT YET WIRED IN — see §3, §10)
+ ↓
+Authorization — Side-Effect Gate with payload binding (partially implemented; binding NOT YET IMPLEMENTED — see §7)
+ ↓
+External Effect — idempotency-key-aware dispatch (NOT YET IMPLEMENTED — see §8)
+ ↓
+Audit — durable, not in-memory (NOT YET IMPLEMENTED — see §6)
+ ↓
+Memory — provenance-tagged, real vs. synthetic (NOT YET IMPLEMENTED — see §11)
+```
 
-- **Primary Repository:** `d:\Sam\SamjuniorsOS\doc\PRODUCT_ARCHITECTURE.md`
-- **Workspace Mirror:** `d:\Sam\SamjuniorsOS-main\SamjuniorsOS-main\doc\PRODUCT_ARCHITECTURE.md`
-- **Next Phase:** Implementation Phase — Milestone 1 (PostgreSQL schema, Prisma client, in-memory store retirement, and route security).
+## 13. Target Architecture (evolve toward this, not now)
+
+Full relational persistence (Postgres/Prisma or equivalent) for all entities in §6; first-class versioned `Artifact` model (§5); multi-instance-safe concurrency control (§9); session-based multi-user authentication once a second human is added (§7); pgvector-based retrieval once the knowledge corpus outgrows full-context injection; broader Composio integrations (Slack/Linear/Calendar) once GitHub-only proves the pattern; E2B sandboxing once autonomous code execution is actually needed; the remaining employee roster (Elena, Marcus) once there's a concrete task only they can do; fine-tuning/eval infrastructure once there's enough real approval-decision volume for it to mean anything.
+
+## 14. What Remains Deferred (unchanged unless evidence says otherwise)
+
+pgvector/RAG, E2B, fine-tuning, Elena Rostova, Marcus Vance, broad Composio integrations, multi-user RBAC, voice, persona customization, multi-agent council workflows, any "production security audit" milestone (premature while the app is single-user by design).
+
+## 15. Architectural Invariants (precise, minimal, and currently unmet where noted)
+
+1. **Founder authority is established server-side, never from a client-supplied field.** [Currently unmet — §7, highest priority.]
+2. **A privileged action's approval is bound to its exact action/target/payload, checked at dispatch time.** [Currently unmet — §7.]
+3. **Workflow and audit state survive a process restart.** [Currently unmet — §6.]
+4. **Synthetic/example data is never labeled with the same confidence as verified real data.** [Currently unmet — §11, second priority.]
+5. **"Verified" means a named, mechanically-checkable test passed — not that an LLM said so.** [Partially unmet — §3, §10.]
+6. **External side effects carry idempotency keys where the provider supports them, and unknown-outcome dispatch is surfaced, not guessed at.** [Currently unmet — §8.]
+
+---
+
+## Document Change Log
+- v1.0.0 → v1.0.1: added scope-deferral annotations based on doc-only review (no repository access).
+- v1.0.1 → v2.0.0 (this version): full rewrite following direct repository inspection. Removed all claims of "done," "immutable," "cryptographic," "zero hallucination potential" that repository evidence does not support. Removed Clerk as a mandatory dependency; replaced with the precise invariant plus a minimal-secret v1 recommendation. Added Artifact, approval-binding, side-effect-failure, and concurrency semantics that were previously undefined or asserted without mechanism.
