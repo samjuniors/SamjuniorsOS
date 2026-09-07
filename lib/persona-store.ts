@@ -208,6 +208,10 @@ class PersonaStoreManager {
     }
   }
 
+  public updateTone(agentId: AgentRole | 'advisor', tone: PersonaTone, notifyUser = false) {
+    this.setTone(agentId, tone, notifyUser);
+  }
+
   public setCustomPrompt(agentId: AgentRole | 'advisor', customPrompt: string) {
     const current = this.getPersona(agentId);
     this.configs[agentId] = {

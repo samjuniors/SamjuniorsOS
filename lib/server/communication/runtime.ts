@@ -376,7 +376,7 @@ export class CommunicationRuntime {
     }
 
     // 2. External Communication Execution ('send' or 'reply')
-    // Must pass strictly through gate.executeWithGate!
+    // Must pass strictly through gate.executeWithGate with cryptographic payload binding!
     const gateResult = await this.gate.executeWithGate({
       request: {
         employeeRole: intent.employeeRole,
@@ -385,6 +385,7 @@ export class CommunicationRuntime {
         workflowContext: intent.workflowRef,
         target,
         approvalId: intent.approvalId,
+        payload: intent.payload,
       },
       executeFn: async () => {
         const provider = this.providerRegistry.getAdapter(intent.channel);
@@ -438,6 +439,23 @@ export class CommunicationRuntime {
 
         // Check if provider adapter is configured
         if (!provider.isConfigured()) {
+          const isDevOrSandbox = process.env.NODE_ENV !== 'production' || process.env.SAFE_SANDBOX_MODE === 'true';
+          if (isDevOrSandbox) {
+            // Enforce Safe Mock Sandbox Mode when provider is unconfigured in development/sandbox
+            messageRecord.deliveryStatus = 'sending';
+            messageRecord.externalProviderRef = `sandbox-mock-${Date.now()}`;
+            await this.store.createMessage(messageRecord);
+
+            return {
+              delivered: true,
+              deliveryStatus: 'sending' as DeliveryStatus,
+              message: messageRecord,
+              externalMessageId: messageRecord.externalProviderRef,
+              isSandboxed: true,
+              note: 'Executed in Zero-Trust Safe Mock Sandbox mode (unconfigured external provider).',
+            };
+          }
+
           messageRecord.deliveryStatus = 'failed';
           messageRecord.error = `NO_EXTERNAL_PROVIDER_CONFIGURED: Channel '${intent.channel}' currently has no external provider adapter connected.`;
           await this.store.createMessage(messageRecord);

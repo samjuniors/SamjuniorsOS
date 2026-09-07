@@ -43,6 +43,8 @@ import { TerminalApp } from '@/components/apps/TerminalApp';
 import { NotesApp } from '@/components/apps/NotesApp';
 import { MessagesApp, ParticipantId } from '@/components/apps/MessagesApp';
 import { ExecutiveCockpit } from '@/components/cockpit/ExecutiveCockpit';
+import { EmployeeProfileModal } from '@/components/hq/EmployeeProfileModal';
+import { AgentRole } from '@/types/os';
 
 export default function SamJuniorsOSPage() {
   // Operational Mode State (Default: Executive Cockpit, with toggle to Classic Desktop)
@@ -70,8 +72,15 @@ export default function SamJuniorsOSPage() {
   const [isControlCenterOpen, setIsControlCenterOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [inspectingAgentId, setInspectingAgentId] = useState<AgentRole>('coo');
+  const [isEmployeeProfileModalOpen, setIsEmployeeProfileModalOpen] = useState(false);
   const [notifications, setNotifications] = useState<OSNotification[]>(() => NotificationStore.getState().notifications);
   const [activeToasts, setActiveToasts] = useState<ToastItem[]>(() => NotificationStore.getState().activeToasts);
+
+  const handleInspectEmployeeProfile = useCallback((role: AgentRole) => {
+    setInspectingAgentId(role);
+    setIsEmployeeProfileModalOpen(true);
+  }, []);
 
   // Directives passed to Workforce
   const [pendingDirective, setPendingDirective] = useState<string>('');
@@ -410,17 +419,31 @@ export default function SamJuniorsOSPage() {
 
   if (viewMode === 'cockpit') {
     return (
-      <ExecutiveCockpit
-        onSwitchToClassic={() => setViewMode('classic')}
-        onOpenApp={(appId) => {
-          setViewMode('classic');
-          openApp(appId as AppId);
-        }}
-        onDispatchDirective={(directive) => {
-          setPendingDirective(directive);
-          openApp('workforce', directive);
-        }}
-      />
+      <>
+        <ExecutiveCockpit
+          onSwitchToClassic={() => setViewMode('classic')}
+          onOpenApp={(appId) => {
+            setViewMode('classic');
+            openApp(appId as AppId);
+          }}
+          onDispatchDirective={(directive) => {
+            setPendingDirective(directive);
+            openApp('workforce', directive);
+          }}
+          onInspectEmployee={handleInspectEmployeeProfile}
+        />
+        <EmployeeProfileModal
+          key={`cockpit-${inspectingAgentId}`}
+          isOpen={isEmployeeProfileModalOpen}
+          onClose={() => setIsEmployeeProfileModalOpen(false)}
+          initialAgentId={inspectingAgentId}
+          onOpenApp={(appId, dir) => {
+            setViewMode('classic');
+            openApp(appId as AppId, dir);
+          }}
+          soundEnabled={soundEnabled}
+        />
+      </>
     );
   }
 
@@ -487,6 +510,7 @@ export default function SamJuniorsOSPage() {
           setWindows(INITIAL_WINDOWS);
           if (soundEnabled) playOSSound('startup');
         }}
+        onInspectEmployeeProfile={handleInspectEmployeeProfile}
       />
 
       {/* 2. Desktop Workspace Icons & Quick Directive Dispatcher */}
@@ -495,6 +519,7 @@ export default function SamJuniorsOSPage() {
         onQuickDirective={(dir) => openApp('workforce', dir)}
         soundEnabled={soundEnabled}
         onAppContextMenu={handleAppContextMenu}
+        onInspectEmployee={handleInspectEmployeeProfile}
       />
 
       {/* 3. Window Manager & Open Windows */}
@@ -526,6 +551,16 @@ export default function SamJuniorsOSPage() {
         onClose={() => setIsSpotlightOpen(false)}
         onOpenApp={openApp}
         onDispatchDirective={(dir) => openApp('workforce', dir)}
+        soundEnabled={soundEnabled}
+        onInspectEmployee={handleInspectEmployeeProfile}
+      />
+
+      <EmployeeProfileModal
+        key={`classic-${inspectingAgentId}`}
+        isOpen={isEmployeeProfileModalOpen}
+        onClose={() => setIsEmployeeProfileModalOpen(false)}
+        initialAgentId={inspectingAgentId}
+        onOpenApp={(appId, dir) => openApp(appId as AppId, dir)}
         soundEnabled={soundEnabled}
       />
 

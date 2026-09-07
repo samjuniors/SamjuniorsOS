@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { action, approvalId, decidedBy, reason, expiresAt } = body;
+    const { action, approvalId, reason, expiresAt } = body;
 
     if (!approvalId || !action) {
       return NextResponse.json(

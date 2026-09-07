@@ -8,6 +8,8 @@ import {
 } from '@/types/authorization';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '@/lib/server/db/prisma';
+import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+import { InstanceConcurrencyGuard } from '@/lib/server/persistence/instance-guard';
 
 /**
  * Interface defining the Approval Store contract.
@@ -46,7 +48,10 @@ export class InMemoryApprovalStore implements IApprovalStore {
   private static instance: InMemoryApprovalStore;
   private approvals: Map<string, FounderApprovalRecord> = new Map();
 
-  private constructor() {}
+  private constructor() {
+    InstanceConcurrencyGuard.getInstance().acquireSingleInstanceLease();
+    this.loadFromDurableStorage();
+  }
 
   public static getInstance(): InMemoryApprovalStore {
     if (!InMemoryApprovalStore.instance) {
@@ -55,13 +60,36 @@ export class InMemoryApprovalStore implements IApprovalStore {
     return InMemoryApprovalStore.instance;
   }
 
+  private loadFromDurableStorage(): void {
+    try {
+      const persisted = DurableFileStore.getInstance().readCollection<FounderApprovalRecord>('approvals');
+      for (const [id, record] of Object.entries(persisted)) {
+        this.approvals.set(id, record);
+      }
+    } catch {
+      // fallback
+    }
+  }
+
   public clear(): void {
     this.approvals.clear();
+    try {
+      DurableFileStore.getInstance().clearCollection('approvals');
+    } catch {
+      // fallback
+    }
   }
 
   public async save(record: FounderApprovalRecord): Promise<FounderApprovalRecord> {
     const clone = JSON.parse(JSON.stringify(record));
     this.approvals.set(record.id, clone);
+
+    // Persist to local durable file store
+    try {
+      DurableFileStore.getInstance().saveItem('approvals', record.id, clone);
+    } catch (err) {
+      console.warn('[ApprovalStore] Error saving to durable file store:', err);
+    }
 
     // Persist to PostgreSQL if database connection is available
     if (process.env.DATABASE_URL) {
@@ -220,6 +248,9 @@ export class InMemoryApprovalStore implements IApprovalStore {
     if (expiresAt) record.expiresAt = expiresAt;
 
     this.approvals.set(id, record);
+    try {
+      DurableFileStore.getInstance().saveItem('approvals', id, record);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -253,6 +284,9 @@ export class InMemoryApprovalStore implements IApprovalStore {
     record.decisionReason = reason || 'Revoked by Founder';
 
     this.approvals.set(id, record);
+    try {
+      DurableFileStore.getInstance().saveItem('approvals', id, record);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -282,6 +316,9 @@ export class InMemoryApprovalStore implements IApprovalStore {
     record.isConsumed = true;
     record.scope.usedCount = (record.scope.usedCount || 0) + 1;
     this.approvals.set(id, record);
+    try {
+      DurableFileStore.getInstance().saveItem('approvals', id, record);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -308,7 +345,9 @@ export class InMemoryAuditStore implements IAuditStore {
   private static instance: InMemoryAuditStore;
   private audits: Map<string, SideEffectAuditRecord> = new Map();
 
-  private constructor() {}
+  private constructor() {
+    this.loadFromDurableStorage();
+  }
 
   public static getInstance(): InMemoryAuditStore {
     if (!InMemoryAuditStore.instance) {
@@ -317,13 +356,35 @@ export class InMemoryAuditStore implements IAuditStore {
     return InMemoryAuditStore.instance;
   }
 
+  private loadFromDurableStorage(): void {
+    try {
+      const persisted = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
+      for (const [id, record] of Object.entries(persisted)) {
+        this.audits.set(id, record);
+      }
+    } catch {
+      // fallback
+    }
+  }
+
   public clear(): void {
     this.audits.clear();
+    try {
+      DurableFileStore.getInstance().clearCollection('audits');
+    } catch {
+      // fallback
+    }
   }
 
   public async record(audit: SideEffectAuditRecord): Promise<SideEffectAuditRecord> {
     const clone = JSON.parse(JSON.stringify(audit));
     this.audits.set(audit.id, clone);
+
+    try {
+      DurableFileStore.getInstance().saveItem('audits', audit.id, clone);
+    } catch (err) {
+      console.warn('[AuditStore] Error saving to durable file store:', err);
+    }
 
     if (process.env.DATABASE_URL) {
       try {

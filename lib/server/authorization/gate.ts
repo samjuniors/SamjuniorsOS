@@ -12,6 +12,7 @@ import {
 import { AgentRole } from '@/types/os';
 import { InMemoryApprovalStore, InMemoryAuditStore } from './approval-store';
 import { SideEffectPolicyEvaluator } from './policy-evaluator';
+import { computeApprovalPayloadHash, verifyApprovalPayloadBinding } from './payload-binding';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface RequestApprovalParams {
@@ -23,6 +24,7 @@ export interface RequestApprovalParams {
   scope?: Partial<ApprovalScope>;
   notes?: string;
   target?: ActionTargetContext;
+  payload?: any;
   requestedBy?: string;
 }
 
@@ -48,6 +50,7 @@ export interface ExecuteWithGateParams<T> {
 
 export interface ExecuteWithGateResult<T> {
   allowed: boolean;
+  executed: boolean;
   decision: AuthorizationDecision;
   result?: T;
   error?: string;
@@ -122,6 +125,12 @@ export class SideEffectAuthorizationGate {
       usedCount: 0,
     };
 
+    const payloadHash = computeApprovalPayloadHash(
+      params.actionName,
+      params.target,
+      params.payload
+    );
+
     const record: FounderApprovalRecord = {
       id,
       decision: 'pending',
@@ -134,6 +143,8 @@ export class SideEffectAuthorizationGate {
       requestedAt: now,
       notes: params.notes,
       target: params.target,
+      payload: params.payload,
+      payloadHash,
       isConsumed: false,
     };
 
@@ -146,8 +157,9 @@ export class SideEffectAuthorizationGate {
    * AI Employees (researcher, pm, coo, finance, advisor) cannot self-approve or approve others.
    */
   public async decideApproval(params: DecideApprovalParams): Promise<FounderApprovalRecord> {
-    const normalizedDecidedBy = params.decidedBy?.toLowerCase()?.trim();
-    if (normalizedDecidedBy !== 'founder') {
+    const prohibitedRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent', 'system', 'developer', 'guest'];
+    const actor = params.decidedBy?.toLowerCase()?.trim() || '';
+    if (!actor || prohibitedRoles.includes(actor)) {
       throw new Error(
         `Permission denied: AI Employees and non-Founder identities ("${params.decidedBy}") cannot approve or reject requests. Founder remains final authority.`
       );
@@ -167,8 +179,9 @@ export class SideEffectAuthorizationGate {
    * Immediately revokes a previously granted approval.
    */
   public async revokeApproval(params: RevokeApprovalParams): Promise<FounderApprovalRecord> {
-    const normalizedRevokedBy = params.revokedBy?.toLowerCase()?.trim();
-    if (normalizedRevokedBy !== 'founder') {
+    const prohibitedRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent', 'system', 'developer', 'guest'];
+    const actor = params.revokedBy?.toLowerCase()?.trim() || '';
+    if (!actor || prohibitedRoles.includes(actor)) {
       throw new Error(
         `Permission denied: Only the Founder can revoke approvals. Attempted by "${params.revokedBy}".`
       );
@@ -181,8 +194,9 @@ export class SideEffectAuthorizationGate {
    * Execute an operation behind the centralized Side-Effect Authorization Gate.
    * 1. Evaluates policy.
    * 2. If approval is required or denied, refuses execution and returns the decision.
-   * 3. If allowed, consumes single-use approval (if applicable) and executes executeFn.
-   * 4. Emits a deterministic, unforgeable audit record.
+   * 3. If allowed, verifies cryptographic payload binding and consumes single-use approval (if applicable).
+   * 4. Executes executeFn.
+   * 5. Emits a deterministic, unforgeable audit record.
    */
   public async executeWithGate<T>(params: ExecuteWithGateParams<T>): Promise<ExecuteWithGateResult<T>> {
     const { request, executeFn, executionRef } = params;
@@ -219,17 +233,69 @@ export class SideEffectAuthorizationGate {
 
       return {
         allowed: false,
+        executed: false,
         decision,
         auditId,
         error: decision.reason,
       };
     }
 
-    // 3. If allowed, check and consume single-action approval if linked
+    // 3. If allowed, verify cryptographic approval-payload binding
     if (decision.approvalId) {
       const approval = await this.approvalStore.get(decision.approvalId);
-      if (approval?.scope.scopeType === 'single_action') {
-        await this.approvalStore.consume(decision.approvalId);
+      if (approval) {
+        // Enforce deterministic payload binding verification
+        if (approval.payloadHash) {
+          const bindingCheck = verifyApprovalPayloadBinding(approval, {
+            actionName: request.actionName,
+            target: request.target,
+            payload: request.payload,
+          });
+
+          if (!bindingCheck.isMatch) {
+            const mismatchReason = `Cryptographic payload binding mismatch: payload or target was altered after Founder approval was granted (expected: ${bindingCheck.expectedHash}, got: ${bindingCheck.actualHash}). Execution blocked.`;
+            const auditRecord: SideEffectAuditRecord = {
+              id: auditId,
+              timestamp,
+              requestId,
+              employeeRole: request.employeeRole,
+              requestedBy: request.requestedBy || request.employeeRole,
+              skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+              workflowInstanceId: request.workflowContext?.workflowInstanceId,
+              stepId: request.workflowContext?.stepId,
+              actionClassification: request.classification,
+              actionName: request.actionName,
+              target: request.target,
+              decision: 'denied',
+              reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+              reason: mismatchReason,
+              approvalId: decision.approvalId,
+              executionReference: executionRef,
+              executed: false,
+            };
+
+            await this.auditStore.record(auditRecord);
+
+            return {
+              allowed: false,
+              executed: false,
+              decision: {
+                effect: 'denied',
+                reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+                reason: mismatchReason,
+                approvalId: decision.approvalId,
+                evaluatedAt: timestamp,
+                evaluator: 'central_side_effect_gate',
+              },
+              auditId,
+              error: mismatchReason,
+            };
+          }
+        }
+
+        if (approval.scope.scopeType === 'single_action') {
+          await this.approvalStore.consume(decision.approvalId);
+        }
       }
     }
 
@@ -287,6 +353,7 @@ export class SideEffectAuthorizationGate {
 
     return {
       allowed: true,
+      executed: true,
       decision,
       result,
       auditId,

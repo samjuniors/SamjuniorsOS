@@ -1,5 +1,6 @@
 import { WorkflowDefinition, WorkflowInstanceState } from '../../../types/workflow';
 import { prisma } from '@/lib/server/db/prisma';
+import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 /**
  * Interface for persisting Workflow Definitions.
@@ -20,7 +21,7 @@ export interface WorkflowInstanceStore {
 }
 
 /**
- * Durable Workflow Store backed by PostgreSQL / Prisma with in-memory caching.
+ * Durable Workflow Store backed by PostgreSQL / Prisma and atomic file persistence with in-memory caching.
  */
 export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowInstanceStore {
   private definitions: Map<string, WorkflowDefinition> = new Map();
@@ -28,13 +29,30 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
 
   private static instance: InMemoryWorkflowStore;
 
-  private constructor() {}
+  private constructor() {
+    this.loadFromDurableStorage();
+  }
 
   public static getInstance(): InMemoryWorkflowStore {
     if (!InMemoryWorkflowStore.instance) {
       InMemoryWorkflowStore.instance = new InMemoryWorkflowStore();
     }
     return InMemoryWorkflowStore.instance;
+  }
+
+  private loadFromDurableStorage(): void {
+    try {
+      const persistedDefs = DurableFileStore.getInstance().readCollection<WorkflowDefinition>('workflow_definitions');
+      for (const [key, def] of Object.entries(persistedDefs)) {
+        this.definitions.set(key, def);
+      }
+      const persistedInsts = DurableFileStore.getInstance().readCollection<WorkflowInstanceState>('workflow_instances');
+      for (const [id, inst] of Object.entries(persistedInsts)) {
+        this.instances.set(id, inst);
+      }
+    } catch {
+      // fallback
+    }
   }
 
   // ---------------------------------------------------------
@@ -45,6 +63,11 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     const key = `${definition.id}@${definition.version}`;
     this.definitions.set(key, definition);
     this.definitions.set(definition.id, definition);
+
+    try {
+      DurableFileStore.getInstance().saveItem('workflow_definitions', key, definition);
+      DurableFileStore.getInstance().saveItem('workflow_definitions', definition.id, definition);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -128,7 +151,12 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
   // ---------------------------------------------------------
 
   async saveInstance(instance: WorkflowInstanceState): Promise<void> {
-    this.instances.set(instance.instanceId, JSON.parse(JSON.stringify(instance)));
+    const clone = JSON.parse(JSON.stringify(instance));
+    this.instances.set(instance.instanceId, clone);
+
+    try {
+      DurableFileStore.getInstance().saveItem('workflow_instances', instance.instanceId, clone);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -206,5 +234,9 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
   clear() {
     this.definitions.clear();
     this.instances.clear();
+    try {
+      DurableFileStore.getInstance().clearCollection('workflow_definitions');
+      DurableFileStore.getInstance().clearCollection('workflow_instances');
+    } catch {}
   }
 }

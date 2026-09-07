@@ -23,9 +23,12 @@ import {
   Cpu,
   Zap,
 } from 'lucide-react';
-import { AppId, OSNotification } from '@/types/os';
+import { AppId, OSNotification, AgentRole } from '@/types/os';
 import { playOSSound } from './IconHelper';
 import { SystemActivityStore, SystemActivityState } from '@/lib/system-activity-store';
+import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
+import { PersonaStore } from '@/lib/persona-store';
+import { AgentAvatar } from './AgentAvatar';
 
 interface TopMenuBarProps {
   activeAppTitle?: string;
@@ -40,6 +43,7 @@ interface TopMenuBarProps {
   toggleSound: () => void;
   autonomyMode: string;
   onRestartOS: () => void;
+  onInspectEmployeeProfile?: (agentId: AgentRole) => void;
 }
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({
@@ -55,11 +59,13 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   toggleSound,
   autonomyMode,
   onRestartOS,
+  onInspectEmployeeProfile,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('10:42 AM');
   const [dateStr, setDateStr] = useState<string>('Tue Sep 1');
   const [isSystemMenuOpen, setIsSystemMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isOfficersMenuOpen, setIsOfficersMenuOpen] = useState(false);
   const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   const [activity, setActivity] = useState<SystemActivityState>(SystemActivityStore.getState());
   const [isHeartbeatPopoverOpen, setIsHeartbeatPopoverOpen] = useState(false);
@@ -167,6 +173,21 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
                       <span>Executive Workforce Console</span>
                     </button>
                     <button
+                      id="menu-item-ai-profiles"
+                      onClick={() => {
+                        setIsSystemMenuOpen(false);
+                        if (onInspectEmployeeProfile) {
+                          onInspectEmployeeProfile('coo');
+                        } else {
+                          openApp('workforce');
+                        }
+                      }}
+                      className="w-full flex items-center px-2.5 py-1.5 text-left rounded-lg hover:bg-white/10 transition-colors"
+                    >
+                      <User className="w-3.5 h-3.5 mr-2 text-indigo-400" />
+                      <span>AI Employee Profiles & Personas</span>
+                    </button>
+                    <button
                       id="menu-item-settings"
                       onClick={() => {
                         openApp('settings');
@@ -245,13 +266,107 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
             >
               Directives
             </button>
-            <button
-              id="topbar-action-agents"
-              onClick={() => openApp('workforce')}
-              className="hover:text-white transition-colors px-1 py-0.5 rounded hover:bg-white/5"
-            >
-              AI Agents
-            </button>
+            {/* Interactive AI Officers Dropdown */}
+            <div className="relative">
+              <button
+                id="topbar-action-agents"
+                onClick={() => {
+                  if (soundEnabled) playOSSound('click');
+                  setIsOfficersMenuOpen(!isOfficersMenuOpen);
+                }}
+                className={`transition-colors px-1.5 py-0.5 rounded flex items-center space-x-1 font-semibold ${
+                  isOfficersMenuOpen
+                    ? 'bg-white/10 text-white'
+                    : 'text-indigo-300 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>AI Officers</span>
+              </button>
+
+              <AnimatePresence>
+                {isOfficersMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsOfficersMenuOpen(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute left-0 mt-1.5 w-72 os-glass rounded-xl shadow-2xl p-2 z-50 border border-white/15 text-slate-200"
+                    >
+                      <div className="px-2 py-1.5 flex items-center justify-between border-b border-white/10 mb-1.5">
+                        <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                          Autonomous Executive Fleet (4)
+                        </span>
+                        <span className="text-[9px] font-mono text-emerald-400">Level 5 Constitutional</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        {(['coo', 'researcher', 'pm', 'finance'] as AgentRole[]).map((role) => {
+                          const prof = DETAILED_AI_EMPLOYEE_PROFILES[role];
+                          if (!prof) return null;
+                          const tone = PersonaStore.getPersona(role)?.tone || 'professional';
+                          return (
+                            <button
+                              key={role}
+                              id={`topbar-officer-btn-${role}`}
+                              onClick={() => {
+                                setIsOfficersMenuOpen(false);
+                                if (soundEnabled) playOSSound('open');
+                                if (onInspectEmployeeProfile) {
+                                  onInspectEmployeeProfile(role);
+                                } else {
+                                  openApp('workforce');
+                                }
+                              }}
+                              className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/10 border border-transparent hover:border-indigo-500/30 transition-all text-left group cursor-pointer"
+                            >
+                              <div className="flex items-center space-x-2.5 min-w-0">
+                                <AgentAvatar roleOrId={role} name={prof.name} size="sm" showStatus status="idle" />
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-white group-hover:text-indigo-200 truncate">
+                                    {prof.name}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate">{prof.role}</div>
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded uppercase font-semibold ${
+                                  tone === 'casual'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : tone === 'flirty'
+                                    ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
+                                    : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                                }`}>
+                                  {tone}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="h-px bg-white/10 my-1.5" />
+
+                      <button
+                        onClick={() => {
+                          setIsOfficersMenuOpen(false);
+                          openApp('workforce');
+                        }}
+                        className="w-full flex items-center justify-center py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 text-[11px] font-semibold transition-all border border-indigo-500/30"
+                      >
+                        <span>Open Workforce Console</span>
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
             <button
               id="topbar-action-research"
               onClick={() => openApp('research')}

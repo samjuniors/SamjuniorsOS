@@ -2,6 +2,7 @@ import { CompanyMemory, RetrievedHistoricalMemory } from '@/types/os';
 import { ICompanyMemoryStore, MemoryQueryParams } from '@/types/context';
 import { OperationalLearningLoop } from './learning-loop';
 import { prisma } from '@/lib/server/db/prisma';
+import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 /**
  * Canonical Seed Memories for SamJuniors OS
@@ -70,11 +71,27 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
 
   private memories: CompanyMemory[] = [...INITIAL_COMPANY_MEMORIES];
 
+  private constructor() {
+    this.loadFromDurableStorage();
+  }
+
   public static getInstance(): CompanyMemoryStore {
     if (!CompanyMemoryStore.instance) {
       CompanyMemoryStore.instance = new CompanyMemoryStore();
     }
     return CompanyMemoryStore.instance;
+  }
+
+  private loadFromDurableStorage(): void {
+    try {
+      const persisted = DurableFileStore.getInstance().readCollection<CompanyMemory>('company_memories');
+      const loaded = Object.values(persisted);
+      if (loaded.length > 0) {
+        this.memories = loaded;
+      }
+    } catch {
+      // fallback
+    }
   }
 
   public async getAllMemories(): Promise<CompanyMemory[]> {
@@ -103,6 +120,10 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
 
   public async recordMemory(memory: CompanyMemory): Promise<void> {
     this.memories.unshift(memory);
+
+    try {
+      DurableFileStore.getInstance().saveItem('company_memories', memory.id, memory);
+    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {

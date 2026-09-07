@@ -74,7 +74,13 @@ export class SideEffectPolicyEvaluator {
 
     // 4. Retrieve or match approval record for external / high-impact / financial operations
     let approval = existingApproval;
-    if (approval === undefined && request.workflowContext) {
+    if (!approval && request.approvalId) {
+      const explicitApproval = await this.approvalStore.get(request.approvalId);
+      if (explicitApproval) {
+        approval = explicitApproval;
+      }
+    }
+    if (!approval && request.workflowContext) {
       approval = await this.approvalStore.findActiveMatching({
         workflowInstanceId: request.workflowContext.workflowInstanceId,
         stepId: request.workflowContext.stepId,

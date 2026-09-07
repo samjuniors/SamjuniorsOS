@@ -23,15 +23,17 @@ import {
   PhoneCall,
   Volume2,
 } from 'lucide-react';
-import { AIAgent, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext } from '@/types/os';
+import { AIAgent, AgentRole, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext, PersonaTone } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit, BookOpen } from 'lucide-react';
+import { BrainCircuit, BookOpen, Sliders } from 'lucide-react';
 import { STRUCTURED_SKILLS, getSkillsForRole } from '@/lib/skills/skill-registry';
 import { StructuredSkillDefinition } from '@/types/capabilities';
 import { SkillInspectionModal } from './SkillInspectionModal';
 import { AgentAvatar, AGENT_AVATAR_THEMES } from '@/components/os/AgentAvatar';
 import { MarkdownMessage } from '@/components/os/MarkdownMessage';
 import { VoiceCallModal } from '@/components/os/VoiceCallModal';
+import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
+import { PersonaStore } from '@/lib/persona-store';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -52,11 +54,19 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   onInspectDeliverable,
   onAskAdvisor,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'chat' | 'skills' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'capabilities' | 'persona' | 'chat' | 'skills' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
   const [inspectingSkill, setInspectingSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
   const structuredSkills = getSkillsForRole(agent.id as any);
   const [chatInput, setChatInput] = useState('');
   const [isVoiceCallOpen, setIsVoiceCallOpen] = useState(false);
+  const detailedProfile = DETAILED_AI_EMPLOYEE_PROFILES[agent.id as keyof typeof DETAILED_AI_EMPLOYEE_PROFILES];
+  const [toneByAgent, setToneByAgent] = useState<Record<string, PersonaTone>>({});
+  const agentTone: PersonaTone = toneByAgent[agent.id] || PersonaStore.getPersona(agent.id as any)?.tone || 'professional';
+
+  const handleUpdateTone = (newTone: PersonaTone) => {
+    setToneByAgent((prev) => ({ ...prev, [agent.id]: newTone }));
+    PersonaStore.updateTone(agent.id as any, newTone);
+  };
   
   // Isolated per-agent chat history
   const [chatByAgent, setChatByAgent] = useState<Record<string, Array<{ sender: 'user' | 'agent'; text: string; time: string }>>>({});
@@ -241,6 +251,8 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
         <div className="px-5 border-b border-white/10 bg-black/20 flex items-center space-x-1 overflow-x-auto text-xs">
           {[
             { id: 'overview', label: 'Executive Overview', icon: User },
+            { id: 'capabilities', label: 'AI Capabilities & Tech', icon: Cpu },
+            { id: 'persona', label: 'Persona & Style', icon: Sliders },
             { id: 'chat', label: 'Direct Chat', icon: MessageSquare },
             { id: 'skills', label: `Skills (${structuredSkills.length})`, icon: BookOpen },
             { id: 'tasks', label: 'Work & Tasks', icon: Target },
@@ -306,7 +318,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                     <div className="hidden sm:flex flex-col items-end shrink-0 space-y-1 text-right">
                       <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Clearance</span>
                       <span className="text-xs font-mono font-bold text-indigo-300 px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-500/30">
-                        LEVEL 5 CONSTITUTIONAL
+                        {detailedProfile?.clearanceLevel || 'LEVEL 5 CONSTITUTIONAL'}
                       </span>
                       <span className="text-[9px] text-emerald-400 font-mono">Safe Mock Guard Active</span>
                     </div>
@@ -316,7 +328,9 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
                       Executive Mandate
                     </span>
-                    <p className="text-xs text-slate-200 leading-relaxed">{agent.bio}</p>
+                    <p className="text-xs text-slate-200 leading-relaxed">
+                      {detailedProfile?.executiveMandate || agent.bio}
+                    </p>
                   </div>
 
                   <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/15 space-y-2">
@@ -334,7 +348,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                       Core Responsibilities
                     </span>
                     <ul className="space-y-2 text-xs text-slate-300">
-                      {(agent.responsibilities || agent.goals || []).map((r, i) => (
+                      {(detailedProfile?.responsibilities || agent.responsibilities || agent.goals || []).map((r, i) => (
                         <li key={i} className="flex items-start gap-2">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
                           <span className="leading-snug">{r}</span>
@@ -351,6 +365,45 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Core Functions with SLA & Invariant Breakdown */}
+              {detailedProfile && detailedProfile.coreFunctions && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                      Operational Domain Functions & SLA Targets (4)
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400">Deterministic Invariants</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {detailedProfile.coreFunctions.map((fn, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-slate-900/60 border border-white/10 hover:border-indigo-500/40 transition-all space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase font-semibold">
+                            Function 0{idx + 1}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> {fn.slaTarget}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-bold text-white">{fn.title}</h4>
+                        <p className="text-[11px] text-slate-300 leading-relaxed">{fn.description}</p>
+                        <div className="pt-2 border-t border-white/5 flex items-start gap-1.5 text-[10px] text-slate-400">
+                          <Lock className="w-2.5 h-2.5 text-indigo-400 mt-0.5 shrink-0" />
+                          <div>
+                            <span className="text-indigo-200 font-semibold">Invariant: </span>
+                            <span>{fn.invariant}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Skills & Tools */}
               <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-3">
@@ -398,6 +451,176 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
                           <span>Inspect Skill</span>
                         </button>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'capabilities' && detailedProfile && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span className="font-bold text-white uppercase tracking-wider text-[10px]">
+                  Specialized AI Capabilities & Cognitive Architectures
+                </span>
+                <span className="font-mono text-indigo-300 text-[11px]">Underlying: {detailedProfile.model}</span>
+              </div>
+
+              {/* Cognitive Spec Card */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Context Window</span>
+                  <div className="font-mono text-white font-bold text-xs mt-0.5">{detailedProfile.contextWindow}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Latency Baseline</span>
+                  <div className="font-mono text-emerald-400 font-bold text-xs mt-0.5">{detailedProfile.latencyTarget}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Epistemic Certainty</span>
+                  <div className="font-mono text-indigo-300 font-bold text-xs mt-0.5">{detailedProfile.neuralSyncScore}</div>
+                </div>
+                <div className="p-3 rounded-xl bg-black/40 border border-white/10">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Sandbox Boundary</span>
+                  <div className="font-mono text-amber-300 font-bold text-xs mt-0.5">Deterministic Safe Mock</div>
+                </div>
+              </div>
+
+              {/* Capabilities Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {detailedProfile.aiCapabilities.map((cap) => (
+                  <div
+                    key={cap.id}
+                    className="p-4 rounded-xl bg-slate-900/60 border border-white/10 hover:border-indigo-500/40 transition-all space-y-2.5 shadow-lg"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase font-semibold">
+                        {cap.category}
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-400 font-bold">{cap.badge}</span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-white">{cap.name}</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed">{cap.description}</p>
+
+                    <div className="pt-2 border-t border-white/5 space-y-1 text-[11px]">
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-slate-400 font-medium">Mechanism:</span>
+                        <span className="text-slate-300 font-mono text-[10px] leading-relaxed">{cap.technicalMechanism}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] font-mono pt-1 text-slate-400">
+                        <span>Latency: <strong className="text-emerald-400">{cap.latencyBenchmark}</strong></span>
+                        <span>Grounding: <strong className="text-indigo-300">{cap.epistemicGrounding}</strong></span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'persona' && detailedProfile && (
+            <div className="space-y-4">
+              {/* Natural DNA Header */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-indigo-950/40 via-purple-950/40 to-slate-950/40 border border-indigo-500/30 space-y-2 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5" />
+                    Natural Operational Persona DNA
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400">{detailedProfile.interactionStyle.toneSummary}</span>
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed">{detailedProfile.interactionStyle.naturalDna}</p>
+
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {detailedProfile.interactionStyle.keyTraits.map((t, i) => (
+                    <span
+                      key={i}
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-300"
+                    >
+                      • {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Archetype Selector */}
+              <div className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">Active Interaction Style Archetype</span>
+                  <span className="text-[10px] font-mono text-emerald-400">Durable Across OS</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {[
+                    {
+                      id: 'professional',
+                      title: 'Professional & Executive',
+                      desc: 'Formal, metric-grounded, structured, SLA rigor',
+                      color: 'border-indigo-500/50 bg-indigo-950/30 text-indigo-200',
+                    },
+                    {
+                      id: 'casual',
+                      title: 'Casual & Candid',
+                      desc: 'Startup-native peer, high energy, zero corporate fluff',
+                      color: 'border-amber-500/50 bg-amber-950/30 text-amber-200',
+                    },
+                    {
+                      id: 'flirty',
+                      title: 'Charming & Playful',
+                      desc: 'Sparkling wit, magnetic charisma, playful camaraderie',
+                      color: 'border-pink-500/50 bg-pink-950/30 text-pink-200',
+                    },
+                  ].map((archetype) => {
+                    const isSelected = agentTone === archetype.id;
+                    return (
+                      <button
+                        key={archetype.id}
+                        id={`workforce-tone-select-btn-${archetype.id}`}
+                        onClick={() => {
+                          handleUpdateTone(archetype.id as PersonaTone);
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
+                          isSelected
+                            ? `${archetype.color} ring-1 ring-white/30 shadow-md`
+                            : 'border-white/10 bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold">{archetype.title}</span>
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                        </div>
+                        <p className="text-[11px] opacity-80 leading-snug">{archetype.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Sample Voice Quote for Selected Tone */}
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <span className="flex items-center gap-1 text-indigo-300">
+                      <Volume2 className="w-3 h-3" /> Sample Dialogue Quote ({agentTone.toUpperCase()})
+                    </span>
+                    <span>Voice Synthesizer Ready</span>
+                  </div>
+                  <p className="text-xs italic text-slate-200 leading-relaxed">
+                    &ldquo;{detailedProfile.interactionStyle.sampleResponses[agentTone]}&rdquo;
+                  </p>
+                </div>
+              </div>
+
+              {/* Communication Rules */}
+              <div className="p-4 rounded-xl bg-black/30 border border-white/10 space-y-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Role-Specific Communication Rules
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-200">
+                  {detailedProfile.interactionStyle.communicationRules.map((rule, idx) => (
+                    <div key={idx} className="flex items-start gap-2 p-2 rounded-lg bg-white/5 border border-white/5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                      <span className="leading-snug">{rule}</span>
                     </div>
                   ))}
                 </div>
@@ -667,35 +890,48 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
             <div className="space-y-4 text-xs">
               <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-3">
                 <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  Autonomous Authority & Safety Boundaries
+                  Autonomous Authority & Safety Boundaries ({detailedProfile?.clearanceLevel || 'LEVEL 5 CONSTITUTIONAL'})
                 </span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* CAN */}
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                  <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 space-y-2">
+                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       What {agent.name.split(' ')[0]} CAN Do Autonomously:
                     </span>
-                    <ul className="space-y-1 text-slate-300 text-[11px]">
-                      <li>• Synthesize and draft comprehensive strategic documents</li>
-                      <li>• Decompose directives into verified execution plans</li>
-                      <li>• Benchmark competitor pricing and developer sentiment</li>
-                      <li>• Model unit economics, pricing tiers, and margin floors</li>
-                      <li>• Inspect and peer-review council outputs</li>
+                    <ul className="space-y-1.5 text-slate-200 text-[11px]">
+                      {(detailedProfile?.canDoAutonomously || [
+                        'Synthesize and draft comprehensive strategic documents',
+                        'Decompose directives into verified execution plans',
+                        'Benchmark competitor pricing and developer sentiment',
+                        'Model unit economics, pricing tiers, and margin floors',
+                      ]).map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-1.5 leading-relaxed">
+                          <span className="text-emerald-400 font-bold">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
                     </ul>
                   </div>
 
                   {/* CANNOT */}
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold text-rose-400 flex items-center gap-1">
+                  <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/20 space-y-2">
+                    <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5" />
-                      What Requires Explicit Founder Sign-Off:
+                      What Strictly Requires Explicit Founder Sign-Off:
                     </span>
-                    <ul className="space-y-1 text-slate-300 text-[11px]">
-                      <li>• Irreversible financial transfers or budget threshold increases</li>
-                      <li>• Production code deployments to live enterprise clusters</li>
-                      <li>• Public press releases and external marketing broadcasts</li>
-                      <li>• Modifying constitutional agent safety rules</li>
+                    <ul className="space-y-1.5 text-slate-200 text-[11px]">
+                      {(detailedProfile?.requiresFounderApproval || [
+                        'Irreversible financial transfers or budget threshold increases',
+                        'Production code deployments to live enterprise clusters',
+                        'Public press releases and external marketing broadcasts',
+                        'Modifying constitutional agent safety rules',
+                      ]).map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-1.5 leading-relaxed">
+                          <span className="text-rose-400 font-bold">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 </div>
