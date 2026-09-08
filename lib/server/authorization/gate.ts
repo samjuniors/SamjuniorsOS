@@ -157,11 +157,22 @@ export class SideEffectAuthorizationGate {
    * AI Employees (researcher, pm, coo, finance, advisor) cannot self-approve or approve others.
    */
   public async decideApproval(params: DecideApprovalParams): Promise<FounderApprovalRecord> {
-    const prohibitedRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent', 'system', 'developer', 'guest'];
+    const ALLOWED_FOUNDER_IDENTITIES = [
+      'founder',
+      'founder-001',
+      'founder-local-session',
+      'executive_founder',
+      'executive-founder',
+    ];
     const actor = params.decidedBy?.toLowerCase()?.trim() || '';
-    if (!actor || prohibitedRoles.includes(actor)) {
+    const isAllowedFounder =
+      ALLOWED_FOUNDER_IDENTITIES.includes(actor) ||
+      (actor.startsWith('founder-') && !actor.includes('agent')) ||
+      params.userContext?.role === 'FOUNDER';
+
+    if (!isAllowedFounder) {
       throw new Error(
-        `Permission denied: AI Employees and non-Founder identities ("${params.decidedBy}") cannot approve or reject requests. Founder remains final authority.`
+        `Permission denied: Identity "${params.decidedBy}" is not an authorized Founder. Only verified Founder identities can approve or reject side-effect requests.`
       );
     }
 

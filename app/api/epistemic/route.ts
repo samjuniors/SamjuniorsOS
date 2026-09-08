@@ -5,6 +5,7 @@ import {
   EpistemicClaimInputSchema,
   ClaimVerificationInputSchema,
 } from "@/lib/server/epistemic/schemas";
+import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 
 /**
  * PHASE 13: GOVERNED EPISTEMIC & MEMORY LIFECYCLE API
@@ -13,12 +14,17 @@ import {
  * - Ingesting raw evidence sources
  * - Submitting candidate claims from agents or founder
  * - Verifying claims against contradiction and constitutional policies
- * - Promoting verified claims to canonical facts
- * - Promoting canonical facts to durable company memory
+ * - Promoting verified claims to canonical facts (Founder-only)
+ * - Promoting canonical facts to durable company memory (Founder-only)
  */
 
 export async function GET(req: NextRequest) {
   try {
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const view = searchParams.get('view') || 'claims'; // 'claims' | 'facts' | 'sources'
     const claimStore = EpistemicClaimStore.getInstance();
@@ -49,6 +55,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const body = await req.json();
     const action = body.action || 'submit_claim';
     const pipeline = EpistemicPipeline.getInstance();
@@ -75,25 +86,43 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const reviewerId = founder.role === 'FOUNDER' ? (parsed.data.reviewerId || founder.userId) : founder.userId;
+      const reviewerRole = founder.role === 'FOUNDER' ? (parsed.data.reviewerRole || 'founder') : founder.role.toLowerCase();
+
       const verification = await pipeline.verifyClaim(parsed.data.claimId, {
-        role: parsed.data.reviewerRole,
-        userId: parsed.data.reviewerId,
+        role: reviewerRole,
+        userId: reviewerId,
       });
 
       return NextResponse.json({ success: true, data: verification });
     }
 
     if (action === 'promote_to_fact') {
-      const { claimId, promotedBy = 'founder' } = body;
+      if (founder.role !== 'FOUNDER') {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: Only Founder can promote claims to canonical facts' },
+          { status: 403 }
+        );
+      }
+
+      const { claimId } = body;
       if (!claimId) {
         return NextResponse.json({ success: false, error: 'claimId is required' }, { status: 400 });
       }
 
-      const fact = await pipeline.promoteClaimToFact(claimId, promotedBy);
+      // Derives promoter identity strictly from authenticated session
+      const fact = await pipeline.promoteClaimToFact(claimId, founder.userId);
       return NextResponse.json({ success: true, data: fact });
     }
 
     if (action === 'promote_to_memory') {
+      if (founder.role !== 'FOUNDER') {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: Only Founder can promote canonical facts to company memory' },
+          { status: 403 }
+        );
+      }
+
       const { factId, approvedAction, executionOutcome, category } = body;
       if (!factId) {
         return NextResponse.json({ success: false, error: 'factId is required' }, { status: 400 });

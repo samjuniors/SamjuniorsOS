@@ -158,6 +158,27 @@ export class EpistemicPipeline {
 
     const now = new Date().toISOString();
     const reviewerId = reviewer.userId || reviewer.role || 'system-policy';
+    const isFounder = reviewer.role?.toLowerCase() === 'founder';
+
+    // Separation of Powers: Proposer CANNOT verify their own claim
+    if (reviewerId.toLowerCase() === claim.proposedBy.toLowerCase() && !(isFounder && reviewer.manualOverride)) {
+      const rejection: VerificationPolicyResult = {
+        claimId,
+        passed: false,
+        policyOutcome: 'rejected_contradiction',
+        reason: `SEPARATION_OF_POWERS_VIOLATION: Proposer ("${claim.proposedBy}") cannot verify their own claim. Independent verifier required.`,
+        verifiedAt: now,
+        verifiedBy: reviewerId,
+        precedenceNote: 'An AI employee or specialist cannot certify its own claims.',
+      };
+      claim.verificationStatus = 'rejected';
+      claim.reviewedAt = now;
+      claim.reviewedBy = reviewerId;
+      claim.rejectionReason = rejection.reason;
+      await this.claimStore.saveClaim(claim);
+      await this.claimStore.recordVerification(rejection);
+      return rejection;
+    }
 
     // 1. Constitutional Margin Floor Check
     const lowerStmt = claim.statement.toLowerCase();
@@ -275,6 +296,27 @@ export class EpistemicPipeline {
     const claim = await this.claimStore.getClaim(claimId);
     if (!claim) {
       throw new Error(`Claim not found: ${claimId}`);
+    }
+
+    // Separation of Powers: Only authorized Founder identities can promote claims to canonical facts
+    const p = promotedBy.toLowerCase().trim();
+    const isAuthorizedFounder =
+      p === 'founder' ||
+      p.startsWith('founder-') ||
+      p === 'system_governor' ||
+      p === 'system-policy';
+
+    if (!isAuthorizedFounder) {
+      throw new Error(
+        `Unauthorized promotion: Only an authenticated Founder can promote claims to canonical facts. Identity "${promotedBy}" is not authorized.`
+      );
+    }
+
+    // Proposer cannot self-promote if an AI specialist
+    if (claim.proposedBy.toLowerCase() === p && !p.startsWith('founder')) {
+      throw new Error(
+        `Separation of powers violation: Specialist proposer "${claim.proposedBy}" cannot promote their own claim to a canonical fact.`
+      );
     }
 
     const verification = await this.claimStore.getVerification(claimId);

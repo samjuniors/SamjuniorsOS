@@ -396,7 +396,7 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'current_truth',
             authority: 'Founder Governance Register',
             timestamp: nowIso,
-            confidence: dec.status === 'approved' ? 'verified_fact' : 'unverified',
+            confidence: 'unverified',
             provenanceKind: 'synthetic',
             notes: 'Seed governance proposal.',
           },

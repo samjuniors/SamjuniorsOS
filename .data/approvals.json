@@ -1,21 +1,273 @@
 {
-  "appr-ms1-test-1": {
-    "id": "appr-ms1-test-1",
-    "workflowInstanceId": "wf-ms1-inst-1",
-    "stepId": "step-1",
+  "appr-4da6fcd2-57df-4777-925e-41a87fa02945": {
+    "id": "appr-4da6fcd2-57df-4777-925e-41a87fa02945",
+    "decision": "revoked",
+    "actionName": "Send Partner Email",
+    "classification": "external_communication",
+    "workflowInstanceId": "inst-202",
+    "stepId": "step-email-partners",
+    "employeeRole": "coo",
+    "scope": {
+      "scopeType": "step",
+      "workflowInstanceId": "inst-202",
+      "stepId": "step-email-partners",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:52.305Z",
+    "payloadHash": "e3963b7c2ef6dfccea8bd9f7d43ed92fa3a97e25c5112ad812bdeac8d445503f",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:52.313Z",
+    "decidedBy": "founder",
+    "decisionReason": "Partner outreach paused due to strategy pivot"
+  },
+  "appr-ac98c2f4-be47-45af-a721-2ae36019be99": {
+    "id": "appr-ac98c2f4-be47-45af-a721-2ae36019be99",
+    "decision": "approved",
+    "actionName": "Send Campaign Blasts",
+    "classification": "external_communication",
+    "workflowInstanceId": "inst-camp-1",
+    "stepId": "step-blast",
+    "employeeRole": "coo",
+    "scope": {
+      "scopeType": "campaign",
+      "workflowInstanceId": "inst-camp-1",
+      "stepId": "step-blast",
+      "campaignId": "q1-expansion",
+      "targetSystem": "email_provider",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:52.310Z",
+    "target": {
+      "resourceId": "q1-expansion",
+      "targetSystem": "email_provider"
+    },
+    "payloadHash": "0bf7ef84d569946352acec286fa2b9d74ab6bb00bfaea1b8f52d60794d441f2d",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:52.312Z",
+    "decidedBy": "founder"
+  },
+  "appr-a25f044a-43a8-48ec-809f-a2c652079f95": {
+    "id": "appr-a25f044a-43a8-48ec-809f-a2c652079f95",
+    "decision": "approved",
+    "actionName": "Publish Release Notes",
+    "classification": "external_record_mutation",
+    "workflowInstanceId": "inst-exp-1",
+    "stepId": "step-pub",
+    "employeeRole": "pm",
+    "scope": {
+      "scopeType": "step",
+      "workflowInstanceId": "inst-exp-1",
+      "stepId": "step-pub",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:52.316Z",
+    "payloadHash": "c2f009d71b15ac6f7720898d137a7b8c50ba4e5f4bf1809235100d6a493d0d94",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:52.317Z",
+    "decidedBy": "founder",
+    "expiresAt": "2026-09-08T05:01:52.317Z"
+  },
+  "appr-4ff139a6-b988-4905-ac31-2a4282d45540": {
+    "id": "appr-4ff139a6-b988-4905-ac31-2a4282d45540",
+    "decision": "approved",
+    "actionName": "One-Time Payment Verification",
+    "classification": "external_record_mutation",
+    "workflowInstanceId": "inst-single-1",
+    "stepId": "step-pay",
+    "employeeRole": "finance",
+    "scope": {
+      "scopeType": "single_action",
+      "workflowInstanceId": "inst-single-1",
+      "stepId": "step-pay",
+      "maxUses": 1,
+      "usedCount": 1
+    },
+    "requestedAt": "2026-09-08T06:01:52.319Z",
+    "payloadHash": "1ce9462307857bac82831c5e927590be8ab1e1b92eaafd082dc5107a127e7ea5",
+    "isConsumed": true,
+    "decidedAt": "2026-09-08T06:01:52.320Z",
+    "decidedBy": "founder"
+  },
+  "appr-ee30cb8f-8505-4a69-af94-1ec40d4c56c9": {
+    "id": "appr-ee30cb8f-8505-4a69-af94-1ec40d4c56c9",
+    "decision": "approved",
+    "actionName": "Notify Board Members",
+    "classification": "external_communication",
+    "workflowInstanceId": "wf-inst-ce8efffe-1a3a-4a04-ac7d-a2821b816a5a",
+    "stepId": "step-3-notify-board",
+    "employeeRole": "coo",
+    "scope": {
+      "scopeType": "step",
+      "workflowInstanceId": "wf-inst-ce8efffe-1a3a-4a04-ac7d-a2821b816a5a",
+      "stepId": "step-3-notify-board",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:52.361Z",
+    "notes": "External communication to board",
+    "payloadHash": "79946e0f37dac4a4851ebd8998a043633adba01e911a733eb7b91acc6112d306",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:52.364Z",
+    "decidedBy": "founder",
+    "decisionReason": "Board update approved"
+  },
+  "appr-f1b43e4b-3061-4663-bcab-79914c42817a": {
+    "id": "appr-f1b43e4b-3061-4663-bcab-79914c42817a",
+    "decision": "revoked",
+    "actionName": "Morning Blast",
+    "classification": "external_communication",
+    "workflowInstanceId": "wf-inst-c99f82cb-984d-4267-88c0-a9c414f0548b",
+    "stepId": "step-wake-blast",
+    "employeeRole": "coo",
+    "scope": {
+      "scopeType": "step",
+      "workflowInstanceId": "wf-inst-c99f82cb-984d-4267-88c0-a9c414f0548b",
+      "stepId": "step-wake-blast",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:52.379Z",
+    "notes": "External notification dispatch",
+    "payloadHash": "849de1c142f4d2c1d2448e9c774eecf04f128017eb0616df897086f311b7abba",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:52.389Z",
+    "decidedBy": "founder",
+    "decisionReason": "Emergency revoke: Morning blast cancelled"
+  },
+  "appr-c74f51d4-2c49-4ab2-842e-01a1a62626e6": {
+    "id": "appr-c74f51d4-2c49-4ab2-842e-01a1a62626e6",
+    "decision": "approved",
+    "actionName": "Plan Action",
+    "classification": "external_communication",
+    "workflowInstanceId": "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587",
+    "stepId": "step-2",
+    "employeeRole": "pm",
+    "scope": {
+      "scopeType": "step",
+      "workflowInstanceId": "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587",
+      "stepId": "step-2",
+      "maxUses": 1,
+      "usedCount": 0
+    },
+    "requestedAt": "2026-09-08T06:01:58.326Z",
+    "notes": "Plan onboarding steps",
+    "payloadHash": "f2fd7a194de38f92f347f949306c617048f55055e2508b0ffafc1a4489c9711d",
+    "isConsumed": false,
+    "decidedAt": "2026-09-08T06:01:58.330Z",
+    "decidedBy": "founder",
+    "decisionReason": "Approved by Founder"
+  },
+  "appr-spoof-test-1": {
+    "id": "appr-spoof-test-1",
+    "workflowInstanceId": "wf-spoof-1",
+    "stepId": "step-spoof-1",
     "employeeRole": "coo",
     "classification": "external_communication",
-    "actionName": "SEND_OUTBOUND_BRIEF",
+    "actionName": "POST_MARKETING_ANNOUNCEMENT",
     "target": {
-      "targetSystem": "RESEND",
+      "targetSystem": "TWITTER",
       "metadata": {
-        "recipient": "advisor@board.com"
+        "tweet": "Launch day!"
       }
     },
-    "decision": "pending",
+    "decision": "approved",
     "scope": {
       "scopeType": "single_action"
     },
-    "requestedAt": "2026-09-07T17:09:31.637Z"
+    "requestedAt": "2026-09-08T06:02:09.821Z",
+    "decidedAt": "2026-09-08T06:02:09.824Z",
+    "decidedBy": "founder_session_verified_001",
+    "decisionReason": "Founder approved through verified server session"
+  },
+  "appr-durable-marker-1788847329836": {
+    "id": "appr-durable-marker-1788847329836",
+    "workflowInstanceId": "wf-durable-restart",
+    "stepId": "step-durable-1",
+    "employeeRole": "finance",
+    "classification": "high_impact_action",
+    "actionName": "BUDGET_REALLOCATION",
+    "target": {
+      "targetSystem": "FINANCE",
+      "metadata": {
+        "amount": 5000
+      }
+    },
+    "decision": "approved",
+    "scope": {
+      "scopeType": "single_action"
+    },
+    "requestedAt": "2026-09-08T06:02:09.836Z"
+  },
+  "appr-bound-1788847329839": {
+    "id": "appr-bound-1788847329839",
+    "workflowInstanceId": "wf-payload-binding-1788847329839",
+    "stepId": "step-send-mail-1788847329839",
+    "employeeRole": "coo",
+    "classification": "external_communication",
+    "actionName": "SEND_COMMUNICATION",
+    "target": {
+      "targetSystem": "RESEND",
+      "metadata": {
+        "recipient": "investor@fund.com",
+        "subject": "Quarterly Update",
+        "bodyContent": "Here is our quarterly update with verified financials.",
+        "budgetAllocationUsd": 1200
+      }
+    },
+    "payloadHash": "9920cc9f27b7ff67e23da03116af7f6936494b51169fd8e2034222be655c0ae6",
+    "decision": "approved",
+    "scope": {
+      "scopeType": "single_action",
+      "usedCount": 1
+    },
+    "requestedAt": "2026-09-08T06:02:09.839Z",
+    "isConsumed": true
+  },
+  "appr-tampered-1788847329850": {
+    "id": "appr-tampered-1788847329850",
+    "workflowInstanceId": "wf-tamper-test-1788847329850",
+    "stepId": "step-transfer-1788847329850",
+    "employeeRole": "finance",
+    "classification": "high_impact_action",
+    "actionName": "WIRE_TRANSFER",
+    "target": {
+      "targetSystem": "BANK",
+      "metadata": {
+        "recipient": "investor@fund.com",
+        "subject": "Quarterly Update",
+        "bodyContent": "Here is our quarterly update with verified financials.",
+        "budgetAllocationUsd": 1200
+      }
+    },
+    "payloadHash": "2e6528e02471fe61f527ec1ab28515973adcc5e0fdedf7f708fb766c1de0e4de",
+    "decision": "approved",
+    "scope": {
+      "scopeType": "single_action"
+    },
+    "requestedAt": "2026-09-08T06:02:09.851Z"
+  },
+  "appr-comm-1788847329854": {
+    "id": "appr-comm-1788847329854",
+    "workflowInstanceId": "wf-comm-safe-1788847329854",
+    "stepId": "step-send-1788847329854",
+    "employeeRole": "coo",
+    "classification": "external_communication",
+    "actionName": "Send Communication (send)",
+    "target": {
+      "targetSystem": "email",
+      "recipient": "partner@enterprise.com",
+      "summary": "Execute communication intent 'send' on email"
+    },
+    "payloadHash": "e559485dd336b0b4ab03d67ef4cf7a854b5732606f046da415aeb648caf1383e",
+    "decision": "approved",
+    "scope": {
+      "scopeType": "single_action",
+      "usedCount": 1
+    },
+    "requestedAt": "2026-09-08T06:02:09.854Z",
+    "isConsumed": true
   }
 }

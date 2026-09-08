@@ -25,5 +25,35 @@
     },
     "confidence": "high_confidence",
     "timestamp": "2026-09-07T17:09:39.216Z"
+  },
+  "sig-1788847165340-998b88": {
+    "id": "sig-1788847165340-998b88",
+    "sourceId": "src-1788847165339-0b6139",
+    "signalType": "financial_record",
+    "extractedObservation": "Current gross margin holds at 84.2% on Cloud Run serverless compute with zero idle cost.",
+    "data": {
+      "gross_margin_percent": 84.2
+    },
+    "confidence": "high_confidence",
+    "timestamp": "2026-09-08T05:59:25.341Z"
+  },
+  "sig-1788847325158-76c0b7": {
+    "id": "sig-1788847325158-76c0b7",
+    "sourceId": "src-1788847325155-6631aa",
+    "signalType": "financial_record",
+    "extractedObservation": "Current gross margin holds at 84.2% on Cloud Run serverless compute with zero idle cost.",
+    "data": {
+      "gross_margin_percent": 84.2
+    },
+    "confidence": "high_confidence",
+    "timestamp": "2026-09-08T06:02:05.158Z"
+  },
+  "sig-1788847335032-de09e0": {
+    "id": "sig-1788847335032-de09e0",
+    "sourceId": "src-1788847335029-d6b7a3",
+    "signalType": "financial_record",
+    "extractedObservation": "Zero idle cost verified on container architecture.",
+    "confidence": "verified_fact",
+    "timestamp": "2026-09-08T06:02:15.032Z"
   }
 }

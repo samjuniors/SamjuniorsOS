@@ -64,5 +64,71 @@
     "capturedBy": "finance",
     "metadata": {},
     "provenanceKind": "live_operational"
+  },
+  "src-1788847165339-0b6139": {
+    "id": "src-1788847165339-0b6139",
+    "sourceSystem": "stripe",
+    "title": "Q3 Verified Billing Telemetry",
+    "rawContent": "{\"mrr\": 42500, \"gross_margin_percent\": 84.2, \"serverless_cost\": 1240}",
+    "contentHash": "3acb0a88947f34f313dadd3f0d1f732e86e304c8d645fe1b3a8f709870bec13c",
+    "capturedAt": "2026-09-08T05:59:25.339Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788847165362-4bb0e4": {
+    "id": "src-1788847165362-4bb0e4",
+    "sourceSystem": "stripe",
+    "title": "Q4 Audited FinOps Report",
+    "rawContent": "{\"mrr\": 58000, \"gross_margin_percent\": 86.5}",
+    "contentHash": "a85596c3ea83c4e3f246ce0f0cdf02ba3b45328137212f8ccc84b1cc2484ca22",
+    "capturedAt": "2026-09-08T05:59:25.362Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788847325155-6631aa": {
+    "id": "src-1788847325155-6631aa",
+    "sourceSystem": "stripe",
+    "title": "Q3 Verified Billing Telemetry",
+    "rawContent": "{\"mrr\": 42500, \"gross_margin_percent\": 84.2, \"serverless_cost\": 1240}",
+    "contentHash": "3acb0a88947f34f313dadd3f0d1f732e86e304c8d645fe1b3a8f709870bec13c",
+    "capturedAt": "2026-09-08T06:02:05.156Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788847325183-a17a4e": {
+    "id": "src-1788847325183-a17a4e",
+    "sourceSystem": "stripe",
+    "title": "Q4 Audited FinOps Report",
+    "rawContent": "{\"mrr\": 58000, \"gross_margin_percent\": 86.5}",
+    "contentHash": "a85596c3ea83c4e3f246ce0f0cdf02ba3b45328137212f8ccc84b1cc2484ca22",
+    "capturedAt": "2026-09-08T06:02:05.183Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788847335029-d6b7a3": {
+    "id": "src-1788847335029-d6b7a3",
+    "sourceSystem": "stripe_and_cloud_run_billing",
+    "title": "Cloud Run Q3 Audit",
+    "rawContent": "Audited Q3 serverless cloud invoice: Total Cloud Run cost $0.00 across 10,000 idle hours.",
+    "contentHash": "d0c6d5bbf379145918d555331e9bc7975985eec56032cc8d85b111dfa302395e",
+    "capturedAt": "2026-09-08T06:02:15.029Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788847335056-59805b": {
+    "id": "src-1788847335056-59805b",
+    "sourceSystem": "cloud_monitoring",
+    "title": "Q4 Cold Start Optimizations",
+    "rawContent": "Cold starts reduced to 120ms with min-instance warm pools.",
+    "contentHash": "e33acc3ba71a659bf957fd60d84d378c594174ddb84a4b1d3c633a71c6582218",
+    "capturedAt": "2026-09-08T06:02:15.056Z",
+    "capturedBy": "coo",
+    "metadata": {},
+    "provenanceKind": "live_operational"
   }
 }

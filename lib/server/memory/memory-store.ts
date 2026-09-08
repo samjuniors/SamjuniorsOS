@@ -183,7 +183,7 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
           epistemicType: 'historical_memory',
           authority: 'Founder-Approved Organizational Precedent',
           timestamp: origMem?.timestamp || nowIso,
-          confidence: (item.epistemicConfidence || 'verified_fact') as any,
+          confidence: (item.epistemicConfidence || 'unverified') as any,
           immutablePrecedent: true,
           notes: 'Precedent only — never new empirical evidence; requires Founder approval to execute',
         },

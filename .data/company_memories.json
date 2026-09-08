@@ -37,5 +37,62 @@
     "epistemicConfidence": "verified_fact",
     "timestamp": "2026-09-07T17:09:39.221Z",
     "recordedAt": "2026-09-07T17:09:39.221Z"
+  },
+  "mem-fact-1788847165371-1cd3fc": {
+    "id": "mem-fact-1788847165371-1cd3fc",
+    "decisionId": "fact-decision-fact-1788847165368-5acabc",
+    "approvedAction": "Maintain strict serverless batching to sustain >86% gross margins",
+    "executionOutcome": "Successfully maintained gross margin above target throughout Q4",
+    "evidenceReferences": [
+      "fact-1788847165368-5acabc",
+      "src-1788847165362-4bb0e4"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-08T05:59:25.371Z",
+    "recordedAt": "2026-09-08T05:59:25.371Z"
+  },
+  "mem-test-unverified-1788847283939": {
+    "id": "mem-test-unverified-1788847283939",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T06:01:23.939Z"
+  },
+  "mem-test-unverified-1788847303279": {
+    "id": "mem-test-unverified-1788847303279",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T06:01:43.279Z"
+  },
+  "mem-fact-1788847325192-c49db4": {
+    "id": "mem-fact-1788847325192-c49db4",
+    "decisionId": "fact-decision-fact-1788847325188-dd8830",
+    "approvedAction": "Maintain strict serverless batching to sustain >86% gross margins",
+    "executionOutcome": "Successfully maintained gross margin above target throughout Q4",
+    "evidenceReferences": [
+      "fact-1788847325188-dd8830",
+      "src-1788847325183-a17a4e"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-08T06:02:05.192Z",
+    "recordedAt": "2026-09-08T06:02:05.192Z"
+  },
+  "mem-fact-1788847335065-4c6a07": {
+    "id": "mem-fact-1788847335065-4c6a07",
+    "decisionId": "fact-decision-fact-1788847335062-a3fbcf",
+    "approvedAction": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "executionOutcome": "Adopted serverless container standard across all company services",
+    "evidenceReferences": [
+      "fact-1788847335062-a3fbcf",
+      "src-1788847335056-59805b"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-08T06:02:15.065Z",
+    "recordedAt": "2026-09-08T06:02:15.065Z"
   }
 }

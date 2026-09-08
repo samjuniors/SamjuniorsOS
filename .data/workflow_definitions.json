@@ -1,36 +1,126 @@
 {
-  "wf-def-ms1@1.0.0": {
-    "id": "wf-def-ms1",
-    "name": "Milestone 1 Test Workflow",
-    "description": "Milestone 1 durability workflow",
-    "objective": "Verify workflow persistence",
+  "wf-def-1@1.0.0": {
+    "id": "wf-def-1",
+    "name": "Customer Onboarding",
+    "description": "Standard self-serve onboarding flow.",
+    "objective": "Onboard a new customer and verify metrics",
     "version": "1.0.0",
-    "steps": [],
     "dependencies": [],
     "requiredApprovals": 0,
     "allowedRoles": [
-      "coo"
+      "pm",
+      "finance",
+      "researcher"
     ],
     "allowedSkills": [
+      "plan",
+      "analyze",
       "research"
     ],
-    "expectedOutputs": []
+    "expectedOutputs": [
+      "onboarding_report"
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "name": "Analyze Inputs",
+        "description": "Analyze initial customer inputs",
+        "assignedRole": "researcher",
+        "skill": "research",
+        "dependencies": [],
+        "inputReferences": [],
+        "outputReferences": [
+          "analysis_result"
+        ],
+        "requiresApproval": false,
+        "retryPolicy": {
+          "maxRetries": 3,
+          "backoffMs": 1000
+        }
+      },
+      {
+        "id": "step-2",
+        "name": "Plan Action",
+        "description": "Plan onboarding steps",
+        "assignedRole": "pm",
+        "skill": "plan",
+        "dependencies": [
+          "step-1"
+        ],
+        "inputReferences": [
+          "analysis_result"
+        ],
+        "outputReferences": [
+          "plan_result"
+        ],
+        "requiresApproval": true,
+        "retryPolicy": {
+          "maxRetries": 1,
+          "backoffMs": 1000
+        }
+      }
+    ]
   },
-  "wf-def-ms1": {
-    "id": "wf-def-ms1",
-    "name": "Milestone 1 Test Workflow",
-    "description": "Milestone 1 durability workflow",
-    "objective": "Verify workflow persistence",
+  "wf-def-1": {
+    "id": "wf-def-1",
+    "name": "Customer Onboarding",
+    "description": "Standard self-serve onboarding flow.",
+    "objective": "Onboard a new customer and verify metrics",
     "version": "1.0.0",
-    "steps": [],
     "dependencies": [],
     "requiredApprovals": 0,
     "allowedRoles": [
-      "coo"
+      "pm",
+      "finance",
+      "researcher"
     ],
     "allowedSkills": [
+      "plan",
+      "analyze",
       "research"
     ],
-    "expectedOutputs": []
+    "expectedOutputs": [
+      "onboarding_report"
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "name": "Analyze Inputs",
+        "description": "Analyze initial customer inputs",
+        "assignedRole": "researcher",
+        "skill": "research",
+        "dependencies": [],
+        "inputReferences": [],
+        "outputReferences": [
+          "analysis_result"
+        ],
+        "requiresApproval": false,
+        "retryPolicy": {
+          "maxRetries": 3,
+          "backoffMs": 1000
+        }
+      },
+      {
+        "id": "step-2",
+        "name": "Plan Action",
+        "description": "Plan onboarding steps",
+        "assignedRole": "pm",
+        "skill": "plan",
+        "dependencies": [
+          "step-1"
+        ],
+        "inputReferences": [
+          "analysis_result"
+        ],
+        "outputReferences": [
+          "plan_result"
+        ],
+        "requiresApproval": true,
+        "retryPolicy": {
+          "maxRetries": 1,
+          "backoffMs": 1000
+        }
+      }
+    ]
   }
 }

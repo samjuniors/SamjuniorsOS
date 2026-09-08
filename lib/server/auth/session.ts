@@ -24,14 +24,37 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
 
   // In sandbox / test mode without real Clerk credentials:
   if (isSandbox) {
-    const isDevOrTest =
-      !process.env.NODE_ENV ||
-      process.env.NODE_ENV === 'development' ||
-      process.env.NODE_ENV === 'test';
-    const devAs = req?.headers.get('x-samjuniors-dev-as') || req?.cookies.get('samjuniors-dev-as')?.value;
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[SessionAuth] Fatal: Sandbox/dummy credentials are not permitted in production.');
+      return null;
+    }
 
-    // Reject if unauthorized in sandbox
-    if (!isDevOrTest && devAs !== 'founder') {
+    // If req is not provided (internal server-side execution without HTTP context)
+    if (!req) {
+      if (process.env.NODE_ENV === 'test') {
+        return {
+          userId: 'founder-local-session',
+          email: 'founder@samjuniors.com',
+          name: 'Executive Founder',
+          role: 'FOUNDER',
+          isVerified: true,
+        };
+      }
+      return null;
+    }
+
+    const devAs = req.headers.get('x-samjuniors-dev-as') || req.cookies.get('samjuniors-dev-as')?.value;
+    const devSecret = req.headers.get('x-samjuniors-dev-secret') || req.cookies.get('samjuniors-dev-secret')?.value;
+    const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
+
+    // Strict check: devAs MUST be explicitly 'founder'
+    if (devAs !== 'founder') {
+      return null;
+    }
+
+    // If a dev secret is configured, it must match
+    if (requiredSecret && devSecret !== requiredSecret) {
+      console.warn('[SessionAuth] Rejecting dev session: invalid x-samjuniors-dev-secret.');
       return null;
     }
 

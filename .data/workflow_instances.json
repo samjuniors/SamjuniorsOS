@@ -1,13 +1,83 @@
 {
-  "wf-inst-ms1": {
-    "instanceId": "wf-inst-ms1",
-    "workflowId": "wf-def-ms1",
+  "wf-inst-0fae733b-262c-491f-8059-0a4a9ed95fc2": {
+    "instanceId": "wf-inst-0fae733b-262c-491f-8059-0a4a9ed95fc2",
+    "workflowId": "wf-def-1",
     "version": "1.0.0",
-    "status": "running",
-    "objective": "Test Milestone 1 Durability",
-    "stepStates": {},
-    "createdAt": "2026-09-07T17:09:31.639Z",
-    "updatedAt": "2026-09-07T17:09:31.639Z",
+    "objective": "Onboard a new customer and verify metrics",
+    "status": "pending",
+    "stepStates": {
+      "step-1": {
+        "stepId": "step-1",
+        "status": "completed",
+        "assignedRole": "researcher",
+        "skill": "research",
+        "outputs": {},
+        "evidenceReferences": [],
+        "retryCount": 0,
+        "authorizationReasonCode": "READ_ONLY_ALLOWED",
+        "approvalState": "approved",
+        "completedAt": "2026-09-08T06:01:58.315Z"
+      },
+      "step-2": {
+        "stepId": "step-2",
+        "status": "pending",
+        "assignedRole": "pm",
+        "skill": "plan",
+        "outputs": {},
+        "evidenceReferences": [],
+        "retryCount": 0
+      }
+    },
+    "createdAt": "2026-09-08T06:01:58.310Z",
+    "updatedAt": "2026-09-08T06:01:58.315Z",
+    "outputs": {},
+    "evidenceReferences": []
+  },
+  "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587": {
+    "instanceId": "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587",
+    "workflowId": "wf-def-1",
+    "version": "1.0.0",
+    "objective": "Onboard a new customer and verify metrics",
+    "status": "completed",
+    "stepStates": {
+      "step-1": {
+        "stepId": "step-1",
+        "status": "completed",
+        "assignedRole": "researcher",
+        "skill": "research",
+        "outputs": {
+          "analysis_result": "done"
+        },
+        "evidenceReferences": [],
+        "retryCount": 0,
+        "authorizationReasonCode": "READ_ONLY_ALLOWED",
+        "approvalState": "approved",
+        "startedAt": "2026-09-08T06:01:58.322Z",
+        "completedAt": "2026-09-08T06:01:58.325Z"
+      },
+      "step-2": {
+        "stepId": "step-2",
+        "status": "completed",
+        "assignedRole": "pm",
+        "skill": "plan",
+        "outputs": {
+          "result": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+          "plan_result": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled."
+        },
+        "evidenceReferences": [
+          "audit-59b87684-e67e-4512-94a3-b212dc7badb0",
+          "pm"
+        ],
+        "retryCount": 0,
+        "authorizationReasonCode": "APPROVAL_REQUIRED_EXTERNAL_COMMUNICATION",
+        "approvalId": "appr-c74f51d4-2c49-4ab2-842e-01a1a62626e6",
+        "approvalState": "approved",
+        "startedAt": "2026-09-08T06:01:58.333Z",
+        "completedAt": "2026-09-08T06:01:58.352Z"
+      }
+    },
+    "createdAt": "2026-09-08T06:01:58.318Z",
+    "updatedAt": "2026-09-08T06:01:58.354Z",
     "outputs": {},
     "evidenceReferences": []
   }

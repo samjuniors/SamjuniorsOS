@@ -336,7 +336,7 @@ export class ContextAssemblyService {
           epistemicLabel: EPISTEMIC_LABELS.historical_memory,
           authority: 'Founder-Approved Historical Precedent',
           timestamp: m.provenance?.timestamp || timestamp,
-          confidence: (m.epistemicConfidence as any) || 'verified_fact',
+          confidence: (m.epistemicConfidence as any) || 'unverified',
           immutablePrecedent: true,
           notes: 'Precedent only — never new empirical evidence',
         },

@@ -138,7 +138,7 @@ export class ServerAgentExecutor {
           keyLearnings: [],
           tags: [],
           timestamp: m.timestamp,
-          epistemicConfidence: 'verified_fact' as const,
+          epistemicConfidence: (m.provenance?.confidence || 'unverified') as any,
           relevanceExplanation: m.matchReason,
           isConflicting: m.isConflicting,
           provenance: m.provenance,

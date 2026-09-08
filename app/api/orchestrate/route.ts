@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MultiAgentOrchestrator } from "@/lib/server/orchestration/orchestrator";
+import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 
 export async function POST(req: NextRequest) {
   try {
+    // Enforce strict Founder authentication
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder || founder.role !== 'FOUNDER') {
+      return NextResponse.json(
+        {
+          error: "Unauthorized: Valid Founder session required to orchestrate executive directives",
+          success: false,
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { directive, agents = ["coo", "researcher", "pm", "finance"], autonomyLevel = "autonomous" } = body;
 
     if (!directive || typeof directive !== "string" || !directive.trim()) {
-      return NextResponse.json({ error: "Directive is required and must be a non-empty string" }, { status: 400 });
+      return NextResponse.json({ error: "Directive is required and must be a non-empty string", success: false }, { status: 400 });
     }
 
     const orchestrator = new MultiAgentOrchestrator();

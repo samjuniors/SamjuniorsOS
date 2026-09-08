@@ -173,7 +173,7 @@ export async function executeApprovedDecision(decisionId: string): Promise<Orche
       approvedAction: decision.recommendation,
       executionOutcome: run.status,
       evidenceReferences: [decision.evidenceSummary],
-      epistemicConfidence: 'verified_fact', // We treat executed outcomes natively as verified facts
+      epistemicConfidence: 'unverified', // Execution outcomes enter as unverified operational traces until verified by epistemic pipeline
       timestamp: new Date().toISOString()
     };
     CompanyContextProvider.recordCompanyMemory(memory);

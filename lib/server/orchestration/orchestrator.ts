@@ -23,6 +23,8 @@ import {
 import { executeGitHubRepositoryRead, executeGitHubIntelligence } from '../tools/providers/github';
 import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence } from '@/types/capabilities';
 import { determineSkillForTask } from '@/lib/skills/skill-registry';
+import { ConstitutionalVerifier } from './verifier';
+import { SideEffectAuthorizationGate } from '../authorization/gate';
 
 const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
   {
@@ -240,33 +242,63 @@ Focus on:
     if (researchToolSelection.selectedToolId && researcherResult.provenance) {
       if ((researchToolSelection.selectedToolId === 'github_repository_read' || researchToolSelection.selectedToolId === 'github_read') && shouldExecuteTools) {
         try {
-          const intelResult = await executeGitHubIntelligence(directive, {
-            toolId: researchToolSelection.selectedToolId,
-            sessionScope: {
-              userId: 'founder-001',
+          const authGate = SideEffectAuthorizationGate.getInstance();
+          const authResult = await authGate.evaluateAndExecute(
+            {
               employeeRole: 'researcher',
-              permittedToolIds: ['github_repository_read', 'github_read'],
+              action: researchToolSelection.selectedToolId,
+              scope: { type: 'single_action', limit: 1 },
+              target: 'github',
+              payload: { directive },
+              reason: `Orchestration tool execution: ${researchToolSelection.selectedToolId}`,
             },
-            provenance: researcherResult.provenance,
-          });
+            async () => {
+              return await executeGitHubIntelligence(directive, {
+                toolId: researchToolSelection.selectedToolId!,
+                sessionScope: {
+                  userId: 'founder-001',
+                  employeeRole: 'researcher',
+                  permittedToolIds: ['github_repository_read', 'github_read'],
+                },
+                provenance: researcherResult.provenance!,
+              });
+            }
+          );
 
-          researchToolEvidence = intelResult.evidence;
-          const epistemic = intelResult.epistemicBreakdown;
+          if (!authResult.executed) {
+            researchToolEvidence = {
+              toolId: researchToolSelection.selectedToolId,
+              toolName: 'GitHub Repository Research',
+              status: authResult.status === 'requires_approval' ? 'requires_approval' : 'failed',
+              timestamp: new Date().toISOString(),
+              inputSummary: `Execution attempted for GitHub repository`,
+              outputSummary: `Execution blocked by Authorization Gate: ${authResult.status}`,
+              errorMessage: authResult.reason || 'Authorization required',
+              provenance: researcherResult.provenance,
+              verificationState: 'verification_failed',
+              executionSafetyState: 'requires_approval',
+              limitations: ['Authorization gate prevented autonomous execution without explicit Founder approval.'],
+            };
+          } else {
+            const intelResult = authResult.data!;
+            researchToolEvidence = intelResult.evidence;
+            const epistemic = intelResult.epistemicBreakdown;
 
-          researcherResult.structuredData = researcherResult.structuredData || {};
-          researcherResult.structuredData.summary = epistemic.summary;
-          researcherResult.structuredData.facts = epistemic.facts;
-          researcherResult.structuredData.inferences = epistemic.inferences;
-          researcherResult.structuredData.uncertainties = epistemic.uncertainties;
-          researcherResult.structuredData.targetRepository = intelResult.intelligenceTopic.title;
+            researcherResult.structuredData = researcherResult.structuredData || {};
+            researcherResult.structuredData.summary = epistemic.summary;
+            researcherResult.structuredData.facts = epistemic.facts;
+            researcherResult.structuredData.inferences = epistemic.inferences;
+            researcherResult.structuredData.uncertainties = epistemic.uncertainties;
+            researcherResult.structuredData.targetRepository = intelResult.intelligenceTopic.title;
 
-          // Propagate grounded findings into downstream context
-          researchFindings = epistemic.briefMarkdown;
+            // Propagate grounded findings into downstream context
+            researchFindings = epistemic.briefMarkdown;
 
-          const briefDeliverable = deliverables.find(d => d.name === 'Market Intelligence & Technical Feasibility Brief');
-          if (briefDeliverable) {
-            briefDeliverable.name = 'Repository Intelligence & Technical Reconnaissance Brief';
-            briefDeliverable.content = epistemic.briefMarkdown;
+            const briefDeliverable = deliverables.find(d => d.name === 'Market Intelligence & Technical Feasibility Brief');
+            if (briefDeliverable) {
+              briefDeliverable.name = 'Repository Intelligence & Technical Reconnaissance Brief';
+              briefDeliverable.content = epistemic.briefMarkdown;
+            }
           }
         } catch (error: any) {
           console.error('[ORCHESTRATOR ERROR in GitHub Intelligence]:', error);
@@ -287,30 +319,60 @@ Focus on:
       } else if (researchToolSelection.selectedToolId === 'web_research' && shouldExecuteTools) {
         try {
           const searchInput = { query: `Competitor landscape and market dynamics for: ${directive}` };
-          const result = await executeWebResearch(searchInput);
-          
-          const supportedClaimsCount = result.claims?.filter(c => c.verificationState === 'claim_supported').length || 0;
+          const authGate = SideEffectAuthorizationGate.getInstance();
+          const authResult = await authGate.evaluateAndExecute(
+            {
+              employeeRole: 'researcher',
+              action: 'web_research',
+              scope: { type: 'single_action', limit: 1 },
+              target: 'web',
+              payload: searchInput,
+              reason: 'Orchestration tool execution: web_research',
+            },
+            async () => {
+              return await executeWebResearch(searchInput);
+            }
+          );
 
-          researchToolEvidence = {
-            toolId: 'web_research',
-            toolName: 'Web Research',
-            status: result.executionStatus,
-            timestamp: result.timestamp,
-            inputSummary: `Query: ${searchInput.query}`,
-            outputSummary: `Retrieved ${result.sources.length} sources; ${supportedClaimsCount} claim(s) supported.`,
-            sourceReferences: result.sources.map(s => s.url),
-            sources: result.sources,
-            claims: result.claims,
-            provenance: researcherResult.provenance,
-            verificationState: result.verificationState,
-            executionSafetyState: 'verified_safe',
-            limitations: result.limitations,
-          };
-          
-          // Inject the real summary into the result snippet if available
-          if (result.summary && result.summary.length > 10) {
-            researcherResult.structuredData = researcherResult.structuredData || {};
-            researcherResult.structuredData.summary = result.summary.slice(0, 150) + '... (via external research)';
+          if (!authResult.executed) {
+            researchToolEvidence = {
+              toolId: 'web_research',
+              toolName: 'Web Research',
+              status: authResult.status === 'requires_approval' ? 'requires_approval' : 'failed',
+              timestamp: new Date().toISOString(),
+              inputSummary: `Query: ${searchInput.query}`,
+              outputSummary: `Execution blocked by Authorization Gate: ${authResult.status}`,
+              errorMessage: authResult.reason || 'Authorization required',
+              provenance: researcherResult.provenance,
+              verificationState: 'verification_failed',
+              executionSafetyState: 'requires_approval',
+              limitations: ['Authorization gate prevented autonomous execution.'],
+            };
+          } else {
+            const result = authResult.data!;
+            const supportedClaimsCount = result.claims?.filter(c => c.verificationState === 'claim_supported').length || 0;
+
+            researchToolEvidence = {
+              toolId: 'web_research',
+              toolName: 'Web Research',
+              status: result.executionStatus,
+              timestamp: result.timestamp,
+              inputSummary: `Query: ${searchInput.query}`,
+              outputSummary: `Retrieved ${result.sources.length} sources; ${supportedClaimsCount} claim(s) supported.`,
+              sourceReferences: result.sources.map(s => s.url),
+              sources: result.sources,
+              claims: result.claims,
+              provenance: researcherResult.provenance,
+              verificationState: result.verificationState,
+              executionSafetyState: 'verified_safe',
+              limitations: result.limitations,
+            };
+            
+            // Inject the real summary into the result snippet if available
+            if (result.summary && result.summary.length > 10) {
+              researcherResult.structuredData = researcherResult.structuredData || {};
+              researcherResult.structuredData.summary = result.summary.slice(0, 150) + '... (via external research)';
+            }
           }
 
           // Build Founder-facing Market Intelligence brief with clear claim-to-source traceability
@@ -565,22 +627,117 @@ Include:
     // ==========================================
     // STAGE 6: CONSTITUTIONAL & SECURITY VERIFICATION (Sophia Vance)
     // ==========================================
-    const verificationNotes = `Safe Mock Execution Active: No external financial mutations allowed. No secret credential exposure. Human-in-the-loop triggers verified for external actions.`;
+    const verificationResultData: VerificationResult = ConstitutionalVerifier.verify({
+      directive,
+      deliverables,
+      specialistOutputs: {
+        researchFindings,
+        productSpecs,
+        financeAssessment,
+      },
+      safeMockRequired: true,
+    });
     
-    const verificationResultData: VerificationResult = {
-      isCompliant: true,
-      checksPassed: [
-        'Safe Mock Execution boundary enforced (external transactions isolated)',
-        'Zero credential or API key leakage in outputs',
-        'Permissions modification attempt check (none detected)',
-        'Human escalation rules validated in PRD specifications',
-        'Provenance metadata attached to all 4 deliverables',
-      ],
-      checksFailed: [],
-      safeMockEnforced: true,
-      notes: verificationNotes,
-      verifiedAt: nowIso,
-    };
+    const verificationNotes = verificationResultData.notes;
+
+    const cooVerifySkill = determineSkillForTask({
+      title: 'Constitutional Compliance Verification',
+      protocolStep: 'verify',
+      directive,
+    }, 'coo');
+
+    if (!verificationResultData.isCompliant) {
+      addMessage(
+        'coo',
+        `[Sophia Vance - COO] ⚠️ CRITICAL VERIFICATION FAILURE: Specialist outputs rejected by constitutional verification engine. Failed checks: ${verificationResultData.checksFailed.join('; ')}. Orchestration halted.`,
+        'critique',
+        'verify'
+      );
+
+      planItems.push({
+        stage: 7,
+        title: 'Constitutional Compliance Verification',
+        agentId: 'coo',
+        protocolStep: 'verify',
+        status: 'failed',
+        outputSnippet: `Verification REJECTED: ${verificationResultData.checksFailed.join('; ')}`,
+        selectedSkill: cooVerifySkill.selectedSkill,
+      });
+
+      const failureExecutiveResult: FounderExecutiveResult = {
+        recommendation: `DIRECTIVE REJECTED BY CONSTITUTIONAL VERIFIER: ${verificationResultData.checksFailed.join('; ')}`,
+        keyFindings: verificationResultData.checksFailed,
+        businessImplications: [
+          'Execution halted: Proposal violates non-negotiable constitutional, financial, or security invariants.',
+          'No automated external actions permitted under non-compliant state.'
+        ],
+        risks: verificationResultData.checksFailed,
+        recommendedNextActions: [
+          'Founder review of compliance violations.',
+          'Remediate directive parameters, margin floor requirements, or security boundaries before resubmission.'
+        ],
+        preparedBy: {
+          name: 'Sophia Vance',
+          role: 'Chief Operating Officer',
+          agentId: 'coo',
+        },
+        participatingEmployees: [
+          {
+            agentId: 'coo',
+            name: 'Sophia Vance',
+            role: 'Chief Operating Officer',
+            department: 'Executive Operations',
+            status: 'failed',
+            contribution: 'Constitutional verification failure audit.',
+          },
+        ],
+        verificationStatus: 'failed',
+        verificationDetails: {
+          isCompliant: false,
+          checksPassed: verificationResultData.checksPassed,
+          checksFailed: verificationResultData.checksFailed,
+          notes: verificationResultData.notes,
+        },
+        evidenceAvailability: {
+          hasProvenance: true,
+          evidenceCount: deliverables.length,
+          primaryBasis: 'model_reasoning',
+          deliverableIds: deliverables.map((d) => d.name),
+        },
+        executionOutcome: 'verification_rejected',
+      };
+
+      return {
+        id: runId,
+        directive,
+        timestamp,
+        status: 'failed',
+        liveAi: true,
+        currentProtocolStep: 'verify',
+        protocolProgress: {
+          understand: 'completed',
+          research: 'completed',
+          analyze: 'completed',
+          plan: 'completed',
+          build_execute: 'completed',
+          test: 'completed',
+          verify: 'failed',
+          review: 'pending',
+          report: 'pending',
+        },
+        plan: planItems,
+        messages,
+        deliverables,
+        executiveResult: failureExecutiveResult,
+        verificationResult: verificationResultData,
+        executionSummary: {
+          totalAgentsInvoked: 4,
+          agentsInvoked: ['coo', 'researcher', 'pm', 'finance'],
+          totalTasksExecuted: planItems.filter((p) => p.status === 'done').length,
+          executionMode: 'multi_agent_orchestrated',
+        },
+      };
+    }
 
     addMessage(
       'coo',
@@ -588,12 +745,6 @@ Include:
       'status',
       'verify'
     );
-
-    const cooVerifySkill = determineSkillForTask({
-      title: 'Constitutional Compliance Verification',
-      protocolStep: 'verify',
-      directive,
-    }, 'coo');
 
     planItems.push({
       stage: 7,
@@ -920,17 +1071,17 @@ In accordance with constitutional truthfulness invariants:
       },
     ];
 
-    const verificationResultData: VerificationResult = {
-      isCompliant: true,
-      checksPassed: [
-        'Truthfulness invariant upheld: no fake metrics fabricated',
-        'Safe Mock boundary enforced',
-      ],
-      checksFailed: ['API key missing on server runtime'],
-      safeMockEnforced: true,
-      notes: 'Execution halted truthfully due to unconfigured API key.',
-      verifiedAt: nowIso,
-    };
+    const verificationResultData: VerificationResult = ConstitutionalVerifier.verify({
+      directive,
+      deliverables,
+      specialistOutputs: {},
+      safeMockRequired: true,
+    });
+    if (!verificationResultData.checksFailed.includes('API key missing on server runtime')) {
+      verificationResultData.checksFailed.push('API key missing on server runtime');
+    }
+    verificationResultData.isCompliant = false;
+    verificationResultData.notes = `Execution halted truthfully due to unconfigured API key. ${verificationResultData.notes}`;
 
     const executiveResult: FounderExecutiveResult = {
       recommendation: 'Configure GEMINI_API_KEY to activate genuine multi-agent council reasoning and synthesis.',
@@ -955,9 +1106,9 @@ In accordance with constitutional truthfulness invariants:
         agentId: 'coo',
       },
       participatingEmployees: [],
-      verificationStatus: 'insufficient_evidence',
+      verificationStatus: verificationResultData.isCompliant ? 'verified' : 'failed',
       verificationDetails: {
-        isCompliant: true,
+        isCompliant: verificationResultData.isCompliant,
         checksPassed: verificationResultData.checksPassed,
         checksFailed: verificationResultData.checksFailed,
         notes: verificationResultData.notes,
@@ -967,7 +1118,9 @@ In accordance with constitutional truthfulness invariants:
         evidenceCount: 0,
         primaryBasis: 'unverified',
       },
-      executionOutcome: 'unconfigured',
+      executionOutcome: verificationResultData.checksFailed.some((c) => !c.includes('API key missing'))
+        ? 'verification_rejected'
+        : 'unconfigured',
       failureReason: 'GEMINI_API_KEY environment variable is not configured.',
     };
 
