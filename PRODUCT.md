@@ -1,76 +1,98 @@
 # PRODUCT.md — Product Definition
-**Status:** Frozen for Phase 1 (Documentation). Repository-grounded as of commit `7154ffc` (2026-09-07).
-**Do not treat "frozen" as "static."** This freezes the *decisions*, not the document — it should still be corrected the moment repository evidence contradicts it. It should not be revised on preference or speculation.
+**Status:** Reconciled against repository `8524908` (2026-09-08) and founder-locked strategic decisions. Supersedes all prior versions.
 
 ---
 
 ## 1. What is SamJuniorsOS?
 
-An internal operating system that lets a solo founder direct a small set of AI "employees" to do real, verifiable work — research, product specs, technical analysis — under a founder-approval gate for anything that mutates state outside the system. The product bet is the **loop**, not the UI shell around it: founder intent → AI-produced work → deterministic check → founder decision → durable record. The Executive Cockpit is the UI expression of that loop, not the product itself.
+**LOCKED DECISION:** SamJuniorsOS is the internal operating system of SamJuniors, built first to help SamJuniors operate itself as an AI-native company — not a SaaS product for external customers. Commercialization is an explicit open future option (§8) and must not distort current architecture decisions. This replaces the previously-unresolved "internal tool vs. sellable product" question from earlier drafts — the founder has now decided: internal, for now.
+
+It helps the company run itself: manage and ship products, market and sell them, manage customers, revenue, and finances, conduct continuous market research, coordinate AI employees, manage company knowledge/memory, plan and prioritize, execute recurring work, measure outcomes, and keep the founder informed and in control of consequential decisions — while reducing how much of that the founder has to do by hand.
+
+**Core principle:** *SamJuniorsOS should not replace the founder. It should multiply the founder.*
 
 ## 2. Who is it for?
 
-Single founder (Sam), operating solo. No confirmed second user, team member, or customer today.
-
-**Open, unresolved product-boundary question — not decided by this document:** is SamJuniorsOS strictly personal/internal tooling, or a product intended to eventually be used by other founders? These imply materially different architectures (see PRODUCT_ARCHITECTURE.md §Trust Boundaries) — internal-only tooling can defer multi-user auth indefinitely; a sellable product cannot. This document does not resolve that question because it isn't a repository or architecture fact — it's a business decision the founder has to make. Everything below is scoped to "internal, single-founder" as the current default, and should be revisited explicitly if that changes.
+Single founder (Sam), operating solo, directing a small set of AI "employees." No second human user exists today. Internal-only per §1 — this is not scoped for other founders to use.
 
 ## 3. What problem does it solve?
 
-Directing multiple AI agents currently means switching between terminals, chat windows, and ad hoc scripts, with no single durable record of what was asked, what was produced, what was approved, and what actually happened as a result. SamJuniorsOS's job is to make that loop legible and auditable in one place — not to make the AI agents smarter, and not to replace tools that already do their job well (GitHub, email, a CRM).
+Two related problems, not one:
+1. **Execution legibility:** directing AI agents currently means switching between terminals, chat windows, and ad hoc scripts, with no durable record of what was asked, produced, approved, or what actually happened.
+2. **Operating cognitive load:** running a company means continuously observing the market, deciding what matters, executing, measuring results, and learning — today that entire cycle lives in the founder's head. The OS's job is to externalize and support that cycle without removing the founder's authority over it.
 
-## 4. What is the core product loop? (the thing that must work before anything else matters)
+## 4. What is the core operating loop?
 
+**This is broader than the original execution loop, per founder direction.** The full company-operating cycle:
+
+```
+MARKET / COMPANY SIGNALS → RESEARCH → GOVERNED KNOWLEDGE (Company Brain)
+→ COMPANY STATE + MEMORY → STRATEGY / PRIORITIES → AI EMPLOYEES + WORKFLOWS
+→ EXECUTION → RESULTS → VERIFICATION → LEARNING → COMPANY MEMORY → NEXT CYCLE
+```
+Shorthand: **Observe → Understand → Decide → Execute → Measure → Learn → Improve.**
+
+**The near-term execution primitive** — the thing that must work before the broader loop means anything — remains:
 ```
 Founder → Sophia (planner) → Thorne (worker) → structured artifact
-       → deterministic verification → authenticated Founder approval (where required)
-       → durable audit record → memory/outcome
+       → deterministic verification → authenticated Founder approval → durable audit → memory/outcome
 ```
-
-Every other feature — additional employees, integrations, UI surfaces — is downstream of this loop being real and trustworthy. Right now it is not: see "Current Repository State" below.
+This is a component of the larger loop, not a replacement definition of the product. See PRODUCT_ARCHITECTURE.md for how Company Brain, Role Brains, and market intelligence relate to it.
 
 ## 5. What is v1?
 
-The smallest version of the loop above, made real:
-- Founder directive, captured through the Executive Cockpit (stream / approval inbox / vitals wall / directive terminal) — UI already exists in the repo, see below.
-- Sophia (planner/COO) and Thorne (technical/research) — the only two agents v1 needs. Both already exist in code.
-- One structured, typed artifact produced by Thorne per directive (not a loose text blob).
-- One deterministic verification step that can actually reject an artifact and force a retry — not "the agent call didn't throw."
-- Founder approval on any step classified as a side effect, gated behind **server-established Founder identity** (see PRODUCT_ARCHITECTURE.md — this is the single hardest v1 requirement and the current repository does not meet it).
-- An audit record for every decision and every side effect that survives a process restart. The current repository does not meet this either — see below.
+Unchanged in substance from the prior v1 scope, now explicitly framed as "foundation phase" of the larger loop (see ROADMAP.md):
+- Executive Cockpit UI (implemented).
+- Sophia + Thorne only (implemented; Maya/Julian exist in code but are out of the v1 critical path).
+- One typed artifact per directive, one deterministic verification gate that can actually reject.
+- Founder approval on side effects, gated behind server-established Founder identity — **partially implemented, see Current Repository State.**
+- Durable audit trail surviving a restart — **partially implemented and deployment-mismatched, see Current Repository State.**
 
 ## 6. What is explicitly deferred?
 
-Deferred until the v1 loop above is proven durable and secure, not on a calendar:
-- Maya Lin, Julian Cruz, and any employee beyond Sophia/Thorne (Maya and Julian exist in code already but are out of the v1 critical loop; Elena Rostova and Marcus Vance don't exist in code at all yet and shouldn't be built until there's a concrete task only they can do).
-- Broad Composio integrations beyond GitHub (Slack, Linear, Calendar).
-- pgvector / RAG retrieval over Canonical Knowledge — flat-table/full-injection is sufficient at current corpus size.
-- E2B sandbox, fine-tuning / eval "Horizon 3."
-- Multi-user RBAC (EXECUTIVE/AUDITOR roles) — no second user exists today.
-- Voice calling, persona customization system, multi-agent "council" collaboration workflows.
-- Any claim that this is a "commercially shippable" product — see the unresolved product-boundary question in §2. Nothing here should be built toward external users until that's explicitly decided.
+Unchanged from the prior document, plus the new strategic concepts from §7–§8 below, all of which are **NEXT/LATER, not v1**:
+- Maya/Julian's own workflows, Elena Rostova, Marcus Vance.
+- Broad integrations beyond GitHub, pgvector, E2B, fine-tuning, multi-user RBAC, voice, council workflows.
+- Company Brain (beyond the epistemic pipeline substrate already in progress), Role Brains, employee versioning/evaluation, continuous market intelligence scheduling, organizational learning loops.
+- Any commercial/SaaS framing — remains an open future option per §1, never a current design input.
 
-## 7. What are the success criteria (for v1, specifically)?
+## 7. Company Brain and Role Brains (new architectural concepts, target-state — see PRODUCT_ARCHITECTURE.md for detail)
 
-- A real directive, given to Sophia, produces a Thorne artifact that passes a deterministic check or is rejected and retried — not silently accepted.
-- A side-effect step cannot be approved by anything other than a server-verified Founder identity — verified by attempting to approve one without that identity and confirming it's rejected.
-- A workflow's state and its audit trail survive an application restart (currently: **fails**, everything is in-memory).
-- No data presented to an agent or the founder as "verified fact" is actually placeholder/sample data (currently: **fails**, see PRODUCT_ARCHITECTURE.md §Memory/Knowledge/State Separation).
+**Company Brain** is the governed, shared source of company truth: knowledge, verified facts, state, strategic decisions, goals, priorities, historical decisions, institutional memory, market intelligence, and policy — explicitly separated from raw sources, unverified claims, hypotheses, and superseded information. Fabricated/demo data must never be represented as Company Brain truth.
 
-## 8. Product boundary — what SamJuniorsOS is explicitly NOT (for now)
+**Role Brains** are per-employee derived context (identity, role-specific knowledge, working memory, experience, skills, development state) built *from* the Company Brain, never a competing source of truth. `ROLE BRAIN ≠ COMPANY TRUTH.`
 
-- Not a multi-tenant SaaS product (no second user, no billing, no public signup).
-- Not a replacement for GitHub, Slack, email, or a CRM — it directs a narrow set of tools, it doesn't rebuild them.
-- Not an autonomous system — every side effect requires a founder decision; nothing here acts without that gate holding.
-- Not, today, a system whose "verified"/"audited"/"durable" claims can be trusted end to end — seven of them do not hold against the current repository (enumerated in PRODUCT_ARCHITECTURE.md). This document exists partly to stop describing those claims as already true.
+A real substrate for this (a Source→Signal→Claim→Fact→Memory pipeline) is already under active development in the repository — see PRODUCT_ARCHITECTURE.md §Memory/Knowledge/State Separation for current status.
+
+## 8. AI Employee Development and Self-Improvement (new, LATER phase, not v1)
+
+Employees should improve over time (work → measure → evaluate → identify skill gaps → train/update → test → approve → deploy → measure again → learn), with immutable version history the founder can inspect and roll back.
+
+**Hard safety principle, non-negotiable regardless of implementation phase: self-improving ≠ self-authorizing.** Agents may propose training, workflow improvements, or upgrades; they must never silently grant themselves permissions, change security or financial authority, bypass founder approval, rewrite canonical company facts, deploy untested behavior, or delete historical records. This is an architectural constraint, not a UI feature, and it applies even to future phases that don't exist yet.
+
+## 9. Continuous Market Intelligence (new, NEXT/LATER, not v1)
+
+A future recurring capability, not a generic news feed: tracking competitors, customer behavior, technology/product/pricing/regulatory changes relevant to SamJuniors specifically, through the lifecycle Source → Signal → Claim → Verified Fact → Implication → Recommendation → Decision → Action → Outcome → Learning. Research must feed decisions and actions, not just produce reports. Scheduling/cadence (e.g. a monthly review) is **not** part of this documentation task's scope and is not implemented.
+
+## 10. Success criteria (v1, unchanged)
+
+- A real directive produces a verified-or-rejected artifact, not a silently-accepted one.
+- A side-effect step cannot be approved without server-verified Founder identity — **currently not fully guaranteed; see Current Repository State.**
+- Workflow/audit state survives an application restart **in the actual deployment environment**, not just a local dev machine — **currently not guaranteed; see Current Repository State.**
+- No data is presented as verified fact unless it actually is — **substantial real progress underway (epistemic pipeline), not yet fully migrated across all state paths.**
+
+## 11. Product boundary
+
+Internal-only (§1). Not a replacement for GitHub/Slack/email/a CRM. Not autonomous — every side effect requires a founder decision. Future commercialization: an explicit, separate, not-yet-made decision — nothing in the current architecture should assume it, and nothing should block it either.
 
 ---
 
-## Current Repository State (verified against commit `7154ffc`, 2026-09-07)
+## Current Repository State (verified against commit `8524908`, 2026-09-08 — supersedes all earlier repository-state snapshots)
 
-- **Stack, as installed:** Next.js 15 / React 19 / TypeScript 5.9, Tailwind 4, Framer Motion, `@google/genai` (Gemini), `@composio/core`. **Not installed, anywhere:** Prisma, any Postgres/DB driver, Clerk, pgvector, E2B. These are target-state only.
-- **Agents implemented in code:** Sophia Vance (COO/orchestrator), Dr. Aris Thorne (research — note: architecture doc previously said "Arthur," code says "Aris," corrected here), Maya Lin (PM), Julian Cruz (Finance). Elena Rostova and Marcus Vance are not implemented.
-- **Persistence:** every store (`CompanyStateStore`, `InMemoryWorkflowStore`, `InMemoryApprovalStore`, `InMemoryAuditStore`, memory store) is a JS singleton holding arrays in process memory. Nothing is durable. A restart or Cloud Run scale event erases all workflow, approval, and audit state.
-- **Authentication:** none. No `middleware.ts`, no Clerk/JWT/session code anywhere in the repository. `POST /api/workflow/approvals` treats a request as the Founder unless the request body explicitly says otherwise (`decidedBy` defaults to `'founder'` when omitted).
-- **Deployment target:** `metadata.json` (`MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API`) and `.env.example` (`APP_URL` documented as a Cloud Run service URL) confirm this is built for a Google AI Studio / Cloud Run hosted deployment, i.e. a public URL — not a local-only prototype.
-- **Test suite:** `tests/*.test.ts` exist (3 files, `describe`/`it` style) but neither `jest` nor `vitest` is a dependency; `npm test` runs an unrelated script (`scripts/test-advisor.ts`). These tests do not currently run in any automated way.
-- **Seed data:** `lib/os-data.ts` and `lib/server/memory/memory-store.ts` contain fabricated sample customers, a fabricated financial model, and five fabricated "company memories" describing events that never occurred — all unconditionally tagged `verified_fact` in code.
+Significant progress since the last review (commit `7154ffc`). Status below uses IMPLEMENTED / PARTIAL / NOT IMPLEMENTED precisely — see PRODUCT_ARCHITECTURE.md for full detail and file references.
+
+- **Auth:** PARTIAL. `middleware.ts` + Clerk now gate the right routes structurally. But `.env.example` has no live Clerk key variables, and the code's own sandbox-mode fallback (active whenever a live key is absent) is bypassable via a client-settable header when not running in `development`/`test`. Separately, `gate.ts`'s `decideApproval` still authorizes via a **blocklist** of disallowed role-strings rather than an allowlist checking against a server-verified identity — a client sending any `decidedBy` string not on that blocklist (e.g. `"admin"`, `"sam"`) currently passes. Not yet a closed gap.
+- **Persistence:** PARTIAL, and mismatched to the stated deployment target. `DurableFileStore` gives real atomic-write, restart-survivable local persistence — but writes to local disk on an app documented as Cloud-Run-hosted, where local disk isn't guaranteed to survive container replacement. Prisma is now a dependency with a real schema, but no `DATABASE_URL` is configured anywhere.
+- **Approval-payload binding:** the SHA-256 canonical-hash computation is implemented correctly. Full enforcement at every dispatch path wasn't confirmed this session — treat as unconfirmed, not assumed complete.
+- **Epistemic/provenance separation (Company Brain substrate):** substantial real work in progress — a genuine Source→Signal→Claim→CanonicalFact→Memory pipeline exists, explicitly modeled on OptimalEngine, with a live/synthetic/sandbox provenance field. Whether the original flagged code paths (`state-store.ts`, `memory-store.ts`'s unconditional `verified_fact` tagging) have been migrated onto it is unconfirmed.
+- **Role Brains, employee versioning, self-improvement governance, market intelligence:** NOT IMPLEMENTED — all correctly remain target-state per §7–§9 above.
