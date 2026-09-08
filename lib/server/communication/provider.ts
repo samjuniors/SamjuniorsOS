@@ -19,7 +19,8 @@ export interface CommunicationProviderAdapter {
   getThread(threadId: string): Promise<MessageThread | null>;
   sendMessage(
     message: Message,
-    approvalId?: string
+    approvalId?: string,
+    idempotencyKey?: string
   ): Promise<{
     success: boolean;
     externalMessageId?: string;
@@ -56,7 +57,8 @@ export class NullCommunicationProviderAdapter implements CommunicationProviderAd
 
   async sendMessage(
     _message: Message,
-    _approvalId?: string
+    _approvalId?: string,
+    _idempotencyKey?: string
   ): Promise<{
     success: boolean;
     externalMessageId?: string;

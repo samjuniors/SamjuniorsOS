@@ -26,6 +26,7 @@ import {
 import { SideEffectAuthorizationGate } from '../authorization/gate';
 import { InMemoryCommunicationStore } from './store';
 import { CommunicationProviderRegistry } from './provider';
+import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CommunicationExecutionResult<T = any> {
@@ -376,11 +377,18 @@ export class CommunicationRuntime {
     }
 
     // 2. External Communication Execution ('send' or 'reply')
-    // Must pass strictly through gate.executeWithGate with cryptographic payload binding!
+    // Must pass strictly through gate.executeWithGate with cryptographic payload binding and durable idempotency!
     const approvalRecord = intent.approvalId ? await this.gate.getApprovalStore().get(intent.approvalId) : null;
     const effectiveActionName = intent.actionName || approvalRecord?.actionName || `Send Communication (${intent.type})`;
     const effectiveTarget = target || approvalRecord?.target;
     const effectivePayload = intent.payload || approvalRecord?.payload;
+
+    const logicalOpId = intent.id || (intent.payload.draftId ? `draft-${intent.payload.draftId}` : uuidv4());
+    const canonicalIdempotencyKey = generateLogicalIdempotencyKey({
+      actionName: effectiveActionName,
+      targetSystem: intent.channel || 'communication',
+      logicalOpId,
+    });
 
     const gateResult = await this.gate.executeWithGate({
       request: {
@@ -390,6 +398,12 @@ export class CommunicationRuntime {
         workflowContext: intent.workflowRef,
         target: effectiveTarget,
         approvalId: intent.approvalId,
+        payload: effectivePayload,
+      },
+      idempotency: {
+        key: canonicalIdempotencyKey,
+        targetSystem: intent.channel,
+        logicalOpId,
         payload: effectivePayload,
       },
       executeFn: async () => {
@@ -456,8 +470,8 @@ export class CommunicationRuntime {
           };
         }
 
-        // Call provider adapter
-        const sendResult = await provider.sendMessage(messageRecord, intent.approvalId);
+        // Call provider adapter with canonical idempotency key
+        const sendResult = await provider.sendMessage(messageRecord, intent.approvalId, canonicalIdempotencyKey);
         messageRecord.deliveryStatus = sendResult.deliveryStatus;
         messageRecord.externalProviderRef = sendResult.externalMessageId;
         messageRecord.error = sendResult.error;

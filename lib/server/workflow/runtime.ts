@@ -6,18 +6,20 @@ import {
   WorkflowInstanceStatus
 } from '../../../types/workflow';
 import { SideEffectClassification, AuthorizationEvaluationRequest } from '@/types/authorization';
-import { InMemoryWorkflowStore } from './store';
+import { getWorkflowStore, WorkflowDefinitionStore, WorkflowInstanceStore } from './store';
 import { ServerAgentExecutor } from '../agents/executor';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
+import { validateStepTransition, validateInstanceTransition } from './state-machine';
+import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
 export class WorkflowRuntime {
-  private store: InMemoryWorkflowStore;
+  private store: WorkflowDefinitionStore & WorkflowInstanceStore;
   private executor: ServerAgentExecutor;
   private gate: SideEffectAuthorizationGate;
 
-  constructor() {
-    this.store = InMemoryWorkflowStore.getInstance();
+  constructor(store?: WorkflowDefinitionStore & WorkflowInstanceStore) {
+    this.store = store || getWorkflowStore();
     this.executor = new ServerAgentExecutor();
     this.gate = SideEffectAuthorizationGate.getInstance();
   }
@@ -116,26 +118,26 @@ export class WorkflowRuntime {
       throw new Error(`Invalid transition: Cannot run a blocked step without resolving condition.`);
     }
     
+    validateStepTransition(oldStatus, newStatus);
+
     if (oldStatus === newStatus) {
       return instance; // No-op
     }
 
-    // Apply Transition
-    step.status = newStatus;
-    instance.updatedAt = new Date().toISOString();
-
-    if (newStatus === 'running' && oldStatus !== 'running') {
-      step.startedAt = instance.updatedAt;
-    }
-    if (newStatus === 'completed' || newStatus === 'failed' || newStatus === 'cancelled') {
-      step.completedAt = instance.updatedAt;
+    const stepPatch: Partial<WorkflowStepState> = {};
+    if (payload?.error) stepPatch.error = payload.error;
+    if (payload?.outputs) stepPatch.outputs = payload.outputs;
+    if (payload?.evidenceReferences) {
+      stepPatch.evidenceReferences = [...(step.evidenceReferences || []), ...payload.evidenceReferences];
     }
 
-    if (payload?.error) step.error = payload.error;
-    if (payload?.outputs) step.outputs = { ...step.outputs, ...payload.outputs };
-    if (payload?.evidenceReferences) step.evidenceReferences.push(...payload.evidenceReferences);
-
-    await this.store.saveInstance(instance);
+    await this.store.transitionStepAtomic(
+      instanceId,
+      stepId,
+      newStatus,
+      instance.stateVersion,
+      stepPatch
+    );
 
     // Evaluate instance status after step transition
     await this.evaluateInstanceStatus(instanceId);
@@ -369,8 +371,9 @@ export class WorkflowRuntime {
 
   /**
    * Execute a Ready step via SideEffectAuthorizationGate and existing orchestration.
+   * Atomically claims the step before external execution and persists transitions atomically.
    */
-  async executeReadyStep(instanceId: string, stepId: string): Promise<void> {
+  async executeReadyStep(instanceId: string, stepId: string, workerId: string = 'worker-default'): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
     if (!instance) throw new Error(`Instance not found: ${instanceId}`);
     
@@ -417,16 +420,40 @@ export class WorkflowRuntime {
       throw new Error(`Side-effect execution prevented by authorization gate: ${gateEvaluation.reason}`);
     }
 
-    // Transition to running
-    await this.transitionStep(instanceId, stepId, 'running');
+    // Atomically claim the step before execution
+    const claimResult = await this.store.claimStepAtomic(
+      instanceId,
+      stepId,
+      workerId,
+      instance.stateVersion
+    );
+    const expectedVersion = claimResult.instance.stateVersion;
 
     try {
       const executionRef = `exec-${instanceId}-${stepId}-${Date.now()}`;
       
-      // Execute through the SideEffectAuthorizationGate wrapper
+      // Execute through the SideEffectAuthorizationGate wrapper with durable idempotency
+      const logicalOpId = `${instanceId}-${stepId}-v${instance.stateVersion}`;
+      const canonicalKey = generateLogicalIdempotencyKey({
+        actionName: stepDef.name,
+        targetSystem: stepDef.targetContext?.targetSystem || 'internal_agent',
+        logicalOpId,
+      });
+
       const gateResult = await this.gate.executeWithGate({
         request: authRequest,
         executionRef,
+        idempotency: {
+          key: canonicalKey,
+          targetSystem: stepDef.targetContext?.targetSystem || 'internal_agent',
+          logicalOpId,
+          payload: {
+            directive: def.objective,
+            protocolStep: step.skill,
+            taskTitle: stepDef.name,
+            taskDescription: stepDef.description,
+          },
+        },
         executeFn: async () => {
           return this.executor.executeAgentTask(
             step.assignedRole,
@@ -455,17 +482,44 @@ export class WorkflowRuntime {
       }
 
       // Transition to completed on success
-      await this.transitionStep(instanceId, stepId, 'completed', {
-        outputs: stepOutputs,
-        evidenceReferences: [gateResult.auditId, ...(agentResult.provenance ? [agentResult.provenance.agentId] : [])],
-      });
+      await this.store.transitionStepAtomic(
+        instanceId,
+        stepId,
+        'completed',
+        expectedVersion,
+        {
+          outputs: stepOutputs,
+          evidenceReferences: [gateResult.auditId, ...(agentResult.provenance ? [agentResult.provenance.agentId] : [])],
+        }
+      );
+
+      // Evaluate instance status after step transition
+      await this.evaluateInstanceStatus(instanceId);
+      // Evaluate readiness of subsequent steps
+      await this.evaluateReadiness(instanceId);
 
     } catch (error: any) {
       // Transition to failed
-      await this.transitionStep(instanceId, stepId, 'failed', {
-        error: error.message || 'Execution failed'
-      });
+      await this.store.transitionStepAtomic(
+        instanceId,
+        stepId,
+        'failed',
+        expectedVersion,
+        {
+          error: error.message || 'Execution failed'
+        }
+      );
+
+      // Evaluate instance status after step transition
+      await this.evaluateInstanceStatus(instanceId);
     }
+  }
+
+  /**
+   * Rehydrates all active workflow instances from authoritative storage.
+   */
+  async rehydrate(): Promise<WorkflowInstanceState[]> {
+    return this.store.rehydrateActiveInstances();
   }
 
   public getGate(): SideEffectAuthorizationGate {

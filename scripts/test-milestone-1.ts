@@ -34,6 +34,7 @@ function assert(condition: boolean, testName: string, detail?: any) {
 }
 
 async function runMilestone1Tests() {
+  (process.env as any).NODE_ENV = 'test';
   console.log('================================================================');
   console.log('🧪 RUNNING MILESTONE 1 VERIFICATION: PERSISTENCE & HARDENING');
   console.log('================================================================\n');

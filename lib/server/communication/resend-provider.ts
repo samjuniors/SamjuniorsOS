@@ -66,7 +66,8 @@ export class ResendCommunicationProviderAdapter implements CommunicationProvider
    */
   async sendMessage(
     message: Message,
-    approvalId?: string
+    approvalId?: string,
+    idempotencyKey?: string
   ): Promise<{
     success: boolean;
     externalMessageId?: string;
@@ -125,12 +126,17 @@ export class ResendCommunicationProviderAdapter implements CommunicationProvider
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
 
+      const requestHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      };
+      if (idempotencyKey) {
+        requestHeaders['Idempotency-Key'] = idempotencyKey;
+      }
+
       const response = await fetcher(`${RESEND_API_BASE_URL}/emails`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
+        headers: requestHeaders,
         body: JSON.stringify(emailPayload),
         signal: controller.signal,
       });

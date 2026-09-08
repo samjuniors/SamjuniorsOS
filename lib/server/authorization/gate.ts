@@ -13,6 +13,13 @@ import { AgentRole } from '@/types/os';
 import { InMemoryApprovalStore, InMemoryAuditStore } from './approval-store';
 import { SideEffectPolicyEvaluator } from './policy-evaluator';
 import { computeApprovalPayloadHash, verifyApprovalPayloadBinding } from './payload-binding';
+import { getIdempotencyStore } from '../idempotency/store';
+import {
+  generateLogicalIdempotencyKey,
+  IdempotencyPayloadMismatchError,
+  OperationInProgressError,
+  UnknownExternalResultError,
+} from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface RequestApprovalParams {
@@ -47,6 +54,13 @@ export interface ExecuteWithGateParams<T> {
   request: AuthorizationEvaluationRequest;
   executeFn: () => Promise<T>;
   executionRef?: string;
+  idempotency?: {
+    key?: string;
+    targetSystem?: string;
+    logicalOpId?: string;
+    payload?: any;
+    ttlMs?: number;
+  };
 }
 
 export interface ExecuteWithGateResult<T> {
@@ -56,6 +70,8 @@ export interface ExecuteWithGateResult<T> {
   result?: T;
   error?: string;
   auditId: string;
+  idempotencyKey?: string;
+  idempotentReplay?: boolean;
 }
 
 /**
@@ -216,6 +232,153 @@ export class SideEffectAuthorizationGate {
     const timestamp = new Date().toISOString();
     const requestId = `req-${uuidv4()}`;
 
+    // 0. Pre-Execution Idempotency Check (completed replay, in-progress conflict, ambiguous recovery, payload tampering)
+    const shouldEnforceIdempotency = Boolean(
+      params.idempotency ||
+      request.classification === 'external_communication' ||
+      request.classification === 'financial_action'
+    );
+
+    let idempotencyKey: string | undefined;
+    let payloadHash: string | undefined;
+
+    if (shouldEnforceIdempotency) {
+      idempotencyKey = params.idempotency?.key || generateLogicalIdempotencyKey({
+        actionName: request.actionName,
+        targetSystem: params.idempotency?.targetSystem || request.target?.targetSystem || 'default',
+        logicalOpId: params.idempotency?.logicalOpId || (request.workflowContext?.workflowInstanceId ? `${request.workflowContext.workflowInstanceId}-${request.workflowContext.stepId}` : (executionRef || requestId)),
+      });
+
+      const effectivePayload = params.idempotency?.payload !== undefined ? params.idempotency.payload : request.payload;
+      payloadHash = computeApprovalPayloadHash(request.actionName, request.target, effectivePayload ?? {});
+
+      const existing = await getIdempotencyStore().get(idempotencyKey);
+      if (existing) {
+        if (payloadHash && existing.payloadHash && existing.payloadHash !== payloadHash) {
+          const mismatchErr = new IdempotencyPayloadMismatchError(
+            idempotencyKey,
+            existing.payloadHash,
+            payloadHash
+          );
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'IDEMPOTENCY_PAYLOAD_MISMATCH',
+            reason: mismatchErr.message,
+            approvalId: request.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+          throw mismatchErr;
+        }
+
+        if (existing.status === 'completed') {
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'allowed',
+            reasonCode: 'IDEMPOTENT_REPLAY',
+            reason: `Operation already executed successfully with idempotency key ${idempotencyKey}. Replaying cached response without re-invoking side effect.`,
+            approvalId: request.approvalId,
+            executionReference: existing.executionRef || executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+
+          return {
+            allowed: true,
+            executed: false,
+            decision: {
+              effect: 'allowed',
+              reasonCode: 'IDEMPOTENT_REPLAY',
+              reason: `Operation already executed successfully with idempotency key ${idempotencyKey}. Replaying cached response without re-invoking side effect.`,
+              approvalId: request.approvalId,
+              evaluatedAt: timestamp,
+              evaluator: 'central_side_effect_gate',
+            },
+            result: existing.response as T,
+            auditId,
+            idempotencyKey,
+            idempotentReplay: true,
+          };
+        }
+
+        if (existing.status === 'in_progress') {
+          const inProgressErr = new OperationInProgressError(idempotencyKey, existing.executionRef || undefined, existing.createdAt);
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'OPERATION_IN_PROGRESS',
+            reason: inProgressErr.message,
+            approvalId: request.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+          throw inProgressErr;
+        }
+
+        if (existing.status === 'unknown') {
+          const unknownErr = new UnknownExternalResultError(
+            idempotencyKey,
+            existing.executionRef || undefined,
+            'Operation has ambiguous prior execution status (crash/timeout recovery state). Manual or reconciliatory inspection required before retrying.'
+          );
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'UNKNOWN_EXTERNAL_RESULT',
+            reason: unknownErr.message,
+            approvalId: request.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+          throw unknownErr;
+        }
+      }
+    }
+
     // 1. Evaluate authorization
     const decision = await this.evaluateAuthorization(request);
 
@@ -253,8 +416,9 @@ export class SideEffectAuthorizationGate {
     }
 
     // 3. If allowed, verify cryptographic approval-payload binding
+    let approval: FounderApprovalRecord | null = null;
     if (decision.approvalId) {
-      const approval = await this.approvalStore.get(decision.approvalId);
+      approval = await this.approvalStore.get(decision.approvalId);
       if (!approval) {
         const missingApprovalReason = `Approval record (${decision.approvalId}) not found in store. Execution blocked.`;
         const auditRecord: SideEffectAuditRecord = {
@@ -383,17 +547,118 @@ export class SideEffectAuthorizationGate {
           error: mismatchReason,
         };
       }
+    }
 
-      if (approval.scope.scopeType === 'single_action') {
-        await this.approvalStore.consume(decision.approvalId);
+    // 4. Atomic Idempotency Claiming
+    if (shouldEnforceIdempotency && idempotencyKey && payloadHash) {
+      try {
+        await getIdempotencyStore().claim({
+          key: idempotencyKey,
+          actionName: request.actionName,
+          payloadHash,
+          executionRef: executionRef || auditId,
+          ttlMs: params.idempotency?.ttlMs,
+        });
+      } catch (claimErr: any) {
+        if (claimErr instanceof IdempotencyPayloadMismatchError) {
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'IDEMPOTENCY_PAYLOAD_MISMATCH',
+            reason: claimErr.message,
+            approvalId: decision.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+        } else if (claimErr instanceof OperationInProgressError) {
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'OPERATION_IN_PROGRESS',
+            reason: claimErr.message,
+            approvalId: decision.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+        } else if (claimErr instanceof UnknownExternalResultError) {
+          const auditRecord: SideEffectAuditRecord = {
+            id: auditId,
+            timestamp,
+            requestId,
+            employeeRole: request.employeeRole,
+            requestedBy: request.requestedBy || request.employeeRole,
+            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+            stepId: request.workflowContext?.stepId,
+            actionClassification: request.classification,
+            actionName: request.actionName,
+            target: request.target,
+            decision: 'denied',
+            reasonCode: 'UNKNOWN_EXTERNAL_RESULT',
+            reason: claimErr.message,
+            approvalId: decision.approvalId,
+            executionReference: executionRef,
+            executed: false,
+          };
+          await this.auditStore.record(auditRecord);
+        }
+        throw claimErr;
       }
     }
 
-    // 4. Execute the authorized operation
+    // 5. Consume single-use approval only after authorization + idempotency claim pass
+    if (decision.approvalId && approval && approval.scope.scopeType === 'single_action') {
+      await this.approvalStore.consume(decision.approvalId);
+    }
+
+    // 6. Execute the authorized operation
     let result: T;
     try {
       result = await executeFn();
     } catch (err: any) {
+      const isAmbiguousTimeout =
+        err?.name === 'TimeoutError' ||
+        err?.code === 'ETIMEDOUT' ||
+        err?.code === 'ECONNRESET' ||
+        err?.isAmbiguous === true ||
+        /timeout|timed out|abort/i.test(err?.message || '');
+
+      if (shouldEnforceIdempotency && idempotencyKey) {
+        if (isAmbiguousTimeout) {
+          await getIdempotencyStore().markUnknown(
+            idempotencyKey,
+            err?.message || 'Execution timed out or aborted with ambiguous provider state'
+          );
+        } else {
+          await getIdempotencyStore().fail(
+            idempotencyKey,
+            err?.message || 'Execution failed'
+          );
+        }
+      }
+
       const auditRecord: SideEffectAuditRecord = {
         id: auditId,
         timestamp,
@@ -415,10 +680,19 @@ export class SideEffectAuthorizationGate {
       };
 
       await this.auditStore.record(auditRecord);
+
+      if (isAmbiguousTimeout) {
+        throw new UnknownExternalResultError(idempotencyKey || 'unknown', executionRef, err?.message || 'Operation timed out; external state is unknown');
+      }
       throw err;
     }
 
-    // 5. Record successful execution in audit trail
+    // 7. Record completion in idempotency store
+    if (shouldEnforceIdempotency && idempotencyKey) {
+      await getIdempotencyStore().complete(idempotencyKey, result, executionRef || auditId);
+    }
+
+    // 8. Record successful execution in audit trail
     const auditRecord: SideEffectAuditRecord = {
       id: auditId,
       timestamp,
@@ -447,6 +721,8 @@ export class SideEffectAuthorizationGate {
       decision,
       result,
       auditId,
+      idempotencyKey,
+      idempotentReplay: false,
     };
   }
 

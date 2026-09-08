@@ -29,3 +29,17 @@ export async function isDatabaseAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Ensures a live PostgreSQL connection is active, or throws if unavailable.
+ * Used for authoritative operations that must fail closed rather than silently falling back.
+ */
+export async function requireDatabase(): Promise<PrismaClient> {
+  const available = await isDatabaseAvailable();
+  if (!available) {
+    throw new Error(
+      'PostgreSQL Database Unavailable: Authoritative operation aborted. Check DATABASE_URL and database connectivity.'
+    );
+  }
+  return prisma;
+}

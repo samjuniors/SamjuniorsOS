@@ -83,12 +83,15 @@ export interface WorkflowStepState {
   sideEffectClassification?: SideEffectClassification;
   approvalId?: string;
   authorizationReasonCode?: string;
+  claimedBy?: string;
+  claimedAt?: string;
 }
 
 export interface WorkflowInstanceState {
   instanceId: string;
   workflowId: string;
   version: string;
+  stateVersion?: number;
   objective: string;
   status: WorkflowInstanceStatus;
   stepStates: Record<string, WorkflowStepState>;
@@ -99,4 +102,6 @@ export interface WorkflowInstanceState {
   approvalState?: 'pending' | 'approved' | 'rejected';
   failureReason?: string;
   escalationState?: string;
+  claimedBy?: string;
+  claimedAt?: string;
 }

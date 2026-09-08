@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MultiAgentOrchestrator } from "@/lib/server/orchestration/orchestrator";
 import { getAuthenticatedFounder } from "@/lib/server/auth/session";
-
-const idempotencyCache = new Map<string, { status: number; body: any; timestamp: number }>();
+import { getIdempotencyStore } from "@/lib/server/idempotency/store";
+import {
+  normalizeClientSuppliedKey,
+  IdempotencyPayloadMismatchError,
+  OperationInProgressError,
+  UnknownExternalResultError,
+} from "@/lib/server/idempotency/state-machine";
+import { computeApprovalPayloadHash } from "@/lib/server/authorization/payload-binding";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,29 +25,90 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const idempotencyKey = req.headers.get('idempotency-key') || body.idempotencyKey;
-    if (idempotencyKey && idempotencyCache.has(idempotencyKey)) {
-      const cached = idempotencyCache.get(idempotencyKey)!;
-      if (Date.now() - cached.timestamp < 60000) {
-        return NextResponse.json(cached.body, {
-          status: cached.status,
-          headers: { 'X-Idempotent-Replay': 'true' },
-        });
-      }
-    }
-
+    const rawIdempotencyKey = req.headers.get('idempotency-key') || body.idempotencyKey;
     const { directive, agents = ["coo", "researcher", "pm", "finance"], autonomyLevel = "autonomous" } = body;
 
     if (!directive || typeof directive !== "string" || !directive.trim()) {
       return NextResponse.json({ error: "Directive is required and must be a non-empty string", success: false }, { status: 400 });
     }
 
+    const idempotencyStore = getIdempotencyStore();
+    let normalizedKey: string | undefined;
+
+    if (rawIdempotencyKey) {
+      normalizedKey = normalizeClientSuppliedKey(rawIdempotencyKey, 'orchestrate');
+      const payloadHash = computeApprovalPayloadHash(
+        'Orchestrate Directive',
+        undefined,
+        {
+          directive: directive.trim(),
+          agents,
+          autonomyLevel,
+        }
+      );
+
+      try {
+        const claimResult = await idempotencyStore.claim({
+          key: normalizedKey,
+          actionName: 'Orchestrate Directive',
+          payloadHash,
+          executionRef: `req-${Date.now()}`,
+        });
+
+        if (claimResult.state === 'completed') {
+          return NextResponse.json(claimResult.record.response, {
+            status: 200,
+            headers: { 'X-Idempotent-Replay': 'true' },
+          });
+        }
+
+        if (claimResult.state === 'in_progress') {
+          return NextResponse.json(
+            {
+              error: `Operation with idempotency key '${normalizedKey}' is already in progress. Concurrent execution rejected.`,
+              success: false,
+            },
+            { status: 409 }
+          );
+        }
+
+        if (claimResult.state === 'unknown') {
+          return NextResponse.json(
+            {
+              error: `Operation with idempotency key '${normalizedKey}' has an ambiguous prior state. Please inspect before retrying.`,
+              success: false,
+            },
+            { status: 409 }
+          );
+        }
+      } catch (claimErr: any) {
+        if (claimErr instanceof IdempotencyPayloadMismatchError) {
+          return NextResponse.json(
+            {
+              error: claimErr.message,
+              success: false,
+            },
+            { status: 422 }
+          );
+        }
+        throw claimErr;
+      }
+    }
+
     const orchestrator = new MultiAgentOrchestrator();
-    const runResult = await orchestrator.orchestrateDirective({
-      directive: directive.trim(),
-      agents,
-      autonomyLevel,
-    });
+    let runResult;
+    try {
+      runResult = await orchestrator.orchestrateDirective({
+        directive: directive.trim(),
+        agents,
+        autonomyLevel,
+      });
+    } catch (execErr: any) {
+      if (normalizedKey) {
+        await idempotencyStore.fail(normalizedKey, execErr.message || 'Orchestration execution failed');
+      }
+      throw execErr;
+    }
 
     const responseBody = {
       success: runResult.status !== 'failed' || runResult.liveAi === false,
@@ -50,12 +117,8 @@ export async function POST(req: NextRequest) {
       executionMode: runResult.executionSummary?.executionMode || 'multi_agent_orchestrated',
     };
 
-    if (idempotencyKey) {
-      idempotencyCache.set(idempotencyKey, {
-        status: 200,
-        body: responseBody,
-        timestamp: Date.now(),
-      });
+    if (normalizedKey) {
+      await idempotencyStore.complete(normalizedKey, responseBody);
     }
 
     return NextResponse.json(responseBody);

@@ -2,6 +2,7 @@ import { CompanyMemory, RetrievedHistoricalMemory } from '@/types/os';
 import { ICompanyMemoryStore, MemoryQueryParams } from '@/types/context';
 import { OperationalLearningLoop } from './learning-loop';
 import { prisma } from '@/lib/server/db/prisma';
+import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 /**
@@ -95,10 +96,24 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
   }
 
   public async getAllMemories(): Promise<CompanyMemory[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const records = await db.companyMemory.findMany({ orderBy: { createdAt: 'desc' } });
+      return records.map((r) => r.details as unknown as CompanyMemory);
+    }
     return [...this.memories];
   }
 
   public async getMemoryById(id: string): Promise<CompanyMemory | null> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const dbMem = await db.companyMemory.findUnique({ where: { id } });
+      if (dbMem && dbMem.details) {
+        return dbMem.details as unknown as CompanyMemory;
+      }
+      return null;
+    }
+
     const mem = this.memories.find((m) => m.id === id);
     if (mem) return { ...mem };
 
@@ -127,6 +142,27 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
       }
     }
 
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyMemory.upsert({
+        where: { id: memory.id },
+        create: {
+          id: memory.id,
+          type: memory.decisionId || 'DECISION_OUTCOME',
+          summary: memory.approvedAction || memory.id,
+          details: sanitizedMemory as any,
+          tags: [],
+          importance: 1,
+          decayScore: 1.0,
+        },
+        update: {
+          details: sanitizedMemory as any,
+          summary: memory.approvedAction || memory.id,
+        },
+      });
+      return;
+    }
+
     this.memories.unshift(sanitizedMemory);
 
     try {
@@ -152,7 +188,7 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
           },
         });
       } catch {
-        // Fallback safely
+        // Fallback safely for offline test environments
       }
     }
   }

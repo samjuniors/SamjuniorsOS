@@ -23,6 +23,7 @@ import {
   StateQueryParams,
 } from '@/types/context';
 import { prisma } from '@/lib/server/db/prisma';
+import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 const STOP_WORDS = new Set([
@@ -108,6 +109,14 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getInitiatives(): Promise<CompanyInitiative[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.initiatives) {
+        return record.initiatives as unknown as CompanyInitiative[];
+      }
+      return [];
+    }
     return [...this.initiatives];
   }
 
@@ -120,6 +129,14 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getDecisions(): Promise<CompanyDecision[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.decisions) {
+        return record.decisions as unknown as CompanyDecision[];
+      }
+      return [];
+    }
     return [...this.decisions];
   }
 
@@ -128,11 +145,36 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getFinancialMetrics(): Promise<FinanceMetric> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.financialModel) {
+        return record.financialModel as unknown as FinanceMetric;
+      }
+    }
     return { ...this.financialModel };
   }
 
   public async setInitiatives(inits: CompanyInitiative[]): Promise<void> {
     this.initiatives = [...inits];
+
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          initiatives: this.initiatives as any,
+        },
+        update: {
+          initiatives: this.initiatives as any,
+        },
+      });
+      return;
+    }
+
+    this.persistState();
+
     if (process.env.DATABASE_URL) {
       try {
         await prisma.companyState.upsert({
@@ -146,13 +188,31 @@ export class CompanyStateStore implements ICompanyStateStore {
           },
         });
       } catch {
-        // Fallback safely for offline environments
+        // Fallback safely for offline test environments
       }
     }
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
     this.decisions.unshift(decision);
+
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          decisions: this.decisions as any,
+        },
+        update: {
+          decisions: this.decisions as any,
+        },
+      });
+      return;
+    }
+
+    this.persistState();
+
     if (process.env.DATABASE_URL) {
       try {
         await prisma.companyState.upsert({
@@ -166,13 +226,31 @@ export class CompanyStateStore implements ICompanyStateStore {
           },
         });
       } catch {
-        // Fallback safely
+        // Fallback safely for offline test environments
       }
     }
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
     this.financialModel = { ...this.financialModel, ...metrics };
+
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          financialModel: this.financialModel as any,
+        },
+        update: {
+          financialModel: this.financialModel as any,
+        },
+      });
+      return;
+    }
+
+    this.persistState();
+
     if (process.env.DATABASE_URL) {
       try {
         await prisma.companyState.upsert({
@@ -186,7 +264,7 @@ export class CompanyStateStore implements ICompanyStateStore {
           },
         });
       } catch {
-        // Fallback safely
+        // Fallback safely for offline test environments
       }
     }
   }

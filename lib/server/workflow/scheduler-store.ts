@@ -1,5 +1,6 @@
 import { ScheduledWorkItem, ScheduledWorkFilter, ScheduledWorkStatus } from '../../../types/scheduling';
 import { prisma } from '@/lib/server/db/prisma';
+import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
 
 /**
  * Interface for persisting Scheduled Work items.
@@ -15,10 +16,139 @@ export interface ScheduledWorkStore {
 }
 
 /**
- * Durable PostgreSQL / Prisma backed ScheduledWorkStore with in-memory caching.
+ * Authoritative PostgreSQL ScheduledWorkStore.
+ * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+ */
+export class PostgresScheduledWorkStore implements ScheduledWorkStore {
+  private static instance: PostgresScheduledWorkStore;
+
+  public static getInstance(): PostgresScheduledWorkStore {
+    if (!PostgresScheduledWorkStore.instance) {
+      PostgresScheduledWorkStore.instance = new PostgresScheduledWorkStore();
+    }
+    return PostgresScheduledWorkStore.instance;
+  }
+
+  async save(item: ScheduledWorkItem): Promise<void> {
+    const db = await requireAuthoritativeDatabase();
+    await db.scheduledWorkItem.upsert({
+      where: { id: item.id },
+      create: {
+        id: item.id,
+        workflowInstanceId: item.workflowInstanceId,
+        stepId: item.stepId,
+        executeAt: new Date(item.executeAt),
+        status: item.status,
+        idempotencyKey: item.id,
+        metadata: (item as any) ?? {},
+      },
+      update: {
+        executeAt: new Date(item.executeAt),
+        status: item.status,
+        metadata: (item as any) ?? {},
+      },
+    });
+  }
+
+  async get(id: string): Promise<ScheduledWorkItem | null> {
+    const db = await requireAuthoritativeDatabase();
+    const found = await db.scheduledWorkItem.findUnique({ where: { id } });
+    if (!found || !found.metadata) return null;
+    return found.metadata as unknown as ScheduledWorkItem;
+  }
+
+  async listDue(asOfTime?: string): Promise<ScheduledWorkItem[]> {
+    const db = await requireAuthoritativeDatabase();
+    const cutoff = asOfTime ? new Date(asOfTime) : new Date();
+
+    const items = await db.scheduledWorkItem.findMany({
+      where: {
+        status: 'scheduled',
+        executeAt: { lte: cutoff },
+      },
+      orderBy: { executeAt: 'asc' },
+    });
+
+    return items.map((i) => i.metadata as unknown as ScheduledWorkItem);
+  }
+
+  async list(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]> {
+    const db = await requireAuthoritativeDatabase();
+    const where: any = {};
+    if (filter?.workflowInstanceId) where.workflowInstanceId = filter.workflowInstanceId;
+    if (filter?.stepId) where.stepId = filter.stepId;
+    if (filter?.status) where.status = filter.status;
+
+    const items = await db.scheduledWorkItem.findMany({
+      where,
+      orderBy: { executeAt: 'asc' },
+    });
+
+    let results = items.map((i) => i.metadata as unknown as ScheduledWorkItem);
+    if (filter?.scheduleType) {
+      results = results.filter((i) => i.scheduleType === filter.scheduleType);
+    }
+    return results;
+  }
+
+  async cancel(id: string, cancelledBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
+    const db = await requireAuthoritativeDatabase();
+    const found = await db.scheduledWorkItem.findUnique({ where: { id } });
+    if (!found || !found.metadata) {
+      throw new Error(`Scheduled work item not found: ${id}`);
+    }
+
+    const item = found.metadata as unknown as ScheduledWorkItem;
+    if (item.status === 'completed' || item.status === 'cancelled') {
+      return item;
+    }
+
+    const now = new Date().toISOString();
+    item.status = 'cancelled';
+    item.updatedAt = now;
+    item.cancellationState = {
+      cancelledAt: now,
+      cancelledBy,
+      reason: reason || 'Cancelled by request',
+    };
+
+    await db.scheduledWorkItem.update({
+      where: { id },
+      data: {
+        status: 'cancelled',
+        metadata: item as any,
+      },
+    });
+
+    return item;
+  }
+
+  async update(item: ScheduledWorkItem): Promise<void> {
+    const db = await requireAuthoritativeDatabase();
+    await db.scheduledWorkItem.update({
+      where: { id: item.id },
+      data: {
+        status: item.status,
+        executeAt: new Date(item.executeAt),
+        metadata: item as any,
+      },
+    });
+  }
+
+  clear(): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Scheduled work items cannot be cleared in production.');
+    }
+  }
+}
+
+/**
+ * Dual-Mode ScheduledWorkStore.
+ * In Authoritative Mode: delegates directly to PostgresScheduledWorkStore (fail-closed).
+ * In Test/Local Mode: uses fast in-memory maps with local file persistence.
  */
 export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
-  private items: Map<string, ScheduledWorkItem> = new Map();
+  public items: Map<string, ScheduledWorkItem> = new Map();
   private static instance: InMemoryScheduledWorkStore;
 
   private constructor() {}
@@ -31,6 +161,10 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   }
 
   async save(item: ScheduledWorkItem): Promise<void> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().save(item);
+    }
+
     this.items.set(item.id, JSON.parse(JSON.stringify(item)));
 
     if (process.env.DATABASE_URL) {
@@ -43,6 +177,7 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
             stepId: item.stepId,
             executeAt: new Date(item.executeAt),
             status: item.status,
+            idempotencyKey: item.id,
             metadata: (item as any) ?? {},
           },
           update: {
@@ -52,12 +187,16 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
           },
         });
       } catch {
-        // Fallback safely
+        // Fallback safely for offline test environments
       }
     }
   }
 
   async get(id: string): Promise<ScheduledWorkItem | null> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().get(id);
+    }
+
     const item = this.items.get(id);
     if (item) return JSON.parse(JSON.stringify(item));
 
@@ -78,6 +217,10 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   }
 
   async listDue(asOfTime?: string): Promise<ScheduledWorkItem[]> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().listDue(asOfTime);
+    }
+
     const cutoff = asOfTime ? new Date(asOfTime).getTime() : Date.now();
     const results: ScheduledWorkItem[] = [];
 
@@ -90,11 +233,14 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
       }
     }
 
-    // Sort deterministically by executeAt ascending
     return results.sort((a, b) => new Date(a.executeAt).getTime() - new Date(b.executeAt).getTime());
   }
 
   async list(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().list(filter);
+    }
+
     let results = Array.from(this.items.values());
 
     if (filter) {
@@ -116,6 +262,10 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   }
 
   async cancel(id: string, cancelledBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().cancel(id, cancelledBy, reason);
+    }
+
     const item = this.items.get(id);
     if (!item) {
       throw new Error(`Scheduled work item not found: ${id}`);
@@ -142,9 +292,6 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
           where: { id },
           data: {
             status: 'cancelled',
-            cancelledAt: new Date(now),
-            cancelledBy,
-            cancellationReason: reason || 'Cancelled by request',
             metadata: item as any,
           },
         });
@@ -157,11 +304,12 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   }
 
   async update(item: ScheduledWorkItem): Promise<void> {
-    if (!this.items.has(item.id)) {
-      throw new Error(`Scheduled work item not found: ${item.id}`);
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().update(item);
     }
-    item.updatedAt = new Date().toISOString();
-    this.items.set(item.id, JSON.parse(JSON.stringify(item)));
+
+    const clone = JSON.parse(JSON.stringify(item));
+    this.items.set(item.id, clone);
 
     if (process.env.DATABASE_URL) {
       try {
@@ -170,7 +318,7 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
           data: {
             status: item.status,
             executeAt: new Date(item.executeAt),
-            metadata: item as any,
+            metadata: clone as any,
           },
         });
       } catch {
@@ -180,6 +328,9 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   }
 
   clear(): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Scheduled work items cannot be cleared in production.');
+    }
     this.items.clear();
   }
 }
