@@ -330,6 +330,7 @@ export interface OrchestrationRun {
     totalTasksExecuted: number;
     executionMode: 'multi_agent_orchestrated' | 'direct_agent' | 'unconfigured';
   };
+  workflowInstanceId?: string;
 }
 
 // ----------------------------------------------------------------------------

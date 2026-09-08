@@ -156,5 +156,41 @@
     "epistemicConfidence": "verified_fact",
     "timestamp": "2026-09-08T06:29:44.823Z",
     "recordedAt": "2026-09-08T06:29:44.823Z"
+  },
+  "mem-test-unverified-1788885390409": {
+    "id": "mem-test-unverified-1788885390409",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T16:36:30.409Z"
+  },
+  "mem-test-unbacked-1788885390409": {
+    "id": "mem-test-unbacked-1788885390409",
+    "decisionId": "dec-unbacked-fact",
+    "approvedAction": "Claiming verified fact without evidence",
+    "executionOutcome": "unbacked",
+    "evidenceReferences": [],
+    "epistemicConfidence": "high_confidence",
+    "timestamp": "2026-09-08T16:36:30.409Z"
+  },
+  "mem-test-unverified-1788909478001": {
+    "id": "mem-test-unverified-1788909478001",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T23:17:58.001Z"
+  },
+  "mem-test-unbacked-1788909478002": {
+    "id": "mem-test-unbacked-1788909478002",
+    "decisionId": "dec-unbacked-fact",
+    "approvedAction": "Claiming verified fact without evidence",
+    "executionOutcome": "unbacked",
+    "evidenceReferences": [],
+    "epistemicConfidence": "high_confidence",
+    "timestamp": "2026-09-08T23:17:58.002Z"
   }
 }

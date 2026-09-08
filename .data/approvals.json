@@ -1,200 +1,30 @@
 {
-  "appr-spoof-test-1": {
-    "id": "appr-spoof-test-1",
-    "workflowInstanceId": "wf-spoof-1",
-    "stepId": "step-spoof-1",
-    "employeeRole": "coo",
+  "appr-a73c49c1-7ccd-4b5c-b3ca-3b451539eec3": {
+    "id": "appr-a73c49c1-7ccd-4b5c-b3ca-3b451539eec3",
+    "decision": "approved",
+    "actionName": "Single Use Side Effect",
     "classification": "external_communication",
-    "actionName": "POST_MARKETING_ANNOUNCEMENT",
-    "target": {
-      "targetSystem": "TWITTER",
-      "metadata": {
-        "tweet": "Launch day!"
-      }
-    },
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action"
-    },
-    "requestedAt": "2026-09-08T06:32:20.032Z",
-    "decidedAt": "2026-09-08T06:32:20.033Z",
-    "decidedBy": "founder_session_verified_001",
-    "decisionReason": "Founder approved through verified server session"
-  },
-  "appr-durable-marker-1788848991636": {
-    "id": "appr-durable-marker-1788848991636",
-    "workflowInstanceId": "wf-durable-restart",
-    "stepId": "step-durable-1",
-    "employeeRole": "finance",
-    "classification": "high_impact_action",
-    "actionName": "BUDGET_REALLOCATION",
-    "target": {
-      "targetSystem": "FINANCE",
-      "metadata": {
-        "amount": 5000
-      }
-    },
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action"
-    },
-    "requestedAt": "2026-09-08T06:29:51.636Z"
-  },
-  "appr-bound-1788848991639": {
-    "id": "appr-bound-1788848991639",
-    "workflowInstanceId": "wf-payload-binding-1788848991639",
-    "stepId": "step-send-mail-1788848991639",
-    "employeeRole": "coo",
-    "classification": "external_communication",
-    "actionName": "SEND_COMMUNICATION",
-    "target": {
-      "targetSystem": "RESEND",
-      "metadata": {
-        "recipient": "investor@fund.com",
-        "subject": "Quarterly Update",
-        "bodyContent": "Here is our quarterly update with verified financials.",
-        "budgetAllocationUsd": 1200
-      }
-    },
-    "payloadHash": "9920cc9f27b7ff67e23da03116af7f6936494b51169fd8e2034222be655c0ae6",
-    "decision": "approved",
+    "workflowInstanceId": "wf-single-1",
+    "stepId": "step-1",
+    "employeeRole": "sales_rep",
     "scope": {
       "scopeType": "single_action",
+      "workflowInstanceId": "wf-single-1",
+      "stepId": "step-1",
+      "targetSystem": "resend",
+      "maxUses": 1,
       "usedCount": 1
     },
-    "requestedAt": "2026-09-08T06:29:51.639Z",
-    "isConsumed": true
-  },
-  "appr-tampered-1788848991651": {
-    "id": "appr-tampered-1788848991651",
-    "workflowInstanceId": "wf-tamper-test-1788848991651",
-    "stepId": "step-transfer-1788848991651",
-    "employeeRole": "finance",
-    "classification": "high_impact_action",
-    "actionName": "WIRE_TRANSFER",
+    "requestedAt": "2026-09-08T15:34:43.384Z",
     "target": {
-      "targetSystem": "BANK",
-      "metadata": {
-        "recipient": "investor@fund.com",
-        "subject": "Quarterly Update",
-        "bodyContent": "Here is our quarterly update with verified financials.",
-        "budgetAllocationUsd": 1200
-      }
+      "targetSystem": "resend"
     },
-    "payloadHash": "2e6528e02471fe61f527ec1ab28515973adcc5e0fdedf7f708fb766c1de0e4de",
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action"
+    "payload": {
+      "action": "fire_once"
     },
-    "requestedAt": "2026-09-08T06:29:51.651Z"
-  },
-  "appr-comm-1788848991654": {
-    "id": "appr-comm-1788848991654",
-    "workflowInstanceId": "wf-comm-safe-1788848991654",
-    "stepId": "step-send-1788848991654",
-    "employeeRole": "coo",
-    "classification": "external_communication",
-    "actionName": "Send Communication (send)",
-    "target": {
-      "targetSystem": "email",
-      "recipient": "partner@enterprise.com",
-      "summary": "Execute communication intent 'send' on email"
-    },
-    "payloadHash": "e559485dd336b0b4ab03d67ef4cf7a854b5732606f046da415aeb648caf1383e",
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action",
-      "usedCount": 1
-    },
-    "requestedAt": "2026-09-08T06:29:51.654Z",
-    "isConsumed": true
-  },
-  "appr-durable-marker-1788849140044": {
-    "id": "appr-durable-marker-1788849140044",
-    "workflowInstanceId": "wf-durable-restart",
-    "stepId": "step-durable-1",
-    "employeeRole": "finance",
-    "classification": "high_impact_action",
-    "actionName": "BUDGET_REALLOCATION",
-    "target": {
-      "targetSystem": "FINANCE",
-      "metadata": {
-        "amount": 5000
-      }
-    },
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action"
-    },
-    "requestedAt": "2026-09-08T06:32:20.044Z"
-  },
-  "appr-bound-1788849140047": {
-    "id": "appr-bound-1788849140047",
-    "workflowInstanceId": "wf-payload-binding-1788849140047",
-    "stepId": "step-send-mail-1788849140047",
-    "employeeRole": "coo",
-    "classification": "external_communication",
-    "actionName": "SEND_COMMUNICATION",
-    "target": {
-      "targetSystem": "RESEND",
-      "metadata": {
-        "recipient": "investor@fund.com",
-        "subject": "Quarterly Update",
-        "bodyContent": "Here is our quarterly update with verified financials.",
-        "budgetAllocationUsd": 1200
-      }
-    },
-    "payloadHash": "9920cc9f27b7ff67e23da03116af7f6936494b51169fd8e2034222be655c0ae6",
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action",
-      "usedCount": 1
-    },
-    "requestedAt": "2026-09-08T06:32:20.047Z",
-    "isConsumed": true
-  },
-  "appr-tampered-1788849140059": {
-    "id": "appr-tampered-1788849140059",
-    "workflowInstanceId": "wf-tamper-test-1788849140059",
-    "stepId": "step-transfer-1788849140059",
-    "employeeRole": "finance",
-    "classification": "high_impact_action",
-    "actionName": "WIRE_TRANSFER",
-    "target": {
-      "targetSystem": "BANK",
-      "metadata": {
-        "recipient": "investor@fund.com",
-        "subject": "Quarterly Update",
-        "bodyContent": "Here is our quarterly update with verified financials.",
-        "budgetAllocationUsd": 1200
-      }
-    },
-    "payloadHash": "2e6528e02471fe61f527ec1ab28515973adcc5e0fdedf7f708fb766c1de0e4de",
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action"
-    },
-    "requestedAt": "2026-09-08T06:32:20.059Z"
-  },
-  "appr-comm-1788849140062": {
-    "id": "appr-comm-1788849140062",
-    "workflowInstanceId": "wf-comm-safe-1788849140062",
-    "stepId": "step-send-1788849140062",
-    "employeeRole": "coo",
-    "classification": "external_communication",
-    "actionName": "Send Communication (send)",
-    "target": {
-      "targetSystem": "email",
-      "recipient": "partner@enterprise.com",
-      "summary": "Execute communication intent 'send' on email"
-    },
-    "payloadHash": "e559485dd336b0b4ab03d67ef4cf7a854b5732606f046da415aeb648caf1383e",
-    "decision": "approved",
-    "scope": {
-      "scopeType": "single_action",
-      "usedCount": 1
-    },
-    "requestedAt": "2026-09-08T06:32:20.062Z",
-    "isConsumed": true
+    "payloadHash": "ac619b53b9b17773987a67fa3620c62e416a98d77dcfd6b59dbe425fc86ec890",
+    "isConsumed": true,
+    "decidedAt": "2026-09-08T15:34:43.385Z",
+    "decidedBy": "founder"
   }
 }

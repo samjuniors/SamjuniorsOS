@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { AIAgent, AgentRole, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext, PersonaTone } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit, BookOpen, Sliders } from 'lucide-react';
+import { BrainCircuit, BookOpen, Sliders, Sparkles, GraduationCap } from 'lucide-react';
 import { STRUCTURED_SKILLS, getSkillsForRole } from '@/lib/skills/skill-registry';
 import { StructuredSkillDefinition } from '@/types/capabilities';
 import { SkillInspectionModal } from './SkillInspectionModal';
@@ -34,6 +34,8 @@ import { MarkdownMessage } from '@/components/os/MarkdownMessage';
 import { VoiceCallModal } from '@/components/os/VoiceCallModal';
 import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
 import { PersonaStore } from '@/lib/persona-store';
+import { SkillTreeView } from '@/components/training/SkillTreeView';
+import { AIEmployeeOnboardingModal } from '@/components/training/AIEmployeeOnboardingModal';
 
 interface EmployeeProfileViewProps {
   agent: AIAgent;
@@ -54,7 +56,8 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
   onInspectDeliverable,
   onAskAdvisor,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'capabilities' | 'persona' | 'chat' | 'skills' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
+  const [activeSubTab, setActiveSubTab] = useState<'overview' | 'skill_tree' | 'capabilities' | 'persona' | 'chat' | 'skills' | 'tasks' | 'deliverables' | 'permissions' | 'audit'>('overview');
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [inspectingSkill, setInspectingSkill] = useState<StructuredSkillDefinition | Readonly<StructuredSkillDefinition> | null>(null);
   const structuredSkills = getSkillsForRole(agent.id as any);
   const [chatInput, setChatInput] = useState('');
@@ -251,6 +254,7 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
         <div className="px-5 border-b border-white/10 bg-black/20 flex items-center space-x-1 overflow-x-auto text-xs">
           {[
             { id: 'overview', label: 'Executive Overview', icon: User },
+            { id: 'skill_tree', label: 'Skill Tree & Specialization', icon: BrainCircuit },
             { id: 'capabilities', label: 'AI Capabilities & Tech', icon: Cpu },
             { id: 'persona', label: 'Persona & Style', icon: Sliders },
             { id: 'chat', label: 'Direct Chat', icon: MessageSquare },
@@ -939,6 +943,15 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
             </div>
           )}
 
+          {activeSubTab === 'skill_tree' && (
+            <div className="space-y-4">
+              <SkillTreeView
+                selectedRole={agent.id}
+                onOpenOnboarding={() => setIsOnboardingOpen(true)}
+              />
+            </div>
+          )}
+
           {activeSubTab === 'audit' && (
             <div className="space-y-3 text-xs">
               <div className="p-4 rounded-xl bg-black/30 border border-white/5 space-y-2 font-mono text-[11px]">
@@ -993,6 +1006,13 @@ export const EmployeeProfileView: React.FC<EmployeeProfileViewProps> = ({
         isOpen={isVoiceCallOpen}
         onClose={() => setIsVoiceCallOpen(false)}
         initialAgentId={agent.id as any}
+      />
+
+      {/* AI Employee Onboarding & Calibration Modal */}
+      <AIEmployeeOnboardingModal
+        agentId={agent.id}
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
       />
     </div>
   );

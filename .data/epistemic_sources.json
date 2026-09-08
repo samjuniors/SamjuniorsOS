@@ -174,5 +174,16 @@
     "capturedBy": "coo",
     "metadata": {},
     "provenanceKind": "live_operational"
+  },
+  "src-test-1788881649512": {
+    "id": "src-test-1788881649512",
+    "sourceSystem": "github",
+    "title": "Repository Commit Log",
+    "rawContent": "Commit 73af411c",
+    "contentHash": "hash-commit-73af411c",
+    "capturedAt": "2026-09-08T15:34:09.512Z",
+    "capturedBy": "system",
+    "metadata": {},
+    "provenanceKind": "live_operational"
   }
 }

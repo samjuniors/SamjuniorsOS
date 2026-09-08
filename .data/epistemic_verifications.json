@@ -286,5 +286,37 @@
     "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
     "verifiedAt": "2026-09-08T06:29:44.817Z",
     "verifiedBy": "founder"
+  },
+  "clm-1788885390365-7fd9af": {
+    "claimId": "clm-1788885390365-7fd9af",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T16:36:30.369Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788885390417-b026a1": {
+    "claimId": "clm-1788885390417-b026a1",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T16:36:30.418Z",
+    "verifiedBy": "coo-verifier-1"
+  },
+  "clm-1788909456609-45eb41": {
+    "claimId": "clm-1788909456609-45eb41",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T23:17:36.612Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788909478007-84072b": {
+    "claimId": "clm-1788909478007-84072b",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T23:17:58.008Z",
+    "verifiedBy": "coo-verifier-1"
   }
 }

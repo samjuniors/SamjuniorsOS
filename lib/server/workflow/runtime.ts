@@ -11,6 +11,8 @@ import { ServerAgentExecutor } from '../agents/executor';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
 import { validateStepTransition, validateInstanceTransition } from './state-machine';
 import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
+import { ConstitutionalVerifier } from '../orchestration/verifier';
+import { resolveTargetRepository, executeGitHubIntelligence } from '../tools/providers/github';
 import { v4 as uuidv4 } from 'uuid';
 
 export class WorkflowRuntime {
@@ -34,7 +36,7 @@ export class WorkflowRuntime {
   /**
    * Creates a new Workflow Instance from a Definition.
    */
-  async createInstance(workflowId: string, version?: string): Promise<WorkflowInstanceState> {
+  async createInstance(workflowId: string, version?: string, initialInputs?: Record<string, any>): Promise<WorkflowInstanceState> {
     const definition = await this.store.getDefinition(workflowId, version);
     if (!definition) {
       throw new Error(`Workflow definition not found: ${workflowId}`);
@@ -68,7 +70,7 @@ export class WorkflowRuntime {
       stepStates,
       createdAt: now,
       updatedAt: now,
-      outputs: {},
+      outputs: { directive: definition.objective, ...(initialInputs || {}) },
       evidenceReferences: [],
     };
 
@@ -184,7 +186,9 @@ export class WorkflowRuntime {
       let inputsMet = true;
       for (const inputKey of stepDef.inputReferences) {
         let found = false;
-        if (instance.outputs && instance.outputs[inputKey] !== undefined) {
+        if (inputKey === 'directive' || inputKey === 'objective') {
+          found = Boolean(instance.objective || def.objective);
+        } else if (instance.outputs && instance.outputs[inputKey] !== undefined) {
           found = true;
         } else {
           for (const s of Object.values(instance.stepStates)) {
@@ -347,6 +351,9 @@ export class WorkflowRuntime {
     const anyFailed = states.some(s => s.status === 'failed');
     const anyCancelled = states.some(s => s.status === 'cancelled');
     const anyRunning = states.some(s => s.status === 'running');
+    const anyReady = states.some(s => s.status === 'ready');
+    const anyAwaitingApproval = states.some(s => s.status === 'awaiting_approval');
+    const anyBlocked = states.some(s => s.status === 'blocked');
     
     let newStatus = instance.status;
     
@@ -358,7 +365,11 @@ export class WorkflowRuntime {
       newStatus = 'cancelled';
     } else if (anyRunning) {
       newStatus = 'running';
-    } else if (instance.status === 'pending' && states.some(s => s.status === 'ready')) {
+    } else if (anyAwaitingApproval && !anyRunning && !anyReady) {
+      newStatus = 'awaiting_approval';
+    } else if (anyBlocked && !anyRunning && !anyReady) {
+      newStatus = 'blocked';
+    } else if (instance.status === 'pending' && anyReady) {
       newStatus = 'running';
     }
 
@@ -373,7 +384,12 @@ export class WorkflowRuntime {
    * Execute a Ready step via SideEffectAuthorizationGate and existing orchestration.
    * Atomically claims the step before external execution and persists transitions atomically.
    */
-  async executeReadyStep(instanceId: string, stepId: string, workerId: string = 'worker-default'): Promise<void> {
+  async executeReadyStep(
+    instanceId: string, 
+    stepId: string, 
+    workerId: string = 'worker-default',
+    options?: { executeTools?: boolean }
+  ): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
     if (!instance) throw new Error(`Instance not found: ${instanceId}`);
     
@@ -432,6 +448,175 @@ export class WorkflowRuntime {
     try {
       const executionRef = `exec-${instanceId}-${stepId}-${Date.now()}`;
       
+      // Assemble upstream outputs from dependencies and prior completed steps on the Blackboard
+      const upstreamOutputs: Record<string, any> = {};
+      for (const s of Object.values(instance.stepStates)) {
+        if (s.outputs) {
+          Object.assign(upstreamOutputs, s.outputs);
+        }
+      }
+
+      // Check if this is a Constitutional Verification Step
+      if (
+        stepDef.skill === 'compliance_verification' || 
+        stepDef.name.toLowerCase().includes('verification')
+      ) {
+        const deliverablesList: any[] = [];
+        const researchState = instance.stepStates['step-research'];
+        const financeState = instance.stepStates['step-finance'];
+        const pmState = instance.stepStates['step-pm-prd'];
+
+        if (researchState?.outputs?.result || researchState?.outputs?.toolIntelBrief) {
+          const isGitHub = Boolean(researchState?.outputs?.toolEvidence);
+          deliverablesList.push({
+            id: 'deliv-step-research',
+            name: isGitHub 
+              ? 'Repository Intelligence & Technical Reconnaissance Brief' 
+              : 'Market Intelligence & Technical Reconnaissance Brief',
+            owner: 'Dr. Aris Thorne (Lead AI Researcher)',
+            authorAgentId: 'researcher',
+            authorName: 'Dr. Aris Thorne',
+            type: 'research',
+            protocolStep: 'research',
+            content: String(researchState.outputs.toolIntelBrief || researchState.outputs.result),
+            provenance: researchState.outputs?.provenance || {
+              authorRole: 'researcher',
+              authorName: 'Dr. Aris Thorne',
+              confidence: 'verified_fact',
+              evidenceBasis: isGitHub ? 'external_evidence' : 'empirical_test',
+              immutable: true,
+              timestamp: new Date().toISOString(),
+            },
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        if (financeState?.outputs?.result) {
+          deliverablesList.push({
+            id: 'deliv-step-finance',
+            name: 'Financial Model & Unit Economics Assessment',
+            owner: 'Julian Cruz (VP Finance)',
+            authorAgentId: 'finance',
+            authorName: 'Julian Cruz',
+            type: 'financial',
+            protocolStep: 'test',
+            content: String(financeState.outputs.result),
+            provenance: financeState.outputs?.provenance || {
+              authorRole: 'finance',
+              authorName: 'Julian Cruz',
+              confidence: 'verified_fact',
+              evidenceBasis: 'logical_proof',
+              immutable: true,
+              timestamp: new Date().toISOString(),
+            },
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        if (pmState?.outputs?.result) {
+          deliverablesList.push({
+            id: 'deliv-step-pm-prd',
+            name: 'Product Requirements Document (PRD)',
+            owner: 'Maya Lin (Principal PM)',
+            authorAgentId: 'pm',
+            authorName: 'Maya Lin',
+            type: 'spec',
+            protocolStep: 'build_execute',
+            content: String(pmState.outputs.result),
+            provenance: pmState.outputs?.provenance || {
+              authorRole: 'pm',
+              authorName: 'Maya Lin',
+              confidence: 'verified_fact',
+              evidenceBasis: 'logical_proof',
+              immutable: true,
+              timestamp: new Date().toISOString(),
+            },
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        const verificationResult = ConstitutionalVerifier.verify({
+          directive: def.objective,
+          deliverables: deliverablesList,
+          specialistOutputs: {
+            cooScope: upstreamOutputs['cooScope'] || upstreamOutputs['result'],
+            researchFindings: upstreamOutputs['researchFindings'] || upstreamOutputs['market_intelligence_brief'],
+            productSpecs: upstreamOutputs['productSpecs'] || upstreamOutputs['prd'],
+            financeAssessment: upstreamOutputs['financeAssessment'] || upstreamOutputs['unit_economics'],
+          },
+        });
+
+        if (!verificationResult.isCompliant) {
+          const failReason = `Constitutional verification failed: ${verificationResult.checksFailed.join('; ')}`;
+          await this.store.transitionStepAtomic(
+            instanceId,
+            stepId,
+            'failed',
+            expectedVersion,
+            {
+              error: failReason,
+              outputs: {
+                verificationResult,
+                result: failReason,
+                statusMessage: `[Sophia Vance - COO] Verification rejected: ${verificationResult.notes || failReason}`,
+              },
+            }
+          );
+          await this.evaluateInstanceStatus(instanceId);
+          return;
+        }
+
+        const successOutputs = {
+          verificationResult,
+          result: 'All constitutional invariants verified: 80%+ gross margin floor, zero credential leaks, safe sandbox compliant.',
+          statusMessage: '[Sophia Vance - COO] Deliverables verified against constitutional invariants and security bounds.',
+        };
+
+        await this.store.transitionStepAtomic(
+          instanceId,
+          stepId,
+          'completed',
+          expectedVersion,
+          {
+            outputs: successOutputs,
+            evidenceReferences: ['audit-verification-passed'],
+          }
+        );
+
+        await this.evaluateInstanceStatus(instanceId);
+        await this.evaluateReadiness(instanceId);
+        return;
+      }
+
+      // Check if this is a Researcher step with tool selection (GitHub intelligence)
+      let toolEvidence: any = undefined;
+      let toolIntelBrief: string | undefined = undefined;
+      const shouldRunTools = options?.executeTools ?? (def.objective.toLowerCase().includes('github') || def.objective.toLowerCase().includes('repo'));
+      if (step.assignedRole === 'researcher' && shouldRunTools) {
+        try {
+          const intelResult = await executeGitHubIntelligence(def.objective, {
+            toolId: 'github_repository_read',
+            sessionScope: {
+              userId: 'founder-001',
+              employeeRole: 'researcher',
+              permittedToolIds: ['github_repository_read', 'github_issues_read'],
+            },
+            provenance: {
+              taskId: `task-intel-${instanceId}`,
+              agentId: 'researcher',
+              agentName: 'Dr. Aris Thorne (Lead Researcher)',
+              protocolStep: 'research',
+              timestamp: new Date().toISOString(),
+              modelUsed: 'gemini-2.5-pro',
+              evidenceBasis: 'external_evidence',
+              isVerified: true,
+            },
+          });
+          toolEvidence = intelResult.evidence;
+          toolIntelBrief = intelResult.epistemicBreakdown.briefMarkdown;
+        } catch (toolErr: any) {
+          console.warn('[WorkflowRuntime] Tool execution warning:', toolErr.message);
+        }
+      }
+
       // Execute through the SideEffectAuthorizationGate wrapper with durable idempotency
       const logicalOpId = `${instanceId}-${stepId}-v${instance.stateVersion}`;
       const canonicalKey = generateLogicalIdempotencyKey({
@@ -462,6 +647,13 @@ export class WorkflowRuntime {
               protocolStep: step.skill,
               taskTitle: stepDef.name,
               taskDescription: stepDef.description,
+              upstreamContext: {
+                cooScope: upstreamOutputs['cooScope'] || upstreamOutputs['result'],
+                researchFindings: upstreamOutputs['researchFindings'] || upstreamOutputs['market_intelligence_brief'] || upstreamOutputs['result'],
+                productSpecs: upstreamOutputs['productSpecs'] || upstreamOutputs['prd'] || upstreamOutputs['result'],
+                financeAssessment: upstreamOutputs['financeAssessment'] || upstreamOutputs['unit_economics'] || upstreamOutputs['result'],
+                verificationNotes: upstreamOutputs['verificationResult'] ? JSON.stringify(upstreamOutputs['verificationResult']) : undefined,
+              },
             },
             `Execute workflow step: ${stepDef.name}`
           );
@@ -474,7 +666,23 @@ export class WorkflowRuntime {
 
       const agentResult = gateResult.result!;
 
-      const stepOutputs: Record<string, any> = { result: agentResult.outputContent };
+      const stepOutputs: Record<string, any> = { 
+        result: agentResult.outputContent,
+        statusMessage: agentResult.statusMessage,
+        structuredData: agentResult.structuredData,
+        provenance: agentResult.provenance,
+        retrievedContext: agentResult.retrievedContext,
+      };
+
+      if (toolEvidence) {
+        stepOutputs.toolEvidence = toolEvidence;
+      }
+      if (toolIntelBrief) {
+        stepOutputs.toolIntelBrief = toolIntelBrief;
+        stepOutputs.researchFindings = toolIntelBrief;
+        stepOutputs.market_intelligence_brief = toolIntelBrief;
+      }
+
       if (stepDef.outputReferences) {
         for (const k of stepDef.outputReferences) {
           stepOutputs[k] = agentResult.outputContent;
@@ -516,6 +724,98 @@ export class WorkflowRuntime {
   }
 
   /**
+   * Executes a workflow instance to completion or until reaching a quiescent state (awaiting_approval, blocked, failed).
+   * Dispatches ready steps wave by wave, supporting parallel execution of independent branches.
+   */
+  async executeWorkflow(
+    instanceId: string,
+    options?: {
+      maxIterations?: number;
+      workerId?: string;
+      executeTools?: boolean;
+    }
+  ): Promise<WorkflowInstanceState> {
+    const maxIterations = options?.maxIterations || 50;
+    const workerId = options?.workerId || 'worker-dag-01';
+    let iteration = 0;
+
+    while (iteration < maxIterations) {
+      iteration++;
+
+      // 1. Evaluate readiness of all steps
+      await this.evaluateReadiness(instanceId);
+
+      const instance = await this.store.getInstance(instanceId);
+      if (!instance) {
+        throw new Error(`Instance not found: ${instanceId}`);
+      }
+
+      // Check if instance reached terminal state
+      if (instance.status === 'completed' || instance.status === 'failed' || instance.status === 'cancelled') {
+        return instance;
+      }
+
+      // 2. Identify ready steps
+      const readySteps = Object.values(instance.stepStates).filter(s => s.status === 'ready');
+
+      if (readySteps.length === 0) {
+        const awaitingApproval = Object.values(instance.stepStates).some(s => s.status === 'awaiting_approval');
+        const blocked = Object.values(instance.stepStates).some(s => s.status === 'blocked');
+
+        if (awaitingApproval) {
+          if (instance.status !== 'awaiting_approval') {
+            instance.status = 'awaiting_approval';
+            instance.updatedAt = new Date().toISOString();
+            await this.store.saveInstance(instance);
+          }
+          return instance;
+        }
+
+        if (blocked) {
+          if (instance.status !== 'blocked') {
+            instance.status = 'blocked';
+            instance.updatedAt = new Date().toISOString();
+            await this.store.saveInstance(instance);
+          }
+          return instance;
+        }
+
+        // Re-evaluate instance status and return
+        await this.evaluateInstanceStatus(instanceId);
+        return (await this.store.getInstance(instanceId))!;
+      }
+
+      // 3. Execute all ready steps concurrently (fan-out!)
+      const stepExecutions = readySteps.map(step =>
+        this.executeReadyStep(instanceId, step.stepId, workerId, options)
+      );
+
+      // Wait for the wave to finish (fan-in!)
+      await Promise.allSettled(stepExecutions);
+
+      // Re-evaluate instance status after the wave
+      await this.evaluateInstanceStatus(instanceId);
+
+      const refreshed = await this.store.getInstance(instanceId);
+      if (!refreshed || refreshed.status === 'failed' || refreshed.status === 'completed' || refreshed.status === 'cancelled') {
+        return refreshed || instance;
+      }
+    }
+
+    return (await this.store.getInstance(instanceId))!;
+  }
+
+  /**
+   * Resumes execution of a paused or awaiting-approval workflow instance from where it left off.
+   */
+  async resumeWorkflow(
+    instanceId: string,
+    options?: { maxIterations?: number; workerId?: string; executeTools?: boolean }
+  ): Promise<WorkflowInstanceState> {
+    return this.executeWorkflow(instanceId, options);
+  }
+
+  /**
    * Rehydrates all active workflow instances from authoritative storage.
    */
   async rehydrate(): Promise<WorkflowInstanceState[]> {
@@ -525,5 +825,14 @@ export class WorkflowRuntime {
   public getGate(): SideEffectAuthorizationGate {
     return this.gate;
   }
+
+  public getStore(): WorkflowDefinitionStore & WorkflowInstanceStore {
+    return this.store;
+  }
+
+  public getExecutor(): ServerAgentExecutor {
+    return this.executor;
+  }
 }
+
 

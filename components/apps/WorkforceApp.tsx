@@ -57,9 +57,14 @@ import { DeliverablesView } from '../hq/DeliverablesView';
 import { DecisionsView } from '../hq/DecisionsView';
 import { ExecutionAuditView } from '../hq/ExecutionAuditView';
 import { CollaborationWorkflowView } from '../hq/CollaborationWorkflowView';
+import { SkillTreeView } from '@/components/training/SkillTreeView';
+import { TrainingDrillsView } from '@/components/training/TrainingDrillsView';
+import { CustomEmployeeOnboarderView } from '@/components/training/CustomEmployeeOnboarderView';
+import { AIEmployeeOnboardingModal } from '@/components/training/AIEmployeeOnboardingModal';
 import { GovernanceStore, GovernanceEventDetail } from '@/lib/governance-store';
 import { SystemActivityStore } from '@/lib/system-activity-store';
 import { CollaborationStore } from '@/lib/collaboration-store';
+import { TrainingStore } from '@/lib/training/training-store';
 import { AppId } from '@/types/os';
 
 interface WorkforceAppProps {
@@ -78,7 +83,10 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
   onOpenApp,
 }) => {
   // Main Tab State: Default is Company HQ
-  const [activeTab, setActiveTab] = useState<'hq' | 'employees' | 'work' | 'collaboration' | 'decisions' | 'audit'>('hq');
+  const [activeTab, setActiveTab] = useState<'hq' | 'employees' | 'academy' | 'work' | 'collaboration' | 'decisions' | 'audit'>('hq');
+  const [academySubTab, setAcademySubTab] = useState<'skill_trees' | 'drills' | 'onboard_custom'>('skill_trees');
+  const [onboardingModalAgent, setOnboardingModalAgent] = useState<string | null>(null);
+  const [academyRoleTarget, setAcademyRoleTarget] = useState<string>('coo');
 
   // Operational State
   const [directiveInput, setDirectiveInput] = useState(initialDirective || '');
@@ -488,6 +496,7 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
     { id: 'hq', label: 'Company HQ', icon: Building2, badge: attentionItems.filter((i) => i.status === 'pending').length },
     { id: 'collaboration', label: 'AI Collaboration', icon: Zap, badge: collabState.status === 'running' ? 1 : undefined },
     { id: 'employees', label: 'Executive Team', icon: Users, badge: agents.length },
+    { id: 'academy', label: 'AI Academy & Skills', icon: Sparkles },
     { id: 'work', label: 'Company Work', icon: Briefcase, badge: currentRun.deliverables.length },
     { id: 'decisions', label: 'Decisions', icon: Scale, badge: decisions.filter((d) => d.status === 'pending_approval').length },
     { id: 'audit', label: 'Technical Audit', icon: Layers },
@@ -801,7 +810,98 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
           </div>
         )}
 
-        {/* TAB 3: COMPANY WORK & DELIVERABLES */}
+        {/* TAB 3: AI ACADEMY, SKILL TREES & SPECIALIZATION */}
+        {activeTab === 'academy' && (
+          <div className="space-y-6 max-w-6xl mx-auto">
+            {/* Academy Sub-Navigation Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-[#11121d] border border-white/10 shadow-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">AI Employee Academy & Specialization</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Develop agent skill trees, run stress certification drills, and onboard new specialized AI agents.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2 bg-black/40 p-1 rounded-xl border border-white/10">
+                <button
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('click');
+                    setAcademySubTab('skill_trees');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    academySubTab === 'skill_trees'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Skill Trees & Boosts
+                </button>
+                <button
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('click');
+                    setAcademySubTab('drills');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    academySubTab === 'drills'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Certification Drills
+                </button>
+                <button
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('click');
+                    setAcademySubTab('onboard_custom');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    academySubTab === 'onboard_custom'
+                      ? 'bg-purple-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  + Onboard Custom AI
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-view Content */}
+            {academySubTab === 'skill_trees' && (
+              <SkillTreeView
+                selectedRole={academyRoleTarget}
+                onOpenOnboarding={(role) => setOnboardingModalAgent(role)}
+              />
+            )}
+
+            {academySubTab === 'drills' && (
+              <TrainingDrillsView
+                selectedRole={academyRoleTarget}
+                onOpenSkillTree={(role) => {
+                  setAcademyRoleTarget(role);
+                  setAcademySubTab('skill_trees');
+                }}
+              />
+            )}
+
+            {academySubTab === 'onboard_custom' && (
+              <CustomEmployeeOnboarderView
+                onEmployeeCreated={(agentId) => {
+                  setAcademyRoleTarget(agentId);
+                  setAcademySubTab('skill_trees');
+                  setOnboardingModalAgent(agentId);
+                }}
+                onCancel={() => setAcademySubTab('skill_trees')}
+              />
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: COMPANY WORK & DELIVERABLES */}
         {activeTab === 'work' && (
           <div className="max-w-6xl mx-auto">
             <DeliverablesView
@@ -850,6 +950,15 @@ export const WorkforceApp: React.FC<WorkforceAppProps> = ({
           <span>Zero Fabricated Metrics Guarantee</span>
         </div>
       </div>
+
+      {/* AI Employee Onboarding Modal */}
+      {onboardingModalAgent && (
+        <AIEmployeeOnboardingModal
+          agentId={onboardingModalAgent}
+          isOpen={!!onboardingModalAgent}
+          onClose={() => setOnboardingModalAgent(null)}
+        />
+      )}
     </div>
   );
 };

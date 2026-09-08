@@ -6,6 +6,7 @@ import { ContextAssemblyService } from '../context/context-assembly';
 import { SERVER_AGENTS, ServerAgentDefinition } from './definitions';
 import { AgentRunStore, AgentRunRecord } from './run-store';
 import { EpistemicPipeline } from '../epistemic/pipeline';
+import { DEFAULT_SKILL_TREES, DEFAULT_EMPLOYEE_TRAINING_PROFILES } from '@/lib/training/default-data';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface AgentExecutionContext {
@@ -199,9 +200,29 @@ export class ServerAgentExecutor {
       };
     }
 
+    // Extract active training specialization modifiers for this employee
+    const trainingProfile = DEFAULT_EMPLOYEE_TRAINING_PROFILES[agentId as keyof typeof DEFAULT_EMPLOYEE_TRAINING_PROFILES];
+    const skillTree = DEFAULT_SKILL_TREES[agentId as keyof typeof DEFAULT_SKILL_TREES];
+    const activeSkillDirectives: string[] = [];
+
+    if (trainingProfile && skillTree) {
+      for (const branch of skillTree.branches) {
+        for (const node of branch.nodes) {
+          if (trainingProfile.unlockedNodeIds.includes(node.id) && node.boostModifiers?.promptDirectiveInjection) {
+            activeSkillDirectives.push(`- [Specialization: ${node.title}]: ${node.boostModifiers.promptDirectiveInjection}`);
+          }
+        }
+      }
+    }
+
+    const specializationSection = activeSkillDirectives.length > 0
+      ? `\nActive Onboarded Specialization Directives:\n${activeSkillDirectives.join('\n')}`
+      : '';
+
     const systemInstruction = `${agentDef.systemInstruction}
 You are executing Protocol Step: "${context.protocolStep}" for Directive: "${context.directive}".
 Task: "${context.taskTitle}" - ${context.taskDescription}
+${specializationSection}
 
 Prohibited Actions to strictly enforce:
 ${agentDef.prohibitedActions.map((p) => `- ${p}`).join('\n')}

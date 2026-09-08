@@ -608,5 +608,106 @@
       "confidence": "verified_fact",
       "notes": "Promoted from Claim clm-1788848984815-7d2346 (Source: src-1788848984814-e1b92b)"
     }
+  },
+  "fact-test-1788881649514": {
+    "id": "fact-test-1788881649514",
+    "claimId": "claim-test-1788881649512",
+    "sourceId": "src-test-1788881649512",
+    "statement": "Verified gross margin is 85%",
+    "subject": "gross_margin",
+    "category": "financial",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-08T15:34:09.514Z",
+    "promotedBy": "founder-verified",
+    "provenance": {}
+  },
+  "fact-1788885390382-a70f6b": {
+    "id": "fact-1788885390382-a70f6b",
+    "claimId": "clm-1788885390365-7fd9af",
+    "statement": "Customer acquisition cost decreased by 18% in Q3 testing",
+    "subject": "CAC",
+    "category": "financial",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-08T16:36:30.382Z",
+    "promotedBy": "founder-001",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788885390382-a70f6b",
+      "sourceTitle": "Customer acquisition cost decreased by 18% in Q3 testing",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder-001 via Epistemic Verification",
+      "timestamp": "2026-09-08T16:36:30.382Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788885390365-7fd9af"
+    }
+  },
+  "fact-1788885390419-ea0030": {
+    "id": "fact-1788885390419-ea0030",
+    "claimId": "clm-1788885390417-b026a1",
+    "statement": "Idempotency test statement for canonical facts",
+    "subject": "Idempotency Testing Fact Subject",
+    "category": "technical_architecture",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-08T16:36:30.419Z",
+    "promotedBy": "founder-001",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788885390419-ea0030",
+      "sourceTitle": "Idempotency test statement for canonical facts",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder-001 via Epistemic Verification",
+      "timestamp": "2026-09-08T16:36:30.419Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788885390417-b026a1"
+    }
+  },
+  "fact-1788909456626-85ae0d": {
+    "id": "fact-1788909456626-85ae0d",
+    "claimId": "clm-1788909456609-45eb41",
+    "statement": "Customer acquisition cost decreased by 18% in Q3 testing",
+    "subject": "CAC",
+    "category": "financial",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-08T23:17:36.626Z",
+    "promotedBy": "founder-001",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788909456626-85ae0d",
+      "sourceTitle": "Customer acquisition cost decreased by 18% in Q3 testing",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder-001 via Epistemic Verification",
+      "timestamp": "2026-09-08T23:17:36.626Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788909456609-45eb41"
+    }
+  },
+  "fact-1788909478010-4630d4": {
+    "id": "fact-1788909478010-4630d4",
+    "claimId": "clm-1788909478007-84072b",
+    "statement": "Idempotency test statement for canonical facts",
+    "subject": "Idempotency Testing Fact Subject",
+    "category": "technical_architecture",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-08T23:17:58.010Z",
+    "promotedBy": "founder-001",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788909478010-4630d4",
+      "sourceTitle": "Idempotency test statement for canonical facts",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder-001 via Epistemic Verification",
+      "timestamp": "2026-09-08T23:17:58.010Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788909478007-84072b"
+    }
   }
 }

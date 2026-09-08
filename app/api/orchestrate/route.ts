@@ -115,6 +115,7 @@ export async function POST(req: NextRequest) {
       data: runResult,
       liveAi: runResult.liveAi ?? false,
       executionMode: runResult.executionSummary?.executionMode || 'multi_agent_orchestrated',
+      workflowInstanceId: runResult.workflowInstanceId,
     };
 
     if (normalizedKey) {
