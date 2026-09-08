@@ -8,7 +8,7 @@ import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/
 export interface ScheduledWorkStore {
   save(item: ScheduledWorkItem): Promise<void>;
   get(id: string): Promise<ScheduledWorkItem | null>;
-  listDue(asOfTime?: string): Promise<ScheduledWorkItem[]>;
+  listDue(asOfTime?: string, limit?: number): Promise<ScheduledWorkItem[]>;
   list(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]>;
   cancel(id: string, cancelledBy?: string, reason?: string): Promise<ScheduledWorkItem>;
   update(item: ScheduledWorkItem): Promise<void>;
@@ -57,7 +57,7 @@ export class PostgresScheduledWorkStore implements ScheduledWorkStore {
     return found.metadata as unknown as ScheduledWorkItem;
   }
 
-  async listDue(asOfTime?: string): Promise<ScheduledWorkItem[]> {
+  async listDue(asOfTime?: string, limit?: number): Promise<ScheduledWorkItem[]> {
     const db = await requireAuthoritativeDatabase();
     const cutoff = asOfTime ? new Date(asOfTime) : new Date();
 
@@ -67,6 +67,7 @@ export class PostgresScheduledWorkStore implements ScheduledWorkStore {
         executeAt: { lte: cutoff },
       },
       orderBy: { executeAt: 'asc' },
+      ...(limit !== undefined && limit > 0 ? { take: limit } : {}),
     });
 
     return items.map((i) => i.metadata as unknown as ScheduledWorkItem);
@@ -216,9 +217,9 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     return null;
   }
 
-  async listDue(asOfTime?: string): Promise<ScheduledWorkItem[]> {
+  async listDue(asOfTime?: string, limit?: number): Promise<ScheduledWorkItem[]> {
     if (isAuthoritativeMode()) {
-      return PostgresScheduledWorkStore.getInstance().listDue(asOfTime);
+      return PostgresScheduledWorkStore.getInstance().listDue(asOfTime, limit);
     }
 
     const cutoff = asOfTime ? new Date(asOfTime).getTime() : Date.now();
@@ -233,7 +234,11 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
       }
     }
 
-    return results.sort((a, b) => new Date(a.executeAt).getTime() - new Date(b.executeAt).getTime());
+    const sorted = results.sort((a, b) => new Date(a.executeAt).getTime() - new Date(b.executeAt).getTime());
+    if (limit !== undefined && limit > 0) {
+      return sorted.slice(0, limit);
+    }
+    return sorted;
   }
 
   async list(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]> {

@@ -9,6 +9,7 @@ import { InMemoryScheduledWorkStore } from './scheduler-store';
 import { InMemoryWorkflowStore } from './store';
 import { WorkflowRuntime } from './runtime';
 import { v4 as uuidv4 } from 'uuid';
+import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordination/lease-manager';
 
 export interface ScheduleWorkParams {
   workflowInstanceId: string;
@@ -39,15 +40,37 @@ export class WorkflowScheduler {
   private schedulerStore: InMemoryScheduledWorkStore;
   private workflowStore: InMemoryWorkflowStore;
   private runtime: WorkflowRuntime;
+  private leaseManager: LeaseManager;
+  private workerId: string;
+  private leaseTtlMs: number;
 
   constructor(
     schedulerStore?: InMemoryScheduledWorkStore,
     workflowStore?: InMemoryWorkflowStore,
-    runtime?: WorkflowRuntime
+    runtime?: WorkflowRuntime,
+    leaseManager?: LeaseManager,
+    workerId?: string,
+    leaseTtlMs: number = 30000
   ) {
     this.schedulerStore = schedulerStore || InMemoryScheduledWorkStore.getInstance();
     this.workflowStore = workflowStore || InMemoryWorkflowStore.getInstance();
     this.runtime = runtime || new WorkflowRuntime();
+    this.leaseManager = leaseManager || getLeaseManager();
+    this.workerId = workerId || generateWorkerIdentity();
+    this.leaseTtlMs = leaseTtlMs;
+  }
+
+  getWorkerId(): string {
+    return this.workerId;
+  }
+
+  getLeaseManager(): LeaseManager {
+    return this.leaseManager;
+  }
+
+  async renewScheduleLease(scheduleId: string): Promise<boolean> {
+    const leaseKey = `sched-item:${scheduleId}`;
+    return this.leaseManager.renew(leaseKey, this.workerId, this.leaseTtlMs);
   }
 
   /**
@@ -136,11 +159,11 @@ export class WorkflowScheduler {
 
   /**
    * Deterministic Due-Work Evaluation.
-   * Evaluates all scheduled items due at or before asOfTime.
+   * Evaluates all scheduled items due at or before asOfTime with bounded batch size and distributed leases.
    */
-  async evaluateDueWork(asOfTime?: string): Promise<DueWorkEvaluationResult> {
+  async evaluateDueWork(asOfTime?: string, batchLimit: number = 50): Promise<DueWorkEvaluationResult> {
     const cutoff = asOfTime ? this.canonicalizeTimestamp(asOfTime) : new Date().toISOString();
-    const dueItems = await this.schedulerStore.listDue(cutoff);
+    const dueItems = await this.schedulerStore.listDue(cutoff, batchLimit);
 
     const evaluationResult: DueWorkEvaluationResult = {
       processedCount: dueItems.length,
@@ -150,248 +173,282 @@ export class WorkflowScheduler {
     for (const item of dueItems) {
       const occurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
       const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
+      const leaseKey = `sched-item:${item.id}`;
 
-      // 1. Idempotency Check: Prevent duplicate execution of this specific occurrence
-      const existingOcc = item.executionHistory.find(h => h.occurrenceId === occurrenceId);
-      if (existingOcc && (existingOcc.status === 'triggered' || existingOcc.status === 'completed')) {
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'skipped',
-        });
-        continue;
-      }
-
-      // 2. Load Workflow Instance & Definition
-      const workflow = await this.workflowStore.getInstance(item.workflowInstanceId);
-      if (!workflow) {
-        item.status = 'failed';
-        item.updatedAt = new Date().toISOString();
-        await this.schedulerStore.update(item);
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'failed',
-          error: `Workflow instance not found: ${item.workflowInstanceId}`,
-        });
-        continue;
-      }
-
-      // 3. Parent Workflow Terminal State Check
-      if (workflow.status === 'completed' || workflow.status === 'cancelled' || workflow.status === 'failed') {
-        item.status = 'cancelled';
-        item.updatedAt = new Date().toISOString();
-        item.cancellationState = {
-          cancelledAt: new Date().toISOString(),
-          cancelledBy: 'system',
-          reason: `Parent workflow is in terminal state: ${workflow.status}`,
-        };
-        await this.schedulerStore.update(item);
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'cancelled',
-          error: `Parent workflow terminal (${workflow.status})`,
-        });
-        continue;
-      }
-
-      // 4. Load Step Definition & Check Step Existence
-      const def = await this.workflowStore.getDefinition(workflow.workflowId, workflow.version);
-      const stepDef = def?.steps.find(s => s.id === item.stepId);
-      const stepState = workflow.stepStates[item.stepId];
-
-      if (!def || !stepDef || !stepState) {
-        item.status = 'failed';
-        item.updatedAt = new Date().toISOString();
-        await this.schedulerStore.update(item);
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'failed',
-          error: `Step definition or state missing for step: ${item.stepId}`,
-        });
-        continue;
-      }
-
-      // 5. If step is already completed or cancelled (and not recurring)
-      if ((stepState.status === 'completed' || stepState.status === 'cancelled') && item.scheduleType !== 'recurring') {
-        item.status = stepState.status;
-        item.updatedAt = new Date().toISOString();
-        await this.schedulerStore.update(item);
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'completed',
-        });
-        continue;
-      }
-
-      // If recurring and step was completed from a prior occurrence, reset status to ready for this new occurrence
-      if (item.scheduleType === 'recurring' && stepState.status === 'completed') {
-        await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'ready');
-      }
-
-      // 6. Wake Workflow Runtime & Re-evaluate Readiness
-      await this.runtime.evaluateReadiness(item.workflowInstanceId);
-      const recheckedWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
-      const recheckedStepState = recheckedWorkflow.stepStates[item.stepId];
-
-      // 7. Dependency & Prerequisites Check
-      if (
-        recheckedStepState.status === 'blocked' || 
-        recheckedStepState.status === 'pending' || 
-        recheckedStepState.status === 'waiting'
-      ) {
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'skipped',
-          error: recheckedStepState.blockedReason || `Step dependencies not fulfilled (status: ${recheckedStepState.status})`,
-        });
-        continue;
-      }
-
-      // 8. Re-evaluate Side-Effect Authorization at Wake Time (Defense-in-depth)
-      let classification = stepDef.sideEffectClassification || (stepDef.requiresApproval ? 'external_communication' : 'read_only');
-      const wakeAuth = await this.runtime.getGate().evaluateAuthorization({
-        employeeRole: stepDef.assignedRole,
-        skillId: stepDef.skill,
-        actionName: stepDef.name,
-        classification,
-        workflowContext: {
-          workflowId: workflow.workflowId,
-          workflowInstanceId: item.workflowInstanceId,
-          stepId: item.stepId,
-          objective: def.objective,
-        },
-        target: stepDef.targetContext,
-        requestedBy: stepDef.assignedRole,
+      // Acquire distributed lease before evaluating or executing this work item
+      const claim = await this.leaseManager.acquire(leaseKey, this.workerId, this.leaseTtlMs, {
+        workflowInstanceId: item.workflowInstanceId,
+        stepId: item.stepId,
+        occurrenceId,
       });
 
-      if (wakeAuth.effect === 'denied') {
-        await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'blocked');
+      if (!claim.acquired) {
         evaluationResult.results.push({
           scheduleId: item.id,
           occurrenceId,
           status: 'skipped',
-          error: `Side-effect authorization denied on wake: ${wakeAuth.reason}`,
+          error: `Active lease held by worker: ${claim.activeLease?.holderId || 'another_worker'}`,
         });
         continue;
       }
 
-      // Strict Governance & Approval Check
-      // If step requires approval and approval has NOT been granted:
-      if ((stepDef.requiresApproval || wakeAuth.effect === 'approval_required') && recheckedStepState.approvalState !== 'approved') {
-        // Transition step to awaiting_approval if not already
-        if (recheckedStepState.status !== 'awaiting_approval') {
-          await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'awaiting_approval');
-        }
-
-        const occRecord: ScheduledExecutionRecord = {
-          occurrenceId,
-          occurrenceNumber,
-          triggeredAt: new Date().toISOString(),
-          status: 'awaiting_approval',
-          error: 'Step requires Founder approval before execution',
-        };
-
-        item.lastTriggeredAt = new Date().toISOString();
-        // Replace or add record
-        const recIndex = item.executionHistory.findIndex(h => h.occurrenceId === occurrenceId);
-        if (recIndex >= 0) {
-          item.executionHistory[recIndex] = occRecord;
-        } else {
-          item.executionHistory.push(occRecord);
-        }
-
-        await this.schedulerStore.update(item);
-
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'awaiting_approval',
-          error: 'Awaiting Founder approval',
-        });
-        continue; // Strictly NEVER execute without approval
-      }
-
-      // 9. Execute Eligible Step
-      const startTime = Date.now();
-      const triggerTime = new Date().toISOString();
-
-      const occRecord: ScheduledExecutionRecord = {
-        occurrenceId,
-        occurrenceNumber,
-        triggeredAt: triggerTime,
-        status: 'triggered',
-      };
-
-      item.lastTriggeredAt = triggerTime;
-      item.executionHistory.push(occRecord);
-      await this.schedulerStore.update(item);
-
       try {
-        // Execute Ready Step via Runtime (which delegates to ServerAgentExecutor)
-        await this.runtime.executeReadyStep(item.workflowInstanceId, item.stepId);
+        // 1. Idempotency Check: Prevent duplicate execution of this specific occurrence
+        const existingOcc = item.executionHistory.find(h => h.occurrenceId === occurrenceId);
+        if (existingOcc && (existingOcc.status === 'triggered' || existingOcc.status === 'completed')) {
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'skipped',
+          });
+          continue;
+        }
 
-        // Fetch final step state after execution
-        const finalWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
-        const finalStepState = finalWorkflow.stepStates[item.stepId];
-        const durationMs = Date.now() - startTime;
-
-        if (finalStepState.status === 'completed') {
-          occRecord.status = 'completed';
-          occRecord.completedAt = new Date().toISOString();
-          occRecord.durationMs = durationMs;
-          occRecord.result = finalStepState.outputs;
-
-          // Handle Schedule Completion or Recurrence Advance
-          if (item.scheduleType === 'recurring' && item.recurrence) {
-            const nextOccNumber = occurrenceNumber + 1;
-            const maxOcc = item.recurrence.maxOccurrences;
-            const nextExecuteAt = this.calculateNextRecurrence(item.executeAt, item.recurrence);
-
-            const isPastEndDate = item.recurrence.endDate && new Date(nextExecuteAt).getTime() > new Date(item.recurrence.endDate).getTime();
-            const isMaxOccReached = maxOcc !== undefined && nextOccNumber > maxOcc;
-
-            if (isPastEndDate || isMaxOccReached) {
-              item.status = 'completed';
-            } else {
-              item.status = 'scheduled';
-              item.executeAt = nextExecuteAt;
-              item.recurrence.currentOccurrence = nextOccNumber;
-            }
-          } else {
-            item.status = 'completed';
-          }
-
+        // 2. Load Workflow Instance & Definition
+        const workflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+        if (!workflow) {
+          item.status = 'failed';
           item.updatedAt = new Date().toISOString();
           await this.schedulerStore.update(item);
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'failed',
+            error: `Workflow instance not found: ${item.workflowInstanceId}`,
+          });
+          continue;
+        }
 
+        // 3. Parent Workflow Terminal State Check
+        if (workflow.status === 'completed' || workflow.status === 'cancelled' || workflow.status === 'failed') {
+          item.status = 'cancelled';
+          item.updatedAt = new Date().toISOString();
+          item.cancellationState = {
+            cancelledAt: new Date().toISOString(),
+            cancelledBy: 'system',
+            reason: `Parent workflow is in terminal state: ${workflow.status}`,
+          };
+          await this.schedulerStore.update(item);
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'cancelled',
+            error: `Parent workflow terminal (${workflow.status})`,
+          });
+          continue;
+        }
+
+        // 4. Load Step Definition & Check Step Existence
+        const def = await this.workflowStore.getDefinition(workflow.workflowId, workflow.version);
+        const stepDef = def?.steps.find(s => s.id === item.stepId);
+        const stepState = workflow.stepStates[item.stepId];
+
+        if (!def || !stepDef || !stepState) {
+          item.status = 'failed';
+          item.updatedAt = new Date().toISOString();
+          await this.schedulerStore.update(item);
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'failed',
+            error: `Step definition or state missing for step: ${item.stepId}`,
+          });
+          continue;
+        }
+
+        // 5. If step is already completed or cancelled (and not recurring)
+        if ((stepState.status === 'completed' || stepState.status === 'cancelled') && item.scheduleType !== 'recurring') {
+          item.status = stepState.status;
+          item.updatedAt = new Date().toISOString();
+          await this.schedulerStore.update(item);
           evaluationResult.results.push({
             scheduleId: item.id,
             occurrenceId,
             status: 'completed',
           });
-        } else if (finalStepState.status === 'failed') {
-          // Handle Step Failure & Retry Policy
-          occRecord.status = 'failed';
-          occRecord.completedAt = new Date().toISOString();
-          occRecord.durationMs = durationMs;
-          occRecord.error = finalStepState.error || 'Execution failed';
+          continue;
+        }
 
-          const retryPolicy = stepDef.retryPolicy || { maxRetries: 0, backoffMs: 1000 };
-          if (finalStepState.retryCount < retryPolicy.maxRetries) {
-            // Schedule Retry with backoff
-            const backoffTime = new Date(Date.now() + retryPolicy.backoffMs).toISOString();
-            item.status = 'scheduled';
-            item.executeAt = backoffTime;
-          } else {
-            // Retries exhausted
-            item.status = 'failed';
+        // If recurring and step was completed from a prior occurrence, reset status to ready for this new occurrence
+        if (item.scheduleType === 'recurring' && stepState.status === 'completed') {
+          await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'ready');
+        }
+
+        // 6. Wake Workflow Runtime & Re-evaluate Readiness
+        await this.runtime.evaluateReadiness(item.workflowInstanceId);
+        const recheckedWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
+        const recheckedStepState = recheckedWorkflow.stepStates[item.stepId];
+
+        // 7. Dependency & Prerequisites Check
+        if (
+          recheckedStepState.status === 'blocked' || 
+          recheckedStepState.status === 'pending' || 
+          recheckedStepState.status === 'waiting'
+        ) {
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'skipped',
+            error: recheckedStepState.blockedReason || `Step dependencies not fulfilled (status: ${recheckedStepState.status})`,
+          });
+          continue;
+        }
+
+        // 8. Re-evaluate Side-Effect Authorization at Wake Time (Defense-in-depth)
+        let classification = stepDef.sideEffectClassification || (stepDef.requiresApproval ? 'external_communication' : 'read_only');
+        const wakeAuth = await this.runtime.getGate().evaluateAuthorization({
+          employeeRole: stepDef.assignedRole,
+          skillId: stepDef.skill,
+          actionName: stepDef.name,
+          classification,
+          workflowContext: {
+            workflowId: workflow.workflowId,
+            workflowInstanceId: item.workflowInstanceId,
+            stepId: item.stepId,
+            objective: def.objective,
+          },
+          target: stepDef.targetContext,
+          requestedBy: stepDef.assignedRole,
+        });
+
+        if (wakeAuth.effect === 'denied') {
+          await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'blocked');
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'skipped',
+            error: `Side-effect authorization denied on wake: ${wakeAuth.reason}`,
+          });
+          continue;
+        }
+
+        // Strict Governance & Approval Check
+        // If step requires approval and approval has NOT been granted:
+        if ((stepDef.requiresApproval || wakeAuth.effect === 'approval_required') && recheckedStepState.approvalState !== 'approved') {
+          // Transition step to awaiting_approval if not already
+          if (recheckedStepState.status !== 'awaiting_approval') {
+            await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'awaiting_approval');
           }
 
+          const occRecord: ScheduledExecutionRecord = {
+            occurrenceId,
+            occurrenceNumber,
+            triggeredAt: new Date().toISOString(),
+            status: 'awaiting_approval',
+            error: 'Step requires Founder approval before execution',
+          };
+
+          item.lastTriggeredAt = new Date().toISOString();
+          // Replace or add record
+          const recIndex = item.executionHistory.findIndex(h => h.occurrenceId === occurrenceId);
+          if (recIndex >= 0) {
+            item.executionHistory[recIndex] = occRecord;
+          } else {
+            item.executionHistory.push(occRecord);
+          }
+
+          await this.schedulerStore.update(item);
+
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId,
+            status: 'awaiting_approval',
+            error: 'Awaiting Founder approval',
+          });
+          continue; // Strictly NEVER execute without approval
+        }
+
+        // 9. Execute Eligible Step
+        const startTime = Date.now();
+        const triggerTime = new Date().toISOString();
+
+        const occRecord: ScheduledExecutionRecord = {
+          occurrenceId,
+          occurrenceNumber,
+          triggeredAt: triggerTime,
+          status: 'triggered',
+        };
+
+        item.lastTriggeredAt = triggerTime;
+        item.executionHistory.push(occRecord);
+        await this.schedulerStore.update(item);
+
+        try {
+          // Execute Ready Step via Runtime (which delegates to ServerAgentExecutor)
+          await this.runtime.executeReadyStep(item.workflowInstanceId, item.stepId);
+
+          // Fetch final step state after execution
+          const finalWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
+          const finalStepState = finalWorkflow.stepStates[item.stepId];
+          const durationMs = Date.now() - startTime;
+
+          if (finalStepState.status === 'completed') {
+            occRecord.status = 'completed';
+            occRecord.completedAt = new Date().toISOString();
+            occRecord.durationMs = durationMs;
+            occRecord.result = finalStepState.outputs;
+
+            // Handle Schedule Completion or Recurrence Advance
+            if (item.scheduleType === 'recurring' && item.recurrence) {
+              const nextOccNumber = occurrenceNumber + 1;
+              const maxOcc = item.recurrence.maxOccurrences;
+              const nextExecuteAt = this.calculateNextRecurrence(item.executeAt, item.recurrence);
+
+              const isPastEndDate = item.recurrence.endDate && new Date(nextExecuteAt).getTime() > new Date(item.recurrence.endDate).getTime();
+              const isMaxOccReached = maxOcc !== undefined && nextOccNumber > maxOcc;
+
+              if (isPastEndDate || isMaxOccReached) {
+                item.status = 'completed';
+              } else {
+                item.status = 'scheduled';
+                item.executeAt = nextExecuteAt;
+                item.recurrence.currentOccurrence = nextOccNumber;
+              }
+            } else {
+              item.status = 'completed';
+            }
+
+            item.updatedAt = new Date().toISOString();
+            await this.schedulerStore.update(item);
+
+            evaluationResult.results.push({
+              scheduleId: item.id,
+              occurrenceId,
+              status: 'completed',
+            });
+          } else if (finalStepState.status === 'failed') {
+            // Handle Step Failure & Retry Policy
+            occRecord.status = 'failed';
+            occRecord.completedAt = new Date().toISOString();
+            occRecord.durationMs = durationMs;
+            occRecord.error = finalStepState.error || 'Execution failed';
+
+            const retryPolicy = stepDef.retryPolicy || { maxRetries: 0, backoffMs: 1000 };
+            if (finalStepState.retryCount < retryPolicy.maxRetries) {
+              // Schedule Retry with backoff
+              const backoffTime = new Date(Date.now() + retryPolicy.backoffMs).toISOString();
+              item.status = 'scheduled';
+              item.executeAt = backoffTime;
+            } else {
+              // Retries exhausted
+              item.status = 'failed';
+            }
+
+            item.updatedAt = new Date().toISOString();
+            await this.schedulerStore.update(item);
+
+            evaluationResult.results.push({
+              scheduleId: item.id,
+              occurrenceId,
+              status: 'failed',
+              error: occRecord.error,
+            });
+          }
+        } catch (err: any) {
+          occRecord.status = 'failed';
+          occRecord.completedAt = new Date().toISOString();
+          occRecord.error = err.message || 'Execution error';
+          item.status = 'failed';
           item.updatedAt = new Date().toISOString();
           await this.schedulerStore.update(item);
 
@@ -399,23 +456,11 @@ export class WorkflowScheduler {
             scheduleId: item.id,
             occurrenceId,
             status: 'failed',
-            error: occRecord.error,
+            error: err.message,
           });
         }
-      } catch (err: any) {
-        occRecord.status = 'failed';
-        occRecord.completedAt = new Date().toISOString();
-        occRecord.error = err.message || 'Execution error';
-        item.status = 'failed';
-        item.updatedAt = new Date().toISOString();
-        await this.schedulerStore.update(item);
-
-        evaluationResult.results.push({
-          scheduleId: item.id,
-          occurrenceId,
-          status: 'failed',
-          error: err.message,
-        });
+      } finally {
+        await this.leaseManager.release(leaseKey, this.workerId);
       }
     }
 
