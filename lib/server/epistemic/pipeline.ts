@@ -15,8 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type FactPromotionAuthority =
   | AuthenticatedFounder
-  | { userId: string; role: 'FOUNDER' | string; isVerified?: boolean; email?: string }
-  | string;
+  | { userId: string; role: 'FOUNDER'; isVerified: true; email?: string; name?: string };
 
 /**
  * PHASE 13: GOVERNED EPISTEMIC PIPELINE
@@ -297,45 +296,30 @@ export class EpistemicPipeline {
 
   public async promoteClaimToFact(
     claimId: string,
-    promoter: FactPromotionAuthority
+    promoter: FactPromotionAuthority | any
   ): Promise<CanonicalFact> {
     const claim = await this.claimStore.getClaim(claimId);
     if (!claim) {
       throw new Error(`Claim not found: ${claimId}`);
     }
 
-    // 1. Resolve promoter authority representation
-    let principal: { userId: string; role: string; isVerified: boolean };
-
+    // 1. Unconditionally eliminate string-based promotion authority across all environments
     if (typeof promoter === 'string') {
-      const p = promoter.toLowerCase().trim();
-      // Controlled test harness allowance:
-      // In automated test environments (NODE_ENV === 'test'), explicit test founder identifiers are recognized.
-      // Arbitrary strings (system_governor, system-policy, guest, researcher, etc.) are strictly disallowed.
-      const ALLOWED_TEST_FOUNDERS = ['founder', 'founder-001', 'founder-local-session', 'executive-founder'];
-      const isTestFounder = process.env.NODE_ENV !== 'production' && ALLOWED_TEST_FOUNDERS.includes(p);
-      principal = {
-        userId: promoter,
-        role: isTestFounder ? 'FOUNDER' : promoter,
-        isVerified: isTestFounder,
-      };
-    } else {
-      principal = {
-        userId: promoter.userId,
-        role: promoter.role,
-        isVerified: promoter.isVerified ?? false,
-      };
+      throw new Error(
+        `Unauthorized promotion: String-based promoter identities are strictly prohibited. Canonical fact promotion requires an explicit authenticated Founder principal object. Attempted by "${promoter}".`
+      );
     }
 
-    // 2. Only an explicitly authorized Founder principal may promote a claim to a canonical fact.
-    // Prohibit arbitrary strings (system_governor, system-policy, guest, etc.) and AI roles.
-    const isAuthorizedFounder =
-      principal.role === 'FOUNDER' &&
-      (principal.isVerified || process.env.NODE_ENV !== 'production');
-
-    if (!isAuthorizedFounder) {
+    if (!promoter || typeof promoter !== 'object') {
       throw new Error(
-        `Unauthorized promotion: Only an authenticated Founder can promote claims to canonical facts. Identity "${principal.userId}" with role "${principal.role}" is not authorized.`
+        'Unauthorized promotion: Valid authenticated Founder principal object is required.'
+      );
+    }
+
+    // 2. Strict invariant: Require isVerified === true and role === 'FOUNDER' unconditionally (NO NODE_ENV bypass)
+    if (promoter.role !== 'FOUNDER' || promoter.isVerified !== true) {
+      throw new Error(
+        `Unauthorized promotion: Only an authenticated and verified Founder principal can promote claims to canonical facts. Attempted by identity "${promoter.userId}" with role "${promoter.role}" (isVerified: ${promoter.isVerified}).`
       );
     }
 
@@ -344,7 +328,7 @@ export class EpistemicPipeline {
     // they cannot promote their own claim under any circumstances.
     const specialistRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent'];
     if (specialistRoles.includes(claim.proposedBy.toLowerCase())) {
-      if (claim.proposedBy.toLowerCase() === principal.userId.toLowerCase()) {
+      if (claim.proposedBy.toLowerCase() === promoter.userId.toLowerCase()) {
         throw new Error(
           `Separation of powers violation: Specialist proposer "${claim.proposedBy}" cannot promote their own claim to a canonical fact.`
         );
@@ -385,14 +369,14 @@ export class EpistemicPipeline {
       validityState: 'active',
       confidence: 'verified_fact',
       promotedAt: now,
-      promotedBy: principal.userId,
+      promotedBy: promoter.userId,
       provenance: {
         sourceSystem: 'epistemic_pipeline',
         sourceId: factId,
         sourceTitle: claim.statement.slice(0, 80),
         epistemicType: 'canonical_fact',
         epistemicLabel: 'canonical verified fact',
-        authority: `Promoted by ${principal.userId} via Epistemic Verification`,
+        authority: `Promoted by ${promoter.userId} via Epistemic Verification`,
         timestamp: now,
         confidence: 'verified_fact',
         notes: `Promoted from Claim ${claimId}${claim.sourceId ? ` (Source: ${claim.sourceId})` : ''}`,

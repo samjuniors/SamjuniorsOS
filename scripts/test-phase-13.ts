@@ -61,7 +61,14 @@ async function runTests() {
   const verifyResult = await pipeline.verifyClaim(validClaim.id, { role: 'founder' });
   console.log(`- Policy evaluation: passed=${verifyResult.passed}, outcome=${verifyResult.policyOutcome}`);
 
-  const promotedFact = await pipeline.promoteClaimToFact(validClaim.id, 'founder');
+  const founderPrincipal = {
+    userId: 'usr-founder-1',
+    role: 'FOUNDER' as const,
+    email: 'founder@samjuniors.com',
+    name: 'Executive Founder',
+    isVerified: true as const,
+  };
+  const promotedFact = await pipeline.promoteClaimToFact(validClaim.id, founderPrincipal);
   console.log(`- Fact Promoted: id=${promotedFact.id}, validity=${promotedFact.validityState}`);
 
   // Test 6: Constitutional Floor Violation Check
@@ -94,7 +101,7 @@ async function runTests() {
   // Founder review overrides previous fact with newer empirical evidence
   const supersedingVerify = await pipeline.verifyClaim(supersedingClaim.id, { role: 'founder' });
   console.log(`- Superseding verify passed: ${supersedingVerify.passed}`);
-  const newFact = await pipeline.promoteClaimToFact(supersedingClaim.id, 'founder');
+  const newFact = await pipeline.promoteClaimToFact(supersedingClaim.id, founderPrincipal);
   console.log(`- New Fact Promoted: id=${newFact.id}`);
 
   // Verify old fact is marked superseded

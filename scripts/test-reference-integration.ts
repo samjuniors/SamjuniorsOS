@@ -98,7 +98,14 @@ async function runReferenceIntegrationTests() {
   assert(validVerification.policyOutcome === 'approved_for_promotion', 'Stage 4: Verified claim approved for promotion');
 
   // Test 1.6: Promotion to Canonical Fact
-  const fact = await pipeline.promoteClaimToFact(agentClaim.id, 'founder');
+  const founderPrincipal = {
+    userId: 'usr-founder-1',
+    role: 'FOUNDER' as const,
+    email: 'founder@samjuniors.com',
+    name: 'Executive Founder',
+    isVerified: true as const,
+  };
+  const fact = await pipeline.promoteClaimToFact(agentClaim.id, founderPrincipal);
   assert(Boolean(fact.id && fact.id.startsWith('fact-')), 'Stage 5: Claim promoted to CanonicalFact');
   assert(fact.validityState === 'active', 'Stage 5: Promoted fact has validityState "active"');
   assert(fact.confidence === 'verified_fact', 'Stage 5: Promoted fact has confidence "verified_fact"');
@@ -122,7 +129,7 @@ async function runReferenceIntegrationTests() {
   });
 
   await pipeline.verifyClaim(newerClaim.id, { role: 'founder' });
-  const newerFact = await pipeline.promoteClaimToFact(newerClaim.id, 'founder');
+  const newerFact = await pipeline.promoteClaimToFact(newerClaim.id, founderPrincipal);
   assert(newerFact.id !== fact.id, 'Stage 5: Newer verified fact created');
 
   // Test 1.8: Memory Packaging & Promotion

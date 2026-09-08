@@ -201,9 +201,30 @@ async function runTests() {
       }
     }
     assert.strictEqual(unauthorizedPromotionBlocked, true, 'Non-founder specialist cannot promote claim to fact');
-    recordPass('Non-founder identity ("researcher") is blocked from promoting claim to canonical fact');
+    // 3.4 String identities are unconditionally eliminated
+    let plainStringFounderBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, 'founder');
+    } catch (err: any) {
+      if (err.message.includes('String-based promoter identities are strictly prohibited') || err.message.includes('Unauthorized promotion')) {
+        plainStringFounderBlocked = true;
+      }
+    }
+    assert.strictEqual(plainStringFounderBlocked, true, 'Plain string "founder" must be rejected');
+    recordPass('Arbitrary string identity ("founder") is strictly rejected');
 
-    // 3.5 Reject arbitrary privileged strings (system_governor, system-policy)
+    let plainStringFounderIdBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, 'founder-001');
+    } catch (err: any) {
+      if (err.message.includes('String-based promoter identities are strictly prohibited') || err.message.includes('Unauthorized promotion')) {
+        plainStringFounderIdBlocked = true;
+      }
+    }
+    assert.strictEqual(plainStringFounderIdBlocked, true, 'Plain string "founder-001" must be rejected');
+    recordPass('Arbitrary string identity ("founder-001") is strictly rejected');
+
+    // 3.5 Reject arbitrary privileged strings (system_governor, system-policy, researcher)
     let sysGovBlocked = false;
     try {
       await pipeline.promoteClaimToFact(testClaim.id, 'system_governor');
@@ -226,7 +247,48 @@ async function runTests() {
     assert.strictEqual(sysPolicyBlocked, true, 'Arbitrary string "system-policy" must be blocked');
     recordPass('Arbitrary string "system-policy" is blocked from fact promotion');
 
-    // 3.6 Reject AI specialist / auditor objects attempting promotion
+    let researcherStrBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, 'researcher');
+    } catch (err: any) {
+      if (err.message.includes('Unauthorized promotion')) {
+        researcherStrBlocked = true;
+      }
+    }
+    assert.strictEqual(researcherStrBlocked, true, 'Non-founder specialist string cannot promote claim to fact');
+    recordPass('Non-founder string identity ("researcher") is blocked from promoting claim');
+
+    // 3.6 Reject unverified / spoofed Founder objects in all environments
+    let unverifiedFounderBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, {
+        userId: 'founder-unverified',
+        role: 'FOUNDER',
+        isVerified: false,
+      });
+    } catch (err: any) {
+      if (err.message.includes('Only an authenticated and verified Founder principal can promote')) {
+        unverifiedFounderBlocked = true;
+      }
+    }
+    assert.strictEqual(unverifiedFounderBlocked, true, 'Unverified Founder object (isVerified: false) must be rejected');
+    recordPass('Unverified Founder object (isVerified: false) is strictly rejected');
+
+    let missingVerifiedFlagBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, {
+        userId: 'founder-spoofed',
+        role: 'FOUNDER',
+      } as any);
+    } catch (err: any) {
+      if (err.message.includes('Only an authenticated and verified Founder principal can promote')) {
+        missingVerifiedFlagBlocked = true;
+      }
+    }
+    assert.strictEqual(missingVerifiedFlagBlocked, true, 'Founder object with missing isVerified must be rejected');
+    recordPass('Founder object with missing isVerified is strictly rejected');
+
+    // 3.7 Reject AI specialist / auditor objects attempting promotion
     let specialistObjBlocked = false;
     try {
       await pipeline.promoteClaimToFact(testClaim.id, { userId: 'agent-1', role: 'researcher', isVerified: true });
@@ -238,7 +300,18 @@ async function runTests() {
     assert.strictEqual(specialistObjBlocked, true, 'AI specialist object cannot promote claim to fact');
     recordPass('AI specialist object ({ role: "researcher" }) is blocked from fact promotion');
 
-    // 3.7 Authorized Founder principal promotes claim to Fact
+    let auditorObjBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, { userId: 'auditor-1', role: 'AUDITOR', isVerified: true });
+    } catch (err: any) {
+      if (err.message.includes('Unauthorized promotion')) {
+        auditorObjBlocked = true;
+      }
+    }
+    assert.strictEqual(auditorObjBlocked, true, 'Auditor object cannot promote claim to fact');
+    recordPass('Auditor object ({ role: "AUDITOR" }) is blocked from fact promotion');
+
+    // 3.8 Authorized Founder principal promotes claim to Fact
     const founderPrincipal: AuthenticatedFounder = {
       userId: 'founder-001',
       role: 'FOUNDER',
