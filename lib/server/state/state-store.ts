@@ -23,6 +23,7 @@ import {
   StateQueryParams,
 } from '@/types/context';
 import { prisma } from '@/lib/server/db/prisma';
+import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are',
@@ -66,11 +67,40 @@ export class CompanyStateStore implements ICompanyStateStore {
   private attentionItems: AttentionItem[] = [...INITIAL_ATTENTION_ITEMS];
   private financialModel: FinanceMetric = { ...SAMPLE_FINANCIAL_MODEL };
 
+  private constructor() {
+    this.loadFromDurableStorage();
+  }
+
   public static getInstance(): CompanyStateStore {
     if (!CompanyStateStore.instance) {
       CompanyStateStore.instance = new CompanyStateStore();
     }
     return CompanyStateStore.instance;
+  }
+
+  private loadFromDurableStorage(): void {
+    try {
+      const persistedState = DurableFileStore.getInstance().readCollection<any>('company_state');
+      if (persistedState.initiatives) this.initiatives = persistedState.initiatives;
+      if (persistedState.products) this.products = persistedState.products;
+      if (persistedState.customers) this.customers = persistedState.customers;
+      if (persistedState.financialModel) this.financialModel = persistedState.financialModel;
+      if (persistedState.decisions) this.decisions = persistedState.decisions;
+    } catch {
+      // fallback
+    }
+  }
+
+  private persistState(): void {
+    try {
+      DurableFileStore.getInstance().writeCollection('company_state', {
+        initiatives: this.initiatives,
+        products: this.products,
+        customers: this.customers,
+        financialModel: this.financialModel,
+        decisions: this.decisions,
+      });
+    } catch {}
   }
 
   public async getProducts(): Promise<ProductFeature[]> {
@@ -238,20 +268,21 @@ export class CompanyStateStore implements ICompanyStateStore {
       results.push({
         entityType: 'finance',
         id: 'finance-current-model',
-        title: `[Financial Model] MRR $${fin.mrr.toLocaleString()} | Gross Margin ${fin.grossMargin}% | Runway ${fin.runwayMonths}mo`,
-        summary: `ARR $${fin.arr.toLocaleString()}, Monthly Burn $${fin.burnRate.toLocaleString()}, Compute Spend $${fin.computeSpend.toLocaleString()}/mo, Floor Guardrail: 80% Gross Margin`,
+        title: `[Simulated Model] Target MRR $${fin.mrr.toLocaleString()} | Target Margin ${fin.grossMargin}% | Runway ${fin.runwayMonths}mo`,
+        summary: `Target ARR $${fin.arr.toLocaleString()}, Target Monthly Burn $${fin.burnRate.toLocaleString()}, Target Compute Spend $${fin.computeSpend.toLocaleString()}/mo, Floor Guardrail: 80% Gross Margin [SYNTHETIC BASELINE]`,
         data: fin,
         relevanceScore: 10,
         matchReason: `Target financial queries and ${targetRole || 'executive'} domain economics`,
         provenance: {
           sourceSystem: 'company_state',
-          sourceId: 'state:finance:current_metrics',
-          sourceTitle: 'Live Operational Financial Ledger',
-          epistemicType: 'current_truth',
-          authority: 'Julian Cruz (CFO) Ledger',
+          sourceId: 'state:finance:simulated_model',
+          sourceTitle: 'Simulated Target Financial Model (Indicative)',
+          epistemicType: 'ai_inference',
+          authority: 'Simulated Financial Target (Julian Cruz Model)',
           timestamp: nowIso,
-          confidence: 'verified_fact',
-          notes: 'Current active unit economics and capital run-rate',
+          confidence: 'unverified',
+          provenanceKind: 'synthetic',
+          notes: 'Simulated unit economics baseline; not audited live company ledger.',
         },
       });
     }
@@ -277,7 +308,7 @@ export class CompanyStateStore implements ICompanyStateStore {
           results.push({
             entityType: 'product',
             id: feat.id,
-            title: `[Product] ${feat.title} (${feat.category})`,
+            title: `[Product Draft] ${feat.title} (${feat.category})`,
             summary: `Status: ${feat.status}, Priority: ${feat.priority}, Completion: ${feat.completion}%: ${feat.description}`,
             data: feat,
             relevanceScore: matched.length * 2 + (feat.priority === 'Critical' ? 2 : 0),
@@ -286,10 +317,12 @@ export class CompanyStateStore implements ICompanyStateStore {
               sourceSystem: 'company_state',
               sourceId: `state:product:${feat.id}`,
               sourceTitle: feat.title,
-              epistemicType: 'current_truth',
-              authority: 'Maya Lin (Head of Product)',
+              epistemicType: 'durable_reference',
+              authority: 'Maya Lin (Head of Product Roadmap)',
               timestamp: nowIso,
-              confidence: 'verified_fact',
+              confidence: 'unverified',
+              provenanceKind: 'synthetic',
+              notes: 'Indicative roadmap feature specification.',
             },
           });
         }
@@ -317,19 +350,21 @@ export class CompanyStateStore implements ICompanyStateStore {
           results.push({
             entityType: 'customer',
             id: deal.id,
-            title: `[Customer Account] ${deal.companyName} (${deal.tier})`,
-            summary: `Stage: ${deal.stage} | ARR: ${deal.arr} | Health: ${deal.health} | Notes: ${deal.notes}`,
+            title: `[Simulated Pipeline Deal] ${deal.companyName} (${deal.tier})`,
+            summary: `Stage: ${deal.stage} | Target ARR: ${deal.arr} | Health: ${deal.health} | Notes: ${deal.notes} [SYNTHETIC DATA]`,
             data: deal,
             relevanceScore: matched.length * 2 + 1,
-            matchReason: matched.length > 0 ? `Matched terms: ${[...new Set(matched)].join(', ')}` : 'Key prospective pipeline account',
+            matchReason: matched.length > 0 ? `Matched terms: ${[...new Set(matched)].join(', ')}` : 'Sample prospective pipeline account',
             provenance: {
               sourceSystem: 'company_state',
               sourceId: `state:customer:${deal.id}`,
               sourceTitle: deal.companyName,
-              epistemicType: 'current_truth',
-              authority: 'CRM Operational Ledger',
+              epistemicType: 'ai_inference',
+              authority: 'CRM Pipeline Sample (Indicative)',
               timestamp: nowIso,
-              confidence: 'verified_fact',
+              confidence: 'unverified',
+              provenanceKind: 'synthetic',
+              notes: 'Simulated prospective pipeline accounts; not verified audited contracts.',
             },
           });
         }
@@ -361,7 +396,9 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'current_truth',
             authority: 'Founder Governance Register',
             timestamp: nowIso,
-            confidence: 'verified_fact',
+            confidence: dec.status === 'approved' ? 'verified_fact' : 'unverified',
+            provenanceKind: 'synthetic',
+            notes: 'Seed governance proposal.',
           },
         });
       }

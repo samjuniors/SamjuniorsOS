@@ -1,0 +1,14 @@
+{
+  "wf-inst-ms1": {
+    "instanceId": "wf-inst-ms1",
+    "workflowId": "wf-def-ms1",
+    "version": "1.0.0",
+    "status": "running",
+    "objective": "Test Milestone 1 Durability",
+    "stepStates": {},
+    "createdAt": "2026-09-07T17:09:31.639Z",
+    "updatedAt": "2026-09-07T17:09:31.639Z",
+    "outputs": {},
+    "evidenceReferences": []
+  }
+}

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Sparkles, Bot, Building2, Users, Compass, Boxes, TrendingUp, Sliders, ArrowRight } from 'lucide-react';
-import { AppId } from '@/types/os';
+import { AppId, AgentRole } from '@/types/os';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
 import { GovernanceStore } from '@/lib/governance-store';
 import { playOSSound } from './IconHelper';
@@ -14,6 +14,7 @@ interface SpotlightSearchProps {
   onOpenApp: (id: AppId) => void;
   onDispatchDirective: (dir: string) => void;
   soundEnabled: boolean;
+  onInspectEmployee?: (agentId: AgentRole) => void;
 }
 
 export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
@@ -22,6 +23,7 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
   onOpenApp,
   onDispatchDirective,
   soundEnabled,
+  onInspectEmployee,
 }) => {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,20 +161,27 @@ export const SpotlightSearch: React.FC<SpotlightSearchProps> = ({
                   <button
                     key={agent.id}
                     onClick={() => {
-                      handleSelectApp('messages');
+                      if (soundEnabled) playOSSound('click');
+                      setQuery('');
+                      onClose();
+                      if (onInspectEmployee) {
+                        onInspectEmployee(agent.id as AgentRole);
+                      } else {
+                        handleSelectApp('messages');
+                      }
                     }}
-                    className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center justify-between transition-colors"
+                    className="w-full p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-left flex items-center justify-between transition-colors cursor-pointer group"
                   >
                     <div className="flex items-center space-x-2.5">
                       <div className={`w-6 h-6 rounded-lg bg-gradient-to-tr ${agent.avatarColor} flex items-center justify-center text-[10px] font-bold text-white`}>
                         {agent.name[0]}
                       </div>
                       <div>
-                        <span className="font-semibold text-white text-xs">{agent.name}</span>
+                        <span className="font-semibold text-white text-xs group-hover:text-indigo-200">{agent.name}</span>
                         <span className="text-[10px] text-indigo-400 ml-1.5">{agent.role}</span>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-emerald-400 capitalize">{agent.status || 'Active'}</span>
+                    <span className="text-[10px] font-mono text-emerald-400 capitalize">Inspect Profile →</span>
                   </button>
                 ))}
               </div>

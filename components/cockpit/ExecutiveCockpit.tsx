@@ -20,13 +20,16 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { FounderApprovalRecord } from '@/types/authorization';
-import { CompanyInitiative, AIAgent, FinanceMetric } from '@/types/os';
+import { CompanyInitiative, AIAgent, FinanceMetric, AgentRole } from '@/types/os';
 import { INITIAL_INITIATIVES, INITIAL_AGENTS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
+import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
+import { PersonaStore } from '@/lib/persona-store';
 
 interface ExecutiveCockpitProps {
   onSwitchToClassic: () => void;
   onOpenApp?: (appId: string) => void;
   onDispatchDirective?: (directive: string) => void;
+  onInspectEmployee?: (agentId: AgentRole) => void;
 }
 
 interface StreamEvent {
@@ -43,6 +46,7 @@ export function ExecutiveCockpit({
   onSwitchToClassic,
   onOpenApp,
   onDispatchDirective,
+  onInspectEmployee,
 }: ExecutiveCockpitProps) {
   // Directives & Inputs
   const [directiveInput, setDirectiveInput] = useState('');
@@ -144,7 +148,6 @@ export function ExecutiveCockpit({
         body: JSON.stringify({
           action,
           approvalId,
-          decidedBy: 'founder',
           reason: action === 'approve' ? 'Approved via Executive Cockpit' : 'Rejected via Executive Cockpit',
         }),
       });
@@ -241,6 +244,29 @@ export function ExecutiveCockpit({
               <span className="text-slate-500">Monthly Burn:</span>
               <span className="font-semibold text-slate-300 font-mono">${financialModel.burnRate.toLocaleString()}</span>
             </div>
+          </div>
+
+          {/* Executive AI Fleet quick chips */}
+          <div className="hidden xl:flex items-center space-x-2 pl-4 border-l border-slate-800">
+            <span className="text-[10px] uppercase font-mono text-slate-500 mr-1">AI Fleet:</span>
+            {(['coo', 'researcher', 'pm', 'finance'] as AgentRole[]).map((role) => {
+              const prof = DETAILED_AI_EMPLOYEE_PROFILES[role];
+              if (!prof) return null;
+              const tone = PersonaStore.getPersona(role)?.tone || 'professional';
+              return (
+                <button
+                  key={role}
+                  id={`cockpit-officer-chip-${role}`}
+                  onClick={() => onInspectEmployee ? onInspectEmployee(role) : onOpenApp?.('workforce')}
+                  title={`${prof.name} (${prof.role}) • Tone: ${tone} • Click to inspect profile`}
+                  className="flex items-center space-x-1.5 px-2 py-1 rounded-md bg-slate-800/80 hover:bg-indigo-950/60 border border-slate-700/60 hover:border-indigo-500/50 text-xs transition cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span className="font-medium text-slate-300 hover:text-white">{prof.name.split(' ')[0]}</span>
+                  <span className="text-[9px] font-mono text-indigo-400 capitalize">({prof.role.split(' ')[0]})</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

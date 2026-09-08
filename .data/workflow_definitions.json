@@ -1,0 +1,36 @@
+{
+  "wf-def-ms1@1.0.0": {
+    "id": "wf-def-ms1",
+    "name": "Milestone 1 Test Workflow",
+    "description": "Milestone 1 durability workflow",
+    "objective": "Verify workflow persistence",
+    "version": "1.0.0",
+    "steps": [],
+    "dependencies": [],
+    "requiredApprovals": 0,
+    "allowedRoles": [
+      "coo"
+    ],
+    "allowedSkills": [
+      "research"
+    ],
+    "expectedOutputs": []
+  },
+  "wf-def-ms1": {
+    "id": "wf-def-ms1",
+    "name": "Milestone 1 Test Workflow",
+    "description": "Milestone 1 durability workflow",
+    "objective": "Verify workflow persistence",
+    "version": "1.0.0",
+    "steps": [],
+    "dependencies": [],
+    "requiredApprovals": 0,
+    "allowedRoles": [
+      "coo"
+    ],
+    "allowedSkills": [
+      "research"
+    ],
+    "expectedOutputs": []
+  }
+}

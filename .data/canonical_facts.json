@@ -1,0 +1,140 @@
+{
+  "fact-1788800922185-339322": {
+    "id": "fact-1788800922185-339322",
+    "claimId": "clm-1788800922183-26d993",
+    "sourceId": "src-1788800922181-714f0a",
+    "statement": "Serverless architecture eliminates idle compute burn compared to legacy virtual machines.",
+    "subject": "container_architecture",
+    "category": "operational",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:08:42.185Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800922185-339322",
+      "sourceTitle": "Serverless architecture eliminates idle compute burn compared to legacy virtual ",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:08:42.185Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800922183-26d993 (Source: src-1788800922181-714f0a)"
+    }
+  },
+  "fact-1788800922186-05d66b": {
+    "id": "fact-1788800922186-05d66b",
+    "claimId": "clm-1788800922185-e527ae",
+    "sourceId": "src-1788800922185-9c02cf",
+    "statement": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "subject": "container_architecture",
+    "category": "operational",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:08:42.186Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800922186-05d66b",
+      "sourceTitle": "Serverless architecture eliminates idle compute burn with optimized 120ms warm p",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:08:42.186Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800922185-e527ae (Source: src-1788800922185-9c02cf)"
+    }
+  },
+  "fact-1788800954661-93b3e1": {
+    "id": "fact-1788800954661-93b3e1",
+    "claimId": "clm-1788800954650-a7a58e",
+    "sourceId": "src-1788800954648-c1ca99",
+    "statement": "Serverless architecture eliminates idle compute burn compared to legacy virtual machines.",
+    "subject": "container_architecture",
+    "category": "operational",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:09:14.661Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800954661-93b3e1",
+      "sourceTitle": "Serverless architecture eliminates idle compute burn compared to legacy virtual ",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:09:14.661Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800954650-a7a58e (Source: src-1788800954648-c1ca99)"
+    }
+  },
+  "fact-1788800954662-108c91": {
+    "id": "fact-1788800954662-108c91",
+    "claimId": "clm-1788800954662-a6ded7",
+    "sourceId": "src-1788800954662-89c725",
+    "statement": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "subject": "container_architecture",
+    "category": "operational",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:09:14.662Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800954662-108c91",
+      "sourceTitle": "Serverless architecture eliminates idle compute burn with optimized 120ms warm p",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:09:14.662Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800954662-a6ded7 (Source: src-1788800954662-89c725)"
+    }
+  },
+  "fact-1788800979218-5e0e46": {
+    "id": "fact-1788800979218-5e0e46",
+    "claimId": "clm-1788800979216-77cab8",
+    "sourceId": "src-1788800979215-c12e46",
+    "statement": "SamJuniors OS gross margin is 84.2%, well above our mandatory 80% constitutional floor.",
+    "subject": "gross_margin",
+    "category": "financial",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:09:39.218Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800979218-5e0e46",
+      "sourceTitle": "SamJuniors OS gross margin is 84.2%, well above our mandatory 80% constitutional",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:09:39.218Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800979216-77cab8 (Source: src-1788800979215-c12e46)"
+    }
+  },
+  "fact-1788800979221-8415c1": {
+    "id": "fact-1788800979221-8415c1",
+    "claimId": "clm-1788800979220-95c334",
+    "sourceId": "src-1788800979219-4cb9d8",
+    "statement": "SamJuniors OS gross margin is 86.5%, driven by batch caching optimization.",
+    "subject": "gross_margin",
+    "category": "financial",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-07T17:09:39.221Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "fact-1788800979221-8415c1",
+      "sourceTitle": "SamJuniors OS gross margin is 86.5%, driven by batch caching optimization.",
+      "epistemicType": "canonical_fact",
+      "epistemicLabel": "canonical verified fact",
+      "authority": "Promoted by founder via Epistemic Verification",
+      "timestamp": "2026-09-07T17:09:39.221Z",
+      "confidence": "verified_fact",
+      "notes": "Promoted from Claim clm-1788800979220-95c334 (Source: src-1788800979219-4cb9d8)"
+    }
+  }
+}

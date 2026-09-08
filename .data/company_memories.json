@@ -1,0 +1,41 @@
+{
+  "mem-fact-1788800922186-d6fb29": {
+    "id": "mem-fact-1788800922186-d6fb29",
+    "decisionId": "fact-decision-fact-1788800922186-05d66b",
+    "approvedAction": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "executionOutcome": "Adopted serverless container standard across all company services",
+    "evidenceReferences": [
+      "fact-1788800922186-05d66b",
+      "src-1788800922185-9c02cf"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-07T17:08:42.186Z",
+    "recordedAt": "2026-09-07T17:08:42.186Z"
+  },
+  "mem-fact-1788800954663-9e61e5": {
+    "id": "mem-fact-1788800954663-9e61e5",
+    "decisionId": "fact-decision-fact-1788800954662-108c91",
+    "approvedAction": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "executionOutcome": "Adopted serverless container standard across all company services",
+    "evidenceReferences": [
+      "fact-1788800954662-108c91",
+      "src-1788800954662-89c725"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-07T17:09:14.663Z",
+    "recordedAt": "2026-09-07T17:09:14.663Z"
+  },
+  "mem-fact-1788800979221-1cf532": {
+    "id": "mem-fact-1788800979221-1cf532",
+    "decisionId": "fact-decision-fact-1788800979221-8415c1",
+    "approvedAction": "Maintain strict serverless batching to sustain >86% gross margins",
+    "executionOutcome": "Successfully maintained gross margin above target throughout Q4",
+    "evidenceReferences": [
+      "fact-1788800979221-8415c1",
+      "src-1788800979219-4cb9d8"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-07T17:09:39.221Z",
+    "recordedAt": "2026-09-07T17:09:39.221Z"
+  }
+}

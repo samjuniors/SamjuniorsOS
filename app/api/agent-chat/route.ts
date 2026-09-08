@@ -357,11 +357,11 @@ ${roleScopedContext}
       if (agentId === 'researcher') {
         fallbackReply = `[Dr. Aris Thorne • Research]\nBased on our research radar: The European market shows strong demand for sovereign, privacy-first agent runtimes with strict GDPR compliance and localized data governance.`;
       } else if (agentId === 'finance') {
-        fallbackReply = `[Julian Cruz • Finance]\nCurrent financial standing: MRR is $28,400 with an 83.9% gross margin floor, $6,400 monthly burn rate, and 38 months of runway.`;
+        fallbackReply = `[Julian Cruz • Finance]\nFinancial Standing: Live accounting integration is pending connection. Under our target baseline model, we maintain an 80%+ gross margin floor and disciplined capital management. Real-time ledger sync is required for audited metrics.`;
       } else if (agentId === 'pm') {
-        fallbackReply = `[Maya Lin • Product]\nActive roadmap status: Project Lumora (Self-Serve AI Agent Onboarding) is currently in specification review with RICE score 88 and target completion this sprint.`;
+        fallbackReply = `[Maya Lin • Product]\nActive roadmap status: Project Lumora (Self-Serve AI Agent Onboarding) is currently in draft roadmap review with target completion pending founder ratification.`;
       } else if (agentId === 'coo' || isAdvisor) {
-        fallbackReply = `[Sophia Vance • COO]\nOperations overview: All 4 agent workstreams are active with 99.4% SLA adherence and zero blocking escalation items.`;
+        fallbackReply = `[Sophia Vance • COO]\nOperations overview: Workstream dispatch and approval gates are operational. Live execution telemetry is logged against active workflow runs.`;
       }
     } else {
       // General conversation & greetings tailored by active tone
@@ -375,7 +375,7 @@ ${roleScopedContext}
         } else if (agentId === 'pm') {
           fallbackReply = `[Maya Lin • Product]\nFounder! Your product roadmap is looking dangerously ambitious today, and I'm completely here for it. Let's make everyone fall in love with what we're building.`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. High gross margins look remarkably attractive on us today—84.2% to be exact. Let's make sure we keep turning heads on the balance sheet.`;
+          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. Financial governance is looking sharp today. Our 80%+ gross margin invariant stands firm—let's make sure we keep turning heads on the balance sheet.`;
         }
       } else if (tone === 'casual') {
         if (isAdvisor) {
@@ -387,7 +387,7 @@ ${roleScopedContext}
         } else if (agentId === 'pm') {
           fallbackReply = `[Maya Lin • Product]\nHey Founder! Product sprints are moving fast and the designs are feeling great. Want to bounce some quick workflow ideas around?`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nHey there! Napkin math is looking strong: margins are solid at 84%, burn is disciplined, and our runway is looking super healthy.`;
+          fallbackReply = `[Julian Cruz • Finance]\nHey there! Financial discipline is solid: our gross margin floor invariant is holding, burn is disciplined, and the balance sheet is protected.`;
         }
       } else {
         // Professional default

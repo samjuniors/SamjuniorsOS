@@ -3,15 +3,16 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { APPS_CONFIG, INITIAL_AGENTS } from '@/lib/os-data';
-import { AppId } from '@/types/os';
+import { AppId, AgentRole } from '@/types/os';
 import { getAppIcon, playOSSound } from './IconHelper';
-import { Sparkles, ArrowRight, Zap, TrendingUp, Send } from 'lucide-react';
+import { Sparkles, ArrowRight, Zap, TrendingUp, Send, User } from 'lucide-react';
 
 interface DesktopIconsProps {
   openApp: (id: AppId) => void;
   soundEnabled: boolean;
   onQuickDirective: (directive: string) => void;
   onAppContextMenu?: (e: React.MouseEvent, app: any) => void;
+  onInspectEmployee?: (agentId: AgentRole) => void;
 }
 
 export const DesktopIcons: React.FC<DesktopIconsProps> = ({
@@ -19,6 +20,7 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
   soundEnabled,
   onQuickDirective,
   onAppContextMenu,
+  onInspectEmployee,
 }) => {
   const [quickInput, setQuickInput] = React.useState('');
 
@@ -173,19 +175,24 @@ export const DesktopIcons: React.FC<DesktopIconsProps> = ({
             </div>
             <div className="flex items-center space-x-2">
               {INITIAL_AGENTS.map((agent) => (
-                <div
+                <button
                   key={agent.id}
-                  title={`${agent.name} (${agent.role}): ${agent.status}`}
-                  className="flex-1 p-1.5 rounded-md bg-black/40 border border-white/5 text-center"
+                  id={`desktop-agent-pill-${agent.id}`}
+                  onClick={() => {
+                    if (soundEnabled) playOSSound('open');
+                    onInspectEmployee ? onInspectEmployee(agent.id as AgentRole) : openApp('workforce');
+                  }}
+                  title={`${agent.name} (${agent.role}) • Click to view detailed profile`}
+                  className="flex-1 p-1.5 rounded-md bg-black/40 hover:bg-indigo-950/60 border border-white/5 hover:border-indigo-500/40 text-center transition-all cursor-pointer group"
                 >
-                  <div className="text-[9px] font-bold text-slate-300 truncate">
+                  <div className="text-[9px] font-bold text-slate-300 group-hover:text-white truncate">
                     {agent.name.split(' ')[0]}
                   </div>
                   <div className="text-[8px] text-emerald-400 flex items-center justify-center gap-0.5 mt-0.5">
                     <span className="w-1 h-1 rounded-full bg-emerald-400" />
-                    Live
+                    Profile
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

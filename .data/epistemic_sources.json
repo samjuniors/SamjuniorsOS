@@ -1,0 +1,68 @@
+{
+  "src-1788800922181-714f0a": {
+    "id": "src-1788800922181-714f0a",
+    "sourceSystem": "stripe_and_cloud_run_billing",
+    "title": "Cloud Run Q3 Audit",
+    "rawContent": "Audited Q3 serverless cloud invoice: Total Cloud Run cost $0.00 across 10,000 idle hours.",
+    "contentHash": "d0c6d5bbf379145918d555331e9bc7975985eec56032cc8d85b111dfa302395e",
+    "capturedAt": "2026-09-07T17:08:42.182Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788800922185-9c02cf": {
+    "id": "src-1788800922185-9c02cf",
+    "sourceSystem": "cloud_monitoring",
+    "title": "Q4 Cold Start Optimizations",
+    "rawContent": "Cold starts reduced to 120ms with min-instance warm pools.",
+    "contentHash": "e33acc3ba71a659bf957fd60d84d378c594174ddb84a4b1d3c633a71c6582218",
+    "capturedAt": "2026-09-07T17:08:42.185Z",
+    "capturedBy": "coo",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788800954648-c1ca99": {
+    "id": "src-1788800954648-c1ca99",
+    "sourceSystem": "stripe_and_cloud_run_billing",
+    "title": "Cloud Run Q3 Audit",
+    "rawContent": "Audited Q3 serverless cloud invoice: Total Cloud Run cost $0.00 across 10,000 idle hours.",
+    "contentHash": "d0c6d5bbf379145918d555331e9bc7975985eec56032cc8d85b111dfa302395e",
+    "capturedAt": "2026-09-07T17:09:14.648Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788800954662-89c725": {
+    "id": "src-1788800954662-89c725",
+    "sourceSystem": "cloud_monitoring",
+    "title": "Q4 Cold Start Optimizations",
+    "rawContent": "Cold starts reduced to 120ms with min-instance warm pools.",
+    "contentHash": "e33acc3ba71a659bf957fd60d84d378c594174ddb84a4b1d3c633a71c6582218",
+    "capturedAt": "2026-09-07T17:09:14.662Z",
+    "capturedBy": "coo",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788800979215-c12e46": {
+    "id": "src-1788800979215-c12e46",
+    "sourceSystem": "stripe",
+    "title": "Q3 Verified Billing Telemetry",
+    "rawContent": "{\"mrr\": 42500, \"gross_margin_percent\": 84.2, \"serverless_cost\": 1240}",
+    "contentHash": "3acb0a88947f34f313dadd3f0d1f732e86e304c8d645fe1b3a8f709870bec13c",
+    "capturedAt": "2026-09-07T17:09:39.215Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  },
+  "src-1788800979219-4cb9d8": {
+    "id": "src-1788800979219-4cb9d8",
+    "sourceSystem": "stripe",
+    "title": "Q4 Audited FinOps Report",
+    "rawContent": "{\"mrr\": 58000, \"gross_margin_percent\": 86.5}",
+    "contentHash": "a85596c3ea83c4e3f246ce0f0cdf02ba3b45328137212f8ccc84b1cc2484ca22",
+    "capturedAt": "2026-09-07T17:09:39.219Z",
+    "capturedBy": "finance",
+    "metadata": {},
+    "provenanceKind": "live_operational"
+  }
+}

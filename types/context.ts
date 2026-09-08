@@ -52,6 +52,7 @@ export interface ContextItemProvenance {
   authority: string; // e.g. "Operational System Truth", "Executive SOP Mandate", "Founder-Approved Precedent", "Empirical Tool Verification"
   timestamp: string;
   confidence: 'verified_fact' | 'high_confidence' | 'reference_standard' | 'unverified';
+  provenanceKind?: 'real' | 'synthetic'; // Explicitly flags synthetic/sample/seed data vs live authoritative state
   immutablePrecedent?: boolean; // true for historical memory
   notes?: string;
 }

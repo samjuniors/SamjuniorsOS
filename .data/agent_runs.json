@@ -1,0 +1,87 @@
+{
+  "run-test-1788800922187": {
+    "runId": "run-test-1788800922187",
+    "agentId": "coo",
+    "agentName": "Elena Vance",
+    "protocolStep": "coo_review",
+    "taskTitle": "Container Architecture Alignment",
+    "directive": "Evaluate serverless infrastructure cost and latency",
+    "status": "completed",
+    "durationMs": 450,
+    "outputContent": "Elena Vance verified container configuration.",
+    "structuredData": {
+      "keyFindings": [
+        "Zero idle cost",
+        "Clean auto-scaling"
+      ]
+    },
+    "claimsGenerated": [
+      "clm-1788800922183-26d993"
+    ],
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Elena Vance",
+      "taskId": "task-test-coo",
+      "protocolStep": "coo_review",
+      "timestamp": "2026-09-07T17:08:42.187Z",
+      "isVerified": true,
+      "evidenceBasis": "model_reasoning"
+    },
+    "timestamp": "2026-09-07T17:08:42.187Z"
+  },
+  "run-test-1788800954664": {
+    "runId": "run-test-1788800954664",
+    "agentId": "coo",
+    "agentName": "Elena Vance",
+    "protocolStep": "coo_review",
+    "taskTitle": "Container Architecture Alignment",
+    "directive": "Evaluate serverless infrastructure cost and latency",
+    "status": "completed",
+    "durationMs": 450,
+    "outputContent": "Elena Vance verified container configuration.",
+    "structuredData": {
+      "keyFindings": [
+        "Zero idle cost",
+        "Clean auto-scaling"
+      ]
+    },
+    "claimsGenerated": [
+      "clm-1788800954650-a7a58e"
+    ],
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Elena Vance",
+      "taskId": "task-test-coo",
+      "protocolStep": "coo_review",
+      "timestamp": "2026-09-07T17:09:14.664Z",
+      "isVerified": true,
+      "evidenceBasis": "model_reasoning"
+    },
+    "timestamp": "2026-09-07T17:09:14.664Z"
+  },
+  "test-run-1788800979222": {
+    "runId": "test-run-1788800979222",
+    "agentId": "researcher",
+    "agentName": "Dr. Aris Thorne",
+    "protocolStep": "research",
+    "taskTitle": "OptimalEngine Epistemic Benchmark",
+    "directive": "Evaluate epistemic lifecycle integration",
+    "status": "completed",
+    "durationMs": 420,
+    "outputContent": "OptimalEngine Source -> Signal -> Claim -> Fact -> Memory architecture successfully incorporated.",
+    "claimsGenerated": [
+      "clm-1788800979216-77cab8",
+      "clm-1788800979220-95c334"
+    ],
+    "provenance": {
+      "agentId": "researcher",
+      "agentName": "Dr. Aris Thorne",
+      "taskId": "test-task",
+      "protocolStep": "research",
+      "timestamp": "2026-09-07T17:09:39.222Z",
+      "isVerified": true,
+      "evidenceBasis": "external_evidence"
+    },
+    "timestamp": "2026-09-07T17:09:39.222Z"
+  }
+}

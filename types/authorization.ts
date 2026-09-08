@@ -68,6 +68,7 @@ export type AuthorizationReasonCode =
   | 'APPROVAL_EXPIRED'
   | 'APPROVAL_SCOPE_MISMATCH'
   | 'APPROVAL_CONSUMED'
+  | 'APPROVAL_PAYLOAD_HASH_MISMATCH'
   | 'DENIED_ADVISOR_EXECUTION_PROHIBITED'
   | 'DENIED_ROLE_PERMISSION_DISALLOWED'
   | 'DENIED_FINANCIAL_ACTION_AUTONOMY_PROHIBITED'
@@ -93,6 +94,8 @@ export interface FounderApprovalRecord {
   decisionReason?: string;
   notes?: string;
   target?: ActionTargetContext;
+  payload?: any;
+  payloadHash?: string; // SHA-256 cryptographic binding of {actionName, target, payload}
   isConsumed?: boolean;
 }
 
@@ -108,6 +111,7 @@ export interface AuthorizationEvaluationRequest {
     objective?: string;
   };
   target?: ActionTargetContext;
+  payload?: any;
   requestedBy?: string;
   approvalId?: string;
 }

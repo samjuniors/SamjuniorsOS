@@ -4,6 +4,9 @@ import { AssembledEmployeeContext, TaskRetrievedContextBundle } from '@/types/co
 import { ContextualRetrievalService } from '../context/context-retrieval';
 import { ContextAssemblyService } from '../context/context-assembly';
 import { SERVER_AGENTS, ServerAgentDefinition } from './definitions';
+import { AgentRunStore, AgentRunRecord } from './run-store';
+import { EpistemicPipeline } from '../epistemic/pipeline';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface AgentExecutionContext {
   directive: string;
@@ -33,6 +36,8 @@ export interface AgentExecutionResult {
   provenance: OutputProvenance;
   retrievedContext?: TaskRetrievedContextBundle;
   assembledContext?: AssembledEmployeeContext;
+  runId?: string;
+  claimsGenerated?: string[];
   error?: string;
 }
 
@@ -67,6 +72,8 @@ export class ServerAgentExecutor {
     context: AgentExecutionContext,
     specificPrompt: string
   ): Promise<AgentExecutionResult> {
+    const startTime = Date.now();
+    const runId = `run-${Date.now()}-${uuidv4().slice(0, 6)}`;
     const agentDef = SERVER_AGENTS[agentId] || SERVER_AGENTS.coo;
     const timestamp = new Date().toISOString();
     const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -150,24 +157,44 @@ export class ServerAgentExecutor {
     };
 
     if (!this.aiClient) {
+      const durationMs = Date.now() - startTime;
+      const unavailContent = `**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.`;
+      const provenance: OutputProvenance = {
+        agentId,
+        agentName: agentDef.name,
+        taskId: `task-${context.protocolStep}-${agentId}`,
+        protocolStep: context.protocolStep,
+        timestamp,
+        isVerified: false,
+        evidenceBasis: 'unverified',
+      };
+
+      await AgentRunStore.getInstance().saveRun({
+        runId,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        taskTitle: context.taskTitle,
+        directive: context.directive,
+        status: 'halted',
+        durationMs,
+        outputContent: unavailContent,
+        provenance,
+        error: 'GEMINI_API_KEY_MISSING',
+        timestamp,
+      });
+
       return {
         success: false,
         agentId,
         agentName: agentDef.name,
         protocolStep: context.protocolStep,
         statusMessage: `[${agentDef.name}] Execution halted: GEMINI_API_KEY is not configured on the server.`,
-        outputContent: `**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.`,
+        outputContent: unavailContent,
         retrievedContext,
         assembledContext,
-        provenance: {
-          agentId,
-          agentName: agentDef.name,
-          taskId: `task-${context.protocolStep}-${agentId}`,
-          protocolStep: context.protocolStep,
-          timestamp,
-          isVerified: false,
-          evidenceBasis: 'unverified',
-        },
+        runId,
+        provenance,
         error: 'GEMINI_API_KEY_MISSING',
       };
     }
@@ -231,6 +258,62 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
         const parsed = JSON.parse(cleanJson);
 
         const basis: EvidenceBasis = (parsed.evidenceBasis as EvidenceBasis) || 'model_reasoning';
+        const durationMs = Date.now() - startTime;
+        const candidateClaims: string[] = [];
+
+        // PHASE 13 (OptimalEngine Epistemic Lifecycle):
+        // Automatically extract candidate claims from agent deliverables.
+        // Invariant: Claims are submitted as 'pending', NEVER silently treated as company truth.
+        if (Array.isArray(parsed.keyTakeaways)) {
+          for (const takeaway of parsed.keyTakeaways) {
+            if (typeof takeaway === 'string' && takeaway.trim().length > 10) {
+              try {
+                const claimCategory = 
+                  agentId === 'finance' ? 'financial' :
+                  agentId === 'researcher' ? 'market_research' :
+                  agentId === 'pm' ? 'operational' : 'governance';
+
+                const claim = await EpistemicPipeline.getInstance().submitClaim({
+                  statement: takeaway.trim(),
+                  subject: context.taskTitle,
+                  category: claimCategory,
+                  proposedBy: agentId,
+                  confidence: basis === 'calculation' ? 'high_confidence' : 'unverified',
+                  agentRunId: runId,
+                });
+                candidateClaims.push(claim.id);
+              } catch {}
+            }
+          }
+        }
+
+        const provenance: OutputProvenance = {
+          agentId,
+          agentName: agentDef.name,
+          taskId: `task-${context.protocolStep}-${agentId}-${Date.now()}`,
+          protocolStep: context.protocolStep,
+          timestamp,
+          isVerified: true,
+          evidenceBasis: basis,
+          modelUsed: model,
+        };
+
+        await AgentRunStore.getInstance().saveRun({
+          runId,
+          agentId,
+          agentName: agentDef.name,
+          protocolStep: context.protocolStep,
+          taskTitle: context.taskTitle,
+          directive: context.directive,
+          status: 'completed',
+          durationMs,
+          outputContent: parsed.artifactContent || parsed.summary || 'Task completed.',
+          structuredData: parsed,
+          claimsGenerated: candidateClaims,
+          provenance,
+          modelUsed: model,
+          timestamp,
+        });
 
         return {
           success: true,
@@ -240,18 +323,11 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
           statusMessage: parsed.statusMessage || `[${agentDef.name}] Completed ${context.taskTitle}.`,
           outputContent: parsed.artifactContent || parsed.summary || 'Task completed.',
           structuredData: parsed,
-          provenance: {
-            agentId,
-            agentName: agentDef.name,
-            taskId: `task-${context.protocolStep}-${agentId}-${Date.now()}`,
-            protocolStep: context.protocolStep,
-            timestamp,
-            isVerified: true,
-            evidenceBasis: basis,
-            modelUsed: model,
-          },
+          provenance,
           retrievedContext,
           assembledContext,
+          runId,
+          claimsGenerated: candidateClaims,
         };
       } catch (err: any) {
         lastError = err;
@@ -268,24 +344,44 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       }
     }
 
+    const durationMs = Date.now() - startTime;
+    const errorOutput = `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`;
+    const failProvenance: OutputProvenance = {
+      agentId,
+      agentName: agentDef.name,
+      taskId: `task-${context.protocolStep}-${agentId}`,
+      protocolStep: context.protocolStep,
+      timestamp,
+      isVerified: false,
+      evidenceBasis: 'unverified',
+    };
+
+    await AgentRunStore.getInstance().saveRun({
+      runId,
+      agentId,
+      agentName: agentDef.name,
+      protocolStep: context.protocolStep,
+      taskTitle: context.taskTitle,
+      directive: context.directive,
+      status: 'failed',
+      durationMs,
+      outputContent: errorOutput,
+      provenance: failProvenance,
+      error: lastError?.message || 'Execution failed',
+      timestamp,
+    });
+
     return {
       success: false,
       agentId,
       agentName: agentDef.name,
       protocolStep: context.protocolStep,
       statusMessage: `[${agentDef.name}] Task execution failed due to API communication error: ${lastError?.message || 'Unknown error'}.`,
-      outputContent: `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`,
+      outputContent: errorOutput,
       retrievedContext,
       assembledContext,
-      provenance: {
-        agentId,
-        agentName: agentDef.name,
-        taskId: `task-${context.protocolStep}-${agentId}`,
-        protocolStep: context.protocolStep,
-        timestamp,
-        isVerified: false,
-        evidenceBasis: 'unverified',
-      },
+      runId,
+      provenance: failProvenance,
       error: lastError?.message || 'Execution failed',
     };
   }

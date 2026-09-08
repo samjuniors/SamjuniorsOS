@@ -1,0 +1,21 @@
+{
+  "appr-ms1-test-1": {
+    "id": "appr-ms1-test-1",
+    "workflowInstanceId": "wf-ms1-inst-1",
+    "stepId": "step-1",
+    "employeeRole": "coo",
+    "classification": "external_communication",
+    "actionName": "SEND_OUTBOUND_BRIEF",
+    "target": {
+      "targetSystem": "RESEND",
+      "metadata": {
+        "recipient": "advisor@board.com"
+      }
+    },
+    "decision": "pending",
+    "scope": {
+      "scopeType": "single_action"
+    },
+    "requestedAt": "2026-09-07T17:09:31.637Z"
+  }
+}

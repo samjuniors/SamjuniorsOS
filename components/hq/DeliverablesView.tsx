@@ -34,21 +34,14 @@ export const DeliverablesView: React.FC<DeliverablesViewProps> = ({
   onAskAdvisor,
 }) => {
   const [activeFilter, setActiveFilter] = useState<string>('all');
-  const [selectedDoc, setSelectedDoc] = useState<ExecutionDeliverable | null>(
-    (selectedDeliverableId ? deliverables.find((d) => d.id === selectedDeliverableId) : null) ||
-      deliverables[0] ||
-      null
-  );
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(selectedDeliverableId || null);
   const [copied, setCopied] = useState(false);
   const [isEvidenceOpen, setIsEvidenceOpen] = useState(false);
 
-  React.useEffect(() => {
-    if (!selectedDoc && deliverables.length > 0) {
-      setSelectedDoc(deliverables[0]);
-    } else if (selectedDoc && !deliverables.some((d) => d.id === selectedDoc.id)) {
-      setSelectedDoc(deliverables[0] || null);
-    }
-  }, [deliverables, selectedDoc]);
+  const selectedDoc =
+    (selectedDocId ? deliverables.find((d) => d.id === selectedDocId) : null) ||
+    deliverables[0] ||
+    null;
 
   const handleCopy = () => {
     if (!selectedDoc) return;
@@ -127,7 +120,7 @@ export const DeliverablesView: React.FC<DeliverablesViewProps> = ({
                 <div
                   key={doc.id || `${doc.name}-${idx}`}
                   onClick={() => {
-                    setSelectedDoc(doc);
+                    setSelectedDocId(doc.id || null);
                     if (onSelectDeliverable) onSelectDeliverable(doc);
                   }}
                   className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-1.5 ${

@@ -1,0 +1,77 @@
+{
+  "clm-1788800922183-2c48ff": {
+    "claimId": "clm-1788800922183-2c48ff",
+    "passed": false,
+    "policyOutcome": "rejected_contradiction",
+    "reason": "CONSTITUTIONAL_POLICY_VIOLATION: Claim violates the strict 80%+ gross margin floor mandate.",
+    "verifiedAt": "2026-09-07T17:08:42.184Z",
+    "verifiedBy": "system-policy",
+    "precedenceNote": "Constitutional 80% gross margin rule is non-negotiable."
+  },
+  "clm-1788800922183-26d993": {
+    "claimId": "clm-1788800922183-26d993",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:08:42.184Z",
+    "verifiedBy": "usr-founder-1"
+  },
+  "clm-1788800922185-e527ae": {
+    "claimId": "clm-1788800922185-e527ae",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:08:42.186Z",
+    "verifiedBy": "founder"
+  },
+  "clm-1788800954650-c82680": {
+    "claimId": "clm-1788800954650-c82680",
+    "passed": false,
+    "policyOutcome": "rejected_contradiction",
+    "reason": "CONSTITUTIONAL_POLICY_VIOLATION: Claim violates the strict 80%+ gross margin floor mandate.",
+    "verifiedAt": "2026-09-07T17:09:14.651Z",
+    "verifiedBy": "system-policy",
+    "precedenceNote": "Constitutional 80% gross margin rule is non-negotiable."
+  },
+  "clm-1788800954650-a7a58e": {
+    "claimId": "clm-1788800954650-a7a58e",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:09:14.651Z",
+    "verifiedBy": "usr-founder-1"
+  },
+  "clm-1788800954662-a6ded7": {
+    "claimId": "clm-1788800954662-a6ded7",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:09:14.662Z",
+    "verifiedBy": "founder"
+  },
+  "clm-1788800979216-77cab8": {
+    "claimId": "clm-1788800979216-77cab8",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:09:39.217Z",
+    "verifiedBy": "founder"
+  },
+  "clm-1788800979218-4d6be3": {
+    "claimId": "clm-1788800979218-4d6be3",
+    "passed": false,
+    "policyOutcome": "rejected_contradiction",
+    "reason": "CONSTITUTIONAL_POLICY_VIOLATION: Claim violates the strict 80%+ gross margin floor mandate.",
+    "verifiedAt": "2026-09-07T17:09:39.219Z",
+    "verifiedBy": "system-policy",
+    "precedenceNote": "Constitutional 80% gross margin rule is non-negotiable."
+  },
+  "clm-1788800979220-95c334": {
+    "claimId": "clm-1788800979220-95c334",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-07T17:09:39.220Z",
+    "verifiedBy": "founder"
+  }
+}
