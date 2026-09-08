@@ -255,59 +255,137 @@ export class SideEffectAuthorizationGate {
     // 3. If allowed, verify cryptographic approval-payload binding
     if (decision.approvalId) {
       const approval = await this.approvalStore.get(decision.approvalId);
-      if (approval) {
-        // Enforce deterministic payload binding verification
-        if (approval.payloadHash) {
-          const bindingCheck = verifyApprovalPayloadBinding(approval, {
-            actionName: request.actionName,
-            target: request.target,
-            payload: request.payload,
-          });
+      if (!approval) {
+        const missingApprovalReason = `Approval record (${decision.approvalId}) not found in store. Execution blocked.`;
+        const auditRecord: SideEffectAuditRecord = {
+          id: auditId,
+          timestamp,
+          requestId,
+          employeeRole: request.employeeRole,
+          requestedBy: request.requestedBy || request.employeeRole,
+          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+          stepId: request.workflowContext?.stepId,
+          actionClassification: request.classification,
+          actionName: request.actionName,
+          target: request.target,
+          decision: 'denied',
+          reasonCode: 'APPROVAL_NOT_FOUND',
+          reason: missingApprovalReason,
+          approvalId: decision.approvalId,
+          executionReference: executionRef,
+          executed: false,
+        };
 
-          if (!bindingCheck.isMatch) {
-            const mismatchReason = `Cryptographic payload binding mismatch: payload or target was altered after Founder approval was granted (expected: ${bindingCheck.expectedHash}, got: ${bindingCheck.actualHash}). Execution blocked.`;
-            const auditRecord: SideEffectAuditRecord = {
-              id: auditId,
-              timestamp,
-              requestId,
-              employeeRole: request.employeeRole,
-              requestedBy: request.requestedBy || request.employeeRole,
-              skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
-              workflowInstanceId: request.workflowContext?.workflowInstanceId,
-              stepId: request.workflowContext?.stepId,
-              actionClassification: request.classification,
-              actionName: request.actionName,
-              target: request.target,
-              decision: 'denied',
-              reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
-              reason: mismatchReason,
-              approvalId: decision.approvalId,
-              executionReference: executionRef,
-              executed: false,
-            };
+        await this.auditStore.record(auditRecord);
 
-            await this.auditStore.record(auditRecord);
+        return {
+          allowed: false,
+          executed: false,
+          decision: {
+            effect: 'denied',
+            reasonCode: 'APPROVAL_NOT_FOUND',
+            reason: missingApprovalReason,
+            approvalId: decision.approvalId,
+            evaluatedAt: timestamp,
+            evaluator: 'central_side_effect_gate',
+          },
+          auditId,
+          error: missingApprovalReason,
+        };
+      }
 
-            return {
-              allowed: false,
-              executed: false,
-              decision: {
-                effect: 'denied',
-                reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
-                reason: mismatchReason,
-                approvalId: decision.approvalId,
-                evaluatedAt: timestamp,
-                evaluator: 'central_side_effect_gate',
-              },
-              auditId,
-              error: mismatchReason,
-            };
-          }
-        }
+      // Enforce mandatory cryptographic payload binding:
+      // Any approval-backed consequential execution MUST have a payload hash.
+      if (!approval.payloadHash) {
+        const missingHashReason = `Cryptographic payload binding missing: approval record (${approval.id}) does not contain a mandatory payloadHash. Consequential execution denied.`;
+        const auditRecord: SideEffectAuditRecord = {
+          id: auditId,
+          timestamp,
+          requestId,
+          employeeRole: request.employeeRole,
+          requestedBy: request.requestedBy || request.employeeRole,
+          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+          stepId: request.workflowContext?.stepId,
+          actionClassification: request.classification,
+          actionName: request.actionName,
+          target: request.target,
+          decision: 'denied',
+          reasonCode: 'APPROVAL_PAYLOAD_HASH_MISSING',
+          reason: missingHashReason,
+          approvalId: decision.approvalId,
+          executionReference: executionRef,
+          executed: false,
+        };
 
-        if (approval.scope.scopeType === 'single_action') {
-          await this.approvalStore.consume(decision.approvalId);
-        }
+        await this.auditStore.record(auditRecord);
+
+        return {
+          allowed: false,
+          executed: false,
+          decision: {
+            effect: 'denied',
+            reasonCode: 'APPROVAL_PAYLOAD_HASH_MISSING',
+            reason: missingHashReason,
+            approvalId: decision.approvalId,
+            evaluatedAt: timestamp,
+            evaluator: 'central_side_effect_gate',
+          },
+          auditId,
+          error: missingHashReason,
+        };
+      }
+
+      // Enforce deterministic payload binding verification
+      const bindingCheck = verifyApprovalPayloadBinding(approval, {
+        actionName: request.actionName,
+        target: request.target,
+        payload: request.payload,
+      });
+
+      if (!bindingCheck.isMatch) {
+        const mismatchReason = `Cryptographic payload binding mismatch: payload or target was altered after Founder approval was granted (expected: ${bindingCheck.expectedHash}, got: ${bindingCheck.actualHash}). Execution blocked.`;
+        const auditRecord: SideEffectAuditRecord = {
+          id: auditId,
+          timestamp,
+          requestId,
+          employeeRole: request.employeeRole,
+          requestedBy: request.requestedBy || request.employeeRole,
+          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+          stepId: request.workflowContext?.stepId,
+          actionClassification: request.classification,
+          actionName: request.actionName,
+          target: request.target,
+          decision: 'denied',
+          reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+          reason: mismatchReason,
+          approvalId: decision.approvalId,
+          executionReference: executionRef,
+          executed: false,
+        };
+
+        await this.auditStore.record(auditRecord);
+
+        return {
+          allowed: false,
+          executed: false,
+          decision: {
+            effect: 'denied',
+            reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+            reason: mismatchReason,
+            approvalId: decision.approvalId,
+            evaluatedAt: timestamp,
+            evaluator: 'central_side_effect_gate',
+          },
+          auditId,
+          error: mismatchReason,
+        };
+      }
+
+      if (approval.scope.scopeType === 'single_action') {
+        await this.approvalStore.consume(decision.approvalId);
       }
     }
 

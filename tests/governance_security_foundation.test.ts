@@ -10,7 +10,7 @@ import { POST as epistemicHandler } from '@/app/api/epistemic/route';
 import { POST as agentChatHandler } from '@/app/api/agent-chat/route';
 import { GET as intentsHandler } from '@/app/api/communication/intents/route';
 import { GET as auditHandler } from '@/app/api/workflow/authorizations/audit/route';
-import { getAuthenticatedFounder } from '@/lib/server/auth/session';
+import { getAuthenticatedFounder, resolveClerkUserRole, AuthenticatedFounder } from '@/lib/server/auth/session';
 import { CompanyMemoryStore } from '@/lib/server/memory/memory-store';
 import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
 import { verifyApprovalPayloadBinding, computeApprovalPayloadHash } from '@/lib/server/authorization/payload-binding';
@@ -90,6 +90,35 @@ async function runTests() {
     }
     assert.strictEqual(attackerBlocked, true, 'Attacker must be blocked by strict allowlist');
     recordPass('Strict allowlist blocks arbitrary attacker identity in decideApproval');
+
+    // 1.4 Clerk User Role Resolution Matrix (Fail-closed & Anti-spoofing)
+    const originalFounderEmails = process.env.FOUNDER_EMAILS;
+    try {
+      // 1.4a configured Founder email -> Founder
+      process.env.FOUNDER_EMAILS = 'sam@samjuniors.com,founder@samjuniors.com';
+      const role1 = resolveClerkUserRole('sam@samjuniors.com');
+      assert.strictEqual(role1, 'FOUNDER', 'Configured founder email must resolve to FOUNDER');
+      recordPass('Configured Founder email resolves to FOUNDER');
+
+      // 1.4b configured non-Founder Clerk user -> Auditor
+      const role2 = resolveClerkUserRole('attacker@evil.com');
+      assert.strictEqual(role2, 'AUDITOR', 'Non-allowlisted user email must resolve to AUDITOR');
+      recordPass('Configured non-Founder Clerk user resolves to AUDITOR');
+
+      // 1.4c missing FOUNDER_EMAILS in production -> no Founder privilege
+      delete process.env.FOUNDER_EMAILS;
+      const role3 = resolveClerkUserRole('founder@samjuniors.com');
+      assert.strictEqual(role3, 'AUDITOR', 'Missing FOUNDER_EMAILS must fail closed to AUDITOR');
+      recordPass('Missing FOUNDER_EMAILS fails closed with no Founder privilege');
+
+      // 1.4d spoofed Founder metadata -> cannot bypass the configured Founder authorization model
+      process.env.FOUNDER_EMAILS = 'sam@samjuniors.com';
+      const role4 = resolveClerkUserRole('imposter@untrusted.com', 'FOUNDER');
+      assert.strictEqual(role4, 'AUDITOR', 'Spoofed metadata role=FOUNDER must not grant Founder privilege without matching email');
+      recordPass('Spoofed Founder metadata cannot bypass configured Founder authorization model');
+    } finally {
+      process.env.FOUNDER_EMAILS = originalFounderEmails;
+    }
   } catch (err) {
     recordFail('Test Group 1 failed', err);
   }
@@ -174,11 +203,54 @@ async function runTests() {
     assert.strictEqual(unauthorizedPromotionBlocked, true, 'Non-founder specialist cannot promote claim to fact');
     recordPass('Non-founder identity ("researcher") is blocked from promoting claim to canonical fact');
 
-    // 3.5 Authorized Founder promotes claim to Fact
-    const promotedFact = await pipeline.promoteClaimToFact(testClaim.id, 'founder');
+    // 3.5 Reject arbitrary privileged strings (system_governor, system-policy)
+    let sysGovBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, 'system_governor');
+    } catch (err: any) {
+      if (err.message.includes('Unauthorized promotion')) {
+        sysGovBlocked = true;
+      }
+    }
+    assert.strictEqual(sysGovBlocked, true, 'Arbitrary string "system_governor" must be blocked');
+    recordPass('Arbitrary string "system_governor" is blocked from fact promotion');
+
+    let sysPolicyBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, 'system-policy');
+    } catch (err: any) {
+      if (err.message.includes('Unauthorized promotion')) {
+        sysPolicyBlocked = true;
+      }
+    }
+    assert.strictEqual(sysPolicyBlocked, true, 'Arbitrary string "system-policy" must be blocked');
+    recordPass('Arbitrary string "system-policy" is blocked from fact promotion');
+
+    // 3.6 Reject AI specialist / auditor objects attempting promotion
+    let specialistObjBlocked = false;
+    try {
+      await pipeline.promoteClaimToFact(testClaim.id, { userId: 'agent-1', role: 'researcher', isVerified: true });
+    } catch (err: any) {
+      if (err.message.includes('Unauthorized promotion')) {
+        specialistObjBlocked = true;
+      }
+    }
+    assert.strictEqual(specialistObjBlocked, true, 'AI specialist object cannot promote claim to fact');
+    recordPass('AI specialist object ({ role: "researcher" }) is blocked from fact promotion');
+
+    // 3.7 Authorized Founder principal promotes claim to Fact
+    const founderPrincipal: AuthenticatedFounder = {
+      userId: 'founder-001',
+      role: 'FOUNDER',
+      email: 'founder@samjuniors.com',
+      name: 'Executive Founder',
+      isVerified: true,
+    };
+    const promotedFact = await pipeline.promoteClaimToFact(testClaim.id, founderPrincipal);
     assert.strictEqual(promotedFact.validityState, 'active');
     assert.strictEqual(promotedFact.confidence, 'verified_fact');
-    recordPass('Authorized Founder successfully promotes verified claim to canonical fact');
+    assert.strictEqual(promotedFact.promotedBy, 'founder-001');
+    recordPass('Explicit AuthenticatedFounder principal successfully promotes verified claim to canonical fact');
   } catch (err) {
     recordFail('Test Group 3 failed', err);
   }
@@ -473,8 +545,15 @@ async function runTests() {
 
     await pipeline.verifyClaim(claim.id, { role: 'coo', userId: 'coo-verifier-1' });
 
-    const fact1 = await pipeline.promoteClaimToFact(claim.id, 'founder-001');
-    const fact2 = await pipeline.promoteClaimToFact(claim.id, 'founder-001');
+    const founderAuth: AuthenticatedFounder = {
+      userId: 'founder-001',
+      role: 'FOUNDER',
+      email: 'founder@samjuniors.com',
+      name: 'Executive Founder',
+      isVerified: true,
+    };
+    const fact1 = await pipeline.promoteClaimToFact(claim.id, founderAuth);
+    const fact2 = await pipeline.promoteClaimToFact(claim.id, founderAuth);
 
     assert.strictEqual(fact1.id, fact2.id, 'Promoting an already promoted claim must return the identical canonical fact');
     recordPass('Promoting an already promoted claim is idempotent and does not duplicate facts');

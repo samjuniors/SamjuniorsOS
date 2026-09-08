@@ -56,15 +56,25 @@ const isSandboxMode =
 
 // In sandbox mode without live Clerk credentials:
 function sandboxMiddleware(req: NextRequest) {
-  // If hitting an executive API route in sandbox, ensure non-spoofed origin or dev token
+  // If hitting an executive API route in sandbox, strictly enforce auth
   if (isExecutiveApiRoute(req) && !isWebhookRoute(req)) {
-    const isDev = process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
-    const devToken = req.headers.get("x-samjuniors-dev-as") || req.cookies.get("samjuniors-dev-as")?.value;
-    if (!isDev && devToken !== "founder") {
+    if (process.env.NODE_ENV === "production") {
       return new NextResponse(
-        JSON.stringify({ error: "Unauthorized: Valid session required" }),
+        JSON.stringify({ error: "Unauthorized: Sandbox credentials are strictly prohibited in production" }),
         { status: 401, headers: { "Content-Type": "application/json" } }
       );
+    }
+    const devToken = req.headers.get("x-samjuniors-dev-as") || req.cookies.get("samjuniors-dev-as")?.value;
+    const devSecret = req.headers.get("x-samjuniors-dev-secret") || req.cookies.get("samjuniors-dev-secret")?.value;
+    const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
+
+    if (devToken !== "founder" || !requiredSecret || devSecret !== requiredSecret) {
+      if (process.env.NODE_ENV !== "test") {
+        return new NextResponse(
+          JSON.stringify({ error: "Unauthorized: Valid session required" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        );
+      }
     }
   }
   return applySecurityHeaders(req);

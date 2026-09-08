@@ -10,11 +10,58 @@ export interface AuthenticatedFounder {
 }
 
 /**
+ * Resolves the effective role for a Clerk-authenticated user.
+ * Strictly enforces that privileged FOUNDER access requires explicit allowlisting in FOUNDER_EMAILS.
+ * Metadata claims (e.g. role: 'FOUNDER') cannot grant FOUNDER authority without matching configured email.
+ */
+export function resolveClerkUserRole(
+  userEmail: string,
+  userMetadataRole?: string
+): 'FOUNDER' | 'EXECUTIVE' | 'AUDITOR' {
+  const rawFounderEmails = process.env.FOUNDER_EMAILS?.trim();
+  const configuredFounderEmails = rawFounderEmails
+    ? rawFounderEmails
+        .toLowerCase()
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => e.length > 0)
+    : [];
+
+  const normalizedEmail = userEmail.toLowerCase().trim();
+
+  // If FOUNDER_EMAILS is missing, empty, or unconfigured, privileged Founder role fails closed.
+  const isExplicitlyAuthorizedFounder =
+    configuredFounderEmails.length > 0 &&
+    normalizedEmail.length > 0 &&
+    configuredFounderEmails.includes(normalizedEmail);
+
+  if (isExplicitlyAuthorizedFounder) {
+    return 'FOUNDER';
+  }
+
+  // Non-Founder users can be EXECUTIVE if declared, otherwise default strictly to AUDITOR.
+  // Note: userMetadataRole === 'FOUNDER' without matching configuredFounderEmails is deliberately ignored to prevent metadata spoofing.
+  if (userMetadataRole === 'EXECUTIVE') {
+    return 'EXECUTIVE';
+  }
+
+  return 'AUDITOR';
+}
+
+/**
  * Validates the authenticated session for executive /api routes.
  * Strictly verifies identity from Clerk claims or secure local development sessions.
  * Never trusts client-supplied identity parameters in HTTP bodies.
  */
 export async function getAuthenticatedFounder(req?: NextRequest): Promise<AuthenticatedFounder | null> {
+  // Prohibit dev headers unconditionally in production
+  if (process.env.NODE_ENV === 'production' && req) {
+    if (req.headers.has('x-samjuniors-dev-as') || req.cookies.has('samjuniors-dev-as')) {
+      console.error('[SessionAuth] Fatal: Dev bypass headers/cookies are strictly prohibited in production.');
+      return null;
+    }
+  }
+
   const clerkPubKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const isSandbox =
     !clerkPubKey ||
@@ -90,22 +137,7 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
     const roleClaim = userMetadata.role;
     const userEmail = user?.emailAddresses[0]?.emailAddress?.toLowerCase() || '';
 
-    // Explicit trusted founder allowlist from environment
-    const configuredFounderEmails = (process.env.FOUNDER_EMAILS || 'founder@samjuniors.com')
-      .toLowerCase()
-      .split(',')
-      .map((e) => e.trim());
-
-    // Never default an arbitrary authenticated Clerk user to FOUNDER. Default to AUDITOR.
-    let effectiveRole: 'FOUNDER' | 'EXECUTIVE' | 'AUDITOR' = 'AUDITOR';
-
-    if (roleClaim === 'FOUNDER' || (configuredFounderEmails.includes(userEmail) && userEmail.length > 0)) {
-      effectiveRole = 'FOUNDER';
-    } else if (roleClaim === 'EXECUTIVE') {
-      effectiveRole = 'EXECUTIVE';
-    } else {
-      effectiveRole = 'AUDITOR';
-    }
+    const effectiveRole = resolveClerkUserRole(userEmail, roleClaim);
 
     return {
       userId: authData.userId,

@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Derives promoter identity strictly from authenticated session
-      const fact = await pipeline.promoteClaimToFact(claimId, founder.userId);
+      const fact = await pipeline.promoteClaimToFact(claimId, founder);
       return NextResponse.json({ success: true, data: fact });
     }
 

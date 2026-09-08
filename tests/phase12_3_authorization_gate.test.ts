@@ -296,6 +296,249 @@ async function runPhase12_3Tests() {
   assert(exec2.allowed === false && exec2.decision.reasonCode === 'APPROVAL_CONSUMED' && execCount === 1, 'Second attempt blocked because single_action approval was consumed');
 
   // ==========================================
+  // TEST GROUP 3.5: Cryptographic Approval-Payload Binding Matrix
+  // ==========================================
+  console.log('\n--- Test Group 3.5: Cryptographic Approval-Payload Binding Matrix ---');
+
+  // Case 1: valid hash → executes
+  const validAppr = await gate.requestApproval({
+    actionName: 'Dispatch Webhook',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-bind-1',
+    stepId: 'step-hook',
+    employeeRole: 'coo',
+    target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+    payload: { event: 'invoice.paid', amount: 5000 },
+  });
+  await gate.decideApproval({
+    approvalId: validAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let hookExecuted = false;
+  const validExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Dispatch Webhook',
+      classification: 'external_communication',
+      target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+      payload: { event: 'invoice.paid', amount: 5000 },
+      workflowContext: { workflowId: 'wf-hook', workflowInstanceId: 'inst-bind-1', stepId: 'step-hook' },
+    },
+    executeFn: async () => { hookExecuted = true; return { sent: true }; },
+  });
+  assert(validExec.allowed === true && validExec.executed === true && hookExecuted === true, '1. Valid hash -> executes successfully');
+
+  // Case 2: missing hash → denied
+  const missingHashAppr = await gate.requestApproval({
+    actionName: 'Dispatch Webhook',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-bind-2',
+    stepId: 'step-hook-nohash',
+    employeeRole: 'coo',
+    target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+  });
+  // Simulate an approval record that lacks payloadHash
+  missingHashAppr.payloadHash = undefined;
+  await approvalStore.save(missingHashAppr);
+  await gate.decideApproval({
+    approvalId: missingHashAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let missingExecuted = false;
+  const missingHashExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Dispatch Webhook',
+      classification: 'external_communication',
+      target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+      workflowContext: { workflowId: 'wf-hook', workflowInstanceId: 'inst-bind-2', stepId: 'step-hook-nohash' },
+    },
+    executeFn: async () => { missingExecuted = true; return { sent: true }; },
+  });
+  assert(missingHashExec.allowed === false && missingHashExec.executed === false && missingHashExec.decision.reasonCode === 'APPROVAL_PAYLOAD_HASH_MISSING' && missingExecuted === false, '2. Missing payloadHash -> denied with APPROVAL_PAYLOAD_HASH_MISSING');
+
+  // Case 3: changed action → denied
+  const changedActionAppr = await gate.requestApproval({
+    actionName: 'Dispatch Webhook',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-bind-3',
+    stepId: 'step-hook-action',
+    employeeRole: 'coo',
+    target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+    payload: { event: 'deploy' },
+  });
+  await gate.decideApproval({
+    approvalId: changedActionAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let actionTamperedExecuted = false;
+  const changedActionExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Dispatch ALTERED Webhook',
+      classification: 'external_communication',
+      target: { targetSystem: 'webhook', recipient: 'https://api.partner.com/events' },
+      payload: { event: 'deploy' },
+      workflowContext: { workflowId: 'wf-hook', workflowInstanceId: 'inst-bind-3', stepId: 'step-hook-action' },
+    },
+    executeFn: async () => { actionTamperedExecuted = true; return { sent: true }; },
+  });
+  assert(changedActionExec.allowed === false && changedActionExec.decision.reasonCode === 'APPROVAL_PAYLOAD_HASH_MISMATCH' && actionTamperedExecuted === false, '3. Changed action -> denied with APPROVAL_PAYLOAD_HASH_MISMATCH');
+
+  // Case 4: changed target → denied
+  const changedTargetAppr = await gate.requestApproval({
+    actionName: 'Dispatch Webhook',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-bind-4',
+    stepId: 'step-hook-target',
+    employeeRole: 'coo',
+    target: { targetSystem: 'webhook', recipient: 'https://trusted.partner.com/events' },
+    payload: { event: 'deploy' },
+  });
+  await gate.decideApproval({
+    approvalId: changedTargetAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let targetTamperedExecuted = false;
+  const changedTargetExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Dispatch Webhook',
+      classification: 'external_communication',
+      target: { targetSystem: 'webhook', recipient: 'https://attacker.evil.com/leak' },
+      payload: { event: 'deploy' },
+      workflowContext: { workflowId: 'wf-hook', workflowInstanceId: 'inst-bind-4', stepId: 'step-hook-target' },
+    },
+    executeFn: async () => { targetTamperedExecuted = true; return { sent: true }; },
+  });
+  assert(changedTargetExec.allowed === false && changedTargetExec.decision.reasonCode === 'APPROVAL_PAYLOAD_HASH_MISMATCH' && targetTamperedExecuted === false, '4. Changed target -> denied with APPROVAL_PAYLOAD_HASH_MISMATCH');
+
+  // Case 5: changed payload → denied
+  const changedPayloadAppr = await gate.requestApproval({
+    actionName: 'Wire Transfer',
+    classification: 'financial_action',
+    workflowInstanceId: 'inst-bind-5',
+    stepId: 'step-pay-tamper',
+    employeeRole: 'finance',
+    target: { targetSystem: 'bank', accountId: 'vendor-123' },
+    payload: { amount: 500 },
+  });
+  await gate.decideApproval({
+    approvalId: changedPayloadAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let payloadTamperedExecuted = false;
+  const changedPayloadExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'finance',
+      actionName: 'Wire Transfer',
+      classification: 'financial_action',
+      target: { targetSystem: 'bank', accountId: 'vendor-123' },
+      payload: { amount: 5000000 },
+      workflowContext: { workflowId: 'wf-pay', workflowInstanceId: 'inst-bind-5', stepId: 'step-pay-tamper' },
+    },
+    executeFn: async () => { payloadTamperedExecuted = true; return { sent: true }; },
+  });
+  assert(changedPayloadExec.allowed === false && changedPayloadExec.decision.reasonCode === 'APPROVAL_PAYLOAD_HASH_MISMATCH' && payloadTamperedExecuted === false, '5. Changed payload -> denied with APPROVAL_PAYLOAD_HASH_MISMATCH');
+
+  // Case 6: consumed approval → denied
+  const consumedAppr = await gate.requestApproval({
+    actionName: 'Single-Use Mutation',
+    classification: 'external_record_mutation',
+    workflowInstanceId: 'inst-bind-6',
+    stepId: 'step-consume-check',
+    employeeRole: 'pm',
+    scope: { scopeType: 'single_action', workflowInstanceId: 'inst-bind-6', stepId: 'step-consume-check' },
+  });
+  await gate.decideApproval({
+    approvalId: consumedAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  let cCount = 0;
+  const cExec1 = await gate.executeWithGate({
+    request: {
+      employeeRole: 'pm',
+      actionName: 'Single-Use Mutation',
+      classification: 'external_record_mutation',
+      workflowContext: { workflowId: 'wf-c', workflowInstanceId: 'inst-bind-6', stepId: 'step-consume-check' },
+    },
+    executeFn: async () => { cCount++; return { done: true }; },
+  });
+  assert(cExec1.allowed === true && cCount === 1, '6a. Single-use approval executes first time');
+  const cExec2 = await gate.executeWithGate({
+    request: {
+      employeeRole: 'pm',
+      actionName: 'Single-Use Mutation',
+      classification: 'external_record_mutation',
+      workflowContext: { workflowId: 'wf-c', workflowInstanceId: 'inst-bind-6', stepId: 'step-consume-check' },
+    },
+    executeFn: async () => { cCount++; return { done: true }; },
+  });
+  assert(cExec2.allowed === false && cExec2.decision.reasonCode === 'APPROVAL_CONSUMED' && cCount === 1, '6b. Consumed approval -> denied with APPROVAL_CONSUMED');
+
+  // Case 7: revoked approval → denied
+  const revokedAppr = await gate.requestApproval({
+    actionName: 'Sensitive Export',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-bind-7',
+    stepId: 'step-revoke-check',
+    employeeRole: 'coo',
+  });
+  await gate.decideApproval({
+    approvalId: revokedAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+  });
+  await gate.revokeApproval({
+    approvalId: revokedAppr.id,
+    revokedBy: 'founder',
+    reason: 'Suspicious activity detected',
+  });
+  let revokedExecuted = false;
+  const revokedExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Sensitive Export',
+      classification: 'external_communication',
+      workflowContext: { workflowId: 'wf-r', workflowInstanceId: 'inst-bind-7', stepId: 'step-revoke-check' },
+    },
+    executeFn: async () => { revokedExecuted = true; return { done: true }; },
+  });
+  assert(revokedExec.allowed === false && revokedExec.decision.reasonCode === 'APPROVAL_REVOKED' && revokedExecuted === false, '7. Revoked approval -> denied with APPROVAL_REVOKED');
+
+  // Case 8: expired approval → denied
+  const expiredAppr = await gate.requestApproval({
+    actionName: 'Time-Sensitive Operation',
+    classification: 'external_record_mutation',
+    workflowInstanceId: 'inst-bind-8',
+    stepId: 'step-expire-check',
+    employeeRole: 'coo',
+  });
+  await gate.decideApproval({
+    approvalId: expiredAppr.id,
+    decision: 'approved',
+    decidedBy: 'founder',
+    expiresAt: new Date(Date.now() - 60000).toISOString(),
+  });
+  let expiredExecuted = false;
+  const expiredExec = await gate.executeWithGate({
+    request: {
+      employeeRole: 'coo',
+      actionName: 'Time-Sensitive Operation',
+      classification: 'external_record_mutation',
+      workflowContext: { workflowId: 'wf-e', workflowInstanceId: 'inst-bind-8', stepId: 'step-expire-check' },
+    },
+    executeFn: async () => { expiredExecuted = true; return { done: true }; },
+  });
+  assert(expiredExec.allowed === false && expiredExec.decision.reasonCode === 'APPROVAL_EXPIRED' && expiredExecuted === false, '8. Expired approval -> denied with APPROVAL_EXPIRED');
+
+  // ==========================================
   // TEST GROUP 4: Workflow Runtime Integration
   // ==========================================
   console.log('\n--- Test Group 4: Workflow Runtime Integration ---');
