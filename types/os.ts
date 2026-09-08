@@ -303,7 +303,7 @@ export interface FounderExecutiveResult {
     primaryBasis: EvidenceBasis;
     deliverableIds?: string[];
   };
-  executionOutcome: 'success' | 'partial' | 'failed' | 'unconfigured';
+  executionOutcome: 'success' | 'partial' | 'failed' | 'unconfigured' | 'verification_rejected';
   failureReason?: string;
 }
 
@@ -394,7 +394,7 @@ export interface RetrievedHistoricalMemory {
       }
     | string;
   provenance?: {
-    sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
+    sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence' | 'epistemic_pipeline';
     sourceId: string;
     sourceTitle: string;
     epistemicType: string;

@@ -29,7 +29,7 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
       return null;
     }
 
-    // If req is not provided (internal server-side execution without HTTP context)
+    // If req is not provided (internal server-side execution without HTTP context, e.g. CLI/unit test runner)
     if (!req) {
       if (process.env.NODE_ENV === 'test') {
         return {
@@ -47,14 +47,25 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
     const devSecret = req.headers.get('x-samjuniors-dev-secret') || req.cookies.get('samjuniors-dev-secret')?.value;
     const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
 
-    // Strict check: devAs MUST be explicitly 'founder'
+    // Strict security check:
+    // 1. devAs MUST be explicitly 'founder'
+    // 2. SAMJUNIORS_DEV_SECRET MUST be set on the server
+    // 3. devSecret MUST be present and match SAMJUNIORS_DEV_SECRET exactly
     if (devAs !== 'founder') {
       return null;
     }
 
-    // If a dev secret is configured, it must match
-    if (requiredSecret && devSecret !== requiredSecret) {
-      console.warn('[SessionAuth] Rejecting dev session: invalid x-samjuniors-dev-secret.');
+    if (!requiredSecret || !devSecret || devSecret !== requiredSecret) {
+      // In automated test environments without HTTP secret setup, allow only if NODE_ENV === 'test' and no spoofed header was sent
+      if (process.env.NODE_ENV === 'test' && !req.headers.has('x-samjuniors-dev-as') && !req.cookies.has('samjuniors-dev-as')) {
+        return {
+          userId: 'founder-local-session',
+          email: 'founder@samjuniors.com',
+          name: 'Executive Founder',
+          role: 'FOUNDER',
+          isVerified: true,
+        };
+      }
       return null;
     }
 
@@ -75,13 +86,32 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
     }
 
     const user = await currentUser();
-    const roleClaim = (authData.sessionClaims?.publicMetadata as any)?.role || 'FOUNDER';
+    const userMetadata = (authData.sessionClaims?.publicMetadata as Record<string, any>) || {};
+    const roleClaim = userMetadata.role;
+    const userEmail = user?.emailAddresses[0]?.emailAddress?.toLowerCase() || '';
+
+    // Explicit trusted founder allowlist from environment
+    const configuredFounderEmails = (process.env.FOUNDER_EMAILS || 'founder@samjuniors.com')
+      .toLowerCase()
+      .split(',')
+      .map((e) => e.trim());
+
+    // Never default an arbitrary authenticated Clerk user to FOUNDER. Default to AUDITOR.
+    let effectiveRole: 'FOUNDER' | 'EXECUTIVE' | 'AUDITOR' = 'AUDITOR';
+
+    if (roleClaim === 'FOUNDER' || (configuredFounderEmails.includes(userEmail) && userEmail.length > 0)) {
+      effectiveRole = 'FOUNDER';
+    } else if (roleClaim === 'EXECUTIVE') {
+      effectiveRole = 'EXECUTIVE';
+    } else {
+      effectiveRole = 'AUDITOR';
+    }
 
     return {
       userId: authData.userId,
-      email: user?.emailAddresses[0]?.emailAddress || 'founder@samjuniors.com',
-      name: `${user?.firstName || ''} ${user?.lastName || 'Founder'}`.trim(),
-      role: roleClaim === 'AUDITOR' ? 'AUDITOR' : roleClaim === 'EXECUTIVE' ? 'EXECUTIVE' : 'FOUNDER',
+      email: userEmail || 'auditor@samjuniors.com',
+      name: `${user?.firstName || ''} ${user?.lastName || 'User'}`.trim(),
+      role: effectiveRole,
       isVerified: true,
     };
   } catch (err) {

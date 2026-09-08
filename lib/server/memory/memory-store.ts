@@ -15,7 +15,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     approvedAction: 'Enforce strict 80%+ gross margin floor across all customer tiers and token usage',
     executionOutcome: 'Preserved target gross margin floor during stress testing; prevented runaway LLM token costs',
     evidenceReferences: ['finance-model-audit', 'margin-verification', 'julian-margin-stress-test'],
-    epistemicConfidence: 'verified_fact',
+    epistemicConfidence: 'high_confidence',
     timestamp: '2026-08-25T14:30:00Z',
     recordedAt: '2026-08-25T14:30:00Z',
   },
@@ -25,7 +25,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     approvedAction: 'Provision dedicated virtual servers with 5000 fixed monthly cost',
     executionOutcome: 'High idle compute burn observed during off-peak windows; flagged for migration',
     evidenceReferences: ['legacy-cloud-bill', 'infra-audit-2026'],
-    epistemicConfidence: 'verified_fact',
+    epistemicConfidence: 'high_confidence',
     timestamp: '2026-08-15T10:00:00Z',
     recordedAt: '2026-08-15T10:00:00Z',
   },
@@ -35,7 +35,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     approvedAction: 'Enforce Zero-Trust Safe Mock Sandboxing on all external mutations and payment operations',
     executionOutcome: 'Blocked 3 accidental external API mutations during developer preview tests without interrupting agent workflow',
     evidenceReferences: ['governance-audit-trail', 'sandbox-telemetry'],
-    epistemicConfidence: 'verified_fact',
+    epistemicConfidence: 'high_confidence',
     timestamp: '2026-08-30T16:00:00Z',
     recordedAt: '2026-08-30T16:00:00Z',
   },
@@ -45,7 +45,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     approvedAction: 'Require 9-step executive council debate before generating high-impact PRDs or financial commitments',
     executionOutcome: 'Reduced hallucinated specifications and unverified architecture claims by 92% across all council runs',
     evidenceReferences: ['res-multi-agent-eval-2026', 'dr-thorne-research-radar'],
-    epistemicConfidence: 'verified_fact',
+    epistemicConfidence: 'high_confidence',
     timestamp: '2026-09-02T11:20:00Z',
     recordedAt: '2026-09-02T11:20:00Z',
   },
@@ -55,7 +55,7 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
     approvedAction: 'Purchase ergonomic desk monitors for hardware testing lab',
     executionOutcome: 'Procured within approved office budget of $1,400',
     evidenceReferences: ['hardware-invoice-489'],
-    epistemicConfidence: 'verified_fact',
+    epistemicConfidence: 'high_confidence',
     timestamp: '2026-07-20T10:00:00Z',
     recordedAt: '2026-07-20T10:00:00Z',
   },
@@ -119,10 +119,18 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
   }
 
   public async recordMemory(memory: CompanyMemory): Promise<void> {
-    this.memories.unshift(memory);
+    const sanitizedMemory: CompanyMemory = { ...memory };
+    if (sanitizedMemory.epistemicConfidence === 'verified_fact') {
+      const hasValidLineage = Array.isArray(sanitizedMemory.evidenceReferences) && sanitizedMemory.evidenceReferences.length > 0;
+      if (!hasValidLineage) {
+        sanitizedMemory.epistemicConfidence = 'high_confidence';
+      }
+    }
+
+    this.memories.unshift(sanitizedMemory);
 
     try {
-      DurableFileStore.getInstance().saveItem('company_memories', memory.id, memory);
+      DurableFileStore.getInstance().saveItem('company_memories', sanitizedMemory.id, sanitizedMemory);
     } catch {}
 
     if (process.env.DATABASE_URL) {

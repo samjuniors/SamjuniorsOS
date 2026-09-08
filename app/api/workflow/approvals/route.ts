@@ -10,6 +10,11 @@ import { getAuthenticatedFounder } from '@/lib/server/auth/session';
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status') as ApprovalStatus | null;
     const workflowInstanceId = searchParams.get('workflowInstanceId');

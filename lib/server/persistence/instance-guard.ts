@@ -45,7 +45,7 @@ export class InstanceConcurrencyGuard {
   /**
    * Checks and acquires the single-instance lease.
    */
-  public acquireSingleInstanceLease(customLockPath?: string): {
+  public acquireSingleInstanceLease(customLockPath?: string, options?: { failClosed?: boolean }): {
     acquired: boolean;
     activeExistingInstance?: InstanceLockInfo;
     warning?: string;
@@ -65,13 +65,19 @@ export class InstanceConcurrencyGuard {
         if (ageMs < 15000 && lockInfo.pid !== process.pid) {
           const warning = `[CONCURRENCY WARNING]: Another SamJuniorsOS instance (PID ${lockInfo.pid}, ID ${lockInfo.instanceId}) holds the active lease. SamJuniorsOS Milestone 1.1 requires a single instance deployment (min=1, max=1) to prevent state divergence.`;
           console.warn(warning);
+          if (options?.failClosed || process.env.STRICT_SINGLE_INSTANCE === 'true') {
+            throw new Error(warning);
+          }
           return {
             acquired: false,
             activeExistingInstance: lockInfo,
             warning,
           };
         }
-      } catch {
+      } catch (err: any) {
+        if (options?.failClosed && err?.message?.includes('[CONCURRENCY WARNING]')) {
+          throw err;
+        }
         // Corrupted lock file, proceed to overwrite
       }
     }

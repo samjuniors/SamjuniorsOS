@@ -247,7 +247,7 @@ export class ContextAssemblyService {
             epistemicLabel: EPISTEMIC_LABELS.current_evidence,
             authority: `Verified Tool Run (${ev.sourceToolOrTest})`,
             timestamp: ev.timestamp || timestamp,
-            confidence: 'verified_fact',
+            confidence: (ev as any).confidence || 'unverified',
             notes: 'Real-time empirical observation — takes top epistemic precedence',
           },
         });
@@ -419,6 +419,7 @@ export class ContextAssemblyService {
       const precedenceWeight: Record<EpistemicClassification, number> = {
         current_evidence: 4,
         current_truth: 3,
+        canonical_fact: 3,
         durable_reference: 2,
         historical_memory: 1,
         ai_inference: 0,

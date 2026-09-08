@@ -94,5 +94,67 @@
     "epistemicConfidence": "verified_fact",
     "timestamp": "2026-09-08T06:02:15.065Z",
     "recordedAt": "2026-09-08T06:02:15.065Z"
+  },
+  "mem-test-unverified-1788847532473": {
+    "id": "mem-test-unverified-1788847532473",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T06:05:32.473Z"
+  },
+  "mem-fact-1788847790638-9b624f": {
+    "id": "mem-fact-1788847790638-9b624f",
+    "decisionId": "fact-decision-fact-1788847790634-3e77cf",
+    "approvedAction": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "executionOutcome": "Adopted serverless container standard across all company services",
+    "evidenceReferences": [
+      "fact-1788847790634-3e77cf",
+      "src-1788847790625-84736f"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-08T06:09:50.638Z",
+    "recordedAt": "2026-09-08T06:09:50.638Z"
+  },
+  "mem-test-unverified-1788848907019": {
+    "id": "mem-test-unverified-1788848907019",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T06:28:27.019Z"
+  },
+  "mem-test-unverified-1788848945758": {
+    "id": "mem-test-unverified-1788848945758",
+    "decisionId": "dec-test-unverified",
+    "approvedAction": "Trial experiment with tentative hypothesis",
+    "executionOutcome": "tentative",
+    "evidenceReferences": [],
+    "epistemicConfidence": "unverified",
+    "timestamp": "2026-09-08T06:29:05.758Z"
+  },
+  "mem-test-unbacked-1788848945760": {
+    "id": "mem-test-unbacked-1788848945760",
+    "decisionId": "dec-unbacked-fact",
+    "approvedAction": "Claiming verified fact without evidence",
+    "executionOutcome": "unbacked",
+    "evidenceReferences": [],
+    "epistemicConfidence": "high_confidence",
+    "timestamp": "2026-09-08T06:29:05.760Z"
+  },
+  "mem-fact-1788848984823-c3e495": {
+    "id": "mem-fact-1788848984823-c3e495",
+    "decisionId": "fact-decision-fact-1788848984820-487ac7",
+    "approvedAction": "Serverless architecture eliminates idle compute burn with optimized 120ms warm pools.",
+    "executionOutcome": "Adopted serverless container standard across all company services",
+    "evidenceReferences": [
+      "fact-1788848984820-487ac7",
+      "src-1788848984814-e1b92b"
+    ],
+    "epistemicConfidence": "verified_fact",
+    "timestamp": "2026-09-08T06:29:44.823Z",
+    "recordedAt": "2026-09-08T06:29:44.823Z"
   }
 }

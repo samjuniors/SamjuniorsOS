@@ -72,6 +72,9 @@ export class InMemoryApprovalStore implements IApprovalStore {
   }
 
   public clear(): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Approval records are governed and cannot be cleared in production.');
+    }
     this.approvals.clear();
     try {
       DurableFileStore.getInstance().clearCollection('approvals');
@@ -368,6 +371,9 @@ export class InMemoryAuditStore implements IAuditStore {
   }
 
   public clear(): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Audit trail is strictly append-only and immutable; cannot be cleared in production.');
+    }
     this.audits.clear();
     try {
       DurableFileStore.getInstance().clearCollection('audits');

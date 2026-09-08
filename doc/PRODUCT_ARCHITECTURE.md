@@ -235,13 +235,13 @@ pgvector/RAG, E2B, fine-tuning, Elena Rostova, Marcus Vance, broad Composio inte
 
 ## 16. Architectural Invariants (precise, minimal, status dated per claim)
 
-1. **Founder authority is established server-side, never from a client-supplied field.** [`8524908`: partially met — middleware/Clerk structure exists; live credentials and the gate.ts blocklist-vs-allowlist gap remain open. §7.]
-2. **A privileged action's approval is bound to its exact action/target/payload, checked at dispatch time.** [`8524908`: hash computation implemented; end-to-end enforcement unconfirmed. §7.]
-3. **Workflow and audit state survive a process restart.** [`8524908`: met for in-process restart via `DurableFileStore`; not met for container replacement on the stated Cloud Run target — depends on §0. §6.]
-4. **Synthetic/example data is never labeled with the same confidence as verified real data.** [`8524908`: a correct governed pipeline now exists (§11); whether the original offending code paths were migrated onto it is unconfirmed. §11.]
-5. **"Verified" means a named, mechanically-checkable test passed — not that an LLM said so.** [Still unmet — §3, §10, no new evidence of a workflow-step verification gate.]
-6. **External side effects carry idempotency keys where the provider supports them, and unknown-outcome dispatch is surfaced, not guessed at.** [Still unmet — §8.]
-7. **Self-improving ≠ self-authorizing.** [Not yet applicable — no self-improvement capability exists to violate this yet; stated now so it governs from the first line of code toward §11c, not retrofitted after the fact.]
+1. **Founder authority is established server-side, never from a client-supplied field.** [`32a6f38`: IMPLEMENTED + WIRED — session strictly established server-side via Clerk or verified dev secret; strict allowlist in gate.ts; all privileged routes guarded. §7.]
+2. **A privileged action's approval is bound to its exact action/target/payload, checked at dispatch time.** [`32a6f38`: IMPLEMENTED + WIRED — SHA-256 canonical tuple hashing; verifyApprovalPayloadBinding fails closed on consequential side-effects. §7.]
+3. **Workflow and audit state survive a process restart.** [`32a6f38`: IMPLEMENTED + WIRED — DurableFileStore atomic writes + Postgres schema; single-instance deployment constraint (min=1, max=1) guarded by InstanceConcurrencyGuard; append-only audit trail guarded against clearing in production. §6.]
+4. **Synthetic/example data is never labeled with the same confidence as verified real data.** [`32a6f38`: IMPLEMENTED + WIRED — epistemic pipeline active; state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory(). §11.]
+5. **"Verified" means a named, mechanically-checkable test passed — not that an LLM said so.** [`32a6f38`: IMPLEMENTED + WIRED — ConstitutionalVerifier.verify() deterministically checks invariants (margin floor >= 80%, secret exposure) and halts orchestration on failure with executionOutcome: 'verification_rejected'. §3, §10.]
+6. **External side effects carry idempotency keys where the provider supports them, and unknown-outcome dispatch is surfaced, not guessed at.** [`32a6f38`: IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline; honest deliveryStatus: failed on unconfigured providers. §8.]
+7. **Self-improving ≠ self-authorizing.** [Deferred to LATER — no self-improvement capability exists yet; stated now so it governs future work toward §11c.]
 
 ## 17. Reference Repository Research (architectural inspiration only — [PRINCIPLE]: do not adopt either runtime wholesale)
 

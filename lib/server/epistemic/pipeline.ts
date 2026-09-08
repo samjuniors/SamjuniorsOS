@@ -324,6 +324,15 @@ export class EpistemicPipeline {
       throw new Error(`Cannot promote claim ${claimId}: verification has not passed or was rejected.`);
     }
 
+    // Idempotency: return existing fact if already promoted
+    if (claim.verificationStatus === 'promoted_to_fact') {
+      const activeFacts = await this.claimStore.listActiveFacts({ category: claim.category, subject: claim.subject });
+      const existing = activeFacts.find((f) => f.claimId === claimId);
+      if (existing) {
+        return existing;
+      }
+    }
+
     const factId = `fact-${Date.now()}-${uuidv4().slice(0, 6)}`;
     const now = new Date().toISOString();
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CommunicationRuntime } from '@/lib/server/communication/runtime';
 import { AgentRole } from '@/types/os';
 import { DraftStatus } from '@/types/communication';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * GET /api/communication/drafts
@@ -9,6 +10,11 @@ import { DraftStatus } from '@/types/communication';
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const authoringRole = (searchParams.get('authoringRole') as AgentRole) || undefined;
     const workflowInstanceId = searchParams.get('workflowInstanceId') || undefined;
@@ -37,6 +43,11 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const body = await req.json();
     const {
       conversationId,

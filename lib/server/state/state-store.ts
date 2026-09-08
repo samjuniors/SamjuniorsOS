@@ -243,7 +243,7 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'current_truth',
             authority: 'Operational Initiative Register',
             timestamp: nowIso,
-            confidence: 'verified_fact',
+            confidence: 'unverified',
             notes: 'Current active organizational initiative',
           },
         });

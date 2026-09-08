@@ -55,5 +55,21 @@
     "extractedObservation": "Zero idle cost verified on container architecture.",
     "confidence": "verified_fact",
     "timestamp": "2026-09-08T06:02:15.032Z"
+  },
+  "sig-1788847790600-452027": {
+    "id": "sig-1788847790600-452027",
+    "sourceId": "src-1788847790597-bb66fb",
+    "signalType": "financial_record",
+    "extractedObservation": "Zero idle cost verified on container architecture.",
+    "confidence": "verified_fact",
+    "timestamp": "2026-09-08T06:09:50.600Z"
+  },
+  "sig-1788848984785-914ed1": {
+    "id": "sig-1788848984785-914ed1",
+    "sourceId": "src-1788848984780-52d834",
+    "signalType": "financial_record",
+    "extractedObservation": "Zero idle cost verified on container architecture.",
+    "confidence": "verified_fact",
+    "timestamp": "2026-09-08T06:29:44.785Z"
   }
 }

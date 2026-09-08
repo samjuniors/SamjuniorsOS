@@ -148,6 +148,7 @@ export interface CommunicationIntent {
   employeeRole: AgentRole | 'advisor' | 'system';
   skillId?: string;
   channel: CommunicationChannel;
+  actionName?: string;
   payload: Record<string, any>;
   target?: ActionTargetContext;
   workflowRef?: {

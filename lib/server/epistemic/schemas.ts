@@ -15,7 +15,7 @@ export const EvidenceSourceSchema = z.object({
   contentHash: z.string().min(8),
   capturedAt: z.string(),
   capturedBy: z.enum(['coo', 'researcher', 'pm', 'finance', 'founder', 'system']),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   provenanceKind: z.enum(['live_operational', 'synthetic', 'sandbox_mock']),
 });
 
@@ -49,7 +49,7 @@ export const AgentRunRecordSchema = z.object({
   status: z.enum(['completed', 'failed', 'halted']),
   durationMs: z.number().nonnegative(),
   outputContent: z.string(),
-  structuredData: z.record(z.any()).optional(),
+  structuredData: z.record(z.string(), z.any()).optional(),
   error: z.string().optional(),
   claimsGenerated: z.array(z.string()).optional(),
   timestamp: z.string(),

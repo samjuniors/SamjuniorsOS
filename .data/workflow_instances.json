@@ -1,83 +1,55 @@
 {
-  "wf-inst-0fae733b-262c-491f-8059-0a4a9ed95fc2": {
-    "instanceId": "wf-inst-0fae733b-262c-491f-8059-0a4a9ed95fc2",
-    "workflowId": "wf-def-1",
+  "wf-inst-6f880b9f-943d-4fc5-8180-69a63a1c14e7": {
+    "instanceId": "wf-inst-6f880b9f-943d-4fc5-8180-69a63a1c14e7",
+    "workflowId": "wf-comm-pipeline",
     "version": "1.0.0",
-    "objective": "Onboard a new customer and verify metrics",
-    "status": "pending",
-    "stepStates": {
-      "step-1": {
-        "stepId": "step-1",
-        "status": "completed",
-        "assignedRole": "researcher",
-        "skill": "research",
-        "outputs": {},
-        "evidenceReferences": [],
-        "retryCount": 0,
-        "authorizationReasonCode": "READ_ONLY_ALLOWED",
-        "approvalState": "approved",
-        "completedAt": "2026-09-08T06:01:58.315Z"
-      },
-      "step-2": {
-        "stepId": "step-2",
-        "status": "pending",
-        "assignedRole": "pm",
-        "skill": "plan",
-        "outputs": {},
-        "evidenceReferences": [],
-        "retryCount": 0
-      }
-    },
-    "createdAt": "2026-09-08T06:01:58.310Z",
-    "updatedAt": "2026-09-08T06:01:58.315Z",
-    "outputs": {},
-    "evidenceReferences": []
-  },
-  "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587": {
-    "instanceId": "wf-inst-0f5fa664-82e2-45f9-893d-044197fe0587",
-    "workflowId": "wf-def-1",
-    "version": "1.0.0",
-    "objective": "Onboard a new customer and verify metrics",
+    "objective": "Safely draft, approve, and dispatch customer email",
     "status": "completed",
     "stepStates": {
-      "step-1": {
-        "stepId": "step-1",
-        "status": "completed",
-        "assignedRole": "researcher",
-        "skill": "research",
-        "outputs": {
-          "analysis_result": "done"
-        },
-        "evidenceReferences": [],
-        "retryCount": 0,
-        "authorizationReasonCode": "READ_ONLY_ALLOWED",
-        "approvalState": "approved",
-        "startedAt": "2026-09-08T06:01:58.322Z",
-        "completedAt": "2026-09-08T06:01:58.325Z"
-      },
-      "step-2": {
-        "stepId": "step-2",
+      "step-prep-email": {
+        "stepId": "step-prep-email",
         "status": "completed",
         "assignedRole": "pm",
-        "skill": "plan",
+        "skill": "strategy_planning",
         "outputs": {
           "result": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
-          "plan_result": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled."
+          "draft_email": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled."
         },
         "evidenceReferences": [
-          "audit-59b87684-e67e-4512-94a3-b212dc7badb0",
+          "audit-5523f2a0-5bb1-48f1-ad4e-6df7170ad522",
           "pm"
         ],
         "retryCount": 0,
-        "authorizationReasonCode": "APPROVAL_REQUIRED_EXTERNAL_COMMUNICATION",
-        "approvalId": "appr-c74f51d4-2c49-4ab2-842e-01a1a62626e6",
+        "sideEffectClassification": "internal_mutation",
+        "authorizationReasonCode": "INTERNAL_MUTATION_ALLOWED",
         "approvalState": "approved",
-        "startedAt": "2026-09-08T06:01:58.333Z",
-        "completedAt": "2026-09-08T06:01:58.352Z"
+        "startedAt": "2026-09-08T06:29:17.773Z",
+        "completedAt": "2026-09-08T06:29:17.792Z"
+      },
+      "step-send-email": {
+        "stepId": "step-send-email",
+        "status": "completed",
+        "assignedRole": "coo",
+        "skill": "executive_dispatch",
+        "outputs": {
+          "result": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+          "sent_receipt": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled."
+        },
+        "evidenceReferences": [
+          "audit-661157ec-125f-4733-9479-a1f1a88734c1",
+          "coo"
+        ],
+        "retryCount": 0,
+        "sideEffectClassification": "external_communication",
+        "authorizationReasonCode": "APPROVAL_PENDING",
+        "approvalId": "appr-bb5a6e29-14f1-4586-88ea-f3e5147d52e5",
+        "approvalState": "approved",
+        "startedAt": "2026-09-08T06:29:17.802Z",
+        "completedAt": "2026-09-08T06:29:17.807Z"
       }
     },
-    "createdAt": "2026-09-08T06:01:58.318Z",
-    "updatedAt": "2026-09-08T06:01:58.354Z",
+    "createdAt": "2026-09-08T06:29:17.770Z",
+    "updatedAt": "2026-09-08T06:29:17.809Z",
     "outputs": {},
     "evidenceReferences": []
   }

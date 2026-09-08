@@ -205,7 +205,29 @@ async function runPhase12_4Tests() {
   // ==========================================
   console.log('\n--- Test Group 5: Provider Adapter Boundary & Safe Execution ---');
 
-  // 1. Request and obtain Founder approval for sending
+  // 1. Request and obtain Founder approval for sending draft1 with cryptographic payload binding
+  const draft1Payload = {
+    draftId: draft1.id,
+    conversationId: draft1.conversationId,
+    threadId: draft1.threadId,
+    sender: {
+      address: 'pm@company.internal',
+      name: 'PM',
+    },
+    recipients: draft1.intendedRecipients,
+    cc: draft1.cc,
+    bcc: draft1.bcc,
+    subject: draft1.subject,
+    bodyContent: draft1.bodyContent,
+    bodyMimeType: draft1.bodyMimeType,
+  };
+
+  const draft1Target = {
+    targetSystem: 'email',
+    recipient: 'sarah.chen@innovatecorp.example',
+    summary: 'Send finalized security and integration specs',
+  };
+
   const sendAppr = await gate.requestApproval({
     actionName: 'Send Integration Spec Email',
     classification: 'external_communication',
@@ -213,11 +235,8 @@ async function runPhase12_4Tests() {
     stepId: 'step-send-spec',
     employeeRole: 'pm',
     scope: { scopeType: 'step', workflowInstanceId: 'inst-comm-1', stepId: 'step-send-spec' },
-    target: {
-      targetSystem: 'email',
-      recipient: 'sarah.chen@innovatecorp.example',
-      summary: 'Send finalized security and integration specs',
-    },
+    target: draft1Target,
+    payload: draft1Payload,
   });
 
   await gate.decideApproval({
@@ -278,21 +297,7 @@ async function runPhase12_4Tests() {
   const mockProvider = new MockEmailProvider();
   providerRegistry.registerAdapter('email', mockProvider);
 
-  // Request new single-action approval for mock provider test
-  const sendAppr2 = await gate.requestApproval({
-    actionName: 'Send Integration Spec Email (Mock Provider)',
-    classification: 'external_communication',
-    workflowInstanceId: 'inst-comm-2',
-    stepId: 'step-send-spec-2',
-    employeeRole: 'pm',
-    scope: { scopeType: 'step', workflowInstanceId: 'inst-comm-2', stepId: 'step-send-spec-2' },
-  });
-  await gate.decideApproval({
-    approvalId: sendAppr2.id,
-    decision: 'approved',
-    decidedBy: 'founder',
-  });
-
+  // Create draft2 first before requesting approval
   const draft2 = await commRuntime.createDraft({
     conversationId: conv.id,
     authoringRole: 'pm',
@@ -305,6 +310,45 @@ async function runPhase12_4Tests() {
       workflowInstanceId: 'inst-comm-2',
       stepId: 'step-send-spec-2',
     },
+  });
+
+  const draft2Payload = {
+    draftId: draft2.id,
+    conversationId: draft2.conversationId,
+    threadId: draft2.threadId,
+    sender: {
+      address: 'pm@company.internal',
+      name: 'PM',
+    },
+    recipients: draft2.intendedRecipients,
+    cc: draft2.cc,
+    bcc: draft2.bcc,
+    subject: draft2.subject,
+    bodyContent: draft2.bodyContent,
+    bodyMimeType: draft2.bodyMimeType,
+  };
+
+  const draft2Target = {
+    targetSystem: draft2.channel,
+    recipient: draft2.intendedRecipients.map((r) => r.address).join(', '),
+    summary: `Send approved draft: "${draft2.subject}"`,
+  };
+
+  // Request new single-action approval with payload binding for mock provider test
+  const sendAppr2 = await gate.requestApproval({
+    actionName: 'Send Integration Spec Email (Mock Provider)',
+    classification: 'external_communication',
+    workflowInstanceId: 'inst-comm-2',
+    stepId: 'step-send-spec-2',
+    employeeRole: 'pm',
+    scope: { scopeType: 'step', workflowInstanceId: 'inst-comm-2', stepId: 'step-send-spec-2' },
+    target: draft2Target,
+    payload: draft2Payload,
+  });
+  await gate.decideApproval({
+    approvalId: sendAppr2.id,
+    decision: 'approved',
+    decidedBy: 'founder',
   });
 
   const sendResultMock = await commRuntime.sendDraft({

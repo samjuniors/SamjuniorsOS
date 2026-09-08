@@ -405,5 +405,285 @@
       "evidenceBasis": "model_reasoning"
     },
     "timestamp": "2026-09-08T06:02:15.066Z"
+  },
+  "run-1788847537090-b0ce12": {
+    "runId": "run-1788847537090-b0ce12",
+    "agentId": "researcher",
+    "agentName": "Dr. Aris Thorne",
+    "protocolStep": "competitor_intel",
+    "taskTitle": "Market Research",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 12,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "researcher",
+      "agentName": "Dr. Aris Thorne",
+      "taskId": "task-competitor_intel-researcher",
+      "protocolStep": "competitor_intel",
+      "timestamp": "2026-09-08T06:05:37.090Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:05:37.090Z"
+  },
+  "run-1788847537110-c0d91e": {
+    "runId": "run-1788847537110-c0d91e",
+    "agentId": "pm",
+    "agentName": "Maya Lin",
+    "protocolStep": "strategy_planning",
+    "taskTitle": "Draft Proposal",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "pm",
+      "agentName": "Maya Lin",
+      "taskId": "task-strategy_planning-pm",
+      "protocolStep": "strategy_planning",
+      "timestamp": "2026-09-08T06:05:37.110Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:05:37.110Z"
+  },
+  "run-1788847537123-55fd90": {
+    "runId": "run-1788847537123-55fd90",
+    "agentId": "coo",
+    "agentName": "Sophia Vance",
+    "protocolStep": "executive_dispatch",
+    "taskTitle": "Notify Board Members",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Sophia Vance",
+      "taskId": "task-executive_dispatch-coo",
+      "protocolStep": "executive_dispatch",
+      "timestamp": "2026-09-08T06:05:37.123Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:05:37.123Z"
+  },
+  "run-test-1788847790640": {
+    "runId": "run-test-1788847790640",
+    "agentId": "coo",
+    "agentName": "Elena Vance",
+    "protocolStep": "coo_review",
+    "taskTitle": "Container Architecture Alignment",
+    "directive": "Evaluate serverless infrastructure cost and latency",
+    "status": "completed",
+    "durationMs": 450,
+    "outputContent": "Elena Vance verified container configuration.",
+    "structuredData": {
+      "keyFindings": [
+        "Zero idle cost",
+        "Clean auto-scaling"
+      ]
+    },
+    "claimsGenerated": [
+      "clm-1788847790602-8baa1f"
+    ],
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Elena Vance",
+      "taskId": "task-test-coo",
+      "protocolStep": "coo_review",
+      "timestamp": "2026-09-08T06:09:50.640Z",
+      "isVerified": true,
+      "evidenceBasis": "model_reasoning"
+    },
+    "timestamp": "2026-09-08T06:09:50.640Z"
+  },
+  "run-1788848646251-bfb2a8": {
+    "runId": "run-1788848646251-bfb2a8",
+    "agentId": "pm",
+    "agentName": "Maya Lin",
+    "protocolStep": "strategy_planning",
+    "taskTitle": "Prepare Outreach Email",
+    "directive": "Safely draft, approve, and dispatch customer email",
+    "status": "halted",
+    "durationMs": 13,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "pm",
+      "agentName": "Maya Lin",
+      "taskId": "task-strategy_planning-pm",
+      "protocolStep": "strategy_planning",
+      "timestamp": "2026-09-08T06:24:06.251Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:24:06.251Z"
+  },
+  "run-1788848646279-a7afdd": {
+    "runId": "run-1788848646279-a7afdd",
+    "agentId": "coo",
+    "agentName": "Sophia Vance",
+    "protocolStep": "executive_dispatch",
+    "taskTitle": "Send Approved Outreach",
+    "directive": "Safely draft, approve, and dispatch customer email",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Sophia Vance",
+      "taskId": "task-executive_dispatch-coo",
+      "protocolStep": "executive_dispatch",
+      "timestamp": "2026-09-08T06:24:06.279Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:24:06.279Z"
+  },
+  "run-1788848951891-6adae5": {
+    "runId": "run-1788848951891-6adae5",
+    "agentId": "researcher",
+    "agentName": "Dr. Aris Thorne",
+    "protocolStep": "competitor_intel",
+    "taskTitle": "Market Research",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 14,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "researcher",
+      "agentName": "Dr. Aris Thorne",
+      "taskId": "task-competitor_intel-researcher",
+      "protocolStep": "competitor_intel",
+      "timestamp": "2026-09-08T06:29:11.891Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:29:11.891Z"
+  },
+  "run-1788848951913-fb4b91": {
+    "runId": "run-1788848951913-fb4b91",
+    "agentId": "pm",
+    "agentName": "Maya Lin",
+    "protocolStep": "strategy_planning",
+    "taskTitle": "Draft Proposal",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "pm",
+      "agentName": "Maya Lin",
+      "taskId": "task-strategy_planning-pm",
+      "protocolStep": "strategy_planning",
+      "timestamp": "2026-09-08T06:29:11.913Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:29:11.913Z"
+  },
+  "run-1788848951925-1f4bfc": {
+    "runId": "run-1788848951925-1f4bfc",
+    "agentId": "coo",
+    "agentName": "Sophia Vance",
+    "protocolStep": "executive_dispatch",
+    "taskTitle": "Notify Board Members",
+    "directive": "Safely execute multi-step business workflow with external side effects",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Sophia Vance",
+      "taskId": "task-executive_dispatch-coo",
+      "protocolStep": "executive_dispatch",
+      "timestamp": "2026-09-08T06:29:11.925Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:29:11.925Z"
+  },
+  "run-1788848957776-8746e7": {
+    "runId": "run-1788848957776-8746e7",
+    "agentId": "pm",
+    "agentName": "Maya Lin",
+    "protocolStep": "strategy_planning",
+    "taskTitle": "Prepare Outreach Email",
+    "directive": "Safely draft, approve, and dispatch customer email",
+    "status": "halted",
+    "durationMs": 12,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "pm",
+      "agentName": "Maya Lin",
+      "taskId": "task-strategy_planning-pm",
+      "protocolStep": "strategy_planning",
+      "timestamp": "2026-09-08T06:29:17.776Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:29:17.776Z"
+  },
+  "run-1788848957803-42de22": {
+    "runId": "run-1788848957803-42de22",
+    "agentId": "coo",
+    "agentName": "Sophia Vance",
+    "protocolStep": "executive_dispatch",
+    "taskTitle": "Send Approved Outreach",
+    "directive": "Safely draft, approve, and dispatch customer email",
+    "status": "halted",
+    "durationMs": 1,
+    "outputContent": "**Execution Unavailable**: Server AI execution requires a configured GEMINI_API_KEY. No live agent execution was performed, and simulated metrics are strictly disabled.",
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Sophia Vance",
+      "taskId": "task-executive_dispatch-coo",
+      "protocolStep": "executive_dispatch",
+      "timestamp": "2026-09-08T06:29:17.803Z",
+      "isVerified": false,
+      "evidenceBasis": "unverified"
+    },
+    "error": "GEMINI_API_KEY_MISSING",
+    "timestamp": "2026-09-08T06:29:17.803Z"
+  },
+  "run-test-1788848984825": {
+    "runId": "run-test-1788848984825",
+    "agentId": "coo",
+    "agentName": "Elena Vance",
+    "protocolStep": "review",
+    "taskTitle": "Container Architecture Alignment",
+    "directive": "Evaluate serverless infrastructure cost and latency",
+    "status": "completed",
+    "durationMs": 450,
+    "outputContent": "Elena Vance verified container configuration.",
+    "structuredData": {
+      "keyFindings": [
+        "Zero idle cost",
+        "Clean auto-scaling"
+      ]
+    },
+    "claimsGenerated": [
+      "clm-1788848984787-1dd5fd"
+    ],
+    "provenance": {
+      "agentId": "coo",
+      "agentName": "Elena Vance",
+      "taskId": "task-test-coo",
+      "protocolStep": "review",
+      "timestamp": "2026-09-08T06:29:44.825Z",
+      "isVerified": true,
+      "evidenceBasis": "model_reasoning"
+    },
+    "timestamp": "2026-09-08T06:29:44.825Z"
   }
 }

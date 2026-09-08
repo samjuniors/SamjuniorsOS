@@ -15,7 +15,9 @@ function canonicalizeValue(value: any): any {
     const sortedKeys = Object.keys(value).sort();
     const result: Record<string, any> = {};
     for (const key of sortedKeys) {
-      result[key] = canonicalizeValue(value[key]);
+      if (value[key] !== undefined) {
+        result[key] = canonicalizeValue(value[key]);
+      }
     }
     return result;
   }
@@ -57,8 +59,12 @@ export function verifyApprovalPayloadBinding(
   }
 ): { isMatch: boolean; expectedHash?: string; actualHash?: string } {
   if (!record.payloadHash) {
-    // If no payload hash was established (legacy record), allow with warning
-    return { isMatch: true };
+    // Fail-closed: Consequential side-effects strictly require cryptographic payload binding
+    return {
+      isMatch: false,
+      expectedHash: 'MANDATORY_PAYLOAD_HASH_REQUIRED',
+      actualHash: 'MISSING_PAYLOAD_HASH_ON_APPROVAL_RECORD',
+    };
   }
 
   const actualHash = computeApprovalPayloadHash(

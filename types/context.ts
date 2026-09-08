@@ -20,7 +20,8 @@ export type EpistemicClassification =
   | 'durable_reference' // Company Knowledge: SOPs, specs, architecture, policies
   | 'historical_memory' // Company Memory: past decisions & recorded execution outcomes (precedent only)
   | 'current_evidence' // Empirical real-time verification from tool runs or test results
-  | 'ai_inference'; // Derived specialist analysis or recommendation
+  | 'ai_inference' // Derived specialist analysis or recommendation
+  | 'canonical_fact'; // Promoted authoritative truth from epistemic pipeline
 
 /**
  * Standardized Phase 11.13 Epistemic Human-Readable Labels
@@ -30,7 +31,8 @@ export type EpistemicLabel =
   | 'company state'
   | 'company knowledge'
   | 'historical memory'
-  | 'AI inference';
+  | 'AI inference'
+  | 'canonical verified fact';
 
 export const EPISTEMIC_LABELS: Record<EpistemicClassification, EpistemicLabel> = {
   current_evidence: 'current verified evidence',
@@ -38,13 +40,14 @@ export const EPISTEMIC_LABELS: Record<EpistemicClassification, EpistemicLabel> =
   durable_reference: 'company knowledge',
   historical_memory: 'historical memory',
   ai_inference: 'AI inference',
+  canonical_fact: 'canonical verified fact',
 };
 
 /**
  * Mandatory Provenance Metadata for every retrieved item
  */
 export interface ContextItemProvenance {
-  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
+  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence' | 'epistemic_pipeline';
   sourceId: string;
   sourceTitle: string;
   epistemicType: EpistemicClassification;

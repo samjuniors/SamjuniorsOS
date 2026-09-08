@@ -247,6 +247,12 @@ async function runPhase12_5Tests() {
     stepId: 'step-send',
   };
 
+  const sendPayload = {
+    recipients: [{ address: 'partner@acme.com' }],
+    subject: 'Approved Partnership Introduction',
+    bodyContent: 'Excited to partner!',
+  };
+
   const approval = await gate.requestApproval({
     employeeRole: 'pm',
     actionName: 'Send Communication (send)',
@@ -255,6 +261,7 @@ async function runPhase12_5Tests() {
     stepId: workflowContext.stepId,
     scope: { scopeType: 'single_action', maxUses: 1 },
     target: { targetSystem: 'email', recipient: 'partner@acme.com', summary: 'Intro email' },
+    payload: sendPayload,
   });
 
   await gate.decideApproval({

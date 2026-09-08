@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CommunicationRuntime } from '@/lib/server/communication/runtime';
 import { ContactVerificationState } from '@/types/communication';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * GET /api/communication/contacts
@@ -8,6 +9,11 @@ import { ContactVerificationState } from '@/types/communication';
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const query = searchParams.get('query') || undefined;
     const organizationId = searchParams.get('organizationId') || undefined;
@@ -36,6 +42,11 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { name, email, organizationId, organizationName, role, title, verificationState, requestedBy } = body;
 

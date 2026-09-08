@@ -243,16 +243,18 @@ Focus on:
       if ((researchToolSelection.selectedToolId === 'github_repository_read' || researchToolSelection.selectedToolId === 'github_read') && shouldExecuteTools) {
         try {
           const authGate = SideEffectAuthorizationGate.getInstance();
-          const authResult = await authGate.evaluateAndExecute(
-            {
+          const authResult = await authGate.executeWithGate({
+            request: {
               employeeRole: 'researcher',
-              action: researchToolSelection.selectedToolId,
-              scope: { type: 'single_action', limit: 1 },
-              target: 'github',
+              actionName: researchToolSelection.selectedToolId,
+              classification: 'read_only',
+              target: {
+                targetSystem: 'github',
+                summary: `GitHub intelligence query for: ${directive}`,
+              },
               payload: { directive },
-              reason: `Orchestration tool execution: ${researchToolSelection.selectedToolId}`,
             },
-            async () => {
+            executeFn: async () => {
               return await executeGitHubIntelligence(directive, {
                 toolId: researchToolSelection.selectedToolId!,
                 sessionScope: {
@@ -262,25 +264,25 @@ Focus on:
                 },
                 provenance: researcherResult.provenance!,
               });
-            }
-          );
+            },
+          });
 
-          if (!authResult.executed) {
+          if (!authResult.executed || !authResult.result) {
             researchToolEvidence = {
               toolId: researchToolSelection.selectedToolId,
               toolName: 'GitHub Repository Research',
-              status: authResult.status === 'requires_approval' ? 'requires_approval' : 'failed',
+              status: 'failed',
               timestamp: new Date().toISOString(),
               inputSummary: `Execution attempted for GitHub repository`,
-              outputSummary: `Execution blocked by Authorization Gate: ${authResult.status}`,
-              errorMessage: authResult.reason || 'Authorization required',
+              outputSummary: `Execution blocked by Authorization Gate: ${authResult.decision.effect}`,
+              errorMessage: authResult.error || authResult.decision.reason || 'Authorization required',
               provenance: researcherResult.provenance,
               verificationState: 'verification_failed',
-              executionSafetyState: 'requires_approval',
+              executionSafetyState: 'safety_violation',
               limitations: ['Authorization gate prevented autonomous execution without explicit Founder approval.'],
             };
           } else {
-            const intelResult = authResult.data!;
+            const intelResult = authResult.result;
             researchToolEvidence = intelResult.evidence;
             const epistemic = intelResult.epistemicBreakdown;
 
@@ -320,37 +322,39 @@ Focus on:
         try {
           const searchInput = { query: `Competitor landscape and market dynamics for: ${directive}` };
           const authGate = SideEffectAuthorizationGate.getInstance();
-          const authResult = await authGate.evaluateAndExecute(
-            {
+          const authResult = await authGate.executeWithGate({
+            request: {
               employeeRole: 'researcher',
-              action: 'web_research',
-              scope: { type: 'single_action', limit: 1 },
-              target: 'web',
+              actionName: 'web_research',
+              classification: 'read_only',
+              target: {
+                targetSystem: 'web',
+                summary: `Competitor landscape and market dynamics for: ${directive}`,
+              },
               payload: searchInput,
-              reason: 'Orchestration tool execution: web_research',
             },
-            async () => {
+            executeFn: async () => {
               return await executeWebResearch(searchInput);
-            }
-          );
+            },
+          });
 
-          if (!authResult.executed) {
+          if (!authResult.executed || !authResult.result) {
             researchToolEvidence = {
               toolId: 'web_research',
               toolName: 'Web Research',
-              status: authResult.status === 'requires_approval' ? 'requires_approval' : 'failed',
+              status: 'failed',
               timestamp: new Date().toISOString(),
               inputSummary: `Query: ${searchInput.query}`,
-              outputSummary: `Execution blocked by Authorization Gate: ${authResult.status}`,
-              errorMessage: authResult.reason || 'Authorization required',
+              outputSummary: `Execution blocked by Authorization Gate: ${authResult.decision.effect}`,
+              errorMessage: authResult.error || authResult.decision.reason || 'Authorization required',
               provenance: researcherResult.provenance,
               verificationState: 'verification_failed',
-              executionSafetyState: 'requires_approval',
+              executionSafetyState: 'safety_violation',
               limitations: ['Authorization gate prevented autonomous execution.'],
             };
           } else {
-            const result = authResult.data!;
-            const supportedClaimsCount = result.claims?.filter(c => c.verificationState === 'claim_supported').length || 0;
+            const result = authResult.result;
+            const supportedClaimsCount = result.claims?.filter((c) => c.verificationState === 'claim_supported').length || 0;
 
             researchToolEvidence = {
               toolId: 'web_research',
@@ -359,7 +363,7 @@ Focus on:
               timestamp: result.timestamp,
               inputSummary: `Query: ${searchInput.query}`,
               outputSummary: `Retrieved ${result.sources.length} sources; ${supportedClaimsCount} claim(s) supported.`,
-              sourceReferences: result.sources.map(s => s.url),
+              sourceReferences: result.sources.map((s) => s.url),
               sources: result.sources,
               claims: result.claims,
               provenance: researcherResult.provenance,
@@ -373,46 +377,46 @@ Focus on:
               researcherResult.structuredData = researcherResult.structuredData || {};
               researcherResult.structuredData.summary = result.summary.slice(0, 150) + '... (via external research)';
             }
-          }
 
-          // Build Founder-facing Market Intelligence brief with clear claim-to-source traceability
-          let formattedBrief = `# Market Intelligence & Technical Feasibility Brief\n`;
-          formattedBrief += `**Directive**: ${directive}\n`;
-          formattedBrief += `**Research Status**: ${result.executionStatus.toUpperCase()} (Verification: ${result.verificationState})\n\n`;
+            // Build Founder-facing Market Intelligence brief with clear claim-to-source traceability
+            let formattedBrief = `# Market Intelligence & Technical Feasibility Brief\n`;
+            formattedBrief += `**Directive**: ${directive}\n`;
+            formattedBrief += `**Research Status**: ${result.executionStatus.toUpperCase()} (Verification: ${result.verificationState})\n\n`;
 
-          if (result.claims && result.claims.length > 0) {
-            formattedBrief += `## Key Findings & Verification\n`;
-            for (const claim of result.claims) {
-              const srcNote = claim.supportingSourceUrls.length > 0 
-                ? ` [Sources: ${claim.supportingSourceUrls.join(', ')}]` 
-                : ' *(Unverified / No supporting source)*';
-              formattedBrief += `- **[${claim.verificationState.toUpperCase()}]** ${claim.statement}${srcNote}\n`;
-              if (claim.evidenceExcerpt) {
-                formattedBrief += `  > Evidence: "${claim.evidenceExcerpt}"\n`;
+            if (result.claims && result.claims.length > 0) {
+              formattedBrief += `## Key Findings & Verification\n`;
+              for (const claim of result.claims) {
+                const srcNote = claim.supportingSourceUrls.length > 0 
+                  ? ` [Sources: ${claim.supportingSourceUrls.join(', ')}]` 
+                  : ' *(Unverified / No supporting source)*';
+                formattedBrief += `- **[${claim.verificationState.toUpperCase()}]** ${claim.statement}${srcNote}\n`;
+                if (claim.evidenceExcerpt) {
+                  formattedBrief += `  > Evidence: "${claim.evidenceExcerpt}"\n`;
+                }
               }
+              formattedBrief += `\n`;
             }
-            formattedBrief += `\n`;
-          }
 
-          if (result.sources && result.sources.length > 0) {
-            formattedBrief += `## Validated Sources\n`;
-            for (const src of result.sources) {
-              formattedBrief += `- **${src.title}**: ${src.url}${src.excerpt ? ` — "${src.excerpt}"` : ''}\n`;
+            if (result.sources && result.sources.length > 0) {
+              formattedBrief += `## Validated Sources\n`;
+              for (const src of result.sources) {
+                formattedBrief += `- **${src.title}**: ${src.url}${src.excerpt ? ` — "${src.excerpt}"` : ''}\n`;
+              }
+              formattedBrief += `\n`;
             }
-            formattedBrief += `\n`;
-          }
 
-          if (result.limitations && result.limitations.length > 0) {
-            formattedBrief += `## Limitations & Bounds\n`;
-            for (const lim of result.limitations) {
-              formattedBrief += `- ${lim}\n`;
+            if (result.limitations && result.limitations.length > 0) {
+              formattedBrief += `## Limitations & Bounds\n`;
+              for (const lim of result.limitations) {
+                formattedBrief += `- ${lim}\n`;
+              }
+              formattedBrief += `\n`;
             }
-            formattedBrief += `\n`;
-          }
 
-          const briefDeliverable = deliverables.find(d => d.name === 'Market Intelligence & Technical Feasibility Brief');
-          if (briefDeliverable) {
-            briefDeliverable.content = formattedBrief;
+            const briefDeliverable = deliverables.find(d => d.name === 'Market Intelligence & Technical Feasibility Brief');
+            if (briefDeliverable) {
+              briefDeliverable.content = formattedBrief;
+            }
           }
         } catch (error: any) {
           researchToolEvidence = {
@@ -705,11 +709,14 @@ Include:
           deliverableIds: deliverables.map((d) => d.name),
         },
         executionOutcome: 'verification_rejected',
+        failureReason: 'Directive rejected by constitutional verification engine.',
       };
 
       return {
         id: runId,
         directive,
+        title: `Directive Execution: ${directive.slice(0, 50)}`,
+        summary: `Halted: Constitutional verification checks failed (${verificationResultData.checksFailed.length} violation(s)).`,
         timestamp,
         status: 'failed',
         liveAi: true,
@@ -721,7 +728,7 @@ Include:
           plan: 'completed',
           build_execute: 'completed',
           test: 'completed',
-          verify: 'failed',
+          verify: 'active',
           review: 'pending',
           report: 'pending',
         },
@@ -1118,7 +1125,7 @@ In accordance with constitutional truthfulness invariants:
         evidenceCount: 0,
         primaryBasis: 'unverified',
       },
-      executionOutcome: verificationResultData.checksFailed.some((c) => !c.includes('API key missing'))
+      executionOutcome: verificationResultData.checksFailed.some((c: string) => !c.includes('API key missing'))
         ? 'verification_rejected'
         : 'unconfigured',
       failureReason: 'GEMINI_API_KEY environment variable is not configured.',

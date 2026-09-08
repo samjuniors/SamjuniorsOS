@@ -377,15 +377,20 @@ export class CommunicationRuntime {
 
     // 2. External Communication Execution ('send' or 'reply')
     // Must pass strictly through gate.executeWithGate with cryptographic payload binding!
+    const approvalRecord = intent.approvalId ? await this.gate.getApprovalStore().get(intent.approvalId) : null;
+    const effectiveActionName = intent.actionName || approvalRecord?.actionName || `Send Communication (${intent.type})`;
+    const effectiveTarget = target || approvalRecord?.target;
+    const effectivePayload = intent.payload || approvalRecord?.payload;
+
     const gateResult = await this.gate.executeWithGate({
       request: {
         employeeRole: intent.employeeRole,
-        actionName: `Send Communication (${intent.type})`,
+        actionName: effectiveActionName,
         classification: 'external_communication',
         workflowContext: intent.workflowRef,
-        target,
+        target: effectiveTarget,
         approvalId: intent.approvalId,
-        payload: intent.payload,
+        payload: effectivePayload,
       },
       executeFn: async () => {
         const provider = this.providerRegistry.getAdapter(intent.channel);
@@ -439,23 +444,6 @@ export class CommunicationRuntime {
 
         // Check if provider adapter is configured
         if (!provider.isConfigured()) {
-          const isDevOrSandbox = process.env.NODE_ENV !== 'production' || process.env.SAFE_SANDBOX_MODE === 'true';
-          if (isDevOrSandbox) {
-            // Enforce Safe Mock Sandbox Mode when provider is unconfigured in development/sandbox
-            messageRecord.deliveryStatus = 'sending';
-            messageRecord.externalProviderRef = `sandbox-mock-${Date.now()}`;
-            await this.store.createMessage(messageRecord);
-
-            return {
-              delivered: true,
-              deliveryStatus: 'sending' as DeliveryStatus,
-              message: messageRecord,
-              externalMessageId: messageRecord.externalProviderRef,
-              isSandboxed: true,
-              note: 'Executed in Zero-Trust Safe Mock Sandbox mode (unconfigured external provider).',
-            };
-          }
-
           messageRecord.deliveryStatus = 'failed';
           messageRecord.error = `NO_EXTERNAL_PROVIDER_CONFIGURED: Channel '${intent.channel}' currently has no external provider adapter connected.`;
           await this.store.createMessage(messageRecord);
@@ -622,6 +610,9 @@ export class CommunicationRuntime {
   async sendDraft(params: {
     draftId: string;
     approvalId: string;
+    actionName?: string;
+    target?: ActionTargetContext;
+    payload?: any;
     senderAddress?: string;
     senderName?: string;
     requestedBy?: AgentRole;
@@ -638,6 +629,31 @@ export class CommunicationRuntime {
 
     const role = params.requestedBy || draft.authoringRole;
     const effectiveWorkflowRef = params.workflowRef || draft.workflowRef;
+    const approval = params.approvalId ? await this.gate.getApprovalStore().get(params.approvalId) : null;
+
+    const effectivePayload = params.payload || approval?.payload || {
+      draftId: draft.id,
+      conversationId: draft.conversationId,
+      threadId: draft.threadId,
+      sender: {
+        address: params.senderAddress || `${role}@company.internal`,
+        name: params.senderName || role.toUpperCase(),
+      },
+      recipients: draft.intendedRecipients,
+      cc: draft.cc,
+      bcc: draft.bcc,
+      subject: draft.subject,
+      bodyContent: draft.bodyContent,
+      bodyMimeType: draft.bodyMimeType,
+    };
+
+    const effectiveTarget = params.target || approval?.target || {
+      targetSystem: draft.channel,
+      recipient: draft.intendedRecipients.map((r) => r.address).join(', '),
+      summary: `Send approved draft: "${draft.subject}"`,
+    };
+
+    const effectiveActionName = params.actionName || approval?.actionName || 'Send Communication (send)';
 
     return this.executeIntent({
       type: 'send',
@@ -645,26 +661,9 @@ export class CommunicationRuntime {
       channel: draft.channel,
       approvalId: params.approvalId,
       workflowRef: effectiveWorkflowRef,
-      payload: {
-        draftId: draft.id,
-        conversationId: draft.conversationId,
-        threadId: draft.threadId,
-        sender: {
-          address: params.senderAddress || `${role}@company.internal`,
-          name: params.senderName || role.toUpperCase(),
-        },
-        recipients: draft.intendedRecipients,
-        cc: draft.cc,
-        bcc: draft.bcc,
-        subject: draft.subject,
-        bodyContent: draft.bodyContent,
-        bodyMimeType: draft.bodyMimeType,
-      },
-      target: {
-        targetSystem: draft.channel,
-        recipient: draft.intendedRecipients.map((r) => r.address).join(', '),
-        summary: `Send approved draft: "${draft.subject}"`,
-      },
+      actionName: effectiveActionName,
+      payload: effectivePayload,
+      target: effectiveTarget,
     });
   }
 

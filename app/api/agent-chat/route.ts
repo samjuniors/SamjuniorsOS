@@ -4,6 +4,7 @@ import { SERVER_AGENTS } from "@/lib/server/agents/definitions";
 import { AgentRole } from "@/types/os";
 import { CompanyContextProvider } from "@/lib/server/context/company-context";
 import { MultiAgentOrchestrator } from "@/lib/server/orchestration/orchestrator";
+import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 
 type MessageIntent = "conversation" | "information_request" | "directive" | "ambiguous" | "approval_action";
 
@@ -171,10 +172,25 @@ Never fabricate imaginary financial metrics or unverified operational claims. Ad
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Session required to communicate with executive agents' },
+        { status: 401 }
+      );
+    }
+
     const { agentId, message, history, contextSnapshot, executeDirective, personaConfig } = await req.json();
 
     if (!agentId || !message) {
       return NextResponse.json({ error: "Agent ID and message are required" }, { status: 400 });
+    }
+
+    if (executeDirective && session.role !== 'FOUNDER') {
+      return NextResponse.json(
+        { error: 'Forbidden: Only verified Founder can trigger autonomous directive execution' },
+        { status: 403 }
+      );
     }
 
     const classification = classifyMessageIntent(message);

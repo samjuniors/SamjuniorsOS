@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { CommunicationRuntime } from '@/lib/server/communication/runtime';
 import { InMemoryCommunicationStore } from '@/lib/server/communication/store';
 import { CommunicationChannel, CommunicationIntentType } from '@/types/communication';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * GET /api/communication/intents
@@ -9,6 +10,11 @@ import { CommunicationChannel, CommunicationIntentType } from '@/types/communica
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const employeeRole = searchParams.get('employeeRole') || undefined;
     const type = (searchParams.get('type') as CommunicationIntentType) || undefined;
@@ -39,6 +45,11 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { type, employeeRole, skillId, channel, payload, target, workflowRef, approvalId } = body;
 

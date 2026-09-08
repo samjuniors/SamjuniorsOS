@@ -188,5 +188,103 @@
     "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
     "verifiedAt": "2026-09-08T06:02:15.059Z",
     "verifiedBy": "founder"
+  },
+  "clm-1788847532447-639851": {
+    "claimId": "clm-1788847532447-639851",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:05:32.455Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788847790604-ecc37b": {
+    "claimId": "clm-1788847790604-ecc37b",
+    "passed": false,
+    "policyOutcome": "rejected_contradiction",
+    "reason": "CONSTITUTIONAL_POLICY_VIOLATION: Claim violates the strict 80%+ gross margin floor mandate.",
+    "verifiedAt": "2026-09-08T06:09:50.606Z",
+    "verifiedBy": "system-policy",
+    "precedenceNote": "Constitutional 80% gross margin rule is non-negotiable."
+  },
+  "clm-1788847790602-8baa1f": {
+    "claimId": "clm-1788847790602-8baa1f",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:09:50.611Z",
+    "verifiedBy": "usr-founder-1"
+  },
+  "clm-1788847790630-842b1f": {
+    "claimId": "clm-1788847790630-842b1f",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:09:50.632Z",
+    "verifiedBy": "founder"
+  },
+  "clm-1788848794289-775e4b": {
+    "claimId": "clm-1788848794289-775e4b",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:26:34.298Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788848846961-30a693": {
+    "claimId": "clm-1788848846961-30a693",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:27:26.969Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788848906991-4105ee": {
+    "claimId": "clm-1788848906991-4105ee",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:28:26.999Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788848945730-f61e2f": {
+    "claimId": "clm-1788848945730-f61e2f",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:29:05.739Z",
+    "verifiedBy": "sophia-vance"
+  },
+  "clm-1788848945763-3c8642": {
+    "claimId": "clm-1788848945763-3c8642",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:29:05.764Z",
+    "verifiedBy": "coo-verifier-1"
+  },
+  "clm-1788848984788-614980": {
+    "claimId": "clm-1788848984788-614980",
+    "passed": false,
+    "policyOutcome": "rejected_contradiction",
+    "reason": "CONSTITUTIONAL_POLICY_VIOLATION: Claim violates the strict 80%+ gross margin floor mandate.",
+    "verifiedAt": "2026-09-08T06:29:44.790Z",
+    "verifiedBy": "system-policy",
+    "precedenceNote": "Constitutional 80% gross margin rule is non-negotiable."
+  },
+  "clm-1788848984787-1dd5fd": {
+    "claimId": "clm-1788848984787-1dd5fd",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:29:44.800Z",
+    "verifiedBy": "usr-founder-1"
+  },
+  "clm-1788848984815-7d2346": {
+    "claimId": "clm-1788848984815-7d2346",
+    "passed": true,
+    "policyOutcome": "approved_for_promotion",
+    "reason": "Claim successfully passed epistemic policy review and contradiction checks.",
+    "verifiedAt": "2026-09-08T06:29:44.817Z",
+    "verifiedBy": "founder"
   }
 }

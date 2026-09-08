@@ -7,8 +7,13 @@ import { ConstitutionalVerifier } from '@/lib/server/orchestration/verifier';
 import { MultiAgentOrchestrator } from '@/lib/server/orchestration/orchestrator';
 import { POST as orchestrateHandler } from '@/app/api/orchestrate/route';
 import { POST as epistemicHandler } from '@/app/api/epistemic/route';
+import { POST as agentChatHandler } from '@/app/api/agent-chat/route';
+import { GET as intentsHandler } from '@/app/api/communication/intents/route';
+import { GET as auditHandler } from '@/app/api/workflow/authorizations/audit/route';
 import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 import { CompanyMemoryStore } from '@/lib/server/memory/memory-store';
+import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
+import { verifyApprovalPayloadBinding, computeApprovalPayloadHash } from '@/lib/server/authorization/payload-binding';
 
 async function runTests() {
   console.log('================================================================');
@@ -298,9 +303,183 @@ async function runTests() {
 
     const checkMem = await memoryStore.getMemoryById(testUnverifiedMemory.id);
     assert.strictEqual(checkMem?.epistemicConfidence, 'unverified', 'Recorded unverified memory must retain unverified confidence');
-    recordPass('Unverified memory retained as unverified, preventing verified_fact contamination');
+    // 5.3 Attempting to inject verified_fact without evidenceReferences is automatically sanitized
+    const testDirectFactInjection = {
+      id: `mem-test-unbacked-${Date.now()}`,
+      decisionId: 'dec-unbacked-fact',
+      approvedAction: 'Claiming verified fact without evidence',
+      executionOutcome: 'unbacked',
+      evidenceReferences: [],
+      epistemicConfidence: 'verified_fact' as const,
+      timestamp: new Date().toISOString(),
+    };
+    await memoryStore.recordMemory(testDirectFactInjection);
+    const checkSanitized = await memoryStore.getMemoryById(testDirectFactInjection.id);
+    assert.strictEqual(checkSanitized?.epistemicConfidence, 'high_confidence', 'Unbacked verified_fact must be sanitized to high_confidence');
+    recordPass('Unbacked verified_fact memory is downgraded to high_confidence');
   } catch (err) {
     recordFail('Test Group 5 failed', err);
+  }
+
+  // ---------------------------------------------------------------------------
+  // TEST GROUP 6: DEV SECRET BOUNDARY & PRODUCTION ENFORCEMENT
+  // ---------------------------------------------------------------------------
+  console.log('\n--- Test Group 6: Dev Secret Boundary & Production Enforcement ---');
+
+  const originalEnv = process.env.NODE_ENV;
+  const originalDevSecret = process.env.SAMJUNIORS_DEV_SECRET;
+
+  try {
+    process.env.SAMJUNIORS_DEV_SECRET = 'correct_super_secret_dev_key';
+
+    // 6.1 Dev header with missing secret returns null session
+    const noSecretReq = new NextRequest('http://localhost:3000/api/orchestrate', {
+      method: 'POST',
+      headers: { 'x-samjuniors-dev-as': 'founder' },
+    });
+    const noSecretSession = await getAuthenticatedFounder(noSecretReq);
+    assert.strictEqual(noSecretSession, null, 'Dev header without dev secret header must be rejected');
+    recordPass('Dev header without dev secret header returns null session');
+
+    // 6.2 Dev header with wrong secret returns null session
+    const wrongSecretReq = new NextRequest('http://localhost:3000/api/orchestrate', {
+      method: 'POST',
+      headers: {
+        'x-samjuniors-dev-as': 'founder',
+        'x-samjuniors-dev-secret': 'wrong_secret',
+      },
+    });
+    const wrongSecretSession = await getAuthenticatedFounder(wrongSecretReq);
+    assert.strictEqual(wrongSecretSession, null, 'Dev header with invalid dev secret must be rejected');
+    recordPass('Dev header with invalid dev secret returns null session');
+
+    // 6.3 Dev header with correct secret in development returns valid founder session
+    const validSecretReq = new NextRequest('http://localhost:3000/api/orchestrate', {
+      method: 'POST',
+      headers: {
+        'x-samjuniors-dev-as': 'founder',
+        'x-samjuniors-dev-secret': 'correct_super_secret_dev_key',
+      },
+    });
+    const validDevSession = await getAuthenticatedFounder(validSecretReq);
+    assert.ok(validDevSession !== null, 'Dev session with matching secret should succeed in dev');
+    assert.strictEqual(validDevSession?.role, 'FOUNDER');
+    recordPass('Dev session with matching secret succeeds in development');
+
+    // 6.4 Production mode strictly rejects dev bypass even with matching secret
+    (process.env as any).NODE_ENV = 'production';
+    const prodDevReq = new NextRequest('http://localhost:3000/api/orchestrate', {
+      method: 'POST',
+      headers: {
+        'x-samjuniors-dev-as': 'founder',
+        'x-samjuniors-dev-secret': 'correct_super_secret_dev_key',
+      },
+    });
+    const prodDevSession = await getAuthenticatedFounder(prodDevReq);
+    assert.strictEqual(prodDevSession, null, 'Production mode must strictly reject all dev header bypasses');
+    recordPass('Production mode strictly rejects dev header bypass even with valid secret');
+  } finally {
+    (process.env as any).NODE_ENV = originalEnv;
+    process.env.SAMJUNIORS_DEV_SECRET = originalDevSecret;
+  }
+
+  // ---------------------------------------------------------------------------
+  // TEST GROUP 7: CRYPTOGRAPHIC PAYLOAD BINDING & ROUTE AUTHORIZATION
+  // ---------------------------------------------------------------------------
+  console.log('\n--- Test Group 7: Cryptographic Payload Binding & Route Authorization ---');
+
+  try {
+    // 7.1 Missing payloadHash fails closed on consequential action
+    const mockApprovalRecord: any = {
+      id: 'appr-no-hash',
+      decision: 'approved',
+      actionName: 'Send Email',
+      classification: 'external_communication',
+      employeeRole: 'pm',
+      target: { targetSystem: 'email', recipient: 'alice@example.com' },
+      payloadHash: undefined, // Missing hash
+    };
+    const bindingResult = verifyApprovalPayloadBinding(mockApprovalRecord, {
+      actionName: 'Send Email',
+      target: { targetSystem: 'email', recipient: 'alice@example.com' },
+      payload: { body: 'Hello' },
+    });
+    assert.strictEqual(bindingResult.isMatch, false, 'Missing payloadHash must fail closed');
+    recordPass('Cryptographic payload binding fails closed when approval lacks payloadHash');
+
+    // 7.2 POST /api/agent-chat: Unauthenticated request rejected with 401
+    const unauthChatReq = new NextRequest('http://localhost:3000/api/agent-chat', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'Hello' }),
+    });
+    const unauthChatRes = await agentChatHandler(unauthChatReq);
+    assert.strictEqual(unauthChatRes.status, 401, 'POST /api/agent-chat must reject unauthenticated requests with 401');
+    recordPass('POST /api/agent-chat rejects unauthenticated requests with HTTP 401');
+
+    // 7.3 GET /api/communication/intents: Unauthenticated request rejected with 401
+    const unauthIntentsReq = new NextRequest('http://localhost:3000/api/communication/intents', {
+      method: 'GET',
+    });
+    const unauthIntentsRes = await intentsHandler(unauthIntentsReq);
+    assert.strictEqual(unauthIntentsRes.status, 401, 'GET /api/communication/intents must reject unauthenticated requests with 401');
+    recordPass('GET /api/communication/intents rejects unauthenticated requests with HTTP 401');
+
+    // 7.4 GET /api/workflow/authorizations/audit: Unauthenticated request rejected with 401
+    const unauthAuditReq = new NextRequest('http://localhost:3000/api/workflow/authorizations/audit', {
+      method: 'GET',
+    });
+    const unauthAuditRes = await auditHandler(unauthAuditReq);
+    assert.strictEqual(unauthAuditRes.status, 401, 'GET /api/workflow/authorizations/audit must reject unauthenticated requests with 401');
+    recordPass('GET /api/workflow/authorizations/audit rejects unauthenticated requests with HTTP 401');
+  } catch (err) {
+    recordFail('Test Group 7 failed', err);
+  }
+
+  // ---------------------------------------------------------------------------
+  // TEST GROUP 8: AUDIT IMMUTABILITY & EPISTEMIC PROMOTION IDEMPOTENCY
+  // ---------------------------------------------------------------------------
+  console.log('\n--- Test Group 8: Audit Immutability & Epistemic Promotion Idempotency ---');
+
+  try {
+    // 8.1 Audit trail immutability in production
+    const auditStore = InMemoryAuditStore.getInstance();
+    const envBefore = process.env.NODE_ENV;
+    try {
+      (process.env as any).NODE_ENV = 'production';
+      let clearBlocked = false;
+      try {
+        auditStore.clear();
+      } catch (err: any) {
+        if (err.message.includes('strictly append-only and immutable')) {
+          clearBlocked = true;
+        }
+      }
+      assert.strictEqual(clearBlocked, true, 'Audit store clear() must throw error in production');
+      recordPass('InMemoryAuditStore.clear() strictly prohibited and throws in production');
+    } finally {
+      (process.env as any).NODE_ENV = envBefore;
+    }
+
+    // 8.2 Epistemic promotion idempotency
+    const pipeline = EpistemicPipeline.getInstance();
+    const claim = await pipeline.submitClaim({
+      statement: 'Idempotency test statement for canonical facts',
+      subject: 'Idempotency Testing Fact Subject',
+      category: 'technical_architecture',
+      proposedBy: 'researcher',
+      empiricalConfidence: 0.95,
+      reasoning: 'Grounded unit test verification',
+    });
+
+    await pipeline.verifyClaim(claim.id, { role: 'coo', userId: 'coo-verifier-1' });
+
+    const fact1 = await pipeline.promoteClaimToFact(claim.id, 'founder-001');
+    const fact2 = await pipeline.promoteClaimToFact(claim.id, 'founder-001');
+
+    assert.strictEqual(fact1.id, fact2.id, 'Promoting an already promoted claim must return the identical canonical fact');
+    recordPass('Promoting an already promoted claim is idempotent and does not duplicate facts');
+  } catch (err) {
+    recordFail('Test Group 8 failed', err);
   }
 
   console.log('\n================================================================');

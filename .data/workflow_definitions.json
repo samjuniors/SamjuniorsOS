@@ -1,125 +1,99 @@
 {
-  "wf-def-1@1.0.0": {
-    "id": "wf-def-1",
-    "name": "Customer Onboarding",
-    "description": "Standard self-serve onboarding flow.",
-    "objective": "Onboard a new customer and verify metrics",
+  "wf-comm-pipeline@1.0.0": {
+    "id": "wf-comm-pipeline",
     "version": "1.0.0",
-    "dependencies": [],
-    "requiredApprovals": 0,
-    "allowedRoles": [
-      "pm",
-      "finance",
-      "researcher"
-    ],
-    "allowedSkills": [
-      "plan",
-      "analyze",
-      "research"
-    ],
-    "expectedOutputs": [
-      "onboarding_report"
-    ],
+    "name": "Customer Communication Pipeline",
+    "description": "Prepare and dispatch client email with authorization",
+    "objective": "Safely draft, approve, and dispatch customer email",
     "steps": [
       {
-        "id": "step-1",
-        "name": "Analyze Inputs",
-        "description": "Analyze initial customer inputs",
-        "assignedRole": "researcher",
-        "skill": "research",
+        "id": "step-prep-email",
+        "name": "Prepare Outreach Email",
+        "description": "Draft outreach email",
+        "assignedRole": "pm",
+        "skill": "strategy_planning",
         "dependencies": [],
         "inputReferences": [],
         "outputReferences": [
-          "analysis_result"
+          "draft_email"
         ],
         "requiresApproval": false,
         "retryPolicy": {
           "maxRetries": 3,
           "backoffMs": 1000
-        }
+        },
+        "sideEffectClassification": "internal_mutation"
       },
       {
-        "id": "step-2",
-        "name": "Plan Action",
-        "description": "Plan onboarding steps",
-        "assignedRole": "pm",
-        "skill": "plan",
+        "id": "step-send-email",
+        "name": "Send Approved Outreach",
+        "description": "Send outreach email to prospect",
+        "assignedRole": "coo",
+        "skill": "executive_dispatch",
         "dependencies": [
-          "step-1"
+          "step-prep-email"
         ],
         "inputReferences": [
-          "analysis_result"
+          "draft_email"
         ],
         "outputReferences": [
-          "plan_result"
+          "sent_receipt"
         ],
-        "requiresApproval": true,
+        "requiresApproval": false,
         "retryPolicy": {
-          "maxRetries": 1,
+          "maxRetries": 3,
           "backoffMs": 1000
-        }
+        },
+        "sideEffectClassification": "external_communication"
       }
     ]
   },
-  "wf-def-1": {
-    "id": "wf-def-1",
-    "name": "Customer Onboarding",
-    "description": "Standard self-serve onboarding flow.",
-    "objective": "Onboard a new customer and verify metrics",
+  "wf-comm-pipeline": {
+    "id": "wf-comm-pipeline",
     "version": "1.0.0",
-    "dependencies": [],
-    "requiredApprovals": 0,
-    "allowedRoles": [
-      "pm",
-      "finance",
-      "researcher"
-    ],
-    "allowedSkills": [
-      "plan",
-      "analyze",
-      "research"
-    ],
-    "expectedOutputs": [
-      "onboarding_report"
-    ],
+    "name": "Customer Communication Pipeline",
+    "description": "Prepare and dispatch client email with authorization",
+    "objective": "Safely draft, approve, and dispatch customer email",
     "steps": [
       {
-        "id": "step-1",
-        "name": "Analyze Inputs",
-        "description": "Analyze initial customer inputs",
-        "assignedRole": "researcher",
-        "skill": "research",
+        "id": "step-prep-email",
+        "name": "Prepare Outreach Email",
+        "description": "Draft outreach email",
+        "assignedRole": "pm",
+        "skill": "strategy_planning",
         "dependencies": [],
         "inputReferences": [],
         "outputReferences": [
-          "analysis_result"
+          "draft_email"
         ],
         "requiresApproval": false,
         "retryPolicy": {
           "maxRetries": 3,
           "backoffMs": 1000
-        }
+        },
+        "sideEffectClassification": "internal_mutation"
       },
       {
-        "id": "step-2",
-        "name": "Plan Action",
-        "description": "Plan onboarding steps",
-        "assignedRole": "pm",
-        "skill": "plan",
+        "id": "step-send-email",
+        "name": "Send Approved Outreach",
+        "description": "Send outreach email to prospect",
+        "assignedRole": "coo",
+        "skill": "executive_dispatch",
         "dependencies": [
-          "step-1"
+          "step-prep-email"
         ],
         "inputReferences": [
-          "analysis_result"
+          "draft_email"
         ],
         "outputReferences": [
-          "plan_result"
+          "sent_receipt"
         ],
-        "requiresApproval": true,
+        "requiresApproval": false,
         "retryPolicy": {
-          "maxRetries": 1,
+          "maxRetries": 3,
           "backoffMs": 1000
-        }
+        },
+        "sideEffectClassification": "external_communication"
       }
     ]
   }

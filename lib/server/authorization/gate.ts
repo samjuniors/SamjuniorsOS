@@ -34,6 +34,7 @@ export interface DecideApprovalParams {
   decidedBy: string;
   reason?: string;
   expiresAt?: string;
+  userContext?: { role?: string; userId?: string };
 }
 
 export interface RevokeApprovalParams {

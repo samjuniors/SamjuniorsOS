@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { SideEffectClassification, AuthorizationEffect } from '@/types/authorization';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * GET /api/workflow/authorizations/audit
@@ -8,6 +9,11 @@ import { SideEffectClassification, AuthorizationEffect } from '@/types/authoriza
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized: Session required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const workflowInstanceId = searchParams.get('workflowInstanceId');
     const stepId = searchParams.get('stepId');

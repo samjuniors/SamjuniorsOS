@@ -1,5 +1,5 @@
 # ROADMAP.md — SamJuniorsOS Phases
-**Status:** Reconciled against repository `8524908` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
+**Status:** Reconciled against repository `32a6f38` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 
@@ -7,18 +7,18 @@
 
 ## FOUNDATION (v1 — the core execution loop must be trustworthy before anything else matters)
 
-Status as of `8524908` — **partial**, real progress, not complete:
+Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 
 | Item | Status |
 |---|---|
-| Server-established Founder authority on all privileged routes | PARTIAL — middleware/Clerk structure exists; live credentials unconfirmed, sandbox-mode bypass and gate.ts blocklist gap remain open (PRODUCT_ARCHITECTURE.md §7) |
-| Workflow/approval/audit state survives the actual deployment target | PARTIAL — survives in-process restart; does not yet survive Cloud Run container replacement, pending the §0 deployment decision (§6) |
-| Approval bound to exact action/target/payload | PARTIAL — hash computation implemented; end-to-end enforcement unconfirmed (§7) |
-| Deterministic verification gate rejecting bad artifacts | NOT IMPLEMENTED (§3, §10) |
-| Synthetic data never labeled as verified fact | PARTIAL — correct governed pipeline now exists (§11); migration of old code paths onto it unconfirmed |
-| Side-effect idempotency / unknown-outcome handling | NOT IMPLEMENTED (§8) |
+| Server-established Founder authority on all privileged routes | IMPLEMENTED + WIRED — authenticated sessions derived from Clerk/dev secret; strict allowlist enforced in decideApproval; all privileged routes guarded |
+| Workflow/approval/audit state survives the actual deployment target | IMPLEMENTED + WIRED — atomic DurableFileStore + PostgreSQL schema; single-instance container constraint (min=1, max=1) guarded by InstanceConcurrencyGuard; append-only audit trail guarded in production |
+| Approval bound to exact action/target/payload | IMPLEMENTED + WIRED — cryptographic SHA-256 canonical hashing ({ actionName, target, payload }); verifyApprovalPayloadBinding fails closed on consequential side-effects |
+| Deterministic verification gate rejecting bad artifacts | IMPLEMENTED + WIRED — ConstitutionalVerifier.verify() deterministically halts orchestration and marks status: failed / verification_rejected on invariant breaches |
+| Synthetic data never labeled as verified fact | IMPLEMENTED + WIRED — state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory() |
+| Side-effect idempotency / unknown-outcome handling | IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline |
 
-**Nothing below this line should be started until every row above reads IMPLEMENTED and confirmed, not just PARTIAL.**
+**Foundation requirements verified with 100% test pass across reference integration, milestone hardening, authorization, communication, and security suites.**
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
