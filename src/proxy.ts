@@ -42,9 +42,12 @@ function isExecutiveApiRoute(pathname: string): boolean {
 function applySecurityHeaders(req: NextRequest) {
   const requestId =
     req.headers.get(REQUEST_ID_HEADER) || crypto.randomUUID().toString();
+  // The Core V4 prototype (/) embeds the static prototype directory in a
+  // same-origin iframe; allow same-origin framing for those assets only.
+  const isPrototypeAsset = req.nextUrl.pathname.startsWith("/prototype/");
   const securityHeaders: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
+    "X-Frame-Options": isPrototypeAsset ? "SAMEORIGIN" : "DENY",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",

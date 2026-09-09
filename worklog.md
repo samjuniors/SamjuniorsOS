@@ -221,3 +221,24 @@ Stage Summary:
 - No gates bypassed, no new authorization system, no runtime rewrite; one principled authority fix + one command layer + one latent route bug fix
 - Known limitations documented (synchronous resume in POST; evaluateReadiness non-CAS save pre-existing; Vitals/Stream demo data still fabricated — next slices)
 - Recommend rotating the GitHub PAT (exposed in chat history); token not present in any committed file
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: Core V4 prototype — SamJuniorsOS founder operating experience (UI/DESIGN iteration only)
+
+Work Log:
+- Pulled GitHub main: 9cd8773 (Core V3 prototype) → built V4 on top. Read AGENTS.md, PRODUCT.md, WORKLOG.md, ROADMAP.md, CONTINUE.md, PROGRESS.md; inspected the V3 prototype (public/prototype/ index/css/js/README + verify script) and the repo Command Center implementation
+- Built Core V4 at public/prototype/v4/ (index.html 774 lines, prototype.css 3083 lines carrying V3 design tokens, prototype.js 1859 lines): five visible layers — FOUNDER INTENT (YOU ASKED / CORE UNDERSTANDS), ACTIVE WORK (WHAT/WHY/CURRENT STEP/EVIDENCE/NEXT + milestones), ATTENTION MODEL (WHAT MATTERS NOW + contextual header COMPANY·WORKING ON·ATTENTION·CLEAR), AUTHORITY BOUNDARY (FOUNDER DECISION REQUIRED + APPROVE/REDIRECT/REJECT/INSPECT + authority note), OUTCOME (result + evidence + provenance + CONTINUE WORK)
+- V4 interaction engine: persistent work threads (dock, SIMULATION-labeled, Continue/Pause/Steer/Stop/Inspect; decisions sheet with history), conversational steering composer (free text + 4 example chips, visibly modifies work), founder interruption (WORK UPDATED pane, old thread marked Redirected), honest consequence semantics (non-consequential templates skip the gate; REJECT = no action taken), 7 V3 states kept internal to the orb
+- Jarvis/Manual as one OS: 8 manual modules without Jarvis; AI credits gate AI capability only (depletion honestly pauses Jarvis, Manual stays usable); messenger as simulated contextual drawer; company state sheet answers the four founder questions; provenance modal scoped per thread (SOURCE→SIGNAL→CLAIM→FACT→DECISION→OUTCOME)
+- Sandbox preview wiring: src/app/page.tsx → same-origin iframe hosting /prototype/v4/index.html at /; fixed sandbox proxy + next.config headers (X-Frame-Options SAMEORIGIN for /prototype/* only); sandbox eslint ignores scripts/**
+- Verification: node scripts/verify-prototype-v4.js 17/17 PASS (IDs, pane mapping, demo-safety absence checks, no backend calls); node --check 0 errors; agent-browser E2E — all 15 required interactions verified on desktop 1600×1000 + mobile 420×900 (command lifecycle, persistent identity, steering incl. at decision gate, interruption, approve/reject/redirect, outcome+evidence+provenance, messenger, manual modules, credits semantics, attention updates incl. WATCH flow, reset); zero browser console errors; VLM visual review of ready/decision/outcome/provenance screenshots — coherent, premium, no glitches
+- Committed b7df665 "feat(prototype): Core V4 — founder operating experience…" (8 files, +6073) authored samjuniors <arena.class007@gmail.com>; pushed 9cd8773..b7df665 main→main; remote verified via fresh clone (files present, verify 17/17, no token in tree); WORKLOG.md (Phase 3.7 entry), PROGRESS.md, doc/ROADMAP.md updated in the repo commit
+- No production backend/API/database/auth/workflow/deployment files touched in the repo — git status showed only prototype + docs + verify script
+
+Stage Summary:
+- Core V4 COMPLETE and browser-verified: repository main at b7df665; V3 preserved at public/prototype/ for A/B design review
+- All simulated data is explicitly labeled (DEMO STATE watermark, SIMULATION badges, repo-confirmed v1 roster only, learning-not-persisted note)
+- Recommended next: founder design review V4 vs V3; if approved, map the five layers onto the real Phase 3.3 authoritative read layer + Phase 3.2 orchestration entry point
+- Recommend rotating the GitHub PAT (exposed in chat history); token not present in any committed file

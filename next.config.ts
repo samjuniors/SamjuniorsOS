@@ -24,6 +24,19 @@ const nextConfig: NextConfig = {
     ],
   },
   transpilePackages: ["motion"],
+  async headers() {
+    // The Core V4 prototype is hosted at / inside a same-origin iframe.
+    // Allow same-origin framing for the static prototype assets only.
+    return [
+      {
+        source: "/prototype/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

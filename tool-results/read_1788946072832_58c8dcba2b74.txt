@@ -1,0 +1,974 @@
+     1→/**
+     2→ * ==========================================================================
+     3→ * SAMJUNIORS OS — CORE V3 PROTOTYPE SCRIPT
+     4→ * Living Intelligence Field · Astra-Inspired Steering · 7 Core Operational States
+     5→ * ==========================================================================
+     6→ */
+     7→
+     8→(function () {
+     9→  'use strict';
+    10→
+    11→  // --- 1. NEW 7-STATE CORE OPERATIONAL MODEL ---
+    12→  const CORE_STATES = {
+    13→    ready: {
+    14→      label: "I'm ready.",
+    15→      headline: "SAMJUNIORS CORE",
+    16→      tagline: "I'm ready. What would you like to do?",
+    17→      contextHeader: "FOUNDER COMMAND",
+    18→      waveSpeed: 0.02,
+    19→      waveAmp: 5,
+    20→      color: '#00E5FF',
+    21→      secondaryColor: '#8B5CF6'
+    22→    },
+    23→    understanding: {
+    24→      label: "Understanding intent & gathering context...",
+    25→      headline: "UNDERSTANDING YOUR INTENT",
+    26→      tagline: "ANALYZING CONTEXT · CROSS-REFERENCING GOVERNED MEMORY",
+    27→      contextHeader: "CONTEXT GATHERING",
+    28→      waveSpeed: 0.05,
+    29→      waveAmp: 12,
+    30→      color: '#38BDF8',
+    31→      secondaryColor: '#6366F1'
+    32→    },
+    33→    working: {
+    34→      label: "Working on task: synthesizing data & drafting steps...",
+    35→      headline: "WORKING ON TASK",
+    36→      tagline: "EXECUTING WORKFLOW · TRANSPARENT STEPS IN PROGRESS",
+    37→      contextHeader: "COMPANY OPERATIONS",
+    38→      waveSpeed: 0.06,
+    39→      waveAmp: 16,
+    40→      color: '#A855F7',
+    41→      secondaryColor: '#00E5FF'
+    42→    },
+    43→    waiting_for_founder: {
+    44→      label: "Founder attention required · Consequential decision gate",
+    45→      headline: "FOUNDER ATTENTION",
+    46→      tagline: "A DECISION REQUIRES YOUR JUDGMENT TO PROCEED",
+    47→      contextHeader: "DECISION GATE",
+    48→      waveSpeed: 0.02,
+    49→      waveAmp: 6,
+    50→      color: '#F59E0B',
+    51→      secondaryColor: '#F43F5E'
+    52→    },
+    53→    executing: {
+    54→      label: "Executing governed step in deterministic sandbox...",
+    55→      headline: "EXECUTING",
+    56→      tagline: "DETERMINISTIC VERIFICATION & GOVERNED PASS ACTIVE",
+    57→      contextHeader: "SANDBOX EXECUTION",
+    58→      waveSpeed: 0.08,
+    59→      waveAmp: 18,
+    60→      color: '#10B981',
+    61→      secondaryColor: '#00E5FF'
+    62→    },
+    63→    completed: {
+    64→      label: "Task completed · Durable record committed",
+    65→      headline: "COMPLETED",
+    66→      tagline: "RESULT PREPARED · AUDIT TRAIL PRESERVED",
+    67→      contextHeader: "TASK COMPLETED",
+    68→      waveSpeed: 0.02,
+    69→      waveAmp: 4,
+    70→      color: '#10B981',
+    71→      secondaryColor: '#34D399'
+    72→    },
+    73→    blocked: {
+    74→      label: "Execution blocked: Invariant boundary reached",
+    75→      headline: "BLOCKED",
+    76→      tagline: "CONSTITUTIONAL SAFETY CHECK HALTED ACTION",
+    77→      contextHeader: "EXCEPTION DIAGNOSTIC",
+    78→      waveSpeed: 0.015,
+    79→      waveAmp: 3,
+    80→      color: '#F43F5E',
+    81→      secondaryColor: '#991B1B'
+    82→    }
+    83→  };
+    84→
+    85→  let currentState = 'ready';
+    86→  let currentMode = 'jarvis';
+    87→  let creditsAvailable = true;
+    88→  let activeTaskTitle = "Company Review Preparation";
+    89→  let simulationTimer = null;
+    90→
+    91→  // --- DOM REFERENCES ---
+    92→  const body = document.body;
+    93→  const coreHeadline = document.getElementById('coreHeadline');
+    94→  const coreTagline = document.getElementById('coreTagline');
+    95→  const coreStatusLabel = document.getElementById('coreStatusLabel');
+    96→  const headerContextText = document.getElementById('headerContextText');
+    97→  const toastNotification = document.getElementById('toastNotification');
+    98→  const clockDisplay = document.getElementById('clockDisplay');
+    99→
+   100→  // Mode Buttons
+   101→  const btnJarvisMode = document.getElementById('btnJarvisMode');
+   102→  const btnManualMode = document.getElementById('btnManualMode');
+   103→
+   104→  // Credits
+   105→  const btnToggleCredits = document.getElementById('btnToggleCredits');
+   106→  const creditsVal = document.getElementById('creditsVal');
+   107→  const jarvisUnavailableBanner = document.getElementById('jarvisUnavailableBanner');
+   108→  const btnRestoreCredits = document.getElementById('btnRestoreCredits');
+   109→
+   110→  // Atmosphere
+   111→  const btnAtmosphereToggle = document.getElementById('btnAtmosphereToggle');
+   112→
+   113→  // Command & Input
+   114→  const commandForm = document.getElementById('commandForm');
+   115→  const commandInput = document.getElementById('commandInput');
+   116→  const suggestedPromptsRow = document.getElementById('suggestedPromptsRow');
+   117→
+   118→  // Work Surface Elements
+   119→  const coreWorkSurface = document.getElementById('coreWorkSurface');
+   120→  const intentQuoteDisplay = document.getElementById('intentQuoteDisplay');
+   121→  const workingTaskName = document.getElementById('workingTaskName');
+   122→  const btnSteeringRedirect = document.getElementById('btnSteeringRedirect');
+   123→  const btnSteeringStop = document.getElementById('btnSteeringStop');
+   124→  const btnExecutingStop = document.getElementById('btnExecutingStop');
+   125→  const steeringPopover = document.getElementById('steeringPopover');
+   126→  const btnCloseSteering = document.getElementById('btnCloseSteering');
+   127→
+   128→  // Decision Elements
+   129→  const btnDecisionApprove = document.getElementById('btnDecisionApprove');
+   130→  const btnDecisionReject = document.getElementById('btnDecisionReject');
+   131→  const btnDismissBlocked = document.getElementById('btnDismissBlocked');
+   132→  const btnCompletedDismiss = document.getElementById('btnCompletedDismiss');
+   133→  const btnCompletedAction1 = document.getElementById('btnCompletedAction1');
+   134→  const btnCompletedAction2 = document.getElementById('btnCompletedAction2');
+   135→
+   136→  // Satellites
+   137→  const beaconCompanyState = document.getElementById('beaconCompanyState');
+   138→  const beaconWorkforce = document.getElementById('beaconWorkforce');
+   139→  const beaconAttention = document.getElementById('beaconAttention');
+   140→  const beaconActivity = document.getElementById('beaconActivity');
+   141→
+   142→  // Contextual Sheets & Modals
+   143→  const sheetCompanyState = document.getElementById('sheetCompanyState');
+   144→  const btnCloseCompanyState = document.getElementById('btnCloseCompanyState');
+   145→  const sheetActivity = document.getElementById('sheetActivity');
+   146→  const btnCloseActivity = document.getElementById('btnCloseActivity');
+   147→  const workforceDrawer = document.getElementById('workforceDrawer');
+   148→  const btnCloseWorkforce = document.getElementById('btnCloseWorkforce');
+   149→  const auditModal = document.getElementById('auditModal');
+   150→  const btnViewAllActivity = document.getElementById('btnViewAllActivity');
+   151→  const btnCloseAudit = document.getElementById('btnCloseAudit');
+   152→
+   153→  // Messenger
+   154→  const messengerDrawer = document.getElementById('messengerDrawer');
+   155→  const btnOpenMessenger = document.getElementById('btnOpenMessenger');
+   156→  const btnCloseMessenger = document.getElementById('btnCloseMessenger');
+   157→  const messengerForm = document.getElementById('messengerForm');
+   158→  const messengerInput = document.getElementById('messengerInput');
+   159→  const messengerMessages = document.getElementById('messengerMessages');
+   160→
+   161→  // Manual Mode Direct Cards
+   162→  const cardManualCompany = document.getElementById('cardManualCompany');
+   163→  const cardManualWork = document.getElementById('cardManualWork');
+   164→  const cardManualDecisions = document.getElementById('cardManualDecisions');
+   165→  const cardManualResearch = document.getElementById('cardManualResearch');
+   166→  const cardManualWorkforce = document.getElementById('cardManualWorkforce');
+   167→  const cardManualActivity = document.getElementById('cardManualActivity');
+   168→  const cardManualAudit = document.getElementById('cardManualAudit');
+   169→
+   170→  // State Test Toolbar
+   171→  const stateChips = document.querySelectorAll('.state-chip');
+   172→
+   173→  // --- 2. PROCEDURAL STARFIELD BACKGROUND ---
+   174→  const starCanvas = document.getElementById('starfieldCanvas');
+   175→  const starCtx = starCanvas ? starCanvas.getContext('2d') : null;
+   176→  let stars = [];
+   177→
+   178→  function initStarfield() {
+   179→    if (!starCanvas || !starCtx) return;
+   180→    resizeStarfield();
+   181→    window.addEventListener('resize', resizeStarfield);
+   182→
+   183→    stars = [];
+   184→    const count = Math.floor((starCanvas.width * starCanvas.height) / 5000);
+   185→    for (let i = 0; i < count; i++) {
+   186→      stars.push({
+   187→        x: Math.random() * starCanvas.width,
+   188→        y: Math.random() * (starCanvas.height * 0.75),
+   189→        radius: Math.random() * 1.3 + 0.3,
+   190→        alpha: Math.random() * 0.8 + 0.2,
+   191→        twinkleSpeed: Math.random() * 0.02 + 0.005,
+   192→        twinkleOffset: Math.random() * Math.PI * 2
+   193→      });
+   194→    }
+   195→  }
+   196→
+   197→  function resizeStarfield() {
+   198→    if (!starCanvas) return;
+   199→    starCanvas.width = window.innerWidth;
+   200→    starCanvas.height = window.innerHeight;
+   201→  }
+   202→
+   203→  function drawStarfield(time) {
+   204→    if (!starCtx) return;
+   205→    starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
+   206→
+   207→    for (let s of stars) {
+   208→      const alpha = s.alpha * (0.6 + 0.4 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset));
+   209→      starCtx.fillStyle = `rgba(220, 240, 255, ${alpha.toFixed(3)})`;
+   210→      starCtx.beginPath();
+   211→      starCtx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+   212→      starCtx.fill();
+   213→    }
+   214→  }
+   215→
+   216→  // --- 3. PROCEDURAL CURVED EARTH HORIZON & CITY LIGHTS ---
+   217→  const earthCanvas = document.getElementById('earthHorizonCanvas');
+   218→  const earthCtx = earthCanvas ? earthCanvas.getContext('2d') : null;
+   219→  let cityLightClusters = [];
+   220→
+   221→  function initEarthHorizon() {
+   222→    if (!earthCanvas || !earthCtx) return;
+   223→    resizeEarthHorizon();
+   224→    window.addEventListener('resize', resizeEarthHorizon);
+   225→
+   226→    cityLightClusters = [];
+   227→    const clusterCount = 14;
+   228→    for (let c = 0; c < clusterCount; c++) {
+   229→      const clusterX = 0.05 + Math.random() * 0.85;
+   230→      const points = [];
+   231→      const pointCount = 20 + Math.floor(Math.random() * 35);
+   232→      for (let p = 0; p < pointCount; p++) {
+   233→        points.push({
+   234→          dx: (Math.random() - 0.5) * 80,
+   235→          dy: Math.random() * 30,
+   236→          size: Math.random() * 1.6 + 0.6,
+   237→          hue: Math.random() > 0.3 ? 38 + Math.random() * 14 : 200 + Math.random() * 20,
+   238→          baseAlpha: Math.random() * 0.7 + 0.2
+   239→        });
+   240→      }
+   241→      cityLightClusters.push({ clusterX, points });
+   242→    }
+   243→  }
+   244→
+   245→  function resizeEarthHorizon() {
+   246→    if (!earthCanvas) return;
+   247→    earthCanvas.width = window.innerWidth;
+   248→    earthCanvas.height = earthCanvas.parentElement.clientHeight;
+   249→  }
+   250→
+   251→  function drawEarthHorizon(time) {
+   252→    if (!earthCtx) return;
+   253→    const w = earthCanvas.width;
+   254→    const h = earthCanvas.height;
+   255→
+   256→    earthCtx.clearRect(0, 0, w, h);
+   257→
+   258→    const startY = h * 0.45;
+   259→    const peakY = h * 0.32;
+   260→    const endY = h * 0.48;
+   261→
+   262→    earthCtx.save();
+   263→
+   264→    const glowGradient = earthCtx.createLinearGradient(0, peakY - 45, 0, peakY + 25);
+   265→    glowGradient.addColorStop(0, 'rgba(0, 229, 255, 0)');
+   266→    glowGradient.addColorStop(0.5, 'rgba(0, 180, 255, 0.18)');
+   267→    glowGradient.addColorStop(0.85, 'rgba(0, 229, 255, 0.45)');
+   268→    glowGradient.addColorStop(1, 'rgba(0, 255, 255, 0.75)');
+   269→
+   270→    earthCtx.beginPath();
+   271→    earthCtx.moveTo(-50, startY);
+   272→    earthCtx.bezierCurveTo(w * 0.3, peakY, w * 0.7, peakY + 10, w + 50, endY);
+   273→    earthCtx.lineTo(w + 50, h + 50);
+   274→    earthCtx.lineTo(-50, h + 50);
+   275→    earthCtx.closePath();
+   276→
+   277→    earthCtx.strokeStyle = glowGradient;
+   278→    earthCtx.lineWidth = 4;
+   279→    earthCtx.stroke();
+   280→
+   281→    const surfaceGradient = earthCtx.createLinearGradient(0, peakY, 0, h);
+   282→    surfaceGradient.addColorStop(0, '#04070E');
+   283→    surfaceGradient.addColorStop(0.15, '#070C18');
+   284→    surfaceGradient.addColorStop(0.6, '#080E1C');
+   285→    surfaceGradient.addColorStop(1, '#05070D');
+   286→
+   287→    earthCtx.fillStyle = surfaceGradient;
+   288→    earthCtx.fill();
+   289→
+   290→    for (let cluster of cityLightClusters) {
+   291→      const cx = cluster.clusterX * w;
+   292→      const t = cluster.clusterX;
+   293→      const cy = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * peakY + t * t * endY;
+   294→
+   295→      for (let pt of cluster.points) {
+   296→        const px = cx + pt.dx;
+   297→        const py = cy + 12 + pt.dy;
+   298→        if (py < cy) continue;
+   299→
+   300→        const flicker = 0.7 + 0.3 * Math.sin(time * 0.003 + px);
+   301→        const alpha = (pt.baseAlpha * flicker).toFixed(2);
+   302→        earthCtx.fillStyle = `hsla(${pt.hue}, 90%, 65%, ${alpha})`;
+   303→        earthCtx.beginPath();
+   304→        earthCtx.arc(px, py, pt.size, 0, Math.PI * 2);
+   305→        earthCtx.fill();
+   306→      }
+   307→    }
+   308→
+   309→    earthCtx.restore();
+   310→  }
+   311→
+   312→  // --- 4. PROCEDURAL LIVING INTELLIGENCE CORE (STATE-AWARE PARTICLES) ---
+   313→  const coreCanvas = document.getElementById('coreCanvas');
+   314→  const coreCtx = coreCanvas ? coreCanvas.getContext('2d') : null;
+   315→
+   316→  // Particle models for the 7 states
+   317→  let coreParticles = [];
+   318→  function initCoreParticles() {
+   319→    coreParticles = [];
+   320→    const count = 36;
+   321→    for (let i = 0; i < count; i++) {
+   322→      coreParticles.push({
+   323→        baseAngle: Math.random() * Math.PI * 2,
+   324→        dist: Math.random() * 80 + 10,
+   325→        speed: Math.random() * 0.002 + 0.001,
+   326→        radius: Math.random() * 2 + 1,
+   327→        seed: Math.random() * 10
+   328→      });
+   329→    }
+   330→  }
+   331→  initCoreParticles();
+   332→
+   333→  function drawLivingCore(time) {
+   334→    if (!coreCtx) return;
+   335→    const w = coreCanvas.width;
+   336→    const h = coreCanvas.height;
+   337→    const cx = w / 2;
+   338→    const cy = h / 2;
+   339→    const stateMeta = CORE_STATES[currentState] || CORE_STATES.ready;
+   340→
+   341→    coreCtx.clearRect(0, 0, w, h);
+   342→
+   343→    const radius = 95;
+   344→
+   345→    coreCtx.save();
+   346→
+   347→    // 1. External Glow
+   348→    const bloomGrad = coreCtx.createRadialGradient(cx, cy, radius * 0.8, cx, cy, radius * 1.5);
+   349→    bloomGrad.addColorStop(0, stateMeta.color + '44');
+   350→    bloomGrad.addColorStop(0.5, stateMeta.secondaryColor + '18');
+   351→    bloomGrad.addColorStop(1, 'transparent');
+   352→    coreCtx.fillStyle = bloomGrad;
+   353→    coreCtx.beginPath();
+   354→    coreCtx.arc(cx, cy, radius * 1.5, 0, Math.PI * 2);
+   355→    coreCtx.fill();
+   356→
+   357→    // 2. 3D Body Shading
+   358→    const lightX = cx + radius * 0.45;
+   359→    const lightY = cy - radius * 0.4;
+   360→    const sphereGrad = coreCtx.createRadialGradient(lightX, lightY, 5, cx, cy, radius);
+   361→
+   362→    if (currentState === 'blocked') {
+   363→      sphereGrad.addColorStop(0, '#5A121D');
+   364→      sphereGrad.addColorStop(0.5, '#2A080D');
+   365→      sphereGrad.addColorStop(1, '#080204');
+   366→    } else if (currentState === 'waiting_for_founder') {
+   367→      sphereGrad.addColorStop(0, '#5C3806');
+   368→      sphereGrad.addColorStop(0.5, '#291703');
+   369→      sphereGrad.addColorStop(1, '#0A0501');
+   370→    } else {
+   371→      sphereGrad.addColorStop(0, '#1E2D4A');
+   372→      sphereGrad.addColorStop(0.35, '#0E1729');
+   373→      sphereGrad.addColorStop(0.7, '#070B14');
+   374→      sphereGrad.addColorStop(1, '#04060B');
+   375→    }
+   376→
+   377→    coreCtx.fillStyle = sphereGrad;
+   378→    coreCtx.beginPath();
+   379→    coreCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+   380→    coreCtx.fill();
+   381→
+   382→    // 3. Iridescent Rim
+   383→    const rimGrad = coreCtx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+   384→    rimGrad.addColorStop(0, stateMeta.color);
+   385→    rimGrad.addColorStop(0.4, stateMeta.secondaryColor);
+   386→    rimGrad.addColorStop(0.85, 'rgba(255, 255, 255, 0.8)');
+   387→    rimGrad.addColorStop(1, 'transparent');
+   388→
+   389→    coreCtx.strokeStyle = rimGrad;
+   390→    coreCtx.lineWidth = 2.4;
+   391→    coreCtx.beginPath();
+   392→    coreCtx.arc(cx, cy, radius - 1, 0, Math.PI * 2);
+   393→    coreCtx.stroke();
+   394→
+   395→    // 4. Living Particle Field Behavior (Specific to State)
+   396→    for (let p of coreParticles) {
+   397→      let px = cx;
+   398→      let py = cy;
+   399→
+   400→      if (currentState === 'ready') {
+   401→        // Slow calm breathing orbit
+   402→        const angle = p.baseAngle + time * (p.speed * 0.8);
+   403→        const dist = (p.dist * 0.7) * (0.8 + 0.2 * Math.sin(time * 0.001 + p.seed));
+   404→        px = cx + Math.cos(angle) * dist;
+   405→        py = cy + Math.sin(angle) * dist * 0.6;
+   406→      } else if (currentState === 'understanding') {
+   407→        // Particles converge inward toward core center
+   408→        const inwardT = (Math.sin(time * 0.002 + p.seed) + 1) * 0.5;
+   409→        const dist = 85 * (1 - inwardT * 0.7);
+   410→        const angle = p.baseAngle + time * 0.002;
+   411→        px = cx + Math.cos(angle) * dist;
+   412→        py = cy + Math.sin(angle) * dist * 0.7;
+   413→      } else if (currentState === 'working') {
+   414→        // Circulate dynamically around/through Core
+   415→        const angle = p.baseAngle + time * (p.speed * 3.0);
+   416→        const dist = p.dist * 0.8;
+   417→        px = cx + Math.cos(angle) * dist;
+   418→        py = cy + Math.sin(angle) * dist * 0.8;
+   419→      } else if (currentState === 'waiting_for_founder') {
+   420→        // Activity slows; focused amber concentration
+   421→        const angle = p.baseAngle + time * (p.speed * 0.2);
+   422→        const dist = 30 + 20 * Math.sin(time * 0.001 + p.seed);
+   423→        px = cx + Math.cos(angle) * dist;
+   424→        py = cy + Math.sin(angle) * dist * 0.9;
+   425→      } else if (currentState === 'executing') {
+   426→        // Directional, structured movement along horizontal/orbital axes
+   427→        const flowX = Math.sin(time * 0.003 + p.seed) * 75;
+   428→        const flowY = Math.cos(time * 0.0015 + p.seed) * 25;
+   429→        px = cx + flowX;
+   430→        py = cy + flowY;
+   431→      } else if (currentState === 'completed') {
+   432→        // Calm settling glow
+   433→        const angle = p.baseAngle + time * 0.0006;
+   434→        const dist = p.dist * 0.6;
+   435→        px = cx + Math.cos(angle) * dist;
+   436→        py = cy + Math.sin(angle) * dist * 0.6;
+   437→      } else if (currentState === 'blocked') {
+   438→        // Restrained perimeter warning
+   439→        const angle = p.baseAngle;
+   440→        const dist = radius * 0.85;
+   441→        px = cx + Math.cos(angle) * dist;
+   442→        py = cy + Math.sin(angle) * dist * 0.6;
+   443→      }
+   444→
+   445→      const pAlpha = 0.35 + 0.45 * Math.sin(time * 0.003 + p.seed);
+   446→      coreCtx.fillStyle = stateMeta.color;
+   447→      coreCtx.globalAlpha = pAlpha;
+   448→      coreCtx.beginPath();
+   449→      coreCtx.arc(px, py, p.radius, 0, Math.PI * 2);
+   450→      coreCtx.fill();
+   451→    }
+   452→    coreCtx.globalAlpha = 1.0;
+   453→
+   454→    // 5. Lens Flare Glare
+   455→    const flareX = cx + radius * 0.68;
+   456→    const flareY = cy - radius * 0.68;
+   457→    const flareGrad = coreCtx.createRadialGradient(flareX, flareY, 0, flareX, flareY, 26);
+   458→    flareGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
+   459→    flareGrad.addColorStop(0.35, stateMeta.color);
+   460→    flareGrad.addColorStop(1, 'transparent');
+   461→
+   462→    coreCtx.fillStyle = flareGrad;
+   463→    coreCtx.beginPath();
+   464→    coreCtx.arc(flareX, flareY, 26, 0, Math.PI * 2);
+   465→    coreCtx.fill();
+   466→
+   467→    coreCtx.restore();
+   468→  }
+   469→
+   470→  // --- 5. FREQUENCY WAVE ---
+   471→  const waveCanvas = document.getElementById('waveCanvas');
+   472→  const waveCtx = waveCanvas ? waveCanvas.getContext('2d') : null;
+   473→
+   474→  function drawFrequencyWave(time) {
+   475→    if (!waveCtx) return;
+   476→    const w = waveCanvas.width;
+   477→    const h = waveCanvas.height;
+   478→    const cy = h / 2;
+   479→    const meta = CORE_STATES[currentState] || CORE_STATES.ready;
+   480→
+   481→    waveCtx.clearRect(0, 0, w, h);
+   482→
+   483→    waveCtx.save();
+   484→    waveCtx.lineWidth = 1.8;
+   485→    waveCtx.lineCap = 'round';
+   486→
+   487→    const waves = [
+   488→      { speed: meta.waveSpeed, amp: meta.waveAmp, freq: 0.02, color: meta.color, alpha: 0.85 },
+   489→      { speed: -meta.waveSpeed * 1.3, amp: meta.waveAmp * 0.6, freq: 0.035, color: meta.secondaryColor, alpha: 0.5 }
+   490→    ];
+   491→
+   492→    for (let wConfig of waves) {
+   493→      waveCtx.strokeStyle = wConfig.color;
+   494→      waveCtx.globalAlpha = wConfig.alpha;
+   495→      waveCtx.beginPath();
+   496→
+   497→      for (let x = 0; x < w; x++) {
+   498→        const taper = Math.sin((x / w) * Math.PI);
+   499→        const y = cy + Math.sin(x * wConfig.freq + time * wConfig.speed) * wConfig.amp * taper;
+   500→        if (x === 0) waveCtx.moveTo(x, y);
+   501→        else waveCtx.lineTo(x, y);
+   502→      }
+   503→      waveCtx.stroke();
+   504→    }
+   505→
+   506→    waveCtx.restore();
+   507→  }
+   508→
+   509→  // Animation Loop
+   510→  function renderLoop(time) {
+   511→    drawStarfield(time);
+   512→    drawEarthHorizon(time);
+   513→    drawLivingCore(time);
+   514→    drawFrequencyWave(time);
+   515→    requestAnimationFrame(renderLoop);
+   516→  }
+   517→
+   518→  // --- 6. STATE MACHINE (7 CORE STATES) ---
+   519→  function setCoreState(stateKey, notifyUser = true) {
+   520→    if (!CORE_STATES[stateKey]) return;
+   521→    currentState = stateKey;
+   522→
+   523→    Object.keys(CORE_STATES).forEach(s => body.classList.remove('state-' + s));
+   524→    body.classList.add('state-' + stateKey);
+   525→
+   526→    const meta = CORE_STATES[stateKey];
+   527→    if (coreStatusLabel) coreStatusLabel.textContent = meta.label;
+   528→    if (coreHeadline) coreHeadline.textContent = meta.headline;
+   529→    if (coreTagline) coreTagline.textContent = meta.tagline;
+   530→    if (headerContextText) headerContextText.textContent = meta.contextHeader;
+   531→
+   532→    // Update state toolbar
+   533→    stateChips.forEach(chip => {
+   534→      if (chip.dataset.state === stateKey) {
+   535→        chip.classList.add('active');
+   536→      } else {
+   537→        chip.classList.remove('active');
+   538→      }
+   539→    });
+   540→
+   541→    // Update Contextual Beacons visibility/appearance based on state
+   542→    if (beaconAttention) {
+   543→      if (stateKey === 'waiting_for_founder') {
+   544→        beaconAttention.style.display = 'flex';
+   545→        beaconAttention.classList.add('highlight-attention');
+   546→      } else {
+   547→        beaconAttention.classList.remove('highlight-attention');
+   548→      }
+   549→    }
+   550→
+   551→    if (notifyUser) {
+   552→      showToast(`Core state: ${stateKey.toUpperCase().replace(/_/g, ' ')}`);
+   553→    }
+   554→  }
+   555→
+   556→  // --- 7. JARVIS VS MANUAL MODE ---
+   557→  function setOperatingMode(mode) {
+   558→    currentMode = mode;
+   559→    if (mode === 'jarvis') {
+   560→      body.classList.remove('mode-manual');
+   561→      body.classList.add('mode-jarvis');
+   562→      btnJarvisMode.classList.add('active');
+   563→      btnManualMode.classList.remove('active');
+   564→      if (headerContextText) headerContextText.textContent = "FOUNDER COMMAND";
+   565→      commandInput.placeholder = "What would you like Core to work on?";
+   566→      showToast("JARVIS Mode: Natural-language company command active.");
+   567→    } else {
+   568→      body.classList.remove('mode-jarvis');
+   569→      body.classList.add('mode-manual');
+   570→      btnManualMode.classList.add('active');
+   571→      btnJarvisMode.classList.remove('active');
+   572→      if (headerContextText) headerContextText.textContent = "GOVERNED SYSTEMS";
+   573→      showToast("MANUAL Mode: Direct operational access (Zero AI mediation).");
+   574→    }
+   575→  }
+   576→
+   577→  // --- 8. AI CREDITS SIMULATION ---
+   578→  function toggleAICredits() {
+   579→    creditsAvailable = !creditsAvailable;
+   580→    if (!creditsAvailable) {
+   581→      body.classList.remove('credits-available');
+   582→      body.classList.add('credits-depleted');
+   583→      creditsVal.textContent = "Credits: 0 (Depleted)";
+   584→      showToast("AI capability depleted. Core switches to Manual fallback.");
+   585→    } else {
+   586→      body.classList.remove('credits-depleted');
+   587→      body.classList.add('credits-available');
+   588→      creditsVal.textContent = "Credits: 850";
+   589→      showToast("AI credits restored. Jarvis assistance available.");
+   590→    }
+   591→  }
+   592→
+   593→  // --- 9. STEERING & REDIRECT CONTROLS (ASTRA-INSPIRED) ---
+   594→  function openSteering() {
+   595→    if (steeringPopover) {
+   596→      steeringPopover.classList.add('open');
+   597→      steeringPopover.setAttribute('aria-hidden', 'false');
+   598→    }
+   599→  }
+   600→
+   601→  function closeSteering() {
+   602→    if (steeringPopover) {
+   603→      steeringPopover.classList.remove('open');
+   604→      steeringPopover.setAttribute('aria-hidden', 'true');
+   605→    }
+   606→  }
+   607→
+   608→  function applySteering(steeringType) {
+   609→    closeSteering();
+   610→    if (simulationTimer) clearTimeout(simulationTimer);
+   611→
+   612→    if (steeringType === 'product') {
+   613→      activeTaskTitle = "Product Context Deep Dive";
+   614→      if (workingTaskName) workingTaskName.textContent = activeTaskTitle;
+   615→      if (headerContextText) headerContextText.textContent = "LUMORA · PRODUCT CONTEXT";
+   616→      showToast("Steered work: Core focused on Product context.");
+   617→    } else if (steeringType === 'research') {
+   618→      activeTaskTitle = "Market Research Signal Synthesis";
+   619→      if (workingTaskName) workingTaskName.textContent = activeTaskTitle;
+   620→      if (headerContextText) headerContextText.textContent = "RESEARCH & SIGNALS";
+   621→      showToast("Steered work: Core focused on Market Research.");
+   622→    } else if (steeringType === 'findings') {
+   623→      setCoreState('completed');
+   624→      showToast("Core paused: Showing findings accumulated so far.");
+   625→      return;
+   626→    } else if (steeringType === 'new_directive') {
+   627→      setCoreState('ready');
+   628→      commandInput.focus();
+   629→      showToast("Core reset: Ready for new instruction.");
+   630→      return;
+   631→    }
+   632→
+   633→    // Continue working with updated focus
+   634→    setCoreState('working', false);
+   635→    simulationTimer = setTimeout(() => {
+   636→      setCoreState('waiting_for_founder', false);
+   637→      showToast("Steered task reached Decision Gate.");
+   638→    }, 2400);
+   639→  }
+   640→
+   641→  function stopOngoingWork() {
+   642→    if (simulationTimer) clearTimeout(simulationTimer);
+   643→    closeSteering();
+   644→    setCoreState('ready', false);
+   645→    showToast("Ongoing work halted by Founder. Core returned to Ready.");
+   646→  }
+   647→
+   648→  // --- 10. COMMAND EXECUTION LIFECYCLE SIMULATION ---
+   649→  function runCommandSimulation(commandText) {
+   650→    if (!commandText || commandText.trim() === '') return;
+   651→    const cleanCmd = commandText.trim();
+   652→    commandInput.value = '';
+   653→
+   654→    if (!creditsAvailable) {
+   655→      showToast("Cannot run Jarvis command: AI Credits depleted. Use Manual mode.");
+   656→      return;
+   657→    }
+   658→
+   659→    if (simulationTimer) clearTimeout(simulationTimer);
+   660→
+   661→    // Contextual direct navigation check
+   662→    const lower = cleanCmd.toLowerCase();
+   663→    if (lower.includes('status') || lower.includes('company')) {
+   664→      toggleCompanyState(true);
+   665→      return;
+   666→    }
+   667→    if (lower.includes('workforce') || lower.includes('sophia') || lower.includes('thorne')) {
+   668→      toggleWorkforce(true);
+   669→      return;
+   670→    }
+   671→
+   672→    activeTaskTitle = cleanCmd;
+   673→    if (intentQuoteDisplay) intentQuoteDisplay.textContent = `"${cleanCmd}"`;
+   674→    if (workingTaskName) workingTaskName.textContent = cleanCmd;
+   675→
+   676→    showToast(`Intent captured: "${cleanCmd}"`);
+   677→    setCoreState('understanding', false);
+   678→
+   679→    // 1. Understanding -> Working (1.4s)
+   680→    simulationTimer = setTimeout(() => {
+   681→      setCoreState('working', false);
+   682→      showToast("Core working: Evaluating company context & signals...");
+   683→
+   684→      // 2. Working -> Waiting for Founder (3.0s)
+   685→      simulationTimer = setTimeout(() => {
+   686→        setCoreState('waiting_for_founder', false);
+   687→        showToast("Consequential Decision Gate reached: Founder Attention Required.");
+   688→      }, 3000);
+   689→
+   690→    }, 1400);
+   691→  }
+   692→
+   693→  // --- 11. CONTEXTUAL SHEETS & MODALS ---
+   694→  function toggleCompanyState(forceOpen) {
+   695→    const shouldOpen = forceOpen !== undefined ? forceOpen : !sheetCompanyState.classList.contains('open');
+   696→    if (shouldOpen) {
+   697→      sheetCompanyState.classList.add('open');
+   698→      sheetCompanyState.setAttribute('aria-hidden', 'false');
+   699→      sheetActivity.classList.remove('open');
+   700→    } else {
+   701→      sheetCompanyState.classList.remove('open');
+   702→      sheetCompanyState.setAttribute('aria-hidden', 'true');
+   703→    }
+   704→  }
+   705→
+   706→  function toggleActivitySheet(forceOpen) {
+   707→    const shouldOpen = forceOpen !== undefined ? forceOpen : !sheetActivity.classList.contains('open');
+   708→    if (shouldOpen) {
+   709→      sheetActivity.classList.add('open');
+   710→      sheetActivity.setAttribute('aria-hidden', 'false');
+   711→      sheetCompanyState.classList.remove('open');
+   712→    } else {
+   713→      sheetActivity.classList.remove('open');
+   714→      sheetActivity.setAttribute('aria-hidden', 'true');
+   715→    }
+   716→  }
+   717→
+   718→  function toggleWorkforce(forceOpen) {
+   719→    const shouldOpen = forceOpen !== undefined ? forceOpen : !workforceDrawer.classList.contains('open');
+   720→    if (shouldOpen) {
+   721→      workforceDrawer.classList.add('open');
+   722→      workforceDrawer.setAttribute('aria-hidden', 'false');
+   723→    } else {
+   724→      workforceDrawer.classList.remove('open');
+   725→      workforceDrawer.setAttribute('aria-hidden', 'true');
+   726→    }
+   727→  }
+   728→
+   729→  function openAuditModal() {
+   730→    auditModal.classList.add('open');
+   731→    auditModal.setAttribute('aria-hidden', 'false');
+   732→  }
+   733→
+   734→  function closeAuditModal() {
+   735→    auditModal.classList.remove('open');
+   736→    auditModal.setAttribute('aria-hidden', 'true');
+   737→  }
+   738→
+   739→  function toggleMessenger() {
+   740→    const isOpen = messengerDrawer.classList.contains('open');
+   741→    if (isOpen) {
+   742→      messengerDrawer.classList.remove('open');
+   743→      messengerDrawer.setAttribute('aria-hidden', 'true');
+   744→    } else {
+   745→      messengerDrawer.classList.add('open');
+   746→      messengerDrawer.setAttribute('aria-hidden', 'false');
+   747→      messengerInput.focus();
+   748→    }
+   749→  }
+   750→
+   751→  function showToast(msg) {
+   752→    if (!toastNotification) return;
+   753→    toastNotification.textContent = msg;
+   754→    toastNotification.classList.add('show');
+   755→    setTimeout(() => {
+   756→      toastNotification.classList.remove('show');
+   757→    }, 3200);
+   758→  }
+   759→
+   760→  // --- 12. REAL-TIME CLOCK ---
+   761→  function updateClock() {
+   762→    if (!clockDisplay) return;
+   763→    const now = new Date();
+   764→    const dateOpts = { weekday: 'short', month: 'short', day: 'numeric' };
+   765→    const dateStr = now.toLocaleDateString('en-US', dateOpts);
+   766→    const timeStr = now.toTimeString().substring(0, 5);
+   767→
+   768→    const dateSpan = clockDisplay.querySelector('.clock-date');
+   769→    const timeSpan = clockDisplay.querySelector('.clock-time');
+   770→    if (dateSpan) dateSpan.textContent = dateStr;
+   771→    if (timeSpan) timeSpan.textContent = timeStr;
+   772→  }
+   773→
+   774→  // --- 13. EVENT BINDINGS ---
+   775→  function bindEvents() {
+   776→    // Mode toggles
+   777→    btnJarvisMode.addEventListener('click', () => setOperatingMode('jarvis'));
+   778→    btnManualMode.addEventListener('click', () => setOperatingMode('manual'));
+   779→
+   780→    // AI Credits
+   781→    btnToggleCredits.addEventListener('click', toggleAICredits);
+   782→    btnRestoreCredits.addEventListener('click', () => {
+   783→      toggleAICredits();
+   784→      setOperatingMode('jarvis');
+   785→    });
+   786→
+   787→    // Atmosphere
+   788→    btnAtmosphereToggle.addEventListener('click', () => {
+   789→      body.classList.toggle('atmosphere-bright');
+   790→      showToast(body.classList.contains('atmosphere-bright') ? "Lighting: High Contrast" : "Lighting: Cinematic Obsidian");
+   791→    });
+   792→
+   793→    // Core Canvas click cycles core state
+   794→    coreCanvas.addEventListener('click', () => {
+   795→      if (currentState === 'ready') setCoreState('understanding');
+   796→      else if (currentState === 'understanding') setCoreState('working');
+   797→      else if (currentState === 'working') setCoreState('waiting_for_founder');
+   798→      else setCoreState('ready');
+   799→    });
+   800→
+   801→    // Satellites
+   802→    beaconCompanyState.addEventListener('click', () => toggleCompanyState());
+   803→    btnCloseCompanyState.addEventListener('click', () => toggleCompanyState(false));
+   804→
+   805→    beaconWorkforce.addEventListener('click', () => toggleWorkforce());
+   806→    btnCloseWorkforce.addEventListener('click', () => toggleWorkforce(false));
+   807→
+   808→    beaconAttention.addEventListener('click', () => {
+   809→      setCoreState('waiting_for_founder');
+   810→    });
+   811→
+   812→    beaconActivity.addEventListener('click', () => toggleActivitySheet());
+   813→    btnCloseActivity.addEventListener('click', () => toggleActivitySheet(false));
+   814→
+   815→    // Steering Buttons
+   816→    btnSteeringRedirect.addEventListener('click', openSteering);
+   817→    btnSteeringStop.addEventListener('click', stopOngoingWork);
+   818→    btnExecutingStop.addEventListener('click', stopOngoingWork);
+   819→    btnCloseSteering.addEventListener('click', closeSteering);
+   820→
+   821→    document.querySelectorAll('.steering-opt-btn').forEach(btn => {
+   822→      btn.addEventListener('click', () => {
+   823→        applySteering(btn.dataset.steering);
+   824→      });
+   825→    });
+   826→
+   827→    // Decision Actions
+   828→    btnDecisionApprove.addEventListener('click', () => {
+   829→      setCoreState('executing', false);
+   830→      showToast("Founder signature recorded. Executing ratified step...");
+   831→
+   832→      simulationTimer = setTimeout(() => {
+   833→        setCoreState('completed');
+   834→        showToast("Consequential action executed and committed to audit store.");
+   835→      }, 2000);
+   836→    });
+   837→
+   838→    btnDecisionReject.addEventListener('click', () => {
+   839→      setCoreState('ready');
+   840→      showToast("Action rejected by Founder. Core returned to Ready.");
+   841→    });
+   842→
+   843→    btnDismissBlocked.addEventListener('click', () => {
+   844→      setCoreState('ready');
+   845→      showToast("Diagnostic acknowledged. Core returned to Ready.");
+   846→    });
+   847→
+   848→    btnCompletedDismiss.addEventListener('click', () => {
+   849→      setCoreState('ready');
+   850→    });
+   851→
+   852→    btnCompletedAction1.addEventListener('click', () => {
+   853→      setCoreState('waiting_for_founder');
+   854→    });
+   855→
+   856→    btnCompletedAction2.addEventListener('click', () => {
+   857→      openAuditModal();
+   858→    });
+   859→
+   860→    // Command Form Submit
+   861→    commandForm.addEventListener('submit', (e) => {
+   862→      e.preventDefault();
+   863→      runCommandSimulation(commandInput.value);
+   864→    });
+   865→
+   866→    // Suggested Prompt Chips
+   867→    suggestedPromptsRow.addEventListener('click', (e) => {
+   868→      const chip = e.target.closest('.prompt-chip');
+   869→      if (chip && chip.dataset.prompt) {
+   870→        runCommandSimulation(chip.dataset.prompt);
+   871→      }
+   872→    });
+   873→
+   874→    // Toolbar 7 State Chips
+   875→    stateChips.forEach(chip => {
+   876→      chip.addEventListener('click', () => {
+   877→        setCoreState(chip.dataset.state);
+   878→      });
+   879→    });
+   880→
+   881→    // Audit Inspector
+   882→    btnViewAllActivity.addEventListener('click', openAuditModal);
+   883→    btnCloseAudit.addEventListener('click', closeAuditModal);
+   884→
+   885→    // Messenger
+   886→    btnOpenMessenger.addEventListener('click', toggleMessenger);
+   887→    btnCloseMessenger.addEventListener('click', toggleMessenger);
+   888→
+   889→    messengerForm.addEventListener('submit', (e) => {
+   890→      e.preventDefault();
+   891→      const val = messengerInput.value.trim();
+   892→      if (!val) return;
+   893→      messengerInput.value = '';
+   894→
+   895→      const userBubble = document.createElement('div');
+   896→      userBubble.className = 'msg-bubble msg-user';
+   897→      userBubble.textContent = val;
+   898→      messengerMessages.appendChild(userBubble);
+   899→      messengerMessages.scrollTop = messengerMessages.scrollHeight;
+   900→
+   901→      setTimeout(() => {
+   902→        const agentBubble = document.createElement('div');
+   903→        agentBubble.className = 'msg-bubble msg-agent';
+   904→        agentBubble.innerHTML = `
+   905→          <div class="msg-sender">Sophia (COO)</div>
+   906→          <div class="msg-content">Understood, Sam. Core state is tracking this directive.</div>
+   907→        `;
+   908→        messengerMessages.appendChild(agentBubble);
+   909→        messengerMessages.scrollTop = messengerMessages.scrollHeight;
+   910→      }, 1000);
+   911→    });
+   912→
+   913→    // Manual Mode Direct Navigation Cards
+   914→    cardManualCompany.addEventListener('click', () => toggleCompanyState(true));
+   915→    cardManualWorkforce.addEventListener('click', () => toggleWorkforce(true));
+   916→    cardManualActivity.addEventListener('click', () => toggleActivitySheet(true));
+   917→    cardManualAudit.addEventListener('click', () => openAuditModal());
+   918→    cardManualDecisions.addEventListener('click', () => {
+   919→      setOperatingMode('jarvis');
+   920→      setCoreState('waiting_for_founder');
+   921→    });
+   922→    cardManualWork.addEventListener('click', () => {
+   923→      setOperatingMode('jarvis');
+   924→      setCoreState('working');
+   925→    });
+   926→    cardManualResearch.addEventListener('click', () => {
+   927→      setOperatingMode('jarvis');
+   928→      setCoreState('understanding');
+   929→    });
+   930→
+   931→    // Global Keybindings (1..7 for the 7 states)
+   932→    window.addEventListener('keydown', (e) => {
+   933→      if (e.key === 'Escape') {
+   934→        toggleCompanyState(false);
+   935→        toggleActivitySheet(false);
+   936→        toggleWorkforce(false);
+   937→        closeAuditModal();
+   938→        closeSteering();
+   939→        messengerDrawer.classList.remove('open');
+   940→      }
+   941→
+   942→      if (!['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+   943→        const stateKeys = Object.keys(CORE_STATES);
+   944→        const num = parseInt(e.key, 10);
+   945→        if (num >= 1 && num <= stateKeys.length) {
+   946→          setCoreState(stateKeys[num - 1]);
+   947→        }
+   948→        if (e.key === 'c' || e.key === 'C') toggleCompanyState();
+   949→        if (e.key === 'w' || e.key === 'W') toggleWorkforce();
+   950→        if (e.key === 'a' || e.key === 'A') toggleActivitySheet();
+   951→        if (e.key === 'm' || e.key === 'M') toggleMessenger();
+   952→      }
+   953→    });
+   954→
+   955→    // Backdrop click
+   956→    auditModal.addEventListener('click', (e) => {
+   957→      if (e.target === auditModal) closeAuditModal();
+   958→    });
+   959→  }
+   960→
+   961→  // --- INITIALIZATION ---
+   962→  function init() {
+   963→    initStarfield();
+   964→    initEarthHorizon();
+   965→    bindEvents();
+   966→    updateClock();
+   967→    setInterval(updateClock, 30000);
+   968→    requestAnimationFrame(renderLoop);
+   969→  }
+   970→
+   971→  window.addEventListener('DOMContentLoaded', init);
+   972→
+   973→})();
+   974→
