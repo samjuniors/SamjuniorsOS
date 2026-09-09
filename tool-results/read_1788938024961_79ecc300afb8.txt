@@ -1,0 +1,856 @@
+     1→import { 
+     2→  WorkflowDefinition, 
+     3→  WorkflowInstanceState, 
+     4→  WorkflowStepState,
+     5→  WorkflowStepStatus,
+     6→  WorkflowInstanceStatus
+     7→} from '../../../types/workflow';
+     8→import { SideEffectClassification, AuthorizationEvaluationRequest } from '@/types/authorization';
+     9→import { getWorkflowStore, WorkflowDefinitionStore, WorkflowInstanceStore } from './store';
+    10→import { ServerAgentExecutor } from '../agents/executor';
+    11→import { SideEffectAuthorizationGate } from '../authorization/gate';
+    12→import { validateStepTransition, validateInstanceTransition } from './state-machine';
+    13→import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
+    14→import { ConstitutionalVerifier } from '../orchestration/verifier';
+    15→import { resolveTargetRepository, executeGitHubIntelligence } from '../tools/providers/github';
+    16→import { mapSkillToProtocolStep } from './dynamic-dag';
+    17→import { v4 as uuidv4 } from 'uuid';
+    18→
+    19→export class WorkflowRuntime {
+    20→  private store: WorkflowDefinitionStore & WorkflowInstanceStore;
+    21→  private executor: ServerAgentExecutor;
+    22→  private gate: SideEffectAuthorizationGate;
+    23→
+    24→  constructor(store?: WorkflowDefinitionStore & WorkflowInstanceStore) {
+    25→    this.store = store || getWorkflowStore();
+    26→    this.executor = new ServerAgentExecutor();
+    27→    this.gate = SideEffectAuthorizationGate.getInstance();
+    28→  }
+    29→
+    30→  /**
+    31→   * Registers a new immutable Workflow Definition.
+    32→   */
+    33→  async registerWorkflow(definition: WorkflowDefinition): Promise<void> {
+    34→    await this.store.saveDefinition(definition);
+    35→  }
+    36→
+    37→  /**
+    38→   * Creates a new Workflow Instance from a Definition.
+    39→   */
+    40→  async createInstance(workflowId: string, version?: string, initialInputs?: Record<string, any>): Promise<WorkflowInstanceState> {
+    41→    const definition = await this.store.getDefinition(workflowId, version);
+    42→    if (!definition) {
+    43→      throw new Error(`Workflow definition not found: ${workflowId}`);
+    44→    }
+    45→
+    46→    const instanceId = `wf-inst-${uuidv4()}`;
+    47→    const now = new Date().toISOString();
+    48→
+    49→    const stepStates: Record<string, WorkflowStepState> = {};
+    50→    for (const step of definition.steps) {
+    51→      stepStates[step.id] = {
+    52→        stepId: step.id,
+    53→        status: 'pending',
+    54→        assignedRole: step.assignedRole,
+    55→        skill: step.skill,
+    56→        outputs: {},
+    57→        evidenceReferences: [],
+    58→        retryCount: 0,
+    59→        sideEffectClassification: step.sideEffectClassification,
+    60→      };
+    61→      
+    62→      // If step has no dependencies, it might be ready. We evaluate readiness later.
+    63→    }
+    64→
+    65→    const instance: WorkflowInstanceState = {
+    66→      instanceId,
+    67→      workflowId: definition.id,
+    68→      version: definition.version,
+    69→      objective: definition.objective,
+    70→      status: 'pending',
+    71→      stepStates,
+    72→      createdAt: now,
+    73→      updatedAt: now,
+    74→      outputs: { directive: definition.objective, ...(initialInputs || {}) },
+    75→      evidenceReferences: [],
+    76→    };
+    77→
+    78→    await this.store.saveInstance(instance);
+    79→    
+    80→    // Evaluate readiness for all steps
+    81→    await this.evaluateReadiness(instanceId);
+    82→
+    83→    return (await this.store.getInstance(instanceId))!;
+    84→  }
+    85→
+    86→  /**
+    87→   * Central state-transition mechanism for steps.
+    88→   */
+    89→  async transitionStep(
+    90→    instanceId: string, 
+    91→    stepId: string, 
+    92→    newStatus: WorkflowStepStatus, 
+    93→    payload?: { error?: string, outputs?: Record<string, any>, evidenceReferences?: string[] }
+    94→  ): Promise<WorkflowInstanceState> {
+    95→    const instance = await this.store.getInstance(instanceId);
+    96→    if (!instance) throw new Error(`Instance not found: ${instanceId}`);
+    97→    
+    98→    const step = instance.stepStates[stepId];
+    99→    if (!step) throw new Error(`Step not found: ${stepId} in instance ${instanceId}`);
+   100→
+   101→    const oldStatus = step.status;
+   102→
+   103→    // Validate Transitions
+   104→    if (oldStatus === 'completed' && newStatus === 'running') {
+   105→      throw new Error(`Invalid transition: Cannot transition from completed to running.`);
+   106→    }
+   107→    if (oldStatus === 'cancelled' && newStatus === 'running') {
+   108→      throw new Error(`Invalid transition: Cannot transition from cancelled to running.`);
+   109→    }
+   110→    if (oldStatus === 'failed' && newStatus === 'completed') {
+   111→      throw new Error(`Invalid transition: Cannot transition from failed to completed directly without retry/recovery.`);
+   112→    }
+   113→    if (oldStatus === 'awaiting_approval' && newStatus === 'completed') {
+   114→      // Must go to approved -> ready/running first, or check approvalState
+   115→      if (step.approvalState !== 'approved') {
+   116→        throw new Error(`Invalid transition: Cannot complete step awaiting approval without approval.`);
+   117→      }
+   118→    }
+   119→    if (oldStatus === 'blocked' && newStatus === 'running') {
+   120→      // Must be unblocked to ready first, or condition resolved
+   121→      throw new Error(`Invalid transition: Cannot run a blocked step without resolving condition.`);
+   122→    }
+   123→    
+   124→    validateStepTransition(oldStatus, newStatus);
+   125→
+   126→    if (oldStatus === newStatus) {
+   127→      return instance; // No-op
+   128→    }
+   129→
+   130→    const stepPatch: Partial<WorkflowStepState> = {};
+   131→    if (payload?.error) stepPatch.error = payload.error;
+   132→    if (payload?.outputs) stepPatch.outputs = payload.outputs;
+   133→    if (payload?.evidenceReferences) {
+   134→      stepPatch.evidenceReferences = [...(step.evidenceReferences || []), ...payload.evidenceReferences];
+   135→    }
+   136→
+   137→    await this.store.transitionStepAtomic(
+   138→      instanceId,
+   139→      stepId,
+   140→      newStatus,
+   141→      instance.stateVersion,
+   142→      stepPatch
+   143→    );
+   144→
+   145→    // Evaluate instance status after step transition
+   146→    await this.evaluateInstanceStatus(instanceId);
+   147→    // Evaluate readiness of subsequent steps
+   148→    await this.evaluateReadiness(instanceId);
+   149→
+   150→    return (await this.store.getInstance(instanceId))!;
+   151→  }
+   152→
+   153→  /**
+   154→   * Evaluates and updates the readiness of all pending steps in an instance.
+   155→   * Enforces centralized Side-Effect Gate authorization policies before advancing to ready.
+   156→   */
+   157→  async evaluateReadiness(instanceId: string): Promise<void> {
+   158→    const instance = await this.store.getInstance(instanceId);
+   159→    if (!instance) return;
+   160→
+   161→    const def = await this.store.getDefinition(instance.workflowId, instance.version);
+   162→    if (!def) return;
+   163→
+   164→    let instanceChanged = false;
+   165→
+   166→    for (const stepDef of def.steps) {
+   167→      const stepState = instance.stepStates[stepDef.id];
+   168→      if (
+   169→        stepState.status !== 'pending' && 
+   170→        stepState.status !== 'blocked' && 
+   171→        stepState.status !== 'awaiting_approval' && 
+   172→        stepState.status !== 'waiting'
+   173→      ) {
+   174→        continue; // Only pending, blocked, awaiting_approval, or waiting steps can become ready
+   175→      }
+   176→
+   177→      let dependenciesMet = true;
+   178→      for (const depId of stepDef.dependencies) {
+   179→        const depState = instance.stepStates[depId];
+   180→        if (!depState || depState.status !== 'completed') {
+   181→          dependenciesMet = false;
+   182→          break;
+   183→        }
+   184→      }
+   185→
+   186→      // Check inputs existing (simulated for now by checking previous outputs if specified in dependencies)
+   187→      let inputsMet = true;
+   188→      for (const inputKey of stepDef.inputReferences) {
+   189→        let found = false;
+   190→        if (inputKey === 'directive' || inputKey === 'objective') {
+   191→          found = Boolean(instance.objective || def.objective);
+   192→        } else if (instance.outputs && instance.outputs[inputKey] !== undefined) {
+   193→          found = true;
+   194→        } else {
+   195→          for (const s of Object.values(instance.stepStates)) {
+   196→            if (s.status === 'completed' && s.outputs && (s.outputs[inputKey] !== undefined || s.outputs['result'] !== undefined)) {
+   197→              found = true;
+   198→              break;
+   199→            }
+   200→          }
+   201→        }
+   202→        if (!found) {
+   203→          inputsMet = false;
+   204→          break;
+   205→        }
+   206→      }
+   207→
+   208→      if (dependenciesMet && inputsMet) {
+   209→        // Classify step side-effects
+   210→        let classification: SideEffectClassification = stepDef.sideEffectClassification || 'read_only';
+   211→        if (!stepDef.sideEffectClassification && stepDef.requiresApproval) {
+   212→          classification = 'external_communication';
+   213→        }
+   214→
+   215→        const authRequest: AuthorizationEvaluationRequest = {
+   216→          employeeRole: stepDef.assignedRole,
+   217→          skillId: stepDef.skill,
+   218→          actionName: stepDef.name,
+   219→          classification,
+   220→          workflowContext: {
+   221→            workflowId: instance.workflowId,
+   222→            workflowInstanceId: instance.instanceId,
+   223→            stepId: stepDef.id,
+   224→            objective: def.objective,
+   225→          },
+   226→          target: stepDef.targetContext,
+   227→        };
+   228→
+   229→        const decision = await this.gate.evaluateAuthorization(authRequest);
+   230→        stepState.authorizationReasonCode = decision.reasonCode;
+   231→
+   232→        if (decision.effect === 'denied') {
+   233→          stepState.status = 'blocked';
+   234→          stepState.blockedReason = decision.reason;
+   235→          if (decision.approvalId) stepState.approvalId = decision.approvalId;
+   236→          instanceChanged = true;
+   237→        } else if (decision.effect === 'approval_required') {
+   238→          // If requires approval and not approved, create or link approval request
+   239→          if (stepState.approvalState !== 'approved') {
+   240→            const approvalRecord = await this.gate.requestApproval({
+   241→              actionName: stepDef.name,
+   242→              classification,
+   243→              workflowInstanceId: instance.instanceId,
+   244→              stepId: stepDef.id,
+   245→              employeeRole: stepDef.assignedRole,
+   246→              scope: stepDef.approvalScope,
+   247→              notes: stepDef.description,
+   248→              target: stepDef.targetContext,
+   249→              requestedBy: stepDef.assignedRole,
+   250→            });
+   251→
+   252→            stepState.approvalId = approvalRecord.id;
+   253→            stepState.status = 'awaiting_approval';
+   254→            stepState.blockedReason = decision.reason;
+   255→            instanceChanged = true;
+   256→          } else {
+   257→            stepState.status = 'ready';
+   258→            instanceChanged = true;
+   259→          }
+   260→        } else if (decision.effect === 'allowed') {
+   261→          // An 'allowed' decision carrying APPROVED_BY_FOUNDER means the policy evaluator
+   262→          // matched an authoritative, Founder-decided approval record for this exact
+   263→          // step. The record is the authority; stepState.approvalState is a derived
+   264→          // cache of it. If the cache were allowed to veto the record, an approved
+   265→          // side-effect step would remain 'awaiting_approval' forever, because no
+   266→          // production path ever sets approvalState other than through this evaluation.
+   267→          const founderAuthorizedByRecord =
+   268→            decision.reasonCode === 'APPROVED_BY_FOUNDER' && Boolean(decision.approvalId);
+   269→          if (
+   270→            stepDef.requiresApproval &&
+   271→            stepState.approvalState !== 'approved' &&
+   272→            !founderAuthorizedByRecord
+   273→          ) {
+   274→            stepState.status = 'awaiting_approval';
+   275→            instanceChanged = true;
+   276→          } else {
+   277→            stepState.status = 'ready';
+   278→            stepState.approvalState = 'approved';
+   279→            if (decision.approvalId) stepState.approvalId = decision.approvalId;
+   280→            stepState.blockedReason = undefined;
+   281→            instanceChanged = true;
+   282→          }
+   283→        }
+   284→      }
+   285→    }
+   286→
+   287→    if (instanceChanged) {
+   288→      instance.updatedAt = new Date().toISOString();
+   289→      await this.store.saveInstance(instance);
+   290→    }
+   291→  }
+   292→
+   293→  /**
+   294→   * Approves a step that is awaiting approval by the Founder.
+   295→   */
+   296→  async approveStep(
+   297→    instanceId: string, 
+   298→    stepId: string, 
+   299→    decidedBy: string = 'founder', 
+   300→    reason?: string
+   301→  ): Promise<WorkflowInstanceState> {
+   302→    const instance = await this.store.getInstance(instanceId);
+   303→    if (!instance) throw new Error(`Instance not found: ${instanceId}`);
+   304→    
+   305→    const step = instance.stepStates[stepId];
+   306→    if (!step) throw new Error(`Step not found: ${stepId}`);
+   307→
+   308→    if (step.status !== 'awaiting_approval') {
+   309→      throw new Error(`Step is not awaiting approval.`);
+   310→    }
+   311→
+   312→    // Record decision in SideEffectAuthorizationGate
+   313→    if (step.approvalId) {
+   314→      await this.gate.decideApproval({
+   315→        approvalId: step.approvalId,
+   316→        decision: 'approved',
+   317→        decidedBy,
+   318→        reason: reason || 'Approved by Founder',
+   319→      });
+   320→    } else {
+   321→      // Create and immediately approve a new FounderApprovalRecord
+   322→      const def = await this.store.getDefinition(instance.workflowId, instance.version);
+   323→      const stepDef = def?.steps.find(s => s.id === stepId);
+   324→      const classification: SideEffectClassification = stepDef?.sideEffectClassification || 'external_communication';
+   325→      
+   326→      const record = await this.gate.requestApproval({
+   327→        actionName: stepDef?.name || stepId,
+   328→        classification,
+   329→        workflowInstanceId: instanceId,
+   330→        stepId,
+   331→        employeeRole: step.assignedRole,
+   332→        scope: stepDef?.approvalScope,
+   333→        requestedBy: step.assignedRole,
+   334→      });
+   335→
+   336→      await this.gate.decideApproval({
+   337→        approvalId: record.id,
+   338→        decision: 'approved',
+   339→        decidedBy,
+   340→        reason: reason || 'Approved by Founder',
+   341→      });
+   342→      step.approvalId = record.id;
+   343→    }
+   344→
+   345→    step.approvalState = 'approved';
+   346→    step.status = 'ready';
+   347→    step.blockedReason = undefined;
+   348→    instance.updatedAt = new Date().toISOString();
+   349→    
+   350→    await this.store.saveInstance(instance);
+   351→    return instance;
+   352→  }
+   353→
+   354→  /**
+   355→   * Re-evaluate overall workflow instance status.
+   356→   */
+   357→  private async evaluateInstanceStatus(instanceId: string): Promise<void> {
+   358→    const instance = await this.store.getInstance(instanceId);
+   359→    if (!instance) return;
+   360→
+   361→    const states = Object.values(instance.stepStates);
+   362→    
+   363→    const allCompleted = states.every(s => s.status === 'completed');
+   364→    const anyFailed = states.some(s => s.status === 'failed');
+   365→    const anyCancelled = states.some(s => s.status === 'cancelled');
+   366→    const anyRunning = states.some(s => s.status === 'running');
+   367→    const anyReady = states.some(s => s.status === 'ready');
+   368→    const anyAwaitingApproval = states.some(s => s.status === 'awaiting_approval');
+   369→    const anyBlocked = states.some(s => s.status === 'blocked');
+   370→    
+   371→    let newStatus = instance.status;
+   372→    
+   373→    if (allCompleted) {
+   374→      newStatus = 'completed';
+   375→    } else if (anyFailed) {
+   376→      newStatus = 'failed';
+   377→    } else if (anyCancelled) {
+   378→      newStatus = 'cancelled';
+   379→    } else if (anyRunning) {
+   380→      newStatus = 'running';
+   381→    } else if (anyAwaitingApproval && !anyRunning && !anyReady) {
+   382→      newStatus = 'awaiting_approval';
+   383→    } else if (anyBlocked && !anyRunning && !anyReady) {
+   384→      newStatus = 'blocked';
+   385→    } else if (instance.status === 'pending' && anyReady) {
+   386→      newStatus = 'running';
+   387→    }
+   388→
+   389→    if (newStatus !== instance.status) {
+   390→      instance.status = newStatus;
+   391→      instance.updatedAt = new Date().toISOString();
+   392→      await this.store.saveInstance(instance);
+   393→    }
+   394→  }
+   395→
+   396→  /**
+   397→   * Execute a Ready step via SideEffectAuthorizationGate and existing orchestration.
+   398→   * Atomically claims the step before external execution and persists transitions atomically.
+   399→   */
+   400→  async executeReadyStep(
+   401→    instanceId: string, 
+   402→    stepId: string, 
+   403→    workerId: string = 'worker-default',
+   404→    options?: { executeTools?: boolean }
+   405→  ): Promise<void> {
+   406→    const instance = await this.store.getInstance(instanceId);
+   407→    if (!instance) throw new Error(`Instance not found: ${instanceId}`);
+   408→    
+   409→    const step = instance.stepStates[stepId];
+   410→    if (!step) throw new Error(`Step not found: ${stepId}`);
+   411→
+   412→    const def = await this.store.getDefinition(instance.workflowId, instance.version);
+   413→    if (!def) throw new Error(`Workflow definition not found`);
+   414→    const stepDef = def.steps.find(s => s.id === stepId);
+   415→    if (!stepDef) throw new Error(`Step definition not found`);
+   416→
+   417→    if (step.status !== 'ready') {
+   418→      throw new Error(`Step is not ready for execution. Current status: ${step.status}`);
+   419→    }
+   420→
+   421→    // Side-Effect Gate Authorization Check prior to execution
+   422→    let classification: SideEffectClassification = stepDef.sideEffectClassification || 'read_only';
+   423→    if (!stepDef.sideEffectClassification && stepDef.requiresApproval) {
+   424→      classification = 'external_communication';
+   425→    }
+   426→
+   427→    const authRequest: AuthorizationEvaluationRequest = {
+   428→      employeeRole: step.assignedRole,
+   429→      skillId: step.skill,
+   430→      actionName: stepDef.name,
+   431→      classification,
+   432→      workflowContext: {
+   433→        workflowId: instance.workflowId,
+   434→        workflowInstanceId: instance.instanceId,
+   435→        stepId: stepDef.id,
+   436→        objective: def.objective,
+   437→      },
+   438→      target: stepDef.targetContext,
+   439→      requestedBy: step.assignedRole,
+   440→    };
+   441→
+   442→    const gateEvaluation = await this.gate.evaluateAuthorization(authRequest);
+   443→    if (gateEvaluation.effect !== 'allowed') {
+   444→      if (gateEvaluation.effect === 'denied') {
+   445→        await this.transitionStep(instanceId, stepId, 'blocked');
+   446→      } else if (gateEvaluation.effect === 'approval_required') {
+   447→        await this.transitionStep(instanceId, stepId, 'awaiting_approval');
+   448→      }
+   449→      throw new Error(`Side-effect execution prevented by authorization gate: ${gateEvaluation.reason}`);
+   450→    }
+   451→
+   452→    // Atomically claim the step before execution
+   453→    const claimResult = await this.store.claimStepAtomic(
+   454→      instanceId,
+   455→      stepId,
+   456→      workerId,
+   457→      instance.stateVersion
+   458→    );
+   459→    const expectedVersion = claimResult.instance.stateVersion;
+   460→
+   461→    try {
+   462→      const executionRef = `exec-${instanceId}-${stepId}-${Date.now()}`;
+   463→      
+   464→      // Assemble upstream outputs from dependencies and prior completed steps on the Blackboard
+   465→      const upstreamOutputs: Record<string, any> = {};
+   466→      for (const s of Object.values(instance.stepStates)) {
+   467→        if (s.outputs) {
+   468→          Object.assign(upstreamOutputs, s.outputs);
+   469→        }
+   470→      }
+   471→
+   472→      // Check if this is a Constitutional Verification Step
+   473→      if (
+   474→        stepDef.skill === 'compliance_verification' || 
+   475→        stepDef.name.toLowerCase().includes('verification')
+   476→      ) {
+   477→        const deliverablesList: any[] = [];
+   478→        const researchState = instance.stepStates['step-research'];
+   479→        const financeState = instance.stepStates['step-finance'];
+   480→        const pmState = instance.stepStates['step-pm-prd'];
+   481→
+   482→        if (researchState?.outputs?.result || researchState?.outputs?.toolIntelBrief) {
+   483→          const isGitHub = Boolean(researchState?.outputs?.toolEvidence);
+   484→          deliverablesList.push({
+   485→            id: 'deliv-step-research',
+   486→            name: isGitHub 
+   487→              ? 'Repository Intelligence & Technical Reconnaissance Brief' 
+   488→              : 'Market Intelligence & Technical Reconnaissance Brief',
+   489→            owner: 'Dr. Aris Thorne (Lead AI Researcher)',
+   490→            authorAgentId: 'researcher',
+   491→            authorName: 'Dr. Aris Thorne',
+   492→            type: 'research',
+   493→            protocolStep: 'research',
+   494→            content: String(researchState.outputs.toolIntelBrief || researchState.outputs.result),
+   495→            provenance: researchState.outputs?.provenance || {
+   496→              authorRole: 'researcher',
+   497→              authorName: 'Dr. Aris Thorne',
+   498→              confidence: 'verified_fact',
+   499→              evidenceBasis: isGitHub ? 'external_evidence' : 'empirical_test',
+   500→              immutable: true,
+   501→              timestamp: new Date().toISOString(),
+   502→            },
+   503→            updatedAt: new Date().toISOString(),
+   504→          });
+   505→        }
+   506→        if (financeState?.outputs?.result) {
+   507→          deliverablesList.push({
+   508→            id: 'deliv-step-finance',
+   509→            name: 'Financial Model & Unit Economics Assessment',
+   510→            owner: 'Julian Cruz (VP Finance)',
+   511→            authorAgentId: 'finance',
+   512→            authorName: 'Julian Cruz',
+   513→            type: 'financial',
+   514→            protocolStep: 'test',
+   515→            content: String(financeState.outputs.result),
+   516→            provenance: financeState.outputs?.provenance || {
+   517→              authorRole: 'finance',
+   518→              authorName: 'Julian Cruz',
+   519→              confidence: 'verified_fact',
+   520→              evidenceBasis: 'logical_proof',
+   521→              immutable: true,
+   522→              timestamp: new Date().toISOString(),
+   523→            },
+   524→            updatedAt: new Date().toISOString(),
+   525→          });
+   526→        }
+   527→        if (pmState?.outputs?.result) {
+   528→          deliverablesList.push({
+   529→            id: 'deliv-step-pm-prd',
+   530→            name: 'Product Requirements Document (PRD)',
+   531→            owner: 'Maya Lin (Principal PM)',
+   532→            authorAgentId: 'pm',
+   533→            authorName: 'Maya Lin',
+   534→            type: 'spec',
+   535→            protocolStep: 'build_execute',
+   536→            content: String(pmState.outputs.result),
+   537→            provenance: pmState.outputs?.provenance || {
+   538→              authorRole: 'pm',
+   539→              authorName: 'Maya Lin',
+   540→              confidence: 'verified_fact',
+   541→              evidenceBasis: 'logical_proof',
+   542→              immutable: true,
+   543→              timestamp: new Date().toISOString(),
+   544→            },
+   545→            updatedAt: new Date().toISOString(),
+   546→          });
+   547→        }
+   548→
+   549→        const verificationResult = ConstitutionalVerifier.verify({
+   550→          directive: def.objective,
+   551→          deliverables: deliverablesList,
+   552→          specialistOutputs: {
+   553→            cooScope: upstreamOutputs['cooScope'] || upstreamOutputs['result'],
+   554→            researchFindings: upstreamOutputs['researchFindings'] || upstreamOutputs['market_intelligence_brief'],
+   555→            productSpecs: upstreamOutputs['productSpecs'] || upstreamOutputs['prd'],
+   556→            financeAssessment: upstreamOutputs['financeAssessment'] || upstreamOutputs['unit_economics'],
+   557→          },
+   558→        });
+   559→
+   560→        if (!verificationResult.isCompliant) {
+   561→          const failReason = `Constitutional verification failed: ${verificationResult.checksFailed.join('; ')}`;
+   562→          await this.store.transitionStepAtomic(
+   563→            instanceId,
+   564→            stepId,
+   565→            'failed',
+   566→            expectedVersion,
+   567→            {
+   568→              error: failReason,
+   569→              outputs: {
+   570→                verificationResult,
+   571→                result: failReason,
+   572→                statusMessage: `[Sophia Vance - COO] Verification rejected: ${verificationResult.notes || failReason}`,
+   573→              },
+   574→            }
+   575→          );
+   576→          await this.evaluateInstanceStatus(instanceId);
+   577→          return;
+   578→        }
+   579→
+   580→        const successOutputs = {
+   581→          verificationResult,
+   582→          result: 'All constitutional invariants verified: 80%+ gross margin floor, zero credential leaks, safe sandbox compliant.',
+   583→          statusMessage: '[Sophia Vance - COO] Deliverables verified against constitutional invariants and security bounds.',
+   584→        };
+   585→
+   586→        await this.store.transitionStepAtomic(
+   587→          instanceId,
+   588→          stepId,
+   589→          'completed',
+   590→          expectedVersion,
+   591→          {
+   592→            outputs: successOutputs,
+   593→            evidenceReferences: ['audit-verification-passed'],
+   594→          }
+   595→        );
+   596→
+   597→        await this.evaluateInstanceStatus(instanceId);
+   598→        await this.evaluateReadiness(instanceId);
+   599→        return;
+   600→      }
+   601→
+   602→      // Check if this is a Researcher step with tool selection (GitHub intelligence)
+   603→      let toolEvidence: any = undefined;
+   604→      let toolIntelBrief: string | undefined = undefined;
+   605→      const shouldRunTools = options?.executeTools ?? (def.objective.toLowerCase().includes('github') || def.objective.toLowerCase().includes('repo'));
+   606→      if (step.assignedRole === 'researcher' && shouldRunTools) {
+   607→        try {
+   608→          const intelResult = await executeGitHubIntelligence(def.objective, {
+   609→            toolId: 'github_repository_read',
+   610→            sessionScope: {
+   611→              userId: 'founder-001',
+   612→              employeeRole: 'researcher',
+   613→              permittedToolIds: ['github_repository_read', 'github_issues_read'],
+   614→            },
+   615→            provenance: {
+   616→              taskId: `task-intel-${instanceId}`,
+   617→              agentId: 'researcher',
+   618→              agentName: 'Dr. Aris Thorne (Lead Researcher)',
+   619→              protocolStep: 'research',
+   620→              timestamp: new Date().toISOString(),
+   621→              modelUsed: 'gemini-2.5-pro',
+   622→              evidenceBasis: 'external_evidence',
+   623→              isVerified: true,
+   624→            },
+   625→          });
+   626→          toolEvidence = intelResult.evidence;
+   627→          toolIntelBrief = intelResult.epistemicBreakdown.briefMarkdown;
+   628→        } catch (toolErr: any) {
+   629→          console.warn('[WorkflowRuntime] Tool execution warning:', toolErr.message);
+   630→        }
+   631→      }
+   632→
+   633→      // Execute through the SideEffectAuthorizationGate wrapper with durable idempotency
+   634→      const logicalOpId = `${instanceId}-${stepId}-v${instance.stateVersion}`;
+   635→      const canonicalKey = generateLogicalIdempotencyKey({
+   636→        actionName: stepDef.name,
+   637→        targetSystem: stepDef.targetContext?.targetSystem || 'internal_agent',
+   638→        logicalOpId,
+   639→      });
+   640→
+   641→      const gateResult = await this.gate.executeWithGate({
+   642→        request: authRequest,
+   643→        executionRef,
+   644→        idempotency: {
+   645→          key: canonicalKey,
+   646→          targetSystem: stepDef.targetContext?.targetSystem || 'internal_agent',
+   647→          logicalOpId,
+   648→          payload: {
+   649→            directive: def.objective,
+   650→            protocolStep: step.skill,
+   651→            taskTitle: stepDef.name,
+   652→            taskDescription: stepDef.description,
+   653→          },
+   654→        },
+   655→        executeFn: async () => {
+   656→          // Map the step's skill NAME to its canonical protocol stage before crossing
+   657→          // the agent-executor boundary: AgentExecutionContext.protocolStep is a
+   658→          // genuine AgentWorkProtocolStep, not a skill name.
+   659→          const protocolStep = mapSkillToProtocolStep(step.skill);
+   660→          return this.executor.executeAgentTask(
+   661→            step.assignedRole,
+   662→            {
+   663→              directive: def.objective,
+   664→              protocolStep,
+   665→              taskTitle: stepDef.name,
+   666→              taskDescription: stepDef.description,
+   667→              upstreamContext: {
+   668→                cooScope: upstreamOutputs['cooScope'] || upstreamOutputs['result'],
+   669→                researchFindings: upstreamOutputs['researchFindings'] || upstreamOutputs['market_intelligence_brief'] || upstreamOutputs['result'],
+   670→                productSpecs: upstreamOutputs['productSpecs'] || upstreamOutputs['prd'] || upstreamOutputs['result'],
+   671→                financeAssessment: upstreamOutputs['financeAssessment'] || upstreamOutputs['unit_economics'] || upstreamOutputs['result'],
+   672→                verificationNotes: upstreamOutputs['verificationResult'] ? JSON.stringify(upstreamOutputs['verificationResult']) : undefined,
+   673→              },
+   674→            },
+   675→            `Execute workflow step: ${stepDef.name}`
+   676→          );
+   677→        }
+   678→      });
+   679→
+   680→      if (!gateResult.allowed) {
+   681→        throw new Error(gateResult.error || 'Execution not authorized');
+   682→      }
+   683→
+   684→      const agentResult = gateResult.result!;
+   685→
+   686→      const stepOutputs: Record<string, any> = { 
+   687→        result: agentResult.outputContent,
+   688→        statusMessage: agentResult.statusMessage,
+   689→        structuredData: agentResult.structuredData,
+   690→        provenance: agentResult.provenance,
+   691→        retrievedContext: agentResult.retrievedContext,
+   692→      };
+   693→
+   694→      if (toolEvidence) {
+   695→        stepOutputs.toolEvidence = toolEvidence;
+   696→      }
+   697→      if (toolIntelBrief) {
+   698→        stepOutputs.toolIntelBrief = toolIntelBrief;
+   699→        stepOutputs.researchFindings = toolIntelBrief;
+   700→        stepOutputs.market_intelligence_brief = toolIntelBrief;
+   701→      }
+   702→
+   703→      if (stepDef.outputReferences) {
+   704→        for (const k of stepDef.outputReferences) {
+   705→          stepOutputs[k] = agentResult.outputContent;
+   706→        }
+   707→      }
+   708→
+   709→      // Transition to completed on success
+   710→      await this.store.transitionStepAtomic(
+   711→        instanceId,
+   712→        stepId,
+   713→        'completed',
+   714→        expectedVersion,
+   715→        {
+   716→          outputs: stepOutputs,
+   717→          evidenceReferences: [gateResult.auditId, ...(agentResult.provenance ? [agentResult.provenance.agentId] : [])],
+   718→        }
+   719→      );
+   720→
+   721→      // Evaluate instance status after step transition
+   722→      await this.evaluateInstanceStatus(instanceId);
+   723→      // Evaluate readiness of subsequent steps
+   724→      await this.evaluateReadiness(instanceId);
+   725→
+   726→    } catch (error: any) {
+   727→      // Transition to failed
+   728→      await this.store.transitionStepAtomic(
+   729→        instanceId,
+   730→        stepId,
+   731→        'failed',
+   732→        expectedVersion,
+   733→        {
+   734→          error: error.message || 'Execution failed'
+   735→        }
+   736→      );
+   737→
+   738→      // Evaluate instance status after step transition
+   739→      await this.evaluateInstanceStatus(instanceId);
+   740→    }
+   741→  }
+   742→
+   743→  /**
+   744→   * Executes a workflow instance to completion or until reaching a quiescent state (awaiting_approval, blocked, failed).
+   745→   * Dispatches ready steps wave by wave, supporting parallel execution of independent branches.
+   746→   */
+   747→  async executeWorkflow(
+   748→    instanceId: string,
+   749→    options?: {
+   750→      maxIterations?: number;
+   751→      workerId?: string;
+   752→      executeTools?: boolean;
+   753→    }
+   754→  ): Promise<WorkflowInstanceState> {
+   755→    const maxIterations = options?.maxIterations || 50;
+   756→    const workerId = options?.workerId || 'worker-dag-01';
+   757→    let iteration = 0;
+   758→
+   759→    while (iteration < maxIterations) {
+   760→      iteration++;
+   761→
+   762→      // 1. Evaluate readiness of all steps
+   763→      await this.evaluateReadiness(instanceId);
+   764→
+   765→      const instance = await this.store.getInstance(instanceId);
+   766→      if (!instance) {
+   767→        throw new Error(`Instance not found: ${instanceId}`);
+   768→      }
+   769→
+   770→      // Check if instance reached terminal state
+   771→      if (instance.status === 'completed' || instance.status === 'failed' || instance.status === 'cancelled') {
+   772→        return instance;
+   773→      }
+   774→
+   775→      // 2. Identify ready steps
+   776→      const readySteps = Object.values(instance.stepStates).filter(s => s.status === 'ready');
+   777→
+   778→      if (readySteps.length === 0) {
+   779→        const awaitingApproval = Object.values(instance.stepStates).some(s => s.status === 'awaiting_approval');
+   780→        const blocked = Object.values(instance.stepStates).some(s => s.status === 'blocked');
+   781→
+   782→        if (awaitingApproval) {
+   783→          if (instance.status !== 'awaiting_approval') {
+   784→            instance.status = 'awaiting_approval';
+   785→            instance.updatedAt = new Date().toISOString();
+   786→            await this.store.saveInstance(instance);
+   787→          }
+   788→          return instance;
+   789→        }
+   790→
+   791→        if (blocked) {
+   792→          if (instance.status !== 'blocked') {
+   793→            instance.status = 'blocked';
+   794→            instance.updatedAt = new Date().toISOString();
+   795→            await this.store.saveInstance(instance);
+   796→          }
+   797→          return instance;
+   798→        }
+   799→
+   800→        // Re-evaluate instance status and return
+   801→        await this.evaluateInstanceStatus(instanceId);
+   802→        return (await this.store.getInstance(instanceId))!;
+   803→      }
+   804→
+   805→      // 3. Execute all ready steps concurrently (fan-out!)
+   806→      const stepExecutions = readySteps.map(step =>
+   807→        this.executeReadyStep(instanceId, step.stepId, workerId, options)
+   808→      );
+   809→
+   810→      // Wait for the wave to finish (fan-in!)
+   811→      await Promise.allSettled(stepExecutions);
+   812→
+   813→      // Re-evaluate instance status after the wave
+   814→      await this.evaluateInstanceStatus(instanceId);
+   815→
+   816→      const refreshed = await this.store.getInstance(instanceId);
+   817→      if (!refreshed || refreshed.status === 'failed' || refreshed.status === 'completed' || refreshed.status === 'cancelled') {
+   818→        return refreshed || instance;
+   819→      }
+   820→    }
+   821→
+   822→    return (await this.store.getInstance(instanceId))!;
+   823→  }
+   824→
+   825→  /**
+   826→   * Resumes execution of a paused or awaiting-approval workflow instance from where it left off.
+   827→   */
+   828→  async resumeWorkflow(
+   829→    instanceId: string,
+   830→    options?: { maxIterations?: number; workerId?: string; executeTools?: boolean }
+   831→  ): Promise<WorkflowInstanceState> {
+   832→    return this.executeWorkflow(instanceId, options);
+   833→  }
+   834→
+   835→  /**
+   836→   * Rehydrates all active workflow instances from authoritative storage.
+   837→   */
+   838→  async rehydrate(): Promise<WorkflowInstanceState[]> {
+   839→    return this.store.rehydrateActiveInstances();
+   840→  }
+   841→
+   842→  public getGate(): SideEffectAuthorizationGate {
+   843→    return this.gate;
+   844→  }
+   845→
+   846→  public getStore(): WorkflowDefinitionStore & WorkflowInstanceStore {
+   847→    return this.store;
+   848→  }
+   849→
+   850→  public getExecutor(): ServerAgentExecutor {
+   851→    return this.executor;
+   852→  }
+   853→}
+   854→
+   855→
+   856→
