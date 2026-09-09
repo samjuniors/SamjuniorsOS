@@ -200,3 +200,24 @@ Stage Summary:
 - PHASE 2.6.1 COMPLETE: all 39 TS errors fixed (tsc exit 0), lease renewal wired + certified (12/12 real PG), phase 2.2 premise/FK test bugs fixed, real-PG CI created, full regression green, security invariants confirmed
 - Push complete: https://github.com/samjuniors/SamjuniorsOS at 305add8
 - Recommend rotating the GitHub PAT (exposed in conversation history)
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: Phase 3 — Command Center, first vertical slice (Founder Decision Loop Closure)
+
+Work Log:
+- Pulled: 305add8 → 478b3e7 (AGENTS.md universal agent contract added). Read AGENTS.md, PRODUCT.md, ROADMAP.md, CONTINUE.md, CAPABILITY_REGISTRY.md, PROGRESS.md, CLAUDE.md, PRODUCT_ARCHITECTURE.md; inspected runtime/gate/stores/routes/cockpit/tests
+- DOC-REPO CONFLICTS found: WORKLOG.md (canonical per AGENTS.md) did not exist; PROGRESS.md stale at f73526f (pre-Phase-2); ROADMAP NEXT items stale vs Phase 2.5–2.6.1
+- VERIFIED the vertical-slice gap at 478b3e7: POST /api/workflow/approvals recorded decisions but NOTHING resumed the bound workflow (approveStep/resumeWorkflow had zero production callers; steps stuck 'awaiting_approval' forever; rejects never failed closed). PLUS latent route bug: session email 'founder@samjuniors.com' passed as decidedBy is NOT in the gate founder allowlist → every cockpit Approve click 500'd 'Permission denied' (verified live)
+- Implemented: runtime.evaluateReadiness honors APPROVED_BY_FOUNDER (record = authority, approvalState = derived cache); decision-reconciler.ts (new command layer — no auth logic, drives resumeWorkflow, honest no-ops, fail-closed error reporting); route passes server-verified session role via gate's userContext contract + returns reconciliation; ExecutiveCockpit reports DURABLE outcome (step/workflow status + audit count), in-flight disabling, directive context
+- Verification: tsc 0 errors; eslint clean (5 files); NEW suite tests/phase3_1_decision_loop.test.ts 11/11 BOTH offline AND authoritative PG 16.4 (approve→execute→durable+audit+consumed, reject/revoke→blocked fail-closed 0 executions, duplicate→no re-execution, concurrent→exactly-once via claimStepAtomic, non-Founder denied, expired denied, userContext contract pinned, no-op bindings); full offline regression all exit 0 (38/38, 38/38, 41, 26, 25/25, 24/24, 22/22, 14/14, 12/12); online regression exit 0 (phase2_6, 2_6_1 12/12, 2_2 18/18, 2_5 + real-PG lease race); browser E2E over live HTTP via real orchestrate path (dynamic-DAG → awaiting_approval): Approve → 'Approved — durable result: step completed, workflow completed (1 audit record)'; Reject → 'blocked, 0 audit records' + durable blockedReason 'Founder rejected approval request'; zero browser console errors
+- Docs: WORKLOG.md created (canonical history + Phase 3.1 record + Phase 2 summary from git evidence); PROGRESS.md appended; ROADMAP.md NEXT status reconciled to 478b3e7 + Phase 3 section added
+- .data test pollution restored; .env removed; token/dev-secret scan of commit tree clean
+- Committed 3cf92f3 'feat(command-center): Phase 3.1 — close the founder decision loop' (8 files, +1028/-30) authored samjuniors <arena.class007@gmail.com>; pushed 478b3e7..3cf92f3 main->main; remote HEAD verified 3cf92f3d21b3b178dc80b04bffcd4631d291ce3d
+
+Stage Summary:
+- Phase 3.1 vertical slice COMPLETE and browser-verified: READ → PRESENT → DECIDE → GATE → RUNTIME → DURABLE → AUDIT → UI REFLECTS
+- No gates bypassed, no new authorization system, no runtime rewrite; one principled authority fix + one command layer + one latent route bug fix
+- Known limitations documented (synchronous resume in POST; evaluateReadiness non-CAS save pre-existing; Vitals/Stream demo data still fabricated — next slices)
+- Recommend rotating the GitHub PAT (exposed in chat history); token not present in any committed file
