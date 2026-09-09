@@ -258,7 +258,19 @@ export class WorkflowRuntime {
             instanceChanged = true;
           }
         } else if (decision.effect === 'allowed') {
-          if (stepDef.requiresApproval && stepState.approvalState !== 'approved') {
+          // An 'allowed' decision carrying APPROVED_BY_FOUNDER means the policy evaluator
+          // matched an authoritative, Founder-decided approval record for this exact
+          // step. The record is the authority; stepState.approvalState is a derived
+          // cache of it. If the cache were allowed to veto the record, an approved
+          // side-effect step would remain 'awaiting_approval' forever, because no
+          // production path ever sets approvalState other than through this evaluation.
+          const founderAuthorizedByRecord =
+            decision.reasonCode === 'APPROVED_BY_FOUNDER' && Boolean(decision.approvalId);
+          if (
+            stepDef.requiresApproval &&
+            stepState.approvalState !== 'approved' &&
+            !founderAuthorizedByRecord
+          ) {
             stepState.status = 'awaiting_approval';
             instanceChanged = true;
           } else {

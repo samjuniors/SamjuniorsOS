@@ -32,6 +32,25 @@ interface ExecutiveCockpitProps {
   onInspectEmployee?: (agentId: AgentRole) => void;
 }
 
+/** Approval record enriched with workflow context by GET /api/workflow/approvals. */
+interface EnrichedApprovalRecord extends FounderApprovalRecord {
+  workflowObjective?: string;
+  workflowStatus?: string;
+  stepStatus?: string;
+  stepSkill?: string;
+}
+
+interface DecisionReconciliation {
+  reconciled?: boolean;
+  workflowInstanceId?: string;
+  stepId?: string;
+  workflowStatus?: string;
+  stepStatus?: string;
+  auditRecords?: number;
+  outcomeNote?: string;
+  error?: string;
+}
+
 interface StreamEvent {
   id: string;
   timestamp: string;
@@ -84,7 +103,7 @@ export function ExecutiveCockpit({
   ]);
 
   // Approvals Inbox State
-  const [approvals, setApprovals] = useState<FounderApprovalRecord[]>([]);
+  const [approvals, setApprovals] = useState<EnrichedApprovalRecord[]>([]);
   const [loadingApprovals, setLoadingApprovals] = useState(true);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
@@ -140,7 +159,14 @@ export function ExecutiveCockpit({
   }, []);
 
   // Handle Approval Decisions
+  // Phase 3 (Command Center): the decision travels through the authorization
+  // gate and is then reconciled into the bound workflow by the existing
+  // runtime; the response reports the DURABLE outcome, which is what the
+  // founder sees — never a UI-assumed success.
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+
   const handleDecision = async (approvalId: string, action: 'approve' | 'reject') => {
+    setDecidingApprovalId(approvalId);
     try {
       const res = await fetch('/api/workflow/approvals', {
         method: 'POST',
@@ -153,8 +179,20 @@ export function ExecutiveCockpit({
       });
 
       if (res.ok) {
-        setActionFeedback(`Action ${action === 'approve' ? 'Approved' : 'Rejected'} successfully.`);
-        setTimeout(() => setActionFeedback(null), 4000);
+        const data = await res.json();
+        const recon: DecisionReconciliation | undefined = data?.reconciliation;
+        let feedback: string;
+        if (recon?.error) {
+          // The decision itself is durable; reconciliation failed and must not be
+          // silently presented as success.
+          feedback = `Decision recorded, but workflow reconciliation FAILED: ${recon.error}`;
+        } else if (recon?.reconciled) {
+          feedback = `${action === 'approve' ? 'Approved' : 'Rejected'} — durable result: step '${recon.stepId}' is ${recon.stepStatus}, workflow ${recon.workflowStatus} (${recon.auditRecords} audit record${recon.auditRecords === 1 ? '' : 's'}).`;
+        } else {
+          feedback = `${action === 'approve' ? 'Approved' : 'Rejected'} — ${recon?.outcomeNote || 'Decision recorded.'}`;
+        }
+        setActionFeedback(feedback);
+        setTimeout(() => setActionFeedback(null), 8000);
         loadApprovals();
 
         // Push to executive stream
@@ -165,7 +203,7 @@ export function ExecutiveCockpit({
             role: 'Founder & CEO',
             author: 'Executive Authority',
             title: `Side-Effect Request ${action === 'approve' ? 'Authorized' : 'Rejected'}`,
-            summary: `Approval ${approvalId} processed with decision: ${action.toUpperCase()}`,
+            summary: recon?.outcomeNote || `Approval ${approvalId} processed with decision: ${action.toUpperCase()}`,
             type: 'approval',
           },
           ...prev,
@@ -176,6 +214,8 @@ export function ExecutiveCockpit({
       }
     } catch (e: any) {
       setActionFeedback(`Network error: ${e.message}`);
+    } finally {
+      setDecidingApprovalId(null);
     }
   };
 
@@ -372,19 +412,26 @@ export function ExecutiveCockpit({
                           Requested by <span className="text-slate-300 font-medium">{appr.employeeRole}</span> on target system{' '}
                           <code className="text-[10px] px-1 py-0.5 rounded bg-slate-800 text-slate-300">{appr.target?.targetSystem || 'internal'}</code>
                         </div>
+                        {appr.workflowObjective && (
+                          <div className="text-[10px] text-slate-500 mt-1 truncate" title={appr.workflowObjective}>
+                            Directive: {appr.workflowObjective}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleDecision(appr.id, 'approve')}
-                          className="px-3 py-1 text-xs font-semibold bg-emerald-600/90 hover:bg-emerald-500 text-white rounded-md shadow transition flex items-center space-x-1"
+                          disabled={decidingApprovalId === appr.id}
+                          className="px-3 py-1 text-xs font-semibold bg-emerald-600/90 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md shadow transition flex items-center space-x-1"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Approve</span>
+                          <span>{decidingApprovalId === appr.id ? 'Executing…' : 'Approve'}</span>
                         </button>
                         <button
                           onClick={() => handleDecision(appr.id, 'reject')}
-                          className="px-3 py-1 text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 text-white rounded-md shadow transition flex items-center space-x-1"
+                          disabled={decidingApprovalId === appr.id}
+                          className="px-3 py-1 text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md shadow transition flex items-center space-x-1"
                         >
                           <XCircle className="w-3.5 h-3.5" />
                           <span>Reject</span>

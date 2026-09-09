@@ -3,6 +3,7 @@ import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { ApprovalStatus, SideEffectClassification } from '@/types/authorization';
 import { InMemoryWorkflowStore } from '@/lib/server/workflow/store';
 import { getAuthenticatedFounder } from '@/lib/server/auth/session';
+import { reconcileFounderDecision } from '@/lib/server/workflow/decision-reconciler';
 
 /**
  * GET /api/workflow/approvals
@@ -61,6 +62,15 @@ export async function GET(req: NextRequest) {
  * POST /api/workflow/approvals
  * Founder Decision & Governance Action Handler.
  * Allows ONLY the Founder to approve, reject, or revoke side-effect requests.
+ *
+ * Phase 3 (Command Center): after the gate durably records the Founder's
+ * decision, the decision is RECONCILED into the bound workflow instance via the
+ * existing WorkflowRuntime (decision-reconciler). Approvals resume execution
+ * through the SideEffectAuthorizationGate (payload binding, single-use
+ * consumption, idempotency, audit); rejections/revocations fail closed into
+ * 'blocked' via the policy evaluator. This route adds no authorization logic —
+ * identity and governance remain exclusively with getAuthenticatedFounder and
+ * the gate.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -86,30 +96,31 @@ export async function POST(req: NextRequest) {
     const verifiedActor = session.email || session.userId || 'founder';
     const gate = SideEffectAuthorizationGate.getInstance();
 
-    if (action === 'approve') {
+    if (action === 'approve' || action === 'reject') {
       const record = await gate.decideApproval({
         approvalId,
-        decision: 'approved',
+        decision: action === 'approve' ? 'approved' : 'rejected',
         decidedBy: verifiedActor,
-        reason: reason || 'Approved by Founder',
+        reason: reason || (action === 'approve' ? 'Approved by Founder' : 'Rejected by Founder'),
         expiresAt,
+        // The session identity was verified server-side above (401 for non-Founders).
+        // The session email is intentionally NOT in the gate's literal allowlist —
+        // pass the verified role through the gate's userContext contract instead of
+        // maintaining a second founder-identity allowlist here.
+        userContext: { role: session.role, userId: session.userId },
       });
-      return NextResponse.json({ success: true, record });
-    } else if (action === 'reject') {
-      const record = await gate.decideApproval({
-        approvalId,
-        decision: 'rejected',
-        decidedBy: verifiedActor,
-        reason: reason || 'Rejected by Founder',
-      });
-      return NextResponse.json({ success: true, record });
+
+      const reconciliation = await reconcileFounderDecision(record);
+      return NextResponse.json({ success: true, record, reconciliation });
     } else if (action === 'revoke') {
       const record = await gate.revokeApproval({
         approvalId,
         revokedBy: verifiedActor,
         reason: reason || 'Revoked by Founder',
       });
-      return NextResponse.json({ success: true, record });
+
+      const reconciliation = await reconcileFounderDecision(record);
+      return NextResponse.json({ success: true, record, reconciliation });
     } else {
       return NextResponse.json(
         { error: `Invalid action "${action}". Must be "approve", "reject", or "revoke".` },

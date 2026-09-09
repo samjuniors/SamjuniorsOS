@@ -3,13 +3,20 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-none — polish pass complete. Awaiting founder direction.
+Phase 3 (Command Center) — first vertical slice complete (Phase 3.1 Founder Decision Loop Closure, see WORKLOG.md). Awaiting founder review of the slice before broadening the Command Center.
 
 ## Next (queued, in order)
-- Visual verification at localhost:3000 (founder)
-- Identify next feature or polish area based on founder priorities
+- Wire the cockpit directive terminal to /api/orchestrate (create real work from the Command Center)
+- Replace Vitals Wall / Executive Stream demo data with authoritative reads
+- Consider CAS guard for evaluateReadiness instance writes
 
 ## Completed
+- [2026-09-09] Phase 3.1 — Founder Decision Loop Closure: approvals now reconcile into workflow execution (approve → resume → gate-mediated execution → durable result + audit → UI reflects; reject/revoke → fail-closed blocked). Fixed latent route bug (session email vs gate allowlist) via server-verified userContext contract. New suite 11/11 in both offline and authoritative-PG modes; full offline + online regression green; browser E2E verified both decision paths with zero console errors. See WORKLOG.md.
+- [2026-09-09] AGENTS.md universal agent contract (commit `478b3e7`).
+- [2026-09-09] Phase 2.6.1 — foundation cleanup & final Phase-2 certification (commit `305add8`): 39 tsc errors fixed, lease renewal wired + certified (12/12 real PG), phase 2.2 test redesign, real-PG CI, full regression green.
+- [2026-09-09] Phase 2.6 — real-PostgreSQL concurrency certification (commit `8e21335`): 7 durability-blocking concurrency defects found & fixed.
+- [2026-09-08] Phase 2.5 distributed scheduling & lease manager (commit `b12cc5b`).
+- [2026-09-08] Security foundation hardening: fail-closed payload binding, authenticated fact promotion, founder allowlists (commits `02fc943`, `5e8ba9f`, `73af411`).
 - [2026-09-07] Review & polish pass (commit `f73526f`) — fixed missing window title icons for messages/advisor, removed fabricated data badges (86% Margin, customer count 12), added prefers-reduced-motion a11y support, fixed z-index monotonic growth, committed previous session's unstaged fixes (AgentAvatar import, persona store re-export, openApp type widening, MessagesApp persona simplification). Build passes cleanly.
 - [2026-09-07] Codebase audit & PRODUCT.md — audited 28-commit codebase, filled PRODUCT.md from code evidence. Build passes cleanly. All 13 apps, 14 OS components, 6 API route groups, 5 stores, 7 type definition files verified present.
 - [pre-session] Full OS shell — window management, dock, top bar, spotlight, control center, calendar modal, notifications, context menus, voice calling

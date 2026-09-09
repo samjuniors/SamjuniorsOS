@@ -22,12 +22,29 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
-- Full relational persistence (Postgres/Prisma actually connected via `DATABASE_URL`) once §0's deployment decision is made.
-- First-class versioned `Artifact` model.
-- The Company Brain becoming the *single* path for state/knowledge reads and writes (not a correct pipeline existing alongside an un-migrated old one).
-- Confirming and closing the two open auth gaps (live Clerk provisioning, gate.ts allowlist fix).
-- GitHub as the first fully-specified external-effect adapter (idempotency key + unknown-outcome handling defined for that one provider — PRODUCT_ARCHITECTURE.md §8).
-- Multi-instance-safe concurrency control, once shared durable persistence exists.
+Status reconciled against `478b3e7` (2026-09-09) — Phase 2.5/2.6/2.6.1 completed and certified several of these items; remaining ones unchanged:
+
+| Item | Status |
+|---|---|
+| Full relational persistence (Postgres/Prisma actually connected via `DATABASE_URL`) | DONE & VERIFIED — authoritative PG stores with fail-closed `DatabaseAuthorityError`, migrations deployed & deterministic (Phase 2.1–2.6) |
+| Multi-instance-safe concurrency control, once shared durable persistence exists | DONE & VERIFIED under tested scenarios (Phase 2.5/2.6 certification; deployment remains pinned to min=1/max=1 by deliberate decision) |
+| First-class versioned `Artifact` model | NOT STARTED |
+| Company Brain as the single path for state/knowledge reads and writes | PARTIAL — epistemic pipeline active alongside un-migrated legacy paths |
+| Live Clerk provisioning (auth gap 1 of 2) | OPEN — deployment decision; gate.ts allowlist gap (2 of 2) closed in Phase 2 (`FOUNDER_ROLE_ALLOWLIST`) |
+| GitHub as the first fully-specified external-effect adapter | NOT STARTED |
+
+## PHASE 3 — Command Center (current; began at `478b3e7`, founder-directed)
+
+The founder's operating interface ON TOP OF the sealed foundation — never a
+second authorization system. Guiding rule: every capability must ride existing
+gates, runtime, persistence, and audit; fewer high-value capabilities over a
+broad dashboard.
+
+| Slice | Status |
+|---|---|
+| 3.1 Founder Decision Loop Closure — approvals read → present → founder decides → gate → runtime resume → durable result → audit → UI reflects | DONE & VERIFIED (see WORKLOG.md) |
+| 3.x Directive terminal → /api/orchestrate from the cockpit | QUEUED |
+| 3.x Authoritative reads for Vitals Wall / Executive Stream (replace demo data) | QUEUED |
 
 ## LATER (genuinely valuable, explicitly not before NEXT is done)
 
