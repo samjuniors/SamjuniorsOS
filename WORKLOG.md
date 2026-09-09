@@ -17,6 +17,82 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.6 — Core V3 / Astra-Inspired Interaction Redesign
+
+**Status:** COMPLETE (Core V3 prototype implemented, verified, isolated in `public/prototype/`).
+**Base HEAD:** `32a6f38`
+
+### What was implemented
+
+A comprehensive redesign of the central operating interface inspired by OpenAI Astra interaction principles, making the **Central Core a genuine living intelligence surface** rather than a decorative orb:
+
+1. **7 Core Operational States Model:**
+   - `READY`: Calm rhythmic breathing, subtle particles, prompt suggestions.
+   - `UNDERSTANDING`: Particles converge inward toward center; Work Surface displays intent and context being gathered (company state, recent decisions, product context, market intelligence).
+   - `WORKING`: Controlled purposeful circulation; Work Surface displays real-time multi-step task progress checklist with checkmarks and steering actions.
+   - `WAITING_FOR_FOUNDER`: Core motion slows and focuses into an attentive warm beacon; Work Surface surfaces a concise decision card with context, evidence availability, impact, and ratification/rejection controls.
+   - `EXECUTING`: Directional, structured kinetic flow; task execution stages checklist with stop controls.
+   - `COMPLETED`: Gentle emerald settling bloom; outcome summary with next useful actions.
+   - `BLOCKED`: Restrained perimeter warning (no glitch/cyberpunk effects); diagnostic failure conditions & prerequisites.
+
+2. **Core Work Surface & Founder Steering:**
+   - Contextual surface positioned directly below the Core that appears during active states and recedes when idle.
+   - Real-time steering controls: `[ ⟳ Redirect ]` (allowing the Founder to steer into product context, market research, or inspect findings) and `[ ⏹ Stop ]` (gracefully halting ongoing work).
+   - Operational transparency without exposing raw model reasoning or chain-of-thought.
+
+3. **Dynamic Context & Operating Governance:**
+   - Dynamic header badge displaying active operational domain (`FOUNDER COMMAND`, `COMPANY OPERATIONS`, `LUMORA · PRODUCT CONTEXT`, `GOVERNED SYSTEMS`).
+   - Conceptual AI Credits simulation (`⚡ Credits: 850`): demonstrates graceful fallback to `JARVIS UNAVAILABLE` when credits are depleted, while Manual operation remains 100% accessible.
+   - Manual Mode direct navigation overlay exposing all 7 governed modules (`Company`, `Work`, `Decisions`, `Research`, `Workforce`, `Activity`, `Audit`).
+   - Persistent watermark: `DEMO STATE · NO LIVE COMPANY DATA CONNECTED`.
+
+### What was verified
+
+- `npx tsc --noEmit` → **0 errors** (zero production regressions).
+- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**.
+- `npx tsx tests/governance_security_foundation.test.ts` → **41/41 PASS**.
+- `node scripts/verify-prototype.js` → **All 33 Core V3 IDs, 0 JS syntax errors, 7 core states, and absence of fabricated company facts verified**.
+
+---
+
+## Phase 3.5 — Jarvis Command Center HTML Prototype (Spatial IA Redesign & Epistemic Realignment)
+
+**Status:** COMPLETE (prototype redesigned, verified, isolated in `public/prototype/`).
+**Base HEAD:** `32a6f38`
+
+### What was implemented
+
+A standalone, high-fidelity visual and interaction prototype exploring the future **Jarvis Command Center** experience for SamJuniorsOS based on the founder's cinematic space/celestial reference, re-architected to make the **Central Core the true interaction epicenter** and ground all context strictly in verified repository reality:
+
+1. **Information Architecture Redesign (Spatial & Contextual):**
+   - **Removed Pinned Dashboard Cards:** Eliminated permanently docked 3-column sidecards (`COMPANY STATUS` and `RECENT ACTIVITY`) that made the interface resemble a standard enterprise dashboard.
+   - **Central Core as Epicenter:** The Celestial Core and Command Bar now command the primary spatial canvas.
+   - **Orbital Contextual Satellites:** Replaced static cards with minimalist ambient satellite beacons (`[● Governed State]`, `[☵ Active Agents]`, `[▲ Ratification Gate]`, `[◷ Activity Stream]`) that expand into spatial sliding sheets on demand or in response to command context.
+   - **Spatial Glass Sheets (Level 2):** Slide-out contextual surfaces for Company State (left), Activity & Provenance (right), and Workforce Presence (bottom), dismissible via `Escape` or keyboard shortcuts (`C`, `W`, `A`, `M`).
+
+2. **Purging Unsupported / Fabricated Facts (`PRODUCT.md` Realignment):**
+   - **Zero Fabricated Metrics:** Removed all placeholder numbers ("12 employees active", "12 workflows running", "Sync: 99.4%", "Customer insights updated", "Finance forecast ready", "Product launch focus").
+   - **Strict v1 Workforce:** Roster is strictly limited to **Sophia (COO / Planner)** and **Thorne (Principal Systems Worker)**. Explicit notice that other roles (Maya, Julian, Elena, Marcus) remain target-state non-v1 architectures per `PRODUCT.md §5–§6`.
+   - **Evidence-Grounded States:** Reflects genuine qualitative states (`Healthy · Governed`, `Single Container Locked`, `Separation of Powers Active`, `Gross Margin Floor: 80% Enforced`).
+   - **Milestone Activity Stream:** Populated exclusively with genuine architectural milestones (`ConstitutionalVerifier passed margin check`, `Sophia validated epistemic claim`, `Thorne completed deterministic build`, `Durable audit record committed`).
+   - **Cryptographic Ratification Gate:** Consequential action modal demonstrating canonical SHA-256 payload hash binding (`{ actionName, target, payload }`).
+
+3. **Files Maintained:**
+   - `public/prototype/index.html`
+   - `public/prototype/prototype.css`
+   - `public/prototype/prototype.js`
+   - `public/prototype/README.md`
+   - `scripts/verify-prototype.js`
+
+### What was verified
+
+- `npx tsc --noEmit` → **0 errors** (zero production regressions).
+- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**.
+- `npx tsx tests/governance_security_foundation.test.ts` → **41/41 PASS**.
+- `node scripts/verify-prototype.js` → **All 21 HTML IDs, 0 JS syntax errors, 8 core states, and absence of fabricated phrases verified**.
+
+---
+
 ## Phase 3.4 — Founder-Guard Legacy Read Routes (security hardening slice)
 
 **Status:** COMPLETE (implemented, tested, regression-verified).

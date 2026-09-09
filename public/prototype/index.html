@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SamJuniorsOS — Core V3 Command Center</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="mode-jarvis state-ready credits-available">
+
+  <!-- BACKGROUND CELESTIAL CANVAS -->
+  <div class="cosmos-viewport" aria-hidden="true">
+    <canvas id="starfieldCanvas"></canvas>
+    <div class="space-nebula"></div>
+    <div class="earth-horizon-wrap">
+      <canvas id="earthHorizonCanvas"></canvas>
+      <div class="sun-glare"></div>
+      <div class="moon-crescent"></div>
+    </div>
+    <div class="vignette-overlay"></div>
+  </div>
+
+  <!-- MAIN HUD WRAPPER -->
+  <div class="hud-container">
+
+    <!-- TOP HEADER WITH DYNAMIC CONTEXT -->
+    <header class="hud-header">
+      <div class="header-left">
+        <div class="brand-badge">
+          <div class="reticle-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="9" stroke-dasharray="4 2"></circle>
+              <circle cx="12" cy="12" r="4"></circle>
+              <line x1="12" y1="1" x2="12" y2="5"></line>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="1" y1="12" x2="5" y2="12"></line>
+              <line x1="19" y1="12" x2="23" y2="12"></line>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-title">SAMJUNIORS OS</span>
+            <span class="brand-subtitle">YOUR AI COMPANY</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DYNAMIC HEADER CONTEXT DISPLAY -->
+      <div class="header-center">
+        <div class="dynamic-context-badge" id="headerContextDisplay">
+          <span class="context-pill-indicator"></span>
+          <span class="context-section-label" id="headerSectionLabel">SAMJUNIORS OS</span>
+          <span class="context-sep">·</span>
+          <span class="context-dynamic-text" id="headerContextText">FOUNDER COMMAND</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- MODE SWITCHER: JARVIS VS MANUAL -->
+        <div class="mode-toggle-group" role="radiogroup" aria-label="Operating Mode">
+          <button type="button" class="mode-btn active" id="btnJarvisMode" data-mode="jarvis" title="AI-assisted natural language command center">
+            <span class="mode-icon">✦</span>
+            <span class="mode-label">JARVIS</span>
+          </button>
+          <button type="button" class="mode-btn" id="btnManualMode" data-mode="manual" title="Direct founder operating navigation (unmediated)">
+            <span class="mode-icon">⊞</span>
+            <span class="mode-label">MANUAL</span>
+          </button>
+        </div>
+
+        <!-- AI CREDITS SIMULATOR CHIP (CONCEPTUAL ONLY) -->
+        <button type="button" class="credits-chip" id="btnToggleCredits" title="Click to test AI Credits Depleted vs Available state">
+          <span class="credits-icon">⚡</span>
+          <span class="credits-val" id="creditsVal">Credits: 850</span>
+        </button>
+
+        <div class="header-divider"></div>
+
+        <!-- LIGHT / ATMOSPHERE TOGGLE -->
+        <button type="button" class="icon-tool-btn" id="btnAtmosphereToggle" title="Toggle Atmospheric Lighting" aria-label="Toggle Atmosphere">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+
+        <!-- DATE TIME -->
+        <div class="clock-display" id="clockDisplay">
+          <span class="clock-date">Tue, Oct 26</span>
+          <span class="clock-time">21:47</span>
+        </div>
+
+        <!-- FOUNDER PROFILE BADGE -->
+        <div class="founder-badge" id="founderBadge" title="Server-Verified Founder Session">
+          <div class="avatar-disc">S</div>
+          <div class="founder-info">
+            <span class="founder-name">Sam</span>
+            <span class="founder-role">Founder</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- JARVIS UNAVAILABLE BANNER (SHOWN WHEN AI CREDITS DEPLETED) -->
+    <div class="jarvis-unavailable-banner" id="jarvisUnavailableBanner" aria-hidden="true">
+      <span class="warn-icon">⚠️</span>
+      <span class="warn-text"><strong>JARVIS UNAVAILABLE</strong> — AI capability credits depleted. Manual OS operation remains fully available.</span>
+      <button type="button" class="btn-restore-credits" id="btnRestoreCredits">Restore Credits</button>
+    </div>
+
+    <!-- SPATIAL OPERATING STAGE -->
+    <main class="spatial-stage-focused">
+
+      <!-- CONTEXTUAL PERIPHERAL SATELLITES (QUIET UNTIL RELEVANT) -->
+      <nav class="orbital-satellites-nav" aria-label="Contextual Operating Satellites">
+        <!-- LEFT CLUSTER -->
+        <div class="satellite-cluster cluster-left">
+          <button type="button" class="satellite-pill" id="beaconCompanyState" title="Expand Contextual Company State">
+            <span class="status-dot dot-green"></span>
+            <span class="pill-title">Company State</span>
+            <span class="pill-meta" id="pillCompanyStateMeta">Governed</span>
+          </button>
+          <button type="button" class="satellite-pill" id="beaconWorkforce" title="Inspect Active AI Employees">
+            <span class="satellite-icon">☵</span>
+            <span class="pill-title">Workforce</span>
+            <span class="pill-meta">Sophia · Thorne</span>
+          </button>
+        </div>
+
+        <!-- RIGHT CLUSTER (APPEARS DYNAMICALLY ON RELEVANCE) -->
+        <div class="satellite-cluster cluster-right">
+          <button type="button" class="satellite-pill highlight-attention" id="beaconAttention" title="Founder Attention Required">
+            <span class="attention-dot"></span>
+            <span class="pill-title">Attention</span>
+            <span class="pill-meta">1 Decision Requires You</span>
+          </button>
+          <button type="button" class="satellite-pill" id="beaconActivity" title="Open Contextual Activity Stream">
+            <span class="satellite-icon">◷</span>
+            <span class="pill-title">Activity</span>
+            <span class="pill-meta" id="pillActivityMeta">Milestones</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- CENTER SUITE: INTELLIGENT LIVING CORE & WORK SURFACE -->
+      <section class="central-core-suite" id="centralCoreSuite">
+
+        <!-- INTRO HERO TYPOGRAPHY -->
+        <div class="core-header-banner">
+          <h1 class="core-headline" id="coreHeadline">SAMJUNIORS CORE</h1>
+          <p class="core-tagline" id="coreTagline">I'm ready. What would you like to do?</p>
+          <div class="glowing-divider"></div>
+        </div>
+
+        <!-- THE LIVING INTELLIGENCE CORE VISUAL ANCHOR -->
+        <div class="core-visual-anchor" id="coreVisualAnchor" role="button" tabindex="0" aria-label="SamJuniorsOS Core Intelligence Field">
+          <div class="core-aura" id="coreAura"></div>
+          <div class="orbital-rings-group">
+            <div class="orbital-ring ring-1"></div>
+            <div class="orbital-ring ring-2"></div>
+            <div class="orbital-ring ring-3"></div>
+          </div>
+          <canvas id="coreCanvas" width="340" height="340"></canvas>
+          <div class="core-inner-corona"></div>
+        </div>
+
+        <!-- FREQUENCY WAVE & STATUS -->
+        <div class="core-status-section">
+          <div class="core-status-label" id="coreStatusLabel">I'm ready.</div>
+          <div class="core-wave-wrap">
+            <canvas id="waveCanvas" width="480" height="36"></canvas>
+          </div>
+        </div>
+
+        <!-- CONTEXTUAL CORE WORK SURFACE (ASTRA-INSPIRED OPERATIONAL TRANSPARENCY) -->
+        <div class="core-work-surface" id="coreWorkSurface" aria-live="polite">
+          
+          <!-- STATE: UNDERSTANDING VIEW -->
+          <div class="work-surface-pane pane-understanding" id="paneUnderstanding">
+            <div class="pane-header">
+              <span class="pane-tag">UNDERSTANDING YOUR INTENT</span>
+              <span class="pane-intent-quote" id="intentQuoteDisplay">"Prepare this week's company review"</span>
+            </div>
+            <div class="context-gathering-box">
+              <span class="box-caption">Context being considered:</span>
+              <div class="context-chips-list">
+                <span class="context-chip"><span class="chip-dot"></span> Company State & Goals</span>
+                <span class="context-chip"><span class="chip-dot"></span> Recent Consequential Decisions</span>
+                <span class="context-chip"><span class="chip-dot"></span> Product Context & Milestones</span>
+                <span class="context-chip"><span class="chip-dot"></span> Governed Market Signals</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE: WORKING VIEW (MULTI-STEP TASK PROGRESS + STEERING) -->
+          <div class="work-surface-pane pane-working" id="paneWorking">
+            <div class="pane-header space-between">
+              <div class="working-title-group">
+                <span class="pane-tag">WORKING ON TASK</span>
+                <span class="pane-task-name" id="workingTaskName">Company Review Preparation</span>
+              </div>
+              <!-- FOUNDER STEERING BAR: REDIRECT / STOP -->
+              <div class="founder-steering-bar">
+                <button type="button" class="btn-steering btn-redirect" id="btnSteeringRedirect" title="Steer or change direction of ongoing work">
+                  ⟳ Redirect
+                </button>
+                <button type="button" class="btn-steering btn-stop" id="btnSteeringStop" title="Halt current execution">
+                  ⏹ Stop
+                </button>
+              </div>
+            </div>
+
+            <div class="task-steps-checklist" id="taskStepsChecklist">
+              <div class="step-row done">
+                <span class="step-check">✓</span>
+                <span class="step-label">Company context</span>
+                <span class="step-status-tag">Synthesized</span>
+              </div>
+              <div class="step-row done">
+                <span class="step-check">✓</span>
+                <span class="step-label">Recent outcomes</span>
+                <span class="step-status-tag">Verified</span>
+              </div>
+              <div class="step-row active">
+                <span class="step-check spinner-dot"></span>
+                <span class="step-label">Market signals</span>
+                <span class="step-status-tag active">Evaluating</span>
+              </div>
+              <div class="step-row pending">
+                <span class="step-check">…</span>
+                <span class="step-label">Executive synthesis</span>
+                <span class="step-status-tag">Queued</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE: WAITING_FOR_FOUNDER VIEW (HUMAN-IN-THE-LOOP RATIFICATION) -->
+          <div class="work-surface-pane pane-waiting" id="paneWaiting">
+            <div class="pane-header">
+              <div class="attention-badge-small">
+                <span class="attention-pulse"></span>
+                FOUNDER ATTENTION REQUIRED
+              </div>
+              <span class="pane-decision-title" id="waitingDecisionTitle">Ratification Gate: Tag Release Candidate</span>
+            </div>
+            <div class="decision-card-body">
+              <div class="decision-meta-row">
+                <span class="d-label">Context:</span>
+                <span class="d-val">All epistemic verifications completed. Invariant margin floor (80%) satisfied.</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Evidence:</span>
+                <span class="d-val status-passed">Deterministic sandbox build verified clean</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Impact:</span>
+                <span class="d-val">Authorizes external deployment candidate creation</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Recommended:</span>
+                <span class="d-val">Authorize release candidate tag</span>
+              </div>
+            </div>
+            <div class="waiting-actions-row">
+              <button type="button" class="btn-decision-reject" id="btnDecisionReject">Reject Action</button>
+              <button type="button" class="btn-decision-approve" id="btnDecisionApprove">
+                <span class="btn-glow"></span>
+                Sign & Ratify Decision
+              </button>
+            </div>
+          </div>
+
+          <!-- STATE: EXECUTING VIEW -->
+          <div class="work-surface-pane pane-executing" id="paneExecuting">
+            <div class="pane-header space-between">
+              <div class="working-title-group">
+                <span class="pane-tag">EXECUTING GOVERNED STEP</span>
+                <span class="pane-task-name" id="executingTaskName">Deterministic Artifact Generation</span>
+              </div>
+              <button type="button" class="btn-steering btn-stop" id="btnExecutingStop">⏹ Stop</button>
+            </div>
+            <div class="task-steps-checklist">
+              <div class="step-row done"><span class="step-check">✓</span> Step 1: Input manifest binding</div>
+              <div class="step-row done"><span class="step-check">✓</span> Step 2: Constitutional invariant pass</div>
+              <div class="step-row active"><span class="step-check spinner-dot"></span> Step 3: Sandbox build execution</div>
+              <div class="step-row pending"><span class="step-check">○</span> Founder gate: Awaiting final signature</div>
+            </div>
+          </div>
+
+          <!-- STATE: COMPLETED VIEW -->
+          <div class="work-surface-pane pane-completed" id="paneCompleted">
+            <div class="pane-header">
+              <span class="pane-tag tag-success">COMPLETED</span>
+              <span class="pane-task-name" id="completedTaskName">Weekly Company Review Prepared</span>
+            </div>
+            <div class="completed-summary-box">
+              <p class="summary-text" id="completedSummaryText">Executive brief prepared. 0 invariant exceptions. 1 decision created for your attention.</p>
+              <div class="completed-action-pills">
+                <button type="button" class="btn-action-pill" id="btnCompletedAction1">Review Created Decision</button>
+                <button type="button" class="btn-action-pill" id="btnCompletedAction2">Inspect Provenance Trail</button>
+                <button type="button" class="btn-action-pill highlight" id="btnCompletedDismiss">Return to Ready</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- STATE: BLOCKED VIEW -->
+          <div class="work-surface-pane pane-blocked" id="paneBlocked">
+            <div class="pane-header">
+              <span class="pane-tag tag-danger">EXECUTION BLOCKED</span>
+              <span class="pane-task-name">Invariant Floor Exception</span>
+            </div>
+            <div class="blocked-diagnostic-box">
+              <div class="blocked-row"><span class="b-label">Condition:</span> <span class="b-val">Constitutional gross margin invariant breached (72% &lt; 80% floor).</span></div>
+              <div class="blocked-row"><span class="b-label">Why:</span> <span class="b-val">Proposed compute unit allocation exceeds budget boundary.</span></div>
+              <div class="blocked-row"><span class="b-label">Prerequisite:</span> <span class="b-val">Founder policy waiver or modified allocation parameters required.</span></div>
+            </div>
+            <div class="blocked-actions-row">
+              <button type="button" class="btn-decision-reject" id="btnDismissBlocked">Acknowledge & Clear</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- FOUNDER COMMAND INPUT BAR -->
+        <div class="command-input-container">
+          <form id="commandForm" class="command-bar-form" autocomplete="off">
+            <div class="command-pill-box">
+              <span class="cmd-icon-prefix">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                id="commandInput"
+                class="command-input"
+                placeholder="What would you like Core to work on?"
+                aria-label="Founder Command Input"
+              />
+              <button type="submit" class="command-submit-btn" id="btnSubmitCommand" aria-label="Execute Command">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </form>
+
+          <!-- PROMPT CHIPS (QUALITATIVE FOUNDER QUESTIONS) -->
+          <div class="suggested-prompts-row" id="suggestedPromptsRow">
+            <button type="button" class="prompt-chip" data-prompt="What's changed in the company?">
+              "What's changed in the company?"
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Prepare my weekly review.">
+              "Prepare my weekly review."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="What needs my attention?">
+              "What needs my attention?"
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Research this opportunity.">
+              "Research this opportunity."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Show me current product risks.">
+              "Show me current product risks."
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- MANUAL MODE DIRECT NAVIGATION OVERLAY -->
+      <section class="manual-mode-view" id="manualModeView" aria-hidden="true">
+        <div class="manual-nav-header">
+          <h2>GOVERNED OPERATING MODULES</h2>
+          <p>Direct unmediated access to SamJuniorsOS systems</p>
+        </div>
+        <div class="manual-modules-grid">
+          <button type="button" class="manual-module-card" id="cardManualCompany">
+            <span class="module-icon">🏢</span>
+            <span class="module-title">Company</span>
+            <span class="module-desc">Operating state, goals, governance</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualWork">
+            <span class="module-icon">⚡</span>
+            <span class="module-title">Work</span>
+            <span class="module-desc">Active workflows & scheduled tasks</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualDecisions">
+            <span class="module-icon">⚖️</span>
+            <span class="module-title">Decisions</span>
+            <span class="module-desc">Pending ratification & ratified records</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualResearch">
+            <span class="module-icon">🔍</span>
+            <span class="module-title">Research</span>
+            <span class="module-desc">Epistemic claims & verified signals</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualWorkforce">
+            <span class="module-icon">☵</span>
+            <span class="module-title">Workforce</span>
+            <span class="module-desc">Sophia & Thorne operating mandates</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualActivity">
+            <span class="module-icon">◷</span>
+            <span class="module-title">Activity</span>
+            <span class="module-desc">Chronological operational events</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualAudit">
+            <span class="module-icon">🛡️</span>
+            <span class="module-title">Audit</span>
+            <span class="module-desc">Immutable append-only provenance</span>
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- STEERING POPOVER (ASTRA-STYLE REDIRECT WORK) -->
+    <div class="steering-popover" id="steeringPopover" aria-hidden="true">
+      <div class="steering-header">
+        <span class="steering-title">Steer Ongoing Work</span>
+        <button type="button" class="btn-close-popover" id="btnCloseSteering">✕</button>
+      </div>
+      <p class="steering-desc">What should Core adjust in this task?</p>
+      <div class="steering-options-list">
+        <button type="button" class="steering-opt-btn" data-steering="product">
+          <span class="opt-bullet">↳</span> Focus on product context
+        </button>
+        <button type="button" class="steering-opt-btn" data-steering="research">
+          <span class="opt-bullet">↳</span> Focus on market research
+        </button>
+        <button type="button" class="steering-opt-btn" data-steering="findings">
+          <span class="opt-bullet">↳</span> Show me findings so far
+        </button>
+        <button type="button" class="steering-opt-btn" data-steering="new_directive">
+          <span class="opt-bullet">↳</span> Give Core another instruction
+        </button>
+      </div>
+    </div>
+
+    <!-- LEVEL 2 CONTEXTUAL SPATIAL SHEET: COMPANY STATE -->
+    <aside class="spatial-sheet sheet-left" id="sheetCompanyState" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>GOVERNED COMPANY STATE</h3>
+          <span class="sub-badge">Evidence-Grounded</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseCompanyState" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <div class="state-metric-group">
+          <div class="state-tile">
+            <span class="tile-label">OPERATING STATUS</span>
+            <div class="tile-val-row">
+              <span class="status-dot dot-green"></span>
+              <span class="tile-val">Healthy · Governed</span>
+            </div>
+            <span class="tile-sub">All route authorization gates enforcing server-derived sessions</span>
+          </div>
+          <div class="state-tile">
+            <span class="tile-label">PERSISTENCE MODE</span>
+            <div class="tile-val-row">
+              <span class="tile-val-cyan">Single Container Locked</span>
+            </div>
+            <span class="tile-sub">min=1, max=1 constraint enforced · DurableFileStore & DB active</span>
+          </div>
+          <div class="state-tile">
+            <span class="tile-label">EPISTEMIC SEPARATION</span>
+            <div class="tile-val-row">
+              <span class="tile-val">Active (No Synthetic Bypasses)</span>
+            </div>
+            <span class="tile-sub">Source → Signal → Claim → Verified Fact</span>
+          </div>
+          <div class="state-tile">
+            <span class="tile-label">CONSTITUTIONAL FLOOR</span>
+            <div class="tile-val-row">
+              <span class="tile-val-green">Gross Margin Floor: 80%</span>
+            </div>
+            <span class="tile-sub">Deterministic rule halts invariant violations</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- LEVEL 2 CONTEXTUAL SPATIAL SHEET: ACTIVITY STREAM -->
+    <aside class="spatial-sheet sheet-right" id="sheetActivity" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>ACTIVITY & PROVENANCE</h3>
+          <span class="sub-badge">Durable Milestones</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseActivity" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <ul class="activity-stream-list" id="activityStreamList">
+          <li class="activity-item">
+            <span class="status-dot dot-emerald"></span>
+            <div class="activity-details">
+              <span class="activity-text">ConstitutionalVerifier passed margin invariant check</span>
+              <span class="activity-time">Verified · Recent</span>
+            </div>
+          </li>
+          <li class="activity-item">
+            <span class="status-dot dot-cyan"></span>
+            <div class="activity-details">
+              <span class="activity-text">Sophia validated epistemic claim</span>
+              <span class="activity-time">Epistemic Gate · Recent</span>
+            </div>
+          </li>
+          <li class="activity-item">
+            <span class="status-dot dot-purple"></span>
+            <div class="activity-details">
+              <span class="activity-text">Thorne completed deterministic sandbox build</span>
+              <span class="activity-time">Systems Execution · Recent</span>
+            </div>
+          </li>
+        </ul>
+        <div class="sheet-footer-action">
+          <button type="button" class="btn-inspect-audit" id="btnViewAllActivity">
+            Open Deep Provenance Inspector (Level 3) →
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- LEVEL 2 CONTEXTUAL DRAWER: WORKFORCE PRESENCE -->
+    <section class="contextual-panel workforce-drawer" id="workforceDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>WORKFORCE PRESENCE</h3>
+          <span class="sub-badge">v1 Governed Roster</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseWorkforce" aria-label="Close Drawer">✕</button>
+      </div>
+      <div class="workforce-compact-view">
+        <div class="wf-section">
+          <span class="wf-section-title">ACTIVE</span>
+          <div class="wf-cards-row">
+            <div class="employee-card-compact">
+              <div class="emp-avatar avatar-purple">S</div>
+              <div class="emp-meta">
+                <span class="emp-name">Sophia</span>
+                <span class="emp-role">Chief Operating Officer · Planner</span>
+              </div>
+              <span class="emp-status-badge badge-active">PLANNING</span>
+            </div>
+            <div class="employee-card-compact">
+              <div class="emp-avatar avatar-blue">T</div>
+              <div class="emp-meta">
+                <span class="emp-name">Thorne</span>
+                <span class="emp-role">Principal Systems Worker · Execution</span>
+              </div>
+              <span class="emp-status-badge badge-active">STANDBY</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="wf-section">
+          <span class="wf-section-title">STANDBY / TARGET-STATE (NON-v1)</span>
+          <div class="wf-standby-list">
+            <span class="standby-item">Maya (Product / Design)</span>
+            <span class="standby-item">Julian (Finance / Margin Floor)</span>
+            <span class="standby-item">Elena Rostova (Deferred)</span>
+            <span class="standby-item">Marcus Vance (Deferred)</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- LEVEL 3 DEEP DETAIL INSPECTOR: PROVENANCE & AUDIT -->
+    <div class="modal-backdrop" id="auditModal" aria-hidden="true">
+      <div class="modal-card audit-card" role="dialog" aria-modal="true" aria-labelledby="auditHeading">
+        <div class="modal-header">
+          <div class="audit-title-group">
+            <span class="cyan-accent-bar"></span>
+            <h3 id="auditHeading">DEEP AUDIT TRAIL & PROVENANCE</h3>
+            <span class="sub-badge">Level 3 Detail</span>
+          </div>
+          <button type="button" class="modal-close-btn" id="btnCloseAudit" aria-label="Close Modal">✕</button>
+        </div>
+        <div class="modal-body audit-body">
+          <div class="audit-telemetry-strip">
+            <div class="telem-item">
+              <span class="telem-lbl">PERSISTENCE MODE</span>
+              <span class="telem-val">PostgreSQL + Atomic Durable Store</span>
+            </div>
+            <div class="telem-item">
+              <span class="telem-lbl">INSTANCE GUARD</span>
+              <span class="telem-val">Single-Container Active (min=1, max=1)</span>
+            </div>
+            <div class="telem-item">
+              <span class="telem-lbl">EPISTEMIC SEPARATION</span>
+              <span class="telem-val">Source → Signal → Claim → Fact (Verified)</span>
+            </div>
+          </div>
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Author</th>
+                  <th>Event / Action</th>
+                  <th>Integrity</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="tag-source">AGENT_RUN</span></td>
+                  <td>Thorne</td>
+                  <td>Deterministic Sandbox Build</td>
+                  <td class="code-font hash-cell">verified</td>
+                  <td><span class="tag-status-green">VERIFIED</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">APPROVAL</span></td>
+                  <td>Sam (Founder)</td>
+                  <td>Ratified Epistemic Ingestion Pipeline</td>
+                  <td class="code-font hash-cell">verified</td>
+                  <td><span class="tag-status-green">RATIFIED</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">AUDIT</span></td>
+                  <td>ConstitutionalVerifier</td>
+                  <td>Constitutional Invariant Margin Check</td>
+                  <td class="code-font hash-cell">verified</td>
+                  <td><span class="tag-status-green">PASSED</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MESSENGER DRAWER -->
+    <div class="messenger-drawer" id="messengerDrawer" aria-hidden="true">
+      <div class="messenger-header">
+        <div class="msg-title-wrap">
+          <div class="pulse-indicator"></div>
+          <span class="msg-title">EXECUTIVE MESSENGER</span>
+          <span class="msg-status">Communication Layer (Sophia & Thorne)</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseMessenger" aria-label="Close Messenger">✕</button>
+      </div>
+      <div class="messenger-messages" id="messengerMessages">
+        <div class="msg-bubble msg-agent">
+          <div class="msg-sender">Sophia (COO)</div>
+          <div class="msg-content">Core is ready for your directive, Sam. Review or operational inquiries can be initiated at any time.</div>
+        </div>
+      </div>
+      <form class="messenger-input-row" id="messengerForm">
+        <input type="text" class="msg-input" id="messengerInput" placeholder="Message Sophia & Thorne..." />
+        <button type="submit" class="msg-send-btn">Send</button>
+      </form>
+    </div>
+
+    <!-- BOTTOM BAR HUD -->
+    <footer class="hud-footer">
+      <div class="footer-left">
+        <!-- PERSISTENT DEMO STATE WATERMARK -->
+        <span class="demo-state-watermark">DEMO STATE · NO LIVE COMPANY DATA CONNECTED</span>
+      </div>
+
+      <div class="footer-center">
+        <!-- 7-STATE TEST TOOLBAR -->
+        <div class="prototype-state-toolbar" id="prototypeStateToolbar" aria-label="Core State Test Toolbar">
+          <span class="toolbar-caption">CORE STATE:</span>
+          <button type="button" class="state-chip active" data-state="ready">1 READY</button>
+          <button type="button" class="state-chip" data-state="understanding">2 UNDERSTANDING</button>
+          <button type="button" class="state-chip" data-state="working">3 WORKING</button>
+          <button type="button" class="state-chip" data-state="waiting_for_founder">4 WAITING FOR FOUNDER</button>
+          <button type="button" class="state-chip" data-state="executing">5 EXECUTING</button>
+          <button type="button" class="state-chip" data-state="completed">6 COMPLETED</button>
+          <button type="button" class="state-chip" data-state="blocked">7 BLOCKED</button>
+        </div>
+      </div>
+
+      <div class="footer-right">
+        <!-- PERSISTENT MESSENGER LAUNCHER -->
+        <button type="button" class="messenger-trigger-btn" id="btnOpenMessenger" title="Open Executive Messenger">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span class="msg-trigger-label">MESSENGER</span>
+        </button>
+        <span class="footer-version">SAMJUNIORS OS v0.3</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- INTERACTIVE TOAST NOTIFICATION -->
+  <div class="toast-notification" id="toastNotification" aria-live="polite"></div>
+
+  <!-- SCRIPT -->
+  <script src="prototype.js"></script>
+</body>
+</html>
