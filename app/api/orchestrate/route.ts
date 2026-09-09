@@ -5,6 +5,7 @@ import { getIdempotencyStore } from "@/lib/server/idempotency/store";
 import {
   normalizeClientSuppliedKey,
   IdempotencyPayloadMismatchError,
+  IdempotencyConflictError,
   OperationInProgressError,
   UnknownExternalResultError,
 } from "@/lib/server/idempotency/state-machine";
@@ -89,6 +90,43 @@ export async function POST(req: NextRequest) {
               success: false,
             },
             { status: 422 }
+          );
+        }
+        // Phase 3.2 (minimal, backward-compatible): the durable idempotency
+        // stores throw structured errors for claimed keys that are in progress,
+        // unknown, or definitively failed. Completing the route's intended
+        // handling (these error classes were already imported) keeps the API
+        // honest for the Command Terminal: duplicate/coordination-loss states
+        // are 409 CONFLICT responses with a structured code, not generic 500s.
+        // Success-path behavior is unchanged.
+        if (claimErr instanceof OperationInProgressError) {
+          return NextResponse.json(
+            {
+              error: claimErr.message,
+              success: false,
+              code: "idempotency_in_progress",
+            },
+            { status: 409 }
+          );
+        }
+        if (claimErr instanceof UnknownExternalResultError) {
+          return NextResponse.json(
+            {
+              error: claimErr.message,
+              success: false,
+              code: "idempotency_unknown",
+            },
+            { status: 409 }
+          );
+        }
+        if (claimErr instanceof IdempotencyConflictError) {
+          return NextResponse.json(
+            {
+              error: claimErr.message,
+              success: false,
+              code: "idempotency_prior_failure",
+            },
+            { status: 409 }
           );
         }
         throw claimErr;

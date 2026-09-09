@@ -426,10 +426,6 @@ export default function SamJuniorsOSPage() {
             setViewMode('classic');
             openApp(appId as AppId);
           }}
-          onDispatchDirective={(directive) => {
-            setPendingDirective(directive);
-            openApp('workforce', directive);
-          }}
           onInspectEmployee={handleInspectEmployeeProfile}
         />
         <EmployeeProfileModal

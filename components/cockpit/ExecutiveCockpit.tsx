@@ -4,18 +4,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Shield,
   Activity,
-  Zap,
   TrendingUp,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
-  Clock,
-  Send,
   Users,
   Briefcase,
-  FileText,
-  DollarSign,
-  Maximize2,
   LayoutGrid,
   RefreshCw
 } from 'lucide-react';
@@ -24,11 +17,12 @@ import { CompanyInitiative, AIAgent, FinanceMetric, AgentRole } from '@/types/os
 import { INITIAL_INITIATIVES, INITIAL_AGENTS, SAMPLE_FINANCIAL_MODEL } from '@/lib/os-data';
 import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
 import { PersonaStore } from '@/lib/persona-store';
+import { CommandTerminal } from './CommandTerminal';
+import { CommandOutcome, CommandErrorState } from '@/lib/cockpit/command-terminal-state';
 
 interface ExecutiveCockpitProps {
   onSwitchToClassic: () => void;
   onOpenApp?: (appId: string) => void;
-  onDispatchDirective?: (directive: string) => void;
   onInspectEmployee?: (agentId: AgentRole) => void;
 }
 
@@ -64,14 +58,10 @@ interface StreamEvent {
 export function ExecutiveCockpit({
   onSwitchToClassic,
   onOpenApp,
-  onDispatchDirective,
   onInspectEmployee,
 }: ExecutiveCockpitProps) {
-  // Directives & Inputs
-  const [directiveInput, setDirectiveInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Live Stream Feed
+  // Live Stream Feed (Phase 3.2: directive events are pushed only AFTER the
+  // server returns the real outcome — no fabricated pre-dispatch entries).
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([
     {
       id: 'stream-1',
@@ -219,34 +209,35 @@ export function ExecutiveCockpit({
     }
   };
 
-  const submitDirective = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!directiveInput.trim()) return;
+  // The command terminal reports the FINAL server-derived state; the stream
+  // event reflects that actual result (durable status or request failure),
+  // never an assumed success.
+  const pushCommandOutcome = useCallback(
+    (directive: string, state: CommandOutcome | CommandErrorState, isOutcome: boolean) => {
+      const label = isOutcome
+        ? `Directive ${String((state as CommandOutcome).kind).replace(/_/g, ' ')} (server-verified)`
+        : `Directive submission failed (${String((state as CommandErrorState).kind).replace(/_/g, ' ')})`;
+      setStreamEvents((prev) => [
+        {
+          id: `command-${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          role: 'Founder Directive',
+          author: 'Command Terminal',
+          title: label,
+          summary: state.detail,
+          type: 'approval' as const,
+        },
+        ...prev,
+      ]);
+    },
+    []
+  );
 
-    setIsSubmitting(true);
-    const directive = directiveInput.trim();
-
-    // Append to local stream
-    setStreamEvents((prev) => [
-      {
-        id: `dir-${Date.now()}`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        role: 'Founder Directive',
-        author: 'Executive Cockpit',
-        title: 'Directive Issued to Workforce',
-        summary: `"${directive}"`,
-        type: 'advisor',
-      },
-      ...prev,
-    ]);
-
-    if (onDispatchDirective) {
-      onDispatchDirective(directive);
-    }
-
-    setDirectiveInput('');
-    setIsSubmitting(false);
-  };
+  // Command Terminal → real orchestration: refresh the existing approvals
+  // inbox immediately when the server reports approval-worthy work.
+  const handleApprovalRequested = useCallback(() => {
+    loadApprovals();
+  }, [loadApprovals]);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0d1117] text-slate-100 font-sans select-none overflow-hidden">
@@ -510,27 +501,14 @@ export function ExecutiveCockpit({
         </section>
       </main>
 
-      {/* 3. BOTTOM DIRECTIVE TERMINAL */}
+      {/* 3. BOTTOM COMMAND TERMINAL — Phase 3.2 vertical slice:
+          founder command → /api/orchestrate → existing runtime → durable result →
+          audit; the terminal displays authoritative server state only. */}
       <footer className="p-4 border-t border-slate-800 bg-[#161b22]/90 backdrop-blur-md z-30">
-        <form onSubmit={submitDirective} className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={directiveInput}
-              onChange={(e) => setDirectiveInput(e.target.value)}
-              placeholder='Direct workforce: "Audit student drop-off rate and generate sprint PRD"...'
-              className="w-full px-4 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 shadow-inner font-sans"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={isSubmitting || !directiveInput.trim()}
-            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center space-x-1.5"
-          >
-            <span>Dispatch</span>
-            <Send className="w-3.5 h-3.5" />
-          </button>
-        </form>
+        <CommandTerminal
+          onApprovalRequested={handleApprovalRequested}
+          onOutcome={pushCommandOutcome}
+        />
       </footer>
     </div>
   );

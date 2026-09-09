@@ -17,6 +17,147 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.2 — Command Terminal → Real Orchestration (second vertical slice)
+
+**Status:** COMPLETE (implemented, tested, browser-verified).
+**Base HEAD:** `3cf92f3` · **Commit:** see git log for the Phase 3.2 entry.
+
+### What was implemented
+
+The Phase 3.2 vertical slice — the founder can now create REAL work from the
+Command Center through the existing orchestration path:
+
+```
+FOUNDER COMMAND → COMMAND TERMINAL → POST /api/orchestrate (EXISTING)
+→ EXISTING RUNTIME → WORKFLOW → APPROVAL WHEN REQUIRED (Phase 3.1 loop)
+→ DURABLE RESULT → AUDIT → TERMINAL REFLECTS ACTUAL SERVER STATE
+```
+
+At `3cf92f3` the cockpit's bottom terminal was a local-only fake: it appended
+a "Directive Issued" stream event and routed the founder to the classic-desktop
+Workforce app (`onDispatchDirective` → `openApp('workforce')`); no request ever
+reached `/api/orchestrate` (WORKLOG 3.1 "next slice candidate").
+
+Changes:
+
+- `lib/cockpit/command-terminal-state.ts` (new, pure client-safe module) —
+  the terminal's display-derivation layer: authoritative run status → outcome,
+  HTTP status → error kind, durable instance state (re-read) → outcome,
+  client idempotency-key generation, and a sessionStorage POINTER for the
+  refresh re-read. Contains no authorization, orchestration, or company-state
+  logic. Pins the rule the tests enforce: HTTP 200 / `success: true` NEVER
+  maps to `completed`; only `data.status` (the durable run status) can.
+  Maps the unconfigured-engine response (status failed + liveAi false +
+  executionMode 'unconfigured') to an honest UNCONFIGURED state.
+- `components/cockpit/CommandTerminal.tsx` (new) — the input surface: input +
+  dispatch, submitting state, result panel (status chip, server-provided
+  detail, instance id, execution mode, replay/reread badges), distinct
+  error rendering (401/403/400/409/422/500/network with the server's safe
+  actionable messages), retry-with-SAME-key on network failure (real
+  idempotency, not client-side fake), refresh re-read that re-fetches the
+  authoritative instance state via the existing GET /api/workflow/instances
+  contract (pointer only — state always comes from the server; missing
+  record → pointer discarded honestly). No approval UI: when the server
+  reports `requires_approval`, it fires `onApprovalRequested` so the EXISTING
+  Phase 3.1 inbox refreshes immediately and points the founder there.
+- `components/cockpit/ExecutiveCockpit.tsx` — the fake dispatch path removed
+  (form, local-stream event, `onDispatchDirective` prop); footer now mounts
+  the CommandTerminal; executive-stream events are pushed only AFTER the
+  server returns the real outcome (never fabricated pre-dispatch).
+- `app/page.tsx` — removed the now-unused `onDispatchDirective` cockpit wiring
+  (classic-desktop paths unchanged).
+- `app/api/orchestrate/route.ts` — smallest necessary, backward-compatible
+  fix: the idempotency claim's thrown `OperationInProgressError` /
+  `UnknownExternalResultError` / `IdempotencyConflictError` states now return
+  structured 409 responses (`code: idempotency_in_progress|idempotency_unknown|
+  idempotency_prior_failure`) instead of generic 500s (these error classes were
+  already imported-but-unhandled in the route). Success paths are untouched;
+  the replay (200 + X-Idempotent-Replay) and payload-mismatch (422) contracts
+  are unchanged.
+
+### What was verified (all actually run)
+
+- `npx tsc --noEmit` → 0 errors.
+- `npx eslint` on all 6 touched/new files → clean.
+- New suite `tests/phase3_2_command_terminal.test.ts` → **22/22 PASS**
+  (offline DurableFileStore mode). Covers: real route-handler invocations for
+  unauthenticated / non-founder / wrong-secret (401), malformed command
+  (missing/empty/non-string directive → 400), founder submission reaching the
+  real path (honest unconfigured result, idempotency key claimed in the
+  existing store, no workflow created, no fabricated metrics), duplicate
+  submission replay (200 + X-Idempotent-Replay + deep-equal body), altered
+  payload (422), in-progress duplicate (409 in_progress), coordination-loss
+  unknown (409 unknown), failed-prior (409 prior_failure), successful
+  orchestration through the exact route code path (runtime → completed run +
+  instance id), approval-required command entering the EXISTING Phase 3.1
+  approval loop (pending record → founder decides → gate-mediated execution →
+  durable completed + audit; reject → blocked, zero executions), durable
+  re-read (store + durable file layer + terminal re-derivation after
+  approval and while awaiting), and the pure terminal display logic
+  (200/success:true + failed → UNCONFIGURED never success; requires_approval →
+  AWAITING; error-kind mapping for every class; blocked/cancelled/missing
+  re-read honesty; unique idempotency keys).
+- Full offline regression (all actually run, all exit 0): Phase 3.1 decision
+  loop 11/11; Phase 2.4 idempotency 14/14 (touched route); governance &
+  security foundation 38/38; Phase 12.3 authorization gate 38/38; Phase 2.1
+  25/25; Phase 2.2 24/24; Phase 2.3 22/22; Phase 2.5 12/12 in-memory
+  (real-PG tests skip by design when no local PostgreSQL, unchanged).
+- Browser E2E (agent-browser against a live `next dev` server on a spare port,
+  dev-cookie founder session, seeded through the exact /api/orchestrate code
+  path):
+  - Cockpit renders the terminal; approvals inbox renders pending approvals.
+  - **Dispatch a directive → live POST /api/orchestrate (200 observed in the
+    network trace) → terminal displays the honest ENGINE NOT CONFIGURED
+    state** ("GEMINI_API_KEY environment variable is not configured", mode
+    unconfigured, liveAi false, "No workflow was created and no results were
+    fabricated") — not success.
+  - **Refresh → DURABLE RE-READ → "AWAITING FOUNDER APPROVAL"** verified from
+    durable state with the pointer to the inbox.
+  - **Approve click in the existing inbox → live response:** "Approved —
+    durable result: step 'step-side-effect' is completed, workflow completed
+    (1 audit record)."
+  - **Refresh again → DURABLE RE-READ → "COMPLETED"** verified from durable
+    state.
+  - Zero page errors / console errors across all flows.
+  - Direct HTTP boundary checks: GET approvals & POST orchestrate without
+    cookies → 401.
+- Runtime `.data` state was restored to HEAD after verification (test/E2E
+  residue is not product state).
+
+### Known limitations
+
+- The configured-engine path (live GEMINI_API_KEY) was verified at the
+  runtime/route level in tests, not with a live AI key (none exists in this
+  environment). The browser E2E exercised the honest unconfigured path over
+  live HTTP, plus the real approval loop on seeded durable state.
+- Orchestration remains synchronous (pre-existing Phase 3.1 limitation,
+  unchanged): long DAGs hold the POST open.
+- `synthesizeOrchestrationRunFromWorkflow` maps a BLOCKED instance to run
+  status 'running' (pre-existing synthesis quirk, deliberately not changed in
+  this slice — documented; the terminal's refresh re-read path DOES display
+  blocked correctly from raw instance state).
+- The 409 structured codes are additive to the existing contract; the
+  terminal also sniffs legacy 500 messages for backward compatibility.
+- The refresh re-read fetches GET /api/workflow/instances (all instances,
+  client-side filter by pointer id) — fine at current single-founder scale.
+- Vitals Wall / Executive Stream still render static demo data (Phase 3.1
+  known limitation; explicitly out of scope here).
+
+### Unresolved risks / next recommended actions
+
+1. **Next slice candidate:** replace the Vitals Wall / Executive Stream demo
+   data with authoritative reads (workflow instances, scheduled work, agent
+   runs, epistemic claims) — the two remaining fabricated-data surfaces.
+2. Consider a CAS guard for `evaluateReadiness`'s instance write (Phase 3.1
+   known limitation, still open).
+3. Consider fixing the blocked→running synthesis quirk in
+   `synthesizeOrchestrationRunFromWorkflow` (small, but it is an API-facing
+   honesty issue for any future consumer).
+4. Consider a background/scheduler-driven orchestration resume so long DAGs
+   don't hold the POST open (Command Center-scale concern).
+
+---
+
 ## Phase 3.1 — Founder Decision Loop Closure (first vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).
