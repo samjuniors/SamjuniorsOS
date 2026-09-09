@@ -3,14 +3,16 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-Phase 3 (Command Center) — two vertical slices complete: Phase 3.1 Founder Decision Loop Closure and Phase 3.2 Command Terminal → Real Orchestration (cockpit terminal now submits through the existing /api/orchestrate path with honest state display; see WORKLOG.md). Awaiting founder review before broadening the Command Center.
+Phase 3 (Command Center) — three vertical slices complete: Phase 3.1 Founder Decision Loop Closure, Phase 3.2 Command Terminal → Real Orchestration, and Phase 3.3 Authoritative Command Center Reads (the cockpit's Vitals Wall / Executive Stream / header vitals now render only authoritative persisted state; all fabricated demo data removed). Awaiting founder review before broadening the Command Center.
 
 ## Next (queued, in order)
-- Replace Vitals Wall / Executive Stream demo data with authoritative reads
+- Founder-guard the three unguarded read routes (GET /api/workflow/scheduling, /api/agents/runs, /api/workflow/definitions) — pre-existing Phase 13 routes
+- Jarvis HTML prototype review/integration (the production read layer is now trustworthy)
 - Consider CAS guard for evaluateReadiness instance writes
 - Consider fixing the blocked→running synthesis quirk in synthesizeOrchestrationRunFromWorkflow
 
 ## Completed
+- [2026-09-09] Phase 3.3 — Authoritative Command Center Reads: replaced the cockpit's remaining fabricated surfaces (Vitals Wall, Executive Stream, header vitals, fleet status) with a read-only server-side aggregation over the existing repositories behind a new founder-guarded GET /api/cockpit/overview; honest fail-closed/empty states (a failed read is never zeros); approvals inbox failure state fixed (no more false "All Side-Effects Clear" on error). New suite 17/17; full offline regression green; browser E2E verified real data rendering, the approval loop over live HTTP, unauthenticated error states, and zero console errors. See WORKLOG.md.
 - [2026-09-09] Phase 3.2 — Command Terminal → Real Orchestration: cockpit terminal replaced the fake local dispatch with the real POST /api/orchestrate contract (client idempotency key, honest authoritative state display incl. unconfigured/awaiting-approval/failed, network-retry same-key, durable refresh re-read via GET /api/workflow/instances, approval integration into the existing Phase 3.1 inbox). Minimal backward-compatible route fix: idempotency claim errors now structured 409s. New suite 22/22; full offline regression green; browser E2E over live HTTP verified the terminal submission, durable re-read before/after approval, and the existing approval loop with zero console errors. See WORKLOG.md.
 - [2026-09-09] Phase 3.1 — Founder Decision Loop Closure: approvals now reconcile into workflow execution (approve → resume → gate-mediated execution → durable result + audit → UI reflects; reject/revoke → fail-closed blocked). Fixed latent route bug (session email vs gate allowlist) via server-verified userContext contract. New suite 11/11 in both offline and authoritative-PG modes; full offline + online regression green; browser E2E verified both decision paths with zero console errors. See WORKLOG.md.
 - [2026-09-09] AGENTS.md universal agent contract (commit `478b3e7`).

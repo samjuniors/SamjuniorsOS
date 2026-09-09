@@ -44,7 +44,7 @@ broad dashboard.
 |---|---|
 | 3.1 Founder Decision Loop Closure — approvals read → present → founder decides → gate → runtime resume → durable result → audit → UI reflects | DONE & VERIFIED (see WORKLOG.md) |
 | 3.2 Command Terminal → /api/orchestrate — cockpit terminal submits real commands through the existing orchestration path with honest state display | DONE & VERIFIED (see WORKLOG.md) |
-| 3.x Authoritative reads for Vitals Wall / Executive Stream (replace demo data) | QUEUED |
+| 3.3 Authoritative Command Center Reads — Vitals Wall / Executive Stream / header vitals replaced with authoritative persisted reads; fabricated demo data removed | DONE & VERIFIED (see WORKLOG.md) |
 
 ## LATER (genuinely valuable, explicitly not before NEXT is done)
 

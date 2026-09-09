@@ -17,6 +17,172 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.3 — Authoritative Command Center Reads (third vertical slice)
+
+**Status:** COMPLETE (implemented, tested, browser-verified).
+**Base HEAD:** `e6c320c` · **Commit:** see git log for the Phase 3.3 entry.
+
+### What was implemented
+
+The Phase 3.3 vertical slice — the cockpit's remaining fabricated/static
+surfaces now read authoritative persisted state:
+
+```
+AUTHORITATIVE PERSISTED STATE → READ/QUERY LAYER (lib/server/cockpit)
+→ GET /api/cockpit/overview → EXECUTIVE COCKPIT → UI REFLECTS REAL STATE
+```
+
+At `e6c320c` the cockpit's Vitals Wall + Executive Stream + header vitals were
+still fabricated: static demo initiatives/workforce/financial constants from
+`lib/os-data.ts`, three seeded fake stream events, fake "Executing/Standby"
+agent status, fake financial chips (runway/margin/burn), a fake green
+"active" fleet dot, and a Vitals Wall labeled "Ground Truth (PostgreSQL)"
+while rendering static data. Additionally, a failed approvals read silently
+rendered "All Side-Effects Clear" (a dangerous false statement).
+
+Changes:
+
+- `lib/server/cockpit/overview.ts` (new) — READ-ONLY server-side aggregation
+  over the EXISTING repositories only: workflow instance store (status
+  counts + recent instances), approval store behind the gate (pending count),
+  scheduled work store (count + earliest due), agent run store (24h
+  completed/failed counts, per-agent last run, run events), audit store
+  behind the gate (execution events), epistemic claim store
+  (claims-pending-verification count). Every metric carries an explicit
+  deterministic definition; fail-closed per source (CockpitReadError names
+  the source — a database failure is NEVER zeros); bounded slices
+  (recentWorkflows ≤ 8, stream ≤ 30, run window 100); discloses `asOf` +
+  `persistenceMode`. No new persistence, no second data model.
+- `app/api/cockpit/overview/route.ts` (new) — the smallest typed read
+  endpoint: founder-session guard (401), aggregation, 503 fail-closed
+  mapping for unavailable authoritative persistence (`reads_unavailable`),
+  500 otherwise. Reads only — no write path exists in this route.
+- `lib/cockpit/overview-state.ts` (new, pure client-safe) — display
+  derivations from the authoritative response: error-kind mapping
+  (401/503/500/network), vitals tiles, relative-time formatting,
+  persistence-mode label, empty-state predicates. No data of its own.
+- `components/cockpit/ExecutiveCockpit.tsx` — ALL fabricated surfaces
+  removed (os-data demo imports gone, seeded stream events gone, financial
+  chips replaced by REAL header chips: pending approvals + active workflows,
+  fake fleet "active" dot removed) and replaced with: bounded polling of the
+  authoritative overview (15s + event-triggered refreshes after command
+  outcomes / approval decisions), Vitals Wall tiles + workflow-instances
+  card + fleet verified-run-activity card, Executive Stream rendered from
+  persisted records (workflow/approval/agent-run/audit events with source
+  badges; local session events only relay real server outcomes per Phase
+  3.2 semantics), honest failure states (vitals error panel, stream
+  unavailable, stale-read banner on network failure), and the approvals
+  inbox now distinguishes loading / error / genuinely-empty (a failed read
+  no longer renders "All Side-Effects Clear").
+- Metrics with NO authoritative source (financial runway/margin/burn,
+  static strategy initiatives) are REMOVED, not replaced with other fake
+  values — the cockpit renders only what persistence actually holds.
+
+### Authoritative source map (implemented)
+
+| Cockpit surface | Authoritative source | Transformation |
+|---|---|---|
+| Active/awaiting/blocked/failed/completed workflow counts | Workflow instance store (PG `workflow_instances`, status-indexed / DurableFileStore) | count by status |
+| Recent workflows list | same | order by updatedAt, top 8 |
+| Pending approvals count (+ inbox) | Approval store behind the gate (Phase 3.1 path, unchanged) | count of decision=pending |
+| Scheduled work count + next due | Scheduled work store (PG `scheduled_work_items`, [status, executeAt] index) | count + min(executeAt) |
+| Agent runs 24h + fleet last-run | Agent run store (PG `agent_runs`, [agentId, status, createdAt] index) | filter by 24h window; first run per roster role |
+| Claims pending verification | Epistemic claim store | count of verificationStatus=pending |
+| Stream events | workflow instances + decided approvals + agent runs + audit records | merged, sorted desc, capped 30, ids `source:recordId` |
+| Financial chips / initiatives / fleet status | NONE EXISTS | removed (honest absence) |
+
+### What was verified (all actually run)
+
+- `npx tsc --noEmit` → 0 errors.
+- `npx eslint` on all 5 touched/new files → clean.
+- New suite `tests/phase3_3_authoritative_reads.test.ts` → **17/17 PASS**
+  (offline DurableFileStore mode). Covers: unauthenticated / non-founder /
+  wrong-secret rejection (401); honest empty state (real zeros, fleet with
+  null lastRuns, empty stream); no fabricated/demo values in the response
+  (structural + demo-string checks); workflow counts derived from real
+  durable instances seeded through the exact runtime path (completed /
+  awaiting / blocked); decided approval + audited execution surfacing as
+  real persisted stream events; agent-run vitals + fleet last-run with the
+  24h window enforced; scheduled-work + epistemic-claim vitals; every
+  stream event mapping to a real persisted record id with desc ordering and
+  the 30-event cap; the read-only guarantee (deep snapshot comparison of
+  instances/approvals/audits/runs/scheduled/claims before+after); refresh
+  reflecting changed durable state; fail-closed 503 with the source named
+  when authoritative persistence is unavailable (real authority machinery,
+  no mocks — DATABASE_MODE=authoritative without PostgreSQL); honest
+  display error derivations; and a static source guard that the cockpit
+  component no longer references any demo-data constant.
+- Full offline regression (all actually run, all exit 0): Phase 3.1 decision
+  loop 11/11; Phase 3.2 command terminal 22/22; governance & security
+  foundation 38/38; Phase 12.3 authorization gate 38/38; Phase 2.1 25/25;
+  Phase 2.2 24/24; Phase 2.3 22/22; Phase 2.4 idempotency 14/14; Phase 2.5
+  12/12 in-memory (real-PG tests skip by design when no local PostgreSQL —
+  none is running in this environment, unchanged posture); Phase 12.4 and
+  12.5 all pass.
+- Browser E2E (agent-browser against a live `next dev` server on a spare
+  port, dev-cookie founder session, seeded through the exact runtime path):
+  - Cockpit renders REAL persisted state: vitals tiles (109 claims pending
+    verification, 36 ok / 6 failed runs in 24h, etc.), workflow-instance
+    counts, fleet verified run activity, and a stream of real
+    workflow/approval/agent-run/audit events — zero fabricated strings on
+    the page (verified by DOM scan).
+  - Source label honest: "Durable file store (local) · as of <time>".
+  - Terminal dispatch → live POST /api/orchestrate → honest ENGINE NOT
+    CONFIGURED result (no workflow, no fabrication).
+  - Seeded awaiting-approval instance → vitals "1 pending / 1 awaiting
+    approval" + inbox card; **Approve click → durable execution + audit**;
+    refresh → "4 completed" + stream shows the real approval/audit/workflow
+    events.
+  - Unauthenticated state: vitals error panel ("Vital signs unavailable …
+    No values are shown as zeros") + approvals error state — verified by
+    clearing cookies; direct HTTP GET without cookies → 401.
+  - Mobile (390px) and desktop layouts verified; zero page/console errors
+    across all flows.
+  - Runtime `.data` state was restored to HEAD after verification (test/E2E
+    residue is not product state); the E2E seed script was removed.
+
+### Known limitations
+
+- `GET /api/workflow/scheduling`, `GET /api/agents/runs`, and
+  `GET /api/workflow/definitions` remain UNGUARDED read routes (pre-existing
+  Phase 13 routes, NOT used by the cockpit — the overview endpoint calls the
+  stores directly behind its own founder guard). Flagged as a follow-up
+  security hardening item, deliberately not expanded into this slice.
+- `listAudits()` has no server-side limit; the overview takes the top 10 of
+  the full list. Audit growth is founder-approval-gated (slow at single-
+  founder scale), but a bounded/limit-aware audit listing is a follow-up if
+  audit volume grows.
+- Stream "events" for workflows are derived from persisted instance state
+  (status + updatedAt), not a persisted transition log — honest state
+  snapshots, not an event-sourced history. Approval/agent-run/audit events
+  ARE individual persisted records.
+- Optional fixes from the Phase 3.3 spec §12 were deliberately NOT taken
+  (neither is in the touched read path, per the spec's own scope rule):
+  (a) `synthesizeOrchestrationRunFromWorkflow` still maps BLOCKED instances
+  to run status 'running' (orchestrate response path; the overview/terminal
+  re-read paths display blocked correctly from raw instance state);
+  (b) `evaluateReadiness`'s non-CAS instance write remains (write-path
+  concurrency characteristic, Phase 2-certified runtime behavior).
+- Polling intervals (approvals 10s, overview 15s) are simple bounded
+  intervals at single-founder scale; no WebSockets/streaming infrastructure
+  was added by design.
+
+### Unresolved risks / next recommended actions
+
+1. **Next slice candidate:** founder-guard the three unguarded read routes
+   (scheduling/agent-runs/definitions GET) — small, security-positive, and
+   now clearly flagged; or begin Jarvis prototype review (the production
+   read layer is now trustworthy, which the prototype integration was
+   waiting on).
+2. Fix the blocked→running synthesis quirk in
+   `synthesizeOrchestrationRunFromWorkflow` (small API-facing honesty fix).
+3. CAS guard for `evaluateReadiness`'s instance write (Phase 3.1 limitation,
+   still open).
+4. Background/scheduler-driven orchestration resume so long DAGs don't hold
+   the POST open (Command Center-scale concern).
+
+---
+
 ## Phase 3.2 — Command Terminal → Real Orchestration (second vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).
