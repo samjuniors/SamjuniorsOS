@@ -46,6 +46,7 @@ broad dashboard.
 | 3.2 Command Terminal → /api/orchestrate — cockpit terminal submits real commands through the existing orchestration path with honest state display | DONE & VERIFIED (see WORKLOG.md) |
 | 3.3 Authoritative Command Center Reads — Vitals Wall / Executive Stream / header vitals replaced with authoritative persisted reads; fabricated demo data removed | DONE & VERIFIED (see WORKLOG.md) |
 | 3.4 Legacy Read Routes Hardening — GET /api/workflow/scheduling, /api/agents/runs, /api/workflow/definitions protected with server-verified founder authentication; defense-in-depth in middleware | DONE & VERIFIED (see WORKLOG.md) |
+| 3.5–3.7 Core Prototype Line (V3 → V4) — UI/UX design iteration only, isolated in `public/prototype/`; V4 adds persistent work identity, conversational steering, attention model, authority boundary and outcome/provenance surfaces | COMPLETE AS PROTOTYPE (no production wiring; see WORKLOG.md Phase 3.5–3.7) |
 
 ## LATER (genuinely valuable, explicitly not before NEXT is done)
 

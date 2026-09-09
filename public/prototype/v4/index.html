@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SamJuniorsOS — Core V4 Command Center</title>
+  <link rel="stylesheet" href="prototype.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="mode-jarvis state-ready credits-available">
+
+  <!-- BACKGROUND CELESTIAL CANVAS -->
+  <div class="cosmos-viewport" aria-hidden="true">
+    <canvas id="starfieldCanvas"></canvas>
+    <div class="space-nebula"></div>
+    <div class="earth-horizon-wrap">
+      <canvas id="earthHorizonCanvas"></canvas>
+      <div class="sun-glare"></div>
+      <div class="moon-crescent"></div>
+    </div>
+    <div class="vignette-overlay"></div>
+  </div>
+
+  <!-- MAIN HUD WRAPPER -->
+  <div class="hud-container">
+
+    <!-- ============ TOP HEADER — CONTEXTUAL COMPANY CONTEXT ============ -->
+    <header class="hud-header">
+      <div class="header-left">
+        <div class="brand-badge">
+          <div class="reticle-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="9" stroke-dasharray="4 2"></circle>
+              <circle cx="12" cy="12" r="4"></circle>
+              <line x1="12" y1="1" x2="12" y2="5"></line>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="1" y1="12" x2="5" y2="12"></line>
+              <line x1="19" y1="12" x2="23" y2="12"></line>
+            </svg>
+          </div>
+          <div class="brand-text-group">
+            <span class="brand-title">SAMJUNIORS OS</span>
+            <span class="brand-sub">CORE V4 · PROTOTYPE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTEXTUAL COMPANY CONTEXT STRIP (replaces static taxonomy) -->
+      <div class="company-context-strip" id="companyContextStrip" aria-live="polite">
+        <span class="ctx-segment" id="ctxCompany">COMPANY</span>
+        <span class="ctx-divider">·</span>
+        <span class="ctx-segment ctx-dynamic" id="ctxWorkingOn">CLEAR</span>
+        <span class="ctx-divider">·</span>
+        <span class="ctx-segment ctx-attention" id="ctxAttention" aria-hidden="true">ATTENTION 1</span>
+        <span class="ctx-segment ctx-clear" id="ctxClear">CLEAR</span>
+      </div>
+
+      <div class="header-right">
+        <div class="mode-toggle-group" role="group" aria-label="Operating Mode">
+          <button type="button" class="mode-btn active" id="btnJarvisMode" data-mode="jarvis" title="AI interaction mode — natural language intent (Jarvis is a mode, not the OS)">
+            <span class="mode-dot"></span> JARVIS
+          </button>
+          <button type="button" class="mode-btn" id="btnManualMode" data-mode="manual" title="Direct founder navigation — the same governed OS, unmediated">
+            <span class="mode-dot"></span> MANUAL
+          </button>
+        </div>
+        <button type="button" class="credits-chip" id="btnToggleCredits" title="Simulate AI credits depletion — AI capability is gated, OS access is not">
+          <span class="credits-bolt">⚡</span>
+          <span class="credits-val" id="creditsVal">AI Credits · Available</span>
+        </button>
+        <button type="button" class="icon-tool-btn" id="btnAtmosphereToggle" title="Toggle Atmospheric Lighting" aria-label="Toggle Atmosphere">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+        <div class="clock-display" id="clockDisplay">
+          <span class="clock-time" id="clockTime">--:--</span>
+          <span class="clock-date" id="clockDate"></span>
+        </div>
+        <div class="founder-badge" id="founderBadge" title="Conceptual — founder session identity is server-verified in the real system">
+          <div class="founder-avatar">S</div>
+          <span class="founder-label">FOUNDER</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- JARVIS UNAVAILABLE BANNER (credits depleted — Manual OS remains available) -->
+    <div class="jarvis-unavailable-banner" id="jarvisUnavailableBanner" aria-hidden="true">
+      <span class="banner-icon">⚡</span>
+      <span class="banner-text"><strong>JARVIS UNAVAILABLE</strong> — AI credits depleted. AI capability is paused; the OS itself remains fully accessible in MANUAL mode.</span>
+      <button type="button" class="btn-restore-credits" id="btnRestoreCredits">Restore Credits (Simulate)</button>
+    </div>
+
+    <!-- ============ SPATIAL OPERATING STAGE ============ -->
+    <main class="spatial-stage-focused">
+
+      <!-- CONTEXTUAL PERIPHERAL SATELLITES (quiet until relevant) -->
+      <nav class="orbital-satellites-nav" aria-label="Contextual Operating Satellites">
+        <div class="satellite-cluster cluster-left">
+          <button type="button" class="satellite-pill" id="beaconCompanyState" title="Open Company State">
+            <span class="status-dot dot-green"></span>
+            <span class="pill-title">Company</span>
+            <span class="pill-meta" id="pillCompanyStateMeta">Demo State</span>
+          </button>
+          <button type="button" class="satellite-pill" id="beaconWorkforce" title="Open AI Workforce">
+            <span class="satellite-icon">☵</span>
+            <span class="pill-title">Workforce</span>
+            <span class="pill-meta">2 · v1 Roster</span>
+          </button>
+        </div>
+        <div class="satellite-cluster cluster-right">
+          <button type="button" class="satellite-pill" id="beaconDecisions" title="Open Decisions">
+            <span class="satellite-icon">⚖</span>
+            <span class="pill-title">Decisions</span>
+            <span class="pill-meta" id="pillDecisionsMeta">—</span>
+          </button>
+          <button type="button" class="satellite-pill" id="beaconActivity" title="Open Activity">
+            <span class="satellite-icon">◷</span>
+            <span class="pill-title">Activity</span>
+            <span class="pill-meta" id="pillActivityMeta">Simulated</span>
+          </button>
+        </div>
+      </nav>
+
+      <!-- CENTER SUITE: THE CORE -->
+      <section class="central-core-suite" id="centralCoreSuite">
+
+        <div class="core-header-banner">
+          <h1 class="core-headline" id="coreHeadline">SAMJUNIORS CORE</h1>
+          <p class="core-tagline" id="coreTagline">What do you need?</p>
+          <div class="glowing-divider"></div>
+        </div>
+
+        <!-- THE LIVING CORE VISUAL ANCHOR -->
+        <div class="core-visual-anchor" id="coreVisualAnchor" role="button" tabindex="0" aria-label="SamJuniorsOS Core — the presence of the company operating system">
+          <div class="core-aura" id="coreAura"></div>
+          <div class="orbital-rings-group">
+            <div class="orbital-ring ring-1"></div>
+            <div class="orbital-ring ring-2"></div>
+            <div class="orbital-ring ring-3"></div>
+          </div>
+          <canvas id="coreCanvas" width="340" height="340"></canvas>
+          <div class="core-inner-corona"></div>
+        </div>
+
+        <div class="core-status-section">
+          <div class="core-status-label" id="coreStatusLabel">Ready for your intent.</div>
+          <div class="core-wave-wrap">
+            <canvas id="waveCanvas" width="480" height="36"></canvas>
+          </div>
+        </div>
+
+        <!-- ===== LAYER 3: ATTENTION MODEL — WHAT MATTERS NOW ===== -->
+        <div class="what-matters-strip" id="whatMattersStrip" role="status" aria-live="polite" title="What matters now — Core filters company complexity for the founder">
+          <span class="wm-caption">WHAT MATTERS NOW</span>
+          <span class="wm-state" id="wmState">
+            <span class="wm-clear-indicator"><span class="wm-dot dot-clear"></span> CLEAR — nothing currently requires founder action</span>
+          </span>
+          <span class="wm-sim-tag">SIMULATED</span>
+        </div>
+
+        <!-- ===== CONTEXTUAL WORK SURFACE (founder intent → active work → decision → outcome) ===== -->
+        <div class="core-work-surface" id="coreWorkSurface" aria-live="polite">
+
+          <!-- LAYER 1: FOUNDER INTENT — UNDERSTANDING PANE -->
+          <div class="work-surface-pane pane-understanding" id="paneUnderstanding">
+            <div class="pane-header">
+              <span class="pane-tag">UNDERSTANDING</span>
+            </div>
+            <div class="intent-block">
+              <div class="intent-row">
+                <span class="intent-label">YOU ASKED</span>
+                <span class="intent-quote" id="intentQuoteDisplay">"Review what changed in the company."</span>
+              </div>
+              <div class="intent-row">
+                <span class="intent-label">CORE UNDERSTANDS</span>
+                <span class="intent-understanding">
+                  <span class="understanding-title" id="understandingTitle">Company review</span>
+                  <span class="understanding-desc" id="understandingDesc">Compare recent company state, decisions, activity and available intelligence.</span>
+                </span>
+              </div>
+            </div>
+            <div class="context-gathering-box">
+              <span class="box-caption">Context Core is considering:</span>
+              <div class="context-chips-list" id="understandingContextChips">
+                <span class="context-chip"><span class="chip-dot"></span> Company state</span>
+                <span class="context-chip"><span class="chip-dot"></span> Recent decisions</span>
+                <span class="context-chip"><span class="chip-dot"></span> Active work</span>
+                <span class="context-chip"><span class="chip-dot"></span> Available intelligence</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== LAYER 2: ACTIVE WORK PANE (persistent work identity — WHAT / WHY / WHERE / NEXT) ===== -->
+          <div class="work-surface-pane pane-active-work" id="paneActiveWork">
+            <div class="pane-header space-between">
+              <div class="working-title-group">
+                <span class="pane-tag" id="activeWorkTag">ACTIVE WORK · RESEARCHING</span>
+                <span class="pane-task-name" id="activeWorkTitle">Positioning Review</span>
+              </div>
+              <div class="founder-steering-bar">
+                <button type="button" class="btn-steering btn-secondary" id="btnWorkPause" title="Pause or resume this work">⏸ Pause</button>
+                <button type="button" class="btn-steering btn-redirect" id="btnWorkSteer" title="Steer — tell Core how to change direction">
+                  ⇄ Steer
+                </button>
+                <button type="button" class="btn-steering btn-stop" id="btnWorkStop" title="Stop this work">⏹ Stop</button>
+              </div>
+            </div>
+
+            <div class="work-meta-grid">
+              <div class="work-meta-cell">
+                <span class="wm-label">WHY</span>
+                <span class="wm-value" id="activeWorkWhy">Founder intent: understand what changed before deciding next steps.</span>
+              </div>
+              <div class="work-meta-cell">
+                <span class="wm-label">CURRENT STEP</span>
+                <span class="wm-value" id="activeWorkCurrentStep">Evaluating available evidence</span>
+              </div>
+              <div class="work-meta-cell cell-evidence">
+                <span class="wm-label">EVIDENCE</span>
+                <span class="wm-value mono" id="activeWorkEvidence">0 sources evaluated · 0 findings pending</span>
+              </div>
+              <div class="work-meta-cell cell-next">
+                <span class="wm-label">NEXT</span>
+                <span class="wm-value" id="activeWorkNext">Compare verified findings against current priorities.</span>
+              </div>
+            </div>
+
+            <div class="task-steps-checklist" id="taskStepsChecklist">
+              <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Context gathered</span><span class="step-status-tag">Done</span></div>
+              <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Relevant sources identified</span><span class="step-status-tag">Done</span></div>
+              <div class="step-row active"><span class="step-check spinner-dot"></span><span class="step-label">Evaluating findings</span><span class="step-status-tag active">In Progress</span></div>
+              <div class="step-row pending"><span class="step-check">○</span><span class="step-label">Prepare recommendation</span><span class="step-status-tag">Queued</span></div>
+            </div>
+
+            <div class="steering-applied-note" id="steeringAppliedNote" aria-hidden="true">
+              <span class="steer-note-label">FOUNDER STEERED:</span>
+              <span class="steer-note-text" id="steeringAppliedText">Focus on enterprise customers.</span>
+            </div>
+          </div>
+
+          <!-- ===== LAYER 4: AUTHORITY BOUNDARY — FOUNDER DECISION PANE ===== -->
+          <div class="work-surface-pane pane-decision" id="paneDecision">
+            <div class="pane-header">
+              <div class="attention-badge-small">
+                <span class="attention-pulse"></span>
+                FOUNDER DECISION REQUIRED
+              </div>
+              <span class="pane-decision-title" id="decisionTitle">Release recommendation</span>
+            </div>
+            <div class="decision-card-body">
+              <div class="decision-meta-row">
+                <span class="d-label">Core has prepared:</span>
+                <span class="d-val" id="decisionPrepared">Release recommendation</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Reason:</span>
+                <span class="d-val" id="decisionReason">This action has external consequences. Requires founder approval before external execution.</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Evidence:</span>
+                <span class="d-val status-passed" id="decisionEvidence">4 sources · 2 verified findings · 1 pending claim</span>
+              </div>
+              <div class="decision-meta-row">
+                <span class="d-label">Core recommendation:</span>
+                <span class="d-val" id="decisionRecommendation">Proceed</span>
+              </div>
+            </div>
+            <div class="authority-note">
+              <span class="shield-mini">⬢</span>
+              Core can analyze, prepare and recommend — it is not authorized to perform consequential actions.
+            </div>
+            <div class="decision-actions-row">
+              <button type="button" class="btn-decision-reject" id="btnDecisionReject">REJECT</button>
+              <button type="button" class="btn-decision-redirect" id="btnDecisionRedirect">REDIRECT</button>
+              <button type="button" class="btn-decision-inspect" id="btnDecisionInspect">INSPECT</button>
+              <button type="button" class="btn-decision-approve" id="btnDecisionApprove">
+                <span class="btn-glow"></span>
+                APPROVE
+              </button>
+            </div>
+          </div>
+
+          <!-- ===== LAYER 5: OUTCOME PANE (work → result → evidence → learning) ===== -->
+          <div class="work-surface-pane pane-outcome" id="paneOutcome">
+            <div class="pane-header">
+              <span class="pane-tag tag-success" id="outcomeTag">COMPLETED</span>
+              <span class="pane-task-name" id="outcomeTitle">Positioning Review</span>
+            </div>
+            <div class="outcome-summary-box">
+              <p class="outcome-label">OUTCOME</p>
+              <p class="summary-text" id="outcomeSummaryText">A recommendation is ready for your review.</p>
+              <div class="outcome-evidence-row" id="outcomeEvidenceRow">
+                <span class="oe-label">EVIDENCE</span>
+                <span class="oe-val mono" id="outcomeEvidenceText">4 sources · 2 verified findings · 1 pending claim</span>
+              </div>
+              <p class="learning-note" id="outcomeLearningNote">Learning is not persisted in this prototype — the production system records outcomes into company memory.</p>
+            </div>
+            <div class="outcome-action-pills">
+              <button type="button" class="btn-action-pill" id="btnOutcomeReview">REVIEW RESULT</button>
+              <button type="button" class="btn-action-pill" id="btnOutcomeEvidence">INSPECT EVIDENCE</button>
+              <button type="button" class="btn-action-pill" id="btnOutcomeProvenance">VIEW PROVENANCE</button>
+              <button type="button" class="btn-action-pill highlight" id="btnOutcomeContinue">CONTINUE WORK</button>
+            </div>
+          </div>
+
+          <!-- FOUNDER INTERRUPTION NOTICE (new command while work is active) -->
+          <div class="work-surface-pane pane-interrupt" id="paneInterrupt">
+            <div class="pane-header">
+              <span class="pane-tag tag-attention">WORK UPDATED</span>
+            </div>
+            <div class="interrupt-body">
+              <div class="interrupt-row">
+                <span class="i-label">Previous direction:</span>
+                <span class="i-val" id="interruptPrevDirection">Positioning review</span>
+              </div>
+              <div class="interrupt-row">
+                <span class="i-label">New founder direction:</span>
+                <span class="i-val i-val-new" id="interruptNewDirection">Customer retention</span>
+              </div>
+              <div class="interrupt-row">
+                <span class="i-label">Status:</span>
+                <span class="i-val i-val-status"><span class="spinner-dot inline"></span> Redirecting…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- BLOCKED PANE (honest failure state — kept for simulation completeness) -->
+          <div class="work-surface-pane pane-blocked" id="paneBlocked">
+            <div class="pane-header">
+              <span class="pane-tag tag-danger">BLOCKED</span>
+              <span class="pane-task-name" id="blockedTitle">Work could not proceed</span>
+            </div>
+            <div class="blocked-diagnostic-box">
+              <div class="blocked-row"><span class="b-label">Condition:</span> <span class="b-val" id="blockedCondition">A prerequisite for this step was not satisfied.</span></div>
+              <div class="blocked-row"><span class="b-label">Why it stopped:</span> <span class="b-val" id="blockedWhy">Core halted before any external effect occurred.</span></div>
+              <div class="blocked-row"><span class="b-label">Founder options:</span> <span class="b-val">Change the instruction, or stop this work.</span></div>
+            </div>
+            <div class="blocked-actions-row">
+              <button type="button" class="btn-decision-redirect" id="btnBlockedSteer">STEER THIS WORK</button>
+              <button type="button" class="btn-decision-reject" id="btnDismissBlocked">STOP & DISMISS</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ===== PERSISTENT WORK THREADS DOCK (work survives state changes) ===== -->
+        <div class="work-threads-dock" id="workThreadsDock" aria-hidden="true">
+          <div class="dock-header">
+            <span class="dock-caption">WORK THREADS</span>
+            <span class="dock-sim-badge">SIMULATION</span>
+          </div>
+          <div class="dock-threads-row" id="dockThreadsRow">
+            <!-- work thread cards are generated by prototype.js -->
+          </div>
+        </div>
+
+        <!-- ===== FOUNDER COMMAND INPUT (Layer 1 entry point) ===== -->
+        <div class="command-input-container">
+          <form id="commandForm" class="command-bar-form" autocomplete="off">
+            <div class="command-pill-box">
+              <span class="cmd-icon-prefix">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                id="commandInput"
+                class="command-input"
+                placeholder="What do you need?"
+                aria-label="Founder Command Input"
+              />
+              <button type="submit" class="command-submit-btn" id="btnSubmitCommand" aria-label="Send Command">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </form>
+
+          <div class="suggested-prompts-row" id="suggestedPromptsRow">
+            <button type="button" class="prompt-chip" data-prompt="Review what changed in the company.">
+              "Review what changed in the company."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Prepare today's priorities.">
+              "Prepare today's priorities."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Investigate this market opportunity.">
+              "Investigate this market opportunity."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Show me what needs my attention.">
+              "Show me what needs my attention."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Continue the positioning review.">
+              "Continue the positioning review."
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ===== MANUAL MODE — DIRECT NAVIGATION (same governed OS, no AI mediation) ===== -->
+      <section class="manual-mode-view" id="manualModeView" aria-hidden="true">
+        <div class="manual-nav-header">
+          <h2>GOVERNED OS MODULES</h2>
+          <p>Direct navigation — no AI mediation required</p>
+        </div>
+        <div class="manual-modules-grid">
+          <button type="button" class="manual-module-card" id="cardManualCompany">
+            <span class="module-icon">◎</span>
+            <span class="module-title">Company</span>
+            <span class="module-desc">State · what changed · what matters</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualWork">
+            <span class="module-icon">⚡</span>
+            <span class="module-title">Work</span>
+            <span class="module-desc">Persistent work threads</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualDecisions">
+            <span class="module-icon">⚖</span>
+            <span class="module-title">Decisions</span>
+            <span class="module-desc">Approval boundary & records</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualResearch">
+            <span class="module-icon">◈</span>
+            <span class="module-title">Research</span>
+            <span class="module-desc">Evidence & provenance</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualWorkforce">
+            <span class="module-icon">☵</span>
+            <span class="module-title">Workforce</span>
+            <span class="module-desc">Governed AI workers</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualActivity">
+            <span class="module-icon">◷</span>
+            <span class="module-title">Activity</span>
+            <span class="module-desc">Operational event stream</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualAudit">
+            <span class="module-icon">⬢</span>
+            <span class="module-title">Audit</span>
+            <span class="module-desc">Append-only provenance trail</span>
+          </button>
+          <button type="button" class="manual-module-card" id="cardManualMessenger">
+            <span class="module-icon">✉</span>
+            <span class="module-title">Messenger</span>
+            <span class="module-desc">Executive communication</span>
+          </button>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ===== CONVERSATIONAL STEERING COMPOSER ===== -->
+    <div class="steering-composer" id="steeringComposer" aria-hidden="true">
+      <div class="steering-header">
+        <span class="steering-title" id="steeringComposerTitle">Steer — Positioning Review</span>
+        <button type="button" class="btn-close-popover" id="btnCloseSteering" aria-label="Close composer">✕</button>
+      </div>
+      <p class="steering-desc">Tell Core how you want to change direction…</p>
+      <form id="steeringForm" class="steering-form" autocomplete="off">
+        <textarea
+          id="steeringInput"
+          class="steering-textarea"
+          rows="2"
+          placeholder="Focus on enterprise customers…"
+          aria-label="Steering instruction"
+        ></textarea>
+        <button type="submit" class="btn-send-steering" id="btnSendSteering">
+          Send Steering Instruction
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </form>
+      <div class="steering-examples-caption">Examples:</div>
+      <div class="steering-examples-list">
+        <button type="button" class="steering-example-chip" data-example="Focus on enterprise customers.">"Focus on enterprise customers."</button>
+        <button type="button" class="steering-example-chip" data-example="Ignore pricing for now.">"Ignore pricing for now."</button>
+        <button type="button" class="steering-example-chip" data-example="Prioritize the strongest verified evidence.">"Prioritize the strongest verified evidence."</button>
+        <button type="button" class="steering-example-chip" data-example="Stop researching and give me the current recommendation.">"Stop researching and give me the current recommendation."</button>
+      </div>
+    </div>
+
+    <!-- ===== CONTEXTUAL SHEET: COMPANY STATE (answers the four founder questions) ===== -->
+    <aside class="spatial-sheet sheet-left" id="sheetCompanyState" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>COMPANY STATE</h3>
+          <span class="sub-badge">DEMO</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseCompanyState" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <div class="company-qa-group">
+          <div class="qa-tile">
+            <span class="qa-question">What is happening?</span>
+            <span class="qa-answer" id="qaHappening">Core is operating with one founder and a governed AI workforce.</span>
+          </div>
+          <div class="qa-tile">
+            <span class="qa-question">What changed?</span>
+            <span class="qa-answer" id="qaChanged">No live company data connected — nothing to report.</span>
+          </div>
+          <div class="qa-tile">
+            <span class="qa-question">What needs attention?</span>
+            <span class="qa-answer" id="qaAttention">Nothing requires founder action in this simulation.</span>
+          </div>
+          <div class="qa-tile">
+            <span class="qa-question">What is being worked on?</span>
+            <span class="qa-answer" id="qaWorkedOn">No active work threads.</span>
+          </div>
+        </div>
+        <div class="sheet-demo-notice">
+          <span class="demo-mini-tag">DEMO STATE</span>
+          No live company data connected. This surface is illustrative.
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== CONTEXTUAL SHEET: ACTIVITY (simulated operational events) ===== -->
+    <aside class="spatial-sheet sheet-right" id="sheetActivity" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>ACTIVITY</h3>
+          <span class="sub-badge">Simulated Events</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseActivity" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <ul class="activity-stream-list" id="activityStreamList">
+          <li class="activity-item">
+            <span class="status-dot dot-cyan"></span>
+            <div class="activity-details">
+              <span class="activity-text">Core prototype initialized — demo state</span>
+              <span class="activity-time">Simulation start</span>
+            </div>
+          </li>
+        </ul>
+        <div class="sheet-footer-action">
+          <button type="button" class="btn-inspect-audit" id="btnViewAllActivity">
+            Open Provenance & Audit (Level 3) →
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== CONTEXTUAL DRAWER: WORKFORCE (generic, repo-confirmed v1 roster only) ===== -->
+    <section class="contextual-panel workforce-drawer" id="workforceDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>AI WORKFORCE</h3>
+          <span class="sub-badge">Governed Workers</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseWorkforce" aria-label="Close Drawer">✕</button>
+      </div>
+      <div class="workforce-compact-view">
+        <div class="wf-section">
+          <span class="wf-section-title">ACTIVE</span>
+          <div class="wf-cards-row">
+            <div class="employee-card-compact">
+              <div class="emp-avatar avatar-purple">S</div>
+              <div class="emp-meta">
+                <span class="emp-name">Sophia</span>
+                <span class="emp-role">Planner · v1 roster (repository-confirmed)</span>
+              </div>
+              <span class="emp-status-badge badge-active">GOVERNED WORKER</span>
+            </div>
+            <div class="employee-card-compact">
+              <div class="emp-avatar avatar-blue">T</div>
+              <div class="emp-meta">
+                <span class="emp-name">Thorne</span>
+                <span class="emp-role">Systems worker · v1 roster (repository-confirmed)</span>
+              </div>
+              <span class="emp-status-badge badge-standby">AVAILABLE WORKER</span>
+            </div>
+          </div>
+        </div>
+        <div class="wf-section">
+          <span class="wf-section-title">STANDBY · TARGET-STATE (NOT v1)</span>
+          <div class="wf-standby-list">
+            <span class="standby-item">Maya (Product / Design)</span>
+            <span class="standby-item">Julian (Finance)</span>
+            <span class="standby-item">Elena Rostova (Deferred)</span>
+            <span class="standby-item">Marcus Vance (Deferred)</span>
+          </div>
+        </div>
+        <div class="wf-demo-note">
+          <span class="demo-mini-tag">DEMO</span>
+          No model assignments, performance scores, or activity telemetry are shown — none exist in the repository.
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== CONTEXTUAL SHEET: WORK THREADS (Manual-mode Work module) ===== -->
+    <aside class="spatial-sheet sheet-left sheet-work" id="sheetWork" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar"></span>
+          <h3>WORK</h3>
+          <span class="sub-badge">Persistent Threads</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseSheetWork" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <div class="work-sheet-empty" id="workSheetEmpty">
+          <span class="dec-empty-title">No work threads</span>
+          <span class="dec-empty-sub">Start work from Core (Jarvis mode) or run any module directly here.</span>
+        </div>
+        <div class="work-sheet-list" id="workSheetList" aria-hidden="true">
+          <!-- thread rows generated by prototype.js -->
+        </div>
+        <div class="sheet-demo-notice">
+          <span class="demo-mini-tag">SIMULATION</span>
+          Work threads are simulated — no agent runtime is connected.
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== CONTEXTUAL SHEET: DECISIONS (approval boundary records) ===== -->
+    <aside class="spatial-sheet sheet-right sheet-decisions" id="sheetDecisions" aria-hidden="true">
+      <div class="sheet-header">
+        <div class="sheet-title-group">
+          <span class="cyan-accent-bar amber"></span>
+          <h3>DECISIONS</h3>
+          <span class="sub-badge">Approval Boundary</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseDecisions" aria-label="Close Sheet">✕</button>
+      </div>
+      <div class="sheet-content">
+        <div class="decisions-empty" id="decisionsEmpty">
+          <span class="dec-empty-icon">⚖</span>
+          <span class="dec-empty-title">No decisions pending</span>
+          <span class="dec-empty-sub">When Core prepares a consequential action, it will wait here for your judgment. Core never self-authorizes.</span>
+        </div>
+        <div class="decisions-list" id="decisionsList" aria-hidden="true">
+          <!-- decision cards generated by prototype.js -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- ===== LEVEL 3: PROVENANCE & EVIDENCE INSPECTOR (Source → Signal → Claim → Fact → Decision → Outcome) ===== -->
+    <div class="modal-backdrop" id="auditModal" aria-hidden="true">
+      <div class="modal-card audit-card" role="dialog" aria-modal="true" aria-labelledby="auditHeading">
+        <div class="modal-header">
+          <div class="audit-title-group">
+            <span class="cyan-accent-bar"></span>
+            <h3 id="auditHeading">PROVENANCE & EVIDENCE</h3>
+            <span class="sub-badge">Source → Signal → Claim → Fact → Decision → Outcome</span>
+          </div>
+          <button type="button" class="modal-close-btn" id="btnCloseAudit" aria-label="Close Modal">✕</button>
+        </div>
+        <div class="modal-body audit-body">
+          <div class="audit-scope-line" id="auditScopeLine">Illustrative provenance chain for this demo work thread.</div>
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>Record</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <tr>
+                  <td><span class="tag-source">SOURCE</span></td>
+                  <td>Company context & activity records</td>
+                  <td><span class="tag-status-green">GATHERED</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">SIGNAL</span></td>
+                  <td>Relevant changes detected for review</td>
+                  <td><span class="tag-status-green">DETECTED</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">CLAIM</span></td>
+                  <td>Findings drafted from evidence</td>
+                  <td><span class="tag-status-amber">PENDING VERIFICATION</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">FACT</span></td>
+                  <td>Verified findings</td>
+                  <td><span class="tag-status-green">VERIFIED</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">DECISION</span></td>
+                  <td>Founder ratification boundary</td>
+                  <td><span class="tag-status-dim">AWAITING FOUNDER</span></td>
+                </tr>
+                <tr>
+                  <td><span class="tag-source">OUTCOME</span></td>
+                  <td>Result with evidence attached</td>
+                  <td><span class="tag-status-dim">NOT YET RECORDED</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="audit-demo-notice">
+            <span class="demo-mini-tag">DEMO</span>
+            This chain is illustrative. The production system records durable, append-only provenance for real work.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== MESSENGER DRAWER (communication layer, explicitly simulated) ===== -->
+    <div class="messenger-drawer" id="messengerDrawer" aria-hidden="true">
+      <div class="messenger-header">
+        <div class="msg-title-wrap">
+          <div class="pulse-indicator"></div>
+          <span class="msg-title">EXECUTIVE MESSENGER</span>
+          <span class="msg-status">Simulated conversation · not a live channel</span>
+        </div>
+        <button type="button" class="drawer-close-btn" id="btnCloseMessenger" aria-label="Close Messenger">✕</button>
+      </div>
+      <div class="messenger-messages" id="messengerMessages">
+        <div class="msg-bubble msg-agent">
+          <div class="msg-sender">Core</div>
+          <div class="msg-content">Messenger is a communication layer, not a dashboard. Messages here are simulated for the prototype.</div>
+        </div>
+      </div>
+      <form class="messenger-input-row" id="messengerForm">
+        <input type="text" class="msg-input" id="messengerInput" placeholder="Message the simulated channel..." />
+        <button type="submit" class="msg-send-btn">Send</button>
+      </form>
+    </div>
+
+    <!-- ===== BOTTOM BAR HUD ===== -->
+    <footer class="hud-footer">
+      <div class="footer-left">
+        <span class="demo-state-watermark">DEMO STATE · NO LIVE COMPANY DATA CONNECTED</span>
+      </div>
+      <div class="footer-center">
+        <div class="prototype-controls" id="prototypeControls" aria-label="Prototype Simulation Controls">
+          <span class="toolbar-caption">SIMULATION:</span>
+          <button type="button" class="ctrl-chip" id="btnResetDemo" title="Reset the simulated work state">⟲ Reset Demo</button>
+        </div>
+      </div>
+      <div class="footer-right">
+        <button type="button" class="messenger-trigger-btn" id="btnOpenMessenger" title="Open Executive Messenger">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span class="msg-trigger-label">MESSENGER</span>
+        </button>
+        <span class="footer-version">SAMJUNIORS OS · CORE V4 PROTOTYPE</span>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- INTERACTIVE TOAST NOTIFICATION -->
+  <div class="toast-notification" id="toastNotification" aria-live="polite"></div>
+
+  <!-- SCRIPT -->
+  <script src="prototype.js"></script>
+</body>
+</html>

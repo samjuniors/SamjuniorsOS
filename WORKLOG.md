@@ -17,6 +17,67 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.7 — Core V4 Prototype (Founder Operating Experience)
+
+**Status:** COMPLETE (Core V4 prototype implemented, browser-verified, isolated in `public/prototype/v4/`).
+**Base HEAD:** `9cd8773`
+
+### What was implemented
+
+A PROTOTYPE/UI-DESIGN iteration only — zero production/backend/API/database/auth/workflow/deployment changes. Core V4 evolves the V3 visual language (cinematic obsidian, central glowing Core, canvas starfield/earth/particles/wave carried forward) from a "state-machine demo" into a founder operating experience organized around five visible layers:
+
+1. **FOUNDER INTENT** — Core opens with "What do you need?"; command entry renders YOU ASKED / CORE UNDERSTANDS (interpreted intent + description) + context chips.
+2. **ACTIVE WORK** — persistent work identity: WHAT (title), WHY, CURRENT STEP, EVIDENCE counts, NEXT, and a milestone checklist with operational progress only (no chain-of-thought); Pause / Steer / Stop controls.
+3. **ATTENTION MODEL** — "WHAT MATTERS NOW" strip + contextual header (COMPANY · WORKING ON · ATTENTION · CLEAR): ATTENTION REQUIRED (n decisions) / WORK IN PROGRESS / WATCH (unresolved findings) / CLEAR, derived from the simulated state; "Show me what needs my attention." routes to the relevant surface.
+4. **AUTHORITY BOUNDARY** — FOUNDER DECISION REQUIRED pane (Core has prepared / Reason / Evidence / Core recommendation) with APPROVE / REDIRECT / REJECT / INSPECT; explicit authority note that Core can analyze, prepare and recommend but is not authorized to perform consequential actions; honest consequence semantics — non-consequential work (Company Review, Priorities) completes without a gate, REJECT records "no action was taken".
+5. **OUTCOME** — COMPLETED pane with outcome, evidence row and REVIEW RESULT / INSPECT EVIDENCE / VIEW PROVENANCE / CONTINUE WORK; provenance inspector scoped per thread (SOURCE → SIGNAL → CLAIM → FACT → DECISION → OUTCOME with honest statuses); learning explicitly NOT claimed as persisted.
+
+V4 interaction model additions:
+
+- **Persistent WORK IDENTITY**: work threads survive every Core state change; WORK THREADS dock (labeled SIMULATION) with Continue/Pause/Steer/Stop/Inspect; "Continue the positioning review." resumes matching threads; decisions persist in a Decisions sheet (approval boundary records) with full APPROVED/REJECTED/REDIRECTED history.
+- **Conversational steering**: free-text steering composer (with the four spec example chips) that visibly modifies work — WHY line updates, "Adjusting to founder steering" milestone, thread flagged steered, activity recorded; steering at the decision gate sends Core back to work and re-prepares the recommendation.
+- **Founder interruption**: a new command during active work renders WORK UPDATED (previous direction → new founder direction → Redirecting…), marks the old thread Redirected, and starts the new work; "Stop."-prefixed commands halt without creating work.
+- **Jarvis/Manual as one OS**: JARVIS is an AI interaction mode (not the OS); MANUAL exposes all 8 modules (Company, Work, Decisions, Research, Workforce, Activity, Audit, Messenger) fully without Jarvis; AI credits gate AI capability only — when depleted Jarvis honestly refuses while Manual remains usable.
+- **Messenger** as a corner-launched contextual drawer (communication layer, explicitly simulated; Core/Sophia contextual messages on decision/completion).
+- **Company State sheet** answers the four founder questions (What is happening? What changed? What needs attention? What is being worked on?) from the simulated state, with DEMO STATE notices.
+- The 7 V3 states remain INTERNAL (they drive the Core orb's presence only); the founder-facing model is the operating loop above.
+
+### Files (all isolated from production code)
+
+- `public/prototype/v4/index.html` (new)
+- `public/prototype/v4/prototype.css` (new — extends the V3 design tokens)
+- `public/prototype/v4/prototype.js` (new — work engine, attention model, steering, interruption, provenance)
+- `public/prototype/v4/README.md` (new)
+- `scripts/verify-prototype-v4.js` (new)
+- V3 remains untouched at `public/prototype/` for comparison.
+
+### What was verified (all actually run)
+
+- `node scripts/verify-prototype-v4.js` → **All 17 structural/safety checks PASS** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, demo-safety absence checks: no fabricated facts/model names/counts/claims, no fetch/XHR/WebSocket).
+- `node --check prototype.js` → 0 syntax errors.
+- Browser E2E via agent-browser against the live prototype (desktop 1600×1000 and mobile 420×900): all 15 required interactions verified — command → understanding; persistent thread appears; milestones progress with evidence ticking; steering (composer + example chips, visibly modifies work); interruption (WORK UPDATED + redirect); decision gate reached; APPROVE → executing → completed outcome; REJECT → honest no-action outcome; REDIRECT → steering at gate → re-prepared recommendation; outcome exposes evidence; provenance modal scoped to thread; return to work threads (focus + CONTINUE WORK + "Continue the positioning review."); messenger drawer with simulated exchange; Manual mode — all 8 modules functional without Jarvis; credits depletion honestly pauses Jarvis while Manual stays usable; attention surface updates across every state change (including the Company Review → WATCH flow). Zero browser console errors; responsive checks (context strip hidden on mobile, core scales to 270px, no overflow).
+- Visual verification of rendered screenshots (ready, decision-gate, outcome, provenance states) via vision model — layout coherent, high contrast, no glitches/overlaps, premium/restrained (not game-like).
+- No production files modified: `git status` shows only `public/prototype/v4/` and `scripts/verify-prototype-v4.js` (+ this documentation).
+
+### Demo-data safety (explicit)
+
+Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark; SIMULATION badges on the threads dock, work sheet and activity; DEMO notices on Company State, Workforce and Provenance surfaces; messenger labeled simulated; learning-not-persisted note on outcomes; workforce limited to the repository-confirmed v1 roster (Sophia/Thorne) with generic governed-worker semantics and target-state standby labels; no employees/revenue/customers/metrics/model names/versions/security claims anywhere.
+
+### Known limitations
+
+- All state is client-side simulation — command interpretation is keyword-template based, not an LLM; nothing is persisted (refresh resets the demo; Reset Demo restores initial state).
+- The decision boundary is demonstrated with generic illustrative language ("external consequences"); no real approval rules are claimed.
+- Founder interruption creates a new thread rather than mutating the old one in place (the old thread is kept, marked Redirected) — a deliberate persistent-identity choice.
+- Voice, autonomous assistant behavior, persistent conversation memory, Role Brains and market intelligence remain out of scope (per product boundaries).
+
+### Next recommended actions
+
+1. Founder design review of V4 vs V3 (`/prototype/v4/` vs `/prototype/`).
+2. If V4 direction is approved: map the five layers onto the REAL authoritative read layer built in Phase 3.3 (work threads ← workflow instances; attention ← real aggregation; decisions ← real approval inbox; provenance ← real audit/epistemic reads) and the real orchestration entry point from Phase 3.2 — the production connection points already exist.
+3. Keep Jarvis/Manual and the credit semantics decision (AI capability vs OS access) as a durable product decision if confirmed by the founder.
+
+---
+
 ## Phase 3.6 — Core V3 / Astra-Inspired Interaction Redesign
 
 **Status:** COMPLETE (Core V3 prototype implemented, verified, isolated in `public/prototype/`).
