@@ -1,0 +1,186 @@
+# ============================================================================
+# SAMJUNIORS OS — CONTINUOUS INTEGRATION
+# ============================================================================
+# Phase 2.6.1: real-PostgreSQL concurrency certification in CI.
+#
+# Jobs:
+#   quality-gate        — TypeScript + Prisma schema validation (no DB required)
+#   postgres-certify    — REAL PostgreSQL 16 service: migrations + full Phase 2.6
+#                         real-DB concurrency certification suite + online-mode
+#                         Phase 2.2 contracts. FAILS (never silently skips) if
+#                         PostgreSQL is unavailable.
+#   offline-regression  — complete Phase 2 regression suites in their designed
+#                         offline mode (no DATABASE_URL).
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-gate:
+    name: Quality Gate (tsc + prisma validate)
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder datasource URLs: prisma validate/generate only require the
+      # declared env vars to exist — no connection is made in this job.
+      DATABASE_URL: postgresql://placeholder:5432/none
+      DIRECT_URL: postgresql://placeholder:5432/none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Prisma schema validation
+        run: npx prisma validate
+
+      - name: Prisma Client generation
+        run: npx prisma generate
+
+      - name: TypeScript strict check
+        run: npx tsc --noEmit
+
+  postgres-certify:
+    name: Real PostgreSQL Concurrency Certification
+    runs-on: ubuntu-latest
+
+    # ---------------------------------------------------------------------------
+    # Real PostgreSQL 16 service container. The concurrency certification job
+    # MUST fail if PostgreSQL is unavailable — it must never pass by silently
+    # skipping the real-DB suite.
+    # ---------------------------------------------------------------------------
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Dedicated disposable CI database — cannot accidentally target any
+          # production system (localhost-only, dedicated credentials).
+          POSTGRES_USER: samjuniors_ci
+          POSTGRES_PASSWORD: samjuniors_ci_pw
+          POSTGRES_DB: samjuniors_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U samjuniors_ci -d samjuniors_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://samjuniors_ci:samjuniors_ci_pw@localhost:5432/samjuniors_ci?schema=public
+      # The schema's datasource declares directUrl for migration-time connections
+      # (Cloud Run / connection-pooler pattern); in CI it points at the same
+      # dedicated service database.
+      DIRECT_URL: postgresql://samjuniors_ci:samjuniors_ci_pw@localhost:5432/samjuniors_ci?schema=public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Prisma schema validation
+        run: npx prisma validate
+
+      - name: Prisma Client generation
+        run: npx prisma generate
+
+      - name: Apply migrations (deterministic history)
+        run: npx prisma migrate deploy
+
+      - name: Verify migration status
+        run: npx prisma migrate status
+
+      - name: TypeScript strict check
+        run: npx tsc --noEmit
+
+      - name: REAL PostgreSQL concurrency certification (Phase 2.6 suite)
+        # This suite exits non-zero (including exit 2 "VERIFICATION BLOCKED")
+        # when the real database is unavailable — the job FAILS rather than
+        # falling back to in-memory mode.
+        run: npx tsx tests/phase2_6_postgres_concurrency.test.ts
+
+      - name: REAL PostgreSQL lease renewal certification (Phase 2.6.1 suite)
+        # Bounded renewal guard, ownership semantics, authorization/idempotency
+        # non-bypass, long-running coordination. Also fails when PG is down.
+        run: npx tsx tests/phase2_6_1_lease_renewal.test.ts
+
+      - name: Phase 2.2 online-authoritative contracts + controlled outage
+        # Online mode against the live service: FK-valid relational fixtures,
+        # plus the fail-closed premise exercised through a real connection
+        # outage in a child process.
+        run: npx tsx tests/phase2_2_authoritative_repositories.test.ts
+
+      - name: Phase 2.5 scheduling (offline sections + real-PG online sections)
+        run: npx tsx tests/phase2_5_distributed_scheduling.test.ts
+
+  offline-regression:
+    name: Phase 2 Offline Regression
+    runs-on: ubuntu-latest
+    env:
+      # Deliberately placeholder (unreachable) DATABASE_URL: the offline suites
+      # below run in their designed offline/test-adapter mode, and prisma
+      # validate/generate only need the declared env vars to exist.
+      DATABASE_URL: postgresql://placeholder:5432/none
+      DIRECT_URL: postgresql://placeholder:5432/none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Prisma schema validation
+        run: npx prisma validate
+
+      - name: Prisma Client generation
+        run: npx prisma generate
+
+      - name: Governance & security foundation suite
+        run: npx tsx tests/governance_security_foundation.test.ts
+
+      - name: Phase 12.3 authorization gate suite
+        run: npx tsx tests/phase12_3_authorization_gate.test.ts
+
+      - name: Phase 12.4 communication infrastructure suite
+        run: npx tsx tests/phase12_4_communication_infrastructure.test.ts
+
+      - name: Phase 12.5 Resend integration suite
+        run: npx tsx tests/phase12_5_resend_integration.test.ts
+
+      - name: Phase 2.1 database foundation suite
+        run: npx tsx tests/phase2_1_database_foundation.test.ts
+
+      - name: Phase 2.2 authoritative repositories suite (offline mode)
+        run: npx tsx tests/phase2_2_authoritative_repositories.test.ts
+
+      - name: Phase 2.3 transactions & transitions suite
+        run: npx tsx tests/phase2_3_transactions_transitions.test.ts
+
+      - name: Phase 2.4 idempotency suite
+        run: npx tsx tests/phase2_4_idempotency.test.ts
+
+      - name: Phase 2.5 distributed scheduling suite (offline mode)
+        run: npx tsx tests/phase2_5_distributed_scheduling.test.ts

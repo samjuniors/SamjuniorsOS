@@ -99,11 +99,11 @@ export const AIEmployeeOnboardingModal: React.FC<AIEmployeeOnboardingModalProps>
       setAgreementSignature(signatureHash);
       setIsSigningConstitution(false);
       playOSSound('notification');
-      dispatchOSNotification(
-        'Constitutional Agreement Ratified',
-        `${profile.name} bound to 5 Core Invariants with cryptographic signature ${signatureHash.slice(0, 16)}...`,
-        'success'
-      );
+      dispatchOSNotification({
+        title: 'Constitutional Agreement Ratified',
+        message: `${profile.name} bound to 5 Core Invariants with cryptographic signature ${signatureHash.slice(0, 16)}...`,
+        type: 'agent',
+      });
     }, 600);
   };
 
@@ -121,11 +121,11 @@ export const AIEmployeeOnboardingModal: React.FC<AIEmployeeOnboardingModalProps>
     } else {
       // Complete activation
       playOSSound('celebration');
-      dispatchOSNotification(
-        'Onboarding Complete',
-        `${profile.name} is now fully calibrated and deployed to the Orchestration Mesh!`,
-        'success'
-      );
+      dispatchOSNotification({
+        title: 'Onboarding Complete',
+        message: `${profile.name} is now fully calibrated and deployed to the Orchestration Mesh!`,
+        type: 'agent',
+      });
       onClose();
     }
   };

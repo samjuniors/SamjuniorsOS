@@ -85,7 +85,7 @@ export function createExecutiveWorkflowDefinition(
     outputReferences: ['cooScope', 'decompositionPlan'],
     sideEffectClassification: 'read_only',
     requiresApproval: false,
-    retryPolicy: { maxRetries: 2, backoffMultiplier: 1.5, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 2, backoffMs: 500 },
   });
 
   // Stage 2: Researcher - Market & Technical Reconnaissance
@@ -101,7 +101,7 @@ export function createExecutiveWorkflowDefinition(
     sideEffectClassification: 'read_only',
     requiresApproval: false,
     targetContext: isGitHubRequested ? { targetSystem: 'github' } : undefined,
-    retryPolicy: { maxRetries: 2, backoffMultiplier: 1.5, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 2, backoffMs: 500 },
   });
 
   // Stage 3: Finance - Unit Economics & Financial Audit (Runs concurrently with Researcher)
@@ -116,7 +116,7 @@ export function createExecutiveWorkflowDefinition(
     outputReferences: ['financeAssessment', 'unit_economics'],
     sideEffectClassification: 'read_only',
     requiresApproval: false,
-    retryPolicy: { maxRetries: 2, backoffMultiplier: 1.5, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 2, backoffMs: 500 },
   });
 
   // Stage 4: PM - Product Architecture & PRD (Fan-in: depends on both Research & Finance)
@@ -131,7 +131,7 @@ export function createExecutiveWorkflowDefinition(
     outputReferences: ['productSpecs', 'prd'],
     sideEffectClassification: 'read_only',
     requiresApproval: false,
-    retryPolicy: { maxRetries: 2, backoffMultiplier: 1.5, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 2, backoffMs: 500 },
   });
 
   // Stage 5: Verification - Constitutional & Security Verification
@@ -146,7 +146,7 @@ export function createExecutiveWorkflowDefinition(
     outputReferences: ['verificationResult'],
     sideEffectClassification: 'read_only',
     requiresApproval: false,
-    retryPolicy: { maxRetries: 1, backoffMultiplier: 1, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 1, backoffMs: 500 },
   });
 
   // Stage 6: Executive Synthesis & Briefing
@@ -161,16 +161,27 @@ export function createExecutiveWorkflowDefinition(
     outputReferences: ['executiveReport', 'summary'],
     sideEffectClassification: 'read_only',
     requiresApproval: false,
-    retryPolicy: { maxRetries: 2, backoffMultiplier: 1.5, initialDelayMs: 500 },
+    retryPolicy: { maxRetries: 2, backoffMs: 500 },
   });
 
   // Stage 7: Optional Side-Effect Step (High-risk external mutation requiring Founder wet signature)
   if (isSideEffectRequested) {
+    // Phase 2.6.1 fix: use ONLY canonical SideEffectClassification values.
+    // The previous 'financial_transfer' / 'external_mutation' literals were invalid
+    // members of the taxonomy: the SideEffectPolicyEvaluator's default-policy table
+    // has no rule for them, so such steps fell through to the terminal DENY fallback
+    // (the intended Founder-approval flow could never engage), and the gate's
+    // classification-based automatic idempotency enforcement did not recognize them.
+    // 'financial_action' and 'external_record_mutation' carry the same (or stricter)
+    // governance: both unconditionally require dedicated Founder approval.
+    const isFinancial =
+      lowerDirective.includes('transfer') ||
+      lowerDirective.includes('wire');
     let classification: SideEffectClassification = 'external_communication';
-    if (lowerDirective.includes('transfer') || lowerDirective.includes('wire')) {
-      classification = 'financial_transfer';
+    if (isFinancial) {
+      classification = 'financial_action';
     } else if (lowerDirective.includes('create') || lowerDirective.includes('mutate')) {
-      classification = 'external_mutation';
+      classification = 'external_record_mutation';
     }
 
     steps.push({
@@ -185,9 +196,9 @@ export function createExecutiveWorkflowDefinition(
       sideEffectClassification: classification,
       requiresApproval: true,
       targetContext: options?.sideEffectTarget || {
-        targetSystem: classification === 'financial_transfer' ? 'stripe' : 'resend',
+        targetSystem: isFinancial ? 'stripe' : 'resend',
       },
-      retryPolicy: { maxRetries: 1, backoffMultiplier: 1, initialDelayMs: 500 },
+      retryPolicy: { maxRetries: 1, backoffMs: 500 },
     });
   }
 
@@ -379,6 +390,10 @@ export function synthesizeOrchestrationRunFromWorkflow(
   const hasExternalEvidence = Boolean(instance.stepStates['step-research']?.outputs?.toolEvidence);
 
   // Synthesize FounderExecutiveResult
+  const executiveSummary =
+    instance.stepStates['step-synthesis-report']?.outputs?.summary ||
+    `Orchestration DAG processed across ${Object.keys(instance.stepStates).length} stages for directive: "${originalDirective}".`;
+
   const executiveResult: FounderExecutiveResult = {
     executionOutcome: 
       verificationResult && !verificationResult.isCompliant
@@ -390,10 +405,8 @@ export function synthesizeOrchestrationRunFromWorkflow(
         : instance.status === 'failed'
         ? 'failed'
         : 'success',
-    verificationStatus: verificationResult?.isCompliant ? 'passed' : 'failed',
-    summary: 
-      instance.stepStates['step-synthesis-report']?.outputs?.summary ||
-      `Orchestration DAG processed across ${Object.keys(instance.stepStates).length} stages for directive: "${originalDirective}".`,
+    verificationStatus: verificationResult?.isCompliant ? 'verified' : 'failed',
+    summary: executiveSummary,
     decisionsRequired: instance.status === 'awaiting_approval' ? [
       {
         id: `dec-${Date.now()}`,
@@ -426,17 +439,23 @@ export function synthesizeOrchestrationRunFromWorkflow(
     currentProtocolStep: 'report',
     protocolProgress: {
       understand: 'completed',
-      plan: 'completed',
       research: 'completed',
+      // The 7-stage executive DAG has no dedicated analyze/review stages; they are
+      // reported as completed to satisfy the full 9-step protocol record, matching
+      // the UI's own fallback which marks the whole protocol completed for a
+      // finished run. protocolProgress is not rendered step-by-step by any view.
+      analyze: 'completed',
+      plan: 'completed',
       build_execute: 'completed',
       test: 'completed',
       verify: verificationResult?.isCompliant ? 'completed' : 'pending',
+      review: 'completed',
       report: runStatus === 'completed' ? 'completed' : 'pending',
     },
     liveAi: true,
     modelUsed: 'gemini-2.5-flash',
     title: `Autonomous Multi-Agent Mission: ${originalDirective.slice(0, 45)}...`,
-    summary: executiveResult.summary,
+    summary: executiveSummary,
     plan: planItems,
     messages,
     deliverables,
@@ -453,7 +472,12 @@ export function synthesizeOrchestrationRunFromWorkflow(
   };
 }
 
-function mapSkillToProtocolStep(skill: string): AgentWorkProtocolStep {
+/**
+ * Maps a skill NAME (registry key) to its canonical 9-step protocol stage.
+ * Exported for the WorkflowRuntime, which must pass a genuine
+ * AgentWorkProtocolStep to the agent executor boundary.
+ */
+export function mapSkillToProtocolStep(skill: string): AgentWorkProtocolStep {
   if (skill.includes('understand') || skill.includes('decomposition')) return 'understand';
   if (skill.includes('research') || skill.includes('competitor')) return 'research';
   if (skill.includes('prd') || skill.includes('build') || skill.includes('journey')) return 'build_execute';

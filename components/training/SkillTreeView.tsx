@@ -87,11 +87,11 @@ export const SkillTreeView: React.FC<SkillTreeViewProps> = ({
     if (res.success) {
       playOSSound('notification');
       setUnlockMessage({ type: 'success', text: res.message });
-      dispatchOSNotification(
-        `Specialization Unlocked: ${node.title}`,
-        `${currentProfile.name} mastered Tier ${node.level} (${node.tierName})! Orchestrator boost is now active.`,
-        'success'
-      );
+      dispatchOSNotification({
+        title: `Specialization Unlocked: ${node.title}`,
+        message: `${currentProfile.name} mastered Tier ${node.level} (${node.tierName})! Orchestrator boost is now active.`,
+        type: 'agent',
+      });
       // refresh selected node with updated state
       const updatedTree = TrainingStore.getSkillTree(activeRole);
       if (updatedTree) {

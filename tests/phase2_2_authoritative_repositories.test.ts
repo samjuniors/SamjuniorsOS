@@ -1,4 +1,7 @@
 import assert from 'assert';
+import { spawnSync } from 'child_process';
+import * as path from 'path';
+import { prisma, isDatabaseAvailable } from '../lib/server/db/prisma';
 import {
   getDatabaseMode,
   isAuthoritativeMode,
@@ -43,17 +46,23 @@ import { AgentRunRecord } from '../lib/server/agents/run-store';
  * 
  * Verifies:
  * 1. Database Authority Mode Detection & Transitions
- * 2. Fail-Closed Behavior in Authoritative Mode when PostgreSQL is unavailable:
- *    - Workflow Repository
- *    - Approval Repository
- *    - Audit Repository
- *    - Agent Run Repository
- *    - Company State Repository
- *    - Epistemic Repository
- *    - Company Memory Repository
- *    - Scheduled Work Repository
+ * 2. Authoritative repository semantics, EXPLICIT PER MODE (Phase 2.6.1 redesign):
+ *    - database-unavailable fail-closed mode: every authoritative operation must
+ *      throw DatabaseAuthorityError. Offline environments run this inline;
+ *      environments with a live PostgreSQL run it in a controlled disposable
+ *      outage CHILD PROCESS (tests/phase2_2_outage_child.ts) whose DATABASE_URL
+ *      points at an unreachable endpoint — a real infrastructure-level outage.
+ *    - database-authoritative ONLINE mode (live PostgreSQL only): functional
+ *      round-trip contracts using VALID relational data (real workflow instance
+ *      created first so approval/audit rows satisfy their foreign keys), with
+ *      deterministic cleanup.
  * 3. Repository Functional Contracts (Create, Read, Update, Query) in Test Mode
  * 4. Preservation of Test/Local Adapters (Zero Regressions, Fast Deterministic Execution)
+ * 
+ * ENVIRONMENT REQUIREMENTS (explicit):
+ * - No DATABASE_URL, or an unreachable one  → offline fail-closed mode runs inline.
+ * - Live PostgreSQL at DATABASE_URL         → online mode + outage child process.
+ *   Migrations are expected to be applied (npx prisma migrate deploy).
  * ============================================================================
  */
 
@@ -108,217 +117,383 @@ async function runAuthoritativeRepositoriesSuite() {
     recordFail('Database Authority mode transitions', err);
   }
 
-  // --- Group 2: Fail-Closed Semantics in Authoritative Mode (Database Unavailable) ---
-  console.log('\n--- Group 2: Fail-Closed Enforcement When PostgreSQL Unavailable ---');
+  // --- Group 2: Authoritative Repository Semantics (PHASE 2.6.1 mode-explicit redesign) ---
+  //
+  // ORIGINAL DESIGN FLAW (Phase 2.6 finding): Group 2 asserted "DB unavailable =>
+  // fail closed" WITHOUT verifying the premise. When a real DATABASE_URL pointed
+  // at a live PostgreSQL (CI, Phase 2.6 runs), the stores happily performed real
+  // I/O: "must throw" assertions failed, junk rows were written, and the approval
+  // save even PASSED for the WRONG reason (a foreign-key violation on the
+  // nonexistent workflowInstanceId 'inst-1', not an authority failure).
+  //
+  // PHASE 2.6.1 REDESIGN — explicit modes, each with a verified premise:
+  //   2A. database-unavailable fail-closed mode (offline env: runs inline;
+  //       online env: runs in a CONTROLLED DISPOSABLE OUTAGE child process with
+  //       DATABASE_URL pointed at an unreachable endpoint — a real infrastructure
+  //       outage, not a mock of the authority layer)
+  //   2B. database-authoritative ONLINE mode (live env only): functional
+  //       round-trip contracts using VALID relational data — a real workflow
+  //       instance is created first so approval/audit rows satisfy the
+  //       workflowInstanceId foreign keys (Phase 2.6 FK test-data fix), with
+  //       deterministic cleanup.
+  console.log('\n--- Group 2: Authoritative Repository Semantics (mode-explicit) ---');
   const originalMode = process.env.DATABASE_MODE;
-  process.env.DATABASE_MODE = 'authoritative';
+  const originalDatabaseUrl = process.env.DATABASE_URL;
+  const dbReachable = await isDatabaseAvailable();
 
-  // 1. Workflow Store Fail-Closed
-  try {
-    const wfStore = PostgresWorkflowStore.getInstance();
-    let threw = false;
+  if (!dbReachable) {
+    // 2A (offline variant): the premise GENUINELY holds — no live database here.
+    console.log('  [MODE: database-unavailable] PostgreSQL unreachable from this process — fail-closed premise holds; running inline.');
+    process.env.DATABASE_MODE = 'authoritative';
+
+    // 1. Workflow Store Fail-Closed
     try {
-      await wfStore.getInstance('non-existent-inst-123');
-    } catch (err: any) {
-      threw = true;
-      assert(err instanceof DatabaseAuthorityError || err.message.includes('Database Unavailable') || err.message.includes('authoritative'), 'Must throw authoritative DB error');
+      const wfStore = PostgresWorkflowStore.getInstance();
+      let threw = false;
+      try {
+        await wfStore.getInstance('non-existent-inst-123');
+      } catch (err: any) {
+        threw = true;
+        assert(err instanceof DatabaseAuthorityError || err.message.includes('Database Unavailable') || err.message.includes('authoritative'), 'Must throw authoritative DB error');
+      }
+      assert(threw, 'PostgresWorkflowStore.getInstance must fail closed when PostgreSQL is unavailable');
+      recordPass('Workflow Repository fails closed on read when DB is unreachable');
+
+      threw = false;
+      try {
+        await wfStore.saveInstance({
+          instanceId: 'inst-fail-test',
+          workflowId: 'wf-1',
+          version: '1.0.0',
+          status: 'running',
+          objective: 'fail closed test',
+          stepStates: {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          outputs: {},
+          evidenceReferences: [],
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresWorkflowStore.saveInstance must fail closed when PostgreSQL is unavailable');
+      recordPass('Workflow Repository fails closed on write when DB is unreachable');
+    } catch (err) {
+      recordFail('Workflow Store fail-closed enforcement', err);
     }
-    assert(threw, 'PostgresWorkflowStore.getInstance must fail closed when PostgreSQL is unavailable');
-    recordPass('Workflow Repository fails closed on read when DB is unreachable');
 
-    threw = false;
+    // 2. Approval Store Fail-Closed
     try {
+      const approvalStore = PostgresApprovalStore.getInstance();
+      let threw = false;
+      try {
+        await approvalStore.get('appr-test-123');
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresApprovalStore.get must fail closed when DB is unreachable');
+      recordPass('Approval Repository fails closed on read when DB is unreachable');
+
+      threw = false;
+      try {
+        await approvalStore.save({
+          id: 'appr-fail-test',
+          workflowInstanceId: 'inst-1',
+          stepId: 'step-1',
+          actionName: 'send_email',
+          employeeRole: 'pm',
+          classification: 'external_communication',
+          decision: 'pending',
+          scope: { scopeType: 'single_action' },
+          requestedAt: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresApprovalStore.save must fail closed when DB is unreachable');
+      recordPass('Approval Repository fails closed on write when DB is unreachable');
+    } catch (err) {
+      recordFail('Approval Store fail-closed enforcement', err);
+    }
+
+    // 3. Audit Store Fail-Closed
+    try {
+      const auditStore = PostgresAuditStore.getInstance();
+      let threw = false;
+      try {
+        await auditStore.record({
+          id: 'audit-fail-test',
+          requestId: 'req-123',
+          employeeRole: 'pm',
+          requestedBy: 'pm',
+          actionClassification: 'external_communication',
+          actionName: 'send_email',
+          decision: 'allowed',
+          reasonCode: 'APPROVED_BY_FOUNDER',
+          reason: 'Authorized by Founder',
+          executed: true,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresAuditStore.record must fail closed when DB is unreachable');
+      recordPass('Audit Repository fails closed on record when DB is unreachable');
+    } catch (err) {
+      recordFail('Audit Store fail-closed enforcement', err);
+    }
+
+    // 4. Agent Run Store Fail-Closed
+    try {
+      const runStore = PostgresAgentRunStore.getInstance();
+      let threw = false;
+      try {
+        await runStore.saveRun({
+          runId: 'run-fail-test',
+          agentId: 'pm',
+          agentName: 'Product Manager',
+          protocolStep: 'execute',
+          taskTitle: 'Test Agent Run',
+          directive: 'Fail closed test',
+          status: 'completed',
+          durationMs: 120,
+          outputContent: 'Test Output',
+          provenance: {
+            role: 'pm',
+            timestamp: new Date().toISOString(),
+            sources: [],
+            confidence: 'high_confidence',
+            verificationMethod: 'heuristic_check',
+          },
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresAgentRunStore.saveRun must fail closed when DB is unreachable');
+      recordPass('Agent Run Repository fails closed on save when DB is unreachable');
+    } catch (err) {
+      recordFail('Agent Run Store fail-closed enforcement', err);
+    }
+
+    // 5. Company State Store Fail-Closed
+    try {
+      const stateStore = CompanyStateStore.getInstance();
+      let threw = false;
+      try {
+        await stateStore.setInitiatives([]);
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'CompanyStateStore.setInitiatives must fail closed in authoritative mode when DB is unreachable');
+      recordPass('Company State Repository fails closed on write when DB is unreachable');
+    } catch (err) {
+      recordFail('Company State Store fail-closed enforcement', err);
+    }
+
+    // 6. Epistemic Store Fail-Closed
+    try {
+      const epistemicStore = PostgresEpistemicStore.getInstance();
+      let threw = false;
+      try {
+        await epistemicStore.saveSource({
+          id: 'src-fail-test',
+          sourceSystem: 'github',
+          title: 'Fail closed source',
+          rawContent: 'Sample content',
+          contentHash: 'hash-12345',
+          capturedAt: new Date().toISOString(),
+          capturedBy: 'system',
+          metadata: {},
+          provenanceKind: 'live_operational',
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresEpistemicStore.saveSource must fail closed when DB is unreachable');
+      recordPass('Epistemic Repository fails closed on source save when DB is unreachable');
+    } catch (err) {
+      recordFail('Epistemic Store fail-closed enforcement', err);
+    }
+
+    // 7. Company Memory Store Fail-Closed
+    try {
+      const memoryStore = CompanyMemoryStore.getInstance();
+      let threw = false;
+      try {
+        await memoryStore.getAllMemories();
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'CompanyMemoryStore.getAllMemories must fail closed in authoritative mode when DB is unreachable');
+      recordPass('Company Memory Repository fails closed on read when DB is unreachable');
+    } catch (err) {
+      recordFail('Company Memory Store fail-closed enforcement', err);
+    }
+
+    // 8. Scheduled Work Store Fail-Closed
+    try {
+      const schedulerStore = PostgresScheduledWorkStore.getInstance();
+      let threw = false;
+      try {
+        await schedulerStore.save({
+          id: 'work-fail-test',
+          workflowInstanceId: 'inst-1',
+          stepId: 'step-1',
+          executeAt: new Date().toISOString(),
+          status: 'scheduled',
+          scheduleType: 'one_time',
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        threw = true;
+      }
+      assert(threw, 'PostgresScheduledWorkStore.save must fail closed when DB is unreachable');
+      recordPass('Scheduled Work Repository fails closed on save when DB is unreachable');
+    } catch (err) {
+      recordFail('Scheduled Work Store fail-closed enforcement', err);
+    }
+  } else {
+    // Live PostgreSQL reachable from this process.
+    console.log('  [MODE: database-authoritative ONLINE] Live PostgreSQL detected.');
+
+    // 2A (online variant): controlled disposable DB outage via a child process.
+    // The child is spawned with DATABASE_URL pointed at an unreachable endpoint and
+    // DATABASE_MODE=authoritative. Its PrismaClient is constructed against the dead
+    // endpoint, so the fail-closed premise ACTUALLY holds at the infrastructure level
+    // (real TCP connection failure) — no mocking of the authority layer.
+    try {
+      const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+      const childEnv = {
+        ...process.env,
+        DATABASE_URL: 'postgresql://outage:outage@127.0.0.1:9/none',
+        DATABASE_MODE: 'authoritative',
+      };
+      const result = spawnSync(tsxBin, ['tests/phase2_2_outage_child.ts'], {
+        cwd: process.cwd(),
+        env: childEnv,
+        timeout: 120000,
+        encoding: 'utf8',
+      });
+      const childOut = ((result.stdout || '') + (result.stderr || '')).trim();
+      const lastLines = childOut.split('\n').filter((l: string) => l.trim()).slice(-4).join(' | ');
+      assert(
+        result.status === 0,
+        `Controlled DB outage child must exit 0 (got ${result.status}${result.signal ? ` signal ${result.signal}` : ''}): ${lastLines}`
+      );
+      assert(
+        childOut.includes('ALL FAIL-CLOSED OK'),
+        'Controlled DB outage child must report all paths fail-closed'
+      );
+      recordPass('All authoritative repositories fail closed under controlled real DB outage (child process, real connection failure)');
+    } catch (err) {
+      recordFail('Controlled DB outage fail-closed enforcement', err);
+    }
+
+    // 2B (online mode): authoritative functional contracts with VALID relational data.
+    // PHASE 2.6 FK FIX: the previous online-mode fixture wrote approval rows
+    // referencing a nonexistent workflowInstanceId ('inst-1'), violating the
+    // approval_records.workflow_instance_id -> workflow_instances.id FK (and could
+    // pass fail-closed assertions for the WRONG reason — a P2003 FK violation).
+    // The schema is authoritative: this fixture now creates a REAL workflow
+    // instance first, so approval + audit rows reference valid relational data.
+    process.env.DATABASE_MODE = 'authoritative';
+    const runTag = `p22-online-${Date.now()}`;
+    const instanceId = `inst-${runTag}`;
+    const approvalId = `appr-${runTag}`;
+    const auditId = `audit-${runTag}`;
+    const cleanupIds = { instanceId, approvalId, auditId };
+
+    try {
+      // Create a REAL workflow instance (valid relational anchor).
+      const wfStore = PostgresWorkflowStore.getInstance();
       await wfStore.saveInstance({
-        instanceId: 'inst-fail-test',
-        workflowId: 'wf-1',
+        instanceId,
+        workflowId: `wf-${runTag}`,
         version: '1.0.0',
         status: 'running',
-        objective: 'fail closed test',
-        stepStates: {},
+        objective: 'Phase 2.2 online-mode relational fixture',
+        stepStates: {
+          'step-p22-1': {
+            stepId: 'step-p22-1',
+            status: 'pending',
+            assignedRole: 'pm',
+            skill: 'content_generation',
+            outputs: {},
+            evidenceReferences: [],
+            retryCount: 0,
+          },
+        },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         outputs: {},
         evidenceReferences: [],
       });
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresWorkflowStore.saveInstance must fail closed when PostgreSQL is unavailable');
-    recordPass('Workflow Repository fails closed on write when DB is unreachable');
-  } catch (err) {
-    recordFail('Workflow Store fail-closed enforcement', err);
-  }
+      const fetchedInstance = await wfStore.getInstance(instanceId);
+      assert(fetchedInstance, 'Online mode: saved workflow instance must be retrievable');
+      assert.strictEqual(fetchedInstance?.instanceId, instanceId, 'Online mode: instanceId round-trip');
+      assert.strictEqual(fetchedInstance?.status, 'running', 'Online mode: status round-trip');
+      recordPass('Online authoritative mode: workflow instance round-trip with valid relational data');
 
-  // 2. Approval Store Fail-Closed
-  try {
-    const approvalStore = PostgresApprovalStore.getInstance();
-    let threw = false;
-    try {
-      await approvalStore.get('appr-test-123');
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresApprovalStore.get must fail closed when DB is unreachable');
-    recordPass('Approval Repository fails closed on read when DB is unreachable');
-
-    threw = false;
-    try {
+      // Approval referencing the REAL instance (FK satisfied).
+      const approvalStore = PostgresApprovalStore.getInstance();
       await approvalStore.save({
-        id: 'appr-fail-test',
-        workflowInstanceId: 'inst-1',
-        stepId: 'step-1',
-        actionName: 'send_email',
+        id: approvalId,
+        workflowInstanceId: instanceId,
+        stepId: 'step-p22-1',
+        actionName: 'send_client_email',
         employeeRole: 'pm',
         classification: 'external_communication',
         decision: 'pending',
-        scope: { scopeType: 'single_action' },
+        scope: { scopeType: 'single_action', allowedUses: 1, usedCount: 0 },
         requestedAt: new Date().toISOString(),
       });
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresApprovalStore.save must fail closed when DB is unreachable');
-    recordPass('Approval Repository fails closed on write when DB is unreachable');
-  } catch (err) {
-    recordFail('Approval Store fail-closed enforcement', err);
-  }
+      const fetchedApproval = await approvalStore.get(approvalId);
+      assert(fetchedApproval, 'Online mode: approval referencing a real workflow instance must persist (FK satisfied)');
+      assert.strictEqual(fetchedApproval?.workflowInstanceId, instanceId, 'Online mode: approval FK round-trip');
+      recordPass('Online authoritative mode: approval record persists with valid workflowInstanceId FK');
 
-  // 3. Audit Store Fail-Closed
-  try {
-    const auditStore = PostgresAuditStore.getInstance();
-    let threw = false;
-    try {
+      // Audit record referencing the REAL instance (FK satisfied).
+      const auditStore = PostgresAuditStore.getInstance();
       await auditStore.record({
-        id: 'audit-fail-test',
-        requestId: 'req-123',
+        id: auditId,
+        requestId: `req-${runTag}`,
         employeeRole: 'pm',
         requestedBy: 'pm',
+        workflowInstanceId: instanceId,
+        stepId: 'step-p22-1',
         actionClassification: 'external_communication',
-        actionName: 'send_email',
+        actionName: 'send_client_email',
         decision: 'allowed',
         reasonCode: 'APPROVED_BY_FOUNDER',
-        reason: 'Authorized by Founder',
+        reason: 'Authorized execution',
+        executionReference: `exec-${runTag}`,
         executed: true,
         timestamp: new Date().toISOString(),
       });
-    } catch (err: any) {
-      threw = true;
+      const fetchedAudit = await auditStore.get(auditId);
+      assert(fetchedAudit, 'Online mode: audit record referencing a real workflow instance must persist (FK satisfied)');
+      assert.strictEqual(fetchedAudit?.workflowInstanceId, instanceId, 'Online mode: audit FK round-trip');
+      const auditList = await auditStore.list({ workflowInstanceId: instanceId });
+      assert(
+        auditList.some((a: any) => a.id === auditId),
+        'Online mode: audit list-by-workflowInstanceId must return the FK-valid record'
+      );
+      recordPass('Online authoritative mode: audit record persists with valid workflowInstanceId FK');
+    } catch (err) {
+      recordFail('Online authoritative relational contracts (FK-valid fixtures)', err);
+    } finally {
+      // Deterministic cleanup — remove exactly the rows this group created.
+      process.env.DATABASE_URL = originalDatabaseUrl;
+      try {
+        await prisma.sideEffectAudit.deleteMany({ where: { id: cleanupIds.auditId } });
+        await prisma.approvalRecord.deleteMany({ where: { id: cleanupIds.approvalId } });
+        await prisma.workflowInstance.deleteMany({ where: { id: cleanupIds.instanceId } });
+      } catch {
+        // Cleanup is best-effort; rows are tagged with a unique runTag so they
+        // cannot collide with real data and can be reaped manually if needed.
+      }
     }
-    assert(threw, 'PostgresAuditStore.record must fail closed when DB is unreachable');
-    recordPass('Audit Repository fails closed on record when DB is unreachable');
-  } catch (err) {
-    recordFail('Audit Store fail-closed enforcement', err);
-  }
-
-  // 4. Agent Run Store Fail-Closed
-  try {
-    const runStore = PostgresAgentRunStore.getInstance();
-    let threw = false;
-    try {
-      await runStore.saveRun({
-        runId: 'run-fail-test',
-        agentId: 'pm',
-        agentName: 'Product Manager',
-        protocolStep: 'execute',
-        taskTitle: 'Test Agent Run',
-        directive: 'Fail closed test',
-        status: 'completed',
-        durationMs: 120,
-        outputContent: 'Test Output',
-        provenance: {
-          role: 'pm',
-          timestamp: new Date().toISOString(),
-          sources: [],
-          confidence: 'high_confidence',
-          verificationMethod: 'heuristic_check',
-        },
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresAgentRunStore.saveRun must fail closed when DB is unreachable');
-    recordPass('Agent Run Repository fails closed on save when DB is unreachable');
-  } catch (err) {
-    recordFail('Agent Run Store fail-closed enforcement', err);
-  }
-
-  // 5. Company State Store Fail-Closed
-  try {
-    const stateStore = CompanyStateStore.getInstance();
-    let threw = false;
-    try {
-      await stateStore.setInitiatives([]);
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'CompanyStateStore.setInitiatives must fail closed in authoritative mode when DB is unreachable');
-    recordPass('Company State Repository fails closed on write when DB is unreachable');
-  } catch (err) {
-    recordFail('Company State Store fail-closed enforcement', err);
-  }
-
-  // 6. Epistemic Store Fail-Closed
-  try {
-    const epistemicStore = PostgresEpistemicStore.getInstance();
-    let threw = false;
-    try {
-      await epistemicStore.saveSource({
-        id: 'src-fail-test',
-        sourceSystem: 'github',
-        title: 'Fail closed source',
-        rawContent: 'Sample content',
-        contentHash: 'hash-12345',
-        capturedAt: new Date().toISOString(),
-        capturedBy: 'system',
-        metadata: {},
-        provenanceKind: 'live_operational',
-      });
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresEpistemicStore.saveSource must fail closed when DB is unreachable');
-    recordPass('Epistemic Repository fails closed on source save when DB is unreachable');
-  } catch (err) {
-    recordFail('Epistemic Store fail-closed enforcement', err);
-  }
-
-  // 7. Company Memory Store Fail-Closed
-  try {
-    const memoryStore = CompanyMemoryStore.getInstance();
-    let threw = false;
-    try {
-      await memoryStore.getAllMemories();
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'CompanyMemoryStore.getAllMemories must fail closed in authoritative mode when DB is unreachable');
-    recordPass('Company Memory Repository fails closed on read when DB is unreachable');
-  } catch (err) {
-    recordFail('Company Memory Store fail-closed enforcement', err);
-  }
-
-  // 8. Scheduled Work Store Fail-Closed
-  try {
-    const schedulerStore = PostgresScheduledWorkStore.getInstance();
-    let threw = false;
-    try {
-      await schedulerStore.save({
-        id: 'work-fail-test',
-        workflowInstanceId: 'inst-1',
-        stepId: 'step-1',
-        executeAt: new Date().toISOString(),
-        status: 'scheduled',
-        scheduleType: 'one_time',
-        createdAt: new Date().toISOString(),
-      });
-    } catch (err: any) {
-      threw = true;
-    }
-    assert(threw, 'PostgresScheduledWorkStore.save must fail closed when DB is unreachable');
-    recordPass('Scheduled Work Repository fails closed on save when DB is unreachable');
-  } catch (err) {
-    recordFail('Scheduled Work Store fail-closed enforcement', err);
   }
 
   // Reset DATABASE_MODE to test for functional validation

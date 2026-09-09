@@ -272,9 +272,15 @@ export class CompanyContextProvider {
         lines.push(`  Council Recommendation: ${run.summary}`);
       }
       if (run.executiveResult) {
-        lines.push(`  Key Findings: ${run.executiveResult.keyFindings.join('; ')}`);
-        lines.push(`  Business Implications: ${run.executiveResult.businessImplications.join('; ')}`);
-        lines.push(`  Risks: ${run.executiveResult.risks.join('; ')}`);
+        if (run.executiveResult.keyFindings?.length) {
+          lines.push(`  Key Findings: ${run.executiveResult.keyFindings.join('; ')}`);
+        }
+        if (run.executiveResult.businessImplications?.length) {
+          lines.push(`  Business Implications: ${run.executiveResult.businessImplications.join('; ')}`);
+        }
+        if (run.executiveResult.risks?.length) {
+          lines.push(`  Risks: ${run.executiveResult.risks.join('; ')}`);
+        }
       }
       lines.push(`  Deliverables Count: ${run.deliverables.length}`);
     });

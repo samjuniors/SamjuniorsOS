@@ -53,7 +53,7 @@ export const CustomEmployeeOnboarderView: React.FC<CustomEmployeeOnboarderViewPr
     'Safe Mock Execution',
   ]);
   const [skillInput, setSkillInput] = useState('');
-  const [baseTone, setBaseTone] = useState<PersonaTone>('analytical');
+  const [baseTone, setBaseTone] = useState<PersonaTone>('professional');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleAddSkill = () => {
@@ -100,11 +100,11 @@ export const CustomEmployeeOnboarderView: React.FC<CustomEmployeeOnboarderViewPr
     const res = TrainingStore.onboardCustomEmployee(draft);
     if (res.success) {
       playOSSound('celebration');
-      dispatchOSNotification(
-        `AI Employee Onboarded: ${name}`,
-        `Custom skill tree generated. Ready for calibration and live orchestrator activation.`,
-        'success'
-      );
+      dispatchOSNotification({
+        title: `AI Employee Onboarded: ${name}`,
+        message: `Custom skill tree generated. Ready for calibration and live orchestrator activation.`,
+        type: 'agent',
+      });
       if (onEmployeeCreated) onEmployeeCreated(res.agentId);
     }
   };

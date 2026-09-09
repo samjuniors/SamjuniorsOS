@@ -152,7 +152,7 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
                   title: run.title || run.directive,
                   category: 'Strategy',
                   sourceEntityId: run.id,
-                  sourceEntityName: res?.preparedBy.name || 'Executive Council',
+                  sourceEntityName: res?.preparedBy?.name || 'Executive Council',
                   recommendation: recommendation,
                   whyItMatters: decisionWhy,
                   risk: risks.join('; '),
@@ -233,7 +233,7 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
                     title: run.title || run.directive,
                     category: 'Strategy',
                     sourceEntityId: run.id,
-                    sourceEntityName: res?.preparedBy.name || 'Executive Council',
+                    sourceEntityName: res?.preparedBy?.name || 'Executive Council',
                     recommendation: recommendation,
                     whyItMatters: decisionWhy,
                     risk: risks.join('; '),
@@ -427,7 +427,7 @@ export const ExecutiveResultCard: React.FC<ExecutiveResultCardProps> = ({
       {/* Prepared By Footer */}
       <div className="pt-2 text-center text-[10px] text-slate-500 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-1">
         <span>
-          Prepared by {res?.preparedBy.name || 'Sophia Vance'} ({res?.preparedBy.role || 'COO'}) with{' '}
+          Prepared by {res?.preparedBy?.name || 'Sophia Vance'} ({res?.preparedBy?.role || 'COO'}) with{' '}
           {participatingEmployees.length > 0
             ? participatingEmployees
                 .filter((e) => e.agentId !== 'coo')

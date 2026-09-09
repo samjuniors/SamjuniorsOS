@@ -246,7 +246,7 @@ export interface ExecutionPlanItem {
   title: string;
   agentId: AgentRole;
   protocolStep: AgentWorkProtocolStep;
-  status: 'pending' | 'in_progress' | 'done' | 'failed' | 'blocked' | 'requires_approval';
+  status: 'pending' | 'in_progress' | 'done' | 'failed' | 'blocked' | 'requires_approval' | 'skipped';
   outputSnippet?: string;
   provenance?: OutputProvenance;
   toolSelection?: import('./capabilities').ToolSelectionResult;
@@ -278,18 +278,21 @@ export interface FounderDecisionDetails {
 }
 
 export interface FounderExecutiveResult {
-  recommendation: string;
-  keyFindings: string[];
-  businessImplications: string[];
-  risks: string[];
-  recommendedNextActions: string[];
+  /** Optional narrative summary (DAG-execution path). The UI falls back to run.summary when absent. */
+  summary?: string;
+  /** Optional: advisor-path narrative. The UI provides fallbacks when absent. */
+  recommendation?: string;
+  keyFindings?: string[];
+  businessImplications?: string[];
+  risks?: string[];
+  recommendedNextActions?: string[];
   founderDecision?: FounderDecisionDetails;
-  preparedBy: {
+  preparedBy?: {
     name: string;
     role: string;
     agentId: AgentRole;
   };
-  participatingEmployees: ParticipatingEmployee[];
+  participatingEmployees?: ParticipatingEmployee[];
   verificationStatus: 'verified' | 'pending' | 'failed' | 'insufficient_evidence';
   verificationDetails?: {
     isCompliant: boolean;
@@ -303,8 +306,49 @@ export interface FounderExecutiveResult {
     primaryBasis: EvidenceBasis;
     deliverableIds?: string[];
   };
-  executionOutcome: 'success' | 'partial' | 'failed' | 'unconfigured' | 'verification_rejected';
+  /**
+   * Execution outcome. The canonical advisor path uses success/partial/failed/
+   * unconfigured/verification_rejected; the workflow-DAG execution path additionally
+   * reports 'autonomous_execution_certified' (DAG completed and verification passed)
+   * and 'awaiting_founder_decision' (DAG paused awaiting Founder ratification).
+   * The UI only branches on 'unconfigured'.
+   */
+  executionOutcome:
+    | 'success'
+    | 'partial'
+    | 'failed'
+    | 'unconfigured'
+    | 'verification_rejected'
+    | 'autonomous_execution_certified'
+    | 'awaiting_founder_decision';
   failureReason?: string;
+  /** Optional (DAG-execution path): decisions requiring Founder ratification. */
+  decisionsRequired?: ExecutiveDecisionRequirement[];
+  /** Optional (DAG-execution path): projected KPIs attached to the executive brief. */
+  kpisProjected?: ProjectedKpi[];
+}
+
+/**
+ * A decision surfaced to the Founder by the workflow-DAG executive path.
+ * Display/report data only — authorization is governed exclusively by the
+ * SideEffectAuthorizationGate and FounderApprovalRecord machinery.
+ */
+export interface ExecutiveDecisionRequirement {
+  id: string;
+  title: string;
+  category: string;
+  recommendedBy: string;
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending_ratification' | 'approved' | 'rejected' | 'ratified';
+  description: string;
+}
+
+/** A projected KPI attached to an executive brief (display data only). */
+export interface ProjectedKpi {
+  name: string;
+  target: string;
+  baseline: string;
+  timeline: string;
 }
 
 export interface OrchestrationRun {

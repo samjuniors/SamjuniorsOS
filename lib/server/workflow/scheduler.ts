@@ -43,6 +43,10 @@ export class WorkflowScheduler {
   private leaseManager: LeaseManager;
   private workerId: string;
   private leaseTtlMs: number;
+  /** Renewal cadence: one third of the lease TTL (never below 1s). */
+  private leaseRenewalIntervalMs: number;
+  /** Hard upper bound on how long a single execution may hold a renewed lease. */
+  private maxLeaseRenewalDurationMs: number;
 
   constructor(
     schedulerStore?: InMemoryScheduledWorkStore,
@@ -50,7 +54,8 @@ export class WorkflowScheduler {
     runtime?: WorkflowRuntime,
     leaseManager?: LeaseManager,
     workerId?: string,
-    leaseTtlMs: number = 30000
+    leaseTtlMs: number = 30000,
+    leaseRenewalOptions?: { renewalIntervalMs?: number; maxRenewalDurationMs?: number }
   ) {
     this.schedulerStore = schedulerStore || InMemoryScheduledWorkStore.getInstance();
     this.workflowStore = workflowStore || InMemoryWorkflowStore.getInstance();
@@ -58,6 +63,10 @@ export class WorkflowScheduler {
     this.leaseManager = leaseManager || getLeaseManager();
     this.workerId = workerId || generateWorkerIdentity();
     this.leaseTtlMs = leaseTtlMs;
+    this.leaseRenewalIntervalMs =
+      leaseRenewalOptions?.renewalIntervalMs || Math.max(1000, Math.floor(leaseTtlMs / 3));
+    this.maxLeaseRenewalDurationMs =
+      leaseRenewalOptions?.maxRenewalDurationMs || 15 * 60 * 1000; // 15 minutes
   }
 
   getWorkerId(): string {
@@ -71,6 +80,114 @@ export class WorkflowScheduler {
   async renewScheduleLease(scheduleId: string): Promise<boolean> {
     const leaseKey = `sched-item:${scheduleId}`;
     return this.leaseManager.renew(leaseKey, this.workerId, this.leaseTtlMs);
+  }
+
+  /**
+   * PHASE 2.6.1 — Bounded lease-renewal guard for long-running step execution.
+   *
+   * `evaluateDueWork` acquires the `sched-item:{id}` lease BEFORE executing a step,
+   * but a step execution can involve LLM calls, external tool research, and provider
+   * side effects that outlive the lease TTL (default 30s). Without renewal the lease
+   * expires mid-execution, another scheduler's `evaluateDueWork` acquires it, and the
+   * original worker silently loses coordination (the Phase 2.6 report gap).
+   *
+   * This guard extends the existing `renewScheduleLease` lifecycle hook — no new
+   * infrastructure, no permanent background worker:
+   *   - Renews at ~1/3 of the TTL, so a single slow/missed renewal cannot expire the lease.
+   *   - Renewal uses the SAME holder-guarded atomic `LeaseManager.renew`: only the
+   *     current holder of an unexpired lease can renew; a stale worker (expired or
+   *     reclaimed lease) can never extend another worker's lease.
+   *   - HARD BOUND: renewals stop after `maxLeaseRenewalDurationMs` (default 15 min),
+   *     so a hung execution eventually loses coordination and the system self-heals.
+   *   - Renewal failure (renew returned false OR threw, e.g. DB outage) marks
+   *     `coordinationLost` — it does NOT abort in-flight work (aborting a possibly
+   *     in-flight external side effect is unsafe). The execution is allowed to finish
+   *     and its outcome is still recorded, but the occurrence is durably marked so
+   *     operators can see that lease ownership was uncertain.
+   *
+   * IMPORTANT (ambiguity model): renewal is COORDINATION ONLY. It does not grant
+   * business authorization (the SideEffectAuthorizationGate remains authoritative)
+   * and does not provide exactly-once execution (idempotency remains authoritative
+   * for external side effects). If coordination is lost, any competing worker that
+   * re-acquires the lease sees this occurrence already 'triggered' in
+   * executionHistory and skips re-execution (occurrence-level idempotency), while
+   * workflow-step writes by a stale worker still fail closed via the
+   * stateVersion-guarded `transitionStepAtomic` CAS.
+   */
+  private startLeaseRenewal(leaseKey: string): {
+    stop: () => void;
+    state: () => { coordinationLost: boolean; reason?: string };
+  } {
+    let stopped = false;
+    let coordinationLost = false;
+    let lossReason: string | undefined;
+    const startedAt = Date.now();
+
+    const markLost = (reason: string) => {
+      if (!coordinationLost) {
+        coordinationLost = true;
+        lossReason = reason;
+        console.warn(
+          `[WorkflowScheduler] Lease coordination LOST for ${leaseKey} (worker ${this.workerId}): ${reason}`
+        );
+      }
+    };
+
+    const timer: ReturnType<typeof setInterval> = setInterval(() => {
+      if (stopped) return;
+
+      // Hard bound: stop renewing after the maximum renewal duration.
+      if (Date.now() - startedAt > this.maxLeaseRenewalDurationMs) {
+        markLost(
+          `maximum lease renewal duration exceeded (${this.maxLeaseRenewalDurationMs}ms); renewals stopped`
+        );
+        return;
+      }
+
+      // Holder-guarded atomic renewal (never extends another worker's lease).
+      // Wrapped defensively: even if a lease-manager implementation ever throws
+      // synchronously (instead of returning a rejected promise as the async
+      // contract requires), the guard must crash NOTHING — it just marks the
+      // coordination as lost (fail-closed) and lets the in-flight work finish.
+      try {
+        this.leaseManager
+          .renew(leaseKey, this.workerId, this.leaseTtlMs)
+          .then((renewed) => {
+            if (!renewed && !stopped) {
+              markLost(
+                'renewal rejected — lease expired, released, or reclaimed by another worker'
+              );
+            }
+          })
+          .catch((err: unknown) => {
+            // DB outage during renewal fails CLOSED for coordination: we do not pretend
+            // ownership is healthy, but we also never abort in-flight side effects.
+            if (!stopped) {
+              markLost(
+                `renewal failed: ${err instanceof Error ? err.message : String(err)}`
+              );
+            }
+          });
+      } catch (err: unknown) {
+        // Synchronous throw from a contract-violating lease manager: same fail-closed path.
+        if (!stopped) {
+          markLost(
+            `renewal threw synchronously: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+    }, this.leaseRenewalIntervalMs);
+
+    // The renewal timer must never keep the Node event loop alive on its own.
+    (timer as { unref?: () => void }).unref?.();
+
+    return {
+      stop: () => {
+        stopped = true;
+        clearInterval(timer);
+      },
+      state: () => ({ coordinationLost, reason: lossReason }),
+    };
   }
 
   /**
@@ -227,7 +344,30 @@ export class WorkflowScheduler {
         const occurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
         const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
 
-        // 1. Idempotency Check: Prevent duplicate execution of this specific occurrence
+        // 1a. IN-FLIGHT OCCURRENCE GUARD (Phase 2.6.1 fix).
+        // A 'triggered' occurrence record is written BEFORE execution begins and
+        // is the durable marker that an execution attempt for this item is (or may
+        // still be) in progress. If a prior worker lost its lease mid-execution
+        // (expiry without renewal, crash, DB outage), a re-acquiring worker MUST
+        // NOT start another execution attempt of the same work: occurrence-number
+        // recomputation (history length + 1 for one_time items) would otherwise
+        // mint a NEW occurrence id, miss the in-flight record, and duplicate the
+        // attempt. The workflow-step claim CAS and the gate idempotency store
+        // provide deeper protection; this guard prevents the wasteful and
+        // potentially cascading duplicate attempt at the scheduler layer.
+        const inFlight = item.executionHistory.find(h => h.status === 'triggered');
+        if (inFlight) {
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId: inFlight.occurrenceId,
+            status: 'skipped',
+            error: `In-flight occurrence ${inFlight.occurrenceId} (status 'triggered') blocks re-execution — prior worker holds or lost its lease mid-execution; awaiting its finalization or explicit recovery.`,
+          });
+          continue;
+        }
+
+        // 1b. Exact-occurrence idempotency: prevent duplicate execution of the
+        // specific occurrence computed above (completed / already-triggered).
         const existingOcc = item.executionHistory.find(h => h.occurrenceId === occurrenceId);
         if (existingOcc && (existingOcc.status === 'triggered' || existingOcc.status === 'completed')) {
           evaluationResult.results.push({
@@ -407,6 +547,10 @@ export class WorkflowScheduler {
         item.executionHistory.push(occRecord);
         await this.schedulerStore.update(item);
 
+        // PHASE 2.6.1: bounded lease renewal while the (potentially long-running)
+        // step executes. See startLeaseRenewal() for the full failure/ambiguity model.
+        const renewalGuard = this.startLeaseRenewal(leaseKey);
+
         try {
           // Execute Ready Step via Runtime (which delegates to ServerAgentExecutor)
           await this.runtime.executeReadyStep(item.workflowInstanceId, item.stepId);
@@ -415,12 +559,22 @@ export class WorkflowScheduler {
           const finalWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
           const finalStepState = finalWorkflow.stepStates[item.stepId];
           const durationMs = Date.now() - startTime;
+          const renewalState = renewalGuard.state();
 
           if (finalStepState.status === 'completed') {
             occRecord.status = 'completed';
             occRecord.completedAt = new Date().toISOString();
             occRecord.durationMs = durationMs;
             occRecord.result = finalStepState.outputs;
+            if (renewalState.coordinationLost) {
+              // Durable marker: this execution completed, but lease ownership was
+              // uncertain at some point. Occurrence-level idempotency ('triggered'
+              // entry written before execution) plus the stateVersion-guarded step
+              // CAS already prevent duplicate/clobbering writes; this field is the
+              // honest operator-visible record of the ambiguity.
+              occRecord.coordinationLost = true;
+              occRecord.error = `Lease coordination lost during execution: ${renewalState.reason}`;
+            }
 
             // Handle Schedule Completion or Recurrence Advance
             if (item.scheduleType === 'recurring' && item.recurrence) {
@@ -449,6 +603,9 @@ export class WorkflowScheduler {
               scheduleId: item.id,
               occurrenceId,
               status: 'completed',
+              error: renewalState.coordinationLost
+                ? `Lease coordination lost during execution: ${renewalState.reason}`
+                : undefined,
             });
           } else if (finalStepState.status === 'failed') {
             // Handle Step Failure & Retry Policy
@@ -456,6 +613,10 @@ export class WorkflowScheduler {
             occRecord.completedAt = new Date().toISOString();
             occRecord.durationMs = durationMs;
             occRecord.error = finalStepState.error || 'Execution failed';
+            if (renewalState.coordinationLost) {
+              occRecord.coordinationLost = true;
+              occRecord.error += ` | Lease coordination lost during execution: ${renewalState.reason}`;
+            }
 
             const retryPolicy = stepDef.retryPolicy || { maxRetries: 0, backoffMs: 1000 };
             if (finalStepState.retryCount < retryPolicy.maxRetries) {
@@ -482,6 +643,11 @@ export class WorkflowScheduler {
           occRecord.status = 'failed';
           occRecord.completedAt = new Date().toISOString();
           occRecord.error = err.message || 'Execution error';
+          const renewalState = renewalGuard.state();
+          if (renewalState.coordinationLost) {
+            occRecord.coordinationLost = true;
+            occRecord.error += ` | Lease coordination lost during execution: ${renewalState.reason}`;
+          }
           item.status = 'failed';
           item.updatedAt = new Date().toISOString();
           await this.schedulerStore.update(item);
@@ -492,8 +658,15 @@ export class WorkflowScheduler {
             status: 'failed',
             error: err.message,
           });
+        } finally {
+          // Stop renewal when the execution section ends (complete, failed, or thrown):
+          // renewal is tied to this execution's lifetime and must never leak past it.
+          renewalGuard.stop();
         }
       } finally {
+        // Lease critical section: ALWAYS release the lease for this item, no matter
+        // which check or execution path was taken. Release is holder-guarded, so a
+        // lease already reclaimed by another worker simply fails harmlessly here.
         await this.leaseManager.release(leaseKey, this.workerId);
       }
     }

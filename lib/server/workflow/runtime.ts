@@ -13,6 +13,7 @@ import { validateStepTransition, validateInstanceTransition } from './state-mach
 import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
 import { ConstitutionalVerifier } from '../orchestration/verifier';
 import { resolveTargetRepository, executeGitHubIntelligence } from '../tools/providers/github';
+import { mapSkillToProtocolStep } from './dynamic-dag';
 import { v4 as uuidv4 } from 'uuid';
 
 export class WorkflowRuntime {
@@ -640,11 +641,15 @@ export class WorkflowRuntime {
           },
         },
         executeFn: async () => {
+          // Map the step's skill NAME to its canonical protocol stage before crossing
+          // the agent-executor boundary: AgentExecutionContext.protocolStep is a
+          // genuine AgentWorkProtocolStep, not a skill name.
+          const protocolStep = mapSkillToProtocolStep(step.skill);
           return this.executor.executeAgentTask(
             step.assignedRole,
             {
               directive: def.objective,
-              protocolStep: step.skill,
+              protocolStep,
               taskTitle: stepDef.name,
               taskDescription: stepDef.description,
               upstreamContext: {

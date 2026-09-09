@@ -1,4 +1,6 @@
 import assert from 'assert';
+import { spawn } from 'child_process';
+import * as path from 'path';
 import {
   PostgresLeaseManager,
   generateWorkerIdentity,
@@ -738,21 +740,37 @@ async function main() {
 
     const startAt = Date.now() + 1500; // simultaneous start barrier
     const workerTags = ['proc0', 'proc1', 'proc2'];
-    const procs = workerTags.map((tag) =>
-      Bun.spawn(
-        ['bun', 'scripts/phase2_6_worker.ts', String(ITER), prefix, tag, String(startAt)],
-        { stdout: 'pipe', stderr: 'inherit', env: { ...process.env } as any }
-      )
-    );
+    const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+
+    const spawnWorker = (tag: string): Promise<{ text: string; code: number | null }> =>
+      new Promise((resolve, reject) => {
+        const proc = spawn(
+          tsxBin,
+          ['scripts/phase2_6_worker.ts', String(ITER), prefix, tag, String(startAt)],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env } as NodeJS.ProcessEnv,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }
+        );
+        let out = '';
+        let errText = '';
+        proc.stdout!.on('data', (d: Buffer) => { out += d.toString(); });
+        proc.stderr!.on('data', (d: Buffer) => { errText += d.toString(); });
+        proc.on('error', reject);
+        proc.on('close', (code) =>
+          resolve({ text: out + (errText ? `\n[stderr] ${errText}` : ''), code })
+        );
+      });
+
+    const workerResults = await Promise.all(workerTags.map(spawnWorker));
 
     const summaries: any[] = [];
-    for (const proc of procs) {
-      const text = await new Response(proc.stdout as any).text();
-      const exitCode = await proc.exited;
-      assert.strictEqual(exitCode, 0, `worker process must exit 0`);
+    for (const { text, code } of workerResults) {
+      assert.strictEqual(code, 0, `worker process must exit 0 (got ${code}): ${text.slice(0, 300)}`);
       const line = text.split('\n').find((l) => l.startsWith('RESULT '));
       assert.ok(line, `worker must print a RESULT line, got: ${text.slice(0, 300)}`);
-      summaries.push(JSON.parse(line.slice('RESULT '.length)));
+      summaries.push(JSON.parse(line!.slice('RESULT '.length)));
     }
 
     // Aggregate worker reports: totals per resource type

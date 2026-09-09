@@ -85,18 +85,22 @@ export const TrainingDrillsView: React.FC<TrainingDrillsViewProps> = ({
         TrainingStore.recordDrillResult(data.result);
         setHistoryResults((prev) => [data.result, ...prev]);
         playOSSound('celebration');
-        dispatchOSNotification(
-          `Drill Passed: ${drill.title}`,
-          `${data.result.agentName} scored ${data.result.overallScore}%! Awarded +${drill.xpReward} Skill XP.`,
-          'success'
-        );
+        dispatchOSNotification({
+          title: `Drill Passed: ${drill.title}`,
+          message: `${data.result.agentName} scored ${data.result.overallScore}%! Awarded +${drill.xpReward} Skill XP.`,
+          type: 'agent',
+        });
       } else {
         throw new Error(data.error || 'Failed to complete drill');
       }
     } catch (err: any) {
       console.error('Error running drill:', err);
       playOSSound('alert');
-      dispatchOSNotification('Drill Error', err.message || 'Execution failed', 'error');
+      dispatchOSNotification({
+        title: 'Drill Error',
+        message: err.message || 'Execution failed',
+        type: 'system',
+      });
     } finally {
       setIsRunning(false);
     }

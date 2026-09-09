@@ -486,29 +486,70 @@ async function runDistributedSchedulingTests() {
     recordFail('Scheduler enforces SideEffectAuthorizationGate and never bypasses Founder approval', err);
   }
 
-  console.log('\n--- Unit Tests: Group 10 — Database Authority Fail-Closed Invariant ---');
+  console.log('\n--- Unit Tests: Group 10 — Database Authority Fail-Closed Invariant (mode-explicit) ---');
   try {
-    const prevEnv = process.env.DATABASE_MODE;
-    process.env.DATABASE_MODE = 'authoritative';
+    // PHASE 2.6.1 test-design fix: the fail-closed premise ("DB unreachable")
+    // must actually hold. With a live PostgreSQL (online environments / CI),
+    // the premise is exercised through the controlled disposable outage child
+    // process (real connection failure, no authority-layer mocks).
+    const dbReachable = await isDatabaseAvailable();
 
-    const pgLeaseMgr = PostgresLeaseManager.getInstance();
-    let threw = false;
+    if (!dbReachable) {
+      console.log('  [MODE: database-unavailable] PostgreSQL unreachable — fail-closed premise holds; running inline.');
+      const prevEnv = process.env.DATABASE_MODE;
+      process.env.DATABASE_MODE = 'authoritative';
 
-    try {
-      // In authoritative mode with DB offline, acquire must fail-closed
-      await pgLeaseMgr.acquire('test-auth-fail-key', 'worker-test', 5000);
-    } catch (err: any) {
-      threw = true;
-      assert.ok(
-        err instanceof DatabaseAuthorityError || err.name === 'DatabaseAuthorityError',
-        `Expected DatabaseAuthorityError, got: ${err.name}`
+      const pgLeaseMgr = PostgresLeaseManager.getInstance();
+      let threw = false;
+
+      try {
+        // In authoritative mode with DB offline, acquire must fail-closed
+        await pgLeaseMgr.acquire('test-auth-fail-key', 'worker-test', 5000);
+      } catch (err: any) {
+        threw = true;
+        assert.ok(
+          err instanceof DatabaseAuthorityError || err.name === 'DatabaseAuthorityError',
+          `Expected DatabaseAuthorityError, got: ${err.name}`
+        );
+      } finally {
+        process.env.DATABASE_MODE = prevEnv;
+      }
+
+      assert.strictEqual(threw, true, 'Must fail-closed when PostgreSQL is unreachable in authoritative mode');
+      recordPass('PostgresLeaseManager fails closed without silent fallback when DB is unreachable');
+    } else {
+      console.log('  [MODE: database-authoritative ONLINE] Live PostgreSQL detected — running controlled outage child process.');
+      const { spawnSync } = await import('child_process');
+      const path = await import('path');
+      const tsxBin = path.join(process.cwd(), 'node_modules', '.bin', 'tsx');
+      const result = spawnSync(tsxBin, ['tests/phase2_2_outage_child.ts'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          DATABASE_URL: 'postgresql://outage:outage@127.0.0.1:9/none',
+          DIRECT_URL: 'postgresql://outage:outage@127.0.0.1:9/none',
+          DATABASE_MODE: 'authoritative',
+        },
+        timeout: 120000,
+        encoding: 'utf8',
+      });
+      const childOut = ((result.stdout || '') + (result.stderr || '')).trim();
+      const lastLines = childOut.split('\n').filter((l: string) => l.trim()).slice(-3).join(' | ');
+      assert.strictEqual(
+        result.status,
+        0,
+        `Outage child must exit 0 (got ${result.status}): ${lastLines}`
       );
-    } finally {
-      process.env.DATABASE_MODE = prevEnv;
+      assert.ok(
+        childOut.includes('PostgresLeaseManager.acquire()'),
+        'Outage child must exercise the lease manager acquire path'
+      );
+      assert.ok(
+        childOut.includes('ALL FAIL-CLOSED OK'),
+        'Outage child must report all paths fail-closed'
+      );
+      recordPass('PostgresLeaseManager fails closed under controlled real DB outage (child process, real connection failure)');
     }
-
-    assert.strictEqual(threw, true, 'Must fail-closed when PostgreSQL is unreachable in authoritative mode');
-    recordPass('PostgresLeaseManager fails closed without silent fallback when DB is unreachable');
   } catch (err) {
     recordFail('PostgresLeaseManager fails closed without silent fallback when DB is unreachable', err);
   }

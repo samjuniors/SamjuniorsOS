@@ -24,6 +24,14 @@ export interface ScheduledExecutionRecord {
   result?: any;
   error?: string;
   durationMs?: number;
+  /**
+   * PHASE 2.6.1: true when the scheduler lost `sched-item` lease ownership at some
+   * point during this occurrence's execution (renewal rejected/threw, or the bounded
+   * renewal duration cap was hit). The execution outcome recorded here is still this
+   * worker's honest observation, but lease ownership was uncertain while it ran.
+   * Coordination marker only — carries no authorization semantics.
+   */
+  coordinationLost?: boolean;
 }
 
 export interface CancellationState {

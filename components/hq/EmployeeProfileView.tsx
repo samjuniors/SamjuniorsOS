@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { AIAgent, AgentRole, ExecutionDeliverable, OutputProvenance, AdvisorTargetContext, PersonaTone } from '@/types/os';
 import { EvidenceModal } from './EvidenceModal';
-import { BrainCircuit, BookOpen, Sliders, Sparkles, GraduationCap } from 'lucide-react';
+import { BrainCircuit, BookOpen, Sliders, GraduationCap } from 'lucide-react';
 import { STRUCTURED_SKILLS, getSkillsForRole } from '@/lib/skills/skill-registry';
 import { StructuredSkillDefinition } from '@/types/capabilities';
 import { SkillInspectionModal } from './SkillInspectionModal';

@@ -108,9 +108,22 @@ export function getAppIcon(iconName: string): LucideIcon {
   return ICON_MAP[iconName] || Bot;
 }
 
-export function playOSSound(
-  type: 'click' | 'open' | 'notification' | 'execute' | 'startup' | 'pop' | 'copy' | 'menu' | 'react' | 'dismiss' | 'minimize'
-) {
+export type OSSoundType =
+  | 'click'
+  | 'open'
+  | 'notification'
+  | 'execute'
+  | 'startup'
+  | 'pop'
+  | 'copy'
+  | 'menu'
+  | 'react'
+  | 'dismiss'
+  | 'minimize'
+  | 'celebration'
+  | 'alert';
+
+export function playOSSound(type: OSSoundType) {
   if (typeof window === 'undefined') return;
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -198,6 +211,28 @@ export function playOSSound(
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
       osc.start(now);
       osc.stop(now + 0.4);
+    } else if (type === 'celebration') {
+      // Rising major arpeggio (C5-E5-G5-C6) — success / completion feedback.
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, i) => {
+        const t = now + i * 0.09;
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(0.05, t);
+      });
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+      osc.start(now);
+      osc.stop(now + 0.55);
+    } else if (type === 'alert') {
+      // Double low buzz — error / warning feedback.
+      osc.frequency.setValueAtTime(196, now);
+      osc.frequency.setValueAtTime(196, now + 0.16);
+      osc.type = 'square';
+      gain.gain.setValueAtTime(0.04, now);
+      gain.gain.setValueAtTime(0.0001, now + 0.13);
+      gain.gain.setValueAtTime(0.04, now + 0.16);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
     }
   } catch {
     // Audio context may be restricted before user gesture
