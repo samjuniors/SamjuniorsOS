@@ -138,3 +138,65 @@ Stage Summary:
 - VERDICT re-confirmed: PASS WITH CONDITIONS — multi-instance safe under tested scenarios
 - min=1/max=1 restriction and .data/instance.lock intentionally unchanged
 - .data test-run pollution restored via git checkout before commit
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Phase 2.6.1 — Foundation cleanup & final Phase-2 certification (audit stage)
+
+Work Log:
+- Verified HEAD 8e21335 on main, clean tree, in sync with origin/main; git identity samjuniors <arena.class007@gmail.com> configured
+- RULE 0 audit: package.json (no test orchestration script; tsx-based suites), tsconfig (strict, excludes tests/), no .github/workflows (CI must be built from scratch)
+- TS error inventory: EXACTLY 39 errors confirmed: dynamic-dag.ts 23, runtime.ts 1, TrainingDrillsView 4, CustomEmployeeOnboarderView 4, AIEmployeeOnboardingModal 3, SkillTreeView 2, EmployeeProfileView 2 (duplicate Sparkles import)
+- Root causes: (a) types/workflow.ts skill fields typed AgentWorkProtocolStep but codebase semantics = skill NAME strings (runtime compares 'compliance_verification', tests cast 'content_generation' as any); (b) retryPolicy {backoffMultiplier,initialDelayMs} vs canonical {backoffMs} — scheduler.ts:463 Date.now()+undefined=NaN latent bug; (c) dynamic-dag uses invalid SideEffectClassification values 'financial_transfer'/'external_mutation' — gate policy-evaluator falls back to DENY (fail-closed dead-end) and gate idempotency auto-enforcement misses classification match; (d) dispatchOSNotification called with 3 positional args + 'success'/'error' (OSNotification.type union is agent|system|finance|deal|company|governance|security); (e) playOSSound 'celebration'/'alert' not in sound union (falls through silently at runtime); (f) PersonaTone 'analytical' invalid; (g) WorkflowDefinition missing-fields + createdAt/updatedAt (Prisma model HAS timestamps; store returns minimal defs); (h) ExecutionPlanItem.status lacks 'skipped'; (i) FounderExecutiveResult unions too narrow for DAG outcomes; protocolProgress missing analyze/review keys; verificationStatus 'passed' vs 'verified' (UI checks === 'verified' — latent display bug)
+- Lease lifecycle audit: acquire/renew/release/reclaim all correct post-2.6; GAP = evaluateDueWork holds sched-item lease (TTL 30s default) across runtime.executeReadyStep (LLM+tools+verification — can exceed TTL) with NO renewal wired; renewScheduleLease(scheduleId) exists at scheduler.ts:71 but never called internally
+- Phase 2.2 test audit: Group 2 "fail-closed when DB unavailable" premise breaks when real DATABASE_URL live (assertions fail + junk rows written; approval save 'inst-1' passes for WRONG reason via FK violation); SideEffectAudit + ApprovalRecord have FK workflowInstanceId→workflow_instances; ScheduledWorkItem has NO FK
+- Idempotency UNKNOWN state machine verified ('unknown' status, blind-retry prohibition, UNKNOWN_EXTERNAL_RESULT)
+- instance-guard (STRICT_SINGLE_INSTANCE) present, untouched
+- Restarted real PostgreSQL 16.4 (zonky binaries, port 5433, DB samjuniors_phase26, role phase26_app) — all 19 tables + migration history intact from Phase 2.6 session
+
+Stage Summary:
+- Audit confirms all Phase 2.6 report claims against actual HEAD; additional latent bugs found: scheduler NaN backoff, gate classification dead-end for DAG side-effect steps, 'passed'/'verified' display bug
+- Implementation order: P0 TS fixes → P1 lease renewal wiring → P2 renewal tests → P1 phase2_2 redesign + FK fixtures → P1 CI workflow → full regression → security scan → commit/push
+
+---
+Task ID: 14
+Agent: main (Z.ai Code)
+Task: Phase 2.6.1 — P0 TS fixes, P1 lease renewal wiring, P1 test redesign, P1 CI, P2 renewal tests
+
+Work Log:
+- P0 TypeScript: fixed all 39 errors → npx tsc --noEmit exits 0 with 0 errors
+  - types/workflow.ts: skill fields widened to honest `string` (skill NAME semantics; runtime compares 'compliance_verification', tests cast 'content_generation' as any); WorkflowDefinition governance fields optional + createdAt/updatedAt (matches Prisma model); retryPolicy canonical {maxRetries, backoffMs}
+  - types/os.ts: ExecutionPlanItem.status + 'skipped'; FounderExecutiveResult advisor fields optional (UI already guards), + optional summary/decisionsRequired/kpisProjected + ExecutiveDecisionRequirement/ProjectedKpi types, executionOutcome + 'autonomous_execution_certified'|'awaiting_founder_decision'
+  - dynamic-dag.ts: retryPolicy normalized to canonical backoffMs (FIXES latent scheduler NaN backoff bug at scheduler.ts:463 Date.now()+undefined); invalid SideEffectClassifications 'financial_transfer'→'financial_action', 'external_mutation'→'external_record_mutation' (FIXES gate dead-end DENY fallback + idempotency auto-enforcement miss); verificationStatus 'passed'→'verified' (FIXES UI verified-gradient display bug); protocolProgress full 9 keys; mapSkillToProtocolStep exported
+  - runtime.ts: maps skill name → canonical AgentWorkProtocolStep at executor boundary
+  - UI: EmployeeProfileView duplicate Sparkles import; playOSSound + 'celebration'/'alert' first-class sounds (synthesized arpeggio/double-buzz); 6 dispatchOSNotification 3-arg calls → object form (type: 'agent'/'system'); PersonaTone 'analytical'→'professional'; ExecutiveResultCard/company-context optional-chaining
+- P1 lease renewal: WorkflowScheduler.startLeaseRenewal() bounded guard (renew at TTL/3, 15-min hard cap, holder-guarded atomic renew, unref'd timer, fail-closed on renew throw/false, NEVER aborts in-flight work); wired into evaluateDueWork around executeReadyStep + finalization; stop in inner finally, release in outer finally (fixed brace structure); ScheduledExecutionRecord + coordinationLost?: boolean durable marker; doc/PHASE_2_DURABILITY_SEMANTICS.md defines all 9 long-running scenarios
+- P1 REAL FINDING during R12 testing: occurrence numbering (executionHistory.length+1) minted a NEW occurrence id for a lease-lost re-reader, MISSING the in-flight 'triggered' record → duplicate execution attempt. Fixed with in-flight 'triggered' occurrence guard (any 'triggered' record blocks re-execution; matches documented semantics)
+- P1 phase2_2 test redesign: mode-explicit (probe isDatabaseAvailable); offline env → inline fail-closed (24/24); online env → controlled disposable outage CHILD process (tests/phase2_2_outage_child.ts, DATABASE_URL→dead port 9, real connection failure, 10/10 fail-closed) + online-authoritative contracts with FK-VALID data (real workflow instance created first; approval+audit reference it; deterministic cleanup) → 18/18 online
+- P1 CI: .github/workflows/ci.yml created from scratch — 3 jobs: quality-gate (tsc+prisma), postgres-certify (PG 16 service, migrate deploy+status, tsc, phase2_6 suite, phase2_6_1 renewal suite, phase2_2 online, phase2_5; FAILS if PG unavailable — no silent skip), offline-regression (all suites, no DATABASE_URL)
+- P2 renewal tests: tests/phase2_6_1_lease_renewal.test.ts — 12/12 PASS on real PG 16.4: R1 holder renew, R2 stale blocked, R3 wrong holder blocked, R4 expired blocked, R5 extension blocks competitors, R6 release-after-renewal, R7 crash recovery (running→waiting→ready clears claim), R8 renewal outage fails closed (guard hardened against sync-throwing contract violators), R9 60-iteration concurrent renewal/reclaim single-winner, R10 renewal does not bypass authorization, R11 renewal does not bypass idempotency (canonical requestApproval+decideApproval with bound target/payload), R12 long-running no silent loss (positive: competitor locked out 3.2s work vs 1.5s TTL; negative: coordinationLost loudly marked + in-flight guard prevents duplicate)
+- Discovered R11 usage contract: gate payload binding verifies request.payload (not idempotency.payload) — test binds both consistently
+
+Stage Summary:
+- All P0/P1/P2 implementation complete; tsc 0 errors; phase2_2 24/24 offline + 18/18 online; phase2_6_1 12/12 real PG
+- Remaining: full regression (all suites), security keyword scan, migration verification, commit+push, final report
+
+---
+Task ID: 15
+Agent: main (Z.ai Code)
+Task: Phase 2.6.1 — full regression, security scan, commit & push
+
+Work Log:
+- Full regression (ONLINE, real PG 16.4 @127.0.0.1:5433/samjuniors_phase26): prisma validate/generate exit 0 (requires DIRECT_URL env — added to CI); migrate deploy "No pending migrations"; migrate status "up to date"; tsc --noEmit 0 errors exit 0
+- Online suites: phase2_6 15/15 (after fixing test N's Bun.spawn → portable node spawn via node_modules/.bin/tsx — CI-portable), phase2_6_1 12/12, phase2_2 18/18, phase2_5 12/12 unit + 1/1 online (after mode-explicit Group 10 fix), governance 38/38, 12.3 38/38, 12.4 41/41, 12.5 26/26, 2.1 25/25, 2.3 22/22, 2.4 14/14 — ALL exit 0
+- Offline regression (no DATABASE_URL): all 9 suites exit 0 with 0 failures (governance 38/38, 12.3 38/38, 12.4 all, 12.5 all, 2.1 25/25, 2.2 24/24, 2.3 22/22, 2.4 14/14, 2.5 12/12 + 5 skipped online)
+- ESLint: all 14 modified source files clean
+- Security regression scan: dev headers rejected unconditionally in production (session.ts); sandbox dummy creds rejected in production; test-mode founder fallback only in NODE_ENV=test without spoofed headers; founder@samjuniors.com only in sandbox/test identity; epistemic promotion requires isVerified===true + role FOUNDER unconditionally (no NODE_ENV bypass) + specialist self-promotion blocked; executeWithGate used by communication+workflow runtimes; Resend Idempotency-Key intact; authoritative-mode delegation to PG stores (DurableFileStore only in non-authoritative mode); UNKNOWN_EXTERNAL_RESULT + markUnknown + "blind retry is prohibited" intact; instance-guard min=1/max=1 + .data/instance.lock intact
+- .data test-run pollution restored via git checkout; prisma/ (schema + migrations) untouched — deterministic history preserved
+- Committed 305add8 "fix(foundation): Phase 2.6.1 — TS cleanup, lease renewal hardening, test-design fixes, real-PG CI" (21 files, +2286/-292), authored samjuniors <arena.class007@gmail.com>; pushed 8e21335..305add8 main->main; remote HEAD verified 305add8118e5bbe247a8d1b678467f3270b3d7ac; token NOT present in commit tree (auth via remote URL only)
+
+Stage Summary:
+- PHASE 2.6.1 COMPLETE: all 39 TS errors fixed (tsc exit 0), lease renewal wired + certified (12/12 real PG), phase 2.2 premise/FK test bugs fixed, real-PG CI created, full regression green, security invariants confirmed
+- Push complete: https://github.com/samjuniors/SamjuniorsOS at 305add8
+- Recommend rotating the GitHub PAT (exposed in conversation history)
