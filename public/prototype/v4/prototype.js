@@ -978,17 +978,17 @@
     whatMattersStrip.classList.toggle('attention-mode', a.decisions > 0);
     if (a.decisions > 0) {
       wmState.className = 'wm-state wm-attention';
-      html = `<span class="wm-dot dot-amber"></span> ATTENTION REQUIRED — ${a.decisions} founder decision${a.decisions > 1 ? 's' : ''}`;
-      if (a.activeWork > 0) html += `<span class="wm-sep">·</span><span class="wm-dot dot-purple"></span> ${a.activeWork} in progress`;
+      html = `<span class="wm-badge badge-amber"><span class="wm-dot dot-amber"></span> ATTENTION REQUIRED</span> <span class="wm-sep">—</span> <span class="wm-desc">${a.decisions} founder decision${a.decisions > 1 ? 's' : ''} awaiting judgment</span>`;
+      if (a.activeWork > 0) html += `<span class="wm-sep">·</span><span class="wm-sub">${a.activeWork} active</span>`;
     } else if (a.activeWork > 0) {
-      wmState.className = 'wm-state';
-      html = `<span class="wm-dot dot-purple"></span> WORK IN PROGRESS — ${a.activeWork} active task${a.activeWork > 1 ? 's' : ''}`;
+      wmState.className = 'wm-state wm-working';
+      html = `<span class="wm-badge badge-purple"><span class="wm-dot dot-purple"></span> WORK IN PROGRESS</span> <span class="wm-sep">—</span> <span class="wm-desc">${a.activeWork} active work item${a.activeWork > 1 ? 's' : ''}</span>`;
     } else if (a.watch > 0) {
-      wmState.className = 'wm-state';
-      html = `<span class="wm-dot dot-cyan"></span> WATCH — ${a.watch} unresolved research finding${a.watch > 1 ? 's' : ''}`;
+      wmState.className = 'wm-state wm-watch';
+      html = `<span class="wm-badge badge-cyan"><span class="wm-dot dot-cyan"></span> WATCH</span> <span class="wm-sep">—</span> <span class="wm-desc">A finding needs review (${a.watch} unresolved)</span>`;
     } else {
-      wmState.className = 'wm-state';
-      html = `<span class="wm-dot dot-clear"></span> CLEAR — nothing currently requires founder action`;
+      wmState.className = 'wm-state wm-clear';
+      html = `<span class="wm-badge badge-clear"><span class="wm-dot dot-clear"></span> CLEAR</span> <span class="wm-sep">—</span> <span class="wm-desc">Nothing currently requires your attention.</span>`;
     }
     wmState.innerHTML = html;
 
@@ -1094,20 +1094,20 @@
     if (!thread) return;
     const t = thread;
     const tagText = t.status === 'executing'
-      ? 'ACTIVE WORK · EXECUTING'
+      ? 'Executing'
       : t.status === 'paused'
-        ? 'ACTIVE WORK · PAUSED'
-        : 'ACTIVE WORK · RESEARCHING';
+        ? 'Paused'
+        : 'Researching';
     activeWorkTag.textContent = tagText;
     activeWorkTitle.textContent = t.title;
     activeWorkWhy.textContent = t.focusNote ? `${t.why} Founder steered: \u201C${t.focusNote}\u201D` : t.why;
     const activeStep = t.steps.find(s => s.state === 'active');
     const nextPending = t.steps.find(s => s.state === 'pending');
     const lastDone = [...t.steps].reverse().find(s => s.state === 'done');
-    activeWorkCurrentStep.textContent = activeStep ? activeStep.label : (nextPending ? `Next: ${nextPending.label}` : (lastDone ? lastDone.label : 'Preparing'));
-    activeWorkEvidence.textContent = `${t.evidence.sources} source${t.evidence.sources === 1 ? '' : 's'} evaluated · ${t.evidence.pending} finding${t.evidence.pending === 1 ? '' : 's'} pending`;
+    activeWorkCurrentStep.textContent = activeStep ? activeStep.label : (nextPending ? nextPending.label : (lastDone ? lastDone.label : 'Preparing'));
+    activeWorkEvidence.textContent = `${t.evidence.sources} source${t.evidence.sources === 1 ? '' : 's'} evaluated · ${t.evidence.pending} pending`;
     activeWorkNext.textContent = t.nextLine;
-    btnWorkPause.textContent = t.status === 'paused' ? '▶ Resume' : '⏸ Pause';
+    btnWorkPause.textContent = t.status === 'paused' ? '▶ Continue' : '⏸ Pause';
 
     taskStepsChecklist.innerHTML = t.steps.map(s => {
       if (s.state === 'done') return `<div class="step-row done"><span class="step-check">✓</span><span class="step-label">${escapeHtml(s.label)}</span><span class="step-status-tag">Done</span></div>`;
@@ -1852,6 +1852,7 @@
     addActivity('Core prototype initialized — demo state', 'info');
     renderAll();
     requestAnimationFrame(renderLoop);
+    window.__v4 = { WorkEngine, setCoreState, renderAll, runCommand, startUnderstanding, onWhatMattersClick };
   }
 
   window.addEventListener('DOMContentLoaded', init);

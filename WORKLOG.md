@@ -17,6 +17,141 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.9 — Core V5 Prototype (Conversational Operating Center — Dark Room + Single Light)
+
+**Status:** COMPLETE (Core V5 prototype created in `public/prototype/v5/`, verified, screenshots captured in artifact directory).
+**Base HEAD:** `9cd8773`
+
+### What was implemented
+
+A complete paradigm shift away from dashboard and card-based interfaces into an **intimate, conversational operating experience with the SamJuniorsOS Core as the main character**:
+
+1. **Dark Room + Single Light Presence**:
+   - Ultra-dark ambient environment (`#020408`) with procedural volumetric lighting cast downward from the central Core onto the floor and dialogue.
+   - Core is rendered on HTML5 canvas with multi-layer procedural illumination: internal circulating thought filaments, directional shading, subtle equatorial ring, and state-responsive breathing and speaking modulation.
+2. **Dialogue-First Interaction**:
+   - Core speaks directly to the founder through living typography beneath the orb (`"Good afternoon, Sam. All systems are operating smoothly. What would you like to focus on today?"`).
+   - Seamless floating conversational capsule with natural language intent handling, mic dictation simulation, and suggestion chips (`"What needs my attention?"`, `"Review positioning"`, `"Company health"`, `"Workforce status"`).
+   - Real-time interruption & conversational steering: typing a new directive during active work safely interrupts and redirects the work.
+3. **Progressive Disclosure (Event Expansion Surface)**:
+   - The screen remains uncluttered; no cards or dashboards are visible by default.
+   - The interface expands naturally only around specific operational events:
+     - **Active Work**: Compact step ribbon (*Context* → *Sources* → *Synthesis* → *Proposal*), real-time status line, and steering controls (`[Steer]`, `[Pause]`, `[Halt]`).
+     - **Authority Boundary (Founder Decision)**: Warm amber spotlight where Core presents its recommendation, brand/security impact, and 4 clean choices: `[Authorize Directive]`, `[Steer & Re-evaluate]`, `[Decline]`, `[Inspect Evidence]`.
+     - **Outcome**: Concrete result summary with links to inspect evidence, view the 5-stage epistemic provenance chain, or continue dialogue.
+     - **Blocked State**: Epistemic invariant halt diagnostic with founder acknowledgment.
+4. **Edge Navigation & OS Slide-Over Drawer**:
+   - Tiny edge triggers in header and footer keep peripheral information quiet.
+   - Switching to Manual Mode or pressing `⌘ OS` smoothly slides out the obsidian OS drawer from the right, exposing all 7 governed modules (`Company State`, `Workforce`, `Decisions`, `Research`, `Activity`, `Audit`, `Messenger`) while keeping Core alive in the background.
+   - Honest credit semantics: credit depletion halts natural language Jarvis synthesis while all 7 OS modules remain fully functional in Manual mode.
+5. **Demo Safety**:
+   - Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark.
+   - Zero fabricated metrics, fake revenue, or fictitious employees. Roster strictly reflects v1 reality (Sophia & Thorne).
+
+### Files Created (isolated strictly in `public/prototype/v5/` and verification scripts)
+
+- `public/prototype/v5/index.html` (DOM architecture for dark-room chamber, Core canvas, dialogue stream, event expansion surface, edge triggers, OS slide-over drawer, and provenance modal)
+- `public/prototype/v5/prototype.css` (dark-room volumetric lighting, single-light radial glows, glass drawer, typography, and responsive rules)
+- `public/prototype/v5/prototype.js` (Core rendering loop, conversational speech engine, intent parser, progressive disclosure, authority boundary, and window.__v5 API)
+- `public/prototype/v5/README.md` (architecture documentation)
+- `scripts/verify-prototype-v5.js` (automated test suite)
+- `scripts/capture-v5-screenshots.js` (automated Chrome CDP screenshot capture)
+
+### What was verified
+
+- `node scripts/verify-prototype-v5.js` → **ALL CHECKS PASSED** (72 required DOM IDs, 7 internal Core states, all 7 governed OS modules in drawer, 4 decision actions, zero backend network calls, zero fabricated metrics).
+- `node --check public/prototype/v5/prototype.js` → 0 syntax errors.
+- `node scripts/verify-prototype-v4.js` → **All 17 checks PASSED** (zero regressions to prior prototype).
+- Regression test suites:
+  - `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASSED**.
+  - `tests/governance_security_foundation.test.ts` → **41/41 PASSED**.
+- 7 high-resolution screenshots rendered via Chrome CDP and inspected:
+  - `v5_state_a_ready.png` (Dark Room / Single Light / Ready)
+  - `v5_state_b_active_work.png` (Active Directive / Step Progression Ribbon)
+  - `v5_state_c_decision_required.png` (Warm Amber Beacon / Founder Decision Spotlight)
+  - `v5_state_d_outcome.png` (Emerald Bloom / Outcome Recorded)
+  - `v5_state_e_os_drawer.png` (OS Slide-Over Drawer / Manual Mode)
+  - `v5_state_f_provenance.png` (Epistemic Provenance Chain Modal)
+  - `v5_state_g_mobile.png` (Mobile Layout 390×844)
+
+---
+
+## Phase 3.8 — Core V4.1 Visual Hierarchy Refinement (Calm Operating Center)
+
+**Status:** COMPLETE (Core V4.1 prototype refined, verified, screenshots captured in artifact directory, ready for founder review).
+**Base HEAD:** `9cd8773`
+
+### What was implemented
+
+A PROTOTYPE/UI-DESIGN refinement only — zero modifications to production backend, APIs, database/Prisma schemas, authentication, authorization, workflow runtime, deployment, or production Command Center code.
+
+Core V4.1 refines the V4 prototype into a calm, focused operating center rather than a sci-fi HUD dashboard, executing the required visual hierarchy:
+1. **CORE** (Dominant living operating presence)
+2. **WHAT MATTERS NOW** (Primary secondary information layer)
+3. **CURRENT WORK** (Compact persistent work identity with progressive disclosure)
+4. **CONTEXTUAL INFORMATION** (Satellites & sheets open contextually)
+5. **DEEP SYSTEM DETAILS** (Milestones, evidence counts, provenance behind explicit disclosure)
+
+Key visual and interaction hierarchy refinements:
+- **Idle / READY State Flow**:
+  - Eliminated expanded work surface when idle.
+  - Reordered the visual flow: `BRAND` (`SamJuniors OS`) → `CORE` (calm breathing orb) → `Ready for your intent.` → `[ What do you need? ]` → `WHAT MATTERS NOW: CLEAR · Nothing currently requires your attention.`
+  - Generous spatial breathing room, feeling deliberate and calm rather than empty.
+- **WHAT MATTERS NOW**:
+  - Re-anchored directly beneath command input as the primary status indicator.
+  - High-clarity typography with semantic color badges: `CLEAR` (subtle slate/emerald), `ATTENTION REQUIRED` (warm amber), `WORK IN PROGRESS` (focused indigo/purple), and `WATCH` (cyan).
+  - Fully clickable: clicking the strip routes immediately to the contextual surface requiring attention (e.g. Decisions sheet or Active Work sheet).
+- **Compact Persistent Active Work Surface**:
+  - Eliminated the large, overwhelming default milestone list from the central surface.
+  - Replaced with a compact, focused work card:
+    - Clear title (`POSITIONING REVIEW`) + live metadata (`Researching · 4 sources evaluated · 0 pending`).
+    - Immediate steering action group (`[Pause / Continue]`, `[Steer]`, `[Stop]`).
+    - Focused two-line status: `Current: Evaluating available evidence` and `Next: Prepare recommendation`.
+    - Progressive disclosure via `<details class="work-details-disclosure">` titled `Detailed Milestones & Rationale` containing the checklist and why-line, accessible on-demand without visual clutter.
+- **Tamed Sci-Fi Clutter & Peripheral Noise**:
+  - Reduced bright neon glow, aggressive halo drop-shadows, and heavy cyan borders.
+  - Replaced with refined obsidian glass (`background: rgba(14, 18, 26, 0.78); backdrop-filter: blur(28px); border: 1px solid rgba(255, 255, 255, 0.08);`).
+  - Subordinated peripheral satellites (`Company`, `Workforce`, `Decisions`, `Activity`): lowered opacity to `0.72`, removed noisy persistent counts, subdued borders; only illuminates (`.highlight-attention`) when active founder attention is required.
+  - Subordinated header utility controls: quiet AI Credits chip, dimmed clock and atmosphere toggles so the central Core remains the unmistakable visual anchor.
+  - Softened orbital rings and calmed rotation duration (34s, 44s, 52s) to eliminate distracting continuous peripheral motion.
+- **Progressive Disclosure Architecture**:
+  - Kept existing deep functionality (Company State, Workforce Presence, Decisions Approval Boundary, Activity Stream, Audit Log, Research Context, Messenger Drawer, Provenance Inspector) without permanent onscreen clutter.
+  - Surfaces open contextually as drawers, sheets, modals, or expandable panels.
+- **Strict Demo Safety Maintained**:
+  - Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark preserved.
+  - No fake metrics, fictional employees, or fabricated company facts introduced.
+
+### Files Changed (isolated to prototype)
+
+- `public/prototype/v4/index.html` (reordered idle hierarchy, structured compact work card with progressive disclosure, refined WHAT MATTERS NOW)
+- `public/prototype/v4/prototype.css` (obsidian theme, subordinated satellites, calmed orbital motion, high-clarity typography, compact work card)
+- `public/prototype/v4/prototype.js` (refined attention status badges, structured active work metadata, exposed `window.__v4` for automation)
+
+### What was verified
+
+- `node scripts/verify-prototype-v4.js` → **All 17 structural/safety checks PASSED** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, zero fake data patterns, zero network calls).
+- `node --check public/prototype/v4/prototype.js` → 0 syntax errors.
+- Unit regression suites:
+  - `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASSED**
+  - `tests/governance_security_foundation.test.ts` → **41/41 PASSED**
+- 13 high-resolution rendered browser screenshots captured via Chrome CDP into artifact directory:
+  - `v4_1_state_a_ready.png` (READY / IDLE)
+  - `v4_1_state_b_understanding.png` (UNDERSTANDING)
+  - `v4_1_state_c_active_work.png` (ACTIVE WORK)
+  - `v4_1_state_d_attention_required.png` (WHAT MATTERS NOW / ATTENTION REQUIRED)
+  - `v4_1_state_e_decision_required.png` (FOUNDER DECISION REQUIRED)
+  - `v4_1_state_f_executing.png` (EXECUTING)
+  - `v4_1_state_g_completed.png` (COMPLETED / OUTCOME)
+  - `v4_1_state_h_provenance.png` (PROVENANCE MODAL)
+  - `v4_1_state_i_manual_mode.png` (MANUAL MODE)
+  - `v4_1_state_j_messenger.png` (MESSENGER OPEN)
+  - `v4_1_expanded_milestones.png` (EXPANDED CONTEXTUAL SURFACE)
+  - `v4_1_minimal_core.png` (MINIMAL SURROUNDING UI)
+  - `v4_1_mobile.png` (MOBILE 390x844 VIEWPORT)
+- Visual self-critique completed against all 10 evaluation criteria.
+
+---
+
 ## Phase 3.7 — Core V4 Prototype (Founder Operating Experience)
 
 **Status:** COMPLETE (Core V4 prototype implemented, browser-verified, isolated in `public/prototype/v4/`).
