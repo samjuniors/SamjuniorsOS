@@ -114,3 +114,27 @@ Stage Summary:
 - min=1/max=1 deployment restriction and .data/instance.lock INTENTIONALLY UNCHANGED — enabling multi-instance remains a deliberate future action
 - Operating assumptions documented: NTP-synced clocks (lease expiry uses app clocks), lease TTL 30s must exceed max step duration (renewItemLease exists but unwired), connection budget 5/instance (Prisma default, 2 vCPU) must be re-validated at enablement time
 - Follow-ups: 39 pre-existing tsc errors at HEAD (UI files), phase2_2 suite online-mode premise + audit FK test-data bug, scheduler lease renewal wiring
+
+---
+Task ID: 12
+Agent: main (Z.ai Code)
+Task: Push Phase 2.6 work to GitHub using user-provided token (arena.class007@gmail.com)
+
+Work Log:
+- User provided GitHub PAT (scope: repo) belonging to account `samjuniors` (owner of samjuniors/SamjuniorsOS) + requested commits authored as arena.class007@gmail.com
+- CRITICAL FINDING: /home/z/SamjuniorsOS (with original Phase 2.6 commit 4ca0967, +2151/-265) was LOST to sandbox reset — only /home/z/my-project (pre-fix migrated copy, unrelated git history) persisted; GitHub was at 4a272d9 without Phase 2.6 fixes
+- Re-cloned repo @ 4a272d9 with token; configured git user samjuniors <arena.class007@gmail.com>
+- Re-applied all 7 Phase 2.6 fixes from worklog specifications: (1) BOM strip in phase2_1 migration, (2) atomic lease acquire (PK-anchored INSERT + guarded UPDATE reclaim + fresh-read P2002 resolution, bounded retry), (3) atomic idempotency claim (UNIQUE-key INSERT + fresh-read reclassification), (4) genuine CAS in claimStepAtomic/transitionStepAtomic (updateMany WHERE stateVersion=validated, 0 rows -> ConcurrencyConflictError), (5) guarded approval consume (updateMany WHERE consumedAt IS NULL), (6) scheduler fresh re-read after lease + finalized-item skip, (7) ready-transition clears stale claim identity (both stores)
+- Provisioned real PostgreSQL 16.4 (zonky embedded binaries, /tmp/pg16, port 5433); role phase26_app NOSUPERUSER + isolated DB samjuniors_phase26 via single-user mode (prisma db execute silently failed — workaround documented)
+- migrate deploy: both migrations applied cleanly (validates BOM fix); migrate status: up to date; 19 tables created
+- Built tests/phase2_6_postgres_concurrency.test.ts (15 groups) + scripts/phase2_6_worker.ts (3-process contention) + scripts/phase2_6_outage_probe.ts
+- FINAL VERIFICATION: 15/15 PASS on real PG 16.4 — lease races A-D, step claim E, OCC F, idem G/H, approval I, scheduler J/K, crash recovery L, mixed M, 3-process N (~1500+ contention events, every race exactly one winner, durable-row verified); outage probe 5/5 fail-closed DatabaseAuthorityError + recovery after restart
+- Regression: governance 38/38, auth gate 38/38, comm infra + resend all pass, 2.1 25/25, 2.3 22/22, 2.4 14/14, 2.2 24/24, 2.5 12/12 offline (+1 real-PG online lease race; known pre-existing online-mode premise failure in Group 10 fail-closed test — environmental, documented)
+- tsc --noEmit: 39 errors ALL pre-existing at 4a272d9 (dynamic-dag/training UI), 0 in modified files; prisma validate clean; eslint clean on all modified/new files
+- Committed 8e21335 (9 files, +1404/-252) authored samjuniors <arena.class007@gmail.com>; pushed 4a272d9..8e21335 main->main (fast-forward, no history rewritten); verified on GitHub API
+
+Stage Summary:
+- Push COMPLETE: https://github.com/samjuniors/SamjuniorsOS at 8e21335 with Phase 2.6 fixes + test suite
+- VERDICT re-confirmed: PASS WITH CONDITIONS — multi-instance safe under tested scenarios
+- min=1/max=1 restriction and .data/instance.lock intentionally unchanged
+- .data test-run pollution restored via git checkout before commit
