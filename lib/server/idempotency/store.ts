@@ -63,42 +63,57 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     return PostgresIdempotencyStore.instance;
   }
 
+  /**
+   * Claim an idempotency key using a single atomic INSERT anchored by the `key` UNIQUE constraint.
+   *
+   * Phase 2.6 hardening: the previous implementation caught the P2002 insert race and then
+   * re-queried INSIDE the same interactive transaction. PostgreSQL has already aborted that
+   * transaction (25P02), so every losing worker crashed with PrismaClientUnknownRequestError
+   * instead of receiving a structured in-progress/unknown/failed verdict.
+   *
+   * Corrected protocol (no interactive transaction, no recovery on an aborted connection):
+   *   1. Fast read — classify an already-present record (payload mismatch / completed /
+   *      in_progress / unknown / failed) without writing.
+   *   2. Atomic INSERT (status=in_progress) — the UNIQUE(key) constraint alone decides the
+   *      winner when two workers race on a fresh key.
+   *   3. P2002 loser resolution — a FRESH read on a healthy connection reclassifies the
+   *      winner's record so the loser gets the exact same verdict as the fast path.
+   */
   async claim(params: IdempotencyClaimParams): Promise<IdempotencyClaimResult> {
     const db = await requireAuthoritativeDatabase();
 
-    return await db.$transaction(async (tx) => {
-      const existing = await tx.idempotencyRecord.findUnique({
+    // 1. Fast path: classify an existing record (read-only).
+    const existing = await db.idempotencyRecord.findUnique({
+      where: { key: params.key },
+    });
+    if (existing) {
+      return this.classifyExistingRecord(params, existing);
+    }
+
+    // 2. Atomic anchor: single INSERT decided by the UNIQUE(key) constraint.
+    try {
+      const created = await db.idempotencyRecord.create({
+        data: {
+          key: params.key,
+          actionName: params.actionName,
+          payloadHash: params.payloadHash || null,
+          status: 'in_progress',
+          executionRef: params.executionRef || null,
+          expiresAt: params.ttlMs ? new Date(Date.now() + params.ttlMs) : null,
+        },
+      });
+      return { state: 'claimed', record: this.mapPrismaToRecord(created) };
+    } catch (createErr: any) {
+      if (createErr.code !== 'P2002') {
+        throw createErr;
+      }
+      // 3. Lost the insert race: resolve the winner with a FRESH read (healthy connection).
+      const winner = await db.idempotencyRecord.findUnique({
         where: { key: params.key },
       });
-
-      if (existing) {
-        // Enforce cryptographic payload binding:
-        // The same key cannot be reused with an altered payload
-        if (params.payloadHash && existing.payloadHash && existing.payloadHash !== params.payloadHash) {
-          throw new IdempotencyPayloadMismatchError(
-            params.key,
-            existing.payloadHash,
-            params.payloadHash
-          );
-        }
-
-        const mapped = this.mapPrismaToRecord(existing);
-
-        if (existing.status === 'completed') {
-          return { state: 'completed', record: mapped };
-        }
-        if (existing.status === 'in_progress') {
-          throw new OperationInProgressError(params.key, existing.executionRef || undefined, existing.createdAt.toISOString());
-        }
-        if (existing.status === 'unknown') {
-          throw new UnknownExternalResultError(params.key, existing.executionRef || undefined, existing.error || undefined);
-        }
-        throw new IdempotencyConflictError(params.key, 'failed', existing.error || 'Previous operation failed definitively');
-      }
-
-      // Record does not exist: create in_progress claim
-      try {
-        const created = await tx.idempotencyRecord.create({
+      if (!winner) {
+        // Winner inserted and the record vanished (test cleanup edge): retry once via create.
+        const retried = await db.idempotencyRecord.create({
           data: {
             key: params.key,
             actionName: params.actionName,
@@ -108,39 +123,54 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
             expiresAt: params.ttlMs ? new Date(Date.now() + params.ttlMs) : null,
           },
         });
-
-        return {
-          state: 'claimed',
-          record: this.mapPrismaToRecord(created),
-        };
-      } catch (err: any) {
-        // Handle concurrent race where another worker created the key concurrently (Prisma P2002)
-        if (err.code === 'P2002') {
-          const winner = await tx.idempotencyRecord.findUnique({
-            where: { key: params.key },
-          });
-          if (winner) {
-            if (params.payloadHash && winner.payloadHash && winner.payloadHash !== params.payloadHash) {
-              throw new IdempotencyPayloadMismatchError(
-                params.key,
-                winner.payloadHash,
-                params.payloadHash
-              );
-            }
-            const mapped = this.mapPrismaToRecord(winner);
-            if (winner.status === 'completed') return { state: 'completed', record: mapped };
-            if (winner.status === 'in_progress') {
-              throw new OperationInProgressError(params.key, winner.executionRef || undefined, winner.createdAt.toISOString());
-            }
-            if (winner.status === 'unknown') {
-              throw new UnknownExternalResultError(params.key, winner.executionRef || undefined, winner.error || undefined);
-            }
-            throw new IdempotencyConflictError(params.key, 'failed', winner.error || 'Previous operation failed definitively');
-          }
-        }
-        throw err;
+        return { state: 'claimed', record: this.mapPrismaToRecord(retried) };
       }
-    });
+      return this.classifyExistingRecord(params, winner);
+    }
+  }
+
+  /**
+   * Classify a durable idempotency record against the incoming claim parameters.
+   * Shared by the fast path and the P2002 race-loser resolution path so both produce
+   * identical verdicts.
+   */
+  private classifyExistingRecord(
+    params: IdempotencyClaimParams,
+    existing: any
+  ): IdempotencyClaimResult {
+    // Enforce cryptographic payload binding: the same key cannot be reused with an altered payload.
+    if (params.payloadHash && existing.payloadHash && existing.payloadHash !== params.payloadHash) {
+      throw new IdempotencyPayloadMismatchError(
+        params.key,
+        existing.payloadHash,
+        params.payloadHash
+      );
+    }
+
+    const mapped = this.mapPrismaToRecord(existing);
+
+    if (existing.status === 'completed') {
+      return { state: 'completed', record: mapped };
+    }
+    if (existing.status === 'in_progress') {
+      throw new OperationInProgressError(
+        params.key,
+        existing.executionRef || undefined,
+        existing.createdAt.toISOString()
+      );
+    }
+    if (existing.status === 'unknown') {
+      throw new UnknownExternalResultError(
+        params.key,
+        existing.executionRef || undefined,
+        existing.error || undefined
+      );
+    }
+    throw new IdempotencyConflictError(
+      params.key,
+      'failed',
+      existing.error || 'Previous operation failed definitively'
+    );
   }
 
   async complete(key: string, response: any, executionRef?: string): Promise<IdempotencyRecordData> {

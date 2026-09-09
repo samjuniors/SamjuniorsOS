@@ -194,6 +194,15 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     return dbInsts.map((dbInst) => this.mapPrismaToInstance(dbInst));
   }
 
+  /**
+   * Atomic step claim with genuine compare-and-swap (Phase 2.6 hardening).
+   *
+   * The previous implementation validated stateVersion at READ time only and then issued
+   * an unguarded UPDATE — under READ COMMITTED two workers could both validate the same
+   * version and both write (lost update / double claim). The corrected write carries the
+   * validated stateVersion in the UPDATE WHERE clause: exactly one writer can transition
+   * v→v+1; every other writer observes 0 rows and fails with ConcurrencyConflictError.
+   */
   async claimStepAtomic(
     instanceId: string,
     stepId: string,
@@ -201,70 +210,94 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     expectedVersion?: number
   ): Promise<{ instance: WorkflowInstanceState; step: WorkflowStepState }> {
     const db = await requireAuthoritativeDatabase();
-    return await db.$transaction(async (tx) => {
-      const dbInst = await tx.workflowInstance.findUnique({
-        where: { id: instanceId },
-      });
-      if (!dbInst) {
-        throw new Error(`Workflow instance not found: ${instanceId}`);
-      }
 
-      if (expectedVersion !== undefined && dbInst.stateVersion !== expectedVersion) {
-        throw new ConcurrencyConflictError(instanceId, expectedVersion, dbInst.stateVersion);
-      }
-
-      const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
-      const step = stepStates[stepId];
-      if (!step) {
-        throw new Error(`Step not found in workflow instance: ${stepId}`);
-      }
-
-      if (step.status !== 'ready') {
-        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
-      }
-
-      if (step.claimedBy && step.claimedBy !== workerId) {
-        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
-      }
-
-      validateStepTransition(step.status, 'running');
-
-      const nowIso = new Date().toISOString();
-      step.status = 'running';
-      step.claimedBy = workerId;
-      step.claimedAt = nowIso;
-      if (!step.startedAt) {
-        step.startedAt = nowIso;
-      }
-      stepStates[stepId] = step;
-
-      let instanceStatus = dbInst.status;
-      if (instanceStatus === 'pending' || instanceStatus === 'waiting') {
-        validateInstanceTransition(instanceStatus as any, 'running');
-        instanceStatus = 'running';
-      }
-
-      const nextVersion = (dbInst.stateVersion || 0) + 1;
-
-      const updated = await tx.workflowInstance.update({
-        where: { id: instanceId },
-        data: {
-          status: instanceStatus,
-          stepStates: stepStates as any,
-          stateVersion: nextVersion,
-          claimedBy: workerId,
-          claimedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-
-      return {
-        instance: this.mapPrismaToInstance(updated),
-        step,
-      };
+    const dbInst = await db.workflowInstance.findUnique({
+      where: { id: instanceId },
     });
+    if (!dbInst) {
+      throw new Error(`Workflow instance not found: ${instanceId}`);
+    }
+
+    // Version validated for this attempt — the CAS below is anchored to THIS value.
+    const validatedVersion = dbInst.stateVersion ?? 0;
+    if (expectedVersion !== undefined && validatedVersion !== expectedVersion) {
+      throw new ConcurrencyConflictError(instanceId, expectedVersion, validatedVersion);
+    }
+
+    const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
+    const step = stepStates[stepId];
+    if (!step) {
+      throw new Error(`Step not found in workflow instance: ${stepId}`);
+    }
+
+    if (step.status !== 'ready') {
+      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+    }
+
+    if (step.claimedBy && step.claimedBy !== workerId) {
+      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+    }
+
+    validateStepTransition(step.status, 'running');
+
+    const nowIso = new Date().toISOString();
+    step.status = 'running';
+    step.claimedBy = workerId;
+    step.claimedAt = nowIso;
+    if (!step.startedAt) {
+      step.startedAt = nowIso;
+    }
+    stepStates[stepId] = step;
+
+    let instanceStatus = dbInst.status;
+    if (instanceStatus === 'pending' || instanceStatus === 'waiting') {
+      validateInstanceTransition(instanceStatus as any, 'running');
+      instanceStatus = 'running';
+    }
+
+    const nextVersion = validatedVersion + 1;
+
+    // Compare-and-swap: the WHERE clause carries the validated stateVersion.
+    const cas = await db.workflowInstance.updateMany({
+      where: {
+        id: instanceId,
+        stateVersion: validatedVersion,
+      },
+      data: {
+        status: instanceStatus,
+        stepStates: stepStates as any,
+        stateVersion: nextVersion,
+        claimedBy: workerId,
+        claimedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    if (cas.count === 0) {
+      // Lost the race: another writer transitioned the instance between read and write.
+      const fresh = await db.workflowInstance.findUnique({ where: { id: instanceId } });
+      throw new ConcurrencyConflictError(instanceId, validatedVersion, fresh?.stateVersion ?? -1);
+    }
+
+    const updated = await db.workflowInstance.findUnique({ where: { id: instanceId } });
+    return {
+      instance: this.mapPrismaToInstance(updated!),
+      step,
+    };
   }
 
+  /**
+   * Atomic step transition with genuine compare-and-swap (Phase 2.6 hardening).
+   *
+   * Same lost-update defect as claimStepAtomic: the UPDATE WHERE clause now carries the
+   * validated stateVersion, so exactly one writer wins and every loser fails with
+   * ConcurrencyConflictError instead of silently overwriting the winner.
+   *
+   * Crash-recovery hardening: transitioning a step to 'ready' now clears the stale claim
+   * identity (claimedBy/claimedAt). Previously a crashed worker's step could never be
+   * re-claimed because claimStepAtomic rejects any step whose claimedBy is set to a
+   * different (dead) worker — a permanent orphan.
+   */
   async transitionStepAtomic(
     instanceId: string,
     stepId: string,
@@ -274,58 +307,78 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     instancePatch?: Partial<WorkflowInstanceState>
   ): Promise<WorkflowInstanceState> {
     const db = await requireAuthoritativeDatabase();
-    return await db.$transaction(async (tx) => {
-      const dbInst = await tx.workflowInstance.findUnique({
-        where: { id: instanceId },
-      });
-      if (!dbInst) {
-        throw new Error(`Workflow instance not found: ${instanceId}`);
-      }
 
-      if (expectedVersion !== undefined && dbInst.stateVersion !== expectedVersion) {
-        throw new ConcurrencyConflictError(instanceId, expectedVersion, dbInst.stateVersion);
-      }
-
-      const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
-      const step = stepStates[stepId];
-      if (!step) {
-        throw new Error(`Step not found in workflow instance: ${stepId}`);
-      }
-
-      validateStepTransition(step.status, targetStatus);
-
-      const nowIso = new Date().toISOString();
-      step.status = targetStatus;
-      if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
-        step.completedAt = nowIso;
-        step.claimedBy = undefined;
-      }
-      if (patch) {
-        Object.assign(step, patch);
-      }
-      stepStates[stepId] = step;
-
-      let nextInstanceStatus = instancePatch?.status ?? dbInst.status;
-      if (instancePatch?.status && instancePatch.status !== dbInst.status) {
-        validateInstanceTransition(dbInst.status as any, instancePatch.status);
-      }
-
-      const nextVersion = (dbInst.stateVersion || 0) + 1;
-
-      const updated = await tx.workflowInstance.update({
-        where: { id: instanceId },
-        data: {
-          status: nextInstanceStatus,
-          stepStates: stepStates as any,
-          stateVersion: nextVersion,
-          error: instancePatch?.failureReason ?? (targetStatus === 'failed' ? (step.error || 'Step failed') : dbInst.error),
-          completedAt: (nextInstanceStatus === 'completed' || targetStatus === 'completed') ? new Date() : dbInst.completedAt,
-          updatedAt: new Date(),
-        },
-      });
-
-      return this.mapPrismaToInstance(updated);
+    const dbInst = await db.workflowInstance.findUnique({
+      where: { id: instanceId },
     });
+    if (!dbInst) {
+      throw new Error(`Workflow instance not found: ${instanceId}`);
+    }
+
+    // Version validated for this attempt — the CAS below is anchored to THIS value.
+    const validatedVersion = dbInst.stateVersion ?? 0;
+    if (expectedVersion !== undefined && validatedVersion !== expectedVersion) {
+      throw new ConcurrencyConflictError(instanceId, expectedVersion, validatedVersion);
+    }
+
+    const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
+    const step = stepStates[stepId];
+    if (!step) {
+      throw new Error(`Step not found in workflow instance: ${stepId}`);
+    }
+
+    validateStepTransition(step.status, targetStatus);
+
+    const nowIso = new Date().toISOString();
+    step.status = targetStatus;
+    if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
+      step.completedAt = nowIso;
+      step.claimedBy = undefined;
+      step.claimedAt = undefined;
+    }
+    if (targetStatus === 'ready') {
+      // Crash recovery / recurring reset: clear stale claim identity so the step can be
+      // re-claimed by ANY live worker (otherwise the orphaned claimedBy blocks forever).
+      step.claimedBy = undefined;
+      step.claimedAt = undefined;
+      step.completedAt = undefined;
+    }
+    if (patch) {
+      Object.assign(step, patch);
+    }
+    stepStates[stepId] = step;
+
+    let nextInstanceStatus = instancePatch?.status ?? dbInst.status;
+    if (instancePatch?.status && instancePatch.status !== dbInst.status) {
+      validateInstanceTransition(dbInst.status as any, instancePatch.status);
+    }
+
+    const nextVersion = validatedVersion + 1;
+
+    // Compare-and-swap: the WHERE clause carries the validated stateVersion.
+    const cas = await db.workflowInstance.updateMany({
+      where: {
+        id: instanceId,
+        stateVersion: validatedVersion,
+      },
+      data: {
+        status: nextInstanceStatus,
+        stepStates: stepStates as any,
+        stateVersion: nextVersion,
+        error: instancePatch?.failureReason ?? (targetStatus === 'failed' ? (step.error || 'Step failed') : dbInst.error),
+        completedAt: (nextInstanceStatus === 'completed' || targetStatus === 'completed') ? new Date() : dbInst.completedAt,
+        updatedAt: new Date(),
+      },
+    });
+
+    if (cas.count === 0) {
+      // Lost the race: another writer transitioned the instance between read and write.
+      const fresh = await db.workflowInstance.findUnique({ where: { id: instanceId } });
+      throw new ConcurrencyConflictError(instanceId, validatedVersion, fresh?.stateVersion ?? -1);
+    }
+
+    const updated = await db.workflowInstance.findUnique({ where: { id: instanceId } });
+    return this.mapPrismaToInstance(updated!);
   }
 
   async rehydrateActiveInstances(): Promise<WorkflowInstanceState[]> {
@@ -718,6 +771,14 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
       step.completedAt = nowIso;
       step.claimedBy = undefined;
+      step.claimedAt = undefined;
+    }
+    if (targetStatus === 'ready') {
+      // Crash recovery / recurring reset: clear stale claim identity so any live worker
+      // can re-claim (mirrors PostgresWorkflowStore Phase 2.6 hardening).
+      step.claimedBy = undefined;
+      step.claimedAt = undefined;
+      step.completedAt = undefined;
     }
     if (patch) {
       Object.assign(step, patch);

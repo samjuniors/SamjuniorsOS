@@ -170,22 +170,21 @@ export class WorkflowScheduler {
       results: [],
     };
 
-    for (const item of dueItems) {
-      const occurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
-      const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
+    for (let item of dueItems) {
+      const discoveryOccurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
       const leaseKey = `sched-item:${item.id}`;
 
       // Acquire distributed lease before evaluating or executing this work item
       const claim = await this.leaseManager.acquire(leaseKey, this.workerId, this.leaseTtlMs, {
         workflowInstanceId: item.workflowInstanceId,
         stepId: item.stepId,
-        occurrenceId,
+        occurrenceId: `${item.id}-occ-${discoveryOccurrenceNumber}`,
       });
 
       if (!claim.acquired) {
         evaluationResult.results.push({
           scheduleId: item.id,
-          occurrenceId,
+          occurrenceId: `${item.id}-occ-${discoveryOccurrenceNumber}`,
           status: 'skipped',
           error: `Active lease held by worker: ${claim.activeLease?.holderId || 'another_worker'}`,
         });
@@ -193,6 +192,41 @@ export class WorkflowScheduler {
       }
 
       try {
+        // 0. Phase 2.6 hardening — FRESH RE-READ after lease acquisition.
+        // The listDue snapshot may be stale: another worker may have finalized this item
+        // (or advanced its recurrence / rewritten executionHistory) between discovery and
+        // lease acquisition. Writing from the stale snapshot would overwrite the winner's
+        // durable state (erased executionHistory, relabeled completed→cancelled).
+        // The lease guarantees no OTHER scheduler is inside this critical section now,
+        // so the fresh read + finalized-skip below is authoritative.
+        const freshItem = await this.schedulerStore.get(item.id);
+        if (!freshItem) {
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId: `${item.id}-occ-${discoveryOccurrenceNumber}`,
+            status: 'skipped',
+            error: 'Scheduled item no longer exists (removed after discovery)',
+          });
+          continue;
+        }
+        item = freshItem;
+
+        if (item.status !== 'scheduled') {
+          // Finalized by a concurrent winner (completed / cancelled / failed / executed).
+          evaluationResult.results.push({
+            scheduleId: item.id,
+            occurrenceId: `${item.id}-occ-${discoveryOccurrenceNumber}`,
+            status: 'skipped',
+            error: `Item already finalized (${item.status}) by another worker after discovery`,
+          });
+          continue;
+        }
+
+        // Recompute the authoritative occurrence identity from the FRESH item state:
+        // the winner may have advanced currentOccurrence or appended history.
+        const occurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
+        const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
+
         // 1. Idempotency Check: Prevent duplicate execution of this specific occurrence
         const existingOcc = item.executionHistory.find(h => h.occurrenceId === occurrenceId);
         if (existingOcc && (existingOcc.status === 'triggered' || existingOcc.status === 'completed')) {

@@ -65,6 +65,25 @@ export class PostgresLeaseManager implements LeaseManager {
     return PostgresLeaseManager.instance;
   }
 
+  /**
+   * Acquire a distributed lease using ONLY atomic single statements.
+   *
+   * Phase 2.6 hardening: the previous implementation resolved the P2002 insert race by
+   * issuing a follow-up query INSIDE the same interactive transaction. Under PostgreSQL
+   * that transaction is already aborted (25P02 — current transaction is aborted, commands
+   * ignored until end of transaction block), so every losing worker crashed with
+   * PrismaClientUnknownRequestError instead of cleanly returning acquired=false.
+   *
+   * The corrected protocol never runs recovery logic on an aborted connection:
+   *   1. Guarded conditional UPDATE — atomically reclaims an expired lease
+   *      (WHERE resourceKey AND expiresAt <= now). Zero rows matched means the row
+   *      is absent or still actively held.
+   *   2. INSERT anchor — creates the row when absent; the resourceKey PRIMARY KEY
+   *      constraint alone decides the winner when workers race to create it.
+   *   3. P2002 loser resolution — a FRESH read on a healthy connection (never inside
+   *      a transaction) reports the true active lease. If the winner already released
+   *      before the fresh read, the resource is genuinely free and we retry (bounded).
+   */
   async acquire(
     resourceKey: string,
     holderId: string,
@@ -72,85 +91,74 @@ export class PostgresLeaseManager implements LeaseManager {
     metadata?: Record<string, any>
   ): Promise<LeaseAcquireResult> {
     const db = await requireAuthoritativeDatabase();
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMs);
+    const MAX_ACQUIRE_ATTEMPTS = 5;
+    let lastActiveLease: DistributedLeaseData | undefined;
+    let lastReason = 'concurrent_acquisition_lost';
 
-    try {
-      return await db.$transaction(async (tx) => {
-        const existing = await tx.distributedLease.findUnique({
-          where: { resourceKey },
-        });
+    for (let attempt = 0; attempt < MAX_ACQUIRE_ATTEMPTS; attempt++) {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + ttlMs);
 
-        if (!existing) {
-          try {
-            const created = await tx.distributedLease.create({
-              data: {
-                resourceKey,
-                holderId,
-                acquiredAt: now,
-                expiresAt,
-                metadata: metadata ?? {},
-              },
-            });
-            return { acquired: true, lease: mapPrismaLease(created) };
-          } catch (createErr: any) {
-            // Concurrent insert race (unique constraint violation P2002)
-            if (createErr.code === 'P2002') {
-              const active = await tx.distributedLease.findUnique({ where: { resourceKey } });
-              return {
-                acquired: false,
-                activeLease: active ? mapPrismaLease(active) : undefined,
-                reason: 'concurrent_acquisition_lost',
-              };
-            }
-            throw createErr;
-          }
+      // Path 1 — atomic guarded reclaim of an expired (or absent-but-matched) lease row.
+      const reclaimed = await db.distributedLease.updateMany({
+        where: {
+          resourceKey,
+          expiresAt: { lte: now }, // Guard: only reclaim if genuinely expired
+        },
+        data: {
+          holderId,
+          acquiredAt: now,
+          expiresAt,
+          metadata: metadata ?? {},
+          updatedAt: now,
+        },
+      });
+
+      if (reclaimed.count === 1) {
+        // We are now the holder: report from a fresh read so callers observe durable state.
+        const fresh = await db.distributedLease.findUnique({ where: { resourceKey } });
+        if (fresh) {
+          return { acquired: true, lease: mapPrismaLease(fresh) };
         }
+        // Extremely unlikely (we hold the row): retry rather than fabricate success.
+        lastReason = 'reclaimed_row_vanished_before_read';
+        continue;
+      }
 
-        // Lease exists: check expiration
-        if (existing.expiresAt > now) {
-          // Lease is still validly held
-          return {
-            acquired: false,
-            activeLease: mapPrismaLease(existing),
-            reason: 'active_lease_held_by_another_worker',
-          };
-        }
-
-        // Lease is expired: atomically reclaim
-        const updated = await tx.distributedLease.updateMany({
-          where: {
-            resourceKey,
-            expiresAt: { lte: now }, // Ensure no concurrent renew or reclaim occurred
-          },
+      // Path 2 — INSERT anchor: row is absent (or actively held, in which case P2002 decides).
+      try {
+        const created = await db.distributedLease.create({
           data: {
+            resourceKey,
             holderId,
             acquiredAt: now,
             expiresAt,
             metadata: metadata ?? {},
-            updatedAt: now,
           },
         });
-
-        if (updated.count === 1) {
-          const fresh = await tx.distributedLease.findUnique({ where: { resourceKey } });
-          return { acquired: true, lease: mapPrismaLease(fresh!) };
-        } else {
-          // Another worker reclaimed it concurrently
-          const active = await tx.distributedLease.findUnique({ where: { resourceKey } });
-          return {
-            acquired: false,
-            activeLease: active ? mapPrismaLease(active) : undefined,
-            reason: 'concurrent_reclamation_lost',
-          };
+        return { acquired: true, lease: mapPrismaLease(created) };
+      } catch (createErr: any) {
+        if (createErr.code !== 'P2002') {
+          throw createErr;
         }
-      });
-    } catch (err) {
-      if (isAuthoritativeMode()) {
-        throw err;
+        // Lost the insert race (resourceKey PRIMARY KEY). Resolve the winner via a
+        // FRESH read outside any transaction — never on the aborted statement path.
+        const active = await db.distributedLease.findUnique({ where: { resourceKey } });
+        if (!active) {
+          // Winner inserted and released before our fresh read: resource is free — retry.
+          lastReason = 'concurrent_release_during_acquisition';
+          continue;
+        }
+        lastActiveLease = mapPrismaLease(active);
+        return {
+          acquired: false,
+          activeLease: lastActiveLease,
+          reason: active.holderId === holderId ? 'already_held_by_self' : 'active_lease_held_by_another_worker',
+        };
       }
-      throw err;
     }
+
+    return { acquired: false, activeLease: lastActiveLease, reason: lastReason };
   }
 
   async renew(resourceKey: string, holderId: string, ttlMs: number): Promise<boolean> {

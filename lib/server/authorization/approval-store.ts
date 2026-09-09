@@ -220,34 +220,51 @@ export class PostgresApprovalStore implements IApprovalStore {
     return this.mapPrismaToApproval(updated);
   }
 
+  /**
+   * Single-use approval consumption with a guarded conditional UPDATE (Phase 2.6 hardening).
+   *
+   * The previous read-check-then-write inside an interactive transaction allowed two
+   * concurrent consumers to both observe consumedAt=null and both write — double
+   * consumption of a one-time authorization. The corrected write is a conditional
+   * UPDATE whose WHERE clause requires consumedAt IS NULL: PostgreSQL itself enforces
+   * exactly-one transition from unconsumed→consumed no matter how many callers race.
+   */
   public async consume(id: string): Promise<FounderApprovalRecord> {
     const db = await requireAuthoritativeDatabase();
-    return await db.$transaction(async (tx) => {
-      const existing = await tx.approvalRecord.findUnique({ where: { id } });
-      if (!existing) {
-        throw new Error(`Approval record not found: ${id}`);
-      }
 
-      const scope = (existing.scope as any) || {};
-      const allowedUses = scope.maxUses ?? scope.allowedUses ?? 1;
-      const currentUses = scope.usedCount ?? 0;
+    const existing = await db.approvalRecord.findUnique({ where: { id } });
+    if (!existing) {
+      throw new Error(`Approval record not found: ${id}`);
+    }
 
-      if (existing.consumedAt !== null || currentUses >= allowedUses) {
-        throw new ApprovalAlreadyConsumedError(id, existing.consumedAt ?? undefined);
-      }
+    const scope = (existing.scope as any) || {};
+    const allowedUses = scope.maxUses ?? scope.allowedUses ?? 1;
+    const currentUses = scope.usedCount ?? 0;
 
-      scope.usedCount = currentUses + 1;
+    if (existing.consumedAt !== null || currentUses >= allowedUses) {
+      throw new ApprovalAlreadyConsumedError(id, existing.consumedAt ?? undefined);
+    }
 
-      const updated = await tx.approvalRecord.update({
-        where: { id },
-        data: {
-          consumedAt: new Date(),
-          scope,
-        },
-      });
-
-      return this.mapPrismaToApproval(updated);
+    // Guarded conditional write: only the FIRST caller transitions null→consumedAt.
+    const guard = await db.approvalRecord.updateMany({
+      where: {
+        id,
+        consumedAt: null,
+      },
+      data: {
+        consumedAt: new Date(),
+        scope: { ...scope, usedCount: currentUses + 1 } as any,
+      },
     });
+
+    if (guard.count === 0) {
+      // Lost the race: another consumer already transitioned this approval.
+      const winner = await db.approvalRecord.findUnique({ where: { id } });
+      throw new ApprovalAlreadyConsumedError(id, winner?.consumedAt ?? undefined);
+    }
+
+    const updated = await db.approvalRecord.findUnique({ where: { id } });
+    return this.mapPrismaToApproval(updated!);
   }
 
   private mapPrismaToApproval(r: any): FounderApprovalRecord {
