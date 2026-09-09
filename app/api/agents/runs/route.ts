@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AgentRunStore } from "@/lib/server/agents/run-store";
+import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 
 /**
  * PHASE 13: PERSISTED AGENT RUNS API (FounderOS & OptimalEngine Pattern)
@@ -8,6 +9,14 @@ import { AgentRunStore } from "@/lib/server/agents/run-store";
  */
 export async function GET(req: NextRequest) {
   try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized: Session required" },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
     const agentId = searchParams.get('agentId') as any;
     const status = searchParams.get('status') as any;

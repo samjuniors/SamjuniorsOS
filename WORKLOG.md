@@ -17,6 +17,77 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.4 — Founder-Guard Legacy Read Routes (security hardening slice)
+
+**Status:** COMPLETE (implemented, tested, regression-verified).
+**Base HEAD:** `6b03925` · **Commit:** see git log for the Phase 3.4 entry.
+
+### What was implemented
+
+The security-hardening slice identified during Phase 3.3 — all three previously unguarded legacy read routes are now strictly protected behind the canonical SamJuniorsOS server-side founder authentication model:
+
+1. `GET /api/workflow/scheduling` (`app/api/workflow/scheduling/route.ts`)
+2. `GET /api/agents/runs` (`app/api/agents/runs/route.ts`)
+3. `GET /api/workflow/definitions` (`app/api/workflow/definitions/route.ts`)
+
+Additionally, `middleware.ts` was updated to include `"/api/agents/(.*)"` in `isExecutiveApiRoute`, ensuring edge defense-in-depth consistency with `/api/workflow/(.*)`.
+
+### Authentication & security behavior
+
+- Every target route imports and calls `getAuthenticatedFounder(req)` from `@/lib/server/auth/session`.
+- Fails closed with HTTP 401 when:
+  - Request is unauthenticated (no cookies / headers).
+  - Dev identity is spoofed / non-founder (e.g. `x-samjuniors-dev-as: attacker`).
+  - Dev secret is missing or incorrect (`x-samjuniors-dev-secret` mismatch).
+  - Production mode is active (`NODE_ENV === 'production'` strictly disallows dev headers/cookies).
+  - Query parameter or body auth spoofing attempts are made (the server reads identity exclusively from verified session/headers).
+- Authenticated Founder requests:
+  - Receive the identical, backward-compatible response schemas.
+  - Routes remain strictly read-only (zero mutations introduced; verified via deep snapshot comparisons before and after GET requests).
+  - No second authentication model, no secondary allowlists, and no client-side trust introduced.
+
+### What was verified (all actually run)
+
+- `npx tsc --noEmit` → 0 errors.
+- `npx eslint` across all modified files → clean (0 errors, 0 warnings).
+- Dedicated test suite `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**:
+  - Route 1 (`GET /api/workflow/scheduling`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read with enriched workflow metadata 200, read-only guarantee verified.
+  - Route 2 (`GET /api/agents/runs`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read 200, read-only guarantee verified.
+  - Route 3 (`GET /api/workflow/definitions`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read 200, read-only guarantee verified.
+- `tests/governance_security_foundation.test.ts` → **41/41 PASS** (added Test 7.5, 7.6, 7.7 for the newly guarded routes).
+- Full regression verification:
+  - Phase 3.3 Authoritative Reads (`tests/phase3_3_authoritative_reads.test.ts`): **17/17 PASS**.
+  - Phase 3.2 Command Terminal (`tests/phase3_2_command_terminal.test.ts`): **22/22 PASS**.
+  - Phase 3.1 Decision Loop (`tests/phase3_1_decision_loop.test.ts`): **11/11 PASS**.
+  - Phase 12.3 Authorization Gate (`tests/phase12_3_authorization_gate.test.ts`): **38/38 PASS**.
+  - Phase 2.1 Database Foundation (`tests/phase2_1_database_foundation.test.ts`): **25/25 PASS**.
+  - Phase 2.4 Idempotency (`tests/phase2_4_idempotency.test.ts`): **14/14 PASS**.
+  - Phase 2.5 Distributed Scheduling (`tests/phase2_5_distributed_scheduling.test.ts`): **12/12 PASS** (offline unit/in-memory concurrency; real-PG skipped when PG offline, unchanged posture).
+
+### Security findings
+
+- The three legacy read routes previously lacked any server-side authentication check, exposing sensitive workflow definitions, internal scheduling delays, and specialist agent run telemetry to unauthenticated callers.
+- All three routes now strictly enforce server-side verified founder authentication with fail-closed 401 semantics.
+- Middleware route matchers now cover `/api/agents/(.*)` alongside existing `/api/workflow/(.*)` routes.
+
+### Remaining risks & pre-existing follow-ups
+
+- Pre-existing Phase 3.3 open items remain unchanged:
+  - `synthesizeOrchestrationRunFromWorkflow` maps BLOCKED instances to run status 'running' in orchestrate synthesis (overview and terminal re-reads display blocked correctly).
+  - `evaluateReadiness` non-CAS write remains (Phase 2-certified runtime write-path concurrency characteristic).
+  - Single-instance deployment constraint (min=1, max=1) remains active.
+
+### Next recommended action
+
+- STOP. Do NOT begin UI redesign or Jarvis integration in this slice.
+- The next activity is the **Command Center UX/UI Design Review** using:
+  1. Current SamJuniorsOS repository
+  2. Current roadmap and product docs
+  3. Provided Jarvis-style visual reference
+  4. Founder's HTML prototype
+
+---
+
 ## Phase 3.3 — Authoritative Command Center Reads (third vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).

@@ -10,6 +10,7 @@ const isExecutiveApiRoute = createRouteMatcher([
   "/api/advisor(.*)",
   "/api/agent-chat(.*)",
   "/api/agent-collab(.*)",
+  "/api/agents/(.*)",
   "/api/communication/contacts(.*)",
   "/api/communication/conversations(.*)",
   "/api/communication/drafts(.*)",

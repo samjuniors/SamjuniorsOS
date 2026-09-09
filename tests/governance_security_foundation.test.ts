@@ -10,6 +10,9 @@ import { POST as epistemicHandler } from '@/app/api/epistemic/route';
 import { POST as agentChatHandler } from '@/app/api/agent-chat/route';
 import { GET as intentsHandler } from '@/app/api/communication/intents/route';
 import { GET as auditHandler } from '@/app/api/workflow/authorizations/audit/route';
+import { GET as schedulingHandler } from '@/app/api/workflow/scheduling/route';
+import { GET as agentRunsHandler } from '@/app/api/agents/runs/route';
+import { GET as definitionsHandler } from '@/app/api/workflow/definitions/route';
 import { getAuthenticatedFounder, resolveClerkUserRole, AuthenticatedFounder } from '@/lib/server/auth/session';
 import { CompanyMemoryStore } from '@/lib/server/memory/memory-store';
 import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
@@ -576,6 +579,24 @@ async function runTests() {
     const unauthAuditRes = await auditHandler(unauthAuditReq);
     assert.strictEqual(unauthAuditRes.status, 401, 'GET /api/workflow/authorizations/audit must reject unauthenticated requests with 401');
     recordPass('GET /api/workflow/authorizations/audit rejects unauthenticated requests with HTTP 401');
+
+    // 7.5 GET /api/workflow/scheduling: Unauthenticated request rejected with 401
+    const unauthSchedReq = new NextRequest('http://localhost:3000/api/workflow/scheduling', { method: 'GET' });
+    const unauthSchedRes = await schedulingHandler(unauthSchedReq);
+    assert.strictEqual(unauthSchedRes.status, 401, 'GET /api/workflow/scheduling must reject unauthenticated requests with 401');
+    recordPass('GET /api/workflow/scheduling rejects unauthenticated requests with HTTP 401');
+
+    // 7.6 GET /api/agents/runs: Unauthenticated request rejected with 401
+    const unauthRunsReq = new NextRequest('http://localhost:3000/api/agents/runs', { method: 'GET' });
+    const unauthRunsRes = await agentRunsHandler(unauthRunsReq);
+    assert.strictEqual(unauthRunsRes.status, 401, 'GET /api/agents/runs must reject unauthenticated requests with 401');
+    recordPass('GET /api/agents/runs rejects unauthenticated requests with HTTP 401');
+
+    // 7.7 GET /api/workflow/definitions: Unauthenticated request rejected with 401
+    const unauthDefsReq = new NextRequest('http://localhost:3000/api/workflow/definitions', { method: 'GET' });
+    const unauthDefsRes = await definitionsHandler(unauthDefsReq);
+    assert.strictEqual(unauthDefsRes.status, 401, 'GET /api/workflow/definitions must reject unauthenticated requests with 401');
+    recordPass('GET /api/workflow/definitions rejects unauthenticated requests with HTTP 401');
   } catch (err) {
     recordFail('Test Group 7 failed', err);
   }
