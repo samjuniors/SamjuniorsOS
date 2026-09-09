@@ -1,0 +1,20 @@
+{
+  "audit-e124e2a7-4e60-4316-ac53-714bde9e3a17": {
+    "id": "audit-e124e2a7-4e60-4316-ac53-714bde9e3a17",
+    "timestamp": "2026-09-09T00:04:41.138Z",
+    "requestId": "req-69064ccb-34fa-42da-97f5-2b173a4782ca",
+    "employeeRole": "researcher",
+    "requestedBy": "researcher",
+    "actionClassification": "read_only",
+    "actionName": "web_research",
+    "target": {
+      "targetSystem": "web",
+      "summary": "Competitor landscape and market dynamics for: Research the self-serve AI agent market and draft a launch recommendation"
+    },
+    "decision": "allowed",
+    "reasonCode": "READ_ONLY_ALLOWED",
+    "reason": "Read-only action does not modify external or persistent system state.",
+    "executionReference": "exec-1788912291511",
+    "executed": true
+  }
+}

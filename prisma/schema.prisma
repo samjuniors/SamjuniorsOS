@@ -1,0 +1,409 @@
+// ============================================================================
+// SamJuniorsOS — AI-Native Company Operating System
+// Prisma Schema (SQLite port for the sandbox deployment)
+//
+// Ported from the upstream PostgreSQL schema:
+//  - enums flattened to String (SQLite has no native enums)
+//  - @db.Text annotations removed (SQLite TEXT is default for String)
+//  - Decimal -> Float (SQLite has no exact decimal type)
+//  - Json columns are supported by Prisma on SQLite
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+// 1. IDENTITY & GOVERNANCE
+// ---------------------------------------------------------
+
+model User {
+  id            String           @id @default(uuid())
+  clerkId       String?          @unique
+  email         String           @unique
+  name          String
+  role          String           @default("FOUNDER") // "FOUNDER" | "EXECUTIVE" | "AUDITOR"
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  approvals     ApprovalRecord[]
+  initiatedRuns WorkflowInstance[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------
+// 2. COMPANY OPERATIONAL STATE
+// ---------------------------------------------------------
+
+model CompanyState {
+  id             String   @id @default(uuid())
+  organizationId String   @unique @default("default")
+  name           String   @default("SamJuniors Ecosystem")
+  stage          String   @default("Seed")
+  products       Json     @default(dbgenerated("'[]'"))
+  initiatives    Json     @default(dbgenerated("'[]'"))
+  customers      Json     @default(dbgenerated("'[]'"))
+  employees      Json     @default(dbgenerated("'[]'"))
+  decisions      Json     @default(dbgenerated("'[]'"))
+  attentionItems Json     @default(dbgenerated("'[]'"))
+  financialModel Json     @default(dbgenerated("'{}'"))
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_state")
+}
+
+// ---------------------------------------------------------
+// 3. CANONICAL KNOWLEDGE (RAG & SPECS)
+// ---------------------------------------------------------
+
+model CompanyKnowledge {
+  id        String   @id @default(uuid())
+  category  String // "PRD", "ARCHITECTURE", "SOP", "BRAND"
+  title     String
+  content   String
+  hash      String   @unique // SHA-256 for change detection
+  metadata  Json     @default(dbgenerated("'{}'"))
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@map("company_knowledge")
+}
+
+// ---------------------------------------------------------
+// 4. EPISODIC MEMORY
+// ---------------------------------------------------------
+
+model CompanyMemory {
+  id         String   @id @default(uuid())
+  type       String // "DECISION_OUTCOME", "FOUNDER_PREFERENCE", "OPERATIONAL_INCIDENT", "STRATEGIC_PIVOT"
+  summary    String
+  details    Json     @default(dbgenerated("'{}'"))
+  category   String?
+  tags       Json     @default(dbgenerated("'[]'"))
+  importance Int      @default(1)
+  decayScore Float    @default(1.0)
+  createdAt  DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@map("company_memories")
+}
+
+// ---------------------------------------------------------
+// 5. DURABLE WORKFLOWS & DAG RUNTIME
+// ---------------------------------------------------------
+
+model WorkflowDefinition {
+  id          String   @id
+  version     String   @default("1.0.0")
+  name        String
+  description String?
+  steps       Json     @default(dbgenerated("'[]'"))
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([id, version])
+  @@map("workflow_definitions")
+}
+
+model WorkflowInstance {
+  id            String            @id @default(uuid())
+  definitionId  String
+  version       String            @default("1.0.0")
+  status        String            @default("pending") // "pending", "running", "paused", "completed", "failed", "cancelled"
+  objective     String
+  stepStates    Json              @default(dbgenerated("'{}'"))
+  context       Json              @default(dbgenerated("'{}'"))
+  error         String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  initiatedById String?
+  initiatedBy   User?             @relation(fields: [initiatedById], references: [id])
+  stateVersion  Int               @default(0)
+  claimedBy     String?
+  claimedAt     DateTime?
+  approvals     ApprovalRecord[]
+  sideEffects   SideEffectAudit[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status])
+  @@index([status, stateVersion])
+  @@map("workflow_instances")
+}
+
+model ScheduledWorkItem {
+  id                 String    @id @default(uuid())
+  workflowInstanceId String
+  stepId             String
+  executeAt          DateTime
+  status             String    @default("scheduled") // "scheduled", "executed", "cancelled", "failed"
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancellationReason String?
+  idempotencyKey     String?
+  metadata           Json      @default(dbgenerated("'{}'"))
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, executeAt])
+  @@index([workflowInstanceId, stepId])
+  @@index([idempotencyKey])
+  @@map("scheduled_work_items")
+}
+
+// ---------------------------------------------------------
+// 6. GOVERNANCE, APPROVALS & AUDIT LEDGER
+// ---------------------------------------------------------
+
+model ApprovalRecord {
+  id                 String            @id @default(uuid())
+  workflowInstanceId String?
+  workflow           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  stepId             String
+  campaignId         String?
+  employeeRole       String
+  classification     String // "read_only", "internal_mutation", "external_communication", "financial_transaction", "infrastructure_change"
+  actionType         String
+  targetSystem       String
+  payload            Json              @default(dbgenerated("'{}'"))
+  payloadHash        String? // SHA-256 cryptographic binding hash
+  decision           String            @default("pending") // "pending", "approved", "rejected", "revoked", "expired"
+  decidedBy          String?
+  decidedAt          DateTime?
+  reason             String?
+  expiresAt          DateTime?
+  consumedAt         DateTime?
+  scope              Json              @default(dbgenerated("'{}'"))
+  founderId          String?
+  founder            User?             @relation(fields: [founderId], references: [id])
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([decision])
+  @@index([workflowInstanceId, stepId])
+  @@index([payloadHash])
+  @@map("approval_records")
+}
+
+model SideEffectAudit {
+  id                 String            @id @default(uuid())
+  requestId          String?
+  approvalId         String?
+  workflowInstanceId String?
+  workflow           WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id], onDelete: Cascade)
+  stepId             String?
+  employeeRole       String
+  classification     String
+  actionType         String
+  targetSystem       String
+  payload            Json              @default(dbgenerated("'{}'"))
+  decisionOutcome    String // "allowed_autonomous", "allowed_approved", "denied_policy", "denied_revoked", "denied_expired", "denied_unapproved"
+  reason             String
+  executionReference String?
+  timestamp          DateTime          @default(now())
+
+  @@index([requestId])
+  @@index([workflowInstanceId, stepId])
+  @@index([targetSystem, timestamp])
+  @@map("side_effect_audits")
+}
+
+// ---------------------------------------------------------
+// 7. REALITY GROUNDING TELEMETRY
+// ---------------------------------------------------------
+
+model TelemetryMetric {
+  id         String   @id @default(uuid())
+  source     String // "LUMORAGLM_PROD", "STRIPE_PROD"
+  metricKey  String // "active_students", "monthly_revenue", "system_errors"
+  value      Float
+  metadata   Json?
+  recordedAt DateTime @default(now())
+
+  @@index([source, metricKey, recordedAt])
+  @@map("telemetry_metrics")
+}
+
+// ---------------------------------------------------------
+// 8. DURABLE AGENT RUNS
+// ---------------------------------------------------------
+
+model AgentRun {
+  id              String           @id // matches runId e.g. "run-12345"
+  agentId         String // "coo", "researcher", "pm", "finance", "advisor"
+  agentName       String
+  protocolStep    String
+  taskTitle       String
+  directive       String
+  status          String // "running", "completed", "failed", "halted"
+  durationMs      Int              @default(0)
+  outputContent   String
+  structuredData  Json             @default(dbgenerated("'{}'"))
+  claimsGenerated Json             @default(dbgenerated("'[]'"))
+  provenance      Json             @default(dbgenerated("'{}'"))
+  modelUsed       String?
+  error           String?
+  createdAt       DateTime         @default(now())
+  claims          EpistemicClaim[]
+
+  @@index([agentId, status, createdAt])
+  @@map("agent_runs")
+}
+
+// ---------------------------------------------------------
+// 9. GOVERNED EPISTEMIC LIFECYCLE
+// ---------------------------------------------------------
+
+model EpistemicSource {
+  id             String            @id // e.g. "src-12345"
+  sourceSystem   String // "github", "stripe", "resend", "tool_execution", "founder_input"
+  uri            String?
+  title          String
+  rawContent     String
+  contentHash    String // SHA-256 hash for tamper detection
+  capturedAt     DateTime          @default(now())
+  capturedBy     String
+  metadata       Json              @default(dbgenerated("'{}'"))
+  provenanceKind String            @default("live_operational") // "live_operational", "synthetic", "sandbox_mock"
+  createdAt      DateTime          @default(now())
+  signals        EpistemicSignal[]
+  claims         EpistemicClaim[]
+  facts          CanonicalFact[]
+
+  @@index([sourceSystem, capturedAt])
+  @@index([contentHash])
+  @@map("epistemic_sources")
+}
+
+model EpistemicSignal {
+  id                   String           @id // e.g. "sig-12345"
+  sourceId             String
+  source               EpistemicSource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  signalType           String // "metric_observation", "system_event", "code_analysis", "financial_record", "communication"
+  extractedObservation String
+  data                 Json?
+  confidence           String           @default("high_confidence")
+  timestamp            DateTime         @default(now())
+  createdAt            DateTime         @default(now())
+  claims               EpistemicClaim[]
+
+  @@index([sourceId])
+  @@index([signalType, timestamp])
+  @@map("epistemic_signals")
+}
+
+model EpistemicClaim {
+  id                 String                 @id // e.g. "clm-12345"
+  sourceId           String?
+  source             EpistemicSource?       @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  signalId           String?
+  signal             EpistemicSignal?       @relation(fields: [signalId], references: [id], onDelete: SetNull)
+  agentRunId         String?
+  agentRun           AgentRun?              @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  statement          String
+  subject            String // e.g. "gross_margin", "customer_pricing"
+  category           String // "financial", "architectural", "operational", "market_research", "governance"
+  proposedBy         String // role or "founder"
+  confidence         String                 @default("unverified")
+  verificationStatus String                 @default("pending") // "pending", "under_review", "promoted_to_fact", "rejected", "superseded"
+  evidenceReferences Json                   @default(dbgenerated("'[]'"))
+  verificationNotes  String?
+  rejectionReason    String?
+  reviewedAt         DateTime?
+  reviewedBy         String?
+  createdAt          DateTime               @default(now())
+  verification       EpistemicVerification?
+  facts              CanonicalFact[]
+
+  @@index([verificationStatus, category])
+  @@index([subject])
+  @@index([proposedBy])
+  @@map("epistemic_claims")
+}
+
+model EpistemicVerification {
+  id                 String         @id @default(uuid())
+  claimId            String         @unique
+  claim              EpistemicClaim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  passed             Boolean
+  policyOutcome      String // "approved_for_promotion", "rejected_contradiction", "rejected_unverified", "requires_founder_review"
+  conflictingFactIds Json           @default(dbgenerated("'[]'"))
+  reason             String
+  verifiedAt         DateTime       @default(now())
+  verifiedBy         String
+  precedenceNote     String?
+  createdAt          DateTime       @default(now())
+
+  @@index([passed, policyOutcome])
+  @@map("epistemic_verifications")
+}
+
+model CanonicalFact {
+  id               String          @id // e.g. "fact-12345"
+  claimId          String
+  claim            EpistemicClaim  @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  sourceId         String?
+  source           EpistemicSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  statement        String
+  subject          String
+  category         String
+  validityState    String          @default("active") // "active", "superseded", "disputed", "deprecated"
+  supersededById   String?
+  supersededBy     CanonicalFact?  @relation("FactSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  supersedingFacts CanonicalFact[] @relation("FactSupersession")
+  confidence       String          @default("verified_fact")
+  promotedAt       DateTime        @default(now())
+  promotedBy       String
+  provenance       Json            @default(dbgenerated("'{}'"))
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([validityState, category])
+  @@index([subject])
+  @@map("canonical_facts")
+}
+
+// ---------------------------------------------------------
+// 10. IDEMPOTENCY & TRANSACTIONAL COORDINATION
+// ---------------------------------------------------------
+
+model IdempotencyRecord {
+  id           String    @id @default(uuid())
+  key          String    @unique
+  actionName   String
+  payloadHash  String?
+  status       String    @default("in_progress") // "in_progress", "completed", "failed"
+  executionRef String?
+  response     Json?
+  error        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  expiresAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([payloadHash])
+  @@map("idempotency_records")
+}
+
+// ---------------------------------------------------------
+// 11. DISTRIBUTED CONCURRENCY LEASE
+// ---------------------------------------------------------
+
+model DistributedLease {
+  resourceKey String   @id // e.g. "instance-primary", "scheduler-work-eval"
+  holderId    String
+  acquiredAt  DateTime @default(now())
+  expiresAt   DateTime
+  metadata    Json     @default(dbgenerated("'{}'"))
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("distributed_leases")
+}
