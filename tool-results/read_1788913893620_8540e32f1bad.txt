@@ -1,0 +1,776 @@
+     1→import {
+     2→  WorkflowDefinition,
+     3→  WorkflowInstanceState,
+     4→  WorkflowStepState,
+     5→  WorkflowStepStatus,
+     6→  WorkflowInstanceStatus,
+     7→} from '../../../types/workflow';
+     8→import { prisma } from '@/lib/server/db/prisma';
+     9→import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
+    10→import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+    11→import {
+    12→  validateStepTransition,
+    13→  validateInstanceTransition,
+    14→  ConcurrencyConflictError,
+    15→  StepClaimError,
+    16→} from './state-machine';
+    17→
+    18→/**
+    19→ * Interface for persisting Workflow Definitions.
+    20→ */
+    21→export interface WorkflowDefinitionStore {
+    22→  saveDefinition(definition: WorkflowDefinition): Promise<void>;
+    23→  getDefinition(id: string, version?: string): Promise<WorkflowDefinition | null>;
+    24→  listDefinitions(): Promise<WorkflowDefinition[]>;
+    25→}
+    26→
+    27→/**
+    28→ * Interface for persisting Workflow Instances with atomic operations.
+    29→ */
+    30→export interface WorkflowInstanceStore {
+    31→  saveInstance(instance: WorkflowInstanceState): Promise<void>;
+    32→  getInstance(instanceId: string): Promise<WorkflowInstanceState | null>;
+    33→  listInstances(status?: string): Promise<WorkflowInstanceState[]>;
+    34→  claimStepAtomic(
+    35→    instanceId: string,
+    36→    stepId: string,
+    37→    workerId: string,
+    38→    expectedVersion?: number
+    39→  ): Promise<{ instance: WorkflowInstanceState; step: WorkflowStepState }>;
+    40→  transitionStepAtomic(
+    41→    instanceId: string,
+    42→    stepId: string,
+    43→    targetStatus: WorkflowStepStatus,
+    44→    expectedVersion?: number,
+    45→    patch?: Partial<WorkflowStepState>,
+    46→    instancePatch?: Partial<WorkflowInstanceState>
+    47→  ): Promise<WorkflowInstanceState>;
+    48→  rehydrateActiveInstances(): Promise<WorkflowInstanceState[]>;
+    49→}
+    50→
+    51→/**
+    52→ * Authoritative PostgreSQL Workflow Store.
+    53→ * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+    54→ */
+    55→export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowInstanceStore {
+    56→  private static instance: PostgresWorkflowStore;
+    57→
+    58→  public static getInstance(): PostgresWorkflowStore {
+    59→    if (!PostgresWorkflowStore.instance) {
+    60→      PostgresWorkflowStore.instance = new PostgresWorkflowStore();
+    61→    }
+    62→    return PostgresWorkflowStore.instance;
+    63→  }
+    64→
+    65→  // ---------------------------------------------------------
+    66→  // Definition Store Methods
+    67→  // ---------------------------------------------------------
+    68→
+    69→  async saveDefinition(definition: WorkflowDefinition): Promise<void> {
+    70→    const db = await requireAuthoritativeDatabase();
+    71→    await db.workflowDefinition.upsert({
+    72→      where: {
+    73→        id_version: {
+    74→          id: definition.id,
+    75→          version: definition.version || '1.0.0',
+    76→        },
+    77→      },
+    78→      create: {
+    79→        id: definition.id,
+    80→        version: definition.version || '1.0.0',
+    81→        name: definition.name,
+    82→        description: definition.description,
+    83→        steps: (definition.steps as any) ?? [],
+    84→      },
+    85→      update: {
+    86→        name: definition.name,
+    87→        description: definition.description,
+    88→        steps: (definition.steps as any) ?? [],
+    89→      },
+    90→    });
+    91→  }
+    92→
+    93→  async getDefinition(id: string, version?: string): Promise<WorkflowDefinition | null> {
+    94→    const db = await requireAuthoritativeDatabase();
+    95→    const dbDef = await db.workflowDefinition.findFirst({
+    96→      where: {
+    97→        id,
+    98→        ...(version ? { version } : {}),
+    99→      },
+   100→      orderBy: { updatedAt: 'desc' },
+   101→    });
+   102→
+   103→    if (!dbDef) return null;
+   104→
+   105→    return {
+   106→      id: dbDef.id,
+   107→      version: dbDef.version,
+   108→      name: dbDef.name,
+   109→      description: dbDef.description || '',
+   110→      objective: '',
+   111→      steps: (dbDef.steps as any) || [],
+   112→      dependencies: [],
+   113→      requiredApprovals: 0,
+   114→      allowedRoles: [],
+   115→      allowedSkills: [],
+   116→      expectedOutputs: [],
+   117→    };
+   118→  }
+   119→
+   120→  async listDefinitions(): Promise<WorkflowDefinition[]> {
+   121→    const db = await requireAuthoritativeDatabase();
+   122→    const dbDefs = await db.workflowDefinition.findMany({
+   123→      orderBy: { updatedAt: 'desc' },
+   124→    });
+   125→
+   126→    return dbDefs.map((dbDef) => ({
+   127→      id: dbDef.id,
+   128→      version: dbDef.version,
+   129→      name: dbDef.name,
+   130→      description: dbDef.description || '',
+   131→      objective: '',
+   132→      steps: (dbDef.steps as any) || [],
+   133→      dependencies: [],
+   134→      requiredApprovals: 0,
+   135→      allowedRoles: [],
+   136→      allowedSkills: [],
+   137→      expectedOutputs: [],
+   138→    }));
+   139→  }
+   140→
+   141→  // ---------------------------------------------------------
+   142→  // Instance Store Methods
+   143→  // ---------------------------------------------------------
+   144→
+   145→  async saveInstance(instance: WorkflowInstanceState): Promise<void> {
+   146→    const db = await requireAuthoritativeDatabase();
+   147→    await db.workflowInstance.upsert({
+   148→      where: { id: instance.instanceId },
+   149→      create: {
+   150→        id: instance.instanceId,
+   151→        definitionId: instance.workflowId,
+   152→        version: instance.version || '1.0.0',
+   153→        stateVersion: instance.stateVersion ?? 0,
+   154→        claimedBy: instance.claimedBy || null,
+   155→        claimedAt: instance.claimedAt ? new Date(instance.claimedAt) : null,
+   156→        status: instance.status,
+   157→        objective: instance.objective || '',
+   158→        stepStates: (instance.stepStates as any) ?? {},
+   159→        context: {},
+   160→        error: instance.failureReason || null,
+   161→        startedAt: instance.createdAt ? new Date(instance.createdAt) : null,
+   162→        completedAt: instance.status === 'completed' && instance.updatedAt ? new Date(instance.updatedAt) : null,
+   163→      },
+   164→      update: {
+   165→        status: instance.status,
+   166→        stateVersion: instance.stateVersion ?? 0,
+   167→        claimedBy: instance.claimedBy || null,
+   168→        claimedAt: instance.claimedAt ? new Date(instance.claimedAt) : null,
+   169→        stepStates: (instance.stepStates as any) ?? {},
+   170→        context: {},
+   171→        error: instance.failureReason || null,
+   172→        completedAt: instance.status === 'completed' && instance.updatedAt ? new Date(instance.updatedAt) : null,
+   173→      },
+   174→    });
+   175→  }
+   176→
+   177→  async getInstance(instanceId: string): Promise<WorkflowInstanceState | null> {
+   178→    const db = await requireAuthoritativeDatabase();
+   179→    const dbInst = await db.workflowInstance.findUnique({
+   180→      where: { id: instanceId },
+   181→    });
+   182→
+   183→    if (!dbInst) return null;
+   184→    return this.mapPrismaToInstance(dbInst);
+   185→  }
+   186→
+   187→  async listInstances(status?: string): Promise<WorkflowInstanceState[]> {
+   188→    const db = await requireAuthoritativeDatabase();
+   189→    const dbInsts = await db.workflowInstance.findMany({
+   190→      where: status ? { status } : undefined,
+   191→      orderBy: { updatedAt: 'desc' },
+   192→    });
+   193→
+   194→    return dbInsts.map((dbInst) => this.mapPrismaToInstance(dbInst));
+   195→  }
+   196→
+   197→  async claimStepAtomic(
+   198→    instanceId: string,
+   199→    stepId: string,
+   200→    workerId: string,
+   201→    expectedVersion?: number
+   202→  ): Promise<{ instance: WorkflowInstanceState; step: WorkflowStepState }> {
+   203→    const db = await requireAuthoritativeDatabase();
+   204→    return await db.$transaction(async (tx) => {
+   205→      const dbInst = await tx.workflowInstance.findUnique({
+   206→        where: { id: instanceId },
+   207→      });
+   208→      if (!dbInst) {
+   209→        throw new Error(`Workflow instance not found: ${instanceId}`);
+   210→      }
+   211→
+   212→      if (expectedVersion !== undefined && dbInst.stateVersion !== expectedVersion) {
+   213→        throw new ConcurrencyConflictError(instanceId, expectedVersion, dbInst.stateVersion);
+   214→      }
+   215→
+   216→      const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
+   217→      const step = stepStates[stepId];
+   218→      if (!step) {
+   219→        throw new Error(`Step not found in workflow instance: ${stepId}`);
+   220→      }
+   221→
+   222→      if (step.status !== 'ready') {
+   223→        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+   224→      }
+   225→
+   226→      if (step.claimedBy && step.claimedBy !== workerId) {
+   227→        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+   228→      }
+   229→
+   230→      validateStepTransition(step.status, 'running');
+   231→
+   232→      const nowIso = new Date().toISOString();
+   233→      step.status = 'running';
+   234→      step.claimedBy = workerId;
+   235→      step.claimedAt = nowIso;
+   236→      if (!step.startedAt) {
+   237→        step.startedAt = nowIso;
+   238→      }
+   239→      stepStates[stepId] = step;
+   240→
+   241→      let instanceStatus = dbInst.status;
+   242→      if (instanceStatus === 'pending' || instanceStatus === 'waiting') {
+   243→        validateInstanceTransition(instanceStatus as any, 'running');
+   244→        instanceStatus = 'running';
+   245→      }
+   246→
+   247→      const nextVersion = (dbInst.stateVersion || 0) + 1;
+   248→
+   249→      const updated = await tx.workflowInstance.update({
+   250→        where: { id: instanceId },
+   251→        data: {
+   252→          status: instanceStatus,
+   253→          stepStates: stepStates as any,
+   254→          stateVersion: nextVersion,
+   255→          claimedBy: workerId,
+   256→          claimedAt: new Date(),
+   257→          updatedAt: new Date(),
+   258→        },
+   259→      });
+   260→
+   261→      return {
+   262→        instance: this.mapPrismaToInstance(updated),
+   263→        step,
+   264→      };
+   265→    });
+   266→  }
+   267→
+   268→  async transitionStepAtomic(
+   269→    instanceId: string,
+   270→    stepId: string,
+   271→    targetStatus: WorkflowStepStatus,
+   272→    expectedVersion?: number,
+   273→    patch?: Partial<WorkflowStepState>,
+   274→    instancePatch?: Partial<WorkflowInstanceState>
+   275→  ): Promise<WorkflowInstanceState> {
+   276→    const db = await requireAuthoritativeDatabase();
+   277→    return await db.$transaction(async (tx) => {
+   278→      const dbInst = await tx.workflowInstance.findUnique({
+   279→        where: { id: instanceId },
+   280→      });
+   281→      if (!dbInst) {
+   282→        throw new Error(`Workflow instance not found: ${instanceId}`);
+   283→      }
+   284→
+   285→      if (expectedVersion !== undefined && dbInst.stateVersion !== expectedVersion) {
+   286→        throw new ConcurrencyConflictError(instanceId, expectedVersion, dbInst.stateVersion);
+   287→      }
+   288→
+   289→      const stepStates: Record<string, WorkflowStepState> = (dbInst.stepStates as any) || {};
+   290→      const step = stepStates[stepId];
+   291→      if (!step) {
+   292→        throw new Error(`Step not found in workflow instance: ${stepId}`);
+   293→      }
+   294→
+   295→      validateStepTransition(step.status, targetStatus);
+   296→
+   297→      const nowIso = new Date().toISOString();
+   298→      step.status = targetStatus;
+   299→      if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
+   300→        step.completedAt = nowIso;
+   301→        step.claimedBy = undefined;
+   302→      }
+   303→      if (patch) {
+   304→        Object.assign(step, patch);
+   305→      }
+   306→      stepStates[stepId] = step;
+   307→
+   308→      let nextInstanceStatus = instancePatch?.status ?? dbInst.status;
+   309→      if (instancePatch?.status && instancePatch.status !== dbInst.status) {
+   310→        validateInstanceTransition(dbInst.status as any, instancePatch.status);
+   311→      }
+   312→
+   313→      const nextVersion = (dbInst.stateVersion || 0) + 1;
+   314→
+   315→      const updated = await tx.workflowInstance.update({
+   316→        where: { id: instanceId },
+   317→        data: {
+   318→          status: nextInstanceStatus,
+   319→          stepStates: stepStates as any,
+   320→          stateVersion: nextVersion,
+   321→          error: instancePatch?.failureReason ?? (targetStatus === 'failed' ? (step.error || 'Step failed') : dbInst.error),
+   322→          completedAt: (nextInstanceStatus === 'completed' || targetStatus === 'completed') ? new Date() : dbInst.completedAt,
+   323→          updatedAt: new Date(),
+   324→        },
+   325→      });
+   326→
+   327→      return this.mapPrismaToInstance(updated);
+   328→    });
+   329→  }
+   330→
+   331→  async rehydrateActiveInstances(): Promise<WorkflowInstanceState[]> {
+   332→    const db = await requireAuthoritativeDatabase();
+   333→    const activeStatuses = ['pending', 'running', 'waiting', 'blocked', 'awaiting_approval'];
+   334→    const dbInsts = await db.workflowInstance.findMany({
+   335→      where: {
+   336→        status: { in: activeStatuses },
+   337→      },
+   338→      orderBy: { updatedAt: 'asc' },
+   339→    });
+   340→    return dbInsts.map((inst) => this.mapPrismaToInstance(inst));
+   341→  }
+   342→
+   343→  private mapPrismaToInstance(dbInst: any): WorkflowInstanceState {
+   344→    return {
+   345→      instanceId: dbInst.id,
+   346→      workflowId: dbInst.definitionId,
+   347→      version: dbInst.version,
+   348→      stateVersion: dbInst.stateVersion ?? 0,
+   349→      claimedBy: dbInst.claimedBy || undefined,
+   350→      claimedAt: dbInst.claimedAt ? dbInst.claimedAt.toISOString() : undefined,
+   351→      status: dbInst.status as any,
+   352→      objective: dbInst.objective,
+   353→      stepStates: (dbInst.stepStates as any) || {},
+   354→      createdAt: dbInst.createdAt.toISOString(),
+   355→      updatedAt: dbInst.updatedAt.toISOString(),
+   356→      outputs: {},
+   357→      evidenceReferences: [],
+   358→      failureReason: dbInst.error || undefined,
+   359→    };
+   360→  }
+   361→
+   362→  clear(): void {
+   363→    if (process.env.NODE_ENV === 'production') {
+   364→      throw new Error('Workflow records cannot be cleared in production.');
+   365→    }
+   366→  }
+   367→}
+   368→
+   369→/**
+   370→ * Dual-Mode Workflow Store.
+   371→ * In Authoritative Mode: delegates directly to PostgresWorkflowStore (fail-closed).
+   372→ * In Test/Local Mode: uses fast in-memory maps with local file persistence.
+   373→ */
+   374→export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowInstanceStore {
+   375→  public definitions: Map<string, WorkflowDefinition> = new Map();
+   376→  public instances: Map<string, WorkflowInstanceState> = new Map();
+   377→
+   378→  private static instance: InMemoryWorkflowStore;
+   379→
+   380→  private constructor() {
+   381→    this.loadFromDurableStorage();
+   382→  }
+   383→
+   384→  public static getInstance(): InMemoryWorkflowStore {
+   385→    if (!InMemoryWorkflowStore.instance) {
+   386→      InMemoryWorkflowStore.instance = new InMemoryWorkflowStore();
+   387→    }
+   388→    return InMemoryWorkflowStore.instance;
+   389→  }
+   390→
+   391→  public loadFromDurableStorage(): void {
+   392→    try {
+   393→      const persistedDefs = DurableFileStore.getInstance().readCollection<WorkflowDefinition>('workflow_definitions');
+   394→      for (const [key, def] of Object.entries(persistedDefs)) {
+   395→        this.definitions.set(key, def);
+   396→      }
+   397→      const persistedInsts = DurableFileStore.getInstance().readCollection<WorkflowInstanceState>('workflow_instances');
+   398→      for (const [id, inst] of Object.entries(persistedInsts)) {
+   399→        this.instances.set(id, inst);
+   400→      }
+   401→    } catch {
+   402→      // fallback
+   403→    }
+   404→  }
+   405→
+   406→  // ---------------------------------------------------------
+   407→  // Definition Store Methods
+   408→  // ---------------------------------------------------------
+   409→
+   410→  async saveDefinition(definition: WorkflowDefinition): Promise<void> {
+   411→    if (isAuthoritativeMode()) {
+   412→      return PostgresWorkflowStore.getInstance().saveDefinition(definition);
+   413→    }
+   414→
+   415→    const key = `${definition.id}@${definition.version}`;
+   416→    this.definitions.set(key, definition);
+   417→    this.definitions.set(definition.id, definition);
+   418→
+   419→    try {
+   420→      DurableFileStore.getInstance().saveItem('workflow_definitions', key, definition);
+   421→      DurableFileStore.getInstance().saveItem('workflow_definitions', definition.id, definition);
+   422→    } catch {}
+   423→
+   424→    if (process.env.DATABASE_URL) {
+   425→      try {
+   426→        await prisma.workflowDefinition.upsert({
+   427→          where: {
+   428→            id_version: {
+   429→              id: definition.id,
+   430→              version: definition.version || '1.0.0',
+   431→            },
+   432→          },
+   433→          create: {
+   434→            id: definition.id,
+   435→            version: definition.version || '1.0.0',
+   436→            name: definition.name,
+   437→            description: definition.description,
+   438→            steps: (definition.steps as any) ?? [],
+   439→          },
+   440→          update: {
+   441→            name: definition.name,
+   442→            description: definition.description,
+   443→            steps: (definition.steps as any) ?? [],
+   444→          },
+   445→        });
+   446→      } catch {
+   447→        // Fallback safely for offline test environments
+   448→      }
+   449→    }
+   450→  }
+   451→
+   452→  async getDefinition(id: string, version?: string): Promise<WorkflowDefinition | null> {
+   453→    if (isAuthoritativeMode()) {
+   454→      return PostgresWorkflowStore.getInstance().getDefinition(id, version);
+   455→    }
+   456→
+   457→    const key = version ? `${id}@${version}` : id;
+   458→    const cached = this.definitions.get(key);
+   459→    if (cached) return cached;
+   460→
+   461→    if (process.env.DATABASE_URL) {
+   462→      try {
+   463→        const dbDef = await prisma.workflowDefinition.findFirst({
+   464→          where: {
+   465→            id,
+   466→            ...(version ? { version } : {}),
+   467→          },
+   468→          orderBy: { updatedAt: 'desc' },
+   469→        });
+   470→        if (dbDef) {
+   471→          const mapped: WorkflowDefinition = {
+   472→            id: dbDef.id,
+   473→            version: dbDef.version,
+   474→            name: dbDef.name,
+   475→            description: dbDef.description || '',
+   476→            objective: '',
+   477→            steps: (dbDef.steps as any) || [],
+   478→            dependencies: [],
+   479→            requiredApprovals: 0,
+   480→            allowedRoles: [],
+   481→            allowedSkills: [],
+   482→            expectedOutputs: [],
+   483→          };
+   484→          this.definitions.set(key, mapped);
+   485→          return mapped;
+   486→        }
+   487→      } catch {
+   488→        // Fallback
+   489→      }
+   490→    }
+   491→
+   492→    return null;
+   493→  }
+   494→
+   495→  async listDefinitions(): Promise<WorkflowDefinition[]> {
+   496→    if (isAuthoritativeMode()) {
+   497→      return PostgresWorkflowStore.getInstance().listDefinitions();
+   498→    }
+   499→
+   500→    const result = new Map<string, WorkflowDefinition>();
+   501→    for (const [key, def] of this.definitions.entries()) {
+   502→      if (!key.includes('@')) {
+   503→        result.set(def.id, def);
+   504→      }
+   505→    }
+   506→    return Array.from(result.values());
+   507→  }
+   508→
+   509→  // ---------------------------------------------------------
+   510→  // Instance Store Methods
+   511→  // ---------------------------------------------------------
+   512→
+   513→  async saveInstance(instance: WorkflowInstanceState): Promise<void> {
+   514→    if (isAuthoritativeMode()) {
+   515→      return PostgresWorkflowStore.getInstance().saveInstance(instance);
+   516→    }
+   517→
+   518→    const clone = JSON.parse(JSON.stringify(instance));
+   519→    this.instances.set(instance.instanceId, clone);
+   520→
+   521→    try {
+   522→      DurableFileStore.getInstance().saveItem('workflow_instances', instance.instanceId, clone);
+   523→    } catch {}
+   524→
+   525→    if (process.env.DATABASE_URL) {
+   526→      try {
+   527→        await prisma.workflowInstance.upsert({
+   528→          where: { id: instance.instanceId },
+   529→          create: {
+   530→            id: instance.instanceId,
+   531→            definitionId: instance.workflowId,
+   532→            version: instance.version || '1.0.0',
+   533→            stateVersion: instance.stateVersion ?? 0,
+   534→            claimedBy: instance.claimedBy || null,
+   535→            claimedAt: instance.claimedAt ? new Date(instance.claimedAt) : null,
+   536→            status: instance.status,
+   537→            objective: instance.objective || '',
+   538→            stepStates: (instance.stepStates as any) ?? {},
+   539→            context: {},
+   540→            error: instance.failureReason || null,
+   541→            startedAt: instance.createdAt ? new Date(instance.createdAt) : null,
+   542→            completedAt: instance.status === 'completed' && instance.updatedAt ? new Date(instance.updatedAt) : null,
+   543→          },
+   544→          update: {
+   545→            status: instance.status,
+   546→            stateVersion: instance.stateVersion ?? 0,
+   547→            claimedBy: instance.claimedBy || null,
+   548→            claimedAt: instance.claimedAt ? new Date(instance.claimedAt) : null,
+   549→            stepStates: (instance.stepStates as any) ?? {},
+   550→            context: {},
+   551→            error: instance.failureReason || null,
+   552→            completedAt: instance.status === 'completed' && instance.updatedAt ? new Date(instance.updatedAt) : null,
+   553→          },
+   554→        });
+   555→      } catch {
+   556→        // Fallback safely in offline test environments
+   557→      }
+   558→    }
+   559→  }
+   560→
+   561→  async getInstance(instanceId: string): Promise<WorkflowInstanceState | null> {
+   562→    if (isAuthoritativeMode()) {
+   563→      return PostgresWorkflowStore.getInstance().getInstance(instanceId);
+   564→    }
+   565→
+   566→    const instance = this.instances.get(instanceId);
+   567→    if (instance) return JSON.parse(JSON.stringify(instance));
+   568→
+   569→    if (process.env.DATABASE_URL) {
+   570→      try {
+   571→        const dbInst = await prisma.workflowInstance.findUnique({
+   572→          where: { id: instanceId },
+   573→        });
+   574→        if (dbInst) {
+   575→          const mapped: WorkflowInstanceState = {
+   576→            instanceId: dbInst.id,
+   577→            workflowId: dbInst.definitionId,
+   578→            version: dbInst.version,
+   579→            stateVersion: dbInst.stateVersion ?? 0,
+   580→            claimedBy: dbInst.claimedBy || undefined,
+   581→            claimedAt: dbInst.claimedAt ? dbInst.claimedAt.toISOString() : undefined,
+   582→            status: dbInst.status as any,
+   583→            objective: dbInst.objective,
+   584→            stepStates: (dbInst.stepStates as any) || {},
+   585→            createdAt: dbInst.createdAt.toISOString(),
+   586→            updatedAt: dbInst.updatedAt.toISOString(),
+   587→            outputs: {},
+   588→            evidenceReferences: [],
+   589→            failureReason: dbInst.error || undefined,
+   590→          };
+   591→          this.instances.set(mapped.instanceId, mapped);
+   592→          return mapped;
+   593→        }
+   594→      } catch {
+   595→        // Fallback
+   596→      }
+   597→    }
+   598→
+   599→    return null;
+   600→  }
+   601→
+   602→  async listInstances(status?: string): Promise<WorkflowInstanceState[]> {
+   603→    if (isAuthoritativeMode()) {
+   604→      return PostgresWorkflowStore.getInstance().listInstances(status);
+   605→    }
+   606→
+   607→    const all = Array.from(this.instances.values());
+   608→    if (status) {
+   609→      return all.filter((i) => i.status === status);
+   610→    }
+   611→    return all;
+   612→  }
+   613→
+   614→  async claimStepAtomic(
+   615→    instanceId: string,
+   616→    stepId: string,
+   617→    workerId: string,
+   618→    expectedVersion?: number
+   619→  ): Promise<{ instance: WorkflowInstanceState; step: WorkflowStepState }> {
+   620→    if (isAuthoritativeMode()) {
+   621→      return PostgresWorkflowStore.getInstance().claimStepAtomic(instanceId, stepId, workerId, expectedVersion);
+   622→    }
+   623→
+   624→    const instance = this.instances.get(instanceId);
+   625→    if (!instance) {
+   626→      throw new Error(`Workflow instance not found: ${instanceId}`);
+   627→    }
+   628→
+   629→    const currentVersion = instance.stateVersion ?? 0;
+   630→    if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+   631→      throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
+   632→    }
+   633→
+   634→    const step = instance.stepStates[stepId];
+   635→    if (!step) {
+   636→      throw new Error(`Step not found in workflow instance: ${stepId}`);
+   637→    }
+   638→
+   639→    if (step.status !== 'ready') {
+   640→      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+   641→    }
+   642→
+   643→    if (step.claimedBy && step.claimedBy !== workerId) {
+   644→      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+   645→    }
+   646→
+   647→    validateStepTransition(step.status, 'running');
+   648→
+   649→    const nowIso = new Date().toISOString();
+   650→    step.status = 'running';
+   651→    step.claimedBy = workerId;
+   652→    step.claimedAt = nowIso;
+   653→    if (!step.startedAt) {
+   654→      step.startedAt = nowIso;
+   655→    }
+   656→
+   657→    if (instance.status === 'pending' || instance.status === 'waiting') {
+   658→      validateInstanceTransition(instance.status, 'running');
+   659→      instance.status = 'running';
+   660→    }
+   661→
+   662→    instance.stateVersion = currentVersion + 1;
+   663→    instance.claimedBy = workerId;
+   664→    instance.claimedAt = nowIso;
+   665→    instance.updatedAt = nowIso;
+   666→
+   667→    const clone = JSON.parse(JSON.stringify(instance));
+   668→    this.instances.set(instanceId, clone);
+   669→
+   670→    try {
+   671→      DurableFileStore.getInstance().saveItem('workflow_instances', instanceId, clone);
+   672→    } catch {}
+   673→
+   674→    return {
+   675→      instance: clone,
+   676→      step: JSON.parse(JSON.stringify(step)),
+   677→    };
+   678→  }
+   679→
+   680→  async transitionStepAtomic(
+   681→    instanceId: string,
+   682→    stepId: string,
+   683→    targetStatus: WorkflowStepStatus,
+   684→    expectedVersion?: number,
+   685→    patch?: Partial<WorkflowStepState>,
+   686→    instancePatch?: Partial<WorkflowInstanceState>
+   687→  ): Promise<WorkflowInstanceState> {
+   688→    if (isAuthoritativeMode()) {
+   689→      return PostgresWorkflowStore.getInstance().transitionStepAtomic(
+   690→        instanceId,
+   691→        stepId,
+   692→        targetStatus,
+   693→        expectedVersion,
+   694→        patch,
+   695→        instancePatch
+   696→      );
+   697→    }
+   698→
+   699→    const instance = this.instances.get(instanceId);
+   700→    if (!instance) {
+   701→      throw new Error(`Workflow instance not found: ${instanceId}`);
+   702→    }
+   703→
+   704→    const currentVersion = instance.stateVersion ?? 0;
+   705→    if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+   706→      throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
+   707→    }
+   708→
+   709→    const step = instance.stepStates[stepId];
+   710→    if (!step) {
+   711→      throw new Error(`Step not found in workflow instance: ${stepId}`);
+   712→    }
+   713→
+   714→    validateStepTransition(step.status, targetStatus);
+   715→
+   716→    const nowIso = new Date().toISOString();
+   717→    step.status = targetStatus;
+   718→    if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
+   719→      step.completedAt = nowIso;
+   720→      step.claimedBy = undefined;
+   721→    }
+   722→    if (patch) {
+   723→      Object.assign(step, patch);
+   724→    }
+   725→
+   726→    if (instancePatch?.status && instancePatch.status !== instance.status) {
+   727→      validateInstanceTransition(instance.status, instancePatch.status);
+   728→      instance.status = instancePatch.status;
+   729→    }
+   730→    if (instancePatch?.failureReason) {
+   731→      instance.failureReason = instancePatch.failureReason;
+   732→    }
+   733→
+   734→    instance.stateVersion = currentVersion + 1;
+   735→    instance.updatedAt = nowIso;
+   736→
+   737→    const clone = JSON.parse(JSON.stringify(instance));
+   738→    this.instances.set(instanceId, clone);
+   739→
+   740→    try {
+   741→      DurableFileStore.getInstance().saveItem('workflow_instances', instanceId, clone);
+   742→    } catch {}
+   743→
+   744→    return clone;
+   745→  }
+   746→
+   747→  async rehydrateActiveInstances(): Promise<WorkflowInstanceState[]> {
+   748→    if (isAuthoritativeMode()) {
+   749→      return PostgresWorkflowStore.getInstance().rehydrateActiveInstances();
+   750→    }
+   751→
+   752→    const activeStatuses: Set<string> = new Set(['pending', 'running', 'waiting', 'blocked', 'awaiting_approval']);
+   753→    const active = Array.from(this.instances.values())
+   754→      .filter((i) => activeStatuses.has(i.status))
+   755→      .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+   756→
+   757→    return JSON.parse(JSON.stringify(active));
+   758→  }
+   759→
+   760→  clear() {
+   761→    this.definitions.clear();
+   762→    this.instances.clear();
+   763→    try {
+   764→      DurableFileStore.getInstance().clearCollection('workflow_definitions');
+   765→      DurableFileStore.getInstance().clearCollection('workflow_instances');
+   766→    } catch {}
+   767→  }
+   768→}
+   769→
+   770→export function getWorkflowStore(): WorkflowDefinitionStore & WorkflowInstanceStore {
+   771→  if (isAuthoritativeMode()) {
+   772→    return PostgresWorkflowStore.getInstance();
+   773→  }
+   774→  return InMemoryWorkflowStore.getInstance();
+   775→}
+   776→

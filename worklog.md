@@ -85,3 +85,32 @@ INFRA NOTE: sandbox kills all command-spawned processes at command exit (SIGKILL
 Stage Summary:
 - SamjuniorsOS fully migrated and verified: 181 source files in src/, 236 files changed, live AI on z-ai backend, SQLite + durable file persistence, no Clerk/Composio/Gemini dependencies
 - All lint/tsc checks clean; E2E golden paths browser-verified
+
+---
+Task ID: 11
+Agent: main (Z.ai Code)
+Task: Phase 2.6 — Real PostgreSQL Concurrency Verification & Multi-Instance Readiness Certification on SamjuniorsOS (pulled fresh from GitHub)
+
+Work Log:
+- Pulled repo: new HEAD 4a272d9 "feat: integrate distributed scheduling test data" (1 commit ahead of Phase 2.5 HEAD b12cc5b); repo moved to /home/z/SamjuniorsOS; bun install
+- Full repository audit: prisma schema/migrations, lib/server/{db,coordination,idempotency,workflow,authorization,agents,orchestration,persistence}, scheduler, gate, resend provider, instance-guard, deployment docs, all Phase 2.x tests
+- Provisioned REAL PostgreSQL 16.4 (zonky embedded binaries from Maven Central, /tmp/pg16) — no Docker/sudo available; disposable instance on port 5433; dedicated DB samjuniors_phase26 + dedicated NOSUPERUSER role phase26_app; deterministic TRUNCATE cleanup
+- CRITICAL FINDING 1: prisma migrate deploy FAILED on real PG — UTF-8 BOM in 20260908100000_phase2_1_foundation/migration.sql → PG 42601 syntax error at position 1; migration could never have been applied to any real PostgreSQL. Fixed (stripped BOM, SQL content unchanged) + resolve + redeploy: both migrations applied, status up-to-date
+- Built tests/phase2_6_postgres_concurrency.test.ts (16 test categories, ~1900+ contention events) + scripts/phase2_6_worker.ts (independent-process PG workers with own PrismaClient pools)
+- CRITICAL FINDING 2: PostgresLeaseManager.acquire P2002-catch-then-query INSIDE interactive transaction → PG 25P02 poisoned transaction → losing workers CRASHED (PrismaClientUnknownRequestError) instead of returning acquired=false. Fixed: atomic single statements (guarded conditional UPDATE reclaim + INSERT PK anchor + P2002 resolved by fresh read, bounded retry loop)
+- CRITICAL FINDING 3: identical poisoned-transaction pattern in PostgresIdempotencyStore.claim. Fixed: single atomic INSERT anchored by key UNIQUE constraint
+- CRITICAL FINDING 4: claimStepAtomic/transitionStepAtomic checked stateVersion at READ time only; UPDATE WHERE had no version guard → textbook lost-update/double-claim under READ COMMITTED. Fixed: genuine compare-and-swap (guarded updateMany WHERE stateVersion=validated; 0 rows → ConcurrencyConflictError) in both PG and InMemory stores
+- CRITICAL FINDING 5: PostgresApprovalStore.consume same read-check-then-write → double consumption. Fixed: guarded conditional updateMany WHERE consumedAt IS NULL
+- CRITICAL FINDING 6: scheduler evaluateDueWork wrote coordination state from stale listDue snapshots — could overwrite concurrent winner's finalization (erased executionHistory, relabeled completed→cancelled). Fixed: fresh re-read after lease acquisition + finalized-item skip
+- CRITICAL FINDING 7: crash recovery dead-end — transitioning to 'ready' never cleared claimedBy, so a crashed worker's step could never be re-claimed (permanent orphan). Fixed: 'ready' clears stale claim identity (both stores)
+- FINAL VERIFICATION (commit 8ca0967... actually 4ca0967): full suite PASS exit 0 — lease 580/0, renewal 101/0, release 100/0, reclaim 100/0, workflow claim 190/0, OCC 190/0, idem claim 190/0, payload mismatch 20/0, approval 190/0, sched work 40/0, mixed 200/0, 3-process 20s sim (no unexpected errors, no orphaned leases, no duplicate anything), stale worker blocked, unknown-external-result both variants, SIGKILL crash recovery, real PG outage fail-closed (all 5 probe paths DatabaseAuthorityError + cross-process probe + zero .data changes) + recovery
+- Full regression: governance 38/38, auth gate 38/38, comm infra all, resend all, 2.1 25/25, 2.3 22/22, 2.4 14/14, 2.2 24/24 offline-designed mode, 2.5 12/12 offline + 1/1 real-PG online; tsc 39 errors ALL pre-existing at audited HEAD (UI/dynamic-dag), 0 in modified files; prisma validate/generate clean
+- Resend Idempotency-Key verified against current official resend.com docs (native idempotency key support confirmed)
+- Committed fixes: 4ca0967 "fix(durability): Phase 2.6 real-PostgreSQL concurrency certification fixes" (8 files, +2151/-265)
+
+Stage Summary:
+- VERDICT: PASS WITH CONDITIONS — multi-instance architecture now genuinely verified safe under tested scenarios
+- 7 certification-blocking defects found & fixed (only durability-blocking fixes, no features added)
+- min=1/max=1 deployment restriction and .data/instance.lock INTENTIONALLY UNCHANGED — enabling multi-instance remains a deliberate future action
+- Operating assumptions documented: NTP-synced clocks (lease expiry uses app clocks), lease TTL 30s must exceed max step duration (renewItemLease exists but unwired), connection budget 5/instance (Prisma default, 2 vCPU) must be re-validated at enablement time
+- Follow-ups: 39 pre-existing tsc errors at HEAD (UI files), phase2_2 suite online-mode premise + audit FK test-data bug, scheduler lease renewal wiring
