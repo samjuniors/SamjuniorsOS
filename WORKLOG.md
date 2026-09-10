@@ -17,6 +17,199 @@ evidence shows a regression.
 
 ---
 
+## Phase 3.12 (Extension) — OS Work Queue Side Drawer & Dark Luna (Astra) Theme
+
+**Status:** COMPLETE (OS Work Queue side drawer implemented, DAG sequence categories built, specialist/decision-gate routing linked, Dark Luna Astra theme implemented with 3D canvas color reactivity, built, typechecked, and browser-verified).
+**Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
+
+### What was implemented
+
+1. **OS Work Queue Side Drawer (Agent Execution Tracker)**:
+   - Designed a non-intrusive, calm side drawer that slides into view from the right (`transform: translateX(0)`) without permanently occupying the workspace or turning into a generic productivity to-do list (Linear/Trello/Jira).
+   - Core remains visible and active in the background; closing the drawer immediately returns to the calm Core default.
+   - Drawer toggle triggers:
+     - New dock icon button `[ 📋 Work Queue (Q) ]`
+     - Quick action chip in Sophia Conversational Bar: `[ 📋 Work Queue (4) ]`
+     - Command center launcher navigation: `OS Work Queue & Tasks`
+     - Console command: `queue`, `todo`, `tasks`
+     - Global keyboard shortcut: `Q` / `q`
+     - Escape key closes the drawer.
+   - Categorized by authentic OS agent workflow sequence:
+     - **CURRENT**: Task in progress (`Step 4 of 9: Directive Decomposition & Execution Plan Synthesis`, owned by Sophia Vance, 78% complete, step flow: NOW / NEXT / THEN).
+     - **NEXT**: Immediate next step in the pipeline (`Step 5 of 9: Constitutional Invariant Deterministic Evaluation Pass`, owned by SamJuniors Core, gross margin floor check).
+     - **THEN**: Subsequent sequence (`Step 6 & 7: Executive Deliverable Compilation & Durable Checkpoint Commit`).
+     - **WAITING**: Blocked/gated task awaiting human ratification (`External Procurement & Sandbox Resource Release`, with direct `[Open Founder Decision Gate]` routing action).
+     - **COMPLETED**: Recently finished tasks with cryptographic verification notes (`Competitive Memo` by Dr. Thorne with 4 citations, `Directive Schema Validation` by Core).
+   - Agent-Like Work Visibility:
+     - Step flow indicators (`NOW`, `NEXT`, `THEN`, `WAITING`, `DONE`).
+     - Expandable details on task card click (`expandedTaskId`).
+     - Specialist owner pill click routes directly to specialist detail modal (`openAgent(task.ownerCode)`).
+     - Prominent operational honesty banner: `CALM OPERATIONAL QUEUE — Structured agent execution pipeline in safe sandbox. Real execution is founder-gated.`
+
+2. **Second Theme: Dark Luna (Astra Cyan & Deep Space)**:
+   - Studied color scheme and visual details from the attached `Uploaded/astra.html` reference (`--cyan: #7cd6ff`, `--teal: #5fe8c8`, `--bg: #04070d`).
+   - Implemented dynamic `[data-theme="luna"]` CSS token overrides in `index.css` for deep space background, luminescent cyan borders, teal accents, and cyan glow.
+   - Updated `Scene.tsx` canvas rendering to be theme-aware: in `luna` mode, the central 3D particle knot shifts from warm amber/gold to electric cyan (`#7cd6ff`) and teal (`#5fe8c8`), and canvas ambient glow shifts to cyan/blue.
+   - Added `Interface Theme` selector in System Preferences modal:
+     - `Dark Solar (Default Warm Amber)` (Knot Core visual master)
+     - `Dark Luna (Astra Cyan & Deep Space)` (Astra reference adaptation)
+   - Preferences automatically persist to `localStorage` under `samjuniors-core-settings`.
+
+### Files Modified
+
+- `Uploaded/samjuniors-os-web-interface/src/App.tsx` (Queue state machine, QueueTask data, drawer markup, dock/launcher/chip hooks, theme settings selector, `data-theme` attribute)
+- `Uploaded/samjuniors-os-web-interface/src/Scene.tsx` (Theme prop, theme-reactive particle colors and ambient glow shaders)
+- `Uploaded/samjuniors-os-web-interface/src/index.css` (Dark Luna tokens, drawer slide-in animation, card layout, step flow badges, owner pills)
+
+### What was verified
+
+- `bun run build` in `Uploaded/samjuniors-os-web-interface` -> single-file bundle built with 0 errors in 785ms.
+- `bun x tsc --noEmit` -> 0 errors.
+- `git status` in root -> 0 production backend, auth, database, or runtime files modified.
+- Full browser subagent verification on `http://127.0.0.1:5173/`:
+  - Verified initial calm state (`queue_1_calm_core_1789028821221.png`).
+  - Verified opening drawer via `q` and chip, verifying all 5 sections and expanded card details (`queue_2_drawer_open_1789028927014.png`).
+  - Verified clicking specialist owner pill opens specialist modal (`queue_3_specialist_from_queue_1789028971015.png`).
+  - Verified routing from waiting task card to Founder Decision Gate (`queue_4_decision_gate_routed_1789029017990.png`).
+  - Verified switching theme to `Dark Luna` in System Preferences (`queue_5_theme_luna_settings_1789029080476.png`).
+  - Verified Work Queue drawer in `Dark Luna` theme (`queue_6_theme_luna_queue_drawer_1789029096644.png`).
+  - Verified restoring `Dark Solar` theme (`theme_solar_restored_1789029243601.png`, `ui_theme_reset_solar_1789029389798.png`).
+  - Video recording: `queue_and_theme_flow_1789028776831.webp`.
+
+---
+
+## Phase 3.12 — Progressive Disclosure / Calm Core
+
+**Status:** COMPLETE (calm default state implemented, progressive disclosure surfaces verified, honest metrics enforced, built, typechecked, and browser-verified).
+**Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
+
+### What was implemented
+
+1. **Natural Calm Default (Ambient Core Dominance)**:
+   - Eliminated dashboard density by making the calm ambient state the natural default rather than an optional toggle mode.
+   - The central SamJuniors Core 3D particle knot and orbital specialists dominate the screen with expansive canvas breathing room.
+   - Anchored the **Sophia Conversational Bar** directly beneath the Core visualization with founder prompt input (`founder › ...`, keyboard shortcut `/`), executive status subline, and quick contextual triggers.
+   - Collapsed peripheral panels into discrete edge affordances (`ACTIVE PROTOCOL · STEP 4` on the left, `SYSTEM & INVARIANTS` on the right).
+   - Collapsed the bottom 6-card specialist roster into a single-line summary strip (`AI WORKFORCE 06 · 2 ACTIVE (V1) · 4 GOVERNED STANDBY · Show Specialist Roster ▾`).
+
+2. **Contextual Progressive Disclosure**:
+   - Implemented state-driven contextual surfaces (`activeContext: 'idle' | 'work' | 'approval' | 'audit' | 'telemetry'`).
+   - **Founder Decision Gate**: Surfaced when consequential external or resource-allocating actions await founder ratification. Presents clear evidence, constitutional margin invariant check, and explicit choices: `[Ratify & Sign Artifact]` or `[Reject (Fail-Closed)]`.
+   - **Active Directive Orchestration**: Surfaced when directives are dispatched. Shows Sophia coordinating, 9-Step DAG protocol progress (Step 4: Plan), and recent audit log.
+   - **Deterministic Invariant Audit**: Surfaced during diagnostic verification. Verifies gross margin floor (≥ 80.0%), safe mock sandbox isolation, and single-use signature binding.
+   - Every contextual surface provides a prominent `[Return to Calm (Esc) ×]` button, and pressing `Escape` immediately returns the workspace to the calm default Core state.
+
+3. **Strict Operational Honesty**:
+   - Eliminated synthetic numbers (`1,248 signals`, `25 deliverables`).
+   - Epistemic signals now explicitly shows `—` (`Not connected · Authoritative claims require Phase 3.3 Company Brain integration`).
+   - Governed deliverables now explicitly shows `—` (`Safe Mock · Prototype artifacts only · 0 authoritative store records`).
+   - Workforce roster marked truthfully as `2 / 2` (`2 V1 ACTIVE · 4 STANDBY`).
+   - Invariant compliance marked as `Enforced` (`Deterministic safety floor active`).
+   - Specialist detail modals and roster cards show `— (Prototype Mock Sandbox)` rather than fabricated historical output counts.
+
+4. **Preserved Architecture & Distinction**:
+   - Preserved SamJuniors Core as the OS control, intelligence, and governance substrate.
+   - Preserved Sophia Vance (COO) as the founder-facing AI employee/interface.
+   - Preserved all Knot Core visual master qualities: dark environment (`#090d11`), front-facing 3D camera projection, particle kinetics, orbital nodes, launcher, dock, and keyboard navigation.
+
+### Files Modified
+
+- `Uploaded/samjuniors-os-web-interface/src/App.tsx` (Progressive disclosure state machine, Sophia conversational bar, contextual cards, honest metrics, keyboard shortcuts)
+- `Uploaded/samjuniors-os-web-interface/src/index.css` (Calm idle grid, edge pills, Sophia bar, decision gate, calm roster strip)
+
+### What was verified
+
+- `bun run build` in `Uploaded/samjuniors-os-web-interface` -> built single-file bundle (`dist/index.html`, 290.43 kB) in 744ms with 0 errors.
+- `bun x tsc --noEmit` -> 0 errors.
+- `git status` in root -> 0 production backend, auth, database, or runtime files modified.
+- Full E2E browser subagent verification on `http://127.0.0.1:5173/`:
+  - Verified calm default/idle state (`calm_default_state_1789028180366.png`).
+  - Verified Founder Decision Gate progressive disclosure (`approval_gate_1789028201046.png`).
+  - Verified Active Directive Orchestration progressive disclosure (`active_work_surface_1789028228245.png`).
+  - Verified honest telemetry panel (`honest_telemetry_panel_1789028265778.png`).
+  - Verified Sophia conversational bar input and specialist roster toggle (`expanded_roster_1789028329076.png`).
+  - Video recording: `progressive_disclosure_calm_core_1789028138805.webp`.
+
+---
+
+## Phase 3.11 — SamJuniorsOS Core UX / Visual Review & Targeted Refinements
+
+**Status:** COMPLETE (reviewed, targeted refinements implemented, built, typechecked, and browser-verified).
+**Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
+
+### What was evaluated & refined
+
+1. **Operational Honesty & Deceptive Trope Removal**:
+   - Eliminated the inherited generic Knot Core artifact "42 relays" / "42 governed relays". Replaced with authentic OS terminology: `6 Specialists · Governed Protocol Mesh`.
+   - Eliminated perpetual ticking random numbers (`Math.random() > 0.5 ? 2 : 1`) and rapid cyclic progress loops. Metrics and event streams are calm and stable, updating only upon explicit founder directives or invariant audit events.
+   - Replaced generic synthetic CPU load bars with authentic governance parameters: `Safe Mock Sandbox`, `Founder Gated (Fail-Closed)`, `Gross margin floor ≥ 80.0% Enforced`, and `Cryptographic SHA-256 binding`.
+2. **Workforce Semantics (Strict 3-Tier Separation)**:
+   - **Active (v1)**: Sophia Vance (COO) & Dr. Aris Thorne (Research) — the only operational specialists in the v1 foundation loop.
+   - **Deferred (v1)**: Maya Lin (Product) & Julian Cruz (Finance) — implemented in code, but deferred outside the v1 critical path per PRODUCT.md §5.
+   - **Planned (Target-State / v2+)**: Elena Rostova (Governance) & Marcus Vance (Systems) — documented target architecture per PRODUCT.md §6.
+   - Replaced misleading "Wake all" behavior: now `Verify v1 workforce` activates only v1 operational foundation specialists, holding deferred/planned roles strictly in governed standby.
+   - Disabled "Run task" on deferred/planned specialist modals; replaced with explicit architectural status badges (`Architecture Deferred (v1)` / `Planned Target-State (v2+)`) to prevent implying false operational capability.
+3. **Sophia Founder Interface & Conversational Readiness**:
+   - Added `Direct Sophia` quick action on the Focus card, establishing a seamless bridge to Sophia's console interface.
+   - Updated Console greeting and responses to reflect Sophia Vance's executive poise from `lib/employee-profiles.ts`.
+   - Handled conversational founder queries: `"what needs attention?"`, `"status"`, `"workforce"`, `"directive <text>"`, `"verify"`.
+
+### What was verified
+
+- `bun run build` in `Uploaded/samjuniors-os-web-interface` -> built single-file bundle (`dist/index.html`, 275.64 kB) in 822ms with 0 errors.
+- `bun x tsc --noEmit` -> 0 errors.
+- Browser subagent verified live on `http://127.0.0.1:5173/`:
+  - Verified calm state: no rapidly incrementing tickers, steady 1,248 epistemic signals, honest `2 / 2 Active (v1) · 4 Standby`.
+  - Verified `Direct Sophia` console integration and conversational replies.
+  - Verified disabled task triggers for Maya Lin (Deferred v1) and Elena Rostova (Planned Target-State).
+  - Verified `Verify invariants` and `Issue directive` execution.
+  - Verified Workforce Monitor and Audit Stream tabs.
+  - Verified zero production backend/auth/database files touched.
+
+---
+
+## Phase 3.10 — Knot Core UI Prototype Content Transplant (SamJuniors Core & Sophia Operational Mesh)
+
+**Status:** COMPLETE (transplanted, front-perspective adjusted, built with Vite/Bun, typechecked with tsc, and browser-verified).
+**Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
+
+### What was implemented
+
+1. **Content & Semantic Model Transplant (Visual Master Preserved)**:
+   - Preserved visual design, particle system, dark styling, animations, dock, launcher, and modal mechanics from the uploaded Knot Core prototype without redesign.
+   - Replaced generic concepts ("Knot Core", "Neural ensemble", simulated placeholder metrics) with authentic SamJuniorsOS architecture:
+     - **SamJuniors Core**: Central OS control, intelligence, and invariant-enforcement layer.
+     - **Sophia Vance**: Chief Operating Officer & Master Orchestrator, operating through the Core as the founder-facing interface. Preserved clear architectural distinction between the Core (governed substrate) and Sophia (AI employee).
+     - **6 Specialists**: Roster mapped strictly to repository truth: Sophia (COO, Active v1), Dr. Aris Thorne (Research, Active v1), Maya Lin (Product, Standby), Julian Cruz (Finance, Standby), Elena Rostova (Governance, Standby), Marcus Vance (Systems, Standby).
+     - **Telemetry & Health**: Epistemic signals across Company Brain, governed deliverables with cryptographic provenance, invariant compliance (100.0% nominal), and founder-gated authority boundary.
+2. **Front-Facing Perspective Adjustment**:
+   - Adjusted camera elevation in `Scene.tsx` from isometric 3/4 tilt (`tilt = -0.33`) to front-facing perspective (`tilt = 0 + view.current.pitch`).
+   - Orbital guide rings and nodes align to an equatorial front horizon.
+3. **Interactive Capabilities & Disclaimers**:
+   - Interactive orbit, drag, and zoom on the Core.
+   - Specialist inspection modal with authentic department, clearance level, and mandate.
+   - Interactive Console (`/` shortcut) connected to Sophia and SamJuniors Core.
+   - "Verify invariants" action triggering real-time constitutional compliance audit.
+   - "Issue directive" action initiating simulated 9-Step Agent Work Protocol.
+   - Explicit disclaimers throughout (`PROTOTYPE SIMULATION · SAFE MOCK SANDBOX · ZERO LIVE PERSISTENCE CONNECTED`), preserving `AGENTS.md` and repository truthfulness rules.
+
+### What was verified
+
+- `bun run build` in `Uploaded/samjuniors-os-web-interface` -> built single-file bundle (`dist/index.html`, 273 kB) in 764ms with 0 errors.
+- `bun x tsc --noEmit` -> 0 errors.
+- `git status` in root -> 0 production backend, auth, database, or runtime files modified.
+- Full E2E browser subagent verification on `http://127.0.0.1:5173/`:
+  - Verified title, status, and navigation.
+  - Verified front-facing Core rendering and orbiting specialist nodes.
+  - Verified Sophia Vance and Dr. Aris Thorne detail modals.
+  - Verified Workforce monitor tab (all 6 specialists with correct tiers).
+  - Verified Audit stream tab (real-time protocol and invariant events).
+  - Verified Console command interaction (`status` and directive dispatch).
+  - Verified "Verify invariants" real-time audit record generation.
+  - Video recording (`samjuniors_core_ui_1789021399907.webp`) and screenshots captured in artifact directory.
+
+---
+
 ## Phase 3.9 — Core V5 Prototype (Conversational Operating Center — Dark Room + Single Light)
 
 **Status:** COMPLETE (Core V5 prototype created in `public/prototype/v5/`, verified, screenshots captured in artifact directory).

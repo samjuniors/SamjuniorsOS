@@ -1,30 +1,26 @@
 {
-  "appr-a73c49c1-7ccd-4b5c-b3ca-3b451539eec3": {
-    "id": "appr-a73c49c1-7ccd-4b5c-b3ca-3b451539eec3",
-    "decision": "approved",
-    "actionName": "Single Use Side Effect",
+  "appr-323b0d84-cc11-4e74-b5de-ddd1c414eb3d": {
+    "id": "appr-323b0d84-cc11-4e74-b5de-ddd1c414eb3d",
+    "decision": "pending",
+    "actionName": "Execute Side Effect Action",
     "classification": "external_communication",
-    "workflowInstanceId": "wf-single-1",
-    "stepId": "step-1",
-    "employeeRole": "sales_rep",
+    "workflowInstanceId": "wf-inst-b76e3ffe-8d32-4467-aaae-b207a341aa9c",
+    "stepId": "step-side-effect",
+    "employeeRole": "coo",
     "scope": {
-      "scopeType": "single_action",
-      "workflowInstanceId": "wf-single-1",
-      "stepId": "step-1",
+      "scopeType": "step",
+      "workflowInstanceId": "wf-inst-b76e3ffe-8d32-4467-aaae-b207a341aa9c",
+      "stepId": "step-side-effect",
       "targetSystem": "resend",
       "maxUses": 1,
-      "usedCount": 1
+      "usedCount": 0
     },
-    "requestedAt": "2026-09-08T15:34:43.384Z",
+    "requestedAt": "2026-09-10T09:46:10.230Z",
+    "notes": "High-risk external operation requiring explicit Founder wet signature.",
     "target": {
       "targetSystem": "resend"
     },
-    "payload": {
-      "action": "fire_once"
-    },
-    "payloadHash": "ac619b53b9b17773987a67fa3620c62e416a98d77dcfd6b59dbe425fc86ec890",
-    "isConsumed": true,
-    "decidedAt": "2026-09-08T15:34:43.385Z",
-    "decidedBy": "founder"
+    "payloadHash": "402b19d47827c4efbe91a4c20f49b87786b5bf4599ff55daaf3ade5339d486cb",
+    "isConsumed": false
   }
 }

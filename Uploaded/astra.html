@@ -1,0 +1,1663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#04070d">
+<title>SAMJUNIORS OS 4.5 — Knot Core</title>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #04070d;
+  --ink: #e8eefc;
+  --dim: #9bafc8;
+  --muted: #72869f;
+  --cyan: #7cd6ff;
+  --amber: #f0b45c;
+  --teal: #5fe8c8;
+  --line: rgba(124,214,255,.17);
+  --soft-line: rgba(124,214,255,.08);
+  --glass: rgba(9,16,28,.88);
+  --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --shadow: 0 22px 65px rgba(0,0,0,.45);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 12px/1.5 var(--mono);
+}
+button, input, select { font: inherit; }
+button { color: inherit; cursor: pointer; }
+button, input, select { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+}
+button:disabled { cursor: not-allowed; opacity: .45; }
+button { border: 0; }
+::selection { background: rgba(124,214,255,.25); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-thumb { background: #314055; border-radius: 5px; }
+[hidden] { display: none !important; }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip {
+  position: fixed;
+  left: 12px; top: -60px;
+  z-index: 1000;
+  background: var(--ink);
+  color: var(--bg);
+  padding: 10px;
+}
+.skip:focus { top: 10px; }
+.icon { width: 18px; height: 18px; display: block; flex: none; }
+.icon-sm { width: 14px; height: 14px; }
+
+#scene {
+  position: fixed; inset: 0;
+  display: block; width: 100%; height: 100%;
+  touch-action: none; cursor: grab;
+}
+#scene.dragging { cursor: grabbing; }
+#scene.hovering { cursor: pointer; }
+.vignette {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.5));
+}
+#labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.node-label {
+  position: absolute; top: 0; left: 0;
+  text-align: center; white-space: nowrap;
+  will-change: transform;
+  text-shadow: 0 2px 8px #000, 0 0 12px #000;
+}
+.node-label strong {
+  display: block; font-size: 11px; letter-spacing: .18em;
+}
+.node-label span { display: block; color: var(--dim); font-size: 8px; }
+
+.topbar {
+  position: fixed; inset: 0 0 auto;
+  height: 46px; z-index: 20;
+  display: flex; align-items: center; gap: 20px;
+  padding: 0 20px;
+  background: rgba(5,9,16,.86);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--soft-line);
+}
+.brand {
+  display: flex; align-items: center; gap: 9px;
+  color: var(--amber); font-weight: 700;
+  font-size: 11px; letter-spacing: .13em; white-space: nowrap;
+}
+.brand small { font-size: 9px; color: var(--muted); font-weight: 400; }
+#topTitle {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: center; text-transform: uppercase;
+  color: var(--dim); letter-spacing: .2em; font-size: 9px;
+}
+.top-stat {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 9px; color: var(--muted); white-space: nowrap;
+}
+.top-stat b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.meter { width: 52px; height: 4px; background: #152133; border-radius: 9px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--amber); transition: width .25s; }
+
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.panel-heading {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 13px;
+  color: var(--muted); font-size: 9px;
+  font-weight: 500; text-transform: uppercase; letter-spacing: .2em;
+}
+.panel-heading::before {
+  content: ""; width: 5px; height: 5px;
+  background: var(--cyan); border-radius: 50%;
+  box-shadow: 0 0 9px var(--cyan);
+}
+#leftPanel {
+  position: fixed; left: 22px; top: 70px;
+  z-index: 10; width: 292px;
+  transition: transform .3s, opacity .3s;
+}
+.focus-card, .activity-card { padding: 17px; }
+#focusTask {
+  font: 600 17px/1.4 var(--display);
+  margin: 0 0 6px; min-height: 48px;
+}
+#focusBy { color: var(--dim); font-size: 10px; margin: 0 0 14px; }
+#focusBy strong { color: var(--cyan); font-weight: 500; }
+.progress {
+  height: 4px; background: #172336;
+  border-radius: 5px; overflow: hidden;
+}
+.progress i {
+  display: block; height: 100%; width: 0;
+  background: linear-gradient(90deg,var(--cyan),var(--teal));
+  transition: width .25s;
+}
+.progress-caption {
+  display: flex; justify-content: space-between;
+  color: var(--muted); font-size: 9px; margin-top: 7px;
+}
+.activity-card { margin-top: 13px; }
+#activity { list-style: none; padding: 0; margin: 0; }
+.activity-item {
+  display: grid; grid-template-columns: 7px 1fr; gap: 10px;
+  border-top: 1px solid var(--soft-line);
+  padding: 10px 0; font-size: 10px; color: var(--dim);
+}
+.activity-item:last-child { padding-bottom: 0; }
+.activity-item i {
+  width: 6px; height: 6px; margin-top: 5px;
+  border-radius: 50%; background: var(--cyan);
+}
+.activity-item strong { color: var(--ink); font-weight: 500; }
+.activity-item time { display: block; font-size: 8px; color: var(--muted); margin-top: 3px; }
+
+#rightPanel {
+  position: fixed; right: 22px; top: 50%;
+  transform: translateY(-50%); z-index: 10;
+  width: 183px; display: grid; gap: 10px;
+  transition: transform .3s, opacity .3s;
+}
+.stat-chip { display: flex; align-items: center; gap: 12px; padding: 13px; }
+.stat-chip > i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; box-shadow: 0 0 12px currentColor;
+}
+.stat-chip b { display: block; font-size: 11px; font-weight: 500; }
+.stat-chip span { display: block; color: var(--muted); font-size: 8px; margin-top: 2px; }
+
+.edge {
+  position: fixed; z-index: 11;
+  width: 25px; height: 52px;
+  background: var(--glass); border: 1px solid var(--line);
+  color: var(--dim); display: grid; place-items: center;
+  transition: left .3s, right .3s;
+}
+#leftToggle { left: 320px; top: 115px; border-radius: 0 8px 8px 0; }
+#rightToggle { right: 211px; top: calc(50% - 26px); border-radius: 8px 0 0 8px; }
+body.left-collapsed #leftPanel { transform: translateX(-115%); opacity: 0; pointer-events: none; }
+body.left-collapsed #leftToggle { left: 0; }
+body.right-collapsed #rightPanel { transform: translate(120%,-50%); opacity: 0; pointer-events: none; }
+body.right-collapsed #rightToggle { right: 0; }
+body.left-collapsed #leftToggle svg, body.right-collapsed #rightToggle svg { transform: rotate(180deg); }
+
+#home {
+  position: fixed; bottom: 16px; left: 16px; z-index: 35;
+  display: flex; align-items: center; gap: 9px;
+  height: 42px; padding: 0 15px;
+  color: var(--amber); font-size: 10px; font-weight: 700; letter-spacing: .15em;
+  background: var(--glass); border: 1px solid rgba(240,180,92,.35); border-radius: 10px;
+}
+#launcher {
+  position: fixed; bottom: 69px; left: 16px; z-index: 36;
+  width: 225px; padding: 7px;
+}
+.menu-button {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 11px; border-radius: 7px;
+  text-align: left; background: transparent;
+  font-size: 10px; letter-spacing: .06em; color: var(--dim);
+}
+.menu-button:hover { background: rgba(124,214,255,.08); color: var(--ink); }
+.menu-button svg { color: var(--cyan); }
+.menu-divider { height: 1px; background: var(--line); margin: 6px; }
+
+.dock {
+  position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 35; display: flex; gap: 3px; padding: 5px;
+  background: rgba(9,14,24,.9); border: 1px solid var(--line);
+  backdrop-filter: blur(16px); border-radius: 13px;
+}
+.icon-button {
+  display: grid; place-items: center;
+  width: 40px; height: 40px; border-radius: 8px;
+  color: var(--dim); background: transparent; position: relative;
+}
+.icon-button:hover { background: rgba(124,214,255,.08); color: var(--cyan); }
+.icon-button[aria-pressed="true"] { color: var(--cyan); background: rgba(124,214,255,.08); }
+.dock .icon-button[aria-pressed="true"]::after {
+  content: ""; position: absolute; bottom: 3px;
+  width: 3px; height: 3px; border-radius: 50%; background: var(--cyan);
+}
+#clockBox {
+  position: fixed; bottom: 17px; right: 22px; z-index: 12;
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+#clock { font-size: 17px; letter-spacing: .09em; }
+#date { font-size: 8px; color: var(--muted); letter-spacing: .14em; }
+
+#sceneHint {
+  position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+  color: var(--muted); pointer-events: none; font-size: 9px;
+  letter-spacing: .07em; text-align: center; width: min(90vw,500px);
+}
+#toast {
+  position: fixed; bottom: 111px; left: 50%; transform: translateX(-50%);
+  z-index: 90; width: max-content; max-width: min(560px,90vw);
+  padding: 12px 17px; border-left: 2px solid var(--amber);
+  font: 13px/1.5 var(--display);
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+#toast.visible { opacity: 1; }
+#tip {
+  position: fixed; z-index: 95; pointer-events: none;
+  padding: 7px 10px; background: #09111f;
+  border: 1px solid var(--line); border-radius: 6px;
+  font-size: 10px; color: var(--cyan);
+}
+
+#agentCard {
+  position: fixed; right: 22px; top: 70px; width: 320px;
+  z-index: 40; overflow: auto; max-height: calc(100dvh - 150px);
+  padding: 20px;
+}
+.card-close { position: absolute; top: 9px; right: 9px; width: 30px; height: 30px; }
+.eyebrow { color: var(--muted); font-size: 8px; letter-spacing: .2em; text-transform: uppercase; }
+#agentName { font: 750 27px/1.2 var(--display); margin: 13px 0 4px; }
+#agentRole { margin: 0; color: var(--dim); font-size: 11px; }
+#agentStatus { margin: 14px 0; font-size: 10px; color: var(--teal); }
+#agentDescription { font-size: 12px; color: var(--dim); line-height: 1.8; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin: 18px 0; }
+.detail-grid dt { color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .1em; }
+.detail-grid dd { margin: 4px 0 0; font-size: 13px; }
+#agentTask { color: var(--dim); font-size: 11px; min-height: 32px; }
+.button-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 17px; }
+.button {
+  background: transparent; color: var(--dim);
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: 9px 12px; font-size: 10px;
+}
+.button:hover { border-color: var(--cyan); color: var(--cyan); }
+.button.primary { border-color: rgba(124,214,255,.5); color: var(--cyan); }
+
+.window {
+  position: fixed; z-index: 50;
+  display: flex; flex-direction: column;
+  width: min(480px,calc(100vw - 24px)); height: min(470px,calc(100dvh - 150px));
+  min-width: 290px; min-height: 240px;
+  resize: both; overflow: hidden;
+  background: rgba(9,16,28,.97);
+}
+.window.focused { border-color: rgba(124,214,255,.4); }
+.window-header {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 7px 5px 14px; min-height: 40px;
+  border-bottom: 1px solid var(--line);
+  cursor: grab; user-select: none; touch-action: none;
+}
+.window-header:active { cursor: grabbing; }
+.window-header > svg { color: var(--cyan); }
+.window-header h2 {
+  flex: 1; margin: 0; font-size: 10px;
+  font-weight: 500; text-transform: uppercase; letter-spacing: .13em;
+}
+.window-header .icon-button { width: 28px; height: 28px; }
+.window-body { flex: 1; min-height: 0; overflow: auto; }
+.window-body.padded { padding: 19px; }
+
+.console-body { display: flex; flex-direction: column; }
+#consoleLog {
+  flex: 1; min-height: 0; overflow: auto; padding: 15px;
+  font-size: 11px; line-height: 1.8;
+}
+.message { margin-bottom: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message strong { font-size: 9px; color: var(--cyan); font-weight: 500; }
+.message.user strong { color: var(--muted); }
+.console-form {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-top: 1px solid var(--line);
+}
+.console-form label { color: var(--cyan); font-size: 10px; }
+.console-form input {
+  min-width: 0; flex: 1; padding: 6px 0;
+  background: none; border: 0; color: var(--ink); outline-offset: 0;
+}
+.console-form input::placeholder { color: var(--muted); }
+.console-form button { padding: 6px 9px; }
+
+.monitor-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.monitor-top span { font-size: 9px; color: var(--muted); }
+.roster-row {
+  display: grid; grid-template-columns: 76px 1fr 45px;
+  align-items: center; gap: 10px; width: 100%;
+  text-align: left; padding: 11px 0;
+  background: none; border-bottom: 1px solid var(--soft-line);
+}
+.roster-row:hover { background: rgba(124,214,255,.04); }
+.roster-row strong { font-size: 10px; letter-spacing: .08em; }
+.roster-row span { color: var(--dim); font-size: 10px; }
+.roster-row small { color: var(--muted); text-align: right; }
+#eventLog { margin-top: 12px; font-size: 9px; color: var(--dim); }
+#eventLog p { margin: 5px 0; }
+#eventLog time { color: var(--muted); margin-right: 8px; }
+
+.setting {
+  display: flex; gap: 20px; align-items: center; justify-content: space-between;
+  padding: 13px 0; border-bottom: 1px solid var(--soft-line);
+}
+.setting label { flex: 1; font-size: 11px; }
+.setting label small { display: block; font-size: 9px; color: var(--muted); margin-top: 4px; }
+.setting input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--cyan); }
+.setting input[type=range] { width: 105px; accent-color: var(--cyan); }
+.setting select { background: #101c2e; border: 1px solid var(--line); border-radius: 5px; padding: 5px; color: var(--ink); }
+.note { color: var(--muted); font-size: 10px; line-height: 1.8; }
+.about-title { margin: 0 0 3px; font: 750 23px var(--display); }
+.about-copy { color: var(--dim); font-size: 12px; line-height: 1.9; }
+.about-copy strong { color: var(--ink); }
+kbd { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font: 10px var(--mono); }
+
+#boot {
+  position: fixed; inset: 0; z-index: 200;
+  background: #030509; display: grid; place-content: center; text-align: center;
+  pointer-events: none; transition: opacity .45s;
+}
+#boot.complete { opacity: 0; }
+.boot-title { font: 750 24px var(--display); letter-spacing: .25em; }
+.boot-title span { color: var(--amber); }
+.boot-sub { color: var(--muted); font-size: 9px; letter-spacing: .2em; margin-top: 12px; }
+.boot-line { height: 1px; margin-top: 24px; background: var(--amber); transform-origin: left; animation: bootline .65s ease-out both; }
+@keyframes bootline { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+#error {
+  position: fixed; z-index: 300; top: 58px; left: 50%; transform: translateX(-50%);
+  background: #301519; color: #ffc2bb; border: 1px solid #894d50;
+  border-radius: 8px; padding: 12px 16px; max-width: 90vw;
+}
+
+@media (max-width: 1050px) {
+  .brand small, .top-stat.uptime { display: none; }
+  #leftPanel { width: 250px; left: 14px; }
+  #leftToggle { left: 270px; }
+  #rightPanel { right: 14px; width: 165px; }
+  #rightToggle { right: 185px; }
+}
+@media (max-width: 720px) {
+  .topbar { padding: 0 12px; gap: 12px; }
+  .brand { font-size: 10px; }
+  #topTitle, .top-stat.load { display: none; }
+  .top-stat { margin-left: auto; }
+  #clockBox { display: none; }
+  #home { left: 10px; bottom: 14px; padding: 0 12px; width: 42px; justify-content: center; }
+  #home span { display: none; }
+  .dock { left: auto; right: 10px; transform: none; bottom: 10px; }
+  .dock .icon-button { width: 35px; }
+  #launcher { left: 10px; }
+  #leftPanel { top: 60px; width: min(285px,calc(100vw - 55px)); }
+  #leftToggle { left: min(305px,calc(100vw - 35px)); top: 90px; }
+  #rightPanel { width: 175px; }
+  #rightToggle { right: 195px; }
+  #agentCard { top: 60px; right: 12px; width: min(320px,calc(100vw - 24px)); }
+  .window {
+    left: 12px !important; top: 60px !important;
+    width: calc(100vw - 24px) !important;
+    height: calc(100dvh - 135px) !important;
+    min-width: 0; resize: none;
+  }
+  .window-header { cursor: default; }
+  .node-label span { display: none; }
+  .node-label strong { font-size: 9px; }
+  #sceneHint { bottom: 78px; font-size: 8px; }
+  #toast { bottom: 100px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+
+<body>
+<a class="skip" href="#dock">Skip to controls</a>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-core" viewBox="0 0 24 24"><path d="m12 2 8 10-8 10L4 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-console" viewBox="0 0 24 24"><path d="m4 5 7 7-7 7m9 0h7"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><path d="M2 12h4l3-8 5 16 3-8h5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 8h10m4 0h2M4 16h4m4 0h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/></symbol>
+  <symbol id="i-about" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h6l-1 8 9-12h-6Z"/></symbol>
+  <symbol id="i-broadcast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11 11 0 0 0 0 16M20 4a11 11 0 0 1 0 16"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+</svg>
+
+<canvas id="scene" aria-label="Animated knot core and six simulated agents. Use the Node Monitor to inspect agents without using the canvas."></canvas>
+<div class="vignette" aria-hidden="true"></div>
+<div id="labels" aria-hidden="true"></div>
+<div id="tip" hidden></div>
+
+<header class="topbar">
+  <div class="brand">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-core"/></svg>
+    SAMJUNIORS OS <small>4.5 · KNOT CORE</small>
+  </div>
+  <div id="topTitle">Neural ensemble · simulation</div>
+  <div class="top-stat load">LOAD <div class="meter"><i id="loadFill"></i></div><b id="loadPct">0%</b></div>
+  <div class="top-stat">TX <b id="txCount">0</b></div>
+  <div class="top-stat uptime">UP <b id="uptime">00:00</b></div>
+</header>
+
+<aside id="leftPanel" aria-label="Ensemble activity">
+  <section class="glass focus-card">
+    <h2 class="panel-heading">Current focus</h2>
+    <p id="focusTask">Calibrating ensemble…</p>
+    <p id="focusBy">awaiting <strong>next intent</strong></p>
+    <div class="progress" role="progressbar" aria-label="Current task progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="focusProgress"><i id="focusFill"></i></div>
+    <div class="progress-caption"><span>SIMULATED WORKLOAD</span><span id="focusPct">0%</span></div>
+  </section>
+  <section class="glass activity-card">
+    <h2 class="panel-heading">Recent activity</h2>
+    <ul id="activity"></ul>
+  </section>
+</aside>
+<button id="leftToggle" class="edge" aria-controls="leftPanel" aria-expanded="true" aria-label="Toggle activity panel">
+  <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-left"/></svg>
+</button>
+
+<aside id="rightPanel" aria-label="Simulation metrics">
+  <div class="glass stat-chip"><i style="color:var(--cyan)"></i><div><b id="statSignals">0 signals</b><span>synaptic transmissions</span></div></div>
+  <div class="glass stat-chip"><i style="color:var(--amber)"></i><div><b id="statMemory">0 deliveries</b><span>ensemble memory</span></div></div>
+  <div class="glass stat-chip"><i style="color:var(--teal)"></i><div><b id="statAgents">6 agents ready</b><span>simulated workers</span></div></div>
+  <div class="glass stat-chip"><i style="color:#59e38f"></i><div><b id="statCoherence">coherence 98.0%</b><span>synthetic telemetry</span></div></div>
+</aside>
+<button id="rightToggle" class="edge" aria-controls="rightPanel" aria-expanded="true" aria-label="Toggle metrics panel">
+  <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-right"/></svg>
+</button>
+
+<nav id="launcher" class="glass" aria-label="Applications and actions" hidden></nav>
+<button id="home" aria-label="Open launcher" aria-expanded="false" aria-controls="launcher">
+  <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.7"><use href="#i-core"/></svg>
+  <span>SAMJUNIORS</span>
+</button>
+<nav id="dock" class="dock" aria-label="Application dock" tabindex="-1"></nav>
+<div id="clockBox"><div id="clock">00:00:00</div><div id="date"></div></div>
+<div id="sceneHint">Drag to orbit · scroll or pinch to zoom · click an agent · / console</div>
+<div id="toast" class="glass" role="status" aria-live="polite"></div>
+
+<section id="agentCard" class="glass" role="dialog" aria-labelledby="agentName" hidden>
+  <button class="icon-button card-close" id="closeCard" aria-label="Close agent details">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-close"/></svg>
+  </button>
+  <span class="eyebrow">Simulated agent · knot orbit</span>
+  <h2 id="agentName"></h2>
+  <p id="agentRole"></p>
+  <p id="agentStatus"></p>
+  <p id="agentDescription"></p>
+  <dl class="detail-grid">
+    <div><dt>Delivered</dt><dd id="agentDone">0</dd></div>
+    <div><dt>Progress</dt><dd id="agentPct">0%</dd></div>
+  </dl>
+  <span class="eyebrow">Current task</span>
+  <p id="agentTask"></p>
+  <div class="progress"><i id="agentFill"></i></div>
+  <div class="button-row">
+    <button class="button primary" id="runAgent">Run task</button>
+    <button class="button" id="pingAgent">Ping</button>
+    <button class="button" id="wakeAgents">Wake all</button>
+  </div>
+</section>
+
+<section id="consoleWindow" class="window glass" role="dialog" aria-labelledby="consoleTitle" hidden>
+  <header class="window-header">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-console"/></svg>
+    <h2 id="consoleTitle">SamJuniors — Console</h2>
+    <button class="icon-button" data-minimize aria-label="Minimize console"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-min"/></svg></button>
+    <button class="icon-button" data-close aria-label="Close console"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="window-body console-body">
+    <div id="consoleLog" role="log" aria-label="Console messages" aria-live="polite"></div>
+    <form id="consoleForm" class="console-form">
+      <label for="consoleInput">you ›</label>
+      <input id="consoleInput" autocomplete="off" spellcheck="false" placeholder="Type help to get started">
+      <button class="button primary" type="submit">Send</button>
+    </form>
+  </div>
+</section>
+
+<section id="monitorWindow" class="window glass" role="dialog" aria-labelledby="monitorTitle" hidden>
+  <header class="window-header">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-monitor"/></svg>
+    <h2 id="monitorTitle">Node monitor</h2>
+    <button class="icon-button" data-minimize aria-label="Minimize monitor"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-min"/></svg></button>
+    <button class="icon-button" data-close aria-label="Close monitor"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="window-body padded">
+    <div class="monitor-top"><span>AGENT ROSTER · SIMULATION</span><button class="button" data-action="wake">Wake all</button></div>
+    <div id="roster"></div>
+    <h3 class="panel-heading" style="margin-top:22px">Event stream</h3>
+    <div id="eventLog"></div>
+  </div>
+</section>
+
+<section id="systemWindow" class="window glass" role="dialog" aria-labelledby="systemTitle" hidden>
+  <header class="window-header">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-settings"/></svg>
+    <h2 id="systemTitle">System settings</h2>
+    <button class="icon-button" data-minimize aria-label="Minimize settings"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-min"/></svg></button>
+    <button class="icon-button" data-close aria-label="Close settings"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="window-body padded">
+    <div class="setting"><label for="voiceSetting">Voice<small>Browser speech; availability varies</small></label><input type="checkbox" id="voiceSetting" data-setting="voice"></div>
+    <div class="setting"><label for="chimesSetting">Chimes<small>Procedural signal sounds</small></label><input type="checkbox" id="chimesSetting" data-setting="chimes"></div>
+    <div class="setting"><label for="motionSetting">Reduced motion<small>Static idle scene; gentler interactions</small></label><input type="checkbox" id="motionSetting" data-setting="reduced"></div>
+    <div class="setting"><label for="labelsSetting">Agent labels<small>Names on the constellation</small></label><input type="checkbox" id="labelsSetting" data-setting="labels"></div>
+    <div class="setting"><label for="chatterSetting">Activity rate<small id="chatterValue">Normal</small></label><input type="range" id="chatterSetting" min="0" max="200" step="10" data-setting="chatter"></div>
+    <div class="setting"><label for="qualitySetting">Rendering quality<small>Lower uses fewer particles</small></label><select id="qualitySetting" data-setting="quality"><option value="auto">Auto</option><option value="low">Low</option><option value="high">High</option></select></div>
+    <div class="button-row">
+      <button class="button primary" data-action="diagnostic">Diagnostic</button>
+      <button class="button" data-action="reset">Reset view</button>
+    </div>
+    <p class="note">Preferences are saved on this device when browser storage is available. The visualization itself needs no network access.</p>
+  </div>
+</section>
+
+<section id="aboutWindow" class="window glass" role="dialog" aria-labelledby="aboutTitle" hidden>
+  <header class="window-header">
+    <svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-about"/></svg>
+    <h2 id="aboutTitle">About this ensemble</h2>
+    <button class="icon-button" data-minimize aria-label="Minimize about"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-min"/></svg></button>
+    <button class="icon-button" data-close aria-label="Close about"><svg class="icon icon-sm" fill="none" stroke="currentColor" stroke-width="2"><use href="#i-close"/></svg></button>
+  </header>
+  <div class="window-body padded">
+    <h3 class="about-title">SAMJUNIORS OS 4.5</h3>
+    <span class="eyebrow" style="color:var(--cyan)">Neural ensemble · knot core</span>
+    <div class="about-copy">
+      <p>Six interwoven strands of light form the core. Six agents orbit it, exchanging pulses with a three-dimensional constellation of relays.</p>
+      <p><strong>This is an interactive simulation.</strong> Tasks, agent personas, telemetry, and console responses are generated locally. No AI backend or actual research tasks are connected.</p>
+      <p><strong>Drag</strong> to orbit, <strong>scroll or pinch</strong> to zoom, and select an agent to inspect it. The monitor provides keyboard-accessible agent controls.</p>
+      <p><kbd>/</kbd> Console &nbsp; <kbd>Space</kbd> Pause<br><kbd>Esc</kbd> Close active overlay</p>
+      <p class="note">Single canvas · no libraries · no external fonts · no tracking. Speech uses your browser’s installed or available voices; some voices may require a connection.</p>
+    </div>
+  </div>
+</section>
+
+<div id="boot" aria-hidden="true">
+  <div class="boot-title">SAMJUNIOR<span>S</span></div>
+  <div class="boot-sub">INITIALIZING LOCAL ENSEMBLE</div>
+  <div class="boot-line"></div>
+</div>
+<div id="error" role="alert" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const pad = n => String(n).padStart(2, "0");
+  const mobile = () => innerWidth <= 720;
+  const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
+  const storageKey = "samjuniors-os-4.5";
+
+  const defaults = {
+    voice: false,
+    chimes: true,
+    reduced: motionQuery.matches,
+    labels: true,
+    chatter: 100,
+    quality: "auto"
+  };
+  let settings = { ...defaults };
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    for (const key of ["voice", "chimes", "reduced", "labels"]) {
+      if (typeof saved[key] === "boolean") settings[key] = saved[key];
+    }
+    if (Number.isFinite(saved.chatter)) settings.chatter = clamp(saved.chatter, 0, 200);
+    if (["auto", "low", "high"].includes(saved.quality)) settings.quality = saved.quality;
+  } catch {}
+  function saveSettings() {
+    try { localStorage.setItem(storageKey, JSON.stringify(settings)); } catch {}
+  }
+
+  const definitions = [
+    ["ATLAS", "Research & Technical", "#7fd4ff",
+      "Reads widely and distills technical material into clear, useful signals.",
+      ["Scanning neural interfaces", "Reviewing memory models", "Benchmarking reasoning stacks"]],
+    ["NOVA", "Operations & Planning", "#b28dff",
+      "Turns intent into schedules, balances capacity, and rehearses what comes next.",
+      ["Orchestrating tomorrow’s schedule", "Forecasting resource demand", "Rehearsing an incident response"]],
+    ["VEGA", "Security & Trust", "#63f2b8",
+      "Watches the perimeter, reviews anomalies, and keeps the ensemble’s boundaries clear.",
+      ["Checking perimeter integrity", "Auditing the anomaly digest", "Refreshing the threat model"]],
+    ["IRIS", "Knowledge & Learning", "#ffd166",
+      "Organizes knowledge into connected references and brings useful context back to the ensemble.",
+      ["Indexing a knowledge shard", "Rebuilding the citation graph", "Summarizing today’s signals"]],
+    ["ECHO", "Communication & Interface", "#6fd4e8",
+      "Shapes the ensemble’s output into calm, readable briefs and well-timed responses.",
+      ["Drafting your morning brief", "Polishing response drafts", "Calibrating communication channels"]],
+    ["ORION", "Strategy & Foresight", "#ff9f6e",
+      "Explores possible futures, compares trade-offs, and looks beyond the immediate horizon.",
+      ["Exploring three future scenarios", "Pruning the strategy tree", "Scanning the quarterly horizon"]]
+  ];
+
+  const agents = definitions.map((d, i) => ({
+    name: d[0], role: d[1], color: d[2], description: d[3], tasks: d[4],
+    index: i, taskIndex: 0, task: "", status: "standby",
+    progress: 0, done: 0, wait: 2 + i * 2.8,
+    duration: 15, report: 0, energy: 0,
+    angle: i * TAU / 6 + .45, radius: 2.55 + (i % 2) * .22,
+    x: 0, y: (i % 3 - 1) * .25, z: 0, links: [],
+    screen: { x: 0, y: 0, p: 1 }
+  }));
+
+  const canvas = $("#scene");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  let running = true;
+  let started = false;
+  let paused = false;
+  let W = 0, H = 0, DPR = 1, scale = 1;
+  let yaw = .6, targetYaw = .6, pitch = .95, targetPitch = .95;
+  let zoom = 1, targetZoom = 1, knotRotation = -.16, targetRotation = -.16;
+  let simTime = 0, visualTime = 0, burst = 0, signals = 0;
+  let background, lastFrame = 0, frameID = 0, uiAccumulator = 0, linkAccumulator = 0;
+  let selectedAgent = null, cardReturnFocus = null, toastTimer;
+  let zIndex = 50, lastInteraction = 0;
+  const bootAt = performance.now();
+  const events = [];
+  const pulses = [];
+  const scheduled = [];
+  const MAX_PULSES = 100;
+  const pointer = { x: -10000, y: -10000 };
+  const pointers = new Map();
+  let gesture = null;
+  const windows = new Map();
+
+  function fail(message) {
+    $("#error").textContent = "Unable to run the scene: " + message;
+    $("#error").hidden = false;
+    $("#boot").hidden = true;
+  }
+  if (!ctx) {
+    fail("Canvas 2D is not available in this browser.");
+    return;
+  }
+
+  /* Audio: created and resumed only after user interaction. */
+  const audio = {
+    ctx: null,
+    unlock() {
+      try {
+        const Audio = window.AudioContext || window.webkitAudioContext;
+        if (!Audio) return;
+        if (!this.ctx) this.ctx = new Audio();
+        if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+      } catch {}
+    },
+    tone(freq = 520, duration = .25, volume = .025) {
+      if (!settings.chimes || !this.ctx || this.ctx.state !== "running") return;
+      try {
+        const t = this.ctx.currentTime;
+        const oscillator = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(.0001, t);
+        gain.gain.exponentialRampToValueAtTime(volume, t + .015);
+        gain.gain.exponentialRampToValueAtTime(.0001, t + duration);
+        oscillator.connect(gain);
+        gain.connect(this.ctx.destination);
+        oscillator.start(t);
+        oscillator.stop(t + duration + .02);
+        oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      } catch {}
+    }
+  };
+  document.addEventListener("pointerdown", () => audio.unlock(), { passive: true });
+  document.addEventListener("keydown", () => audio.unlock(), { passive: true });
+
+  function speak(text) {
+    if (!settings.voice || !("speechSynthesis" in window)) return;
+    try {
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      const voice = voices.find(v => v.localService && /^en/i.test(v.lang))
+        || voices.find(v => /^en/i.test(v.lang));
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1.02;
+      utterance.pitch = .93;
+      utterance.volume = .8;
+      speechSynthesis.speak(utterance);
+    } catch {}
+  }
+  function toast(text) {
+    $("#toast").textContent = text;
+    $("#toast").classList.add("visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $("#toast").classList.remove("visible"), 3800);
+  }
+
+  /* Scene assets. */
+  let seed = 82371;
+  function seeded() {
+    seed |= 0;
+    seed = seed + 0x6D2B79F5 | 0;
+    let n = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    n = n + Math.imul(n ^ n >>> 7, 61 | n) ^ n;
+    return ((n ^ n >>> 14) >>> 0) / 4294967296;
+  }
+  const gaussian = () => Math.sqrt(-2 * Math.log(Math.max(seeded(), .00001))) * Math.cos(TAU * seeded());
+
+  function makeGlow(color, size = 96) {
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const g = c.getContext("2d");
+    const gradient = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    gradient.addColorStop(0, "#ffffff");
+    gradient.addColorStop(.08, color);
+    gradient.addColorStop(.25, color + "66");
+    gradient.addColorStop(.55, color + "16");
+    gradient.addColorStop(1, color + "00");
+    g.fillStyle = gradient;
+    g.fillRect(0, 0, size, size);
+    return c;
+  }
+
+  const particleColors = ["#82cdff", "#c5e8ff", "#f5faff", "#ffb07a"];
+  const particleGlows = particleColors.map(c => makeGlow(c));
+  const coreGlow = makeGlow("#528fff", 192);
+
+  agents.forEach(a => {
+    a.glow = makeGlow(a.color);
+    const label = document.createElement("div");
+    label.className = "node-label";
+    const name = document.createElement("strong");
+    name.textContent = a.name;
+    name.style.color = a.color;
+    const role = document.createElement("span");
+    role.textContent = a.role;
+    label.append(name, role);
+    $("#labels").append(label);
+    a.label = label;
+  });
+
+  const curves = [
+    [[0,-.33],[.12,-.40],[.25,-.48],[.36,-.54]],
+    [[.36,-.54],[.61,-.68],[.86,-.43],[.71,-.17]],
+    [[.71,-.17],[.60,.02],[.47,.24],[.36,.43]]
+  ];
+  const cubic = (a,b,c,d,t) => {
+    const s = 1-t;
+    return s*s*s*a + 3*s*s*t*b + 3*s*t*t*c + t*t*t*d;
+  };
+  const rawPath = [];
+  let pathLength = 0;
+  curves.forEach((curve, segment) => {
+    for (let i = 0; i <= 180; i++) {
+      if (segment && i === 0) continue;
+      const t = i / 180;
+      const x = cubic(...curve.map(p => p[0]), t);
+      const y = cubic(...curve.map(p => p[1]), t);
+      const previous = rawPath[rawPath.length - 1];
+      if (previous) pathLength += Math.hypot(x-previous.x, y-previous.y);
+      rawPath.push({ x, y, distance: pathLength });
+    }
+  });
+  const path = [];
+  let pathCursor = 1;
+  for (let i = 0; i <= 1000; i++) {
+    const distance = pathLength * i / 1000;
+    while (pathCursor < rawPath.length-1 && rawPath[pathCursor].distance < distance) pathCursor++;
+    const a = rawPath[pathCursor-1], b = rawPath[pathCursor];
+    const f = (distance-a.distance)/(b.distance-a.distance || 1);
+    path.push({ x:a.x+(b.x-a.x)*f, y:a.y+(b.y-a.y)*f });
+  }
+
+  const particles = Array.from({ length: 3200 }, (_, i) => {
+    const bright = seeded() > .97;
+    const angle = i % 6 * TAU / 6;
+    return {
+      t: seeded(), speed: .7 + seeded()*.6,
+      ox: gaussian()*.018, oy: gaussian()*.018,
+      depth: gaussian()*.025, phase: seeded()*TAU,
+      cos: Math.cos(angle), sin: Math.sin(angle),
+      color: Math.floor(seeded()*4),
+      bright, radius: bright ? 1.5+seeded()*1.5 : .35+seeded()*.7,
+      alpha: .3+seeded()*.6,
+      dx: 0, dy: 0, scatterX: gaussian(), scatterY: gaussian()
+    };
+  });
+  const stars = Array.from({ length: 120 }, () => ({
+    x:seeded(), y:seeded(), radius:.3+seeded()*.9, alpha:.1+seeded()*.35, phase:seeded()*TAU
+  }));
+
+  const shell = Array.from({ length: 76 }, (_, i) => {
+    const theta = seeded()*TAU, phi = Math.acos(2*seeded()-1), radius = 3.4+seeded()*.9;
+    return {
+      x:Math.sin(phi)*Math.cos(theta)*radius,
+      y:Math.cos(phi)*radius*.8,
+      z:Math.sin(phi)*Math.sin(theta)*radius,
+      ring:i<13, energy:0, phase:seeded()*TAU,
+      screen:{x:0,y:0,p:1}
+    };
+  });
+  const shellLinks = [];
+  const edgeKeys = new Set();
+  const distanceSq = (a,b) => (a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2;
+  shell.forEach((a,i) => {
+    shell.map((b,j) => ({ j, d:distanceSq(a,b) }))
+      .filter(e => e.j !== i)
+      .sort((a,b) => a.d-b.d)
+      .slice(0,2).forEach(({j}) => {
+        const key = [Math.min(i,j),Math.max(i,j)].join(":");
+        if (!edgeKeys.has(key)) {
+          edgeKeys.add(key);
+          shellLinks.push([i,j]);
+        }
+      });
+  });
+
+  function project(x,y,z,out) {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const x1 = x*cy+z*sy, z1 = -x*sy+z*cy;
+    const y1 = y*cp-z1*sp, z2 = y*sp+z1*cp;
+    const perspective = 7/(7+z2);
+    out.x = W/2+x1*scale*perspective;
+    out.y = H/2+y1*scale*perspective;
+    out.p = perspective;
+    return out;
+  }
+  const depthAlpha = p => clamp((p-.5)/.9,.18,1);
+  function updatePositions() {
+    agents.forEach(a => {
+      a.x = Math.cos(a.angle)*a.radius;
+      a.z = Math.sin(a.angle)*a.radius;
+      project(a.x,a.y,a.z,a.screen);
+    });
+    shell.forEach(s => project(s.x,s.y,s.z,s.screen));
+  }
+  function updateLinks() {
+    agents.forEach(a => {
+      a.links = shell.map((s,i) => ({i,d:distanceSq(a,s)}))
+        .sort((a,b) => a.d-b.d).slice(0,3).map(e => e.i);
+    });
+  }
+  function lowQuality() {
+    return settings.quality === "low" || (settings.quality === "auto" && (mobile() || devicePixelRatio > 2));
+  }
+  function resize() {
+    W = innerWidth; H = innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, lowQuality() ? 1.5 : 2);
+    canvas.width = Math.round(W*DPR);
+    canvas.height = Math.round(H*DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    background = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);
+    background.addColorStop(0,"#03070c");
+    background.addColorStop(.55,"#060d16");
+    background.addColorStop(1,"#091421");
+    scale = Math.min(W,H)*.092*zoom;
+    updatePositions();
+    clampWindows();
+  }
+
+  /* Frame-independent pulses and task scheduling. */
+  function sendPulse(from,to,color="#bde7ff") {
+    if (pulses.length >= MAX_PULSES) return;
+    pulses.push({from,to,color,t:0,speed:rand(.7,1.3)});
+    signals++;
+  }
+  function shellPulse(index,reverse=false,color="#bde7ff") {
+    const edge = shellLinks[index];
+    if (!edge) return;
+    sendPulse(shell[edge[reverse?1:0]],shell[edge[reverse?0:1]],color);
+  }
+  function schedule(delay,fn) {
+    if (scheduled.length < 350) scheduled.push({at:simTime+delay,fn});
+  }
+  function kick(amount=1) {
+    if (!settings.reduced) burst = Math.max(burst,amount);
+  }
+  function ping(a,silent=false) {
+    a.energy = 1;
+    a.links.forEach((index,i) => sendPulse(i%2?shell[index]:a,i%2?a:shell[index],a.color));
+    if (!silent) audio.tone(510+a.index*65);
+  }
+  function broadcast() {
+    agents.forEach(a => ping(a,true));
+    kick(.8);
+    audio.tone(330,.6,.035);
+    toast("Intent broadcast to all six simulated agents.");
+    logEvent("CORE","Broadcast intent", "#f0b45c");
+  }
+  function diagnostic() {
+    shellLinks.forEach((_,i) => schedule(i*.014,() => shellPulse(i,i%2===0)));
+    kick(.65);
+    audio.tone(220,.65,.035);
+    toast("Diagnostic sweep — tracing every constellation link.");
+    logEvent("CORE","Full diagnostic sweep","#f0b45c");
+  }
+  function sweep() {
+    shellLinks.forEach((_,i) => schedule(i*.01,() => shellPulse(i,true,"#5fe8c8")));
+    kick(.4);
+    toast("Sweeping the relay fabric.");
+  }
+  function startTask(a) {
+    if (a.status !== "standby") return;
+    a.task = a.tasks[a.taskIndex++ % a.tasks.length];
+    a.status = "working"; a.progress = 0; a.duration = rand(13,23);
+    ping(a,true);
+    kick(.18);
+    logEvent(a.name,"Started — "+a.task,a.color);
+  }
+  function wakeAll() {
+    agents.forEach(startTask);
+    toast("All available agents are running simulated tasks.");
+  }
+  function updateSimulation(dt) {
+    simTime += dt;
+    for (let i=scheduled.length-1;i>=0;i--) {
+      if (scheduled[i].at <= simTime) scheduled.splice(i,1)[0].fn();
+    }
+    agents.forEach(a => {
+      a.energy *= Math.exp(-dt*2.5);
+      if (a.status === "standby") {
+        if (settings.chatter > 0) {
+          a.wait -= dt*settings.chatter/100;
+          if (a.wait <= 0) startTask(a);
+        }
+      } else if (a.status === "reporting") {
+        a.report -= dt;
+        if (a.report <= 0) {
+          a.status = "standby"; a.task = ""; a.progress = 0;
+          a.wait = rand(7,17);
+        }
+      } else {
+        a.progress = clamp(a.progress+dt/a.duration,0,1);
+        a.status = a.progress>.62 ? "analyzing" : "working";
+        if (a.progress >= 1) {
+          a.done++; a.status = "reporting"; a.report = 2.5;
+          ping(a,true);
+          kick(.28);
+          audio.tone(660+a.index*25,.45,.018);
+          logEvent(a.name,"Delivered — "+a.task,a.color);
+        }
+      }
+    });
+    if (Math.random() < dt*1.8*settings.chatter/100) shellPulse(Math.floor(Math.random()*shellLinks.length));
+    for (let i=pulses.length-1;i>=0;i--) {
+      const p = pulses[i];
+      p.t += dt*p.speed;
+      if (p.t >= 1) {
+        p.to.energy = Math.min(1,(p.to.energy||0)+.5);
+        pulses.splice(i,1);
+      }
+    }
+    shell.forEach(s => s.energy *= Math.exp(-dt*2.3));
+  }
+
+  function line(a,b,color,alpha,width=1) {
+    ctx.globalAlpha = clamp(alpha,0,1);
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  }
+  function dot(x,y,r,color,alpha=1) {
+    ctx.globalAlpha = clamp(alpha,0,1);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x,y,Math.max(.1,r),0,TAU); ctx.fill();
+  }
+
+  function drawShell() {
+    ctx.globalCompositeOperation = "lighter";
+    for (const [i,j] of shellLinks) {
+      const a = shell[i], b = shell[j];
+      line(a.screen,b.screen,"#9ac9ff",
+        (.07+Math.max(a.energy,b.energy)*.25)*depthAlpha((a.screen.p+b.screen.p)/2));
+    }
+    agents.forEach(a => {
+      a.links.forEach(index => {
+        const b = shell[index];
+        line(a.screen,b.screen,a.color,
+          (.1+a.energy*.42)*depthAlpha((a.screen.p+b.screen.p)/2));
+      });
+    });
+    shell.forEach(s => {
+      const p = s.screen, alpha = depthAlpha(p.p);
+      if (s.ring) {
+        ctx.globalAlpha = alpha*(.4+s.energy*.5);
+        ctx.strokeStyle = "#c6e7ff"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.x,p.y,scale*.072*p.p,0,TAU); ctx.stroke();
+        ctx.globalAlpha *= .4;
+        ctx.beginPath(); ctx.arc(p.x,p.y,scale*.105*p.p,0,TAU); ctx.stroke();
+      } else {
+        dot(p.x,p.y,(1.25+s.energy)*p.p,"#cde8ff",alpha*(.4+s.energy*.6));
+      }
+    });
+
+    const projected = {x:0,y:0,p:1};
+    pulses.forEach(p => {
+      project(
+        p.from.x+(p.to.x-p.from.x)*p.t,
+        p.from.y+(p.to.y-p.from.y)*p.t,
+        p.from.z+(p.to.z-p.from.z)*p.t,projected);
+      const alpha = depthAlpha(projected.p)*Math.sin(Math.PI*p.t);
+      dot(projected.x,projected.y,6*projected.p,p.color,alpha*.16);
+      dot(projected.x,projected.y,2*projected.p,p.color,alpha);
+    });
+
+    agents.forEach(a => {
+      const p = a.screen, size = scale*(.4+a.energy*.14)*p.p;
+      ctx.globalAlpha = .75*depthAlpha(p.p);
+      ctx.drawImage(a.glow,p.x-size/2,p.y-size/2,size,size);
+      ctx.globalAlpha = .75*depthAlpha(p.p);
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = selectedAgent===a ? 1.8 : 1;
+      ctx.setLineDash([4,6]);
+      ctx.lineDashOffset = -visualTime*(a.status==="standby"?5:15);
+      ctx.beginPath(); ctx.arc(p.x,p.y,scale*.12*p.p,0,TAU); ctx.stroke();
+      ctx.setLineDash([]);
+      a.label.style.transform = `translate(${p.x}px,${p.y-scale*.18*p.p-10}px) translate(-50%,-100%)`;
+      a.label.style.opacity = clamp(depthAlpha(p.p),.4,.95);
+    });
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function drawKnot(dt) {
+    const size = Math.min(W,H)*.315*zoom;
+    const angle = knotRotation+visualTime*.022;
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    const relaxation = 1-Math.exp(-dt*9);
+    const interactionRadius = mobile()?78:115;
+    const count = lowQuality()?1500:3200;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = .07;
+    ctx.drawImage(coreGlow,W/2-size*1.5,H/2-size*1.5,size*3,size*3);
+
+    for (let i=0;i<count;i++) {
+      const p = particles[i];
+      const t = (p.t+visualTime*.018*p.speed)%1;
+      const pf = t*(path.length-1);
+      const index = Math.min(path.length-2,Math.floor(pf)), f = pf-index;
+      const base = path[index], next = path[index+1];
+      const lx = base.x+(next.x-base.x)*f+p.ox;
+      const ly = base.y+(next.y-base.y)*f+p.oy;
+      const x = lx*p.cos-ly*p.sin, y = lx*p.sin+ly*p.cos;
+      const z = Math.sin(t*TAU+p.phase)*.08+p.depth;
+      const hx = W/2+(x*ca-y*sa)*size*(1+z*.3);
+      const hy = H/2+(x*sa+y*ca)*size*(1+z*.3);
+      let gx = p.scatterX*burst*size*.45, gy = p.scatterY*burst*size*.45;
+      if (!settings.reduced) {
+        const dx = hx-pointer.x, dy = hy-pointer.y, distance = Math.hypot(dx,dy);
+        if (distance>.01 && distance<interactionRadius) {
+          const force = (1-distance/interactionRadius)**2*30;
+          gx += dx/distance*force;
+          gy += dy/distance*force;
+        }
+      }
+      p.dx += (gx-p.dx)*relaxation;
+      p.dy += (gy-p.dy)*relaxation;
+      const alpha = p.alpha*Math.min(1,t*24,(1-t)*24)*(.72+z);
+      const radius = p.radius*Math.max(.65,size/285);
+      ctx.globalAlpha = clamp(alpha,0,1);
+      if (p.bright) {
+        const s = radius*12;
+        ctx.drawImage(particleGlows[p.color],hx+p.dx-s/2,hy+p.dy-s/2,s,s);
+      } else {
+        ctx.fillStyle = particleColors[p.color];
+        ctx.fillRect(hx+p.dx,hy+p.dy,radius,radius);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function render(dt) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = background;
+    ctx.fillRect(0,0,W,H);
+    stars.forEach(s => dot(s.x*W,s.y*H,s.radius,"#b4d6ff",
+      s.alpha*(.8+.2*Math.sin(visualTime*.5+s.phase))));
+    drawShell();
+    drawKnot(dt);
+  }
+
+  function frame(timestamp) {
+    if (!running || document.hidden) return;
+    try {
+      const dt = lastFrame ? clamp((timestamp-lastFrame)/1000,0,.05) : 0;
+      lastFrame = timestamp;
+      const simDt = paused?0:dt;
+      if (!paused) {
+        updateSimulation(dt);
+        if (!settings.reduced) {
+          visualTime += dt;
+          agents.forEach(a => a.angle += dt*(a.status==="standby"?.045:.065));
+          if (!gesture && performance.now()-lastInteraction>4000) targetYaw += dt*.04;
+        }
+      }
+      const smoothing = settings.reduced ? 1 : 1-Math.exp(-dt*8);
+      yaw += (targetYaw-yaw)*smoothing;
+      pitch += (targetPitch-pitch)*smoothing;
+      zoom += (targetZoom-zoom)*smoothing;
+      knotRotation += (targetRotation-knotRotation)*smoothing;
+      burst *= Math.exp(-simDt*2.8);
+      if (settings.reduced) burst = 0;
+      scale = Math.min(W,H)*.092*zoom;
+      updatePositions();
+      linkAccumulator += simDt;
+      if (linkAccumulator>.5) { updateLinks(); linkAccumulator=0; }
+      render(paused?0:dt);
+      uiAccumulator += dt;
+      if (uiAccumulator>.2) { refreshUI(); uiAccumulator=0; }
+      frameID = requestAnimationFrame(frame);
+    } catch (error) {
+      running = false;
+      console.error(error);
+      fail(error.message || String(error));
+    }
+  }
+
+  /* Safe DOM updates: no user content is inserted as HTML. */
+  function logEvent(who,text,color="#7cd6ff") {
+    events.unshift({who,text,color,time:new Date()});
+    events.length = Math.min(events.length,80);
+    renderEvents();
+  }
+  function renderEvents() {
+    const fragment = document.createDocumentFragment();
+    events.slice(0,4).forEach(e => {
+      const li = document.createElement("li");
+      li.className = "activity-item";
+      const marker = document.createElement("i"); marker.style.background=e.color;
+      const body = document.createElement("div");
+      const name = document.createElement("strong"); name.textContent=e.who;
+      const time = document.createElement("time");
+      time.dateTime=e.time.toISOString();
+      time.textContent=e.time.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+      body.append(name,document.createTextNode(" — "+e.text),time);
+      li.append(marker,body); fragment.append(li);
+    });
+    $("#activity").replaceChildren(fragment);
+    const stream = document.createDocumentFragment();
+    events.slice(0,35).forEach(e => {
+      const p=document.createElement("p"), time=document.createElement("time");
+      time.textContent=e.time.toLocaleTimeString();
+      p.append(time,document.createTextNode(e.who+" · "+e.text));
+      stream.append(p);
+    });
+    $("#eventLog").replaceChildren(stream);
+  }
+
+  function refreshUI() {
+    const busy=agents.filter(a=>a.status==="working"||a.status==="analyzing");
+    const active=[...busy].sort((a,b)=>b.progress-a.progress)[0];
+    const done=agents.reduce((n,a)=>n+a.done,0);
+    const progress=active?Math.round(active.progress*100):0;
+    $("#focusTask").textContent=active?active.task:(done?"Ensemble resting":"Awaiting next intent");
+    const by=$("#focusBy");
+    if (active) {
+      const strong=document.createElement("strong"); strong.textContent=active.name;
+      by.replaceChildren(document.createTextNode("assigned to "),strong);
+    } else by.textContent="all agents available";
+    $("#focusFill").style.width=progress+"%";
+    $("#focusPct").textContent=progress+"%";
+    $("#focusProgress").setAttribute("aria-valuenow",progress);
+    const load=Math.round(5+busy.length/6*70+busy.reduce((n,a)=>n+a.progress,0)/6*20);
+    $("#loadPct").textContent=load+"%";
+    $("#loadFill").style.width=load+"%";
+    $("#txCount").textContent=signals.toLocaleString();
+    $("#statSignals").textContent=signals.toLocaleString()+" signals";
+    $("#statMemory").textContent=done+" deliveries";
+    $("#statAgents").textContent=busy.length+" agents active";
+    $("#statCoherence").textContent="coherence "+(98+Math.sin(simTime*.07)*.9).toFixed(1)+"%";
+    agents.forEach(a=>{
+      a.rosterStatus.textContent=a.status;
+      a.rosterPct.textContent=Math.round(a.progress*100)+"%";
+    });
+    if (selectedAgent) refreshCard();
+  }
+  function openCard(a) {
+    cardReturnFocus=document.activeElement;
+    selectedAgent=a;
+    $("#agentName").textContent=a.name;
+    $("#agentName").style.color=a.color;
+    $("#agentRole").textContent=a.role;
+    $("#agentDescription").textContent=a.description;
+    $("#agentFill").style.background=a.color;
+    $("#agentCard").style.zIndex=++zIndex;
+    $("#agentCard").hidden=false;
+    refreshCard();
+    $("#closeCard").focus({preventScroll:true});
+  }
+  function refreshCard() {
+    const a=selectedAgent;
+    $("#agentStatus").textContent="● "+a.status.toUpperCase();
+    $("#agentDone").textContent=a.done;
+    $("#agentPct").textContent=Math.round(a.progress*100)+"%";
+    $("#agentTask").textContent=a.task||"Standing by for the next task.";
+    $("#agentFill").style.width=a.progress*100+"%";
+    $("#runAgent").disabled=a.status!=="standby";
+  }
+  function closeCard() {
+    $("#agentCard").hidden=true;
+    selectedAgent=null;
+    if (cardReturnFocus?.isConnected) cardReturnFocus.focus({preventScroll:true});
+  }
+  $("#closeCard").onclick=closeCard;
+  $("#runAgent").onclick=()=>{ if(selectedAgent) { startTask(selectedAgent); refreshCard(); } };
+  $("#pingAgent").onclick=()=>{ if(selectedAgent) { ping(selectedAgent); toast(selectedAgent.name+" pinged."); } };
+  $("#wakeAgents").onclick=wakeAll;
+
+  agents.forEach(a=>{
+    const row=document.createElement("button"); row.className="roster-row";
+    const name=document.createElement("strong"); name.textContent=a.name; name.style.color=a.color;
+    const status=document.createElement("span"), pct=document.createElement("small");
+    row.append(name,status,pct);
+    row.setAttribute("aria-label","Inspect "+a.name+", "+a.role);
+    row.onclick=()=>openCard(a);
+    a.rosterStatus=status; a.rosterPct=pct;
+    $("#roster").append(row);
+  });
+
+  /* Persistent windows: minimize/reopen never resets console content. */
+  function icon(name) {
+    return `<svg class="icon" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+  }
+  const apps=[
+    ["console","Console","console"],
+    ["monitor","Node monitor","monitor"],
+    ["system","System settings","settings"],
+    ["about","About","about"]
+  ];
+  function focusWindow(rec) {
+    windows.forEach(w=>w.el.classList.toggle("focused",w===rec));
+    rec.el.style.zIndex=++zIndex;
+    $("#topTitle").textContent=rec.title+" · simulation";
+  }
+  function syncDock() {
+    $$("#dock [data-app]").forEach(b=>{
+      b.setAttribute("aria-pressed",String(!windows.get(b.dataset.app).el.hidden));
+    });
+    const visible=[...windows.values()].filter(w=>!w.el.hidden)
+      .sort((a,b)=>Number(b.el.style.zIndex)-Number(a.el.style.zIndex));
+    $("#topTitle").textContent=visible.length?visible[0].title+" · simulation":"Neural ensemble · simulation";
+  }
+  function showWindow(id,focus=true) {
+    const rec=windows.get(id); if(!rec)return;
+    if(rec.el.hidden) rec.returnFocus=document.activeElement;
+    rec.el.hidden=false;
+    focusWindow(rec); syncDock(); clampWindows();
+    if(focus) (id==="console"?$("#consoleInput"):rec.el.querySelector("[data-close]")).focus({preventScroll:true});
+  }
+  function hideWindow(rec) {
+    rec.el.hidden=true;
+    syncDock();
+    if(rec.returnFocus?.isConnected && !rec.returnFocus.closest("[hidden]")) rec.returnFocus.focus({preventScroll:true});
+    else $("#home").focus({preventScroll:true});
+  }
+  function clampWindows() {
+    if(mobile())return;
+    windows.forEach(rec=>{
+      if(rec.el.hidden)return;
+      const el=rec.el;
+      const width=Math.min(el.offsetWidth,W-24), height=Math.min(el.offsetHeight,H-130);
+      el.style.width=width+"px"; el.style.height=Math.max(240,height)+"px";
+      el.style.left=clamp(parseFloat(el.style.left)||12,12,Math.max(12,W-width-12))+"px";
+      el.style.top=clamp(parseFloat(el.style.top)||60,55,Math.max(55,H-el.offsetHeight-75))+"px";
+    });
+  }
+  apps.forEach(([id,title,symbol],i)=>{
+    const el=$("#"+id+"Window");
+    const rec={el,id,title,returnFocus:null};
+    windows.set(id,rec);
+    el.style.left=Math.max(20,(innerWidth-480)/2+i*20)+"px";
+    el.style.top=80+i*22+"px";
+    el.addEventListener("pointerdown",()=>focusWindow(rec));
+    el.addEventListener("focusin",()=>focusWindow(rec));
+    el.querySelector("[data-close]").onclick=()=>hideWindow(rec);
+    el.querySelector("[data-minimize]").onclick=()=>hideWindow(rec);
+    const header=el.querySelector(".window-header");
+    let drag=null;
+    header.addEventListener("pointerdown",e=>{
+      if(mobile()||e.target.closest("button")||e.button!==0)return;
+      drag={id:e.pointerId,x:e.clientX-el.offsetLeft,y:e.clientY-el.offsetTop};
+      header.setPointerCapture(e.pointerId);
+    });
+    header.addEventListener("pointermove",e=>{
+      if(!drag||drag.id!==e.pointerId)return;
+      el.style.left=clamp(e.clientX-drag.x,0,Math.max(0,W-el.offsetWidth))+"px";
+      el.style.top=clamp(e.clientY-drag.y,48,Math.max(48,H-el.offsetHeight-70))+"px";
+    });
+    header.addEventListener("lostpointercapture",()=>drag=null);
+    header.addEventListener("pointerup",()=>drag=null);
+    header.addEventListener("pointercancel",()=>drag=null);
+
+    const dock=document.createElement("button");
+    dock.className="icon-button"; dock.dataset.app=id;
+    dock.title=title; dock.setAttribute("aria-label",title); dock.setAttribute("aria-pressed","false");
+    dock.innerHTML=icon(symbol);
+    dock.onclick=()=>el.hidden?showWindow(id):hideWindow(rec);
+    $("#dock").append(dock);
+
+    const menu=document.createElement("button");
+    menu.className="menu-button"; menu.innerHTML=icon(symbol);
+    menu.append(document.createTextNode(title));
+    menu.onclick=()=>{setLauncher(false);showWindow(id);};
+    $("#launcher").append(menu);
+  });
+
+  function togglePause() {
+    paused=!paused;
+    const b=$("#pauseButton");
+    b.setAttribute("aria-pressed",String(paused));
+    b.setAttribute("aria-label",paused?"Resume simulation":"Pause simulation");
+    b.title=paused?"Resume simulation":"Pause simulation";
+    toast(paused?"Simulation paused.":"Simulation resumed.");
+  }
+  const pauseButton=document.createElement("button");
+  pauseButton.id="pauseButton"; pauseButton.className="icon-button";
+  pauseButton.title="Pause simulation"; pauseButton.setAttribute("aria-label","Pause simulation");
+  pauseButton.setAttribute("aria-pressed","false");
+  pauseButton.innerHTML=icon("pause"); pauseButton.onclick=togglePause;
+  $("#dock").append(pauseButton);
+
+  const diagButton=document.createElement("button");
+  diagButton.className="icon-button"; diagButton.title="Run diagnostic";
+  diagButton.setAttribute("aria-label","Run diagnostic"); diagButton.innerHTML=icon("bolt");
+  diagButton.onclick=diagnostic; $("#dock").append(diagButton);
+  const divider=document.createElement("div"); divider.className="menu-divider"; $("#launcher").append(divider);
+  [["Diagnostic","bolt",diagnostic],["Sweep fabric","monitor",sweep],["Broadcast intent","broadcast",broadcast]].forEach(([name,symbol,fn])=>{
+    const b=document.createElement("button"); b.className="menu-button"; b.innerHTML=icon(symbol);
+    b.append(document.createTextNode(name)); b.onclick=()=>{setLauncher(false);fn();}; $("#launcher").append(b);
+  });
+
+  function setLauncher(open) {
+    $("#launcher").hidden=!open;
+    $("#home").setAttribute("aria-expanded",String(open));
+  }
+  $("#home").onclick=()=>setLauncher($("#launcher").hidden);
+  document.addEventListener("pointerdown",e=>{
+    if(!e.target.closest("#launcher, #home"))setLauncher(false);
+  });
+  function setPanel(side,collapsed) {
+    document.body.classList.toggle(side+"-collapsed",collapsed);
+    $("#"+side+"Toggle").setAttribute("aria-expanded",String(!collapsed));
+    $("#"+side+"Panel").inert=collapsed;
+    $("#"+side+"Panel").setAttribute("aria-hidden",String(collapsed));
+  }
+  ["left","right"].forEach(side=>{
+    setPanel(side,mobile());
+    $("#"+side+"Toggle").onclick=()=>setPanel(side,!document.body.classList.contains(side+"-collapsed"));
+  });
+
+  /* Console: deterministic local commands, safe text output. */
+  const history=[];
+  let historyIndex=0, draft="";
+  function message(text,user=false) {
+    const log=$("#consoleLog");
+    const row=document.createElement("div"); row.className="message"+(user?" user":"");
+    const tag=document.createElement("strong"); tag.textContent=user?"[YOU] ":"[SAMJUNIORS] ";
+    row.append(tag,document.createTextNode(text)); log.append(row);
+    while(log.children.length>150)log.firstElementChild.remove();
+    log.scrollTop=log.scrollHeight;
+  }
+  function reply(text) { message(text); speak(text); }
+  function command(raw) {
+    const input=raw.trim(), l=input.toLowerCase();
+    if(l==="help"||l==="?") {
+      reply("Local commands:\nstatus · diagnostic · scan · broadcast\nagents · wake · run <agent> · ping <agent>\nopen <console|monitor|system|about>\nvoice on/off · chimes on/off\npause · resume · reset · time · clear\n\nThis is a visualization demo, not a connected AI assistant.");
+    } else if(l==="status") {
+      const active=agents.filter(a=>a.status!=="standby").length;
+      reply(`${active}/6 agents active · ${signals} signals · ${agents.reduce((n,a)=>n+a.done,0)} deliveries.\nSimulation ${paused?"paused":"running"}.`);
+    } else if(l==="diagnostic") diagnostic();
+    else if(l==="scan"||l==="sweep") sweep();
+    else if(l==="broadcast") broadcast();
+    else if(l==="wake") wakeAll();
+    else if(l==="agents") reply(agents.map(a=>`${a.name}: ${a.status}${a.task?" — "+a.task:""}`).join("\n"));
+    else if(l.startsWith("open ")) {
+      const id=l.slice(5).trim();
+      if(windows.has(id))showWindow(id);else reply("Available apps: console, monitor, system, about.");
+    } else if(/^(run|ping) /.test(l)) {
+      const [action,name]=l.split(/\s+/);
+      const a=agents.find(a=>a.name.toLowerCase()===name);
+      if(!a)reply("Choose ATLAS, NOVA, VEGA, IRIS, ECHO, or ORION.");
+      else if(action==="ping"){ping(a);reply(a.name+" pinged.");}
+      else if(a.status!=="standby")reply(a.name+" is already "+a.status+".");
+      else{startTask(a);reply("Started a simulated task for "+a.name+".");}
+    } else if(/^(voice|chimes) (on|off)$/.test(l)) {
+      const [key,value]=l.split(" ");
+      changeSetting(key,value==="on");
+      reply(key+" "+value+".");
+    } else if(l==="pause"){if(!paused)togglePause();}
+    else if(l==="resume"){if(paused)togglePause();}
+    else if(l==="reset")resetView();
+    else if(l==="clear")$("#consoleLog").replaceChildren();
+    else if(l==="time")reply(new Date().toLocaleString());
+    else if(/^(hi|hello|hey)\b/.test(l))reply("Hello. The ensemble is ready. Try “help” or select an agent in the monitor.");
+    else reply("This console supports local demo commands rather than open-ended AI chat. Type “help” to see what you can do.");
+  }
+  $("#consoleForm").addEventListener("submit",e=>{
+    e.preventDefault();
+    const input=$("#consoleInput"), text=input.value.trim();
+    if(!text)return;
+    input.value=""; history.push(text);
+    if(history.length>100)history.shift();
+    historyIndex=history.length; draft="";
+    message(text,true); command(text);
+  });
+  $("#consoleInput").addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp") {
+      e.preventDefault();
+      if(historyIndex===history.length)draft=e.target.value;
+      if(historyIndex>0)e.target.value=history[--historyIndex];
+    }
+    if(e.key==="ArrowDown") {
+      e.preventDefault();
+      if(historyIndex<history.length)historyIndex++;
+      e.target.value=historyIndex===history.length?draft:history[historyIndex];
+    }
+  });
+  message("Local console attached. Type help for commands. All agents and telemetry are simulated.");
+
+  function syncSettings() {
+    $$("[data-setting]").forEach(el=>{
+      const key=el.dataset.setting;
+      if(el.type==="checkbox")el.checked=settings[key];else el.value=settings[key];
+    });
+    $("#labels").hidden=!settings.labels;
+    $("#chatterValue").textContent=settings.chatter===0?"Idle":settings.chatter+"% of normal";
+  }
+  function changeSetting(key,value) {
+    settings[key]=value;
+    if(key==="voice"&&!value&&"speechSynthesis" in window)speechSynthesis.cancel();
+    if(key==="quality")resize();
+    syncSettings(); saveSettings();
+  }
+  $$("[data-setting]").forEach(el=>{
+    el.addEventListener(el.type==="range"?"input":"change",()=>{
+      const value=el.type==="checkbox"?el.checked:el.type==="range"?Number(el.value):el.value;
+      changeSetting(el.dataset.setting,value);
+    });
+  });
+  function resetView() {
+    targetYaw=.6; targetPitch=.95; targetZoom=1; targetRotation=-.16;
+    lastInteraction=performance.now(); toast("View reset.");
+  }
+  $$("[data-action]").forEach(b=>{
+    b.onclick=()=>({wake:wakeAll,diagnostic,reset:resetView}[b.dataset.action]?.());
+  });
+
+  /* Canvas input: pointer capture, correct pinch direction, cancellation-safe taps. */
+  function hitTest(x,y) {
+    let result=null, nearest=Infinity;
+    agents.forEach(a=>{
+      const d=Math.hypot(x-a.screen.x,y-a.screen.y);
+      if(d<(mobile()?29:23)&&d<nearest){result={type:"agent",node:a};nearest=d;}
+    });
+    if(result)return result;
+    shell.forEach((s,i)=>{
+      if(!s.ring)return;
+      const d=Math.hypot(x-s.screen.x,y-s.screen.y);
+      if(d<Math.max(12,scale*.12*s.screen.p)&&d<nearest){result={type:"relay",node:s,index:i};nearest=d;}
+    });
+    return result;
+  }
+  function hideTip() { $("#tip").hidden=true; canvas.classList.remove("hovering"); }
+  canvas.addEventListener("pointerdown",e=>{
+    if(e.button!==0)return;
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    lastInteraction=performance.now();
+    hideTip();
+    if(pointers.size===1) {
+      gesture={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,start:performance.now(),moved:false,multi:false};
+    } else if(pointers.size>=2) {
+      const [a,b]=[...pointers.values()];
+      gesture.multi=true; gesture.moved=true;
+      gesture.pinch=Math.hypot(a.x-b.x,a.y-b.y);
+      gesture.zoom=targetZoom;
+    }
+    canvas.classList.add("dragging");
+  });
+  canvas.addEventListener("pointermove",e=>{
+    pointer.x=e.clientX; pointer.y=e.clientY;
+    if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(gesture&&pointers.size) {
+      lastInteraction=performance.now();
+      if(pointers.size>=2) {
+        const [a,b]=[...pointers.values()];
+        const distance=Math.hypot(a.x-b.x,a.y-b.y);
+        targetZoom=clamp(gesture.zoom*distance/Math.max(gesture.pinch,1),.6,1.65);
+      } else if(!gesture.multi) {
+        const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+        targetYaw-=dx*.006;
+        targetPitch=clamp(targetPitch-dy*.005,.15,Math.PI-.15);
+        targetRotation+=dx*.004;
+        if(Math.hypot(e.clientX-gesture.startX,e.clientY-gesture.startY)>6)gesture.moved=true;
+      }
+      gesture.x=e.clientX; gesture.y=e.clientY;
+      return;
+    }
+    if(e.pointerType!=="mouse")return;
+    const hit=hitTest(e.clientX,e.clientY);
+    if(!hit){hideTip();return;}
+    canvas.classList.add("hovering");
+    const tip=$("#tip");
+    tip.textContent=hit.type==="agent"?hit.node.name+" · "+hit.node.status:"RELAY "+String(hit.index+1).padStart(2,"0")+" · click to ping";
+    tip.hidden=false;
+    tip.style.left=clamp(e.clientX+14,8,W-tip.offsetWidth-8)+"px";
+    tip.style.top=clamp(e.clientY+14,50,H-tip.offsetHeight-8)+"px";
+  });
+  function releasePointer(e,cancelled=false) {
+    if(!pointers.has(e.pointerId))return;
+    const tap=gesture&&!cancelled&&!gesture.moved&&!gesture.multi&&performance.now()-gesture.start<450;
+    pointers.delete(e.pointerId);
+    if(pointers.size===0) {
+      gesture=null; canvas.classList.remove("dragging");
+      if(e.pointerType!=="mouse")pointer.x=pointer.y=-10000;
+    }
+    if(!tap)return;
+    const hit=hitTest(e.clientX,e.clientY);
+    if(hit?.type==="agent"){openCard(hit.node);ping(hit.node);}
+    else if(hit?.type==="relay") {
+      shellLinks.forEach(([a,b],i)=>{
+        if(a===hit.index||b===hit.index)shellPulse(i,b===hit.index);
+      });
+      hit.node.energy=1; audio.tone(660,.3);
+    } else {kick(1);audio.tone(440,.25,.015);}
+  }
+  canvas.addEventListener("pointerup",e=>releasePointer(e));
+  canvas.addEventListener("pointercancel",e=>releasePointer(e,true));
+  canvas.addEventListener("lostpointercapture",e=>{
+    if(pointers.has(e.pointerId))releasePointer(e,true);
+  });
+  canvas.addEventListener("pointerleave",()=>{
+    if(!gesture){pointer.x=pointer.y=-10000;hideTip();}
+  });
+  canvas.addEventListener("wheel",e=>{
+    e.preventDefault();
+    const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?H:1);
+    targetZoom=clamp(targetZoom*Math.exp(-delta*.001),.6,1.65);
+    lastInteraction=performance.now();hideTip();
+  },{passive:false});
+
+  document.addEventListener("keydown",e=>{
+    const editing=e.target instanceof Element&&e.target.closest("input,textarea,select,[contenteditable='true']");
+    if(e.key==="Escape") {
+      if(!$("#launcher").hidden){setLauncher(false);$("#home").focus();return;}
+      const overlays=[...windows.values()].filter(w=>!w.el.hidden).map(w=>({z:Number(w.el.style.zIndex),close:()=>hideWindow(w)}));
+      if(!$("#agentCard").hidden)overlays.push({z:Number($("#agentCard").style.zIndex),close:closeCard});
+      overlays.sort((a,b)=>b.z-a.z)[0]?.close();
+      return;
+    }
+    if(editing||e.ctrlKey||e.metaKey||e.altKey)return;
+    if(e.key==="/"){e.preventDefault();showWindow("console");}
+    if(e.code==="Space"&&!e.target.closest("button,a")){e.preventDefault();togglePause();}
+  });
+
+  function updateClock() {
+    const now=new Date();
+    $("#clock").textContent=[now.getHours(),now.getMinutes(),now.getSeconds()].map(pad).join(":");
+    $("#date").textContent=now.toLocaleDateString(undefined,{weekday:"short",day:"2-digit",month:"short"}).toUpperCase();
+    const elapsed=Math.floor((performance.now()-bootAt)/1000);
+    $("#uptime").textContent=pad(Math.floor(elapsed/60))+":"+pad(elapsed%60);
+  }
+  document.addEventListener("visibilitychange",()=>{
+    cancelAnimationFrame(frameID);
+    lastFrame=0;
+    pointers.clear();gesture=null;
+    canvas.classList.remove("dragging");
+    pointer.x=pointer.y=-10000;
+    if(document.hidden) {
+      if("speechSynthesis" in window)speechSynthesis.cancel();
+    } else if(started&&running)frameID=requestAnimationFrame(frame);
+  });
+  addEventListener("resize",resize);
+  addEventListener("blur",()=>{
+    pointers.clear();gesture=null;
+    canvas.classList.remove("dragging");
+    pointer.x=pointer.y=-10000;
+  });
+
+  try {
+    resize(); updatePositions(); updateLinks(); syncSettings();
+    logEvent("KNOT CORE","Online — six agents in formation","#7cd6ff");
+    refreshUI(); updateClock();
+    setInterval(updateClock,1000);
+    started=true;
+    frameID=requestAnimationFrame(frame);
+    setTimeout(()=>{
+      $("#boot").classList.add("complete");
+      setTimeout(()=>$("#boot").hidden=true,500);
+    },650);
+  } catch(error) {
+    running=false;
+    console.error(error);
+    fail(error.message||String(error));
+  }
+})();
+</script>
+</body>
+</html>
