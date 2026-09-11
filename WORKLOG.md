@@ -17,6 +17,63 @@ evidence shows a regression.
 
 ---
 
+## V2.1 UX Refinement — Calm Operating Center & Progressive Disclosure
+
+**Status:** COMPLETE (Progressive disclosure doctrine implemented across Neural and Desktop modes; Sophia/Core made the serene dominant center; permanent secondary telemetry, session clocks, keyboard legends, and tag clutter removed from Neural mode; briefing panel converted to contextual floating trigger pill with attention alerts; redundant System telemetry card and percentage bars eliminated; FlowDesktop bottom dock and side rails default to collapsed; full TypeScript and Vite singlefile production builds passing cleanly).
+**Scope:** `Uploaded/Design1/` (`src/App.tsx`, `src/components/SophiaPanel.tsx`, `src/components/FlowDesktop.tsx`, `src/components/os/TodoDrawer.tsx`), `DESIGN.md`.
+**Safety Invariant:** UI ONLY. Zero backend, API, database, auth, or state mutations. All state derives reactively from `osStore.ts`.
+
+### What was refined
+
+1. **Neural Mode (Sophia / Core Dominance)**:
+   - **Calm by Default**: Removed the permanent bottom state telemetry strip (`STATE`, `NEEDS YOU`, `VOICE`, `SESSION`), the bottom-left keyboard hint block, and the repetitive quick-action tag pills under the ask bar.
+   - **Contextual Briefing Trigger**: Replaced the permanent open 292px right panel with an unobtrusive floating trigger chip. When quiet, it displays `[ ✦ Briefing ]`; when decisions or attention items exist, it signals notice with an alert tone and count (`[ ⚖️ 2 Decisions waiting ]`).
+   - **Focused Actionable Briefing**: Clicking the trigger reveals immediate decision action cards (Approve / Defer / Decline) and triage items without distracting physics tuning sliders or redundant percentage bars.
+   - **Conversational Input**: Ask bar centered at bottom with voice toggle, keyboard focus (`/`), and clean executive styling.
+
+2. **Desktop Mode (Contextual & Information-Rich)**:
+   - **Maximized Operating Canvas**: `FlowDesktop` defaults the bottom work dock and side rails to collapsed edge toggles, giving the operating graph complete breathing room.
+   - **Removed Redundant Telemetry**: Eliminated the redundant "System" card (zoomPct, focus mode, voice switch) that duplicated menu bar and HUD controls.
+   - **TodoDrawer Streamlined**: Removed redundant percentage progress bar from drawer header; enriched filter pills (`open`, `blocked`, `done`) with live item counts.
+
+3. **Zero-Collision Spatial Architecture & Layout Audit**:
+   - **`TodoDrawer` Handle Repositioning & Dynamic Translation**: Offset drawer toggle from `top-1/2` to `top: 36%` (transform `-50%`) with dynamic right anchoring (`right: open ? min(290px, 85vw) : 0px`). The handle moves synchronously with drawer expansion/collapse, never covers inner drawer tasks or close buttons, and leaves `top: 50%` completely free for `FlowDesktop`'s canvas right rail chevron.
+   - **Canvas / Dock Deconfliction**: Eliminated the redundant bottom canvas button (`Work · {work.length}`) and inline dock from `FlowDesktop` that previously collided directly with `AgentQuickDock` (`bottom: 10px`). Connected `FlowDesktop`'s header Work button directly to `TodoDrawer` via `onToggleWork`.
+   - **Vertical Viewport Safeguards**: Capped `SophiaPanel` to `max-h-[calc(100vh-13.5rem)]` with responsive margin (`right-3 top-16 sm:right-6 sm:top-20`), ensuring full clearance above the bottom ask bar on both mobile and desktop screens.
+   - **Responsive Backdrop Dimmer**: Added a one-touch backdrop dismissal for mobile drawers.
+
+4. **Unified Zero-Flicker Mode Switcher**:
+   - Anchored the segmented mode toggle pill persistently at `fixed left-1/2 top-1.5 z-[60] -translate-x-1/2` across both Sophia and SamJuniorsOS views.
+   - Removed disparate, jumpy buttons from `DesktopOS` top bar and Sophia scene; mode pill now occupies the exact same pixel coordinates, preventing any layout flicker or element jumping.
+   - Centered vertically within the 44px top menu bar in Desktop view, maintaining unified glass styling, spring animation, and sound feedback.
+
+5. **Floating Agent Chat Launcher & Small Handy Chat Panel (`ChatPanel.tsx`)**:
+   - **Floating Chat Trigger Icon**: Positioned at `fixed bottom-5 right-5 z-40` with live pulsing unread badge counter.
+   - **Handy Chat Box**: Anchored at `bottom-20 right-5 z-50` (`w-[360px] h-[510px]`) featuring:
+     - **Contacts/Senders Bar**: Easy switching between Sophia (✦ Orchestrator), Operations (⚙️ Ops), Research (🔍 Research), Finance (💳 Finance), and Comms (💬 Comms).
+     - **Live & Preloaded Message History**: Realistic initial messages from agents with timestamps, agent avatars, and user reply styling.
+     - **Interactive Messaging**: User can type directives or questions; agents respond in role with realistic epistemic grounding and typing indicator.
+     - **Quick Prompts**: Contextual prompt suggestion chips for rapid founder inquiries.
+     - **Hotkeys**: Press `C` to toggle chat open/closed; `Escape` to close.
+   - **Canvas Minimap Alignment**: Adjusted `Minimap` in `FlowDesktop` to `bottom-3 right-20` to prevent any overlap with the chat launcher.
+
+6. **Design System Synchronized (`DESIGN.md`)**:
+   - Documented the V2.1 progressive disclosure doctrine: **calm → notice → understand → act → inspect**.
+   - Documented Spatial Hierarchy & Zero-Collision Layout Invariants.
+   - Documented Unified Mode Switcher and Agent Messages & Handy Chat Panel.
+
+### What was verified
+
+1. **TypeScript Compilation**:
+   - `npx tsc --noEmit` in `Uploaded/Design1`: 0 errors.
+   - Root project `npx tsc --noEmit`: 0 errors.
+2. **Production Build**:
+   - `npm run build` in `Uploaded/Design1`: singlefile bundle cleanly built in `dist/index.html` (475.88 kB) in 2.78s with zero warnings/errors.
+3. **Regression Tests**:
+   - Root `npm test` (`scripts/test-advisor.ts`): 25/25 tests passed.
+
+---
+
 ## V2 UI/UX Prototype & Design System
 
 **Status:** COMPLETE (V2 Design System documented in `DESIGN.md`; Design1 unified as the primary reactive OS architecture; cherry-picked UX enhancements from Design2 integrated including progress bars, filter pills, stage visualization, agent avatar cards, 3-column stat grid, and attending tooltips; verified clean with TypeScript typecheck and Vite singlefile production build).

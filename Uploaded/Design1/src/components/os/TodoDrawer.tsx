@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity, Pause, Play, AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity, Pause, Play, AlertTriangle, ArrowRight } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS, agentName, STAGES, type Workstream } from "../../lib/osStore";
 
@@ -12,7 +12,7 @@ const STATE_TINT: Record<Workstream["state"], string> = {
 
 type Filter = "open" | "blocked" | "done";
 
-/** V2 Work drawer — workstreams with progress summary, filter pills, stage visualization. */
+/** V2.1 Work drawer — workstreams with filter pills and stage visualization. */
 export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   const work = useOS((s) => s.work);
   const agents = useOS((s) => s.agents);
@@ -23,8 +23,6 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
   const active = work.filter((w) => w.state === "active").length;
   const blocked = work.filter((w) => w.state === "blocked").length;
   const doneCount = work.filter((w) => w.state === "done").length;
-  const total = work.length;
-  const percent = total ? Math.round((doneCount / total) * 100) : 0;
 
   const shown = work.filter((w) =>
     filter === "open" ? w.state !== "done" :
@@ -43,14 +41,28 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
 
   return (
     <>
+      {/* Mobile backdrop for clean dismissal */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-[1px] lg:hidden"
+          onClick={() => { osSound.close(); onToggle(false); }}
+        />
+      )}
+
+      {/* Floating pull tab handle — dynamically moves with drawer, positioned safely above right rail chevrons */}
       <button
         onClick={() => { osSound.click(); onToggle(!open); }}
         title={open ? "Close work (T)" : "Open work (T)"}
-        className={`fixed right-0 top-1/2 z-40 flex -translate-y-1/2 items-center gap-1.5 rounded-l-full border-b border-l border-t border-cyan-400/40 bg-[#07101d]/90 py-2 pl-2 pr-1.5 backdrop-blur-xl transition-all duration-300 hover:border-cyan-300 hover:bg-[#0c1a2e] active:scale-95 ${open ? "border-cyan-400 bg-cyan-950/80" : "hover:-translate-x-1"}`}
-        style={{ boxShadow: open ? "-6px 0 24px rgba(56,189,248,0.45), inset 0 1px 0 rgba(255,255,255,0.2)" : "-6px 0 18px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.12)" }}
+        className={`fixed z-40 flex items-center gap-1.5 rounded-l-2xl border-b border-l border-t border-cyan-400/40 bg-[#07101d]/95 py-2 pl-2 pr-1.5 backdrop-blur-xl transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-cyan-300 hover:bg-[#0c1a2e] active:scale-95 ${open ? "border-cyan-400 bg-cyan-950/90" : "hover:-translate-x-1"}`}
+        style={{
+          top: "36%",
+          transform: "translateY(-50%)",
+          right: open ? "min(290px, 85vw)" : "0px",
+          boxShadow: open ? "-6px 0 24px rgba(56,189,248,0.45), inset 0 1px 0 rgba(255,255,255,0.2)" : "-6px 0 18px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.12)",
+        }}
         aria-label="Toggle work drawer"
       >
-        <span className={`flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400/20 text-cyan-200 transition-transform duration-300 ${open ? "" : "-rotate-180"}`}>
+        <span className={`flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400/20 text-cyan-200 transition-transform duration-350 ${open ? "" : "-rotate-180"}`}>
           {open ? <ChevronRight size={12} strokeWidth={2.5} /> : <ChevronLeft size={12} strokeWidth={2.5} />}
         </span>
         <div className="flex flex-col items-center gap-0.5">
@@ -78,31 +90,21 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
           <button onClick={() => { osSound.close(); onToggle(false); }} className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90" title="Close"><X size={14} /></button>
         </div>
 
-        {/* V2: Progress summary bar */}
-        <div className="border-b border-white/10 px-3.5 py-2 bg-white/[0.01]">
-          <div className="mb-1 flex items-center justify-between text-[11px]">
-            <span className="flex items-center gap-1 text-slate-300">
-              <CheckCircle2 size={12} className="text-emerald-400" />
-              <span className="font-semibold text-white">{doneCount}</span>/{total} done
-            </span>
-            <span className="tnum font-mono text-cyan-300 font-semibold text-[10.5px]">{percent}%</span>
-          </div>
-          <div className="v2-progress">
-            <div className="v2-progress-fill" style={{ width: `${percent}%` }} />
-          </div>
-        </div>
-
-        {/* V2: Filter tab pills */}
+        {/* Filter tab pills with counts */}
         <div className="flex items-center gap-1 border-b border-white/8 px-3 py-1.5">
-          {(["open", "blocked", "done"] as Filter[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => { osSound.hover(); setFilter(t); }}
-              className={`v2-tab ${filter === t ? "active" : ""}`}
-            >
-              {t}
-            </button>
-          ))}
+          {(["open", "blocked", "done"] as Filter[]).map((t) => {
+            const count = t === "open" ? work.filter((w) => w.state !== "done").length : t === "blocked" ? blocked : doneCount;
+            return (
+              <button
+                key={t}
+                onClick={() => { osSound.hover(); setFilter(t); }}
+                className={`v2-tab flex items-center gap-1 ${filter === t ? "active" : ""}`}
+              >
+                <span>{t}</span>
+                <span className="text-[9px] opacity-70 font-mono">({count})</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Workstream list */}

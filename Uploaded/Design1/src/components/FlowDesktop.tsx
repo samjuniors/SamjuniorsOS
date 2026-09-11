@@ -4,13 +4,13 @@ import {
   Send, PackageCheck, Search, ClipboardList, Landmark, Scale, ChevronDown, Check,
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
-  Building2, Pencil, Play, Pause, ArrowRight,
+  Building2, Pencil, ArrowRight,
 } from "lucide-react";
 import { FlowEngine, NODES, WORLD, type FlowNode } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
-  type AttentionKind, type Agent, type Workstream,
+  type AttentionKind, type Agent,
 } from "../lib/osStore";
 
 /* ------------------------------------------------------------- node meta */
@@ -246,54 +246,7 @@ function WorkforceList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-function SystemState({ zoomPct, focus, voice }: { zoomPct: number; focus: boolean; voice: boolean }) {
-  const sessionStart = useOS((s) => s.sessionStart);
-  const online = typeof navigator !== "undefined" ? navigator.onLine : true;
-  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const rows: [string, string, boolean?][] = [
-    ["Mode", focus ? "Focus" : "Workspace"],
-    ["Sophia voice", voice ? "On" : "Off"],
-    ["Network", online ? "Online" : "Offline", !online],
-    ["Canvas", `${zoomPct}%`],
-    ["Motion", reduce ? "Reduced (system)" : "Full"],
-    ["Session", (() => { const s = Math.floor((Date.now() - sessionStart) / 1000); const m = Math.floor(s / 60); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`; })()],
-  ];
-  return (
-    <ul className="space-y-1">
-      {rows.map(([k, v, warn]) => (
-        <li key={k} className="flex items-center justify-between border-b border-white/[0.06] py-1.5 text-[12px] last:border-0">
-          <span className="text-slate-400">{k}</span>
-          <span className={`tnum font-mono text-[11.5px] ${warn ? "text-rose-200" : "text-cyan-100"}`}>{v}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
-function WorkTile({ w }: { w: Workstream }) {
-  const idx = ["discovery", "build", "review", "ship", "done"].indexOf(w.stage);
-  return (
-    <div className="group flex min-w-[210px] max-w-[240px] shrink-0 flex-col rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 transition hover:border-white/20">
-      <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[12px] font-medium text-slate-100">{w.title}</span>
-        <span className={`shrink-0 rounded px-1.5 py-px text-[9px] uppercase tracking-[0.12em] ${w.state === "blocked" ? "bg-rose-400/15 text-rose-200" : w.state === "paused" ? "bg-white/5 text-slate-400" : w.state === "done" ? "bg-white/5 text-slate-500" : "bg-emerald-400/10 text-emerald-200"}`}>{w.state}</span>
-      </div>
-      <div className="mt-1 text-[10.5px] text-slate-500">{agentName(w.owner)} · {w.stage}</div>
-      <div className="mt-2 flex items-center gap-1">
-        {["discovery", "build", "review", "ship", "done"].map((s, i) => (
-          <span key={s} title={s} className={`h-1 flex-1 rounded-full ${i <= idx ? "bg-cyan-300/80" : "bg-white/10"}`} />
-        ))}
-      </div>
-      <div className="mt-2 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
-        {w.state !== "done" && <button onClick={() => { osSound.click(); os.advanceWork(w.id); }} title="Advance stage" className="rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-300 hover:border-cyan-200/30 hover:text-cyan-100">Advance</button>}
-        {w.state === "active" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "paused"); }} title="Pause" className="rounded-md p-1 text-slate-400 hover:text-white"><Pause size={11} /></button>}
-        {w.state === "paused" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} title="Resume" className="rounded-md p-1 text-slate-400 hover:text-white"><Play size={11} /></button>}
-        {w.state !== "blocked" && w.state !== "done" && <button onClick={() => { osSound.close(); os.setWorkState(w.id, "blocked"); }} title="Mark blocked" className="rounded-md p-1 text-slate-400 hover:text-rose-300"><AlertTriangle size={11} /></button>}
-        {w.state === "blocked" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} title="Unblock" className="rounded-md px-1.5 py-0.5 text-[10px] text-amber-200 hover:text-white">Unblock</button>}
-      </div>
-    </div>
-  );
-}
 
 function CompanyCard({ onClose }: { onClose: () => void }) {
   const company = useOS((s) => s.company);
@@ -362,7 +315,7 @@ function Minimap({ vw, vh, k, pan, onJump }: { vw: number; vh: number; k: number
 /* ------------------------------------------------------------- component */
 
 export default function FlowDesktop({
-  focus = false, onPanelOpen, onNodeClick, onOpenAgent, voice = false, onVoice,
+  focus = false, onPanelOpen, onNodeClick, onOpenAgent, voice: _voice = false, onVoice, onToggleWork,
 }: {
   focus?: boolean;
   onPanelOpen?: () => void;
@@ -370,6 +323,7 @@ export default function FlowDesktop({
   onOpenAgent?: (id: string) => void;
   voice?: boolean;
   onVoice?: (on: boolean) => void;
+  onToggleWork?: () => void;
 }) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -383,7 +337,6 @@ export default function FlowDesktop({
   const [showHint, setShowHint] = useState(true);
   const [leftOpen, setLeftOpen] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1024 : true));
   const [rightOpen, setRightOpen] = useState(() => (typeof window !== "undefined" ? window.innerWidth >= 1280 : true));
-  const [workOpen, setWorkOpen] = useState(true);
   const [gridOn, setGridOn] = useState(true);
   const [mapOn, setMapOn] = useState(true);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -565,7 +518,7 @@ export default function FlowDesktop({
     onNodeClick?.(n);
   };
 
-  const effLeft = leftOpen && !focus, effRight = rightOpen && !focus, effWork = workOpen && !focus;
+  const effLeft = leftOpen && !focus, effRight = rightOpen && !focus;
   const zoomPct = Math.round((cam.k / Math.max(0.001, baseFit.current)) * 100);
   const gridMinor = 44 * cam.k, gridMajor = 220 * cam.k;
   const selMeta = selected ? META[selected.id] : null;
@@ -608,7 +561,7 @@ export default function FlowDesktop({
           <div className="mr-1 hidden items-center gap-2 text-[10px] tracking-[0.2em] text-slate-300 sm:flex">
             {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.8)]" /> {attention.length} NEED YOU</> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.8)]" /> ALL QUIET</>}
           </div>
-          <button onClick={() => { osSound.click(); setWorkOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effWork ? "Hide work" : "Show work"} className={`flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] transition hover:bg-white/10 hover:text-white active:scale-95 ${effWork ? "text-cyan-200" : "text-slate-500"}`}><Activity size={14} /><span className="hidden lg:inline">Work</span></button>
+          <button onClick={() => { osSound.click(); onToggleWork ? onToggleWork() : onPanelOpen?.(); }} title="Work drawer (T)" className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 active:scale-95"><Activity size={14} className="text-cyan-300" /><span className="hidden lg:inline">Work</span>{work.length > 0 && <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-200">{work.length}</span>}</button>
           <button onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effRight ? "Hide workforce" : "Show workforce"} className={`flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 ${effRight ? "text-cyan-200" : "text-slate-500"}`}><PanelRightClose size={16} /></button>
         </div>
 
@@ -633,11 +586,6 @@ export default function FlowDesktop({
             <SideCard title="Needs you" icon={<AlertTriangle size={13} />} count={attention.length} tone="amber"
               action={attention.length ? <button onClick={() => { osSound.click(); os.clearHandled(); }} title="Clear handled" className="rounded-md p-1 text-slate-600 hover:text-slate-300"><Check size={12} /></button> : undefined}>
               <AttentionList />
-            </SideCard>
-          </div>
-          <div className="w-[232px] max-lg:w-[254px]">
-            <SideCard title="System" icon={<Activity size={13} />} defaultOpen={false}>
-              <SystemState zoomPct={zoomPct} focus={focus} voice={voice} />
             </SideCard>
           </div>
           <div className="mt-auto w-[232px] pt-1 text-[9px] tracking-[0.26em] text-slate-600 max-lg:w-[254px]">SAMJUNIORSOS · ATTENTION</div>
@@ -741,7 +689,7 @@ export default function FlowDesktop({
               <span className="tnum hidden px-1.5 font-mono text-[10.5px] text-slate-500 sm:block"><span ref={cursorRef}>–, –</span></span>
             </div>
 
-            {mapOn && <div className="absolute bottom-3 right-3 z-10 hidden sm:block"><Minimap vw={vw} vh={vh} k={cam.k} pan={{ x: cam.x, y: cam.y }} onJump={jumpTo} /></div>}
+            {mapOn && <div className="absolute bottom-3 right-20 z-10 hidden sm:block"><Minimap vw={vw} vh={vh} k={cam.k} pan={{ x: cam.x, y: cam.y }} onJump={jumpTo} /></div>}
 
             {showHint && !focus && !selected && (
               <div className="pointer-events-none absolute left-1/2 top-3 z-10 hidden -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-[#060c18]/85 px-3.5 py-1.5 text-[10.5px] tracking-wide text-slate-400 backdrop-blur-md lg:flex" style={{ animation: `os-in 400ms ${EASE}` }}>
@@ -749,30 +697,6 @@ export default function FlowDesktop({
               </div>
             )}
           </div>
-
-          {/* ============ work dock (fixed, never zooms) ============ */}
-          <div className={`grid shrink-0 transition-all duration-500 ${effWork ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
-            <div className="overflow-hidden">
-              <div className="flex items-stretch gap-2 overflow-x-auto rounded-2xl border border-white/[0.08] bg-[#060c18]/85 px-2.5 py-2 backdrop-blur-md [scrollbar-width:thin]">
-                <div className="flex shrink-0 flex-col justify-center pr-1">
-                  <span className="text-[9.5px] font-semibold uppercase tracking-[0.22em] text-slate-500">Work</span>
-                  <span className="tnum font-mono text-[10.5px] text-cyan-200">{work.filter((w) => w.state === "active").length} active{work.some((w) => w.state === "blocked") ? ` · ${work.filter((w) => w.state === "blocked").length} blocked` : ""}</span>
-                </div>
-                <div className="w-px shrink-0 self-stretch bg-white/10" />
-                {work.length === 0 && <div className="flex items-center px-2 text-[11.5px] text-slate-500">No workstreams. Say “work on …” to Sophia or add one.</div>}
-                {work.map((w) => <WorkTile key={w.id} w={w} />)}
-                <button onClick={() => { const t = window.prompt("New workstream:"); if (t && t.trim()) { osSound.open(); os.addWork(t.trim(), "ops"); } }} className="flex min-w-[54px] shrink-0 items-center justify-center rounded-xl border border-dashed border-white/10 text-slate-500 transition hover:border-cyan-200/30 hover:text-cyan-100" title="Add workstream">+</button>
-                <div className="ml-auto hidden shrink-0 items-center gap-3 pr-1 md:flex">
-                  <button onClick={() => { osSound.click(); setWorkOpen(false); }} title="Hide" className="rounded-lg p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-white"><ChevronDown size={13} /></button>
-                </div>
-              </div>
-            </div>
-          </div>
-          {!effWork && !focus && (
-            <button onClick={() => { osSound.click(); setWorkOpen(true); }} className="mx-auto flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-[#0a1220]/90 px-3.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 backdrop-blur-md transition hover:text-cyan-200 active:scale-95" style={{ animation: `os-in 240ms ${EASE}` }}>
-              Work · {work.length} <ChevronDown size={11} className="rotate-180" />
-            </button>
-          )}
         </main>
 
         {/* ---------------- right rail: workforce + decisions ---------------- */}

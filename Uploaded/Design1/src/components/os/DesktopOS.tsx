@@ -289,19 +289,13 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
           <div className="hidden items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10.5px] text-slate-400 lg:flex">
             {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.8)]" /><span className="font-mono text-[10px] tracking-wider text-amber-100">{attention.length} NEED YOU</span></> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" /><span className="font-mono text-[10px] tracking-wider">ALL QUIET</span></>}
           </div>
+          <button onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`hidden h-7.5 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition active:scale-95 md:flex ${focus ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-white"}`} title="Focus mode (F)">
+            <PanelRightClose size={13} className={focus ? "text-cyan-300" : ""} /><span className="hidden xl:inline">Focus</span>
+          </button>
         </div>
 
-        <div className="flex items-center gap-1">
-          <button onClick={() => { osSound.click(); win === "min" ? openWin() : minWin(); }} className={`flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] font-semibold transition active:scale-95 ${win !== "min" ? "border border-cyan-400/30 bg-cyan-400/15 text-cyan-200 shadow-[0_0_12px_rgba(56,189,248,0.25)]" : "text-slate-400 hover:bg-white/10 hover:text-white"}`}>
-            <LayoutGrid size={14} className="text-orange-300" /><span className="hidden min-[420px]:inline">Workspace</span>{win !== "min" && <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />}
-          </button>
-          <button onClick={() => { osSound.click(); onOpenNeural(); }} className="flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-95" title="Sophia">
-            <Sparkles size={14} className="text-cyan-300" /><span className="hidden sm:inline">Sophia</span>
-          </button>
-          <button onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`flex h-7.5 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition active:scale-95 ${focus ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-white"}`} title="Focus mode (F)">
-            <PanelRightClose size={13} className={focus ? "text-cyan-300" : ""} /><span className="hidden md:inline">Focus</span>
-          </button>
-        </div>
+        {/* Center spacer reserving exact footprint for global persistent mode toggle [Sophia | SamJuniorsOS] */}
+        <div className="hidden w-[220px] shrink-0 sm:block" />
 
         <div className="flex items-center gap-1">
           <TrayBtn active={pop === "net"} onClick={() => toggle("net")} title="Network">{device.online ? <Wifi size={14} /> : <WifiOff size={14} className="text-rose-300" />}</TrayBtn>
@@ -502,7 +496,15 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
             </div>
           )}
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            <FlowDesktop focus={focus} onPanelOpen={() => setFocus(false)} onNodeClick={handleNodeClick} onOpenAgent={(id) => setAgentId(id)} voice={voice} onVoice={setVoice} />
+            <FlowDesktop
+              focus={focus}
+              onPanelOpen={() => setFocus(false)}
+              onNodeClick={handleNodeClick}
+              onOpenAgent={(id) => setAgentId(id)}
+              voice={voice}
+              onVoice={setVoice}
+              onToggleWork={() => setWorkOpen((v) => !v)}
+            />
           </div>
         </div>
       )}

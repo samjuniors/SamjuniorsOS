@@ -209,31 +209,73 @@ Standard easing: `cubic-bezier(.16, 1, .3, 1)` (spring). Hover: `transition dura
 | `T` | Desktop | Toggle work drawer |
 | `Escape` | Global | Close any open panel/modal/drawer |
 
-### Progressive Disclosure
+### Progressive Disclosure (V2.1 Doctrine: Calm → Notice → Understand → Act → Inspect)
 
-Default calm -> on-demand panels -> contextual alerts -> deep-dive modals.
+1. **Calm (Default State)**:
+   - Neural scene is unoccluded and serene. Secondary telemetry (technical state badges, session clocks, keyboard legends) is removed from persistent view.
+   - Flow canvas opens with maximum vertical and horizontal breathing space. Work docks and telemetry rails default to collapsed edge triggers.
+2. **Notice**:
+   - Status surfaces highlight only consequential changes requiring human direction.
+   - Amber pulse badges and concise indicators (`[ ⚖️ 2 Decisions waiting ]`) signal when executive action is needed.
+3. **Understand**:
+   - Contextual panels (Sophia Briefing, Bell popover, Inspector HUD) provide clear context without jargon or redundant percentages.
+4. **Act**:
+   - Direct inline action affordances (Approve, Defer, Decline, Advance stage, Assign owner) allow the founder to resolve items in place.
+5. **Inspect**:
+   - Deep-dive modalities (Role cards / Persona modals, operating graph zoom, detailed logs) remain readily accessible on demand without crowding the daily operating canvas.
+
+### Spatial Hierarchy & Zero-Collision Layout Invariants
+
+To guarantee that no toggle, drawer, or button ever occludes, overlaps behind, or blocks another interactive control:
+
+1. **Edge Toggle Clearance**:
+   - **`TodoDrawer` Handle**: Anchored at `top: 36%` with dynamic translation `right: open ? min(290px, 85vw) : 0px`. It moves smoothly with the drawer so it never covers drawer internal elements and leaves `top: 50%` completely clear for `FlowDesktop` canvas rail collapse/expand chevrons.
+2. **Dock vs Canvas Independence**:
+   - **`AgentQuickDock`**: Anchored at `bottom: 10px` (`left: 50% -translate-x-1/2`). Redundant canvas-level bottom buttons have been eliminated from `FlowDesktop` so the dock has exclusive center-bottom clearance, routing all work triggers directly to `TodoDrawer` via the header Work trigger and `T` hotkey.
+3. **Vertical Viewport Safeguards**:
+   - **`SophiaPanel` Briefing**: Clamped to `max-h-[calc(100vh-13.5rem)]` with responsive margin (`right-3 top-16 sm:right-6 sm:top-20`), ensuring full clearance above the bottom ask bar on both desktop and mobile viewports.
+4. **Mobile & Viewport Backdrops**:
+   - Drawers and popovers feature responsive backdrop dimmers for effortless, one-touch outside dismissal on smaller viewports.
+5. **Unified Mode Switcher (Zero-Flicker Invariant)**:
+   - Positioned persistently at `fixed left-1/2 top-1.5 z-[60] -translate-x-1/2` across both Sophia and SamJuniorsOS modes.
+   - Eliminates layout shifting and flickering: the segmented pill remains anchored at the exact same physical coordinates with identical glass styling, smooth spring transitions, and unified sound feedback.
+6. **Agent Messages & Handy Chat Panel (`ChatPanel.tsx`)**:
+   - **Floating Launcher**: Circular glass icon at `fixed bottom-5 right-5 z-40` with pulsing unread message badge count.
+   - **Handy Chat Box**: Compact glass panel at `bottom-20 right-5 z-50` (`w-[360px] h-[510px]`) featuring:
+     - **Contact Picker**: Instant switching between Sophia, Operations, Research, Finance, and Comms.
+     - **Thread History**: Preloaded and live conversation history with role-appropriate agent avatars, timestamps, and typing feedback.
+     - **Quick Suggestions**: Clickable prompt chips for immediate founder queries.
+     - **Hotkeys**: Toggle via `C` / `c` or `Escape` to close.
 
 ---
 
-## 9. Neural Mode
+## 9. Neural Mode (V2.1)
 
-Sophia's ambient presence. Full-screen particle canvas with greeting, ask bar, briefing panel, state strip. Sophia states: idle, attentive, thinking, speaking.
+Sophia/Core is the dominant, serene operating presence.
+- **Visual Center**: Full-screen particle canvas knot responding to voice, ambient phrasing, and conversational directives.
+- **Greeting & Ambient Line**: Honest, concise executive summary ("All quiet. Nothing needs you right now" or "2 decisions are waiting for your direction").
+- **Briefing**: Unobtrusive floating trigger pill that alerts when decisions or attention items exist; expands on click to reveal immediate action items.
+- **Ask Bar**: Clean conversational input with microphone voice toggle and shortcut focus (`/`), free of repetitive static tag clutter.
 
-## 10. Desktop Mode
+## 10. Desktop Mode (V2.1)
 
-Full OS chrome: menu bar, wallpapers, windows (max/win/min), spotlight, context menu, desktop icons, operating graph, agent dock, work drawer, toasts.
+Information-rich multi-window operating environment with contextual surfaces:
+- **Operating Graph**: Full-viewport canvas with fluid pan/zoom, interactive nodes, and collapsible attention/decision rails.
+- **Top Menu Bar**: Glass chrome with instant Spotlight search (⌘K), workspace switcher, Bell notification tray, and calendar/device stats.
+- **Work Drawer (`TodoDrawer`)**: Actionable workstream checklist with clean filter pills (`open`, `blocked`, `done`) and stage progress visualization.
+- **Workforce Dock (`AgentQuickDock`)**: Compact bottom dock with agent-tinted glow avatars and live attending tooltips, routing directly to rich Persona modals.
 
 ## 11. Content Hierarchy
 
-1. What needs you (decisions, blocked, attention)
-2. Active work (workstreams with stage/owner/state)
-3. Company context (focus, principles, constraints)
-4. Workforce state (agent readiness, assignments)
-5. System/telemetry (session, voice, connection)
+1. **What needs you** (open decisions, blocked workstreams, high-priority attention items)
+2. **Active work** (workstreams with stages, owners, and honest state)
+3. **Company context** (weekly focus, identity, strategic direction)
+4. **Workforce state** (agent readiness, assignments, escalation rules)
+5. **System & preferences** (voice, interface sounds, wallpaper display)
 
 ### Operational Honesty
 
-- Every count derives from `osStore` state
-- No fabricated metrics
-- No simulated agent output
-- Empty states show honest messages
+- Every count derives strictly from `osStore` state
+- No fabricated percentages or demo vanity metrics
+- No simulated agent chatter
+- Empty states show honest messages ("All quiet. Nothing needs you.")
