@@ -183,6 +183,12 @@ See V2 prototype source for exact implementation. All follow the token system ab
 
 ## 7. Animations
 
+### Semantic Motion
+
+Every graph animation, particle flow, glow, node transition, and contextual
+card must represent a real state, relationship, event, or interaction.
+Decorative or random operational motion is prohibited.
+
 | Name | Duration | Easing | Use |
 |---|---|---|---|
 | `os-in` | - | `cubic-bezier(.16,1,.3,1)` | Panel entry |
@@ -336,3 +342,24 @@ Domain entities are decoupled from raw JSX markup via typed contracts:
    - Execution: Side drawers (`TodoDrawer`) and side cards (`SideCard`).
    - Deep inspection: Modals (`PersonaModal`, `InspectorSurface`).
 4. **Zero Layout Shift**: All surfaces adhere to fixed aspect ratios, tabular numbers (`font-mono`, `.tnum`), and fluid max-height limits with custom thin scrollbars.
+5. **Single Authoritative Interface**: The V2 Design1 shell is the exclusive operational UI of SamJuniorsOS on the root dev server (`http://localhost:3000/`). Competing interfaces, classic multi-window fallbacks, or legacy prototype toggles are prohibited in active application routes. Legacy UI code remains strictly as an inactive archive/reference asset.
+6. **Semantic Motion**: Every graph animation, particle flow, glow, node transition, and contextual card must represent a real state, relationship, event, or interaction. Decorative/random operational motion is prohibited.
+
+---
+
+## 13. Semantic Motion & Living Graph Specification
+
+The living operating graph visually communicates the dynamic state of SamJuniorsOS using physical, state-bound visual metaphors:
+
+1. **Orthogonal Conduit Routing**: Connectors use clean, rounded right-angle paths that trace authentic organizational relationships (`delegates`, `researches`, `depends-on`, `checks`, `escalates-to`, `feeds`).
+2. **State-Driven Particle Kinetics**:
+   - **Active Pulse**: High-velocity laser comet with spark emitter physics traveling along an active relationship vector.
+   - **Arrival Burst**: Radial energy dissipation and perimeter illumination when an event or data packet arrives at a target node.
+   - **Quiet Completion**: Completed paths dim down to subdued, calm steady conduits.
+   - **Attention & Blocked Pulse**: Paths awaiting founder decision or invariant check pulse with warm amber (`#f59e0b`) or alert rose (`#fb7185`).
+   - **Ambient Breathing**: Subtle, slow particle drift when idle to maintain liveliness without visual clutter.
+3. **Spatial Contextual Cards**:
+   - Ephemeral spatial cards appear adjacent to active or relevant nodes to disclose immediate operational intent (e.g. `Sophia: Delegating research ➜ Dr. Thorne`).
+   - Cards smoothly animate into view on relevant events and collapse/fade out when the event completes.
+4. **Zero Random Decoration**: No particle or animation fires without an authentic causal event in the operating state.
+

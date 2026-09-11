@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Inbox, CalendarDays, Radar, MessageSquare, BookOpen, Filter, Brain, Bot, ListTree,
-  Send, PackageCheck, Search, ClipboardList, Landmark, Scale, ChevronDown, Check,
+  Bot, ListTree, PackageCheck, ClipboardList, Scale, ChevronDown, Check,
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
-  Building2, Pencil, ArrowRight, Flag,
+  Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
+  Coins, FileText,
 } from "lucide-react";
-import { FlowEngine, NODES, WORLD, type FlowNode } from "../lib/flow";
+import { FlowEngine, WORLD, deriveGraph, type FlowNode, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
-  type AttentionKind, type Agent,
+  type AttentionKind, type Agent, STAGES,
 } from "../lib/osStore";
 import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
@@ -20,21 +20,121 @@ import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surface
 type Meta = { title: string; sub: string; icon: ReactNode; tint?: string; desc: string; agent?: string };
 
 const META: Record<string, Meta> = {
-  inbox: { title: "Inbox", sub: "Messages & mail", icon: <Inbox size={29} strokeWidth={1.7} />, desc: "Everything addressed to you or the company. Sophia reads it first; you only see what needs you." },
-  calendar: { title: "Calendar", sub: "Commitments", icon: <CalendarDays size={29} strokeWidth={1.7} />, tint: "#38bdf8", desc: "Meetings, deadlines and promises. Conflicts and slips become attention items." },
-  signals: { title: "Signals", sub: "Changes & alerts", icon: <Radar size={29} strokeWidth={1.7} />, tint: "#34d399", desc: "External changes worth knowing: a customer, a market, a system. Filtered against your focus." },
-  requests: { title: "Requests", sub: "From the workforce", icon: <MessageSquare size={29} strokeWidth={1.7} />, tint: "#38bdf8", desc: "Questions and asks raised by agents while working. Most are answered by Sophia." },
-  memory: { title: "Company Memory", sub: "Context & history", icon: <BookOpen size={29} strokeWidth={1.7} />, desc: "What the company knows about itself: focus, principles, past decisions." },
-  triage: { title: "Triage", sub: "What matters now", icon: <Filter size={29} strokeWidth={1.8} />, tint: "#4ade80", desc: "Every input is ranked against this week's focus. Noise stops here." },
-  understand: { title: "Understand", sub: "Intent & priority", icon: <Brain size={29} strokeWidth={1.7} />, desc: "What is being asked, by whom, how urgent, and whether it needs a human." },
-  core: { title: "Sophia", sub: "", icon: <Bot size={32} strokeWidth={1.7} />, desc: "The orchestrator. Routes work to the workforce and brings only decisions to you.", agent: "sophia" },
-  plan: { title: "Plan", sub: "Break into work", icon: <ListTree size={29} strokeWidth={1.7} />, desc: "Approved intent becomes workstreams with one owner and a stage each." },
-  delegate: { title: "Delegate", sub: "Assign an owner", icon: <Send size={29} strokeWidth={1.7} />, desc: "Each workstream goes to the role best placed to run it, within its permissions." },
-  deliver: { title: "Deliver", sub: "Ship & report", icon: <PackageCheck size={29} strokeWidth={1.7} />, desc: "Finished work is shipped, reported back, and written into company memory." },
-  research: { title: "Research", sub: "Options & trade-offs", icon: <Search size={29} strokeWidth={1.7} />, desc: "Gathers context and produces options before a decision reaches you.", agent: "research" },
-  ops: { title: "Operations", sub: "Execution", icon: <ClipboardList size={29} strokeWidth={1.7} />, desc: "Runs workstreams through stages and escalates when blocked.", agent: "ops" },
-  finance: { title: "Finance", sub: "Money & commitments", icon: <Landmark size={29} strokeWidth={1.7} />, tint: "#34d399", desc: "Costs options and flags anything that changes runway or obligations.", agent: "finance" },
-  decisions: { title: "Your Decisions", sub: "Human in the loop", icon: <Scale size={29} strokeWidth={1.7} />, desc: "The only queue that requires you. Approve, defer or decline — Sophia handles the rest." },
+  founder: {
+    title: "Founder / Inputs",
+    sub: "Directives & Authority",
+    icon: <Building2 size={26} strokeWidth={1.8} />,
+    tint: "#38bdf8",
+    desc: "Founder authority boundary. High-level strategic directives, focus setting, and consequential approval gates originate here.",
+  },
+  core: {
+    title: "Sophia",
+    sub: "COO & Orchestrator",
+    icon: <Bot size={28} strokeWidth={1.8} />,
+    tint: "#fb923c",
+    desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
+    agent: "sophia",
+  },
+  ops: {
+    title: "Dr. Aris Thorne",
+    sub: "Research & Intelligence",
+    icon: <ClipboardList size={26} strokeWidth={1.8} />,
+    tint: "#38bdf8",
+    desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
+    agent: "ops",
+  },
+  finance: {
+    title: "Julian Cruz",
+    sub: "Finance & Unit Economics",
+    icon: <Coins size={26} strokeWidth={1.8} />,
+    tint: "#34d399",
+    desc: "Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails.",
+    agent: "finance",
+  },
+  pm: {
+    title: "Maya Lin",
+    sub: "Product Architecture & PRD",
+    icon: <FileText size={26} strokeWidth={1.8} />,
+    tint: "#c084fc",
+    desc: "Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and DAG protocol milestones.",
+    agent: "pm",
+  },
+  verification: {
+    title: "Constitutional Verifier",
+    sub: "Deterministic Safety Gate",
+    icon: <ShieldCheck size={26} strokeWidth={1.8} />,
+    tint: "#34d399",
+    desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, safe mock isolation, and single-use cryptographic signature binding.",
+  },
+  outcome: {
+    title: "Governed Outcome",
+    sub: "Immutable Vault",
+    icon: <PackageCheck size={26} strokeWidth={1.8} />,
+    tint: "#34d399",
+    desc: "Cryptographically verified deliverables and historical outcomes safely committed to durable company memory.",
+  },
+  approval: {
+    title: "Founder Approval Gate",
+    sub: "Consequential Decision",
+    icon: <Scale size={26} strokeWidth={1.8} />,
+    tint: "#fbbf24",
+    desc: "Consequential external, resource, or security actions require authenticated Founder ratification before proceeding.",
+  },
+  "workflow-standby": {
+    title: "Workflow Engine",
+    sub: "Standby · Ready",
+    icon: <ListTree size={26} strokeWidth={1.8} />,
+    tint: "#94a3b8",
+    desc: "Active workflow runtime standing by. Directives from Sophia dispatch structured workstreams through this channel.",
+  },
+};
+
+const getMeta = (n: FlowNode): Meta => {
+  if (n.type === "workflow") {
+    const stepLabel = n.subtitle ?? "Protocol Step";
+    return {
+      title: n.title,
+      sub: stepLabel,
+      icon: <Activity size={24} strokeWidth={1.8} />,
+      tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : n.state === "active" ? "#38bdf8" : "#94a3b8",
+      desc: n.activity ?? `${stepLabel} actively governed under SamJuniorsOS protocol invariants.`,
+      agent: n.owner,
+    };
+  }
+  if (n.type === "approval") {
+    return {
+      title: n.title,
+      sub: n.subtitle ?? "Founder Ratification",
+      icon: <Scale size={26} strokeWidth={1.8} />,
+      tint: "#fbbf24",
+      desc: "Consequential action requires authenticated Founder approval before release.",
+    };
+  }
+  if (n.type === "verification") {
+    return {
+      title: n.title,
+      sub: n.subtitle ?? "Constitutional Verifier",
+      icon: <ShieldCheck size={26} strokeWidth={1.8} />,
+      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
+      desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, mock sandbox isolation, single-use cryptographic signature binding.",
+    };
+  }
+  if (n.type === "outcome") {
+    return {
+      title: n.title,
+      sub: n.subtitle ?? "Immutable Vault",
+      icon: <PackageCheck size={26} strokeWidth={1.8} />,
+      tint: "#34d399",
+      desc: "Historical deliverables with cryptographic verification signatures committed to company memory.",
+    };
+  }
+  return META[n.id] ?? {
+    title: n.title,
+    sub: n.subtitle ?? "",
+    icon: <Bot size={26} strokeWidth={1.8} />,
+    tint: "#38bdf8",
+    desc: n.activity ?? "Governed operating node.",
+  };
 };
 
 const EASE = "cubic-bezier(.16,1,.3,1)";
@@ -46,75 +146,284 @@ const MAX_K = 2.4;
 function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
   n: FlowNode; selected?: boolean; badge?: ReactNode; onClick?: (n: FlowNode) => void; onDoubleClick?: (n: FlowNode) => void;
 }) {
-  const m = META[n.id];
+  const m = getMeta(n);
+
+  // 1. Sophia Core (Centerpiece Orchestrator)
   if (n.kind === "core") {
+    const isActive = n.state === "active";
+    const isBlocked = n.state === "blocked";
     return (
       <div
         onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-        className={`group absolute flex cursor-pointer select-none items-center justify-center gap-3 rounded-2xl border text-white transition-all duration-200 hover:-translate-y-1 active:scale-95 ${selected ? "border-orange-200/90" : "border-orange-300/50"}`}
+        className={`group absolute flex cursor-pointer select-none items-center justify-center gap-3 rounded-2xl border text-white transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
+          selected
+            ? "border-orange-200/90 ring-2 ring-orange-400/50"
+            : isBlocked
+            ? "border-rose-400/80 shadow-[0_0_30px_rgba(244,63,94,0.4)]"
+            : isActive
+            ? "border-orange-300/80 shadow-[0_0_40px_rgba(255,140,60,0.5)]"
+            : "border-orange-300/40"
+        }`}
         style={{
           left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
-          background: "linear-gradient(160deg, rgba(60,40,30,0.94), rgba(25,18,14,0.97))",
+          background: "linear-gradient(160deg, rgba(60,40,30,0.95), rgba(25,18,14,0.98))",
           boxShadow: selected
-            ? "inset 0 0 30px rgba(255,140,60,0.35), 0 0 60px rgba(255,120,40,0.6), 0 0 0 2px rgba(255,200,140,0.5)"
-            : "inset 0 0 30px rgba(255,140,60,0.25), 0 0 40px rgba(255,120,40,0.35)",
+            ? "inset 0 0 30px rgba(255,140,60,0.4), 0 0 60px rgba(255,120,40,0.65), 0 0 0 2px rgba(255,200,140,0.5)"
+            : isActive
+            ? "inset 0 0 30px rgba(255,140,60,0.35), 0 0 45px rgba(255,120,40,0.45)"
+            : "inset 0 0 20px rgba(255,140,60,0.15), 0 0 25px rgba(0,0,0,0.6)",
         }}
       >
-        <span className="text-orange-100 drop-shadow-[0_0_10px_rgba(255,170,80,0.9)] transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
+        <span className="text-orange-100 drop-shadow-[0_0_12px_rgba(255,170,80,0.9)] transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
         <div className="leading-[1.05] drop-shadow-[0_0_14px_rgba(255,190,120,0.8)]">
-          <div className="text-[22px] font-semibold tracking-[-0.01em]">Sophia</div>
-          <div className="text-[10.5px] uppercase tracking-[0.22em] text-orange-100/80">Orchestrator</div>
+          <div className="text-[21px] font-semibold tracking-[-0.01em]">Sophia</div>
+          <div className="text-[10px] uppercase tracking-[0.24em] text-orange-100/80">Planner</div>
         </div>
         {badge}
         {selected && <span className="pointer-events-none absolute -inset-2 animate-pulse rounded-3xl border border-orange-200/40" />}
       </div>
     );
   }
-  const round = n.kind === "round";
-  const titleLines = m.title.split("\n");
+
+  // 2. Round Nodes (Dr. Thorne, Julian Cruz, Maya Lin & Constitutional Verifier)
+  if (n.kind === "round") {
+    const isVerifier = n.type === "verification";
+    const isFinance = n.id === "finance";
+    const isPm = n.id === "pm";
+    const isAct = n.state === "active";
+    const isBlk = n.state === "blocked";
+    const isComp = n.state === "complete";
+
+    const borderColor = selected
+      ? "1px solid rgba(160,230,255,0.95)"
+      : isBlk
+      ? "1px solid rgba(244,63,94,0.8)"
+      : isComp
+      ? "1px solid rgba(52,211,153,0.7)"
+      : isFinance
+      ? "1px solid rgba(52,211,153,0.8)"
+      : isPm
+      ? "1px solid rgba(192,132,252,0.8)"
+      : isAct
+      ? "1px solid rgba(56,189,248,0.85)"
+      : "1px solid rgba(120,190,255,0.4)";
+
+    const shadow = selected
+      ? "0 0 34px rgba(103,232,249,0.6), inset 0 0 18px rgba(103,232,249,0.3)"
+      : isBlk
+      ? "0 0 28px rgba(244,63,94,0.45), inset 0 0 16px rgba(244,63,94,0.25)"
+      : isComp || isFinance
+      ? "0 0 28px rgba(52,211,153,0.4), inset 0 0 16px rgba(52,211,153,0.2)"
+      : isPm
+      ? "0 0 28px rgba(192,132,252,0.4), inset 0 0 16px rgba(192,132,252,0.2)"
+      : isAct
+      ? "0 0 30px rgba(56,189,248,0.5), inset 0 0 16px rgba(56,189,248,0.25)"
+      : "0 10px 25px rgba(0,0,0,0.5), inset 0 0 14px rgba(56,189,248,0.15)";
+
+    const bgGradient = isVerifier
+      ? "radial-gradient(circle at 50% 40%, rgba(20,55,45,0.94), rgba(8,20,16,0.98))"
+      : isFinance
+      ? "radial-gradient(circle at 50% 40%, rgba(18,50,40,0.94), rgba(7,20,16,0.98))"
+      : isPm
+      ? "radial-gradient(circle at 50% 40%, rgba(55,22,75,0.94), rgba(20,8,28,0.98))"
+      : "radial-gradient(circle at 50% 40%, rgba(35,65,115,0.94), rgba(12,20,38,0.98))";
+
+    return (
+      <div
+        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
+        className="group absolute cursor-pointer select-none"
+        style={{ left: n.x - 90, top: n.y - n.h / 2, width: 180 }}
+      >
+        <div
+          className={`relative mx-auto flex items-center justify-center rounded-full text-white transition-all duration-200 group-hover:-translate-y-1 group-hover:scale-105 active:scale-95 ${selected ? "ring-2 ring-cyan-200/80" : ""}`}
+          style={{
+            width: n.w, height: n.h,
+            color: m.tint ?? "#f3f7ff",
+            background: bgGradient,
+            border: borderColor,
+            boxShadow: shadow,
+          }}
+        >
+          <span className="transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
+          {badge}
+        </div>
+        <div className="pointer-events-none mt-2 text-center">
+          <div className={`text-[14.5px] font-semibold leading-[1.15] tracking-[-0.008em] transition-colors ${selected ? "text-cyan-100" : "text-white group-hover:text-cyan-100"}`} style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>
+            {m.title}
+          </div>
+          {m.sub && <div className="mt-0.5 text-[10.5px] text-slate-300/90" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}>{m.sub}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Workflow Card (Tasks in active progression)
+  if (n.type === "workflow") {
+    const isAct = n.state === "active";
+    const isBlk = n.state === "blocked";
+    const isComp = n.state === "complete";
+    const stepLabel = n.protocolStep ? n.protocolStep.replace("step-", "").toUpperCase() : "PROTOCOL";
+
+    return (
+      <div
+        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
+        className={`group absolute cursor-pointer select-none rounded-2xl border p-2.5 transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
+          selected
+            ? "border-cyan-200/90 ring-2 ring-cyan-300/60 shadow-[0_0_30px_rgba(56,189,248,0.45)]"
+            : isBlk
+            ? "border-rose-400/70 shadow-[0_0_24px_rgba(244,63,94,0.35)]"
+            : isComp
+            ? "border-emerald-400/50 shadow-[0_0_20px_rgba(52,211,153,0.25)]"
+            : isAct
+            ? "border-cyan-300/70 shadow-[0_0_28px_rgba(56,189,248,0.35)]"
+            : "border-white/12 shadow-[0_8px_20px_rgba(0,0,0,0.4)]"
+        }`}
+        style={{
+          left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
+          background: isBlk
+            ? "linear-gradient(160deg, rgba(45,16,22,0.96), rgba(20,8,12,0.98))"
+            : isComp
+            ? "linear-gradient(160deg, rgba(16,40,30,0.96), rgba(8,20,16,0.98))"
+            : isAct
+            ? "linear-gradient(160deg, rgba(20,40,70,0.96), rgba(10,20,38,0.98))"
+            : "linear-gradient(160deg, rgba(32,38,50,0.96), rgba(18,22,30,0.98))",
+        }}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
+            isBlk ? "bg-rose-400/20 text-rose-200" : isComp ? "bg-emerald-400/20 text-emerald-200" : isAct ? "bg-cyan-400/20 text-cyan-200" : "bg-white/10 text-slate-300"
+          }`}>
+            {stepLabel}
+          </span>
+          <span className={`h-2 w-2 rounded-full ${isBlk ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.9)]" : isComp ? "bg-emerald-400" : isAct ? "animate-pulse bg-cyan-400 shadow-[0_0_6px_rgba(56,189,248,0.9)]" : "bg-slate-600"}`} />
+        </div>
+        <div className="mt-1.5 truncate text-[12.5px] font-semibold text-white group-hover:text-cyan-100">
+          {n.title}
+        </div>
+        <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
+          <span className="truncate max-w-[95px]">{n.subtitle ?? (n.owner ? agentName(n.owner) : "Governed")}</span>
+          <span className={`font-mono font-semibold ${isBlk ? "text-rose-300" : isComp ? "text-emerald-300" : isAct ? "text-cyan-200" : "text-slate-400"}`}>
+            {isAct ? "ACTIVE" : isBlk ? "BLOCKED" : isComp ? "DONE" : "WAITING"}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // 4. Founder Approval Gate
+  if (n.type === "approval") {
+    return (
+      <div
+        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
+        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
+        className={`group absolute cursor-pointer select-none rounded-2xl border p-3 transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
+          selected ? "border-amber-200 ring-2 ring-amber-300/60" : "border-amber-300/60 shadow-[0_0_35px_rgba(245,158,11,0.35)]"
+        }`}
+        style={{
+          left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
+          background: "linear-gradient(160deg, rgba(48,32,10,0.96), rgba(24,16,6,0.98))",
+        }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-amber-300">
+            <Scale size={16} />
+            <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-amber-200">APPROVAL GATE</span>
+          </span>
+          <span className="h-2 w-2 animate-ping rounded-full bg-amber-400" />
+        </div>
+        <div className="mt-1 truncate text-[13px] font-semibold text-white">
+          {n.activity ?? n.title}
+        </div>
+        <div className="mt-0.5 text-[10.5px] text-amber-100/75">
+          {n.subtitle ?? "Ratification required"}
+        </div>
+      </div>
+    );
+  }
+
+  // 5. Standard Card (Founder / Outcome)
   return (
     <div
       onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-      className="group absolute cursor-pointer select-none"
-      style={{ left: n.x - 90, top: n.y - n.h / 2, width: 180 }}
+      className={`group absolute flex cursor-pointer select-none flex-col justify-center rounded-2xl border p-3 text-white transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
+        selected ? "border-cyan-200 ring-2 ring-cyan-300/60" : "border-white/14 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
+      }`}
+      style={{
+        left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
+        background: n.type === "outcome"
+          ? "linear-gradient(160deg, rgba(18,42,32,0.96), rgba(10,22,16,0.98))"
+          : "linear-gradient(160deg, rgba(42,50,68,0.96), rgba(20,24,34,0.98))",
+      }}
     >
-      <div
-        className={`relative mx-auto flex items-center justify-center text-white transition-all duration-200 group-hover:-translate-y-1 group-hover:scale-105 active:scale-95 ${round ? "rounded-full" : "rounded-2xl"} ${selected ? "ring-2 ring-cyan-200/80" : ""}`}
-        style={{
-          width: n.w, height: n.h,
-          color: m.tint ?? "#f3f7ff",
-          background: round
-            ? "radial-gradient(circle at 50% 40%, rgba(40,70,120,0.92), rgba(14,22,40,0.96))"
-            : "linear-gradient(160deg, rgba(58,64,78,0.96), rgba(28,32,42,0.98))",
-          border: selected ? "1px solid rgba(160,230,255,0.9)" : round ? "1px solid rgba(120,190,255,0.55)" : "1px solid rgba(255,255,255,0.14)",
-          boxShadow: selected
-            ? "0 0 34px rgba(103,232,249,0.55), inset 0 0 18px rgba(103,232,249,0.25)"
-            : round ? "0 0 26px rgba(80,160,255,0.45), inset 0 0 18px rgba(80,160,255,0.25)" : "0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)",
-        }}
-      >
-        <span className="transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
+      <div className="flex items-center justify-between">
+        <span style={{ color: m.tint ?? "#f3f7ff" }}>{m.icon}</span>
         {badge}
       </div>
-      <div className="pointer-events-none mt-2 text-center">
-        <div className={`text-[15px] font-semibold leading-[1.15] tracking-[-0.008em] transition-colors ${selected ? "text-cyan-100" : "text-white group-hover:text-cyan-100"}`} style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>
-          {titleLines.map((l) => <div key={l}>{l}</div>)}
-        </div>
-        {m.sub && <div className="mt-0.5 text-[11px] text-slate-300/90" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}>{m.sub}</div>}
+      <div className="mt-1.5 truncate text-[13px] font-semibold text-white group-hover:text-cyan-100">
+        {m.title}
       </div>
+      {m.sub && <div className="truncate text-[10px] text-slate-300/80">{m.sub}</div>}
+    </div>
+  );
+}
+
+function SpatialCardOverlay({ card }: { card: SpatialCard }) {
+  const toneClasses = card.tone === "amber"
+    ? "border-amber-400/40 bg-[#120d04]/94 text-amber-200 shadow-[0_8px_28px_rgba(245,158,11,0.3)]"
+    : card.tone === "rose"
+    ? "border-rose-400/40 bg-[#140608]/94 text-rose-200 shadow-[0_8px_28px_rgba(244,63,94,0.3)]"
+    : card.tone === "emerald"
+    ? "border-emerald-400/40 bg-[#04140c]/94 text-emerald-200 shadow-[0_8px_28px_rgba(16,185,129,0.3)]"
+    : "border-cyan-400/40 bg-[#06101e]/94 text-cyan-200 shadow-[0_8px_28px_rgba(56,189,248,0.3)]";
+
+  const dotClass = card.tone === "amber"
+    ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]"
+    : card.tone === "rose"
+    ? "bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.9)]"
+    : card.tone === "emerald"
+    ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]"
+    : "bg-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.9)]";
+
+  return (
+    <div
+      className={`pointer-events-none absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-1.5 text-[11px] backdrop-blur-md transition-all duration-300 ${toneClasses}`}
+      style={{ left: card.x, top: card.y, animation: `os-in 240ms ${EASE}` }}
+    >
+      <span className={`h-1.5 w-1.5 animate-pulse rounded-full ${dotClass}`} />
+      <span className="font-semibold text-white">{card.actor}:</span>
+      <span className="opacity-90">{card.action}</span>
+      {card.target && (
+        <span className="flex items-center gap-1 font-medium text-white/80">
+          <span>➜</span>
+          <span>{card.target}</span>
+        </span>
+      )}
     </div>
   );
 }
 
 function CountBadge({ n, tone = "cyan" }: { n: number; tone?: "cyan" | "amber" | "rose" }) {
   if (!n) return null;
-  const c = tone === "amber" ? "bg-amber-300 text-[#1a1200] shadow-[0_0_10px_rgba(252,211,77,0.8)]" : tone === "rose" ? "bg-rose-400 text-white shadow-[0_0_10px_rgba(251,113,133,0.8)]" : "bg-cyan-300 text-[#04121b] shadow-[0_0_10px_rgba(103,232,249,0.8)]";
+  const c = tone === "amber"
+    ? "bg-amber-300 text-[#1a1200] shadow-[0_0_10px_rgba(252,211,77,0.8)]"
+    : tone === "rose"
+    ? "bg-rose-400 text-white shadow-[0_0_10px_rgba(251,113,133,0.8)]"
+    : "bg-cyan-300 text-[#04121b] shadow-[0_0_10px_rgba(103,232,249,0.8)]";
   return <span className={`tnum absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[10px] font-bold ${c}`}>{n}</span>;
 }
 
 function StateDot({ state }: { state: Agent["state"] }) {
-  const c = state === "working" ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" : state === "waiting" ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]" : state === "offline" ? "bg-slate-600" : "bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]";
+  const c = state === "working"
+    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]"
+    : state === "waiting"
+    ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]"
+    : state === "offline"
+    ? "bg-slate-600"
+    : "bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]";
   return <span className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border-2 border-[#0a1120] ${c}`} />;
 }
 
@@ -248,8 +557,6 @@ function WorkforceList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
-
-
 function CompanyCard({ onClose }: { onClose: () => void }) {
   const company = useOS((s) => s.company);
   const edit = (field: "oneLiner" | "focus", label: string) => {
@@ -290,7 +597,9 @@ function CompanyCard({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Minimap({ vw, vh, k, pan, onJump }: { vw: number; vh: number; k: number; pan: { x: number; y: number }; onJump: (wx: number, wy: number) => void }) {
+function Minimap({ vw, vh, k, pan, nodes, onJump }: {
+  vw: number; vh: number; k: number; pan: { x: number; y: number }; nodes: FlowNode[]; onJump: (wx: number, wy: number) => void
+}) {
   const MW = 132, MH = 84;
   const ms = Math.min(MW / WORLD.W, MH / WORLD.H);
   const ox = (MW - WORLD.W * ms) / 2, oy = (MH - WORLD.H * ms) / 2;
@@ -298,6 +607,7 @@ function Minimap({ vw, vh, k, pan, onJump }: { vw: number; vh: number; k: number
   const tx = vw / 2 + pan.x - WORLD.CX * k;
   const ty = vh / 2 + pan.y - WORLD.CY * k;
   const a = toMini((0 - tx) / k, (0 - ty) / k), b = toMini((vw - tx) / k, (vh - ty) / k);
+
   return (
     <div className="overflow-hidden rounded-xl border border-white/12 bg-[#060c18]/90 shadow-[0_10px_30px_rgba(0,0,0,0.55)] backdrop-blur-md">
       <svg width={MW} height={MH} className="block cursor-crosshair" onPointerDown={(e) => e.stopPropagation()}
@@ -307,7 +617,23 @@ function Minimap({ vw, vh, k, pan, onJump }: { vw: number; vh: number; k: number
           onJump((e.clientX - r.left - ox) / ms + (WORLD.CX - WORLD.W / 2), (e.clientY - r.top - oy) / ms + (WORLD.CY - WORLD.H / 2));
         }}>
         <rect x={0} y={0} width={MW} height={MH} fill="rgba(10,20,36,0.6)" />
-        {NODES.map((n) => { const p = toMini(n.x, n.y); return <circle key={n.id} cx={p.x} cy={p.y} r={n.id === "core" ? 3.4 : 1.8} fill={n.id === "core" ? "#fb923c" : "#7dd3fc"} opacity={0.9} />; })}
+        {nodes.map((n) => {
+          const p = toMini(n.x, n.y);
+          const color = n.id === "core"
+            ? "#fb923c"
+            : n.state === "blocked"
+            ? "#fb7185"
+            : n.state === "complete"
+            ? "#34d399"
+            : n.type === "approval"
+            ? "#fbbf24"
+            : n.id === "finance"
+            ? "#34d399"
+            : n.id === "pm"
+            ? "#c084fc"
+            : "#7dd3fc";
+          return <circle key={n.id} cx={p.x} cy={p.y} r={n.id === "core" ? 3.4 : n.kind === "round" ? 2.4 : 1.8} fill={color} opacity={0.9} />;
+        })}
         <rect x={Math.min(a.x, b.x)} y={Math.min(a.y, b.y)} width={Math.max(6, Math.abs(b.x - a.x))} height={Math.max(6, Math.abs(b.y - a.y))} fill="rgba(103,232,249,0.12)" stroke="rgba(103,232,249,0.7)" strokeWidth={1} rx={2} />
       </svg>
     </div>
@@ -350,6 +676,10 @@ export default function FlowDesktop({
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
   const osState = useOS((s) => s);
+
+  // Dynamically derive genuine living SamJuniorsOS graph
+  const graph = useMemo(() => deriveGraph(osState), [osState]);
+
   const metrics = generateSystemMetrics(osState);
   const milestones = generateCompanyMilestones();
 
@@ -367,9 +697,14 @@ export default function FlowDesktop({
   useEffect(() => {
     const engine = new FlowEngine(canvasRef.current!);
     engineRef.current = engine;
+    engine.setGraph(graph);
     engine.start();
     return () => engine.stop();
   }, []);
+
+  useEffect(() => {
+    engineRef.current?.setGraph(graph);
+  }, [graph]);
 
   useEffect(() => {
     const el = viewportRef.current!;
@@ -489,6 +824,7 @@ export default function FlowDesktop({
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
     updateCursorReadout(e.clientX, e.clientY);
     if (!pointers.current.has(e.pointerId)) return;
@@ -505,9 +841,10 @@ export default function FlowDesktop({
     if (ps) {
       const dx = e.clientX - ps.px, dy = e.clientY - ps.py;
       if (Math.abs(dx) + Math.abs(dy) > 3) { ps.moved = true; setShowHint(false); }
-      setCam((p) => clamp(ps.x + dx, ps.y + dy, p.k));
+      setCam((p) => clamp(ps.x + dx, p.y + dy, p.k));
     }
   };
+
   const endPointer = (e: React.PointerEvent) => {
     const ps = panStart.current;
     pointers.current.delete(e.pointerId);
@@ -526,17 +863,20 @@ export default function FlowDesktop({
   const effLeft = leftOpen && !focus, effRight = rightOpen && !focus;
   const zoomPct = Math.round((cam.k / Math.max(0.001, baseFit.current)) * 100);
   const gridMinor = 44 * cam.k, gridMajor = 220 * cam.k;
-  const selMeta = selected ? META[selected.id] : null;
+  const selMeta = selected ? getMeta(selected) : null;
   const selAgent = selMeta?.agent ? agents.find((a) => a.id === selMeta.agent) : undefined;
+  const selWork = selected?.type === "workflow"
+    ? work.find((w) => selected.id === `step-${w.id}` || selected.id === `workflow-${w.id}` || selected.title === w.title)
+    : undefined;
 
-  // real per-node badges from state
-  const badgeFor = (id: string): ReactNode => {
-    if (id === "decisions") return <CountBadge n={decisions.length} tone="amber" />;
-    if (id === "triage") return <CountBadge n={attention.length} />;
-    if (id === "core") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
-    if (id === "requests") return <CountBadge n={attention.filter((a) => a.from !== "you" && a.from !== "sophia").length} />;
-    const ag = agents.find((a) => a.id === id);
-    if (ag) return <StateDot state={ag.state} />;
+  // Real per-node badges from state
+  const badgeFor = (node: FlowNode): ReactNode => {
+    if (node.type === "approval") return <CountBadge n={decisions.length} tone="amber" />;
+    if (node.id === "core") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
+    if (node.id === "ops" || node.id === "finance" || node.id === "pm") {
+      const ag = agents.find((a) => a.id === node.id);
+      if (ag) return <StateDot state={ag.state} />;
+    }
     return null;
   };
 
@@ -557,7 +897,7 @@ export default function FlowDesktop({
         </div>
 
         <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] tracking-[0.18em] text-slate-400 md:flex">
-          <Layers size={12} className="text-cyan-300" /> OPERATING GRAPH
+          <Layers size={12} className="text-cyan-300" /> LIVING OPERATING GRAPH
           <span className="text-slate-700">·</span>
           <span className="tnum font-mono text-cyan-200">{zoomPct}%</span>
         </div>
@@ -610,7 +950,7 @@ export default function FlowDesktop({
           <div className="mt-auto w-[232px] pt-1 text-[9px] tracking-[0.26em] text-slate-600 max-lg:w-[254px]">SAMJUNIORSOS · ATTENTION</div>
         </aside>
 
-        {/* ---------------- center: canvas + work dock ---------------- */}
+        {/* ---------------- center: canvas + operating graph ---------------- */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 sm:gap-2.5">
           <div
             ref={viewportRef}
@@ -627,20 +967,33 @@ export default function FlowDesktop({
           >
             {gridOn && (
               <>
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.09) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.5 : 1 }} />
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.13) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.08) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.12) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
               </>
             )}
-            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.28), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.24), transparent 55%)" }} />
+            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.25), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.22), transparent 55%)" }} />
 
             {/* world layer */}
             <div className="absolute left-0 top-0 h-0 w-0" style={{ transform: `translate(${tx}px, ${ty}px) scale(${cam.k})`, transformOrigin: "0 0" }}>
-              <div className="absolute whitespace-nowrap text-[11px] font-bold tracking-[0.24em] text-white/85" style={{ left: 760, top: 58 }}>INPUTS</div>
-              <div className="absolute whitespace-nowrap text-[11px] font-bold tracking-[0.24em] text-white/85" style={{ left: 285, top: 366 }}>ORCHESTRATION</div>
-              <div className="absolute flex items-center gap-2 whitespace-nowrap text-[11px] font-bold tracking-[0.22em] text-cyan-300" style={{ left: 478, top: 579 }}><span className="text-orange-400">➜</span> WORKFORCE</div>
-              <div className="absolute whitespace-nowrap text-[11px] font-bold tracking-[0.24em] text-amber-200/90" style={{ left: 870, top: 760 }}>HUMAN IN THE LOOP</div>
-              {NODES.map((n) => (
-                <NodeCard key={n.id} n={n} selected={selected?.id === n.id} badge={badgeFor(n.id)} onClick={handleNodeClick} onDoubleClick={focusNode} />
+              {/* Category section titles */}
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-slate-400" style={{ left: 180, top: 290 }}>INPUTS & DIRECTIVES</div>
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-orange-300/80" style={{ left: 460, top: 290 }}>COO & ORCHESTRATOR</div>
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-cyan-300/80" style={{ left: 740, top: 290 }}>ACTIVE SPECIALISTS</div>
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-sky-300/80" style={{ left: 1010, top: 290 }}>PROTOCOL STEPS</div>
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1280, top: 290 }}>CONSTITUTIONAL VERIFIER</div>
+              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1500, top: 290 }}>GOVERNED VAULT</div>
+              {graph.nodes.some((n) => n.type === "approval") && (
+                <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-amber-300/90" style={{ left: 620, top: 615 }}>FOUNDER APPROVAL GATE</div>
+              )}
+
+              {/* Dynamic Living Nodes */}
+              {graph.nodes.map((n) => (
+                <NodeCard key={n.id} n={n} selected={selected?.id === n.id} badge={badgeFor(n)} onClick={handleNodeClick} onDoubleClick={focusNode} />
+              ))}
+
+              {/* Spatial Contextual Cards */}
+              {graph.spatialCards.map((card) => (
+                <SpatialCardOverlay key={card.id} card={card} />
               ))}
             </div>
 
@@ -666,13 +1019,17 @@ export default function FlowDesktop({
 
             {/* inspector — contextual, progressive */}
             {selected && selMeta && !focus && (
-              <div className="absolute left-1/2 top-14 z-10 w-[340px] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-cyan-200/25 bg-[#081120]/94 p-3.5 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl sm:top-3 sm:max-w-[calc(100%-20rem)]" style={{ animation: `os-in 220ms ${EASE}` }}>
+              <div className="absolute left-1/2 top-14 z-10 w-[380px] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-cyan-200/25 bg-[#081120]/95 p-4 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:top-3 sm:max-w-[calc(100%-20rem)]" style={{ animation: `os-in 220ms ${EASE}` }}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-white/[0.05]" style={{ color: selMeta.tint ?? "#fff" }}>{selMeta.icon}</span>
                     <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold leading-tight text-white">{selMeta.title}</div>
-                      {selAgent ? <div className="truncate text-[11px] text-slate-400">{selAgent.role} · <span className={selAgent.state === "waiting" ? "text-amber-200" : "text-slate-300"}>{selAgent.current ?? selAgent.state}</span></div> : selMeta.sub && <div className="truncate text-[11px] text-slate-400">{selMeta.sub}</div>}
+                      <div className="truncate text-[13.5px] font-semibold leading-tight text-white">{selMeta.title}</div>
+                      {selAgent ? (
+                        <div className="truncate text-[11px] text-slate-400">{selAgent.role} · <span className={selAgent.state === "waiting" ? "text-amber-200" : "text-slate-300"}>{selAgent.current ?? selAgent.state}</span></div>
+                      ) : (
+                        selMeta.sub && <div className="truncate text-[11px] text-slate-400">{selMeta.sub}</div>
+                      )}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -680,10 +1037,76 @@ export default function FlowDesktop({
                     <button onClick={() => { osSound.click(); setSelected(null); }} title="Close" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-white"><X size={13} /></button>
                   </div>
                 </div>
-                <p className="mt-2 text-[11.5px] leading-relaxed text-slate-400">{selMeta.desc}</p>
-                {selected.id === "decisions" && decisions.length > 0 && (
-                  <div className="mt-2 rounded-lg border border-amber-300/20 bg-amber-300/[0.06] px-2.5 py-1.5 text-[11px] text-amber-100">{decisions.length} open · see Decisions on the right</div>
+
+                <p className="mt-2 text-[11.5px] leading-relaxed text-slate-300">{selMeta.desc}</p>
+
+                {/* Workflow specific actions */}
+                {selWork && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
+                    <div className="flex items-center justify-between text-[10.5px]">
+                      <span className="uppercase tracking-wider text-slate-400">Progression Stage</span>
+                      <span className="font-mono font-bold text-cyan-200">{selWork.stage.toUpperCase()}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {STAGES.map((s, idx) => {
+                        const curIdx = STAGES.indexOf(selWork.stage);
+                        const isPast = idx <= curIdx;
+                        return (
+                          <div key={s} className="flex flex-1 flex-col items-center gap-1">
+                            <div className={`h-1.5 w-full rounded-full transition-colors ${isPast ? "bg-cyan-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]" : "bg-white/10"}`} />
+                            <span className="text-[8px] uppercase tracking-tighter text-slate-500">{s.slice(0, 3)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={() => { osSound.click(); os.advanceWork(selWork.id); }}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-cyan-300/40 bg-cyan-400/15 py-1 text-[11px] font-medium text-cyan-100 hover:bg-cyan-400/25 active:scale-95"
+                      >
+                        Advance Stage <ArrowRight size={11} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          osSound.click();
+                          os.setWorkState(selWork.id, selWork.state === "active" ? "paused" : "active");
+                        }}
+                        className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+                      >
+                        {selWork.state === "active" ? <Pause size={11} /> : <Play size={11} />}
+                      </button>
+                    </div>
+                  </div>
                 )}
+
+                {/* Approval specific actions */}
+                {selected.type === "approval" && decisions.length > 0 && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-2.5">
+                    <div className="text-[11px] font-medium text-amber-100">{decisions.length} Open Consequential Decision{decisions.length > 1 ? "s" : ""}</div>
+                    <div className="space-y-1.5">
+                      {decisions.slice(0, 2).map((d) => (
+                        <div key={d.id} className="flex items-center justify-between rounded-lg bg-black/30 px-2 py-1.5 text-[11px]">
+                          <span className="truncate text-slate-200">{d.title}</span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => { osSound.click(); os.resolveDecision(d.id, "Approve"); }} className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] text-cyan-200 hover:bg-cyan-400/30">Approve</button>
+                            <button onClick={() => { osSound.click(); os.resolveDecision(d.id, "Defer"); }} className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-white/20">Defer</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Verification specific metrics */}
+                {selected.type === "verification" && (
+                  <div className="mt-3 space-y-1.5 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-2.5 text-[11px]">
+                    <div className="font-semibold text-emerald-200">Constitutional Invariant Guarantees:</div>
+                    <div className="flex items-center gap-1.5 text-slate-300"><Check size={12} className="text-emerald-400" /> Gross Margin Floor ≥ 80.0% Enforced</div>
+                    <div className="flex items-center gap-1.5 text-slate-300"><Check size={12} className="text-emerald-400" /> Safe Sandbox Isolation Active</div>
+                    <div className="flex items-center gap-1.5 text-slate-300"><Check size={12} className="text-emerald-400" /> Single-Use SHA-256 Signatures Bound</div>
+                  </div>
+                )}
+
                 {selAgent && (
                   <button onClick={() => { osSound.click(); onOpenAgent?.(selAgent.id); }} className="mt-2.5 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-cyan-200 hover:text-white">Open role card <ArrowRight size={12} /></button>
                 )}
@@ -708,7 +1131,7 @@ export default function FlowDesktop({
               <span className="tnum hidden px-1.5 font-mono text-[10.5px] text-slate-500 sm:block"><span ref={cursorRef}>–, –</span></span>
             </div>
 
-            {mapOn && <div className="absolute bottom-3 right-20 z-10 hidden sm:block"><Minimap vw={vw} vh={vh} k={cam.k} pan={{ x: cam.x, y: cam.y }} onJump={jumpTo} /></div>}
+            {mapOn && <div className="absolute bottom-3 right-20 z-10 hidden sm:block"><Minimap vw={vw} vh={vh} k={cam.k} pan={{ x: cam.x, y: cam.y }} nodes={graph.nodes} onJump={jumpTo} /></div>}
 
             {showHint && !focus && !selected && (
               <div className="pointer-events-none absolute left-1/2 top-3 z-10 hidden -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-[#060c18]/85 px-3.5 py-1.5 text-[10.5px] tracking-wide text-slate-400 backdrop-blur-md lg:flex" style={{ animation: `os-in 400ms ${EASE}` }}>

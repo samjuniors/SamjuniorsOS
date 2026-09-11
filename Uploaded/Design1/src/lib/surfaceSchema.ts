@@ -182,55 +182,53 @@ export function generateSystemMetrics(state: OSState): MetricItem[] {
 
   return [
     {
-      id: "margin",
-      label: "Gross Margin Floor",
-      value: "≥ 80.0%",
+      id: "execution-primitive",
+      label: "Execution primitive",
+      value: "Sophia → Thorne",
       status: "healthy",
       confidence: "verified",
-      source: "Company Invariant · Phase 2.1",
+      source: "PRODUCT.md §4",
     },
     {
       id: "decisions",
       label: "Open Decisions",
       value: openDecisions,
       status: openDecisions > 0 ? "waiting" : "healthy",
-      confidence: "verified",
-      source: "Founder Decision Queue",
+      confidence: "unconfigured",
+      source: "UI session — not server-backed",
     },
     {
       id: "active-work",
       label: "Active Workstreams",
       value: activeWork,
       status: blockedWork > 0 ? "blocked" : "active",
-      confidence: "verified",
-      source: "Operations Engine",
+      confidence: "unconfigured",
+      source: "UI session — not server-backed",
     },
     {
       id: "workforce",
-      label: "Workforce Coverage",
-      value: `${state.agents.filter((a) => a.state !== "offline").length}/${state.agents.length}`,
-      unit: "roles",
+      label: "Implemented roles",
+      value: "2",
+      unit: "v1",
       status: "active",
       confidence: "verified",
-      source: "Role Registry",
+      source: "PRODUCT.md §5",
     },
   ];
 }
 
 export function generateCompanyMilestones(): TimelineMilestone[] {
   return [
-    { id: "m1", title: "Phase 1.0: Core Orchestration", subtitle: "Multi-agent runtime initialized", at: "Completed", status: "complete" },
-    { id: "m2", title: "Phase 2.0: Unified Operating UX", subtitle: "Zero-flicker mode switch & handy chat", at: "Completed", status: "complete" },
-    { id: "m3", title: "Phase 2.1: Scalable Surface System", subtitle: "Standardized 10 domain surfaces & state handling", at: "Active", status: "current" },
-    { id: "m4", title: "Phase 2.2: Live Production Connectors", subtitle: "Telemetry streaming & external tools", at: "Q4 2026", status: "upcoming" },
+    { id: "m1", title: "Foundation execution primitive", subtitle: "Sophia plans; Thorne produces a typed artifact", at: "Implemented", status: "complete" },
+    { id: "m2", title: "Verification and Founder approval", subtitle: "Deterministic verification and authenticated approval are wired", at: "Implemented", status: "complete" },
+    { id: "m3", title: "Company Brain and Role Brains", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },
+    { id: "m4", title: "Market intelligence", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },
   ];
 }
 
 export function generateAgentRelationships(): RelationshipLink[] {
   return [
-    { id: "r1", fromId: "sophia", fromName: "Sophia", toId: "ops", toName: "Operations", type: "delegates" },
-    { id: "r2", fromId: "ops", fromName: "Operations", toId: "research", toName: "Research", type: "depends-on" },
-    { id: "r3", fromId: "finance", fromName: "Finance", toId: "sophia", toName: "Sophia", type: "escalates-to" },
-    { id: "r4", fromId: "comms", fromName: "Comms", toId: "ops", toName: "Operations", type: "monitors" },
+    { id: "r1", fromId: "sophia", fromName: "Sophia", toId: "ops", toName: "Thorne", type: "delegates" },
+    { id: "r2", fromId: "ops", fromName: "Thorne", toId: "sophia", toName: "Sophia", type: "escalates-to" },
   ];
 }

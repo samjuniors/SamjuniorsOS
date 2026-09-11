@@ -1,18 +1,18 @@
 import type {Metadata} from 'next';
-import './globals.css'; // Global styles
+import './v2-globals.css';
 
 export const metadata: Metadata = {
-  title: 'SamJuniors OS — Autonomous AI Executive Desktop',
-  description: 'An internal desktop operating system for an AI-run company featuring an autonomous multi-agent workforce, company vitals, and executive orchestrator.',
+  title: 'SamJuniorsOS',
+  description: 'The internal operating system for SamJuniors.',
   openGraph: {
-    title: 'SamJuniors OS — Autonomous AI Executive Desktop',
-    description: 'An internal desktop operating system for an AI-run company featuring an autonomous multi-agent workforce, company vitals, and executive orchestrator.',
+    title: 'SamJuniorsOS',
+    description: 'The internal operating system for SamJuniors.',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'SamJuniors OS — Autonomous AI Executive Desktop',
-    description: 'An internal desktop operating system for an AI-run company featuring an autonomous multi-agent workforce, company vitals, and executive orchestrator.',
+    title: 'SamJuniorsOS',
+    description: 'The internal operating system for SamJuniors.',
   },
 };
 

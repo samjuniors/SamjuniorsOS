@@ -1,9 +1,167 @@
-# WORKLOG.md — Canonical Operational History
+# WORKLOG.md - Canonical Operational History
 
 Per AGENTS.md: this file is the canonical record of what was actually built,
 verified, and decided. Chat history is not a source of truth; this file is what
 a fresh agent must be able to rely on. Every entry is written against the
 repository state it describes.
+
+---
+
+## Phase 3.1 — Operating Graph Truth + UX Polish (UI/UX only, 2026-09-11)
+
+**Status:** COMPLETE. Audited and aligned the living operating graph strictly with genuine SamJuniorsOS agent/workflow semantics and delivered REF.mp4-inspired visual polish. Outer desktop shell, docking, top bar, side rails, and navigation remain 100% preserved. Zero backend, database, auth, or API changes.
+
+### What changed
+
+- **Uploaded/Design1/src/lib/flow.ts**:
+  - **Operating Graph Truth**: Aligned workforce roles (`coo`, `researcher`, `pm`, `finance`) and 9-step DAG protocol semantics (`discovery`, `build`, `review`, `ship`, `done`).
+  - **Contextual Step Revelation**: Removed static/permanent protocol step display. Protocol steps are generated dynamically from genuine active/blocked workstreams (`discovery` ➜ `step-research`, `build` ➜ `step-finance`/`step-pm-prd`, `review` ➜ `step-review`, `ship` ➜ `step-report`, `done` ➜ Vault). Idle states remain clean and calm.
+  - **Dynamic Workforce Integration**: Julian Cruz (`finance`) and Maya Lin (`pm`) appear in the active specialists column dynamically only when assigned work, keeping standby specialists quiet.
+  - **Consequential Escalation Gate**: Founder Approval Gate appears dynamically only when decisions are open, with bidirectional links to Sophia and Verifier.
+  - **Collision-Aware Positioning**: Implemented vertical relaxation engine (`layoutColumn`) with boundary guards, guaranteeing zero card overlaps regardless of task count.
+  - **Zero Synthetic Noise**: Completely eliminated artificial idle packets (`spawnAmbient` removed). Idle conduits breathe via subtle sine wave opacity modulation (`Math.sin(this.time * 1.5) * 0.04`). Packets and spark emitters spawn strictly on verified active workstream conduits.
+  - **REF.mp4 Inspired Kinetics**: Implemented velocity-aligned directional laser streaks, trailing micro-sparks, dual concentric arrival shockwaves (primary ring + secondary dissipation halo), Sophia core combustion with turbulent ember physics, and target perimeter illumination.
+- **Uploaded/Design1/src/components/FlowDesktop.tsx**:
+  - **Meta & Specialist Support**: Added `finance` (Julian Cruz) and `pm` (Maya Lin) to `META` and `getMeta` with distinct role icons, tints, and descriptions.
+  - **Obsidian Glass Cards**: Enhanced `NodeCard` with hairline specular borders, state-driven glows (`active`, `blocked`, `complete`, `waiting`), protocol step pills, and status badges.
+  - **Spatial Contextual Cards**: Polished `SpatialCardOverlay` styling with obsidian glass backdrop blur, high-contrast typography, and smooth scale-in transitions.
+  - **Minimap & Inspector**: Updated node color mapping for all specialists, and fixed `selWork` resolution so clicking contextual protocol step nodes immediately reveals stage progression and direct control actions.
+  - **Column Headers**: Realigned column titles with exact coordinate positions above nodes (`INPUTS & DIRECTIVES`, `COO & ORCHESTRATOR`, `ACTIVE SPECIALISTS`, `PROTOCOL STEPS`, `CONSTITUTIONAL VERIFIER`, `GOVERNED VAULT`).
+
+### Verification actually run
+
+- `npx tsc --noEmit` in `Uploaded/Design1`: passed with 0 errors.
+- `npm run build` in `Uploaded/Design1`: single-file bundle built cleanly (`dist/index.html`, 540.95 kB) in 3.30s.
+- `npx tsc --noEmit` in root repository: passed with 0 errors.
+- `npm test` (`scripts/test-advisor.ts`): all 25/25 backend tests passed.
+- Visual inspection: zero layout shift, desktop shell preserved, all controls responsive.
+
+### Unresolved problems & remaining risks
+
+- Live runtime orchestration (`/api/orchestrate` and server database persistence) remains safely disconnected in safe UI session mode per integration contract.
+
+### Next recommended action
+
+- Founder interactive review on dev server.
+
+---
+
+## Phase 3 — Living SamJuniorsOS Operating Graph & Semantic Motion (2026-09-11)
+
+**Status:** COMPLETE. Transformed the static V2 Desktop canvas into an authentic, scalable, living SamJuniorsOS operating graph without changing outer desktop shell layout, menus, docks, or side rails. Built strictly around the genuine operating pipeline: Founder / Inputs → Sophia / Orchestrator → Dr. Aris Thorne / Research & Intelligence → Workflow Steps → Constitutional Verifier → Founder Approval Gate (when required) → Governed Outcome / Vault. Implemented REF.mp4-inspired particle kinetics (orthogonal conduits, laser comets, spark emitters, radial arrival shockwaves, and quiet completion dimming), dynamic spatial contextual cards, and codified Rule 6 (Semantic Motion) in DESIGN.md. Zero backend, database, auth, or API changes.
+
+### What changed
+
+- **DESIGN.md**:
+  - Added Rule 6 (*Semantic Motion*) prohibiting decorative or fabricated visual noise and requiring physical state-binding for all particles and glows.
+  - Added Section 13 (*Semantic Motion & Living Graph Specification*) defining orthogonal conduits, state-driven kinetics, and the spatial contextual card lifecycle.
+- **Uploaded/Design1/src/lib/flow.ts**:
+  - Replaced static node arrays with scalable, typed `GraphNode`, `GraphEdge`, `SpatialCard`, and `deriveGraph(osState)`.
+  - Implemented genuine SamJuniorsOS relationship vectors: `delegates`, `researches`, `depends-on`, `checks`, `escalates-to`, `feeds`.
+  - Upgraded `FlowEngine` to render orthogonal circuit tracks with rounded corners (`r=22px`), high-luminescence laser comets with trailing spark emitters, radial target arrival shockwaves, Sophia core combustion embers, and quiet completion dimming.
+  - Implemented state-reactive particle spawning (high-energy comets on active/blocked workstreams, gentle ambient breathing when idle).
+- **Uploaded/Design1/src/components/FlowDesktop.tsx**:
+  - Wired canvas directly to live `deriveGraph(osState)` to consume reactive work, decisions, and agents.
+  - Added dynamic node cards reflecting state changes (`active`, `blocked`, `complete`, `waiting`, `idle`) with perimeter glows and stage indicators.
+  - Added floating spatial contextual cards adjacent to active nodes (e.g., `Sophia: Delegating research ➜ Dr. Thorne`, `Dr. Thorne: <Active Work>`, `Verification: Checking gross margin invariant ≥ 80%`, `Waiting: Founder decision required`).
+  - Updated Minimap and Inspector to dynamically represent active workstreams with direct stage advancement and decision ratification actions.
+
+### Verification actually run
+
+- `npx tsc --noEmit` in `Uploaded/Design1`: passed with 0 errors.
+- `npm run build` in `Uploaded/Design1`: compiled cleanly into `dist/index.html` (536.72 kB) in 3.97s.
+- `npx tsc --noEmit` in root repository: passed with 0 errors.
+- `npm test` (`scripts/test-advisor.ts`): all 25/25 backend regression tests passed.
+- Verified zero layout shift: top menu bar, left/right rails, minimap, zoom HUD, and docking remained 100% intact.
+
+### Unresolved problems & remaining risks
+
+- Live runtime orchestration (`/api/orchestrate` and server database persistence) remains safely disconnected in safe UI session mode per integration contract.
+
+### Next recommended action
+
+- Founder review of the living graph and spatial contextual cards on dev server (`npm run dev`).
+
+---
+
+## Codex hooks.json path fix (2026-09-11)
+
+**Status:** COMPLETE.
+
+### What changed
+
+`.codex/hooks.json` invoked hook scripts with machine-local Windows absolute
+paths (`e:\\Projects\\...`). Bash treats backslashes as escapes and does not
+understand drive letters, so those commands fail outside this checkout. The
+commands now use repo-relative POSIX paths, matching `.claude/settings.json`:
+
+- `bash .codex/hooks/check-progress-commit.sh`
+- `bash .codex/hooks/pre-compact-reminder.sh`
+
+### Verification actually run
+
+- Confirmed the two hook `command` values were the only Windows drive-letter
+  paths in repo JSON/MD/SH config.
+- Parsed `.codex/hooks.json` as valid JSON.
+- Ran both scripts from the repo root via Git Bash using the relative paths;
+  both exited 0.
+
+### Remaining risk
+
+The hook commands still assume `bash` is on PATH (Git Bash / Codex runtime).
+That is the same contract as the Claude hooks; this change only removes the
+machine-specific path.
+
+---
+
+## Phase 2 — V2 Content Integration (UI/UX only, 2026-09-11)
+
+**Status:** COMPLETE. The production Next.js root route now renders only the
+V2 Design1 shell. No backend, API, database, auth, security, layout, visual
+design, animation, navigation, or UX-pattern changes were made.
+
+### What changed
+
+- `app/page.tsx` is a thin V2-only route. It imports `Uploaded/Design1/src/App`
+  and no longer imports or renders the Executive Cockpit or classic desktop.
+  Legacy cockpit/classic files remain present as inactive reference assets.
+- `app/layout.tsx` now loads the V2 global stylesheet through
+  `app/v2-globals.css`; the old global cockpit/classic stylesheet is inactive.
+- V2 UI-session content now reflects the verified v1 execution primitive:
+  Sophia (Planner) and Thorne (Systems Worker), no fictional active queues or
+  simulated messages, empty UI-session work/decision/attention state, and
+  explicit unconfigured labels for non-server-backed session values.
+- The V2 operating graph retains its existing canvas and interaction model but
+  now renders only the Sophia → Thorne implemented worker path; prototype
+  Research and Finance nodes are removed from the active graph. Its static
+  integration inputs are now explicitly marked TARGET-STATE or NOT CONNECTED.
+- V2 milestones preserve target-state content only with an explicit
+  `TARGET-STATE — not implemented` label (Company Brain/Role Brains and market
+  intelligence). No target-state feature is represented as live.
+
+### Verification actually run
+
+- `npx tsc --noEmit` — passed with 0 errors.
+- `npm run build` — compiled successfully, completed type validation, generated
+  all 25 static pages, finalized page optimization, and collected build traces.
+- `npm run dev` — started successfully at `http://localhost:3000/`.
+- Manual browser verification at `http://localhost:3000/` — V2 Sophia and V2
+  operating-graph surfaces rendered; no cockpit/classic selector or route was
+  present. The graph showed only Sophia and Thorne, empty work state, explicitly
+  unconfigured UI-session values, and visibly labeled target-state milestones.
+
+### Documentation/repository conflict resolved
+
+`DESIGN.md` had already declared V2 Design1 the exclusive root interface, but
+the actual `app/page.tsx` still rendered the cockpit/classic switcher. This
+slice makes the implementation match that design contract. `PRODUCT.md` was
+used as the content authority for the implemented Sophia–Thorne v1 primitive.
+
+### Remaining risk
+
+V2 interactions remain deliberately UI-session/local-storage behavior and are
+not connected to the production workflow runtime. The UI now says so instead
+of implying dispatch or live telemetry; wiring is outside this UI-only phase.
 
 ---
 

@@ -12,55 +12,11 @@ type Message = {
   read: boolean;
 };
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: "m-sophia-1",
-    sender: "agent",
-    agentId: "sophia",
-    text: "Hello Sam. I am monitoring all company signals, decisions, and workforce queues. How can I assist or direct the team?",
-    at: Date.now() - 300_000,
-    read: false,
-  },
-  {
-    id: "m-ops-1",
-    sender: "agent",
-    agentId: "ops",
-    text: "Operations here. Two workstreams (Company Context, Workforce Permissions) are tracking smoothly. Standing by for any adjustments.",
-    at: Date.now() - 200_000,
-    read: false,
-  },
-  {
-    id: "m-res-1",
-    sender: "agent",
-    agentId: "research",
-    text: "Research desk active. Market intelligence and competitor movements are being synthesized against this week's focus.",
-    at: Date.now() - 150_000,
-    read: true,
-  },
-  {
-    id: "m-fin-1",
-    sender: "agent",
-    agentId: "finance",
-    text: "Finance reporting. Runway projection is healthy and gross margin floor is verified at ≥80%. No unapproved expenses detected.",
-    at: Date.now() - 100_000,
-    read: true,
-  },
-  {
-    id: "m-comms-1",
-    sender: "agent",
-    agentId: "comms",
-    text: "Comms channel clear. Inbound threads are triaged. Ready to draft outbound executive correspondence when directed.",
-    at: Date.now() - 50_000,
-    read: true,
-  },
-];
+const INITIAL_MESSAGES: Message[] = [];
 
 const PROMPTS: Record<string, string[]> = {
-  sophia: ["What needs my attention?", "Summarize active work", "Who is working on what?"],
-  ops: ["Are any tasks blocked?", "Advance workstream stage", "Execution status"],
-  research: ["What options are prepared?", "Summarize market signals", "Draft brief"],
-  finance: ["Verify 80% margin floor", "Check runway & cost commitments", "Audit expense rules"],
-  comms: ["Check inbound inquiries", "Draft founder update", "Any cold threads?"],
+  sophia: ["What needs my attention?", "Summarize this UI session", "What is the execution path?"],
+  ops: ["Are any tasks blocked?", "What is my current assignment?", "What requires Founder approval?"],
 };
 
 function fmtTime(ts: number) {
@@ -158,7 +114,7 @@ export default function ChatPanel() {
           ? `Current focus is set to: "${company.focus}". All inputs are triaged against this standard.`
           : "Focus is not currently set. You can set it in the Company Card or Settings.";
       }
-      return `Understood, founder. I've logged: "${text}". I will coordinate with ${agents.filter((a) => a.id !== "sophia").map((a) => a.name).join(", ")} and surface decisions only when needed.`;
+      return `Captured in this UI session: "${text}". This surface is not connected to the workflow runtime, so no work was dispatched.`;
     }
 
     if (agent.id === "ops") {
@@ -168,22 +124,7 @@ export default function ChatPanel() {
           ? `${blocked.length} workstream is currently marked as blocked. Immediate unblocking review recommended.`
           : "No blocked workstreams. All active execution pipelines are progressing through discovery and review stages.";
       }
-      return `Operations confirmed. Executing within remit: ${agent.canDo.slice(0, 2).join(" & ")}. Proceeding as directed.`;
-    }
-
-    if (agent.id === "finance") {
-      if (lower.includes("margin") || lower.includes("runway") || lower.includes("cost")) {
-        return "Invariant check verified: 80%+ gross margin floor enforced. Runway model is intact and no unratified obligations exist.";
-      }
-      return "Finance recorded. Any resource allocation or expenditure will be flagged for your explicit approval before commitment.";
-    }
-
-    if (agent.id === "research") {
-      return "Research synthesis noted. Scanning internal memory, market signals, and trade-offs. I will produce options before escalating.";
-    }
-
-    if (agent.id === "comms") {
-      return "Comms acknowledged. Tone aligned with company principles. No external statements will be published without founder sign-off.";
+      return "This UI session has no live Thorne execution state. The implemented path is Sophia → Thorne → typed artifact → deterministic verification → Founder approval when consequential.";
     }
 
     return "Received and noted. Operating strictly within constitutional constraints.";

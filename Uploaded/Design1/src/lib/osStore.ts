@@ -81,76 +81,46 @@ export type OSState = {
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
 
-/* ------------------------------------------------------------------ seeds */
+/* ------------------------------------------------------------------ UI session seed
+ *
+ * This UI-only store is deliberately non-authoritative. It contains only the
+ * implemented v1 execution primitive from PRODUCT.md; it must not imply live
+ * telemetry, active assignments, or external integrations.
+ */
 
 const now = Date.now();
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const AGENTS: Agent[] = [
   {
-    id: "sophia", name: "Sophia", role: "Orchestrator",
-    remit: "Your interface to the OS. Triages inputs, routes work to the workforce, and brings only decisions to you.",
-    canDo: ["Triage attention", "Plan & delegate work", "Escalate decisions", "Brief you on state"],
-    tools: ["Attention queue", "Decision queue", "Workstreams", "Voice"],
-    escalates: "Anything that commits money, people, or reputation.",
+    id: "sophia", name: "Sophia", role: "Planner",
+    remit: "Plans founder directives, routes work to Thorne, and returns verified outcomes or decisions requiring Founder approval.",
+    canDo: ["Plan directives", "Route work to Thorne", "Escalate decisions", "Brief the Founder"],
+    tools: ["Directive planning", "Decision queue", "Workflow context"],
+    escalates: "Any consequential action requiring authenticated Founder approval.",
     state: "ready", tint: "text-cyan-300", glow: "rgba(56,189,248,0.4)",
   },
   {
-    id: "research", name: "Research", role: "Analysis & options",
-    remit: "Gathers context and produces options with trade-offs before a decision reaches you.",
-    canDo: ["Compare options", "Summarise sources", "Draft briefs"],
-    tools: ["Company memory", "Web", "Documents"],
-    escalates: "When options conflict with a stated principle.",
-    state: "ready", tint: "text-violet-300", glow: "rgba(168,85,247,0.4)",
-  },
-  {
-    id: "ops", name: "Operations", role: "Execution & follow-through",
-    remit: "Turns approved decisions into workstreams and keeps them moving through stages.",
-    canDo: ["Run workstreams", "Track blockers", "Report status"],
-    tools: ["Workstreams", "Calendar", "Checklists"],
-    escalates: "Blocked > 1 stage or a missed commitment.",
+    id: "ops", name: "Thorne", role: "Systems Worker",
+    remit: "Executes structured work planned by Sophia and produces a typed artifact for deterministic verification.",
+    canDo: ["Execute structured work", "Produce typed artifacts", "Report blockers"],
+    tools: ["Workflow runtime", "Verification context", "Artifact handoff"],
+    escalates: "A failed verification, blocked workflow, or action requiring Founder approval.",
     state: "ready", tint: "text-amber-300", glow: "rgba(251,146,60,0.4)",
-  },
-  {
-    id: "finance", name: "Finance", role: "Money & commitments",
-    remit: "Frames the cost of options and flags anything that changes runway or obligations.",
-    canDo: ["Cost options", "Flag commitments", "Prepare approvals"],
-    tools: ["Ledger", "Budgets"],
-    escalates: "Any new recurring cost or contract.",
-    state: "ready", tint: "text-emerald-300", glow: "rgba(52,211,153,0.4)",
-  },
-  {
-    id: "comms", name: "Comms", role: "Messages & relationships",
-    remit: "Drafts outbound communication in your voice and keeps threads from going cold.",
-    canDo: ["Draft replies", "Summarise threads", "Schedule follow-ups"],
-    tools: ["Inbox", "Calendar", "Templates"],
-    escalates: "Anything external that speaks for the company.",
-    state: "ready", tint: "text-rose-300", glow: "rgba(244,63,94,0.4)",
   },
 ];
 
 const SEED: OSState = {
-  attention: [
-    { id: uid(), kind: "decision", title: "Set this week's focus", detail: "Sophia uses it to prioritise attention and work.", from: "sophia", at: now - 60_000, decisionId: "d-focus" },
-    { id: uid(), kind: "decision", title: "Activate the workforce", detail: "Five roles are configured and waiting for your go.", from: "sophia", at: now - 50_000, decisionId: "d-workforce" },
-    { id: uid(), kind: "review", title: "Confirm escalation rules", detail: "Each role escalates on money, people, or reputation. Adjust if needed.", from: "ops", at: now - 40_000 },
-  ],
-  decisions: [
-    { id: "d-focus", title: "Set this week's focus", context: "One sentence. Everything the workforce does is ranked against it.", options: ["Set focus", "Later"], raisedBy: "sophia", at: now - 60_000, status: "open", effect: "edit-context" },
-    { id: "d-workforce", title: "Activate the workforce", context: "Research, Operations, Finance and Comms move from Ready to Working on their first assignments.", options: ["Activate", "Keep on standby"], raisedBy: "sophia", at: now - 50_000, status: "open", effect: "activate-workforce" },
-    { id: "d-voice", title: "Should Sophia speak?", context: "Voice briefings when something needs you. Text remains available either way.", options: ["Voice on", "Text only"], raisedBy: "sophia", at: now - 30_000, status: "open", effect: "toggle-voice" },
-  ],
-  work: [
-    { id: uid(), title: "Company context", owner: "sophia", stage: "discovery", state: "active", note: "Name, one-liner, focus, principles.", at: now - 90_000 },
-    { id: uid(), title: "Workforce permissions", owner: "ops", stage: "review", state: "active", note: "What each role may do without asking.", at: now - 80_000 },
-  ],
+  attention: [],
+  decisions: [],
+  work: [],
   agents: AGENTS,
   company: {
     name: "SamJuniors",
-    oneLiner: "",
+    oneLiner: "Internal operating system for SamJuniors.",
     focus: "",
-    principles: ["Bring decisions, not noise", "One owner per workstream", "Escalate money, people, reputation"],
-    constraints: ["Sophia never commits on your behalf", "Every workstream has a stage and an owner"],
+    principles: ["Multiply the Founder", "Bring verified outcomes or decisions", "Company truth is governed"],
+    constraints: ["Consequential actions require authenticated Founder approval", "Unknown state remains unknown"],
   },
   sophia: "idle",
   lastSaid: "",
@@ -160,7 +130,7 @@ const SEED: OSState = {
 
 /* ------------------------------------------------------------------ store */
 
-const KEY = "samjuniors-os-v1";
+const KEY = "samjuniors-os-v2-ui-session";
 
 function load(): OSState {
   try {
