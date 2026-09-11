@@ -25,8 +25,10 @@ const nextConfig: NextConfig = {
   },
   transpilePackages: ["motion"],
   async headers() {
-    // The Core V4 prototype is hosted at / inside a same-origin iframe.
-    // Allow same-origin framing for the static prototype assets only.
+    // The Core V4/V5 prototypes are archived design references served as
+    // static assets under /prototype/*. The active root route serves the
+    // V2 Design1 shell directly (no iframe). Framing is allowed only for
+    // these static prototype assets.
     return [
       {
         source: "/prototype/:path*",

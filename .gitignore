@@ -56,3 +56,10 @@ dist/
 
 # Skills directory
 /skills/
+
+# Runtime artifacts — never track (Phase 3.3 cleanup)
+db/*.db
+.data/
+.zscripts/dev.pid
+tool-results/
+qa-shots/

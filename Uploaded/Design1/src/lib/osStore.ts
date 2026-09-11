@@ -180,10 +180,24 @@ function load(): OSState {
   }
 }
 
-let state: OSState = typeof window === "undefined" ? SEED : load();
+// Hydration-safe initialization: both SSR and the first client render start
+// from SEED so the trees match; persisted localStorage state is applied
+// after mount via rehydrate() (avoids the server/client branch mismatch).
+let state: OSState = SEED;
 let cachedAttention = state.attention.filter((a) => !a.handled);
 let cachedDecisions = state.decisions.filter((d) => d.status === "open");
 let cachedWork = state.work.filter((w) => w.state !== "done");
+let hydrated = false;
+
+/** Post-mount rehydration: swap in persisted localStorage state (if any) and
+ *  notify subscribers. Called once from the app root's mount effect. */
+function rehydrate() {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+  state = load();
+  updateCaches();
+  listeners.forEach((l) => l());
+}
 
 function updateCaches() {
   cachedAttention = state.attention.filter((a) => !a.handled);
@@ -260,6 +274,7 @@ function log(text: string) {
 }
 
 export const os = {
+  rehydrate,
   setSophia(mode: SophiaMode) { if (state.sophia !== mode) set({ sophia: mode }); },
   setLastSaid(text: string) { set({ lastSaid: text }); },
 

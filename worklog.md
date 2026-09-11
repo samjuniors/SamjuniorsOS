@@ -339,3 +339,28 @@ Stage Summary:
 - Phase 3.2 visual bar met: reference-grade execution energy (comet/beam/impact/ignition/gold-sparks), glass node materials, atmospheric depth (dust/bokeh/crosshairs), continuous precise conduits — VLM-verified PASS across idle/execution/fit/high-zoom/zoomed-out
 - Only 2 files changed (flow.ts, FlowDesktop.tsx) — render layer exclusively; zero backend/API/database/auth/shell/layout/semantics changes; all motion strictly state-driven (idle remains provably calm)
 - Known limitations: edge selection not implemented (accepted design — edges are canvas-rendered; clicks pass through to deselect); DOM nodes rasterize via CSS transform so extreme zoom (>2x) text is GPU-scaled; agent-browser video recorder keeps only ~2s buffer (full animation evidenced by sequential stills + short clips); qa-shots committed as evidence adds ~7MB
+
+---
+Task ID: cleanup-1 (Phase 3.3)
+Agent: main (Z.ai Code)
+Task: PHASE 3.3 — Repository cleanup & dead-code audit (graph accepted as baseline; no redesign)
+
+Work Log:
+- Full-repo evidence gathering before any decision: git log/status, remote origin/main tree comparison, complete import tracing (root route → Uploaded/Design1 self-contained; API routes → src/lib/server + src/types only; Design1 internal graph fully reachable from App.tsx; zero Design1→sandbox-src imports; src/proxy.ts confirmed active Next 16 middleware via dev.log)
+- Key evidence: remote app/page.tsx explicitly documents cockpit/classic-desktop code as retained inactive reference material → classic UI set (src/components/{apps,cockpit,hq,os,ui}, hooks, client stores, globals.css) classified ARCHIVE-in-place, not deleted; os-data/governance-store/skill-registry verified as backend-imported (company-context, state-store, decision-loop, orchestrator, context-assembly) → KEEP
+- upload/ (9 PNG, 13MB) proven byte-identical to Uploaded/ (all 9 md5 match) → DELETED duplicate
+- qa-shots/ (27 png + 3 webm, 25MB Phase 3.2 evidence) DELETED per phase rule (QA artifacts not in production; preserved in git history e2aa21c/06092b2)
+- tool-results/ (13 txt transient tool junk, zero refs) DELETED
+- scripts/capture-v4-1-screenshots.js + capture-v5-screenshots.js DELETED (one-time authoring tools hardcoded to original author's Windows paths C:\Users\User_S\.../E:\Projects\...; cannot execute here; outputs not in repo); verify-prototype-v4/v5.js KEPT (functional regression checks, still passing)
+- Runtime artifacts untracked (git rm --cached, kept on disk): db/custom.db, .data/*.json ×3, .zscripts/dev.pid — auto-commits had re-added what pull-2 intended to exclude; .gitignore extended (db/*.db, .data/, .zscripts/dev.pid, tool-results/, qa-shots/)
+- FIX DOCS: next.config.ts stale iframe comment corrected (prototypes now archived static references, root serves V2Design1 directly); PROGRESS.md "Now" refreshed; WORKLOG.md Phase 3.3 entry appended
+- During mandated browser verification, found PRE-EXISTING hydration error (proven pre-existing via git-stash A/B at pre-cleanup HEAD): osStore.ts `let state = typeof window === "undefined" ? SEED : load()` — the exact server/client branch React warns about; any returning user with persisted localStorage ≠ SEED got hydration failure + full client re-render on every load
+- Surgical hydration fix (NOT a graph change; flow.ts/FlowDesktop.tsx untouched): osStore now initializes to SEED on both server and client + new os.rehydrate() swaps in persisted state post-mount and notifies subscribers; App.tsx root mount effect calls os.rehydrate(); h1 greeting got suppressHydrationWarning (legitimately time-dependent text)
+- Verified fix empirically: fresh user (no localStorage) 0 errors; returning user (injected persisted workstream) 0 hydration errors + persisted state correctly applied ("All quiet · 1 workstream active") + 0 console errors; noted agent-browser `errors --clear` is broken (sticky list) — used fresh browser session for decisive test
+- Post-cleanup verification battery: rg zero broken refs to deleted paths (only historical log mentions); bunx tsc 0 errors in src/+Uploaded (only pre-existing examples/skills env noise); bun run lint 0 errors (same 2 pre-existing warnings in inactive legacy components); verify-prototype-v4 ALL PASS; verify-prototype-v5 ALL PASS; browser E2E — root renders (VLM: full Sophia scene, no glitches), OS tab → BootLock → Desktop graph with all 7 nodes (Founder/Sophia Vance/Dr. Aris Thorne/Maya Lin/Julian Cruz/Verifier/Governed Vault) + edges + calm idle, node click → selection ring + WORKFORCE·ROLE inspector + de-emphasis (3 nodes at 0.32 opacity), persisted-workstream state renders in graph (VLM PASS); dev.log clean
+
+Stage Summary:
+- Repository cleaned: ~38MB duplicates/QA-junk removed from working tree, runtime files untracked, docs de-staled; zero backend/API/database/auth changes; graph visual implementation untouched (only osStore hydration timing + one suppressHydrationWarning attribute — end-state visuals identical)
+- ARCHIVE set retained in place pending founder approval for any future deletion: classic cockpit UI + its stores/globals.css, Uploaded/Design2 + interactive-3d-particle-lattice + samjuniors-os-web-interface + astra.html + REF.mp4 + 9 reference frames, public/prototype/v4+v5
+- Retained: all governance docs (DESIGN/PRODUCT/WORKLOG/PROGRESS/CONTINUE/CLAUDE/CAPABILITY_REGISTRY/doc/*), .agents/.codex, tests/*.sh, verify scripts, environment scaffold
+- Noted (no action): CLAUDE.md line-1 `@AGENTS.md` import references a file that exists on remote but was never pulled into sandbox

@@ -87,7 +87,8 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
           <span className={`h-1.5 w-1.5 rounded-full ${modeDot} ${mode === "speaking" ? "animate-pulse" : ""}`} />
           Sophia · {modeLabel}
         </div>
-        <h1 className="text-3xl font-light leading-tight tracking-tight text-white sm:text-4xl">
+        {/* suppressHydrationWarning: time-of-day greeting is legitimately time-dependent (SSR render time ≠ client hydration time) */}
+        <h1 suppressHydrationWarning className="text-3xl font-light leading-tight tracking-tight text-white sm:text-4xl">
           Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"},{" "}
           <span className="bg-gradient-to-r from-cyan-200 via-sky-300 to-blue-400 bg-clip-text font-medium text-transparent">Sam</span>
         </h1>
@@ -148,6 +149,10 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("sophia");
+
+  // Apply persisted OS state after mount (hydration-safe: SSR and the first
+  // client render both start from SEED; localStorage state lands post-mount).
+  useEffect(() => { os.rehydrate(); }, []);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">

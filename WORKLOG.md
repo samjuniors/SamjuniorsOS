@@ -1445,3 +1445,37 @@ Deployment posture unchanged: single instance (min=1, max=1) +
 - Phase 3.15: wire `SophiaConversationalBar` to `POST /api/orchestrate` under Phase 3.2 command-terminal semantics
 - Phase 3.15: wire `WorkQueueDrawer` to live 9-Step DAG execution state (not just topology)
 - Phase 3.15: wire `onApprovalRequested` callback back from Sophia → approval inbox refresh
+
+---
+
+## Phase 3.3 — Repository Cleanup & Dead-Code Audit
+
+**Date:** 2026-09-12 · **Scope:** audit + cleanup only — graph visual implementation accepted and untouched; no backend/API/database/auth changes.
+
+### Audit method
+Every candidate was traced by imports/references before classification (no name-based assumptions). Root route verified as V2 Design1 shell (self-contained; zero imports from sandbox `src/components`); API routes verified to depend only on `src/lib/server/**` + `src/types/**`; `src/proxy.ts` confirmed as the active Next 16 middleware. Upstream `app/page.tsx` documents that cockpit/classic-desktop code is deliberately retained as inactive reference material — honored.
+
+### Deleted (confirmed dead/obsolete)
+- `upload/` — 9 PNGs byte-identical to `Uploaded/` (md5-verified duplicate)
+- `qa-shots/` — Phase 3.2 QA screenshots/videos (preserved in git history)
+- `tool-results/` — transient tool output junk
+- `scripts/capture-v4-1-screenshots.js`, `scripts/capture-v5-screenshots.js` — one-time capture tools bound to the original author's Windows paths; not executable here
+
+### Untracked from git (kept on disk, now gitignored)
+`db/custom.db`, `.data/*.json`, `.zscripts/dev.pid` — runtime artifacts previously captured by auto-commits.
+
+### Archived in place (reference material — founder approval required to delete)
+Classic cockpit/desktop UI (`src/components/{apps,cockpit,hq,os,ui}`, hooks, client stores, `globals.css`), `Uploaded/Design2`, `Uploaded/interactive-3d-particle-lattice`, `Uploaded/samjuniors-os-web-interface`, `Uploaded/astra.html`, `Uploaded/REF.mp4`, `Uploaded/Screenshot_*` reference frames, `public/prototype/v4` + `v5`.
+
+### Docs fixed
+`next.config.ts` stale iframe comment; `PROGRESS.md` "Now" section; this entry.
+
+### Bonus fix surfaced by mandated verification (pre-existing, proven via stash A/B)
+Hydration failure on every load for returning users: `osStore` used a `typeof window` server/client branch at module init. Fixed hydration-safe: both sides start from `SEED`, persisted localStorage state now applied post-mount via `os.rehydrate()` (called from App root effect); greeting `<h1>` got `suppressHydrationWarning` for the time-dependent text. Zero visual/graph changes — `flow.ts`/`FlowDesktop.tsx` untouched.
+
+### Verification
+- Broken-reference search: clean (only historical log mentions)
+- `tsc --noEmit`: 0 errors in `src/` + `Uploaded/` (pre-existing `examples/`+`skills/` env noise unchanged)
+- `bun run lint`: 0 errors (same 2 pre-existing warnings in inactive legacy components)
+- `verify-prototype-v4.js`: ALL PASS · `verify-prototype-v5.js`: ALL PASS
+- Browser E2E: root renders fully (VLM clean); OS graph shows all 7 nodes + edges, calm idle; node selection → inspector + de-emphasis verified; hydration errors 0 for both fresh and returning users; 0 console errors
