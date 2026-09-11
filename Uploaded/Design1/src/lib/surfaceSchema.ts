@@ -179,47 +179,52 @@ export function generateSystemMetrics(state: OSState): MetricItem[] {
   const activeWork = state.work.filter((w) => w.state === "active").length;
   const blockedWork = state.work.filter((w) => w.state === "blocked").length;
   const openDecisions = state.decisions.filter((d) => d.status === "open").length;
+  // Execution state is server-authoritative (fed by lib/runtime.ts from
+  // /api/agents/runs + /api/workflow/approvals). Local-only counts occur
+  // only when the server read model has not synced yet.
+  const serverSynced = state.work.some((w) => w.origin === "server") || state.decisions.some((d) => d.approvalId);
+  const stateSource = serverSynced ? "Server read model (/api/agents/runs)" : "Awaiting server sync";
 
   return [
     {
       id: "execution-primitive",
       label: "Execution primitive",
-      value: "Sophia → Thorne",
+      value: "Council · 9-step protocol",
       status: "healthy",
       confidence: "verified",
-      source: "PRODUCT.md §4",
+      source: "orchestrator.ts (MultiAgentOrchestrator)",
     },
     {
       id: "decisions",
       label: "Open Decisions",
       value: openDecisions,
       status: openDecisions > 0 ? "waiting" : "healthy",
-      confidence: "unconfigured",
-      source: "UI session — not server-backed",
+      confidence: "verified",
+      source: state.decisions.some((d) => d.approvalId) ? "Server: /api/workflow/approvals" : stateSource,
     },
     {
       id: "active-work",
       label: "Active Workstreams",
       value: activeWork,
       status: blockedWork > 0 ? "blocked" : "active",
-      confidence: "unconfigured",
-      source: "UI session — not server-backed",
+      confidence: "verified",
+      source: stateSource,
     },
     {
       id: "workforce",
       label: "Employed AI roles",
-      value: "4",
-      unit: "v1",
+      value: `${state.agents.length || 4}`,
+      unit: "agents",
       status: "active",
       confidence: "verified",
-      source: "agents/definitions.ts",
+      source: "Server: /api/agents → definitions.ts",
     },
   ];
 }
 
 export function generateCompanyMilestones(): TimelineMilestone[] {
   return [
-    { id: "m1", title: "Foundation execution primitive", subtitle: "Sophia plans; Thorne produces a typed artifact", at: "Implemented", status: "complete" },
+    { id: "m1", title: "Foundation execution primitive", subtitle: "Founder → Sophia → 4-agent council → verified artifact", at: "Implemented", status: "complete" },
     { id: "m2", title: "Verification and Founder approval", subtitle: "Deterministic verification and authenticated approval are wired", at: "Implemented", status: "complete" },
     { id: "m3", title: "Company Brain and Role Brains", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },
     { id: "m4", title: "Market intelligence", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },

@@ -15,6 +15,8 @@ export type AttentionItem = {
   at: number;
   handled?: boolean;
   decisionId?: string;
+  /** true = mirrored from server state (approval gate / orchestration run). */
+  server?: boolean;
 };
 
 export type DecisionStatus = "open" | "approved" | "deferred" | "declined";
@@ -28,6 +30,9 @@ export type Decision = {
   status: DecisionStatus;
   chosen?: string;
   effect?: "toggle-voice" | "edit-context" | "activate-workforce";
+  /** Present when this decision mirrors a REAL pending Founder approval record
+   *  from the server's SideEffectAuthorizationGate (/api/workflow/approvals). */
+  approvalId?: string;
 };
 
 export type Stage = "discovery" | "build" | "review" | "ship" | "done";
@@ -40,6 +45,10 @@ export type Workstream = {
   state: WorkState;
   note?: string;
   at: number;
+  /** "server" = derived from authoritative agent-run records (read model);
+   *  "local"/undefined = a founder-owned note created in this UI session. */
+  origin?: "server" | "local";
+  directive?: string;
 };
 
 export type AgentState = "ready" | "working" | "waiting" | "offline";
@@ -77,15 +86,20 @@ export type OSState = {
   lastSaid: string;
   sessionStart: number;
   log: { id: string; at: number; text: string }[];
+  /** Server-derived workstream ids the founder dismissed from view
+   *  (the server records themselves are never deleted). */
+  dismissed: string[];
 };
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
 
 /* ------------------------------------------------------------------ UI session seed
  *
- * This UI-only store is deliberately non-authoritative. It contains only the
- * implemented v1 execution primitive from PRODUCT.md; it must not imply live
- * telemetry, active assignments, or external integrations.
+ * This UI-only store is deliberately non-authoritative: execution state is
+ * fed from the server read model (lib/runtime.ts → /api/agents/runs,
+ * /api/workflow/approvals, /api/agents) and replaced on every sync. What
+ * remains here are founder-owned session records (notes, focus, decisions
+ * raised by hand) plus presentation-layer constants for the roster.
  */
 
 const now = Date.now();
@@ -146,7 +160,29 @@ const SEED: OSState = {
   lastSaid: "",
   sessionStart: now,
   log: [],
+  dismissed: [],
 };
+
+/** Presentation-layer constants for the authoritative roster. Existence and
+ *  identity (which agents exist, names, roles) come from the server roster
+ *  (GET /api/agents → lib/server/agents/definitions.ts); these constants only
+ *  carry UI rendering metadata (tint/glow + human-readable summaries). */
+export function presentationFor(uiId: string): Agent {
+  const hit = AGENTS.find((a) => a.id === uiId);
+  if (hit) return { ...hit };
+  return {
+    id: uiId,
+    name: uiId,
+    role: "AI Employee",
+    remit: "Defined by the server workforce roster.",
+    canDo: [],
+    tools: [],
+    escalates: "Consequential actions require authenticated Founder approval.",
+    state: "ready",
+    tint: "text-cyan-300",
+    glow: "rgba(56,189,248,0.4)",
+  };
+}
 
 /* ------------------------------------------------------------------ store */
 
@@ -167,6 +203,7 @@ function load(): OSState {
     return {
       ...SEED,
       ...saved,
+      dismissed: saved.dismissed ?? [],
       agents,
       // Migrate legacy owner ids ("ops"/"pm"/"finance") to the authoritative roster.
       work: (saved.work ?? SEED.work).map((w) => ({ ...w, owner: migrateOwner(w.owner) })),
@@ -273,8 +310,53 @@ function log(text: string) {
   set((s) => ({ log: [{ id: uid(), at: Date.now(), text }, ...s.log].slice(0, 40) }));
 }
 
+/** After a server approval decision, re-sync the read model so the decision
+ *  queue reflects the gate's authoritative state. */
+function m_refreshAfterApproval(): Promise<void> {
+  return import("./runtime").then((m) => m.syncFromServer({ quiet: true }));
+}
+
 export const os = {
   rehydrate,
+
+  /** Merge a server read model (lib/runtime.ts) into the store.
+   *  Server-origin work/decisions/attention REPLACE local projections — the
+   *  server is authoritative for execution state. Founder-owned local records
+   *  (notes, focus, hand-raised decisions, offline choices) are preserved. */
+  applyServerState(srv: {
+    agents?: Agent[];
+    work?: Workstream[];
+    decisions?: Decision[];
+    attention?: AttentionItem[];
+  }) {
+    set((s) => {
+      const agents = srv.agents
+        ? srv.agents.map((sa) => {
+            const local = s.agents.find((a) => a.id === sa.id);
+            // Preserve the founder's local offline choice across syncs.
+            if (local?.state === "offline") return { ...sa, state: "offline" as const, current: undefined };
+            return sa;
+          })
+        : s.agents;
+      return {
+        agents,
+        work: [
+          ...(srv.work ?? []).filter((w) => !s.dismissed.includes(w.id)),
+          ...s.work.filter((w) => w.origin !== "server"),
+        ],
+        decisions: [...(srv.decisions ?? []), ...s.decisions.filter((d) => !d.approvalId)],
+        attention: [...(srv.attention ?? []), ...s.attention.filter((a) => !a.server)],
+      };
+    });
+  },
+
+  getDismissed(): string[] {
+    return state.dismissed;
+  },
+
+  /** Append an honest activity-log entry (rendered in the activity surface). */
+  log(text: string) { log(text); },
+
   setSophia(mode: SophiaMode) { if (state.sophia !== mode) set({ sophia: mode }); },
   setLastSaid(text: string) { set({ lastSaid: text }); },
 
@@ -298,6 +380,28 @@ export const os = {
   resolveDecision(id: string, chosen: string) {
     const d = state.decisions.find((x) => x.id === id);
     if (!d) return;
+
+    // REAL governance decision: mirrored from the server approval gate —
+    // route Approve/Reject to POST /api/workflow/approvals. The decision
+    // stays open locally until the SERVER confirms (next sync removes it
+    // once it is no longer pending). No fake local success.
+    if (d.approvalId) {
+      const lower = chosen.toLowerCase();
+      if (/approve|yes|go|proceed|ratif/.test(lower) || /reject|decline|no|deny|veto/.test(lower)) {
+        const action = /reject|decline|no\b|deny|veto/.test(lower) ? "reject" : "approve";
+        log(`Sending governance decision "${d.title}" → ${action} (server gate)…`);
+        void import("./runtime")
+          .then((m) => m.decideApproval(d.approvalId!, action))
+          .then(() => m_refreshAfterApproval())
+          .catch((err) => {
+            log(`Approval "${d.title}" failed: ${err instanceof Error ? err.message : String(err)} — still pending on the server.`);
+          });
+        return "pending";
+      }
+      // Defer etc. on a server approval: no server mutation — leave it pending.
+      return "open";
+    }
+
     const lower = chosen.toLowerCase();
     const status: DecisionStatus = /later|defer|standby|hold/.test(lower) ? "deferred" : /decline|no\b|reject/.test(lower) ? "declined" : "approved";
     set((s) => ({
@@ -310,10 +414,13 @@ export const os = {
   },
 
   addWork(title: string, owner = "thorne", note?: string) {
-    const w: Workstream = { id: uid(), title, owner, stage: "discovery", state: "active", note, at: Date.now() };
+    // Local founder-owned note (NOT a server execution). Server-origin
+    // workstreams are created exclusively by the runtime read model
+    // (lib/runtime.ts) from real agent-run records.
+    const w: Workstream = { id: uid(), title, owner, stage: "discovery", state: "active", note, at: Date.now(), origin: "local" };
     set((s) => ({ work: [w, ...s.work] }));
     os.assign(owner, title);
-    log(`Work started: ${title} (${owner})`);
+    log(`Local work note started: ${title} (${owner})`);
     return w;
   },
   advanceWork(id: string) {
@@ -333,7 +440,15 @@ export const os = {
     if (w && st === "blocked") os.addAttention({ kind: "blocked", title: `Blocked: ${w.title}`, detail: `${agentName(w.owner)} needs a call from you.`, from: w.owner });
     os.refreshAgents();
   },
-  removeWork(id: string) { set((s) => ({ work: s.work.filter((w) => w.id !== id) })); os.refreshAgents(); },
+  removeWork(id: string) {
+    set((s) => {
+      const w = s.work.find((x) => x.id === id);
+      // Server-origin work: dismiss from view (durable; the server record persists).
+      const dismissed = w?.origin === "server" && !s.dismissed.includes(id) ? [...s.dismissed, id] : s.dismissed;
+      return { work: s.work.filter((x) => x.id !== id), dismissed };
+    });
+    os.refreshAgents();
+  },
 
   assign(agentId: string, current: string) {
     set((s) => ({ agents: s.agents.map((a) => (a.id === agentId ? { ...a, state: "working", current } : a)) }));
@@ -383,8 +498,12 @@ export const os = {
     }
   },
 
-  /** Natural-language entry from the ask bar. Returns what Sophia should say. */
-  ask(raw: string): string {
+  /** Natural-language entry from the ask bar. Handles ONLY local founder records
+   *  (decisions raised by hand, focus, notes) and real-state briefings. Returns
+   *  null when the input is not a local command — the caller (App.tsx) then
+   *  routes it to the real server runtime: directives → POST /api/orchestrate,
+   *  everything else → POST /api/agent-chat. No fake work is created here. */
+  localCommand(raw: string): string | null {
     const text = raw.trim();
     if (!text) return "";
     const lower = text.toLowerCase();
@@ -394,11 +513,6 @@ export const os = {
       const t = strip(/^(decide|decision)\b/i);
       os.addDecision(t || "Untitled decision");
       return `Added a decision: ${t || "untitled"}. It's in your queue.`;
-    }
-    if (/^(work|start|build|do)\b/.test(lower)) {
-      const t = strip(/^(work( on)?|start|build|do)\b/i);
-      os.addWork(t || "Untitled workstream", "thorne");
-      return `Started a workstream: ${t || "untitled"}. Operations owns it.`;
     }
     if (/^(focus|this week)\b/.test(lower)) {
       const t = strip(/^(focus( is| on)?|this week)\b/i);
@@ -411,9 +525,7 @@ export const os = {
       os.addAttention({ kind: "note", title: t || "Note", from: "you" });
       return "Noted.";
     }
-    // default: capture as a message for triage
-    os.addAttention({ kind: "message", title: text, from: "you" });
-    return "Got it. I've put that in your attention list for triage.";
+    return null;
   },
 
   /** One-line spoken/text briefing derived from real state. */
@@ -443,7 +555,7 @@ export const os = {
 
   reset() {
     try { localStorage.removeItem(KEY); } catch { /* noop */ }
-    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })) };
+    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })), dismissed: [] };
     updateCaches();
     listeners.forEach((l) => l());
   },

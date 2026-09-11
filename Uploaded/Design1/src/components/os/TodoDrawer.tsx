@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS } from "../../lib/osStore";
+import { dispatchDirective, toServerAgentId } from "../../lib/runtime";
 
 import { ListSurface, WorkSurface } from "../surfaces/StandardSurfaces";
 import { workstreamToWork } from "../../lib/surfaceSchema";
@@ -39,13 +40,27 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
     { id: "done", label: "Done", count: doneCount },
   ];
 
+  /** Founder command → REAL orchestration (POST /api/orchestrate). While the
+   *  council executes, the graph and workforce surfaces animate from durable
+   * agent-run records — never from a locally invented workstream. The chosen
+   * owner is transmitted as the requested council composition (real API field);
+   * the resulting workstream's owner/stage derive from the server run. */
   const add = (e?: React.FormEvent) => {
     e?.preventDefault();
     const t = draft.trim();
     if (!t) return;
     osSound.open();
-    os.addWork(t, owner);
     setDraft("");
+    const agents = owner === "sophia"
+      ? ["coo", "researcher", "pm", "finance"]
+      : ["coo", toServerAgentId(owner)];
+    void dispatchDirective(t, { agents })
+      .then((run) => {
+        os.log(`Directive "${t}" completed: ${run.executionSummary?.totalTasksExecuted ?? 0} real protocol steps.`);
+      })
+      .catch((err: unknown) => {
+        os.log(`Directive "${t}" failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`);
+      });
   };
 
   return (
@@ -116,8 +131,12 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
                 <WorkSurface
                   work={workstreamToWork(
                     w,
-                    () => { osSound.click(); os.advanceWork(w.id); },
-                    (st) => { osSound.click(); os.setWorkState(w.id, st); }
+                    // Server-origin workstreams are read-only projections of real
+                    // agent-run records: stage/state refresh automatically from the
+                    // runtime sync (and its 3s poll during dispatch). Local notes
+                    // keep their manual advance/pause controls.
+                    w.origin === "server" ? undefined : () => { osSound.click(); os.advanceWork(w.id); },
+                    w.origin === "server" ? undefined : (st) => { osSound.click(); os.setWorkState(w.id, st); }
                   )}
                 />
                 <button

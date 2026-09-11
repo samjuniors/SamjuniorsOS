@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Bot, X, Wrench, CheckCircle2, ShieldAlert, ArrowRight, Pause, Play, ChevronDown } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS, agentName, type Agent } from "../../lib/osStore";
+import { dispatchDirective, toServerAgentId } from "../../lib/runtime";
 import { RelationshipSurface } from "../surfaces/StandardSurfaces";
 import { generateAgentRelationships } from "../../lib/surfaceSchema";
 
@@ -183,7 +184,7 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
               </button>
             )}
             <button
-              onClick={() => { osSound.open(); const t = window.prompt(`Assign ${agent.name} a workstream:`); if (t && t.trim()) os.addWork(t.trim(), agent.id); }}
+              onClick={() => { osSound.open(); const t = window.prompt(`Assign ${agent.name} a workstream:`); if (t && t.trim()) void dispatchDirective(t.trim(), { agents: ["coo", toServerAgentId(agent.id)] }).catch((err: unknown) => { os.log(`Directive failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`); }); }}
               className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 px-3.5 py-1.5 text-[11.5px] font-bold text-slate-950 shadow-[0_0_15px_rgba(56,189,248,0.4)] transition hover:brightness-110 active:scale-95"
             >
               Assign work <ArrowRight size={13} strokeWidth={2.5} />
