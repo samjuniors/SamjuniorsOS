@@ -1,0 +1,1518 @@
+     1→/**
+     2→ * FlowEngine — Living SamJuniorsOS operating graph canvas & kinetics.
+     3→ * Inspired by REF.mp4 & verified repository definitions:
+     4→ *  - Real SamJuniorsOS operational chain: Founder ➜ Sophia ➜ Active Specialists ➜ Contextual Protocol Steps ➜ Verifier ➜ Vault
+     5→ *  - Contextual revelation: active DAG steps reveal only as real work progresses; idle remains calm
+     6→ *  - Scalable collision-aware column positioning: zero overlap regardless of task count
+     7→ *  - Strictly state-driven kinetics: NO synthetic packets when idle; idle breathes ambiently
+     8→ *  - Directional laser streaks with velocity-aligned trailing spark emitters
+     9→ *  - Dual-ring arrival shockwaves and target perimeter illumination
+    10→ *  - Sophia core combustion with procedural ember physics
+    11→ */
+    12→
+    13→export const DESIGN_W = 1600;
+    14→export const DESIGN_H = 900;
+    15→
+    16→export type NodeKind = "card" | "core" | "round";
+    17→export type GraphNodeType = "founder" | "agent" | "workflow" | "verification" | "approval" | "outcome";
+    18→export type GraphNodeState = "idle" | "active" | "processing" | "waiting" | "blocked" | "complete";
+    19→export type GraphRelationship =
+    20→  | "delegates"
+    21→  | "researches"
+    22→  | "models_finance"
+    23→  | "authors_prd"
+    24→  | "checks"
+    25→  | "synthesizes"
+    26→  | "escalates-to"
+    27→  | "feeds";
+    28→
+    29→export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose" | "fire";
+    30→
+    31→export type FlowNode = {
+    32→  id: string;
+    33→  x: number;
+    34→  y: number;
+    35→  w: number;
+    36→  h: number;
+    37→  kind: NodeKind;
+    38→  type: GraphNodeType;
+    39→  state: GraphNodeState;
+    40→  title: string;
+    41→  subtitle?: string;
+    42→  activity?: string;
+    43→  protocolStep?: string;
+    44→  relevance?: number;
+    45→  owner?: string;
+    46→  tint?: string;
+    47→  glow?: string;
+    48→};
+    49→
+    50→export type FlowEdge = {
+    51→  id: string;
+    52→  from: string;
+    53→  to: string;
+    54→  pts: [number, number][];
+    55→  style: EdgeStyle;
+    56→  arrow?: boolean;
+    57→  relationship: GraphRelationship;
+    58→  state: GraphNodeState;
+    59→  activity?: string;
+    60→};
+    61→
+    62→export type SpatialCard = {
+    63→  id: string;
+    64→  nodeId: string;
+    65→  x: number;
+    66→  y: number;
+    67→  actor: string;
+    68→  action: string;
+    69→  target?: string;
+    70→  tone: "cyan" | "amber" | "emerald" | "rose";
+    71→};
+    72→
+    73→export type GraphModel = {
+    74→  nodes: FlowNode[];
+    75→  edges: FlowEdge[];
+    76→  spatialCards: SpatialCard[];
+    77→};
+    78→
+    79→export const WORLD = {
+    80→  CX: 840,
+    81→  CY: 440,
+    82→  W: 1600,
+    83→  H: 900,
+    84→  MIN_X: 80,
+    85→  MAX_X: 1620,
+    86→  MIN_Y: 40,
+    87→  MAX_Y: 860,
+    88→};
+    89→
+    90→type P = { x: number; y: number };
+    91→type Sampled = { pts: P[]; cum: number[]; len: number; edge: FlowEdge; index: number };
+    92→type PacketTone = "cyan" | "amber" | "emerald" | "rose" | "fire" | "white";
+    93→type Packet = { e: number; d: number; speed: number; tone: PacketTone; trail: number };
+    94→type Ember = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; heat: number; color: string };
+    95→type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string };
+    96→type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone; isSecondary?: boolean };
+    97→
+    98→function samplePath(raw: [number, number][], radius = 22, step = 4): P[] {
+    99→  const pts = raw.map(([x, y]) => ({ x, y }));
+   100→  if (pts.length < 2) return pts;
+   101→  const out: P[] = [];
+   102→  const pushLine = (a: P, b: P) => {
+   103→    const len = Math.hypot(b.x - a.x, b.y - a.y);
+   104→    const n = Math.max(1, Math.ceil(len / step));
+   105→    for (let i = 0; i < n; i++) out.push({ x: a.x + (b.x - a.x) * (i / n), y: a.y + (b.y - a.y) * (i / n) });
+   106→  };
+   107→  const pushQuad = (a: P, c: P, b: P) => {
+   108→    const N = 10;
+   109→    for (let i = 0; i < N; i++) {
+   110→      const t = i / N, u = 1 - t;
+   111→      out.push({ x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y });
+   112→    }
+   113→  };
+   114→  let cur = pts[0];
+   115→  for (let i = 1; i < pts.length - 1; i++) {
+   116→    const p = pts[i], prev = pts[i - 1], next = pts[i + 1];
+   117→    const lin = Math.hypot(p.x - prev.x, p.y - prev.y);
+   118→    const lout = Math.hypot(next.x - p.x, next.y - p.y);
+   119→    if (lin < 1e-3 || lout < 1e-3) continue;
+   120→    const r = Math.min(radius, lin / 2, lout / 2);
+   121→    const din = { x: (p.x - prev.x) / lin, y: (p.y - prev.y) / lin };
+   122→    const dout = { x: (next.x - p.x) / lout, y: (next.y - p.y) / lout };
+   123→    const pin = { x: p.x - din.x * r, y: p.y - din.y * r };
+   124→    const pout = { x: p.x + dout.x * r, y: p.y + dout.y * r };
+   125→    pushLine(cur, pin);
+   126→    pushQuad(pin, p, pout);
+   127→    cur = pout;
+   128→  }
+   129→  pushLine(cur, pts[pts.length - 1]);
+   130→  out.push(pts[pts.length - 1]);
+   131→  return out;
+   132→}
+   133→
+   134→function sprite(r: number, g: number, b: number, size = 64): HTMLCanvasElement {
+   135→  const c = document.createElement("canvas");
+   136→  c.width = c.height = size;
+   137→  const x = c.getContext("2d")!;
+   138→  const h = size / 2;
+   139→  const grd = x.createRadialGradient(h, h, 0, h, h, h);
+   140→  grd.addColorStop(0, "rgba(255,255,255,1)");
+   141→  grd.addColorStop(0.18, `rgba(${r},${g},${b},0.95)`);
+   142→  grd.addColorStop(0.45, `rgba(${r},${g},${b},0.35)`);
+   143→  grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+   144→  x.fillStyle = grd;
+   145→  x.fillRect(0, 0, size, size);
+   146→  return c;
+   147→}
+   148→
+   149→const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+   150→
+   151→/**
+   152→ * Collision-aware vertical column layout engine.
+   153→ * Computes balanced Y coordinates for nodes in a column respecting their bounding box heights,
+   154→ * applying relaxation passes to eliminate any overlap.
+   155→ */
+   156→function layoutColumn(nodesInCol: FlowNode[], centerY = 440, minGap = 24) {
+   157→  if (nodesInCol.length === 0) return;
+   158→  if (nodesInCol.length === 1) {
+   159→    nodesInCol[0].y = centerY;
+   160→    return;
+   161→  }
+   162→  const totalH = nodesInCol.reduce((sum, n) => sum + n.h, 0) + (nodesInCol.length - 1) * minGap;
+   163→  let curY = centerY - totalH / 2;
+   164→  for (const n of nodesInCol) {
+   165→    n.y = Math.round(curY + n.h / 2);
+   166→    curY += n.h + minGap;
+   167→  }
+   168→  // Boundary safeguards & relaxation passes
+   169→  for (let iter = 0; iter < 4; iter++) {
+   170→    for (let i = 0; i < nodesInCol.length - 1; i++) {
+   171→      const a = nodesInCol[i];
+   172→      const b = nodesInCol[i + 1];
+   173→      const reqDist = (a.h + b.h) / 2 + minGap;
+   174→      const actualDist = b.y - a.y;
+   175→      if (actualDist < reqDist) {
+   176→        const overlap = (reqDist - actualDist) / 2;
+   177→        a.y = Math.max(120, Math.round(a.y - overlap));
+   178→        b.y = Math.min(780, Math.round(b.y + overlap));
+   179→      }
+   180→    }
+   181→  }
+   182→}
+   183→
+   184→/**
+   185→ * Dynamic, collision-aware orthogonal conduit connector.
+   186→ */
+   187→function connectNodes(
+   188→  fromNode: FlowNode,
+   189→  toNode: FlowNode,
+   190→  id: string,
+   191→  style: EdgeStyle,
+   192→  relationship: GraphRelationship,
+   193→  state: GraphNodeState,
+   194→  activity?: string
+   195→): FlowEdge {
+   196→  const x1 = fromNode.x + fromNode.w / 2;
+   197→  const y1 = fromNode.y;
+   198→  const x2 = toNode.x - toNode.w / 2;
+   199→  const y2 = toNode.y;
+   200→
+   201→  let pts: [number, number][];
+   202→  if (Math.abs(y1 - y2) < 4) {
+   203→    pts = [[x1, y1], [x2, y2]];
+   204→  } else {
+   205→    const xMid = Math.round((x1 + x2) / 2);
+   206→    pts = [[x1, y1], [xMid, y1], [xMid, y2], [x2, y2]];
+   207→  }
+   208→
+   209→  return {
+   210→    id,
+   211→    from: fromNode.id,
+   212→    to: toNode.id,
+   213→    pts,
+   214→    style,
+   215→    arrow: true,
+   216→    relationship,
+   217→    state,
+   218→    activity,
+   219→  };
+   220→}
+   221→
+   222→/**
+   223→ * Dynamic operating graph projection derived strictly from live OS state.
+   224→ * Real operational chain:
+   225→ *   Founder / Inputs
+   226→ *   → Sophia Vance (COO / Orchestrator)
+   227→ *   → Active Specialists (Dr. Thorne, and Maya Lin / Julian Cruz when actively assigned)
+   228→ *   → Contextual Protocol Steps (understand, research, test, build_execute, verify, report)
+   229→ *   → Constitutional Verifier (Margin ≥ 80% & Safe Mock Sandbox)
+   230→ *   → Founder Approval Gate (contextually visible when decisions require wet signature ratification)
+   231→ *   → Governed Outcome (Immutable Vault)
+   232→ */
+   233→export function deriveGraph(state: {
+   234→  work: Array<{ id: string; title: string; state: string; stage: string; owner?: string }>;
+   235→  decisions: Array<{ id: string; title: string; status: string }>;
+   236→  agents?: Array<{ id: string; name: string; role: string; state: string }>;
+   237→  company?: { name: string; focus: string };
+   238→  attention?: Array<{ id: string; title: string; kind: string; handled?: boolean }>;
+   239→}): GraphModel {
+   240→  const nodes: FlowNode[] = [];
+   241→  const edges: FlowEdge[] = [];
+   242→  const spatialCards: SpatialCard[] = [];
+   243→
+   244→  const openDecisions = state.decisions.filter((d) => d.status === "open");
+   245→  const hasOpenDecisions = openDecisions.length > 0;
+   246→  const activeWork = state.work.filter((w) => w.state === "active");
+   247→  const blockedWork = state.work.filter((w) => w.state === "blocked");
+   248→  const doneWork = state.work.filter((w) => w.state === "done");
+   249→  const hasActiveWork = activeWork.length > 0;
+   250→  const hasBlockedWork = blockedWork.length > 0;
+   251→  const hasReviewWork = state.work.some((w) => (w.stage === "review" || w.stage === "ship") && w.state === "active");
+   252→
+   253→  // 1. Column 0: Founder / Inputs (Authority Boundary)
+   254→  const founderNode: FlowNode = {
+   255→    id: "founder",
+   256→    x: 180,
+   257→    y: 440,
+   258→    w: 124,
+   259→    h: 80,
+   260→    kind: "card",
+   261→    type: "founder",
+   262→    state: hasOpenDecisions ? "waiting" : "idle",
+   263→    title: "Founder / Inputs",
+   264→    subtitle: state.company?.focus ? `Focus: ${state.company.focus}` : "Directives & Invariants",
+   265→    activity: hasOpenDecisions ? "Reviewing decisions" : undefined,
+   266→    relevance: hasOpenDecisions ? 1 : 0.6,
+   267→  };
+   268→  nodes.push(founderNode);
+   269→
+   270→  // 2. Column 1: Sophia Vance (COO & Master Orchestrator)
+   271→  const sophiaState: GraphNodeState = hasActiveWork ? "active" : hasBlockedWork ? "blocked" : "idle";
+   272→  const coreNode: FlowNode = {
+   273→    id: "core",
+   274→    x: 430,
+   275→    y: 440,
+   276→    w: 214,
+   277→    h: 96,
+   278→    kind: "core",
+   279→    type: "agent",
+   280→    state: sophiaState,
+   281→    title: "Sophia",
+   282→    subtitle: "COO & Orchestrator",
+   283→    activity: hasActiveWork ? `Orchestrating ${activeWork.length} workstream${activeWork.length > 1 ? "s" : ""}` : undefined,
+   284→    relevance: 1,
+   285→    owner: "sophia",
+   286→  };
+   287→  nodes.push(coreNode);
+   288→
+   289→  // Founder -> Sophia conduit
+   290→  edges.push(
+   291→    connectNodes(
+   292→      founderNode,
+   293→      coreNode,
+   294→      "e-founder-core",
+   295→      hasActiveWork ? "cyan" : "white",
+   296→      "delegates",
+   297→      hasActiveWork ? "active" : "idle",
+   298→      hasActiveWork ? "Dispatching directives" : undefined
+   299→    )
+   300→  );
+   301→
+   302→  // 3. Column 2: Employed Specialists (collision-aware) — all four authoritative v1
+   303→  //    employees render permanently; per PRODUCT.md §5 Sophia+Thorne are the implemented
+   304→  //    v1 critical path, Maya/Julian are employed (defined + profiled) and activate only
+   305→  //    when real work is assigned to them. No standby/target-state employees are shown.
+   306→  const specialistNodes: FlowNode[] = [];
+   307→
+   308→  const workFor = (...ids: string[]) =>
+   309→    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state !== "done");
+   310→  const activeFor = (...ids: string[]) =>
+   311→    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state === "active");
+   312→
+   313→  // Dr. Aris Thorne — Lead Market & Technology Researcher (permanent v1 specialist)
+   314→  const thorneWork = workFor("thorne", "ops", "researcher") ?? (!state.work.some((w) => w.owner) && activeWork[0]);
+   315→  const thorneBlocked = state.work.find((w) => (w.owner === "thorne" || w.owner === "ops") && w.state === "blocked");
+   316→  const thorneState: GraphNodeState = thorneWork && thorneWork.state === "active" ? "active" : thorneBlocked ? "blocked" : thorneWork ? "idle" : "idle";
+   317→
+   318→  const thorneNode: FlowNode = {
+   319→    id: "thorne",
+   320→    x: 710,
+   321→    y: 440,
+   322→    w: 112,
+   323→    h: 88,
+   324→    kind: "round",
+   325→    type: "agent",
+   326→    state: thorneState,
+   327→    title: "Dr. Aris Thorne",
+   328→    subtitle: "Research & Intelligence",
+   329→    activity: thorneWork && thorneWork.state === "active" ? thorneWork.title : thorneBlocked ? "Blocked on research" : undefined,
+   330→    relevance: thorneWork || thorneBlocked ? 1 : 0.7,
+   331→    owner: "thorne",
+   332→  };
+   333→  specialistNodes.push(thorneNode);
+   334→
+   335→  // Maya Lin — Principal Product Manager (employed; active only with assigned work)
+   336→  const mayaWork = workFor("maya", "pm");
+   337→  const mayaActive = !!activeFor("maya", "pm");
+   338→  const mayaBlocked = state.work.find((w) => (w.owner === "maya" || w.owner === "pm") && w.state === "blocked");
+   339→  const mayaNode: FlowNode = {
+   340→    id: "maya",
+   341→    x: 710,
+   342→    y: 440,
+   343→    w: 112,
+   344→    h: 88,
+   345→    kind: "round",
+   346→    type: "agent",
+   347→    state: mayaBlocked ? "blocked" : mayaActive ? "active" : "idle",
+   348→    title: "Maya Lin",
+   349→    subtitle: "Product Architecture & PRD",
+   350→    activity: mayaActive && mayaWork ? mayaWork.title : mayaBlocked ? "Blocked on specifications" : undefined,
+   351→    relevance: mayaWork || mayaBlocked ? 1 : 0.7,
+   352→    owner: "maya",
+   353→  };
+   354→  specialistNodes.push(mayaNode);
+   355→
+   356→  // Julian Cruz — Chief Financial Analyst (employed; active only with assigned work)
+   357→  const julianWork = workFor("julian", "finance");
+   358→  const julianActive = !!activeFor("julian", "finance");
+   359→  const julianBlocked = state.work.find((w) => (w.owner === "julian" || w.owner === "finance") && w.state === "blocked");
+   360→  const julianNode: FlowNode = {
+   361→    id: "julian",
+   362→    x: 710,
+   363→    y: 440,
+   364→    w: 112,
+   365→    h: 88,
+   366→    kind: "round",
+   367→    type: "agent",
+   368→    state: julianBlocked ? "blocked" : julianActive ? "active" : "idle",
+   369→    title: "Julian Cruz",
+   370→    subtitle: "Finance & Unit Economics",
+   371→    activity: julianActive && julianWork ? julianWork.title : julianBlocked ? "Blocked on margin audit" : undefined,
+   372→    relevance: julianWork || julianBlocked ? 1 : 0.7,
+   373→    owner: "julian",
+   374→  };
+   375→  specialistNodes.push(julianNode);
+   376→
+   377→  // Layout specialists collision-free
+   378→  layoutColumn(specialistNodes, 440, 24);
+   379→  specialistNodes.forEach((node) => nodes.push(node));
+   380→
+   381→  // Connect Sophia to each specialist — genuine delegation authority (cyan = AI/data pathway)
+   382→  edges.push(
+   383→    connectNodes(
+   384→      coreNode,
+   385→      thorneNode,
+   386→      "e-core-thorne",
+   387→      thorneState === "active" || thorneState === "blocked" ? "cyan" : "white",
+   388→      "delegates",
+   389→      thorneState === "active" ? "active" : thorneState === "blocked" ? "blocked" : "idle",
+   390→      thorneState === "active" ? "Delegating research" : thorneState === "blocked" ? "Awaiting unblock" : undefined
+   391→    )
+   392→  );
+   393→
+   394→  edges.push(
+   395→    connectNodes(
+   396→      coreNode,
+   397→      mayaNode,
+   398→      "e-core-maya",
+   399→      mayaNode.state === "active" || mayaNode.state === "blocked" ? "cyan" : "white",
+   400→      "delegates",
+   401→      mayaNode.state,
+   402→      mayaActive ? "Delegating product architecture" : undefined
+   403→    )
+   404→  );
+   405→
+   406→  edges.push(
+   407→    connectNodes(
+   408→      coreNode,
+   409→      julianNode,
+   410→      "e-core-julian",
+   411→      julianNode.state === "active" || julianNode.state === "blocked" ? "cyan" : "white",
+   412→      "models_finance",
+   413→      julianNode.state,
+   414→      julianActive ? "Requesting unit economics audit" : undefined
+   415→    )
+   416→  );
+   417→
+   418→  // Research feeds product: Thorne's intelligence flows into Maya's PRDs —
+   419→  // contextual: rendered only while Maya is actively authoring.
+   420→  if (mayaActive) {
+   421→    edges.push(
+   422→      connectNodes(
+   423→        thorneNode,
+   424→        mayaNode,
+   425→        "e-thorne-maya",
+   426→        "cyan",
+   427→        "feeds",
+   428→        "active",
+   429→        "Feeding research into PRD"
+   430→      )
+   431→    );
+   432→  }
+   433→
+   434→  // 4. Column 3: Contextual Protocol Steps (Revealed ONLY as real work progresses)
+   435→  const protocolStepNodes: FlowNode[] = [];
+   436→  const activeOrOpenWork = state.work.filter((w) => w.state !== "done").slice(0, 5);
+   437→
+   438→  activeOrOpenWork.forEach((w) => {
+   439→    const isAct = w.state === "active";
+   440→    const isBlk = w.state === "blocked";
+   441→    const wState: GraphNodeState = isBlk ? "blocked" : isAct ? "active" : "waiting";
+   442→
+   443→    // Route each protocol step to the genuinely responsible specialist.
+   444→    const ownerIsMaya = w.owner === "maya" || w.owner === "pm";
+   445→    const ownerIsJulian = w.owner === "julian" || w.owner === "finance";
+   446→
+   447→    let stepName = "Research & Reconnaissance";
+   448→    let stepCode = "step-research";
+   449→    let assignedSpecialist = thorneNode;
+   450→    let relationship: GraphRelationship = "researches";
+   451→
+   452→    if (w.stage === "discovery") {
+   453→      stepName = "Market Reconnaissance";
+   454→      stepCode = "step-research";
+   455→      assignedSpecialist = thorneNode;
+   456→      relationship = "researches";
+   457→    } else if (w.stage === "build") {
+   458→      if (ownerIsJulian) {
+   459→        stepName = "Unit Economics Audit";
+   460→        stepCode = "step-finance";
+   461→        assignedSpecialist = julianNode;
+   462→        relationship = "models_finance";
+   463→      } else if (ownerIsMaya) {
+   464→        stepName = "Product Architecture & PRD";
+   465→        stepCode = "step-pm-prd";
+   466→        assignedSpecialist = mayaNode;
+   467→        relationship = "authors_prd";
+   468→      } else {
+   469→        // Thorne-led build: research synthesis artifact
+   470→        stepName = "Research Synthesis";
+   471→        stepCode = "step-research";
+   472→        assignedSpecialist = thorneNode;
+   473→        relationship = "researches";
+   474→      }
+   475→    } else if (w.stage === "review") {
+   476→      stepName = "Council Peer Review";
+   477→      stepCode = "step-review";
+   478→      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
+   479→      relationship = "checks";
+   480→    } else if (w.stage === "ship") {
+   481→      stepName = "Executive Synthesis";
+   482→      stepCode = "step-report";
+   483→      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
+   484→      relationship = "synthesizes";
+   485→    }
+   486→
+   487→    const stepNode: FlowNode = {
+   488→      id: `step-${w.id}`,
+   489→      x: 1010,
+   490→      y: 440,
+   491→      w: 160,
+   492→      h: 76,
+   493→      kind: "card",
+   494→      type: "workflow",
+   495→      state: wState,
+   496→      title: w.title,
+   497→      subtitle: `${stepName}`,
+   498→      protocolStep: stepCode,
+   499→      activity: isAct ? `${stepName} in execution` : isBlk ? "Attention required" : undefined,
+   500→      relevance: isAct || isBlk ? 1 : 0.45,
+   501→      owner: w.owner,
+   502→    };
+   503→    protocolStepNodes.push(stepNode);
+   504→
+   505→    // Edge from the responsible specialist into live execution.
+   506→    // fire = white-hot execution energy (per reference spec); cyan is reserved
+   507→    // for AI/data pathways; rose = blocked; white = idle conduit.
+   508→    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "fire" : "white";
+   509→    edges.push(
+   510→      connectNodes(
+   511→        assignedSpecialist,
+   512→        stepNode,
+   513→        `e-spec-${w.id}`,
+   514→        edgeStyle,
+   515→        relationship,
+   516→        isBlk ? "blocked" : isAct ? "active" : "idle",
+   517→        w.title
+   518→      )
+   519→    );
+   520→  });
+   521→
+   522→  // Layout protocol steps collision-free
+   523→  if (protocolStepNodes.length > 0) {
+   524→    layoutColumn(protocolStepNodes, 440, 22);
+   525→    protocolStepNodes.forEach((n) => nodes.push(n));
+   526→  }
+   527→
+   528→  // 5. Column 4: Constitutional Verifier (Governance & Invariants)
+   529→  const verState: GraphNodeState = hasBlockedWork
+   530→    ? "blocked"
+   531→    : hasReviewWork
+   532→    ? "active"
+   533→    : doneWork.length > 0
+   534→    ? "complete"
+   535→    : "idle";
+   536→
+   537→  const verifierNode: FlowNode = {
+   538→    id: "verification",
+   539→    x: 1280,
+   540→    y: 440,
+   541→    w: 120,
+   542→    h: 84,
+   543→    kind: "round",
+   544→    type: "verification",
+   545→    state: verState,
+   546→    title: "Verifier",
+   547→    subtitle: "Constitutional Safety",
+   548→    activity: hasReviewWork ? "Evaluating gross margin ≥ 80%" : hasBlockedWork ? "Invariant check failed" : undefined,
+   549→    relevance: hasReviewWork || hasBlockedWork ? 1 : 0.5,
+   550→  };
+   551→  nodes.push(verifierNode);
+   552→
+   553→  // Connect protocol steps to Verifier (or direct Thorne -> Verifier when idle)
+   554→  if (protocolStepNodes.length === 0) {
+   555→    // Quiet baseline conduit when no active workstream
+   556→    edges.push(
+   557→      connectNodes(
+   558→        thorneNode,
+   559→        verifierNode,
+   560→        "e-thorne-verifier",
+   561→        "white",
+   562→        "checks",
+   563→        "idle",
+   564→        undefined
+   565→      )
+   566→    );
+   567→  } else {
+   568→    protocolStepNodes.forEach((stepNode) => {
+   569→      const isReview = stepNode.state === "active" && (stepNode.subtitle?.includes("Review") || stepNode.subtitle?.includes("Synthesis"));
+   570→      const isBlk = stepNode.state === "blocked";
+   571→      const edgeStyle: EdgeStyle = isBlk ? "rose" : isReview ? "cyan" : "white";
+   572→      edges.push(
+   573→        connectNodes(
+   574→          stepNode,
+   575→          verifierNode,
+   576→          `e-ver-${stepNode.id}`,
+   577→          edgeStyle,
+   578→          "checks",
+   579→          isBlk ? "blocked" : isReview ? "active" : "idle"
+   580→        )
+   581→      );
+   582→    });
+   583→  }
+   584→
+   585→  // 6. Column 5: Governed Outcome / Immutable Vault
+   586→  const outcomeState: GraphNodeState = doneWork.length > 0 ? "complete" : "idle";
+   587→  const outcomeNode: FlowNode = {
+   588→    id: "outcome",
+   589→    x: 1500,
+   590→    y: 440,
+   591→    w: 130,
+   592→    h: 78,
+   593→    kind: "card",
+   594→    type: "outcome",
+   595→    state: outcomeState,
+   596→    title: "Governed Vault",
+   597→    subtitle: "Immutable Memory",
+   598→    activity: doneWork.length > 0 ? `${doneWork.length} deliverable${doneWork.length > 1 ? "s" : ""} verified` : undefined,
+   599→    relevance: doneWork.length > 0 ? 1 : 0.35,
+   600→  };
+   601→  nodes.push(outcomeNode);
+   602→
+   603→  // Connector from Verifier to Outcome
+   604→  edges.push(
+   605→    connectNodes(
+   606→      verifierNode,
+   607→      outcomeNode,
+   608→      "e-verifier-outcome",
+   609→      doneWork.length > 0 ? "emerald" : "white",
+   610→      "feeds",
+   611→      doneWork.length > 0 ? "complete" : "idle"
+   612→    )
+   613→  );
+   614→
+   615→  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open)
+   616→  if (hasOpenDecisions) {
+   617→    const approvalNode: FlowNode = {
+   618→      id: "approval",
+   619→      x: 570,
+   620→      y: 680,
+   621→      w: 180,
+   622→      h: 84,
+   623→      kind: "card",
+   624→      type: "approval",
+   625→      state: "blocked",
+   626→      title: "Founder Approval Gate",
+   627→      subtitle: `${openDecisions.length} Decision${openDecisions.length > 1 ? "s" : ""} Waiting`,
+   628→      activity: openDecisions[0]?.title ?? "Consequential Action Ratification",
+   629→      relevance: 1,
+   630→    };
+   631→    nodes.push(approvalNode);
+   632→
+   633→    // Sophia escalates to Approval Gate
+   634→    const p1: [number, number][] = [
+   635→      [coreNode.x, coreNode.y + coreNode.h / 2],
+   636→      [coreNode.x, approvalNode.y],
+   637→      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
+   638→    ];
+   639→    edges.push({
+   640→      id: "e-sophia-approval",
+   641→      from: "core",
+   642→      to: "approval",
+   643→      pts: p1,
+   644→      style: "amber",
+   645→      arrow: true,
+   646→      relationship: "escalates-to",
+   647→      state: "blocked",
+   648→      activity: "Escalating decision",
+   649→    });
+   650→
+   651→    // Approval Gate escalates to Founder
+   652→    const p2: [number, number][] = [
+   653→      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
+   654→      [founderNode.x, approvalNode.y],
+   655→      [founderNode.x, founderNode.y + founderNode.h / 2],
+   656→    ];
+   657→    edges.push({
+   658→      id: "e-approval-founder",
+   659→      from: "approval",
+   660→      to: "founder",
+   661→      pts: p2,
+   662→      style: "amber",
+   663→      arrow: true,
+   664→      relationship: "escalates-to",
+   665→      state: "blocked",
+   666→      activity: "Requires Founder Ratification",
+   667→    });
+   668→  }
+   669→
+   670→  // 8. Spatial Contextual Cards (Real operational intent only)
+   671→  if (hasActiveWork) {
+   672→    spatialCards.push({
+   673→      id: "sp-sophia",
+   674→      nodeId: "core",
+   675→      x: coreNode.x,
+   676→      y: coreNode.y - coreNode.h / 2 - 24,
+   677→      actor: "Sophia Vance",
+   678→      action: "Orchestrating specialist workstreams",
+   679→      target: "Dr. Aris Thorne",
+   680→      tone: "cyan",
+   681→    });
+   682→  }
+   683→  if (thorneWork && thorneWork.state === "active") {
+   684→    spatialCards.push({
+   685→      id: "sp-thorne",
+   686→      nodeId: "thorne",
+   687→      x: thorneNode.x,
+   688→      y: thorneNode.y - thorneNode.h / 2 - 24,
+   689→      actor: "Dr. Aris Thorne",
+   690→      action: thorneWork.title,
+   691→      tone: "cyan",
+   692→    });
+   693→  }
+   694→  if (julianWork && julianWork.state === "active") {
+   695→    spatialCards.push({
+   696→      id: "sp-julian",
+   697→      nodeId: "julian",
+   698→      x: julianNode.x,
+   699→      y: julianNode.y - julianNode.h / 2 - 24,
+   700→      actor: "Julian Cruz",
+   701→      action: "Stress-testing margin floor ≥ 80%",
+   702→      tone: "cyan",
+   703→    });
+   704→  }
+   705→  if (mayaWork && mayaWork.state === "active") {
+   706→    spatialCards.push({
+   707→      id: "sp-maya",
+   708→      nodeId: "maya",
+   709→      x: mayaNode.x,
+   710→      y: mayaNode.y - mayaNode.h / 2 - 24,
+   711→      actor: "Maya Lin",
+   712→      action: "Drafting PRD & architecture specs",
+   713→      tone: "cyan",
+   714→    });
+   715→  }
+   716→  if (hasReviewWork) {
+   717→    spatialCards.push({
+   718→      id: "sp-verify",
+   719→      nodeId: "verification",
+   720→      x: verifierNode.x,
+   721→      y: verifierNode.y - verifierNode.h / 2 - 24,
+   722→      actor: "Constitutional Verifier",
+   723→      action: "Auditing gross margin invariant ≥ 80%",
+   724→      tone: "emerald",
+   725→    });
+   726→  } else if (hasBlockedWork) {
+   727→    spatialCards.push({
+   728→      id: "sp-verify-blocked",
+   729→      nodeId: "verification",
+   730→      x: verifierNode.x,
+   731→      y: verifierNode.y - verifierNode.h / 2 - 24,
+   732→      actor: "Constitutional Verifier",
+   733→      action: "Deterministic check failed — blocked",
+   734→      tone: "rose",
+   735→    });
+   736→  }
+   737→  if (hasOpenDecisions) {
+   738→    spatialCards.push({
+   739→      id: "sp-approval",
+   740→      nodeId: "approval",
+   741→      x: 570,
+   742→      y: 618,
+   743→      actor: "Waiting",
+   744→      action: "Founder decision required",
+   745→      target: "Founder",
+   746→      tone: "amber",
+   747→    });
+   748→  }
+   749→
+   750→  return { nodes, edges, spatialCards };
+   751→}
+   752→
+   753→// Static fallback nodes/edges for compatibility
+   754→export const NODES: FlowNode[] = deriveGraph({ work: [], decisions: [] }).nodes;
+   755→export const EDGES: FlowEdge[] = deriveGraph({ work: [], decisions: [] }).edges;
+   756→
+   757→/**
+   758→ * FlowEngine canvas particle renderer.
+   759→ * Produces high-fidelity orthogonal circuit lines, directional laser streaks,
+   760→ * trailing spark physics, dual-ring arrival shockwaves, and ambient breathing.
+   761→ */
+   762→export class FlowEngine {
+   763→  canvas: HTMLCanvasElement;
+   764→  ctx: CanvasRenderingContext2D;
+   765→  scale = 1;
+   766→  tx = 0;
+   767→  ty = 0;
+   768→  vw = 0;
+   769→  vh = 0;
+   770→  dpr = 1;
+   771→  time = 0;
+   772→
+   773→  paths: Sampled[] = [];
+   774→  outgoing = new Map<string, number[]>();
+   775→  nodeMap = new Map<string, FlowNode>();
+   776→  packets: Packet[] = [];
+   777→  embers: Ember[] = [];
+   778→  sparks: Spark[] = [];
+   779→  rings: Ring[] = [];
+   780→  energy = new Map<string, number>();
+   781→  coreHeat = 0.3;
+   782→  spawnTimer = 0;
+   783→  emberAcc = 0;
+   784→  /** When set (node-selection focus), edges/nodes unrelated to the focused
+   785→   *  node's direct relationships render at reduced emphasis. */
+   786→  focusNodes: Set<string> | null = null;
+   787→
+   788→  blueSprite = sprite(56, 189, 248);
+   789→  fireSprite = sprite(249, 115, 22);
+   790→  amberSprite = sprite(245, 158, 11);
+   791→  emeraldSprite = sprite(16, 185, 129);
+   792→  roseSprite = sprite(244, 63, 94);
+   793→  whiteSprite = sprite(240, 245, 255);
+   794→  private raf = 0;
+   795→  private lastT = 0;
+   796→
+   797→  constructor(canvas: HTMLCanvasElement) {
+   798→    this.canvas = canvas;
+   799→    this.ctx = canvas.getContext("2d")!;
+   800→    this.setGraph({ nodes: NODES, edges: EDGES, spatialCards: [] });
+   801→  }
+   802→
+   803→  setGraph(graph: GraphModel) {
+   804→    this.paths = [];
+   805→    this.outgoing.clear();
+   806→    this.nodeMap.clear();
+   807→    this.energy.clear();
+   808→    this.packets = [];
+   809→
+   810→    for (const n of graph.nodes) {
+   811→      this.nodeMap.set(n.id, n);
+   812→      this.energy.set(n.id, n.state === "active" || n.state === "blocked" ? 0.4 : 0);
+   813→    }
+   814→
+   815→    graph.edges.forEach((e, index) => {
+   816→      const pts = samplePath(e.pts);
+   817→      const cum = [0];
+   818→      for (let i = 1; i < pts.length; i++) {
+   819→        cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+   820→      }
+   821→      this.paths.push({ pts, cum, len: cum[cum.length - 1], edge: e, index });
+   822→      if (!this.outgoing.has(e.from)) this.outgoing.set(e.from, []);
+   823→      this.outgoing.get(e.from)!.push(index);
+   824→    });
+   825→  }
+   826→
+   827→  setFocus(nodeIds: Set<string> | null) {
+   828→    this.focusNodes = nodeIds && nodeIds.size > 0 ? nodeIds : null;
+   829→  }
+   830→
+   831→  setScale(scale: number) {
+   832→    this.setViewport(DESIGN_W * scale, DESIGN_H * scale, scale, 0, 0);
+   833→  }
+   834→
+   835→  setViewport(vw: number, vh: number, scale: number, tx: number, ty: number) {
+   836→    this.vw = vw;
+   837→    this.vh = vh;
+   838→    this.scale = scale;
+   839→    this.tx = tx;
+   840→    this.ty = ty;
+   841→    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+   842→    const w = Math.max(1, Math.floor(vw * this.dpr));
+   843→    const h = Math.max(1, Math.floor(vh * this.dpr));
+   844→    if (this.canvas.width !== w || this.canvas.height !== h) {
+   845→      this.canvas.width = w;
+   846→      this.canvas.height = h;
+   847→    }
+   848→  }
+   849→
+   850→  pointAt(p: Sampled, d: number): P {
+   851→    const cum = p.cum;
+   852→    if (d <= 0) return p.pts[0];
+   853→    if (d >= p.len) return p.pts[p.pts.length - 1];
+   854→    let lo = 0,
+   855→      hi = cum.length - 1;
+   856→    while (hi - lo > 1) {
+   857→      const mid = (lo + hi) >> 1;
+   858→      if (cum[mid] <= d) lo = mid;
+   859→      else hi = mid;
+   860→    }
+   861→    const seg = cum[hi] - cum[lo] || 1;
+   862→    const t = (d - cum[lo]) / seg;
+   863→    return { x: p.pts[lo].x + (p.pts[hi].x - p.pts[lo].x) * t, y: p.pts[lo].y + (p.pts[hi].y - p.pts[lo].y) * t };
+   864→  }
+   865→
+   866→  /**
+   867→   * Spawns data packets ONLY when there is actual active or blocked operational activity.
+   868→   * Zero synthetic packets are spawned during idle state.
+   869→   */
+   870→  spawn(randomStart = false) {
+   871→    const activePaths = this.paths.filter((p) => p.edge.state === "active" || p.edge.state === "blocked");
+   872→    if (!activePaths.length) return;
+   873→    const p = activePaths[Math.floor(Math.random() * activePaths.length)];
+   874→    const tone: PacketTone =
+   875→      p.edge.style === "fire"
+   876→        ? "fire"
+   877→        : p.edge.style === "rose"
+   878→        ? "rose"
+   879→        : p.edge.style === "amber"
+   880→        ? "amber"
+   881→        : p.edge.style === "emerald"
+   882→        ? "emerald"
+   883→        : "cyan";
+   884→
+   885→    // Source-node ignition: dispatch visibly energizes the emitting node's
+   886→    // perimeter (matches reference frame 2 — C-arc border light-up).
+   887→    const src = this.energy.get(p.edge.from) || 0;
+   888→    this.energy.set(p.edge.from, Math.max(src, 0.72));
+   889→
+   890→    this.packets.push({
+   891→      e: p.index,
+   892→      d: randomStart ? Math.random() * p.len : 0,
+   893→      speed: rnd(160, 240),
+   894→      tone,
+   895→      trail: rnd(45, 70),
+   896→    });
+   897→  }
+   898→
+   899→  /**
+   900→   * Dual-ring arrival shockwave and target perimeter illumination.
+   901→   */
+   902→  arrive(nodeId: string, x: number, y: number, tone: PacketTone = "cyan") {
+   903→    this.energy.set(nodeId, 1);
+   904→    const isCore = nodeId === "core";
+   905→    const isBlocked = tone === "rose" || this.nodeMap.get(nodeId)?.state === "blocked";
+   906→    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "fire" ? "fire" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
+   907→
+   908→    // Primary fast shockwave ring
+   909→    this.rings.push({
+   910→      x,
+   911→      y,
+   912→      life: 0,
+   913→      max: isCore ? 0.7 : 0.38,
+   914→      r: isCore ? 140 : 64,
+   915→      tone: ringTone,
+   916→    });
+   917→
+   918→    // Secondary soft dissipation halo ring
+   919→    this.rings.push({
+   920→      x,
+   921→      y,
+   922→      life: 0,
+   923→      max: isCore ? 0.9 : 0.6,
+   924→      r: isCore ? 180 : 92,
+   925→      tone: ringTone,
+   926→      isSecondary: true,
+   927→    });
+   928→
+   929→    const count = isCore ? 32 : 18;
+   930→    this.burstFire(x, y, count, ringTone);
+   931→
+   932→    if (isCore) {
+   933→      this.coreHeat = Math.min(1.6, this.coreHeat + 0.6);
+   934→      const c = this.nodeMap.get("core");
+   935→      if (c) {
+   936→        for (let i = 0; i < 18; i++) {
+   937→          this.embers.push({
+   938→            x: c.x - c.w / 2 + Math.random() * c.w,
+   939→            y: c.y - c.h / 2,
+   940→            vx: rnd(-22, 22),
+   941→            vy: rnd(-130, -50),
+   942→            life: 0,
+   943→            max: rnd(0.45, 0.95),
+   944→            size: rnd(1.4, 3.2),
+   945→            heat: rnd(0.4, 1),
+   946→            color: "#ffaa55",
+   947→          });
+   948→        }
+   949→      }
+   950→    }
+   951→  }
+   952→
+   953→  burstFire(x: number, y: number, n: number, tone: PacketTone = "cyan") {
+   954→    const col =
+   955→      tone === "amber"
+   956→        ? "#fbbf24"
+   957→        : tone === "rose"
+   958→        ? "#fb7185"
+   959→        : tone === "emerald"
+   960→        ? "#34d399"
+   961→        : tone === "fire"
+   962→        ? "#ff8833"
+   963→        : "#38bdf8";
+   964→
+   965→    for (let i = 0; i < n; i++) {
+   966→      const a = Math.random() * Math.PI * 2;
+   967→      const sp = rnd(35, 170);
+   968→      this.embers.push({
+   969→        x: x + rnd(-8, 8),
+   970→        y: y + rnd(-8, 8),
+   971→        vx: Math.cos(a) * sp,
+   972→        vy: Math.sin(a) * sp,
+   973→        life: 0,
+   974→        max: rnd(0.35, 0.85),
+   975→        size: rnd(1.0, 2.8),
+   976→        heat: Math.random(),
+   977→        color: col,
+   978→      });
+   979→    }
+   980→  }
+   981→
+   982→  step(dt: number) {
+   983→    this.time += dt;
+   984→    const core = this.nodeMap.get("core");
+   985→    const hasActiveEdges = this.paths.some((p) => p.edge.state === "active" || p.edge.state === "blocked");
+   986→
+   987→    // Dynamic packet spawner: ONLY active when real work is in flight
+   988→    if (hasActiveEdges) {
+   989→      this.spawnTimer -= dt;
+   990→      if (this.spawnTimer <= 0 && this.packets.length < 24) {
+   991→        this.spawnTimer = rnd(0.7, 1.3);
+   992→        this.spawn();
+   993→      }
+   994→    } else {
+   995→      // Idle state: strictly NO fake packets generated
+   996→      this.spawnTimer = 0;
+   997→    }
+   998→
+   999→    // Packet advance, directional angle & trail physics
+  1000→    for (let i = this.packets.length - 1; i >= 0; i--) {
+  1001→      const pk = this.packets[i];
+  1002→      const path = this.paths[pk.e];
+  1003→      if (!path) {
+  1004→        this.packets.splice(i, 1);
+  1005→        continue;
+  1006→      }
+  1007→      pk.d += pk.speed * dt;
+  1008→
+  1009→      // Trailing micro-spark emission along motion vector
+  1010→      if (Math.random() < 0.4) {
+  1011→        const head = this.pointAt(path, pk.d);
+  1012→        const prev = this.pointAt(path, Math.max(0, pk.d - 6));
+  1013→        const ang = Math.atan2(head.y - prev.y, head.x - prev.x);
+  1014→        const spMag = rnd(25, 55);
+  1015→
+  1016→        this.sparks.push({
+  1017→          x: head.x + rnd(-2, 2),
+  1018→          y: head.y + rnd(-2, 2),
+  1019→          vx: -Math.cos(ang) * spMag + Math.sin(ang) * rnd(-15, 15),
+  1020→          vy: -Math.sin(ang) * spMag - Math.cos(ang) * rnd(-15, 15),
+  1021→          life: 0,
+  1022→          max: rnd(0.18, 0.4),
+  1023→          size: rnd(1.0, 2.2),
+  1024→          color:
+  1025→            pk.tone === "amber"
+  1026→              ? "#fde68a"
+  1027→              : pk.tone === "rose"
+  1028→              ? "#fca5a5"
+  1029→              : pk.tone === "emerald"
+  1030→              ? "#a7f3d0"
+  1031→              : "#7dd3fc",
+  1032→        });
+  1033→      }
+  1034→
+  1035→      if (pk.d < path.len) continue;
+  1036→
+  1037→      const to = path.edge.to;
+  1038→      const end = path.pts[path.pts.length - 1];
+  1039→      this.arrive(to, end.x, end.y, pk.tone);
+  1040→
+  1041→      const next = this.outgoing.get(to);
+  1042→      const activeNext = next?.filter((idx) => this.paths[idx]?.edge.state === "active" || this.paths[idx]?.edge.state === "blocked");
+  1043→      const candidates = (activeNext && activeNext.length ? activeNext : next) || [];
+  1044→
+  1045→      if (candidates.length && Math.random() < 0.85 && this.packets.length < 36) {
+  1046→        pk.e = candidates[Math.floor(Math.random() * candidates.length)];
+  1047→        pk.d = 0;
+  1048→        pk.speed = rnd(150, 230);
+  1049→        const nextEdge = this.paths[pk.e].edge;
+  1050→        pk.tone =
+  1051→          nextEdge.style === "fire"
+  1052→            ? "fire"
+  1053→            : nextEdge.style === "rose"
+  1054→            ? "rose"
+  1055→            : nextEdge.style === "amber"
+  1056→            ? "amber"
+  1057→            : nextEdge.style === "emerald"
+  1058→            ? "emerald"
+  1059→            : "cyan";
+  1060→      } else {
+  1061→        this.packets.splice(i, 1);
+  1062→      }
+  1063→    }
+  1064→
+  1065→    // Energy decay
+  1066→    for (const [k, v] of this.energy) {
+  1067→      this.energy.set(k, v * Math.exp(-2.5 * dt));
+  1068→    }
+  1069→    this.coreHeat = 0.3 + (this.coreHeat - 0.3) * Math.exp(-1.4 * dt);
+  1070→
+  1071→    // Sophia Core perimeter combustion: active only when Sophia is orchestrating
+  1072→    this.emberAcc += core && core.state === "active" ? dt * 38 : 0;
+  1073→    while (core && this.emberAcc > 1) {
+  1074→      this.emberAcc -= 1;
+  1075→      const per = (core.w + core.h) * 2;
+  1076→      let d = Math.random() * per;
+  1077→      let x = core.x - core.w / 2,
+  1078→        y = core.y - core.h / 2;
+  1079→      if (d < core.w) x += d;
+  1080→      else if ((d -= core.w) < core.h) {
+  1081→        x += core.w;
+  1082→        y += d;
+  1083→      } else if ((d -= core.h) < core.w) {
+  1084→        x += core.w - d;
+  1085→        y += core.h;
+  1086→      } else {
+  1087→        y += d - core.w;
+  1088→      }
+  1089→      this.embers.push({
+  1090→        x: x + rnd(-3, 3),
+  1091→        y: y + rnd(-3, 3),
+  1092→        vx: rnd(-20, 20),
+  1093→        vy: rnd(-70, -15),
+  1094→        life: 0,
+  1095→        max: rnd(0.35, 0.9),
+  1096→        size: rnd(0.8, 2.2),
+  1097→        heat: Math.random(),
+  1098→        color: "#fb923c",
+  1099→      });
+  1100→    }
+  1101→
+  1102→    // Embers update
+  1103→    for (let i = this.embers.length - 1; i >= 0; i--) {
+  1104→      const em = this.embers[i];
+  1105→      em.life += dt;
+  1106→      if (em.life >= em.max) {
+  1107→        this.embers.splice(i, 1);
+  1108→        continue;
+  1109→      }
+  1110→      em.vy -= 35 * dt;
+  1111→      em.vx += Math.sin(this.time * 8 + em.heat * 15) * 25 * dt;
+  1112→      const dmp = Math.exp(-1.5 * dt);
+  1113→      em.vx *= dmp;
+  1114→      em.vy *= dmp;
+  1115→      em.x += em.vx * dt;
+  1116→      em.y += em.vy * dt;
+  1117→    }
+  1118→
+  1119→    // Sparks update
+  1120→    for (let i = this.sparks.length - 1; i >= 0; i--) {
+  1121→      const sp = this.sparks[i];
+  1122→      sp.life += dt;
+  1123→      if (sp.life >= sp.max) {
+  1124→        this.sparks.splice(i, 1);
+  1125→        continue;
+  1126→      }
+  1127→      sp.vx *= Math.exp(-2.0 * dt);
+  1128→      sp.vy *= Math.exp(-2.0 * dt);
+  1129→      sp.x += sp.vx * dt;
+  1130→      sp.y += sp.vy * dt;
+  1131→    }
+  1132→
+  1133→    // Rings update
+  1134→    for (let i = this.rings.length - 1; i >= 0; i--) {
+  1135→      const ring = this.rings[i];
+  1136→      ring.life += dt;
+  1137→      if (ring.life >= ring.max) {
+  1138→        this.rings.splice(i, 1);
+  1139→      }
+  1140→    }
+  1141→  }
+  1142→
+  1143→  render() {
+  1144→    const g = this.ctx;
+  1145→    g.setTransform(1, 0, 0, 1, 0, 0);
+  1146→    g.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  1147→
+  1148→    const k = this.scale * this.dpr;
+  1149→    g.setTransform(k, 0, 0, k, this.tx * this.dpr, this.ty * this.dpr);
+  1150→    g.lineCap = "round";
+  1151→    g.lineJoin = "round";
+  1152→
+  1153→    // --- Technical Circuit Crosshairs & Coordinates
+  1154→    g.save();
+  1155→    g.strokeStyle = "rgba(56, 189, 248, 0.05)";
+  1156→    g.lineWidth = 1;
+  1157→    for (let gx = 180; gx <= 1520; gx += 260) {
+  1158→      for (let gy = 200; gy <= 780; gy += 240) {
+  1159→        g.beginPath();
+  1160→        g.moveTo(gx - 4, gy);
+  1161→        g.lineTo(gx + 4, gy);
+  1162→        g.moveTo(gx, gy - 4);
+  1163→        g.lineTo(gx, gy + 4);
+  1164→        g.stroke();
+  1165→      }
+  1166→    }
+  1167→    g.restore();
+  1168→
+  1169→    // Ambient breathing oscillation (sine wave)
+  1170→    const ambientBreath = Math.sin(this.time * 1.5) * 0.04;
+  1171→
+  1172→    // --- Connectors (Orthogonal Conduits)
+  1173→    for (const p of this.paths) {
+  1174→      const e = p.edge;
+  1175→      const eFrom = this.energy.get(e.from) || 0;
+  1176→      const eTo = this.energy.get(e.to) || 0;
+  1177→      const lit = Math.max(eFrom, eTo);
+  1178→
+  1179→      // Selection focus: unrelated edges de-emphasize (related = either endpoint
+  1180→      // belongs to the focused node's direct relationship set).
+  1181→      const related = !this.focusNodes || this.focusNodes.has(e.from) || this.focusNodes.has(e.to);
+  1182→      const dim = related ? 1 : 0.3;
+  1183→
+  1184→      g.save();
+  1185→      g.globalAlpha = dim;
+  1186→
+  1187→      g.beginPath();
+  1188→      g.moveTo(p.pts[0].x, p.pts[0].y);
+  1189→      for (let i = 1; i < p.pts.length; i++) g.lineTo(p.pts[i].x, p.pts[i].y);
+  1190→
+  1191→      if (e.style === "fire" && e.state === "active") {
+  1192→        // White-hot execution conduit: orange corona + bright interior core
+  1193→        // (reference frames 3–5 — execution energy transiting the edge).
+  1194→        g.save();
+  1195→        g.globalCompositeOperation = "lighter";
+  1196→        g.strokeStyle = `rgba(249,115,22,${0.3 + lit * 0.38})`;
+  1197→        g.lineWidth = 9;
+  1198→        g.stroke();
+  1199→        g.strokeStyle = `rgba(255,214,170,${0.72 + lit * 0.28})`;
+  1200→        g.lineWidth = 2.2;
+  1201→        g.setLineDash([12, 14]);
+  1202→        g.lineDashOffset = -this.time * 85;
+  1203→        g.stroke();
+  1204→        g.setLineDash([]);
+  1205→        g.restore();
+  1206→      } else if (e.style === "rose" || e.state === "blocked") {
+  1207→        g.save();
+  1208→        g.globalCompositeOperation = "lighter";
+  1209→        g.strokeStyle = `rgba(244,63,94,${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
+  1210→        g.lineWidth = 8;
+  1211→        g.stroke();
+  1212→        g.strokeStyle = `rgba(251,113,133,${0.68 + lit * 0.32})`;
+  1213→        g.lineWidth = 2.2;
+  1214→        g.stroke();
+  1215→        g.restore();
+  1216→      } else if (e.style === "amber") {
+  1217→        g.save();
+  1218→        g.globalCompositeOperation = "lighter";
+  1219→        g.strokeStyle = `rgba(245,158,11,${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
+  1220→        g.lineWidth = 8;
+  1221→        g.stroke();
+  1222→        g.strokeStyle = `rgba(252,211,77,${0.68 + lit * 0.3})`;
+  1223→        g.lineWidth = 2.2;
+  1224→        g.stroke();
+  1225→        g.restore();
+  1226→      } else if (e.style === "emerald" || e.state === "complete") {
+  1227→        g.save();
+  1228→        g.strokeStyle = `rgba(16,185,129,${0.18 + lit * 0.22})`;
+  1229→        g.lineWidth = 5;
+  1230→        g.stroke();
+  1231→        g.strokeStyle = `rgba(52,211,153,${0.55 + lit * 0.3})`;
+  1232→        g.lineWidth = 1.8;
+  1233→        g.stroke();
+  1234→        g.restore();
+  1235→      } else if (e.style === "cyan" || e.state === "active") {
+  1236→        g.save();
+  1237→        g.globalCompositeOperation = "lighter";
+  1238→        g.strokeStyle = `rgba(56,189,248,${0.28 + lit * 0.35})`;
+  1239→        g.lineWidth = 9;
+  1240→        g.stroke();
+  1241→        g.strokeStyle = `rgba(125,211,252,${0.68 + lit * 0.32})`;
+  1242→        g.lineWidth = 2.2;
+  1243→        g.setLineDash([8, 10]);
+  1244→        g.lineDashOffset = -this.time * 65;
+  1245→        g.stroke();
+  1246→        g.setLineDash([]);
+  1247→        g.restore();
+  1248→      } else {
+  1249→        // Quiet idle baseline conduit (ambient breathing, no flurry)
+  1250→        g.strokeStyle = `rgba(40,55,80,${0.16 + ambientBreath + lit * 0.1})`;
+  1251→        g.lineWidth = 4;
+  1252→        g.stroke();
+  1253→        g.strokeStyle = `rgba(130,165,205,${0.24 + ambientBreath + lit * 0.2})`;
+  1254→        g.lineWidth = 1.4;
+  1255→        g.stroke();
+  1256→      }
+  1257→
+  1258→      // Heat gradient entering Sophia core
+  1259→      if (e.to === "core") {
+  1260→        const tail = 110;
+  1261→        const start = Math.max(0, p.len - tail);
+  1262→        const a = this.pointAt(p, start);
+  1263→        const b = p.pts[p.pts.length - 1];
+  1264→        const grad = g.createLinearGradient(a.x, a.y, b.x, b.y);
+  1265→        grad.addColorStop(0, "rgba(255,150,60,0)");
+  1266→        grad.addColorStop(1, `rgba(255,170,80,${0.5 + this.coreHeat * 0.35})`);
+  1267→        g.save();
+  1268→        g.globalCompositeOperation = "lighter";
+  1269→        g.beginPath();
+  1270→        let began = false;
+  1271→        for (let i = 0; i < p.pts.length; i++) {
+  1272→          if (p.cum[i] < start) continue;
+  1273→          if (!began) {
+  1274→            g.moveTo(a.x, a.y);
+  1275→            began = true;
+  1276→          }
+  1277→          g.lineTo(p.pts[i].x, p.pts[i].y);
+  1278→        }
+  1279→        g.strokeStyle = grad;
+  1280→        g.lineWidth = 5;
+  1281→        g.stroke();
+  1282→        g.restore();
+  1283→      }
+  1284→
+  1285→      // Arrowheads
+  1286→      if (e.arrow) {
+  1287→        const n = p.pts.length;
+  1288→        const b = p.pts[n - 1],
+  1289→          a = p.pts[n - 4] || p.pts[0];
+  1290→        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  1291→        g.fillStyle =
+  1292→          e.style === "rose"
+  1293→            ? `rgba(251,113,133,${0.85 + lit * 0.15})`
+  1294→            : e.style === "amber"
+  1295→            ? `rgba(252,211,77,${0.85 + lit * 0.15})`
+  1296→            : e.style === "emerald"
+  1297→            ? `rgba(52,211,153,${0.85 + lit * 0.15})`
+  1298→            : e.style === "cyan"
+  1299→            ? `rgba(125,211,252,${0.85 + lit * 0.15})`
+  1300→            : e.style === "fire"
+  1301→            ? `rgba(255,214,170,${0.85 + lit * 0.15})`
+  1302→            : `rgba(180,210,240,${0.55 + ambientBreath + lit * 0.2})`;
+  1303→
+  1304→        g.beginPath();
+  1305→        g.moveTo(b.x, b.y);
+  1306→        g.lineTo(b.x - Math.cos(ang - 0.45) * 9.5, b.y - Math.sin(ang - 0.45) * 9.5);
+  1307→        g.lineTo(b.x - Math.cos(ang + 0.45) * 9.5, b.y - Math.sin(ang + 0.45) * 9.5);
+  1308→        g.closePath();
+  1309→        g.fill();
+  1310→      }
+  1311→
+  1312→      // Connection ports — small circles anchoring the conduit to its endpoints
+  1313→      // (reference frame 1 — precise connection points on node borders).
+  1314→      {
+  1315→        const s = p.pts[0],
+  1316→          t = p.pts[p.pts.length - 1];
+  1317→        const portAlpha = 0.35 + lit * 0.5;
+  1318→        const portColor =
+  1319→          e.style === "fire" && e.state === "active"
+  1320→            ? `rgba(255,200,150,${portAlpha})`
+  1321→            : e.style === "rose"
+  1322→            ? `rgba(251,113,133,${portAlpha})`
+  1323→            : e.style === "amber"
+  1324→            ? `rgba(252,211,77,${portAlpha})`
+  1325→            : e.style === "emerald"
+  1326→            ? `rgba(52,211,153,${portAlpha})`
+  1327→            : `rgba(150,190,235,${portAlpha})`;
+  1328→        g.fillStyle = portColor;
+  1329→        g.beginPath();
+  1330→        g.arc(s.x, s.y, 2.6, 0, Math.PI * 2);
+  1331→        g.fill();
+  1332→        g.beginPath();
+  1333→        g.arc(t.x, t.y, 2.6, 0, Math.PI * 2);
+  1334→        g.fill();
+  1335→      }
+  1336→
+  1337→      g.restore(); // focus dim scope
+  1338→    }
+  1339→
+  1340→    g.globalCompositeOperation = "lighter";
+  1341→
+  1342→    // --- Node Arrival Energy Glow
+  1343→    for (const n of this.nodeMap.values()) {
+  1344→      const en = this.energy.get(n.id) || 0;
+  1345→      if (en < 0.02) continue;
+  1346→      const related = !this.focusNodes || this.focusNodes.has(n.id);
+  1347→      const glowEn = en * (related ? 1 : 0.3);
+  1348→      if (glowEn < 0.02) continue;
+  1349→      const r = Math.max(n.w, n.h) * (0.85 + glowEn * 0.35);
+  1350→      const isCore = n.id === "core";
+  1351→      const isBlocked = n.state === "blocked";
+  1352→      const isExecuting = this.nodeMap.get(n.id)?.state === "active" && n.type === "agent";
+  1353→      const gr = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
+  1354→      if (isCore) {
+  1355→        gr.addColorStop(0, `rgba(255,170,80,${0.45 * glowEn})`);
+  1356→      } else if (isBlocked) {
+  1357→        gr.addColorStop(0, `rgba(244,63,94,${0.45 * glowEn})`);
+  1358→      } else if (isExecuting) {
+  1359→        // Executing specialists radiate warm execution energy.
+  1360→        gr.addColorStop(0, `rgba(255,170,90,${0.4 * glowEn})`);
+  1361→      } else {
+  1362→        gr.addColorStop(0, `rgba(56,189,248,${0.45 * glowEn})`);
+  1363→      }
+  1364→      gr.addColorStop(1, "rgba(0,0,0,0)");
+  1365→      g.fillStyle = gr;
+  1366→      g.fillRect(n.x - r, n.y - r, r * 2, r * 2);
+  1367→    }
+  1368→
+  1369→    // --- Sophia Core Fire Border
+  1370→    const c = this.nodeMap.get("core");
+  1371→    if (c) {
+  1372→      const heat = this.coreHeat;
+  1373→      const x = c.x - c.w / 2 - 5,
+  1374→        y = c.y - c.h / 2 - 5,
+  1375→        w = c.w + 10,
+  1376→        h = c.h + 10;
+  1377→      g.save();
+  1378→      g.shadowColor = "rgba(255,140,50,0.95)";
+  1379→      g.shadowBlur = 20 + heat * 24;
+  1380→      g.strokeStyle = `rgba(255,${Math.round(160 + heat * 50)},80,${0.5 + heat * 0.4})`;
+  1381→      g.lineWidth = 2.0 + heat * 1.5;
+  1382→      g.beginPath();
+  1383→      g.roundRect(x, y, w, h, 16);
+  1384→      g.stroke();
+  1385→      g.restore();
+  1386→
+  1387→      const gr = g.createRadialGradient(c.x, c.y, c.w * 0.2, c.x, c.y, c.w * 0.8);
+  1388→      gr.addColorStop(0, `rgba(255,140,60,${0.1 + heat * 0.1})`);
+  1389→      gr.addColorStop(1, "rgba(255,120,40,0)");
+  1390→      g.fillStyle = gr;
+  1391→      g.fillRect(c.x - c.w, c.y - c.w, c.w * 2, c.w * 2);
+  1392→    }
+  1393→
+  1394→    // --- Sparks
+  1395→    for (const sp of this.sparks) {
+  1396→      const k2 = 1 - sp.life / sp.max;
+  1397→      g.globalAlpha = k2 * 0.9;
+  1398→      g.fillStyle = sp.color;
+  1399→      g.beginPath();
+  1400→      g.arc(sp.x, sp.y, sp.size * k2, 0, Math.PI * 2);
+  1401→      g.fill();
+  1402→    }
+  1403→    g.globalAlpha = 1;
+  1404→
+  1405→    // --- Embers
+  1406→    for (const em of this.embers) {
+  1407→      const k2 = 1 - em.life / em.max;
+  1408→      const s = em.size * (0.6 + k2) * 3;
+  1409→      g.globalAlpha = Math.min(1, k2 * 1.3);
+  1410→      g.drawImage(em.heat > 0.7 ? this.whiteSprite : this.fireSprite, em.x - s, em.y - s, s * 2, s * 2);
+  1411→      g.globalAlpha = k2;
+  1412→      g.fillStyle = em.color;
+  1413→      g.beginPath();
+  1414→      g.arc(em.x, em.y, em.size * 0.55 * (0.5 + k2), 0, Math.PI * 2);
+  1415→      g.fill();
+  1416→    }
+  1417→    g.globalAlpha = 1;
+  1418→
+  1419→    // --- Directional Laser Streaks (Packets)
+  1420→    for (const pk of this.packets) {
+  1421→      const p = this.paths[pk.e];
+  1422→      if (!p) continue;
+  1423→      const head = this.pointAt(p, pk.d);
+  1424→      const steps = 12;
+  1425→      const spr =
+  1426→        pk.tone === "amber"
+  1427→          ? this.amberSprite
+  1428→          : pk.tone === "rose"
+  1429→          ? this.roseSprite
+  1430→          : pk.tone === "emerald"
+  1431→          ? this.emeraldSprite
+  1432→          : pk.tone === "fire"
+  1433→          ? this.fireSprite
+  1434→          : pk.tone === "white"
+  1435→          ? this.whiteSprite
+  1436→          : this.blueSprite;
+  1437→
+  1438→      const rgb =
+  1439→        pk.tone === "amber"
+  1440→          ? "245,158,11"
+  1441→          : pk.tone === "rose"
+  1442→          ? "244,63,94"
+  1443→          : pk.tone === "emerald"
+  1444→          ? "16,185,129"
+  1445→          : pk.tone === "fire"
+  1446→          ? "249,115,22"
+  1447→          : pk.tone === "white"
+  1448→          ? "255,255,255"
+  1449→          : "56,189,248";
+  1450→
+  1451→      // Directional laser streak trail
+  1452→      for (let i = steps; i >= 1; i--) {
+  1453→        const d = pk.d - (pk.trail * i) / steps;
+  1454→        if (d < 0) continue;
+  1455→        const q = this.pointAt(p, d);
+  1456→        const t = 1 - i / steps;
+  1457→        const r = 0.8 + t * 2.6;
+  1458→        g.fillStyle = `rgba(${rgb},${t * t * 0.85})`;
+  1459→        g.beginPath();
+  1460→        g.arc(q.x, q.y, r, 0, Math.PI * 2);
+  1461→        g.fill();
+  1462→      }
+  1463→
+  1464→      // White-hot laser core pip
+  1465→      const s = 12;
+  1466→      g.drawImage(spr, head.x - s, head.y - s, s * 2, s * 2);
+  1467→      g.fillStyle = "#ffffff";
+  1468→      g.beginPath();
+  1469→      g.arc(head.x, head.y, 2.2, 0, Math.PI * 2);
+  1470→      g.fill();
+  1471→    }
+  1472→
+  1473→    // --- Arrival Shockwave Rings (Dual concentric rings)
+  1474→    for (const r of this.rings) {
+  1475→      const k2 = r.life / r.max;
+  1476→      const alpha = r.isSecondary ? (1 - k2) * 0.45 : (1 - k2) * 0.8;
+  1477→      const strokeCol =
+  1478→        r.tone === "rose"
+  1479→          ? `rgba(244,63,94,${alpha})`
+  1480→          : r.tone === "amber"
+  1481→          ? `rgba(245,158,11,${alpha})`
+  1482→          : r.tone === "emerald"
+  1483→          ? `rgba(16,185,129,${alpha})`
+  1484→          : r.tone === "fire"
+  1485→          ? `rgba(255,170,90,${alpha})`
+  1486→          : `rgba(56,189,248,${alpha})`;
+  1487→
+  1488→      g.strokeStyle = strokeCol;
+  1489→      g.lineWidth = r.isSecondary ? 1.4 * (1 - k2) + 0.3 : 2.4 * (1 - k2) + 0.5;
+  1490→      g.beginPath();
+  1491→      if (r.tone === "fire") {
+  1492→        g.roundRect(r.x - r.r * k2 * 1.5, r.y - r.r * k2 * 0.7, r.r * k2 * 3, r.r * k2 * 1.4, 18);
+  1493→      } else {
+  1494→        g.arc(r.x, r.y, r.r * Math.pow(k2, r.isSecondary ? 0.8 : 0.6), 0, Math.PI * 2);
+  1495→      }
+  1496→      g.stroke();
+  1497→    }
+  1498→
+  1499→    g.globalCompositeOperation = "source-over";
+  1500→  }
+  1501→
+  1502→  start() {
+  1503→    this.lastT = performance.now();
+  1504→    const loop = (now: number) => {
+  1505→      const dt = Math.min(0.04, Math.max(0.001, (now - this.lastT) / 1000));
+  1506→      this.lastT = now;
+  1507→      this.step(dt);
+  1508→      this.render();
+  1509→      this.raf = requestAnimationFrame(loop);
+  1510→    };
+  1511→    this.raf = requestAnimationFrame(loop);
+  1512→  }
+  1513→
+  1514→  stop() {
+  1515→    cancelAnimationFrame(this.raf);
+  1516→  }
+  1517→}
+  1518→
