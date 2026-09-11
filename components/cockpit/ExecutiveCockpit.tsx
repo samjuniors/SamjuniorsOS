@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Shield,
   Activity,
@@ -16,13 +16,23 @@ import {
   AlertTriangle,
   WifiOff,
   Database,
+  Sparkles,
+  Sun,
+  Moon,
+  X,
+  ChevronRight,
+  ListTodo,
+  Terminal,
+  ExternalLink,
+  Sliders,
+  Clock,
+  Lock,
+  Compass,
 } from 'lucide-react';
 import { FounderApprovalRecord } from '@/types/authorization';
 import { AgentRole } from '@/types/os';
 import { DETAILED_AI_EMPLOYEE_PROFILES } from '@/lib/employee-profiles';
 import { PersonaStore } from '@/lib/persona-store';
-import { CommandTerminal } from './CommandTerminal';
-import { CommandOutcome, CommandErrorState } from '@/lib/cockpit/command-terminal-state';
 import {
   CockpitOverviewView,
   CockpitStreamEventView,
@@ -36,6 +46,9 @@ import {
   workflowStatusTone,
   agentRunStatusTone,
 } from '@/lib/cockpit/overview-state';
+import { SamJuniorsCoreCanvas, SPECIALIST_NODES, SpecialistId } from './SamJuniorsCoreCanvas';
+import { SophiaConversationalBar } from './SophiaConversationalBar';
+import { WorkQueueDrawer } from './WorkQueueDrawer';
 
 interface ExecutiveCockpitProps {
   onSwitchToClassic: () => void;
@@ -62,29 +75,19 @@ interface DecisionReconciliation {
   error?: string;
 }
 
-/**
- * PHASE 3.3 — Executive Stream events.
- *
- * Server events are derived exclusively from persisted records via
- * GET /api/cockpit/overview (workflow instances, approval decisions, agent
- * runs, audit records). Local session events may additionally relay REAL
- * server outcomes (Phase 3.2 semantics: pushed only AFTER the server returns
- * the actual result) — nothing here is fabricated.
- */
 interface StreamEvent {
   id: string;
-  /** Display clock label. */
   timestamp: string;
-  /** Server events carry their record's ISO timestamp. */
   timestampIso?: string;
   role: string;
   author: string;
   title: string;
   summary: string;
   type: 'milestone' | 'approval' | 'telemetry' | 'advisor';
-  /** Present on server-derived events; identifies the persisted source. */
   source?: CockpitStreamEventView['source'];
 }
+
+type ContextSurface = 'idle' | 'approval' | 'work' | 'audit' | 'telemetry';
 
 const OVERVIEW_POLL_INTERVAL_MS = 15000;
 const APPROVALS_POLL_INTERVAL_MS = 10000;
@@ -131,11 +134,9 @@ export function ExecutiveCockpit({
   onInspectEmployee,
 }: ExecutiveCockpitProps) {
   // -----------------------------------------------------------------------
-  // AUTHORITATIVE OVERVIEW (Phase 3.3) — Vitals Wall + Executive Stream now
-  // derive from persisted state via GET /api/cockpit/overview. The demo-data
-  // constants previously imported from lib/os-data (seed initiatives, the
-  // static workforce array, the sample financial model, and the seeded stream
-  // events) are REMOVED.
+  // AUTHORITATIVE OVERVIEW (Phase 3.3 / 3.14)
+  // Vitals Wall + Executive Stream derive purely from persisted state via
+  // GET /api/cockpit/overview.
   // -----------------------------------------------------------------------
   const [overview, setOverview] = useState<CockpitOverviewView | null>(null);
   const [overviewError, setOverviewError] = useState<OverviewErrorState | null>(null);
@@ -143,13 +144,50 @@ export function ExecutiveCockpit({
   const [serverStreamEvents, setServerStreamEvents] = useState<StreamEvent[]>([]);
   const [localStreamEvents, setLocalStreamEvents] = useState<StreamEvent[]>([]);
 
-  // Approvals Inbox State (Phase 3.1 loop — unchanged semantics, with an
-  // honest failure state added in Phase 3.3: a failed read no longer renders
-  // as "All Side-Effects Clear").
+  // Approvals Inbox State
   const [approvals, setApprovals] = useState<EnrichedApprovalRecord[]>([]);
   const [loadingApprovals, setLoadingApprovals] = useState(true);
   const [approvalsError, setApprovalsError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+
+  // Progressive Disclosure UI States (Phase 3.12 / 3.14 Calm Core)
+  const [activeContext, setActiveContext] = useState<ContextSurface>('idle');
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
+  const [isRosterOpen, setIsRosterOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<SpecialistId | null>(null);
+  const [currentTheme, setCurrentTheme] = useState<'solar' | 'luna'>('solar');
+  const [noticeToast, setNoticeToast] = useState<string | null>(null);
+
+  const sophiaInputRef = useRef<HTMLInputElement>(null);
+
+  // Load theme preference on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('samjuniors_cockpit_theme');
+      if (savedTheme === 'luna' || savedTheme === 'solar') {
+        setCurrentTheme(savedTheme);
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      }
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const next = currentTheme === 'solar' ? 'luna' : 'solar';
+    setCurrentTheme(next);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('samjuniors_cockpit_theme', next);
+      document.documentElement.setAttribute('data-theme', next);
+    }
+    showToast(`Theme switched to ${next === 'solar' ? 'Dark Solar (Amber Core)' : 'Dark Luna (Cyan/Teal Core)'}`);
+  };
+
+  const showToast = (msg: string) => {
+    setNoticeToast(msg);
+    setTimeout(() => {
+      setNoticeToast((prev) => (prev === msg ? null : prev));
+    }, 7000);
+  };
 
   const loadOverview = useCallback(async () => {
     try {
@@ -169,8 +207,6 @@ export function ExecutiveCockpit({
         setOverviewError(deriveOverviewErrorFromHttpStatus(res.status, body));
       }
     } catch (reason) {
-      // Network failure: keep the last successful read (stale, clearly
-      // labeled) — never silently substitute fabricated values.
       setOverviewError(deriveOverviewErrorFromNetworkFailure(reason));
     } finally {
       setOverviewLoading(false);
@@ -197,10 +233,6 @@ export function ExecutiveCockpit({
     }
   }, []);
 
-  // Bounded polling: simple intervals, cleared on unmount. The underlying
-  // data is genuinely polled from authoritative persistence — no simulated
-  // liveness. The initial reads are deferred to a timer so the effect body
-  // only subscribes; every setState happens asynchronously after a fetch.
   useEffect(() => {
     let mounted = true;
 
@@ -226,13 +258,34 @@ export function ExecutiveCockpit({
     };
   }, [loadApprovals, loadOverview]);
 
-  // Handle Approval Decisions
-  // Phase 3 (Command Center): the decision travels through the authorization
-  // gate and is then reconciled into the bound workflow by the existing
-  // runtime; the response reports the DURABLE outcome, which is what the
-  // founder sees — never a UI-assumed success.
-  const [decidingApprovalId, setDecidingApprovalId] = useState<string | null>(null);
+  // Keyboard shortcut listener: 'q' for queue, '/' for Sophia focus, 'Escape' to dismiss context
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') {
+          target.blur();
+        }
+        return;
+      }
 
+      if (e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        setIsQueueOpen((prev) => !prev);
+      } else if (e.key === '/') {
+        e.preventDefault();
+        sophiaInputRef.current?.focus();
+      } else if (e.key === 'Escape') {
+        if (isQueueOpen) setIsQueueOpen(false);
+        else if (activeContext !== 'idle') setActiveContext('idle');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isQueueOpen, activeContext]);
+
+  // Handle Approval Decisions
   const handleDecision = async (approvalId: string, action: 'approve' | 'reject') => {
     setDecidingApprovalId(approvalId);
     try {
@@ -251,8 +304,6 @@ export function ExecutiveCockpit({
         const recon: DecisionReconciliation | undefined = data?.reconciliation;
         let feedback: string;
         if (recon?.error) {
-          // The decision itself is durable; reconciliation failed and must not be
-          // silently presented as success.
           feedback = `Decision recorded, but workflow reconciliation FAILED: ${recon.error}`;
         } else if (recon?.reconciled) {
           feedback = `${action === 'approve' ? 'Approved' : 'Rejected'} — durable result: step '${recon.stepId}' is ${recon.stepStatus}, workflow ${recon.workflowStatus} (${recon.auditRecords} audit record${recon.auditRecords === 1 ? '' : 's'}).`;
@@ -260,13 +311,11 @@ export function ExecutiveCockpit({
           feedback = `${action === 'approve' ? 'Approved' : 'Rejected'} — ${recon?.outcomeNote || 'Decision recorded.'}`;
         }
         setActionFeedback(feedback);
+        showToast(feedback);
         setTimeout(() => setActionFeedback(null), 8000);
         loadApprovals();
-        // The durable state changed — re-read the authoritative overview.
         loadOverview();
 
-        // Push to executive stream (relays the REAL server reconciliation
-        // result — pushed only after the server returned it).
         setLocalStreamEvents((prev) => [
           {
             id: `decision-${Date.now()}`,
@@ -282,326 +331,250 @@ export function ExecutiveCockpit({
         ]);
       } else {
         const err = await res.json();
-        setActionFeedback(`Error: ${err.error || 'Failed to process'}`);
+        const msg = `Error: ${err.error || 'Failed to process decision'}`;
+        setActionFeedback(msg);
+        showToast(msg);
       }
     } catch (e: any) {
-      setActionFeedback(`Network error: ${e.message}`);
+      const msg = `Network error: ${e.message}`;
+      setActionFeedback(msg);
+      showToast(msg);
     } finally {
       setDecidingApprovalId(null);
     }
   };
 
-  // The command terminal reports the FINAL server-derived state; the stream
-  // event reflects that actual result (durable status or request failure),
-  // never an assumed success. The authoritative overview is re-read so the
-  // Vitals Wall / stream reflect the new durable state.
-  const pushCommandOutcome = useCallback(
-    (directive: string, state: CommandOutcome | CommandErrorState, isOutcome: boolean) => {
-      const label = isOutcome
-        ? `Directive ${String((state as CommandOutcome).kind).replace(/_/g, ' ')} (server-verified)`
-        : `Directive submission failed (${String((state as CommandErrorState).kind).replace(/_/g, ' ')})`;
-      setLocalStreamEvents((prev) => [
-        {
-          id: `command-${Date.now()}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          timestampIso: new Date().toISOString(),
-          role: 'Founder Directive',
-          author: 'Command Terminal',
-          title: label,
-          summary: state.detail,
-          type: 'approval' as const,
-        },
-        ...prev,
-      ]);
-      loadOverview();
-    },
-    [loadOverview]
-  );
-
-  // Command Terminal → real orchestration: refresh the existing approvals
-  // inbox immediately when the server reports approval-worthy work.
-  const handleApprovalRequested = useCallback(() => {
-    loadApprovals();
-    loadOverview();
-  }, [loadApprovals, loadOverview]);
-
   const handleRefreshAll = useCallback(() => {
     loadApprovals();
     loadOverview();
+    showToast('Authoritative persistence refreshed.');
   }, [loadApprovals, loadOverview]);
 
-  // -----------------------------------------------------------------------
-  // Derived display state (pure derivations from the authoritative response)
-  // -----------------------------------------------------------------------
+  // Derived display state
   const vitalsTiles = overview ? deriveVitalsTiles(overview) : [];
   const workflowCounts = overview?.vitals?.workflows;
-  const isStaleRead =
-    overviewError?.kind === 'network_error' && overview !== null;
-
+  const isStaleRead = overviewError?.kind === 'network_error' && overview !== null;
   const streamEvents = [...localStreamEvents, ...serverStreamEvents];
 
-  const renderHeaderVitals = () => {
-    if (overview) {
-      const pending = overview.vitals?.approvals?.pending;
-      const active = overview.vitals?.workflows?.active;
-      return (
-        <div className="hidden lg:flex items-center space-x-6 text-xs">
-          <div className="flex items-center space-x-2" data-testid="cockpit-header-vital-pending-approvals">
-            <span className="text-slate-500">Pending Approvals:</span>
-            <span className={`font-semibold font-mono ${typeof pending === 'number' && pending > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {typeof pending === 'number' ? pending : '—'}
+  return (
+    <div className="cockpit-shell">
+      {/* 1. TOP AMBIENT HEADER */}
+      <header className="cockpit-top-bar" aria-label="Executive Cockpit Header">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-600 to-amber-500 flex items-center justify-center font-bold text-white shadow-md text-sm tracking-wider">
+            SJ
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold tracking-wider text-slate-100 uppercase">
+                SamJuniors OS v1 Core
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-medium border border-emerald-500/30">
+                POSTGRES AUTHORITATIVE
+              </span>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono">
+              CONSTITUTIONAL EXECUTIVE SHELL · CALM CORE
+            </div>
+          </div>
+        </div>
+
+        {/* Center Eyebrow */}
+        <div className="hidden lg:flex items-center gap-4 text-xs font-mono text-slate-400">
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">APPROVAL GATE:</span>
+            <span
+              className={`font-semibold font-mono ${
+                approvals.length > 0 ? 'text-amber-400' : 'text-emerald-400'
+              }`}
+            >
+              {loadingApprovals ? '…' : `${approvals.length} PENDING`}
             </span>
           </div>
-          <div className="flex items-center space-x-2" data-testid="cockpit-header-vital-active-workflows">
-            <span className="text-slate-500">Active Workflows:</span>
+          <div className="h-3 w-px bg-slate-800" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-slate-500">ACTIVE WORKFLOWS:</span>
             <span className="font-semibold text-indigo-400 font-mono">
-              {typeof active === 'number' ? active : '—'}
+              {workflowCounts ? workflowCounts.active : '0'}
             </span>
           </div>
           {isStaleRead && (
-            <span className="flex items-center space-x-1 text-[10px] font-mono text-amber-400/90" title={overviewError?.detail}>
-              <WifiOff className="w-3 h-3" />
-              <span>STALE</span>
+            <span className="flex items-center gap-1 text-[10px] text-amber-400">
+              <WifiOff className="w-3 h-3" /> STALE
             </span>
           )}
         </div>
-      );
-    }
-    return (
-      <div className="hidden lg:flex items-center space-x-2 text-xs text-slate-500" data-testid="cockpit-vitals-unavailable">
-        <AlertTriangle className="w-3.5 h-3.5" />
-        <span>Vitals {overviewLoading ? 'connecting…' : 'unavailable'}</span>
-      </div>
-    );
-  };
 
-  const renderVitalsError = () => {
-    if (!overviewError || isStaleRead) return null;
-    return (
-      <div className="px-4 py-3 bg-rose-950/30 border-b border-rose-900/40 flex items-start gap-2.5">
-        {overviewError.kind === 'unauthenticated' ? (
-          <Shield className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-        ) : (
-          <Database className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-        )}
-        <div>
-          <p className="text-xs font-semibold text-rose-300" data-testid="cockpit-vitals-error">
-            Vital signs unavailable
-          </p>
-          <p className="text-[11px] text-rose-400/80 leading-relaxed">{overviewError.detail}</p>
-          <p className="text-[10px] text-slate-500 mt-1">
-            No values are shown as zeros — the real state is unknown until the read succeeds.
-          </p>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex flex-col h-screen w-screen bg-[#0d1117] text-slate-100 font-sans select-none overflow-hidden">
-      {/* 1. TOP EXECUTIVE HEADER */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-slate-800 bg-[#161b22]/90 backdrop-blur-md z-30">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-md">
-              SJ
-            </div>
-            <div>
-              <div className="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-                SamJuniors Cockpit
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono font-medium border border-emerald-500/30">
-                  LIVE GOVERNANCE
-                </span>
-              </div>
-              <div className="text-xs text-slate-400">Autonomous Company Operating System</div>
-            </div>
-          </div>
-
-          <div className="h-4 w-px bg-slate-700 hidden md:block" />
-
-          {/* Key Vitals Chips — derived from the authoritative overview read.
-              The fabricated financial chips (runway / margin / burn from the
-              static sample financial model in the demo-data module) were
-              removed in Phase 3.3: no authoritative financial source exists. */}
-          {renderHeaderVitals()}
-
-          {/* Executive AI Fleet quick chips — roster CONFIGURATION (who
-              exists), not runtime status. The fabricated "active" status dot
-              was removed in Phase 3.3; real run activity is shown in the
-              Vitals Wall fleet card. */}
-          <div className="hidden xl:flex items-center space-x-2 pl-4 border-l border-slate-800">
-            <span className="text-[10px] uppercase font-mono text-slate-500 mr-1">AI Fleet:</span>
-            {(['coo', 'researcher', 'pm', 'finance'] as AgentRole[]).map((role) => {
-              const prof = DETAILED_AI_EMPLOYEE_PROFILES[role];
-              if (!prof) return null;
-              const tone = PersonaStore.getPersona(role)?.tone || 'professional';
-              return (
-                <button
-                  key={role}
-                  id={`cockpit-officer-chip-${role}`}
-                  onClick={() => onInspectEmployee ? onInspectEmployee(role) : onOpenApp?.('workforce')}
-                  title={`${prof.name} (${prof.role}) • Tone: ${tone} • Click to inspect profile`}
-                  className="flex items-center space-x-1.5 px-2 py-1 rounded-md bg-slate-800/80 hover:bg-indigo-950/60 border border-slate-700/60 hover:border-indigo-500/50 text-xs transition cursor-pointer"
-                >
-                  <span className="font-medium text-slate-300 hover:text-white">{prof.name.split(' ')[0]}</span>
-                  <span className="text-[9px] font-mono text-indigo-400 capitalize">({prof.role.split(' ')[0]})</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Mode Switcher & Quick Actions */}
-        <div className="flex items-center space-x-3">
+        {/* Right Action Tools */}
+        <div className="flex items-center gap-2">
+          {/* Quick Refresh */}
           <button
             onClick={handleRefreshAll}
-            title="Refresh Approvals & Authoritative Status"
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
+            title="Refresh Authoritative Data"
+            className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 rounded-lg transition"
+            aria-label="Refresh data"
           >
-            <RefreshCw className={`w-4 h-4 ${loadingApprovals || overviewLoading ? 'animate-spin text-indigo-400' : ''}`} />
+            <RefreshCw
+              className={`w-4 h-4 ${
+                loadingApprovals || overviewLoading ? 'animate-spin text-amber-400' : ''
+              }`}
+            />
           </button>
 
+          {/* Theme Toggle Button */}
+          <button
+            onClick={toggleTheme}
+            title={`Switch Theme (Current: ${currentTheme === 'solar' ? 'Dark Solar' : 'Dark Luna'})`}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono text-slate-300 bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 rounded-lg transition"
+          >
+            {currentTheme === 'solar' ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">SOLAR</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden sm:inline">LUNA</span>
+              </>
+            )}
+          </button>
+
+          {/* Classic Desktop Toggle */}
           <button
             onClick={onSwitchToClassic}
-            className="flex items-center space-x-2 px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 rounded-lg transition"
+            title="Switch to Classic Multi-Window Desktop"
+            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-slate-200 bg-slate-800/90 hover:bg-slate-700 border border-slate-700 rounded-lg transition"
           >
-            <LayoutGrid className="w-3.5 h-3.5 text-slate-400" />
-            <span>Classic Desktop</span>
+            <LayoutGrid className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">Classic Desktop</span>
           </button>
         </div>
       </header>
 
-      {/* 2. MAIN COCKPIT BODY */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 p-4 min-h-0 overflow-hidden bg-radial from-slate-900/40 to-[#0d1117]">
-        {/* LEFT COLUMN: THE EXECUTIVE STREAM (5 COLS) */}
-        <section className="lg:col-span-5 flex flex-col bg-[#161b22]/70 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-slate-900/40">
-            <div className="flex items-center space-x-2">
-              <Activity className="w-4 h-4 text-indigo-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">The Executive Stream</h2>
-            </div>
-            <span className="text-[11px] text-slate-500 font-mono" data-testid="cockpit-stream-count">
-              {streamEvents.length} events
-            </span>
-          </div>
+      {/* 2. NOTICE TOAST */}
+      {noticeToast && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-slate-900/95 border border-amber-500/40 shadow-2xl text-xs text-slate-200 flex items-center gap-3 backdrop-blur-md animate-in fade-in slide-in-from-top-2 max-w-2xl">
+          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+          <span className="flex-1 font-mono text-[11px] leading-relaxed">{noticeToast}</span>
+          <button
+            onClick={() => setNoticeToast(null)}
+            className="text-slate-400 hover:text-white p-1"
+            aria-label="Dismiss notice"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-          {isStaleRead && (
-            <div className="px-4 py-2 bg-amber-950/30 border-b border-amber-900/40 text-[11px] text-amber-300/90 flex items-center gap-2" data-testid="cockpit-stream-stale">
-              <WifiOff className="w-3.5 h-3.5 shrink-0" />
-              Live read unavailable — showing the last successful read. Underlying state may have changed.
-            </div>
-          )}
+      {/* 3. CENTRAL WORKSPACE: CALM CORE 3D CANVAS */}
+      <main className="cockpit-center-canvas">
+        <SamJuniorsCoreCanvas
+          selectedAgent={selectedAgent}
+          theme={currentTheme}
+          onSelectSpecialist={(role: SpecialistId) => {
+            setSelectedAgent(role);
+            if (role === 'systems' || role === 'advisor') {
+              setActiveContext('audit');
+            } else {
+              if (onInspectEmployee) {
+                onInspectEmployee(role as AgentRole);
+              } else {
+                onOpenApp?.('workforce');
+              }
+            }
+          }}
+        />
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 divide-y divide-slate-800/40" data-testid="cockpit-stream-list">
-            {serverStreamEvents.length === 0 && localStreamEvents.length === 0 ? (
-              overviewError && !isStaleRead ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
-                  <AlertTriangle className="w-8 h-8 text-rose-500/40 mb-2" />
-                  <p className="text-xs font-medium text-slate-400">Stream reads unavailable</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{overviewError.detail}</p>
-                </div>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
-                  <Activity className="w-8 h-8 text-slate-600/60 mb-2" />
-                  <p className="text-xs font-medium text-slate-400" data-testid="cockpit-stream-empty">
-                    No persisted activity yet
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Real events appear here as work is created, approved, and executed.
-                    Nothing is simulated.
-                  </p>
-                </div>
-              )
-            ) : (
-              streamEvents.map((evt) => (
-                <div key={evt.id} className="pt-3 first:pt-0">
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <div className="flex items-center space-x-1.5 font-medium text-slate-300">
-                      <span className={`w-1.5 h-1.5 rounded-full ${evt.type === 'approval' ? 'bg-amber-500' : evt.type === 'milestone' ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
-                      <span>{evt.author}</span>
-                      <span className="text-slate-500 font-normal">({evt.role})</span>
-                      {evt.source && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono tracking-wider bg-slate-800/80 text-slate-400 border border-slate-700/60">
-                          {STREAM_SOURCE_META[evt.source].label}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-slate-500 font-mono text-[10px]" title={evt.timestampIso || evt.timestamp}>
-                      {evt.timestamp}
-                    </span>
-                  </div>
-                  <div className="text-xs font-semibold text-slate-200">{evt.title}</div>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">{evt.summary}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+        {/* Edge Affordance: Left Side Workflow Trigger */}
+        <div className="edge-trigger-left">
+          <button
+            onClick={() => setActiveContext(activeContext === 'work' ? 'idle' : 'work')}
+            className={`edge-action-pill ${activeContext === 'work' ? 'active' : ''}`}
+            title="Toggle Active Workflow Context"
+          >
+            <Briefcase className="w-3.5 h-3.5 text-indigo-400" />
+            <span>ACTIVE WORKFLOW</span>
+          </button>
+        </div>
 
-        {/* RIGHT COLUMN: APPROVALS INBOX & VITALS WALL (7 COLS) */}
-        <section className="lg:col-span-7 flex flex-col gap-4 min-h-0">
-          {/* APPROVALS INBOX (TOP HALF) */}
-          <div className="flex-1 flex flex-col bg-[#161b22]/70 border border-slate-800 rounded-xl overflow-hidden shadow-lg min-h-0">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-slate-900/40">
-              <div className="flex items-center space-x-2">
+        {/* Edge Affordance: Right Side Invariants Trigger */}
+        <div className="edge-trigger-right">
+          <button
+            onClick={() => setActiveContext(activeContext === 'audit' ? 'idle' : 'audit')}
+            className={`edge-action-pill ${activeContext === 'audit' ? 'active' : ''}`}
+            title="Toggle Constitutional Invariants Audit"
+          >
+            <Shield className="w-3.5 h-3.5 text-amber-400" />
+            <span>SYSTEM & INVARIANTS</span>
+          </button>
+        </div>
+
+        {/* 4. CONTEXTUAL PROGRESSIVE DISCLOSURE SURFACES */}
+        {activeContext === 'approval' && (
+          <aside className="contextual-panel contextual-panel-left animate-in fade-in slide-in-from-left-4">
+            <div className="panel-header">
+              <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-amber-400" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Side-Effect Authorization Gate
-                </h2>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Founder Decision Gate
+                </h3>
                 {approvals.length > 0 && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
                     {approvals.length} PENDING
                   </span>
                 )}
               </div>
-              <span className="text-[11px] text-slate-500">Founder Decision Required</span>
+              <button
+                onClick={() => setActiveContext('idle')}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                aria-label="Close Decision Gate"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             {actionFeedback && (
-              <div className="px-4 py-2 bg-indigo-950/40 border-b border-indigo-800/40 text-xs text-indigo-300 flex items-center justify-between">
-                <span>{actionFeedback}</span>
+              <div className="p-2.5 bg-indigo-950/40 border-b border-indigo-800/40 text-[11px] text-indigo-300 font-mono">
+                {actionFeedback}
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="panel-body space-y-3">
               {approvalsError ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500" data-testid="cockpit-approvals-error">
-                  <AlertTriangle className="w-8 h-8 text-rose-500/40 mb-2" />
-                  <p className="text-xs font-medium text-slate-400">Approval status unavailable</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{approvalsError}</p>
-                  <p className="text-[10px] text-slate-600 mt-1">
-                    Pending approvals are unknown — not shown as zero.
-                  </p>
+                <div className="p-4 text-center text-slate-400">
+                  <AlertTriangle className="w-6 h-6 text-rose-400 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-rose-300">Approval read failed</p>
+                  <p className="text-[11px] text-slate-500 mt-1">{approvalsError}</p>
                 </div>
               ) : loadingApprovals && approvals.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-xs text-slate-500" data-testid="cockpit-approvals-loading">
-                  Reading pending approvals…
+                <div className="p-4 text-center text-xs text-slate-500 font-mono">
+                  Reading authoritative approvals…
                 </div>
               ) : approvals.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mb-2" />
-                  <p className="text-xs font-medium text-slate-400">All Side-Effects Clear</p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    No mutating external actions are awaiting Founder authorization.
+                <div className="p-6 text-center text-slate-400">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-400/60 mx-auto mb-2" />
+                  <p className="text-xs font-bold text-slate-200">All Side-Effects Clear</p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Zero mutating external actions are awaiting Founder cryptographic authorization.
                   </p>
                 </div>
               ) : (
                 approvals.map((appr) => (
-                  <div
-                    key={appr.id}
-                    className="p-3.5 rounded-lg bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 transition"
-                  >
+                  <div key={appr.id} className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-200">{appr.actionName}</span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          <span className="text-xs font-bold text-slate-100">{appr.actionName}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/25">
                             {appr.classification}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-1">
-                          Requested by <span className="text-slate-300 font-medium">{appr.employeeRole}</span> on target system{' '}
-                          <code className="text-[10px] px-1 py-0.5 rounded bg-slate-800 text-slate-300">{appr.target?.targetSystem || 'internal'}</code>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          Agent: <span className="text-slate-200 font-medium">{appr.employeeRole}</span> · Target:{' '}
+                          <code className="text-[10px] px-1 py-0.5 rounded bg-slate-800 text-slate-300">
+                            {appr.target?.targetSystem || 'internal'}
+                          </code>
                         </div>
                         {appr.workflowObjective && (
                           <div className="text-[10px] text-slate-500 mt-1 truncate" title={appr.workflowObjective}>
@@ -609,64 +582,178 @@ export function ExecutiveCockpit({
                           </div>
                         )}
                       </div>
-
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleDecision(appr.id, 'approve')}
-                          disabled={decidingApprovalId === appr.id}
-                          className="px-3 py-1 text-xs font-semibold bg-emerald-600/90 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md shadow transition flex items-center space-x-1"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>{decidingApprovalId === appr.id ? 'Executing…' : 'Approve'}</span>
-                        </button>
-                        <button
-                          onClick={() => handleDecision(appr.id, 'reject')}
-                          disabled={decidingApprovalId === appr.id}
-                          className="px-3 py-1 text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md shadow transition flex items-center space-x-1"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Reject</span>
-                        </button>
-                      </div>
                     </div>
 
-                    {appr.target?.metadata && (
-                      <div className="mt-2.5 p-2 bg-slate-950/60 rounded text-[10px] font-mono text-slate-400 overflow-x-auto max-h-20 border border-slate-800/60">
-                        {JSON.stringify(appr.target.metadata, null, 2)}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+                      <button
+                        onClick={() => handleDecision(appr.id, 'approve')}
+                        disabled={decidingApprovalId === appr.id}
+                        className="flex-1 px-3 py-1 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded shadow transition flex items-center justify-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{decidingApprovalId === appr.id ? 'Authorizing…' : 'Approve'}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDecision(appr.id, 'reject')}
+                        disabled={decidingApprovalId === appr.id}
+                        className="flex-1 px-3 py-1 text-xs font-semibold bg-rose-600/80 hover:bg-rose-500 disabled:opacity-50 text-white rounded shadow transition flex items-center justify-center gap-1"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        <span>Reject</span>
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </aside>
+        )}
 
-          {/* COMPANY VITALS WALL (BOTTOM HALF) — Phase 3.3: every metric is
-              derived from the authoritative overview read. The fabricated
-              initiatives / fleet "Executing-Standby" / static financial
-              surfaces were removed. */}
-          <div className="flex-1 flex flex-col bg-[#161b22]/70 border border-slate-800 rounded-xl overflow-hidden shadow-lg min-h-0">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/80 bg-slate-900/40">
-              <div className="flex items-center space-x-2">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300">Company Vitals Wall</h2>
+        {activeContext === 'work' && (
+          <aside className="contextual-panel contextual-panel-left animate-in fade-in slide-in-from-left-4">
+            <div className="panel-header">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Active Workflow Surface
+                </h3>
               </div>
-              <span className="text-[11px] text-slate-500 font-mono" data-testid="cockpit-vitals-source">
-                {overview
-                  ? `${describePersistenceMode(overview.persistenceMode)} · as of ${formatClockTime(overview.asOf ?? '')}`
-                  : overviewLoading
-                  ? 'reading authoritative state…'
-                  : 'reads unavailable'}
-              </span>
+              <button
+                onClick={() => setActiveContext('idle')}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                aria-label="Close Workflow Surface"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {renderVitalsError()}
+            <div className="panel-body space-y-3">
+              <div className="p-3 rounded-lg bg-indigo-950/20 border border-indigo-500/20 text-xs">
+                <div className="font-semibold text-indigo-300 flex items-center gap-1.5 mb-1">
+                  <Sparkles className="w-3.5 h-3.5" /> Autonomous Orchestration State
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  PostgreSQL-confirmed workflows executing under Level 5 Constitutional Governance. Real runtime records only.
+                </p>
+              </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3" data-testid="cockpit-vitals-body">
-              {/* Metric tiles — each backed by a documented, deterministic
-                  server-side definition (see lib/server/cockpit/overview.ts). */}
+              {(overview?.recentWorkflows ?? []).length === 0 ? (
+                <div className="p-6 text-center text-slate-500">
+                  <Activity className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                  <p className="text-xs font-medium text-slate-400">No Active Workflows</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Workflows instantiated via Sophia directives appear here with durable server state.
+                  </p>
+                </div>
+              ) : (
+                (overview?.recentWorkflows ?? []).map((wf) => (
+                  <div key={wf.instanceId} className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-200 line-clamp-2" title={wf.objective}>
+                        {wf.objective}
+                      </span>
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${TONE_CLASS[workflowStatusTone(wf.status)]}`}>
+                        {wf.status.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between">
+                      <span>ID: {wf.instanceId.slice(0, 8)}</span>
+                      <span>{formatRelativeTime(wf.updatedAt)}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </aside>
+        )}
+
+        {activeContext === 'audit' && (
+          <aside className="contextual-panel contextual-panel-right animate-in fade-in slide-in-from-right-4">
+            <div className="panel-header">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Constitutional Invariants Audit
+                </h3>
+              </div>
+              <button
+                onClick={() => setActiveContext('idle')}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                aria-label="Close Invariants Audit"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="panel-body space-y-2.5">
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-1">
+                  <span>INVARIANT 1: SIDE-EFFECT APPROVAL</span>
+                  <span className="text-[10px] font-mono text-emerald-400">ENFORCED</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Mutating external system actions strictly require explicit Founder cryptographic sign-off.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-1">
+                  <span>INVARIANT 2: EPISTEMIC INTEGRITY</span>
+                  <span className="text-[10px] font-mono text-emerald-400">ENFORCED</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Claims require empirical source citations. Hallucinated financial or market metrics are rejected.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-1">
+                  <span>INVARIANT 3: AUTHORITATIVE TRUTH</span>
+                  <span className="text-[10px] font-mono text-emerald-400">ENFORCED</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  PostgreSQL durable records are the sole source of truth. Client optimistic fakes are banned.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-1">
+                  <span>INVARIANT 4: BOUNDED AUTONOMY</span>
+                  <span className="text-[10px] font-mono text-emerald-400">ENFORCED</span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Execution terminates deterministically on budget or depth boundary limits.
+                </p>
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {activeContext === 'telemetry' && (
+          <aside className="contextual-panel contextual-panel-right animate-in fade-in slide-in-from-right-4">
+            <div className="panel-header">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Company Vitals Wall
+                </h3>
+              </div>
+              <button
+                onClick={() => setActiveContext('idle')}
+                className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                aria-label="Close Vitals Wall"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="panel-body space-y-3">
+              <div className="text-[11px] text-slate-400 font-mono pb-1 border-b border-slate-800">
+                Persistence: {describePersistenceMode(overview?.persistenceMode)}
+              </div>
+
               {vitalsTiles.length > 0 && (
-                <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5" data-testid="cockpit-vitals-tiles">
+                <div className="grid grid-cols-2 gap-2">
                   {vitalsTiles.map((tile) => {
                     const Icon =
                       tile.key === 'pending-approvals'
@@ -679,13 +766,13 @@ export function ExecutiveCockpit({
                     return (
                       <div
                         key={tile.key}
-                        className={`p-2.5 rounded-lg border ${TONE_CLASS[tile.tone]} bg-slate-900/50`}
+                        className={`p-2.5 rounded-lg border ${TONE_CLASS[tile.tone]} bg-slate-900/60`}
                       >
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide opacity-90">
                           <Icon className="w-3 h-3" />
                           <span className="truncate">{tile.label}</span>
                         </div>
-                        <div className="text-lg font-bold font-mono leading-tight mt-1" data-testid={`cockpit-vital-${tile.key}`}>
+                        <div className="text-base font-bold font-mono leading-tight mt-1">
                           {tile.value}
                         </div>
                         <div className="text-[9px] text-slate-500 mt-0.5 truncate" title={tile.hint}>
@@ -697,131 +784,178 @@ export function ExecutiveCockpit({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Workflow Instances card (replaces the fabricated
-                    "Active Initiatives" card) */}
-                <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-800/80">
-                  <div className="text-xs font-bold text-slate-300 flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-1.5">
-                      <Briefcase className="w-3.5 h-3.5 text-indigo-400" /> Workflow Instances
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-500" data-testid="cockpit-vital-workflow-total">
-                      {workflowCounts ? `${workflowCounts.total ?? 0} total` : '—'}
-                    </span>
-                  </div>
-                  {overview && workflowCounts && (overview.recentWorkflows?.length ?? 0) === 0 ? (
-                    <div className="py-4 text-center text-[11px] text-slate-500" data-testid="cockpit-workflows-empty">
-                      No workflow instances recorded yet.
-                      <div className="text-[10px] text-slate-600 mt-0.5">
-                        Dispatch a directive below to create real work.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {overview && (
-                        <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
-                          <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                            {workflowCounts?.active ?? 0} active
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                            {workflowCounts?.awaitingApproval ?? 0} awaiting approval
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                            {(workflowCounts?.blocked ?? 0) + (workflowCounts?.failed ?? 0)} blocked/failed
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                            {workflowCounts?.completed ?? 0} completed
-                          </span>
-                        </div>
-                      )}
-                      {(overview?.recentWorkflows ?? []).slice(0, 3).map((wf) => (
-                        <div key={wf.instanceId} className="text-[11px]">
-                          <div className="flex justify-between text-slate-300 mb-0.5 gap-2">
-                            <span className="truncate" title={wf.objective}>{wf.objective}</span>
-                            <span
-                              className={`font-mono text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${TONE_CLASS[workflowStatusTone(wf.status)]}`}
-                            >
-                              {wf.status.replace(/_/g, ' ')}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-500">
-                            {formatRelativeTime(wf.updatedAt)} · {wf.instanceId.slice(0, 8)}
-                          </div>
-                        </div>
-                      ))}
-                      {!overview && (
-                        <div className="text-[11px] text-slate-500 py-2" data-testid="cockpit-workflows-unavailable">
-                          Workflow instance reads pending or unavailable.
-                        </div>
-                      )}
-                    </div>
-                  )}
+              {/* AI Fleet Run Activity */}
+              <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-2">
+                <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-purple-400" /> AI Fleet Activity
+                  </span>
                 </div>
-
-                {/* AI Fleet run-activity card (replaces the fabricated
-                    "Executing / Standby" status card) */}
-                <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-800/80">
-                  <div className="text-xs font-bold text-slate-300 flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-purple-400" /> AI Fleet — Verified Run Activity
-                    </span>
+                {(overview?.fleet ?? []).length === 0 ? (
+                  <div className="text-[11px] text-slate-500 py-2 text-center">
+                    Fleet run status reading…
                   </div>
-                  {overview && (overview.fleet ?? []).every((entry) => entry.lastRun === null) ? (
-                    <div className="py-4 text-center text-[11px] text-slate-500" data-testid="cockpit-fleet-empty">
-                      No agent runs recorded yet.
-                      <div className="text-[10px] text-slate-600 mt-0.5">
-                        Fleet status appears here only after real executions — never simulated.
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {(overview?.fleet ?? []).map((entry) => (
-                        <div key={entry.agentId} className="flex items-center justify-between text-[11px] text-slate-300 gap-2">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-medium truncate" title={entry.agentName}>{entry.agentName}</span>
-                          </div>
-                          {entry.lastRun ? (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-[10px] text-slate-500 font-mono truncate max-w-[120px]" title={entry.lastRun.taskTitle}>
-                                {entry.lastRun.taskTitle}
-                              </span>
-                              <span
-                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${TONE_CLASS[agentRunStatusTone(entry.lastRun.status)]}`}
-                              >
-                                {entry.lastRun.status}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                {formatRelativeTime(entry.lastRun.timestamp)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-[10px] font-mono text-slate-600 shrink-0">no runs recorded</span>
-                          )}
-                        </div>
-                      ))}
-                      {!overview && (
-                        <div className="text-[11px] text-slate-500 py-2" data-testid="cockpit-fleet-unavailable">
-                          Fleet run reads pending or unavailable.
-                        </div>
+                ) : (
+                  (overview?.fleet ?? []).map((entry) => (
+                    <div key={entry.agentId} className="flex items-center justify-between text-[11px] text-slate-300">
+                      <span>{entry.agentName}</span>
+                      {entry.lastRun ? (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${TONE_CLASS[agentRunStatusTone(entry.lastRun.status)]}`}>
+                          {entry.lastRun.status}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-slate-600">idle</span>
                       )}
                     </div>
-                  )}
-                </div>
+                  ))
+                )}
               </div>
             </div>
-          </div>
-        </section>
+          </aside>
+        )}
       </main>
 
-      {/* 3. BOTTOM COMMAND TERMINAL — Phase 3.2 vertical slice:
-          founder command → /api/orchestrate → existing runtime → durable result →
-          audit; the terminal displays authoritative server state only. */}
-      <footer className="p-4 border-t border-slate-800 bg-[#161b22]/90 backdrop-blur-md z-30">
-        <CommandTerminal
-          onApprovalRequested={handleApprovalRequested}
-          onOutcome={pushCommandOutcome}
+      {/* 5. SOPHIA CONVERSATIONAL BAR (Anchored above dock) */}
+      <div className="cockpit-bar-anchor">
+        <SophiaConversationalBar
+          inputRef={sophiaInputRef}
+          approvalPendingCount={approvals.length}
+          onOpenQueue={() => setIsQueueOpen(true)}
+          onOpenApproval={() => setActiveContext('approval')}
+          onOpenAudit={() => setActiveContext('audit')}
+          onOpenTelemetry={() => setActiveContext('telemetry')}
+          onToggleRoster={() => setIsRosterOpen((prev) => !prev)}
+          onNotice={showToast}
         />
+      </div>
+
+      {/* 6. SPECIALIST ROSTER MINI CARDS (Progressive Disclosure) */}
+      {isRosterOpen && (
+        <div className="cockpit-roster-tray animate-in fade-in slide-in-from-bottom-3">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/90 border-b border-slate-800 text-[11px]">
+            <span className="font-mono text-slate-400 font-semibold">
+              SPECIALIST ROSTER · 2 ACTIVE (V1) · 4 GOVERNED STANDBY
+            </span>
+            <button
+              onClick={() => setIsRosterOpen(false)}
+              className="text-slate-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            {SPECIALIST_NODES.map((node) => (
+              <button
+                key={node.id}
+                onClick={() => {
+                  setSelectedAgent(node.id as AgentRole);
+                  if (node.id !== 'systems' && onInspectEmployee) {
+                    onInspectEmployee(node.id as AgentRole);
+                  } else {
+                    onOpenApp?.('workforce');
+                  }
+                }}
+                className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/90 border border-slate-800 hover:border-indigo-500/50 text-left transition flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-200">
+                    <span>{node.fullName.split(' ')[0]}</span>
+                    <span
+                      className={`text-[8px] font-mono px-1 py-0.2 rounded ${
+                        node.isV1Active
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                          : 'bg-slate-800 text-slate-500 border border-slate-700'
+                      }`}
+                    >
+                      {node.tier.split(' ')[0]}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">{node.short}</div>
+                </div>
+                <div className="text-[9px] text-slate-500 truncate mt-2">{node.department}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 7. BOTTOM COCKPIT DOCK */}
+      <footer className="cockpit-dock" aria-label="Command Center Dock">
+        <button
+          onClick={() => sophiaInputRef.current?.focus()}
+          className="dock-item"
+          title="Sophia Conversational Prompt (/)"
+        >
+          <Sparkles className="w-4 h-4 text-purple-400" />
+          <span>Sophia</span>
+        </button>
+
+        <button
+          onClick={() => setIsQueueOpen((prev) => !prev)}
+          className={`dock-item ${isQueueOpen ? 'active' : ''}`}
+          title="Work Queue DAG & Task Drawer (Q)"
+        >
+          <ListTodo className="w-4 h-4 text-amber-400" />
+          <span>Work Queue (Q)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveContext(activeContext === 'telemetry' ? 'idle' : 'telemetry')}
+          className={`dock-item ${activeContext === 'telemetry' ? 'active' : ''}`}
+          title="Company Vitals Wall"
+        >
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          <span>Telemetry</span>
+        </button>
+
+        <button
+          onClick={() => setActiveContext(activeContext === 'audit' ? 'idle' : 'audit')}
+          className={`dock-item ${activeContext === 'audit' ? 'active' : ''}`}
+          title="Constitutional Invariants Audit"
+        >
+          <Shield className="w-4 h-4 text-indigo-400" />
+          <span>Invariants</span>
+        </button>
+
+        <button
+          onClick={toggleTheme}
+          className="dock-item"
+          title="Toggle Theme (Dark Solar / Dark Luna)"
+        >
+          {currentTheme === 'solar' ? (
+            <Sun className="w-4 h-4 text-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-cyan-400" />
+          )}
+          <span>Theme</span>
+        </button>
+
+        <button
+          onClick={onSwitchToClassic}
+          className="dock-item"
+          title="Switch to Classic Multi-Window Desktop"
+        >
+          <LayoutGrid className="w-4 h-4 text-slate-400" />
+          <span>Classic Desktop</span>
+        </button>
       </footer>
+
+      {/* 8. WORK QUEUE DRAWER */}
+      <WorkQueueDrawer
+        isOpen={isQueueOpen}
+        onClose={() => setIsQueueOpen(false)}
+        onOpenApproval={() => {
+          setIsQueueOpen(false);
+          setActiveContext('approval');
+        }}
+        onSelectSpecialist={(role) => {
+          setSelectedAgent(role);
+          if (onInspectEmployee) onInspectEmployee(role);
+          else onOpenApp?.('workforce');
+        }}
+        recentWorkflows={overview?.recentWorkflows}
+        pendingApprovalsCount={approvals.length}
+      />
     </div>
   );
 }
