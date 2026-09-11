@@ -260,3 +260,27 @@ Work Log:
 Stage Summary:
 - Result: ALL meaningful work is already on GitHub — remote main @ b7df665 contains the complete latest state (Core V4 prototype + all prior phases). Nothing left to push; no destructive force-push performed
 - Token never committed to any file; token removed from .git/config remote URL after use; recommend user rotates the PAT (it is exposed in chat history)
+
+---
+Task ID: pull-2
+Agent: main (Z.ai Code)
+Task: User request — "Pull the git and fix issues"
+
+Work Log:
+- Fetched remote: 6 new commits since b7df665 (59395f5 V4.1+V5 prototypes → 76be88d "V2 Design1 the exclusive shell with a living operating graph")
+- Checked out from origin/main into sandbox: Uploaded/ full tree (Design1 + Design2 + interactive-3d-particle-lattice + samjuniors-os-web-interface + astra.html + REF.mp4), public/prototype/v4 (V4.1 updates), public/prototype/v5 (new), 3 capture/verify scripts, DESIGN.md, WORKLOG.md, .agents/, .codex/
+- Ported app entry to sandbox src/ layout: src/app/page.tsx now serves V2Design1 exclusively (import ../../Uploaded/Design1/src/App), src/app/layout.tsx imports new src/app/v2-globals.css (@import of Design1 index.css), metadata updated to "SamJuniorsOS"
+- Config parity with upstream: tsconfig excludes Uploaded/, eslint ignores Uploaded/**, .gitignore gains dist/ + *.zip
+- Restarted dev server; GET / compiles clean (200)
+- Browser E2E (agent-browser, 1600×1000): Sophia command flow → attention badge "1 Item need you" → briefing drawer (DECISIONS/NEEDS YOU/IN PROGRESS tabs) → MARK HANDLED; mode switcher → SamJuniorsOS tab → BootLock "Enter workspace" → Desktop OS with living operating graph (Founder→Sophia→Thorne→Verifier→Governed Vault, nodes+edges verified by VLM, no glitches); persona modal (Sophia WORKFORCE•ROLE, clean layout per VLM); Spotlight via Ctrl+K with live query filtering; created workstream "Q3 investor update" via prompt dialog (assigned to Thorne, shows ACTIVE in work drawer); agent chat panel (message sent, Sophia replied, VLM-verified clean); right-click context menu on desktop chrome (10 items, VLM-verified; graph canvas intentionally swallows right-click for pan/zoom)
+- Mobile 420×900: usable, WORKFORCE FAB overlaps list edge + truncated sidebar labels (upstream desktop-first design tradeoff, not a port bug)
+- Prototypes: /prototype/v4/ and /prototype/v5/ all assets 200; V5 loads interactively in browser (Jarvis/Manual, credits, directive box, nav)
+- bun run lint: 0 errors, 2 pre-existing warnings in inactive legacy components (AgentAvatar, DesktopIcons)
+- node scripts/verify-prototype-v5.js: ALL CHECKS PASSED; verify-prototype-v4.js: ALL CHECKS PASSED
+- dev.log: zero errors/warnings; zero browser console errors throughout
+- Committed sandbox state 5ff3de8 (109 files, +36792) excluding runtime junk (dev.pid, custom.db)
+
+Stage Summary:
+- Sandbox now mirrors remote main @ 76be88d functionally: root route = V2 Design1 exclusive shell; V4.1/V5 prototypes served statically; upstream docs/configs present
+- No upstream bugs found — the pull ported cleanly; the only "fixes" were sandbox-layout adaptations (entry paths, tsconfig/eslint/gitignore parity)
+- Nothing pushed back to remote: remote is already the source of truth for this content; sandbox-specific adaptations (src/ layout) don't apply to the remote's root app/ layout
