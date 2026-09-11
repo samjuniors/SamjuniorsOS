@@ -50,5 +50,9 @@ test
 prompt
 
 server.log
+# build outputs (from upstream)
+dist/
+*.zip
+
 # Skills directory
 /skills/

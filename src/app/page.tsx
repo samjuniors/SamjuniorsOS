@@ -1,23 +1,12 @@
 'use client';
 
-import React from 'react';
+import V2Design1 from '../../Uploaded/Design1/src/App';
 
 /**
- * SamJuniorsOS — Core V4 Prototype preview host.
- *
- * The Core V4 prototype is a standalone static HTML/CSS/JS experience,
- * isolated from all production/backend code at `public/prototype/v4/`.
- * This page simply hosts it full-viewport at the root route so the
- * founder can preview it. No production code is imported or modified.
+ * The root route intentionally serves only the V2 Design1 operating surface.
+ * Cockpit and classic-desktop code remains in the repository as inactive
+ * reference material and is not imported from an active route.
  */
-export default function CoreV4PrototypeHost() {
-  return (
-    <iframe
-      id="coreV4Frame"
-      src="/prototype/v4/index.html"
-      title="SamJuniorsOS Core V4 Prototype"
-      className="fixed inset-0 h-screen w-screen border-0 bg-black"
-      allow="clipboard-write"
-    />
-  );
+export default function SamJuniorsOSPage() {
+  return <V2Design1 />;
 }

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SamJuniors OS — Core V5 (Conversational Operating Center)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body class="dark-room" id="appBody">
+
+  <!-- Volumetric Dark Room & Lighting Canvas -->
+  <div class="ambient-darkroom" id="ambientDarkroom">
+    <canvas id="lightingCanvas" class="lighting-canvas"></canvas>
+    <div class="room-vignette"></div>
+    <div class="floor-reflection" id="floorReflection"></div>
+  </div>
+
+  <!-- Ultra-Minimal Edge Header -->
+  <header class="edge-header" id="edgeHeader">
+    <div class="edge-brand">
+      <span class="os-wordmark">SAMJUNIORS <span class="os-submark">OS</span></span>
+      <span class="status-indicator">
+        <span class="status-pulse-dot"></span>
+        <span class="status-label" id="systemPresenceLabel">Core Online · 14ms</span>
+      </span>
+    </div>
+
+    <div class="edge-utilities">
+      <button class="credits-chip" id="creditsToggle" title="Click to simulate credit depletion">
+        <span class="credits-icon">⚡</span>
+        <span class="credits-count" id="creditsCount">850 Credits</span>
+      </button>
+
+      <div class="mode-toggle-group">
+        <button class="mode-btn active" id="modeJarvis" data-mode="jarvis">Jarvis</button>
+        <button class="mode-btn" id="modeManual" data-mode="manual">Manual</button>
+      </div>
+
+      <button class="os-menu-btn" id="osDrawerOpenBtn" aria-label="Open OS Navigation">
+        <span class="os-menu-icon">⌘</span>
+        <span class="os-menu-text">OS</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Central Core Chamber (The Main Character) -->
+  <main class="core-chamber" id="coreChamber">
+    
+    <!-- Central Living Light Presence -->
+    <div class="core-stage" id="coreStage">
+      <div class="core-canvas-wrap">
+        <canvas id="coreCanvas" width="460" height="460" class="core-canvas"></canvas>
+        <div class="core-glow-aura" id="coreGlowAura"></div>
+      </div>
+    </div>
+
+    <!-- Core Spoken Dialogue & Intent Stream -->
+    <div class="core-dialogue-container" id="coreDialogueContainer">
+      <div class="core-state-badge" id="coreStateBadge">
+        <span class="state-dot" id="coreStateDot"></span>
+        <span class="state-text" id="coreStateText">LISTENING · READY FOR INTENT</span>
+      </div>
+      
+      <div class="core-speech-line" id="coreSpeechLine" aria-live="polite">
+        Good afternoon, Sam. All systems are operating smoothly. What would you like to focus on today?
+      </div>
+    </div>
+
+    <!-- Conversational Input Bar -->
+    <div class="conversational-bar-container" id="inputContainer">
+      <form id="conversationalForm" class="conversational-form" onsubmit="return false;">
+        <div class="input-wrapper">
+          <button type="button" class="mic-btn" id="micBtn" title="Simulate voice dictation" aria-label="Voice input">
+            <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+          
+          <input 
+            type="text" 
+            id="conversationalInput" 
+            class="conversational-input" 
+            placeholder="Talk to Core or type a directive..." 
+            autocomplete="off" 
+            spellcheck="false"
+          >
+
+          <button type="submit" class="send-btn" id="sendBtn" aria-label="Send Directive">
+            <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Discreet Conversational Suggestion Chips -->
+      <div class="suggestion-chips" id="suggestionChips">
+        <button class="chip" data-query="What needs my attention?">What needs my attention?</button>
+        <button class="chip" data-query="Review market positioning">Review positioning</button>
+        <button class="chip" data-query="Company health and signals">Company health</button>
+        <button class="chip" data-query="Check on Sophia and Thorne">Workforce status</button>
+      </div>
+    </div>
+
+    <!-- PROGRESSIVE DISCLOSURE: Contextual Event Expansion Surface -->
+    <!-- Naturally expands around active work, decisions, outcomes, or diagnostics -->
+    <div class="event-expansion-surface" id="eventExpansionSurface" aria-expanded="false">
+      
+      <!-- EVENT PANE 1: UNDERSTANDING INTENT -->
+      <div class="event-pane pane-understanding" id="paneUnderstanding" hidden>
+        <div class="event-card glass-panel">
+          <div class="pane-meta-tag">INTENT UNDERSTOOD</div>
+          <div class="understanding-quote" id="understandingQuote">"Review market positioning"</div>
+          <div class="context-gathering-row">
+            <span class="gathering-label">Gathering Context:</span>
+            <div class="gathering-chips" id="gatheringChips">
+              <span class="context-chip active">Market Signals</span>
+              <span class="context-chip active">Company State</span>
+              <span class="context-chip">Recent Decisions</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EVENT PANE 2: ACTIVE WORK -->
+      <div class="event-pane pane-active-work" id="paneActiveWork" hidden>
+        <div class="event-card glass-panel">
+          <div class="work-header-row">
+            <div class="work-title-group">
+              <span class="work-badge pulse">ACTIVE DIRECTIVE</span>
+              <h3 class="work-title" id="workTitle">Market Positioning Synthesis</h3>
+            </div>
+            <div class="work-controls">
+              <button class="btn-steer" id="btnSteerWork" title="Guide or alter direction">
+                <span class="btn-icon">↺</span> Steer
+              </button>
+              <button class="btn-pause" id="btnPauseWork" title="Pause work">Pause</button>
+              <button class="btn-halt" id="btnHaltWork" title="Cancel directive">Halt</button>
+            </div>
+          </div>
+
+          <div class="work-status-line" id="workStatusLine">
+            <span class="step-indicator-dot"></span>
+            <span id="workStepText">Evaluating 4 competitive sources and pricing signals...</span>
+          </div>
+
+          <!-- Step Progression Ribbon -->
+          <div class="step-ribbon" id="stepRibbon">
+            <div class="step-node completed" title="Context Retrieval">
+              <span class="node-dot">✓</span>
+              <span class="node-label">Context</span>
+            </div>
+            <div class="step-line active"></div>
+            <div class="step-node active" title="Market Scan">
+              <span class="node-dot"></span>
+              <span class="node-label">Sources</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-node pending" title="Synthesis">
+              <span class="node-dot"></span>
+              <span class="node-label">Synthesis</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step-node pending" title="Recommendation">
+              <span class="node-dot"></span>
+              <span class="node-label">Proposal</span>
+            </div>
+          </div>
+
+          <!-- Inline Steering Input (Revealed on click of Steer) -->
+          <div class="inline-steer-box" id="inlineSteerBox" hidden>
+            <input type="text" id="inlineSteerInput" placeholder="Give new steering instruction (e.g. 'Focus on AI-native autonomy')...">
+            <button type="button" class="btn-submit-steer" id="btnSubmitSteer">Apply Steering</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- EVENT PANE 3: FOUNDER DECISION REQUIRED (Authority Boundary) -->
+      <div class="event-pane pane-decision" id="paneDecision" hidden>
+        <div class="event-card glass-panel authority-panel">
+          <div class="authority-header">
+            <div class="authority-badge">
+              <span class="amber-glow-dot"></span>
+              FOUNDER AUTHORITY REQUIRED
+            </div>
+            <span class="authority-tag">Boundary Gate #F-208</span>
+          </div>
+
+          <div class="decision-content">
+            <h3 class="decision-heading" id="decisionHeading">Update Public Brand Positioning & Narrative</h3>
+            <p class="decision-summary" id="decisionSummary">
+              Core and Sophia have prepared the revised value proposition positioning SamJuniorsOS as an AI-native operational platform. This action will modify public marketing documentation and requires authenticated founder authorization.
+            </p>
+
+            <div class="decision-evidence-box">
+              <div class="evidence-stat">
+                <span class="stat-num">4</span>
+                <span class="stat-lbl">Sources Verified</span>
+              </div>
+              <div class="evidence-stat">
+                <span class="stat-num">0</span>
+                <span class="stat-lbl">Conflicting Claims</span>
+              </div>
+              <div class="evidence-stat">
+                <span class="stat-num">HIGH</span>
+                <span class="stat-lbl">Brand Impact</span>
+              </div>
+            </div>
+
+            <div class="decision-actions">
+              <button class="btn-authorize" id="btnAuthorizeDecision">
+                <span class="btn-icon">✓</span> Authorize Directive
+              </button>
+              <button class="btn-redirect" id="btnRedirectDecision">
+                <span class="btn-icon">↺</span> Steer & Re-evaluate
+              </button>
+              <button class="btn-decline" id="btnDeclineDecision">
+                Decline
+              </button>
+              <button class="btn-inspect" id="btnInspectDecision">
+                Inspect Evidence
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- EVENT PANE 4: COMPLETED OUTCOME -->
+      <div class="event-pane pane-completed" id="paneCompleted" hidden>
+        <div class="event-card glass-panel outcome-panel">
+          <div class="outcome-header">
+            <span class="emerald-glow-dot"></span>
+            <span class="outcome-badge">OUTCOME RECORDED</span>
+            <span class="outcome-id" id="outcomeId">Directive #D-104</span>
+          </div>
+
+          <h3 class="outcome-title" id="outcomeTitle">Market Positioning Update Ratified</h3>
+          <p class="outcome-description" id="outcomeDescription">
+            Founder authorization confirmed. Updated messaging document archived to Company Brain. All relevant downstream agents notified.
+          </p>
+
+          <div class="outcome-actions">
+            <button class="btn-outcome-action" id="btnInspectOutcomeEvidence">Inspect Evidence</button>
+            <button class="btn-outcome-action" id="btnViewProvenance">View Provenance Trail</button>
+            <button class="btn-outcome-action primary" id="btnDismissOutcome">Continue Dialogue</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- EVENT PANE 5: BLOCKED STATE -->
+      <div class="event-pane pane-blocked" id="paneBlocked" hidden>
+        <div class="event-card glass-panel blocked-panel">
+          <div class="blocked-header">
+            <span class="ruby-glow-dot"></span>
+            <span class="blocked-badge">GOVERNANCE HALT</span>
+          </div>
+          <h3 class="blocked-title" id="blockedTitle">Action Suspended: Epistemic Invariant Breached</h3>
+          <p class="blocked-description" id="blockedDescription">
+            Core halted execution safely. Attempted action required persistent external credentials that have not been provisioned by the founder.
+          </p>
+          <div class="blocked-actions">
+            <button class="btn-blocked-action primary" id="btnAcknowledgeBlocked">Acknowledge & Reset</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Tiny Edge Status Bar (Bottom) -->
+  <footer class="edge-footer" id="edgeFooter">
+    <div class="edge-left-indicators">
+      <button class="edge-dock-trigger" id="dockCompanyBtn" title="View Company State">
+        <span class="dock-glyph">◬</span>
+        <span class="dock-text">Company</span>
+      </button>
+      <button class="edge-dock-trigger" id="dockWorkforceBtn" title="View Workforce">
+        <span class="dock-glyph">👥</span>
+        <span class="dock-text">Workforce</span>
+      </button>
+      <button class="edge-dock-trigger attention-pulse" id="dockDecisionsBtn" title="View Decisions">
+        <span class="dock-glyph">⚖</span>
+        <span class="dock-text">Decisions</span>
+        <span class="dock-badge" id="decisionsBadge">1</span>
+      </button>
+      <button class="edge-dock-trigger" id="dockMessengerBtn" title="Open Messenger">
+        <span class="dock-glyph">💬</span>
+        <span class="dock-text">Messenger</span>
+      </button>
+    </div>
+
+    <div class="edge-center-trigger">
+      <button class="edge-os-pill" id="edgeOsPill">
+        <span class="pill-symbol">⌘</span>
+        <span class="pill-label">OS Navigation</span>
+      </button>
+    </div>
+
+    <div class="edge-right-watermark">
+      <span class="watermark-tag">DEMO STATE · NO LIVE COMPANY DATA CONNECTED</span>
+    </div>
+  </footer>
+
+  <!-- ===================================================================== -->
+  <!-- OS SLIDE-OVER DRAWER (Manual Mode / Deep System Navigation)           -->
+  <!-- Exposes all 7 governed OS modules without cluttering the main chamber -->
+  <!-- ===================================================================== -->
+  <div class="os-drawer-overlay" id="osDrawerOverlay" hidden>
+    <div class="os-drawer glass-panel" id="osDrawer" role="dialog" aria-modal="true" aria-label="Operating System Navigation">
+      
+      <div class="drawer-header">
+        <div class="drawer-brand">
+          <span class="drawer-os-name">SAMJUNIORS OS</span>
+          <span class="drawer-mode-indicator" id="drawerModeIndicator">MANUAL NAVIGATION</span>
+        </div>
+        <button class="drawer-close-btn" id="drawerCloseBtn" aria-label="Close Drawer">✕</button>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="drawer-nav" id="drawerNav">
+        <button class="drawer-nav-item active" data-tab="company">Company</button>
+        <button class="drawer-nav-item" data-tab="workforce">Workforce</button>
+        <button class="drawer-nav-item" data-tab="decisions">Decisions <span class="tab-badge">1</span></button>
+        <button class="drawer-nav-item" data-tab="research">Research</button>
+        <button class="drawer-nav-item" data-tab="activity">Activity</button>
+        <button class="drawer-nav-item" data-tab="audit">Audit</button>
+        <button class="drawer-nav-item" data-tab="messenger">Messenger</button>
+      </nav>
+
+      <!-- Drawer Content Panels -->
+      <div class="drawer-content-area" id="drawerContentArea">
+
+        <!-- TAB 1: COMPANY -->
+        <div class="drawer-tab-pane active" id="tabPaneCompany">
+          <h4 class="tab-section-title">Company Operating State</h4>
+          <div class="tab-card">
+            <div class="card-label">WHAT IS HAPPENING</div>
+            <p class="card-text">Single-container lock active. Baseline operational foundation verified. No active execution faults.</p>
+          </div>
+          <div class="tab-card">
+            <div class="card-label">WHAT CHANGED RECENTLY</div>
+            <p class="card-text">Market positioning synthesis drafted. Sophia completed preliminary competitive scan.</p>
+          </div>
+          <div class="tab-card">
+            <div class="card-label">WHAT NEEDS ATTENTION</div>
+            <p class="card-text text-amber">1 founder decision pending: Public Brand Positioning authorization.</p>
+          </div>
+          <div class="tab-card">
+            <div class="card-label">ACTIVE WORKFLOWS</div>
+            <p class="card-text">Positioning Review thread (Simulated #D-104) in synthesis stage.</p>
+          </div>
+        </div>
+
+        <!-- TAB 2: WORKFORCE -->
+        <div class="drawer-tab-pane" id="tabPaneWorkforce">
+          <h4 class="tab-section-title">Governed Workforce Roster (v1)</h4>
+          <div class="workforce-member-card">
+            <div class="member-header">
+              <span class="member-name">Sophia</span>
+              <span class="member-role">COO / Strategic Planner</span>
+              <span class="member-status-dot online"></span>
+            </div>
+            <p class="member-desc">Synthesizes company state, prepares plans, structures directives.</p>
+            <div class="member-meta">Status: <span class="text-cyan">Standby / Awaiting Direction</span></div>
+          </div>
+
+          <div class="workforce-member-card">
+            <div class="member-header">
+              <span class="member-name">Thorne</span>
+              <span class="member-role">Systems & Verification Worker</span>
+              <span class="member-status-dot online"></span>
+            </div>
+            <p class="member-desc">Executes verified code changes, inspects test runs, enforces invariant verification.</p>
+            <div class="member-meta">Status: <span class="text-emerald">Idle / Systems Nominal</span></div>
+          </div>
+        </div>
+
+        <!-- TAB 3: DECISIONS -->
+        <div class="drawer-tab-pane" id="tabPaneDecisions">
+          <h4 class="tab-section-title">Authority Boundary & Approvals</h4>
+          <div class="decision-record pending">
+            <div class="record-header">
+              <span class="record-type amber">PENDING AUTHORIZATION</span>
+              <span class="record-time">5m ago</span>
+            </div>
+            <h5 class="record-title">Public Brand Positioning Update</h5>
+            <p class="record-summary">Modifies external messaging and positioning strategy based on 4 evaluated competitor sources.</p>
+            <button class="btn-drawer-action" id="btnDrawerJumpDecision">Open in Main Chamber</button>
+          </div>
+
+          <div class="decision-record historical">
+            <div class="record-header">
+              <span class="record-type green">APPROVED & RATIFIED</span>
+              <span class="record-time">Yesterday</span>
+            </div>
+            <h5 class="record-title">Single-Container Lock Verification</h5>
+            <p class="record-summary">Ratified single-container execution boundary constraint for v1 deployment.</p>
+          </div>
+        </div>
+
+        <!-- TAB 4: RESEARCH -->
+        <div class="drawer-tab-pane" id="tabPaneResearch">
+          <h4 class="tab-section-title">Epistemic Research & Signals</h4>
+          <div class="tab-card">
+            <div class="card-label">SOURCES EVALUATED</div>
+            <p class="card-text">4 competitive market signals parsed (YCombinator AI trends, Cloud pricing benchmark, Developer productivity survey, Agent runtime architectures).</p>
+          </div>
+          <div class="tab-card">
+            <div class="card-label">CONFIRMED CLAIMS</div>
+            <p class="card-text">Autonomous execution requires deterministic verification gates and human-in-the-loop authorization.</p>
+          </div>
+        </div>
+
+        <!-- TAB 5: ACTIVITY -->
+        <div class="drawer-tab-pane" id="tabPaneActivity">
+          <h4 class="tab-section-title">System Event Stream</h4>
+          <ul class="activity-feed-list" id="activityFeedList">
+            <li class="feed-item">
+              <span class="feed-time">16:04</span>
+              <span class="feed-text">Core entered listening presence. All systems nominal.</span>
+            </li>
+            <li class="feed-item">
+              <span class="feed-time">16:01</span>
+              <span class="feed-text">Sophia prepared positioning brief for founder inspection.</span>
+            </li>
+            <li class="feed-item">
+              <span class="feed-time">15:45</span>
+              <span class="feed-text">Single-container lock invariant certified by Thorne.</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- TAB 6: AUDIT -->
+        <div class="drawer-tab-pane" id="tabPaneAudit">
+          <h4 class="tab-section-title">Tamper-Evident Audit Records</h4>
+          <div class="tab-card mono">
+            <div class="card-label">LATEST LOG ENTRY</div>
+            <p class="card-text">SHA256: 9e3a01fb78c... [FOUNDER_SESSION_INIT] auth_level: ROOT</p>
+          </div>
+          <div class="tab-card mono">
+            <div class="card-label">IMMUTABLE LOG STATUS</div>
+            <p class="card-text">Ledger synchronous · Invariant 80% gross margin lock intact.</p>
+          </div>
+        </div>
+
+        <!-- TAB 7: MESSENGER -->
+        <div class="drawer-tab-pane" id="tabPaneMessenger">
+          <h4 class="tab-section-title">Internal Communications</h4>
+          <div class="messenger-history" id="messengerHistory">
+            <div class="chat-bubble incoming">
+              <span class="sender-name">Sophia (COO)</span>
+              <p class="bubble-text">Sam, I have gathered the 4 competitive signals for the positioning review. Thorne and I stand ready for your direction.</p>
+              <span class="bubble-time">16:02</span>
+            </div>
+          </div>
+          <div class="messenger-input-row">
+            <input type="text" id="messengerInput" placeholder="Message Sophia or Thorne...">
+            <button type="button" id="messengerSendBtn">Send</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Provenance Modal -->
+  <div class="provenance-modal-overlay" id="provenanceModal" hidden>
+    <div class="provenance-modal glass-panel">
+      <div class="modal-header">
+        <h4 class="modal-title">Epistemic Provenance Chain</h4>
+        <button class="modal-close-btn" id="provenanceCloseBtn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="chain-flow">
+          <div class="chain-step completed">
+            <span class="step-num">1</span>
+            <div class="step-info">
+              <span class="step-title">SOURCE</span>
+              <span class="step-detail">4 verified market data points</span>
+            </div>
+          </div>
+          <div class="chain-arrow">↓</div>
+          <div class="chain-step completed">
+            <span class="step-num">2</span>
+            <div class="step-info">
+              <span class="step-title">SIGNAL</span>
+              <span class="step-detail">Shift toward AI-native operating platforms</span>
+            </div>
+          </div>
+          <div class="chain-arrow">↓</div>
+          <div class="chain-step completed">
+            <span class="step-num">3</span>
+            <div class="step-info">
+              <span class="step-title">CLAIM</span>
+              <span class="step-detail">Core value prop aligns with autonomous execution</span>
+            </div>
+          </div>
+          <div class="chain-arrow">↓</div>
+          <div class="chain-step completed">
+            <span class="step-num">4</span>
+            <div class="step-info">
+              <span class="step-title">DECISION GATE</span>
+              <span class="step-detail">Authenticated Founder Approval</span>
+            </div>
+          </div>
+          <div class="chain-arrow">↓</div>
+          <div class="chain-step completed">
+            <span class="step-num">5</span>
+            <div class="step-info">
+              <span class="step-title">OUTCOME</span>
+              <span class="step-detail">Recorded into Company Memory</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="prototype.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SamJuniorsOS — Core V4 Command Center</title>
+  <title>SamJuniorsOS — Core V4.1 Command Center</title>
   <link rel="stylesheet" href="prototype.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -42,7 +42,7 @@
           </div>
           <div class="brand-text-group">
             <span class="brand-title">SAMJUNIORS OS</span>
-            <span class="brand-sub">CORE V4 · PROTOTYPE</span>
+            <span class="brand-sub">CORE V4.1 · PROTOTYPE</span>
           </div>
         </div>
       </div>
@@ -160,8 +160,53 @@
           </div>
         </div>
 
-        <!-- ===== LAYER 3: ATTENTION MODEL — WHAT MATTERS NOW ===== -->
-        <div class="what-matters-strip" id="whatMattersStrip" role="status" aria-live="polite" title="What matters now — Core filters company complexity for the founder">
+        <!-- ===== FOUNDER COMMAND INPUT (Layer 1 entry point) ===== -->
+        <div class="command-input-container">
+          <form id="commandForm" class="command-bar-form" autocomplete="off">
+            <div class="command-pill-box">
+              <span class="cmd-icon-prefix">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input
+                type="text"
+                id="commandInput"
+                class="command-input"
+                placeholder="What do you need?"
+                aria-label="Founder Command Input"
+              />
+              <button type="submit" class="command-submit-btn" id="btnSubmitCommand" aria-label="Send Command">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </button>
+            </div>
+          </form>
+
+          <div class="suggested-prompts-row" id="suggestedPromptsRow">
+            <button type="button" class="prompt-chip" data-prompt="Review what changed in the company.">
+              "Review what changed in the company."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Prepare today's priorities.">
+              "Prepare today's priorities."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Investigate this market opportunity.">
+              "Investigate this market opportunity."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Show me what needs my attention.">
+              "Show me what needs my attention."
+            </button>
+            <button type="button" class="prompt-chip" data-prompt="Continue the positioning review.">
+              "Continue the positioning review."
+            </button>
+          </div>
+        </div>
+
+        <!-- ===== LAYER 2 / PRIMARY SECONDARY INFO: ATTENTION MODEL — WHAT MATTERS NOW ===== -->
+        <div class="what-matters-strip" id="whatMattersStrip" role="status" aria-live="polite" title="What matters now — click to view relevant contextual information">
           <span class="wm-caption">WHAT MATTERS NOW</span>
           <span class="wm-state" id="wmState">
             <span class="wm-clear-indicator"><span class="wm-dot dot-clear"></span> CLEAR — nothing currently requires founder action</span>
@@ -201,47 +246,54 @@
             </div>
           </div>
 
-          <!-- ===== LAYER 2: ACTIVE WORK PANE (persistent work identity — WHAT / WHY / WHERE / NEXT) ===== -->
+          <!-- ===== LAYER 2: ACTIVE WORK PANE (compact persistent work identity — WHAT / WHY / WHERE / NEXT) ===== -->
           <div class="work-surface-pane pane-active-work" id="paneActiveWork">
-            <div class="pane-header space-between">
+            <div class="active-work-header">
               <div class="working-title-group">
-                <span class="pane-tag" id="activeWorkTag">ACTIVE WORK · RESEARCHING</span>
                 <span class="pane-task-name" id="activeWorkTitle">Positioning Review</span>
+                <div class="active-work-meta-line">
+                  <span class="pane-tag" id="activeWorkTag">Researching</span>
+                  <span class="meta-sep">·</span>
+                  <span class="meta-evidence" id="activeWorkEvidence">4 sources evaluated · 0 pending</span>
+                </div>
               </div>
               <div class="founder-steering-bar">
-                <button type="button" class="btn-steering btn-secondary" id="btnWorkPause" title="Pause or resume this work">⏸ Pause</button>
-                <button type="button" class="btn-steering btn-redirect" id="btnWorkSteer" title="Steer — tell Core how to change direction">
-                  ⇄ Steer
-                </button>
+                <button type="button" class="btn-steering btn-secondary" id="btnWorkPause" title="Pause or continue this work">⏸ Pause</button>
+                <button type="button" class="btn-steering btn-redirect" id="btnWorkSteer" title="Steer — tell Core how to change direction">⇄ Steer</button>
                 <button type="button" class="btn-steering btn-stop" id="btnWorkStop" title="Stop this work">⏹ Stop</button>
               </div>
             </div>
 
-            <div class="work-meta-grid">
-              <div class="work-meta-cell">
-                <span class="wm-label">WHY</span>
-                <span class="wm-value" id="activeWorkWhy">Founder intent: understand what changed before deciding next steps.</span>
+            <div class="work-summary-rows">
+              <div class="work-compact-row">
+                <span class="wc-label">Current:</span>
+                <span class="wc-val" id="activeWorkCurrentStep">Evaluating available evidence</span>
               </div>
-              <div class="work-meta-cell">
-                <span class="wm-label">CURRENT STEP</span>
-                <span class="wm-value" id="activeWorkCurrentStep">Evaluating available evidence</span>
-              </div>
-              <div class="work-meta-cell cell-evidence">
-                <span class="wm-label">EVIDENCE</span>
-                <span class="wm-value mono" id="activeWorkEvidence">0 sources evaluated · 0 findings pending</span>
-              </div>
-              <div class="work-meta-cell cell-next">
-                <span class="wm-label">NEXT</span>
-                <span class="wm-value" id="activeWorkNext">Compare verified findings against current priorities.</span>
+              <div class="work-compact-row">
+                <span class="wc-label">Next:</span>
+                <span class="wc-val" id="activeWorkNext">Prepare recommendation</span>
               </div>
             </div>
 
-            <div class="task-steps-checklist" id="taskStepsChecklist">
-              <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Context gathered</span><span class="step-status-tag">Done</span></div>
-              <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Relevant sources identified</span><span class="step-status-tag">Done</span></div>
-              <div class="step-row active"><span class="step-check spinner-dot"></span><span class="step-label">Evaluating findings</span><span class="step-status-tag active">In Progress</span></div>
-              <div class="step-row pending"><span class="step-check">○</span><span class="step-label">Prepare recommendation</span><span class="step-status-tag">Queued</span></div>
-            </div>
+            <!-- Progressive Disclosure: Expandable Milestones, Context & Steering -->
+            <details class="work-details-disclosure" id="workDetailsDisclosure">
+              <summary class="work-disclosure-summary">
+                <span class="disclosure-label">Milestones & Context</span>
+                <span class="disclosure-arrow">▾</span>
+              </summary>
+              <div class="disclosure-body">
+                <div class="task-steps-checklist" id="taskStepsChecklist">
+                  <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Context gathered</span><span class="step-status-tag">Done</span></div>
+                  <div class="step-row done"><span class="step-check">✓</span><span class="step-label">Relevant sources identified</span><span class="step-status-tag">Done</span></div>
+                  <div class="step-row active"><span class="step-check spinner-dot"></span><span class="step-label">Evaluating findings</span><span class="step-status-tag active">In Progress</span></div>
+                  <div class="step-row pending"><span class="step-check">○</span><span class="step-label">Prepare recommendation</span><span class="step-status-tag">Queued</span></div>
+                </div>
+                <div class="work-why-context">
+                  <span class="wc-label">Intent / Why:</span>
+                  <span class="wc-val" id="activeWorkWhy">Founder intent: understand what changed before deciding next steps.</span>
+                </div>
+              </div>
+            </details>
 
             <div class="steering-applied-note" id="steeringAppliedNote" aria-hidden="true">
               <span class="steer-note-label">FOUNDER STEERED:</span>
@@ -362,51 +414,6 @@
           </div>
           <div class="dock-threads-row" id="dockThreadsRow">
             <!-- work thread cards are generated by prototype.js -->
-          </div>
-        </div>
-
-        <!-- ===== FOUNDER COMMAND INPUT (Layer 1 entry point) ===== -->
-        <div class="command-input-container">
-          <form id="commandForm" class="command-bar-form" autocomplete="off">
-            <div class="command-pill-box">
-              <span class="cmd-icon-prefix">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-              </span>
-              <input
-                type="text"
-                id="commandInput"
-                class="command-input"
-                placeholder="What do you need?"
-                aria-label="Founder Command Input"
-              />
-              <button type="submit" class="command-submit-btn" id="btnSubmitCommand" aria-label="Send Command">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                  <polyline points="12 5 19 12 12 19"></polyline>
-                </svg>
-              </button>
-            </div>
-          </form>
-
-          <div class="suggested-prompts-row" id="suggestedPromptsRow">
-            <button type="button" class="prompt-chip" data-prompt="Review what changed in the company.">
-              "Review what changed in the company."
-            </button>
-            <button type="button" class="prompt-chip" data-prompt="Prepare today's priorities.">
-              "Prepare today's priorities."
-            </button>
-            <button type="button" class="prompt-chip" data-prompt="Investigate this market opportunity.">
-              "Investigate this market opportunity."
-            </button>
-            <button type="button" class="prompt-chip" data-prompt="Show me what needs my attention.">
-              "Show me what needs my attention."
-            </button>
-            <button type="button" class="prompt-chip" data-prompt="Continue the positioning review.">
-              "Continue the positioning review."
-            </button>
           </div>
         </div>
 
@@ -759,7 +766,7 @@
           </svg>
           <span class="msg-trigger-label">MESSENGER</span>
         </button>
-        <span class="footer-version">SAMJUNIORS OS · CORE V4 PROTOTYPE</span>
+        <span class="footer-version">SAMJUNIORS OS · CORE V4.1 PROTOTYPE</span>
       </div>
     </footer>
 
