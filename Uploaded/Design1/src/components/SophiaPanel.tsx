@@ -1,29 +1,15 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, Check, Circle, AlertTriangle, MessageSquare, StickyNote, Scale, X, Sparkles } from "lucide-react";
+import { ChevronDown, AlertTriangle, Scale, X, Sparkles } from "lucide-react";
 import type { Settings } from "../lib/field";
-import { os, useOS, openAttention, openDecisions, activeWork, agentName, STAGES, type AttentionKind } from "../lib/osStore";
+import { os, useOS, openAttention, openDecisions, activeWork, agentName, STAGES } from "../lib/osStore";
+import { DecisionSurface, AttentionSurface, EmptyState } from "./surfaces/StandardSurfaces";
+import { decisionToDecisionData, attentionToAttentionData } from "../lib/surfaceSchema";
 
 type Props = {
   settings: Settings;
   onChange: (s: Settings) => void;
   onReset: () => void;
   onSpeak: (text: string) => void;
-};
-
-const KIND_ICON: Record<AttentionKind, ReactNode> = {
-  decision: <Scale size={12} />,
-  review: <Circle size={12} />,
-  blocked: <AlertTriangle size={12} />,
-  message: <MessageSquare size={12} />,
-  note: <StickyNote size={12} />,
-};
-
-const KIND_TINT: Record<AttentionKind, string> = {
-  decision: "text-cyan-200 border-cyan-300/30 bg-cyan-300/10",
-  review: "text-slate-200 border-white/15 bg-white/5",
-  blocked: "text-rose-200 border-rose-300/30 bg-rose-400/10",
-  message: "text-violet-200 border-violet-300/30 bg-violet-400/10",
-  note: "text-amber-100 border-amber-300/25 bg-amber-300/10",
 };
 
 function Section({ title, count, children, defaultOpen = true, icon }: { title: string; count?: number; children: ReactNode; defaultOpen?: boolean; icon?: ReactNode }) {
@@ -136,57 +122,35 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
           {/* ---- Decisions (Immediate Act) ---- */}
           <Section title="Decisions" count={decisions.length} defaultOpen={decisions.length > 0} icon={<Scale size={11} />}>
             {decisions.length === 0 ? (
-              <p className="py-1 text-[12px] text-slate-500">No open decisions waiting.</p>
+              <EmptyState title="No open decisions" description="All governance checks are verified and clear." />
             ) : (
-              <ul className="space-y-2.5">
+              <div className="space-y-2.5">
                 {decisions.map((d) => (
-                  <li key={d.id} className="rounded-xl border border-amber-300/25 bg-amber-400/[0.04] p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="text-[12.5px] font-semibold text-white">{d.title}</div>
-                      <span className="shrink-0 rounded border border-amber-300/30 bg-amber-400/10 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wider text-amber-200">Action</span>
-                    </div>
-                    {d.context && <div className="mt-1 text-[11px] leading-snug text-slate-300">{d.context}</div>}
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                      {d.options.map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => decide(d.id, opt)}
-                          className="rounded-lg border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100 transition hover:border-cyan-300 hover:bg-cyan-400/20 active:scale-95"
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </li>
+                  <DecisionSurface
+                    key={d.id}
+                    decision={decisionToDecisionData(d)}
+                    onDecide={(opt) => decide(d.id, opt)}
+                  />
                 ))}
-              </ul>
+              </div>
             )}
           </Section>
 
           {/* ---- Needs you (Notice -> Understand -> Triage) ---- */}
           <Section title="Needs you" count={attention.length} defaultOpen={decisions.length === 0}>
             {attention.length === 0 ? (
-              <p className="py-1 text-[12px] text-slate-500">Nothing needs you right now.</p>
+              <EmptyState title="All clear" description="Nothing needs your immediate attention." />
             ) : (
-              <ul className="space-y-1.5">
+              <div className="space-y-2">
                 {attention.slice(0, 6).map((a) => (
-                  <li key={a.id} className="group flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2 py-1.5">
-                    <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${KIND_TINT[a.kind]}`}>{KIND_ICON[a.kind]}</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12px] text-slate-100">{a.title}</span>
-                      <span className="block text-[10.5px] text-slate-500">{agentName(a.from)} · {a.kind}</span>
-                    </span>
-                    <button
-                      onClick={() => os.handleAttention(a.id)}
-                      title="Mark handled"
-                      className="rounded-md p-1 text-slate-500 opacity-0 transition hover:bg-white/10 hover:text-cyan-200 group-hover:opacity-100"
-                    >
-                      <Check size={12} />
-                    </button>
-                  </li>
+                  <AttentionSurface
+                    key={a.id}
+                    attention={attentionToAttentionData(a)}
+                    onResolve={() => os.handleAttention(a.id)}
+                  />
                 ))}
-                {attention.length > 6 && <li className="text-[10.5px] text-slate-500">+{attention.length - 6} more in SamJuniorsOS</li>}
-              </ul>
+                {attention.length > 6 && <p className="text-[10.5px] text-slate-500 pt-1">+{attention.length - 6} more in SamJuniorsOS</p>}
+              </div>
             )}
           </Section>
 

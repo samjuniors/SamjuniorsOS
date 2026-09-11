@@ -279,3 +279,60 @@ Information-rich multi-window operating environment with contextual surfaces:
 - No fabricated percentages or demo vanity metrics
 - No simulated agent chatter
 - Empty states show honest messages ("All quiet. Nothing needs you.")
+
+---
+
+## 12. Scalable Content-to-Surface Architecture (V2.1)
+
+To ensure SamJuniorsOS scales gracefully as new initiatives, agents, external integrations (GitHub, Stripe, Cloud APIs), and operational telemetry are added without dashboard clutter or layout shifts, V2.1 enforces strict **separation of UI presentation surfaces from domain content definitions**.
+
+### Canonical Domain Schemas (`src/lib/surfaceSchema.ts`)
+
+Domain entities are decoupled from raw JSX markup via typed contracts:
+- `EntityItem`: Agents, tools, human stakeholders.
+- `AttentionData`: Triage alerts, reviews, notices, and messages.
+- `WorkData`: Tasks, workstreams, initiatives, and deliverables.
+- `DecisionData`: Governance choices requiring founder approval.
+- `ActivityEvent`: Immutable audit log entries.
+- `MetricItem`: Operational KPIs, financial floors, and workforce ratios.
+- `TimelineMilestone`: Company phases, releases, and roadmap milestones.
+- `RelationshipLink`: Directed dependencies, delegations, and escalations.
+
+### The 10 Standardized Reusable Surfaces (`src/components/surfaces/StandardSurfaces.tsx`)
+
+| Surface | Purpose | Progressive Disclosure Levels | Container Usage |
+|---|---|---|---|
+| **1. EntitySurface** | Shows an agent, tool, or person | Level 1: Compact avatar & status dot<br>Level 2: Badges & current status<br>Level 3: Collapsible remit & scope | `AgentQuickDock`, `PersonaModal`, `FlowDesktop` workforce |
+| **2. AttentionSurface** | Notice, alert, and review triage | Level 1: Left tone bar & title<br>Level 2: Detail narrative & source<br>Level 3: Inline mark-handled action | `SophiaPanel`, Bell popover, `FlowDesktop` left rail |
+| **3. WorkSurface** | Workstreams and deliverables | Level 1: Title & owner badge<br>Level 2: 5-stage progression track (`discovery`→`done`)<br>Level 3: Pause, Resume, Advance stage actions | `TodoDrawer`, `SophiaPanel` in-progress |
+| **4. DecisionSurface** | Executive human-in-the-loop decisions | Level 1: Title & author tag<br>Level 2: Context explanation<br>Level 3: Actionable choice buttons / resolved state | `SophiaPanel`, `FlowDesktop` right rail |
+| **5. ActivitySurface** | Audit log & runtime events | Level 1: Timestamp & actor badge<br>Level 2: Full event description | Bell popover recent list, Inspector log tab |
+| **6. MetricSurface** | Operational and financial KPIs | Level 1: Label & tabular value (`.tnum`)<br>Level 2: Status pill<br>Level 3: Epistemic confidence (`verified` / `inferred`) & source | `FlowDesktop` left rail, Company context |
+| **7. TimelineSurface** | Roadmap & company milestones | Level 1: Vertical sequence nodes (`complete`, `current`, `upcoming`)<br>Level 2: Phase subtitle & completion dates | `FlowDesktop` left rail, Company overview |
+| **8. RelationshipSurface** | Directed links between entities | Level 1: `[From] --(delegates / depends-on / escalates)--> [To]` tags | `PersonaModal`, `FlowDesktop` canvas inspector |
+| **9. ListSurface** | Universal collection container | Level 1: Total count badge & header action<br>Level 2: Live text search filter<br>Level 3: Stage filter pills (`open`, `blocked`, `done`)<br>Level 4: Integrated Loading, Empty, and Error states | `TodoDrawer`, Chat contact lists |
+| **10. InspectorSurface** | Deep contextual inspection sheet | Level 1: Header with status pill and close trigger<br>Level 2: Tabbed navigation (`Overview`, `Activity`, `Relationships`)<br>Level 3: Full scrollable detail body | Modal overlay, canvas inspector HUD |
+
+### Standardized System States
+
+1. **LoadingState**:
+   - Obsidian glass skeleton card with cyan pulse ping and spinning indicator.
+   - Text message: "Synchronizing neural telemetry...".
+2. **EmptyState**:
+   - Clean obsidian container with delicate icon, uppercase title, description, and optional CTA button.
+   - Context-aware messages (e.g. "Nothing is blocked. All active workstreams are flowing smoothly.").
+3. **ErrorState**:
+   - Rose-tinted translucent warning card with disruption alert and "Retry Sync" affordance.
+
+### Scalable Content-to-Surface Rules
+
+1. **Never add new permanent panels**: The core layout footprint (Neural Core knot, canvas viewport, top bar, floating chat launcher) is fixed and inviolable.
+2. **Reuse existing surfaces for new data**: Any incoming data (such as a GitHub Pull Request, a Stripe invoice, an external server alert) MUST map to one of the 10 standard surfaces:
+   - A GitHub PR maps to `WorkSurface` (stage = `review`).
+   - A Stripe webhook alert maps to `AttentionSurface` (kind = `review` or `blocked`).
+   - An API health metric maps to `MetricSurface` (confidence = `verified`).
+3. **Progressive Disclosure Boundary**:
+   - Quick glance: Glance pills (`SophiaPanel` collapsed trigger, top bar status dot, dock badges).
+   - Execution: Side drawers (`TodoDrawer`) and side cards (`SideCard`).
+   - Deep inspection: Modals (`PersonaModal`, `InspectorSurface`).
+4. **Zero Layout Shift**: All surfaces adhere to fixed aspect ratios, tabular numbers (`font-mono`, `.tnum`), and fluid max-height limits with custom thin scrollbars.

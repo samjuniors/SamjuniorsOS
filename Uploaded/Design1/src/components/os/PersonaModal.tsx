@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Bot, X, Wrench, CheckCircle2, ShieldAlert, ArrowRight, Pause, Play, ChevronDown } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS, agentName, type Agent } from "../../lib/osStore";
+import { RelationshipSurface } from "../surfaces/StandardSurfaces";
+import { generateAgentRelationships } from "../../lib/surfaceSchema";
 
 export type { Agent as AgentPersona };
 
@@ -22,6 +24,8 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
   const raised = useOS((s) => s.attention.filter((a) => a.from === agentId && !a.handled));
   const [more, setMore] = useState(false);
   if (!agent) return null;
+
+  const relationships = generateAgentRelationships().filter((r) => r.fromId === agent.id || r.toId === agent.id);
 
   const close = () => { osSound.close(); onClose(); };
   const toggleOffline = () => {
@@ -148,6 +152,15 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
                   {agent.tools.map((t) => <span key={t} className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[10.5px] font-medium text-slate-300">{t}</span>)}
                 </div>
               </div>
+
+              {relationships.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
+                    Operational Relationships
+                  </span>
+                  <RelationshipSurface links={relationships} />
+                </div>
+              )}
 
               <div className="flex items-start gap-2 rounded-2xl border border-rose-300/15 bg-rose-400/[0.05] p-3">
                 <ShieldAlert size={14} className="mt-0.5 shrink-0 text-rose-300" />

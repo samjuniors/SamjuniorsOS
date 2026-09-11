@@ -4,7 +4,7 @@ import {
   Send, PackageCheck, Search, ClipboardList, Landmark, Scale, ChevronDown, Check,
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
-  Building2, Pencil, ArrowRight,
+  Building2, Pencil, ArrowRight, Flag,
 } from "lucide-react";
 import { FlowEngine, NODES, WORLD, type FlowNode } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
@@ -12,6 +12,8 @@ import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
   type AttentionKind, type Agent,
 } from "../lib/osStore";
+import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
+import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -347,6 +349,9 @@ export default function FlowDesktop({
   const work = useOS(activeWork);
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
+  const osState = useOS((s) => s);
+  const metrics = generateSystemMetrics(osState);
+  const milestones = generateCompanyMilestones();
 
   const vwRef = useRef(vw), vhRef = useRef(vh), camRef = useRef(cam), spaceRef = useRef(false);
   const didFit = useRef(false), baseFit = useRef(0.55);
@@ -586,6 +591,20 @@ export default function FlowDesktop({
             <SideCard title="Needs you" icon={<AlertTriangle size={13} />} count={attention.length} tone="amber"
               action={attention.length ? <button onClick={() => { osSound.click(); os.clearHandled(); }} title="Clear handled" className="rounded-md p-1 text-slate-600 hover:text-slate-300"><Check size={12} /></button> : undefined}>
               <AttentionList />
+            </SideCard>
+          </div>
+          <div className="w-[232px] max-lg:w-[254px]">
+            <SideCard title="Invariants" icon={<Activity size={13} />} defaultOpen={false}>
+              <div className="space-y-2">
+                {metrics.map((m) => (
+                  <MetricSurface key={m.id} metric={m} />
+                ))}
+              </div>
+            </SideCard>
+          </div>
+          <div className="w-[232px] max-lg:w-[254px]">
+            <SideCard title="Milestones" icon={<Flag size={13} />} defaultOpen={false}>
+              <TimelineSurface milestones={milestones} />
             </SideCard>
           </div>
           <div className="mt-auto w-[232px] pt-1 text-[9px] tracking-[0.26em] text-slate-600 max-lg:w-[254px]">SAMJUNIORSOS · ATTENTION</div>

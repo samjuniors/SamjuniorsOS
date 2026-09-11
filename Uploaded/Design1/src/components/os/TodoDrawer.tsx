@@ -1,24 +1,21 @@
 import { useState } from "react";
-import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity, Pause, Play, AlertTriangle, ArrowRight } from "lucide-react";
+import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
-import { os, useOS, agentName, STAGES, type Workstream } from "../../lib/osStore";
+import { os, useOS } from "../../lib/osStore";
 
-const STATE_TINT: Record<Workstream["state"], string> = {
-  active: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30",
-  paused: "bg-white/5 text-slate-300 border-white/10",
-  blocked: "bg-rose-500/15 text-rose-200 border-rose-500/30",
-  done: "bg-white/5 text-slate-500 border-white/10",
-};
+import { ListSurface, WorkSurface } from "../surfaces/StandardSurfaces";
+import { workstreamToWork } from "../../lib/surfaceSchema";
 
 type Filter = "open" | "blocked" | "done";
 
-/** V2.1 Work drawer — workstreams with filter pills and stage visualization. */
+/** V2.1 Work drawer — standardized ListSurface & WorkSurface with search, filter pills, and stage pipeline. */
 export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
   const work = useOS((s) => s.work);
   const agents = useOS((s) => s.agents);
   const [draft, setDraft] = useState("");
   const [owner, setOwner] = useState("ops");
   const [filter, setFilter] = useState<Filter>("open");
+  const [search, setSearch] = useState("");
 
   const active = work.filter((w) => w.state === "active").length;
   const blocked = work.filter((w) => w.state === "blocked").length;
@@ -29,6 +26,18 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
     filter === "blocked" ? w.state === "blocked" :
     w.state === "done"
   );
+
+  const filtered = shown.filter((w) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return w.title.toLowerCase().includes(q) || w.owner.toLowerCase().includes(q) || w.stage.toLowerCase().includes(q);
+  });
+
+  const filterPills = [
+    { id: "open", label: "Open", count: work.filter((w) => w.state !== "done").length },
+    { id: "blocked", label: "Blocked", count: blocked },
+    { id: "done", label: "Done", count: doneCount },
+  ];
 
   const add = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -90,53 +99,37 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
           <button onClick={() => { osSound.close(); onToggle(false); }} className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90" title="Close"><X size={14} /></button>
         </div>
 
-        {/* Filter tab pills with counts */}
-        <div className="flex items-center gap-1 border-b border-white/8 px-3 py-1.5">
-          {(["open", "blocked", "done"] as Filter[]).map((t) => {
-            const count = t === "open" ? work.filter((w) => w.state !== "done").length : t === "blocked" ? blocked : doneCount;
-            return (
-              <button
-                key={t}
-                onClick={() => { osSound.hover(); setFilter(t); }}
-                className={`v2-tab flex items-center gap-1 ${filter === t ? "active" : ""}`}
-              >
-                <span>{t}</span>
-                <span className="text-[9px] opacity-70 font-mono">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Workstream list */}
-        <div className="os-scroll flex-1 space-y-1.5 overflow-y-auto px-2.5 py-2">
-          {shown.length === 0 ? (
-            <div className="py-8 text-center text-[11px] text-slate-500">{filter === "blocked" ? "Nothing is blocked." : filter === "done" ? "Nothing shipped yet." : "No open workstreams."}</div>
-          ) : shown.map((w) => {
-            const idx = STAGES.indexOf(w.stage);
-            return (
-              <div key={w.id} className={`group rounded-lg border p-2 transition-all ${w.state === "done" ? "border-white/5 bg-white/[0.02] opacity-60" : "border-white/10 bg-white/[0.03] hover:border-cyan-300/30"}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <p className={`min-w-0 flex-1 text-[11.5px] leading-snug ${w.state === "done" ? "text-slate-500 line-through" : "text-slate-200"}`}>{w.title}</p>
-                  <span className={`shrink-0 rounded border px-1 py-px text-[8.5px] font-semibold uppercase tracking-wider ${STATE_TINT[w.state]}`}>{w.state}</span>
-                </div>
-                {/* V2: Stage progress bars */}
-                <div className="v2-stage-row mt-1.5">
-                  {STAGES.map((s, i) => <span key={s} title={s} className={`v2-stage-bar ${i <= idx ? "filled" : ""}`} />)}
-                </div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="text-[9.5px] text-slate-500">{agentName(w.owner)} · {w.stage}</span>
-                  <div className="flex items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                    {w.state !== "done" && <button onClick={() => { osSound.click(); os.advanceWork(w.id); }} title="Advance stage" className="rounded p-1 text-slate-400 hover:text-cyan-200"><ArrowRight size={11} /></button>}
-                    {w.state === "active" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "paused"); }} title="Pause" className="rounded p-1 text-slate-400 hover:text-white"><Pause size={11} /></button>}
-                    {w.state === "paused" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} title="Resume" className="rounded p-1 text-slate-400 hover:text-white"><Play size={11} /></button>}
-                    {w.state === "active" && <button onClick={() => { osSound.close(); os.setWorkState(w.id, "blocked"); }} title="Mark blocked" className="rounded p-1 text-slate-400 hover:text-rose-300"><AlertTriangle size={11} /></button>}
-                    {w.state === "blocked" && <button onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} title="Unblock" className="rounded px-1 text-[9.5px] text-amber-200 hover:text-white">Unblock</button>}
-                    <button onClick={() => { osSound.close(); os.removeWork(w.id); }} title="Remove" className="rounded p-1 text-slate-500 hover:bg-rose-500/20 hover:text-rose-300"><Trash2 size={11} /></button>
-                  </div>
-                </div>
+        {/* Workstream list via standardized ListSurface */}
+        <div className="os-scroll flex-1 overflow-y-auto px-2.5 py-2">
+          <ListSurface
+            items={filtered}
+            searchQuery={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search workstreams..."
+            filterPills={filterPills}
+            activeFilter={filter}
+            onFilterChange={(f) => { osSound.hover(); setFilter(f as Filter); }}
+            emptyTitle={filter === "blocked" ? "Nothing is blocked" : filter === "done" ? "Nothing shipped yet" : "No open workstreams"}
+            emptyDescription={filter === "blocked" ? "All current tasks are executing cleanly." : filter === "done" ? "Shipped milestones will appear here." : "Deploy a new workstream using the creator below."}
+            renderItem={(w) => (
+              <div key={w.id} className="relative group">
+                <WorkSurface
+                  work={workstreamToWork(
+                    w,
+                    () => { osSound.click(); os.advanceWork(w.id); },
+                    (st) => { osSound.click(); os.setWorkState(w.id, st); }
+                  )}
+                />
+                <button
+                  onClick={() => { osSound.close(); os.removeWork(w.id); }}
+                  title="Remove workstream"
+                  className="absolute top-2 right-2 p-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={11} />
+                </button>
               </div>
-            );
-          })}
+            )}
+          />
         </div>
 
         {/* Add workstream form */}

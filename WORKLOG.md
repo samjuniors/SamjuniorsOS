@@ -17,6 +17,51 @@ evidence shows a regression.
 
 ---
 
+## V2.1 Scalable UX — Standardized Surfaces, Decoupled Content Schemas & Progressive Disclosure
+
+**Status:** COMPLETE (Standardized 10 reusable UI surfaces across Entity, Attention, Work, Decision, Activity, Metric, Timeline, Relationship, List, and Inspector; decoupled domain content schemas via pure adapters in `src/lib/surfaceSchema.ts`; integrated surfaces into TodoDrawer, SophiaPanel, PersonaModal, and FlowDesktop; implemented loading, empty, and error states; documented scalable content-to-surface rules in `DESIGN.md`; zero backend or API changes; TypeScript type checks passing cleanly; production singlefile bundle verified).
+**Scope:** `Uploaded/Design1/` (`src/lib/surfaceSchema.ts`, `src/components/surfaces/StandardSurfaces.tsx`, `src/components/SophiaPanel.tsx`, `src/components/os/TodoDrawer.tsx`, `src/components/os/PersonaModal.tsx`, `src/components/FlowDesktop.tsx`), `DESIGN.md`.
+**Safety Invariant:** UI ONLY. Zero backend, database, auth, API, or workflow changes. All operational data flows through reactive adapters without simulation or layout shifts.
+
+### What was accomplished
+
+1. **Decoupled Domain Schemas (`src/lib/surfaceSchema.ts`)**:
+   - Defined canonical interfaces: `EntityItem`, `AttentionData`, `WorkData`, `DecisionData`, `ActivityEvent`, `MetricItem`, `TimelineMilestone`, and `RelationshipLink`.
+   - Built pure transformation adapters from `osStore` state: `agentToEntity`, `workstreamToWork`, `decisionToDecisionData`, `attentionToAttentionData`, `logToActivity`, `generateSystemMetrics`, `generateCompanyMilestones`, `generateAgentRelationships`.
+   - Guaranteed that any future telemetry (GitHub PRs, Stripe invoices, customer leads, MCP tools) maps cleanly into standardized surface contracts without altering core layouts.
+
+2. **The 10 Standardized Reusable Surfaces (`src/components/surfaces/StandardSurfaces.tsx`)**:
+   - `EntitySurface`: Agent/person identity card with avatar glow, status pill, role tags, and collapsible remit & scope disclosure.
+   - `AttentionSurface`: Notice/alert/review triage card with tone borders (rose/amber/cyan), timestamp, and mark-handled affordance.
+   - `WorkSurface`: Workstream task card with owner badge, 5-stage progression track (`discovery`→`build`→`review`→`ship`→`done`), pause/resume toggle, and advance stage trigger.
+   - `DecisionSurface`: Governance decision card with context, choice buttons, and resolved state indicator.
+   - `ActivitySurface`: Audit trail row with tabular timestamp, actor tag, and event description.
+   - `MetricSurface`: Operational KPI card with tabular numbers (`.tnum`), status pill, epistemic confidence badge (`verified`/`inferred`), and source footnote.
+   - `TimelineSurface`: Roadmap milestone sequence with complete, current, and upcoming indicators.
+   - `RelationshipSurface`: Directed entity link representation (`[From] --(type)--> [To]`).
+   - `ListSurface`: Universal collection wrapper with text search filter, stage filter pills, item counter badge, and built-in loading/empty/error states.
+   - `InspectorSurface`: Slide-out deep inspection sheet with tabbed navigation (`Overview`, `Activity`, `Relationships`) and dismiss action.
+
+3. **Standardized System States**:
+   - `LoadingState`: Obsidian glass shimmer skeleton with pulsating cyan neural ring.
+   - `EmptyState`: Contextual clean obsidian card with delicate glyph, message, and optional CTA button.
+   - `ErrorState`: Translucent rose alert card with disruption description and retry trigger.
+
+4. **Integration into Existing Surfaces**:
+   - **`TodoDrawer.tsx`**: Replaced manual filtering and card markup with `ListSurface` and `WorkSurface`; added live search filter, filter pill counts (`open`, `blocked`, `done`), stage track, and honest empty states.
+   - **`SophiaPanel.tsx`**: Integrated `DecisionSurface` for executive founder decisions, `AttentionSurface` for triage notices, and `EmptyState` when all governance checks are clear.
+   - **`PersonaModal.tsx`**: Added `RelationshipSurface` displaying operational dependencies, delegations, and escalations.
+   - **`FlowDesktop.tsx`**: Integrated `MetricSurface` in an "Invariants" side card (Gross Margin Floor ≥ 80%, Open Decisions, Active Workstreams, Workforce Coverage) and `TimelineSurface` in a "Milestones" side card, both defaulting to collapsed for calm focus.
+
+5. **Documentation & Verification**:
+   - Added Section 12 to `DESIGN.md` detailing the 10 surfaces, state standards, container mappings, and scalable content-to-surface rules.
+   - Verified `npx tsc --noEmit` in `Uploaded/Design1`: 0 errors.
+   - Verified `npm run build` in `Uploaded/Design1`: single-file bundle built cleanly (`dist/index.html`, 517.45 kB).
+   - Verified root test suite: 25/25 backend regression tests pass.
+   - Verified root `npx tsc --noEmit`: 0 errors.
+
+---
+
 ## V2.1 UX Refinement — Calm Operating Center & Progressive Disclosure
 
 **Status:** COMPLETE (Progressive disclosure doctrine implemented across Neural and Desktop modes; Sophia/Core made the serene dominant center; permanent secondary telemetry, session clocks, keyboard legends, and tag clutter removed from Neural mode; briefing panel converted to contextual floating trigger pill with attention alerts; redundant System telemetry card and percentage bars eliminated; FlowDesktop bottom dock and side rails default to collapsed; full TypeScript and Vite singlefile production builds passing cleanly).
