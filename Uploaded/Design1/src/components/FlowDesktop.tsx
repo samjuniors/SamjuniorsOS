@@ -35,29 +35,29 @@ const META: Record<string, Meta> = {
     desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
     agent: "sophia",
   },
-  ops: {
+  thorne: {
     title: "Dr. Aris Thorne",
     sub: "Research & Intelligence",
     icon: <ClipboardList size={26} strokeWidth={1.8} />,
     tint: "#38bdf8",
-    desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
-    agent: "ops",
+    desc: "Lead Market & Technology Researcher. Executes structured market intelligence, competitive reconnaissance, and technical feasibility synthesis to produce typed artifacts.",
+    agent: "thorne",
   },
-  finance: {
+  julian: {
     title: "Julian Cruz",
     sub: "Finance & Unit Economics",
     icon: <Coins size={26} strokeWidth={1.8} />,
     tint: "#34d399",
-    desc: "Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails.",
-    agent: "finance",
+    desc: "Chief Financial Analyst. Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails with explicit assumptions.",
+    agent: "julian",
   },
-  pm: {
+  maya: {
     title: "Maya Lin",
     sub: "Product Architecture & PRD",
     icon: <FileText size={26} strokeWidth={1.8} />,
     tint: "#c084fc",
-    desc: "Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and DAG protocol milestones.",
-    agent: "pm",
+    desc: "Principal Product Manager. Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and phased implementation roadmaps.",
+    agent: "maya",
   },
   verification: {
     title: "Constitutional Verifier",
@@ -143,10 +143,11 @@ const MAX_K = 2.4;
 
 /* ------------------------------------------------------------------ nodes */
 
-function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
-  n: FlowNode; selected?: boolean; badge?: ReactNode; onClick?: (n: FlowNode) => void; onDoubleClick?: (n: FlowNode) => void;
+function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }: {
+  n: FlowNode; selected?: boolean; badge?: ReactNode; dimmed?: boolean; detail?: boolean; onClick?: (n: FlowNode) => void; onDoubleClick?: (n: FlowNode) => void;
 }) {
   const m = getMeta(n);
+  const dimStyle = dimmed ? { opacity: 0.32, filter: "saturate(0.6)" } : undefined;
 
   // 1. Sophia Core (Centerpiece Orchestrator)
   if (n.kind === "core") {
@@ -173,12 +174,13 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
             : isActive
             ? "inset 0 0 30px rgba(255,140,60,0.35), 0 0 45px rgba(255,120,40,0.45)"
             : "inset 0 0 20px rgba(255,140,60,0.15), 0 0 25px rgba(0,0,0,0.6)",
+          ...dimStyle,
         }}
       >
         <span className="text-orange-100 drop-shadow-[0_0_12px_rgba(255,170,80,0.9)] transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
         <div className="leading-[1.05] drop-shadow-[0_0_14px_rgba(255,190,120,0.8)]">
           <div className="text-[21px] font-semibold tracking-[-0.01em]">Sophia</div>
-          <div className="text-[10px] uppercase tracking-[0.24em] text-orange-100/80">Planner</div>
+          {detail && <div className="text-[10px] uppercase tracking-[0.24em] text-orange-100/80">COO · ORCHESTRATOR</div>}
         </div>
         {badge}
         {selected && <span className="pointer-events-none absolute -inset-2 animate-pulse rounded-3xl border border-orange-200/40" />}
@@ -186,11 +188,11 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
     );
   }
 
-  // 2. Round Nodes (Dr. Thorne, Julian Cruz, Maya Lin & Constitutional Verifier)
+  // 2. Round Nodes (Dr. Thorne, Maya Lin, Julian Cruz & Constitutional Verifier)
   if (n.kind === "round") {
     const isVerifier = n.type === "verification";
-    const isFinance = n.id === "finance";
-    const isPm = n.id === "pm";
+    const isJulian = n.id === "julian";
+    const isMaya = n.id === "maya";
     const isAct = n.state === "active";
     const isBlk = n.state === "blocked";
     const isComp = n.state === "complete";
@@ -201,9 +203,9 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
       ? "1px solid rgba(244,63,94,0.8)"
       : isComp
       ? "1px solid rgba(52,211,153,0.7)"
-      : isFinance
+      : isJulian
       ? "1px solid rgba(52,211,153,0.8)"
-      : isPm
+      : isMaya
       ? "1px solid rgba(192,132,252,0.8)"
       : isAct
       ? "1px solid rgba(56,189,248,0.85)"
@@ -213,9 +215,9 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
       ? "0 0 34px rgba(103,232,249,0.6), inset 0 0 18px rgba(103,232,249,0.3)"
       : isBlk
       ? "0 0 28px rgba(244,63,94,0.45), inset 0 0 16px rgba(244,63,94,0.25)"
-      : isComp || isFinance
+      : isComp || isJulian
       ? "0 0 28px rgba(52,211,153,0.4), inset 0 0 16px rgba(52,211,153,0.2)"
-      : isPm
+      : isMaya
       ? "0 0 28px rgba(192,132,252,0.4), inset 0 0 16px rgba(192,132,252,0.2)"
       : isAct
       ? "0 0 30px rgba(56,189,248,0.5), inset 0 0 16px rgba(56,189,248,0.25)"
@@ -223,9 +225,9 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
 
     const bgGradient = isVerifier
       ? "radial-gradient(circle at 50% 40%, rgba(20,55,45,0.94), rgba(8,20,16,0.98))"
-      : isFinance
+      : isJulian
       ? "radial-gradient(circle at 50% 40%, rgba(18,50,40,0.94), rgba(7,20,16,0.98))"
-      : isPm
+      : isMaya
       ? "radial-gradient(circle at 50% 40%, rgba(55,22,75,0.94), rgba(20,8,28,0.98))"
       : "radial-gradient(circle at 50% 40%, rgba(35,65,115,0.94), rgba(12,20,38,0.98))";
 
@@ -234,7 +236,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
         onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
         onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
         className="group absolute cursor-pointer select-none"
-        style={{ left: n.x - 90, top: n.y - n.h / 2, width: 180 }}
+        style={{ left: n.x - 90, top: n.y - n.h / 2, width: 180, ...dimStyle }}
       >
         <div
           className={`relative mx-auto flex items-center justify-center rounded-full text-white transition-all duration-200 group-hover:-translate-y-1 group-hover:scale-105 active:scale-95 ${selected ? "ring-2 ring-cyan-200/80" : ""}`}
@@ -253,7 +255,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
           <div className={`text-[14.5px] font-semibold leading-[1.15] tracking-[-0.008em] transition-colors ${selected ? "text-cyan-100" : "text-white group-hover:text-cyan-100"}`} style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>
             {m.title}
           </div>
-          {m.sub && <div className="mt-0.5 text-[10.5px] text-slate-300/90" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}>{m.sub}</div>}
+          {detail && m.sub && <div className="mt-0.5 text-[10.5px] text-slate-300/90" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}>{m.sub}</div>}
         </div>
       </div>
     );
@@ -278,7 +280,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
             : isComp
             ? "border-emerald-400/50 shadow-[0_0_20px_rgba(52,211,153,0.25)]"
             : isAct
-            ? "border-cyan-300/70 shadow-[0_0_28px_rgba(56,189,248,0.35)]"
+            ? "border-orange-300/70 shadow-[0_0_28px_rgba(255,140,60,0.4)]"
             : "border-white/12 shadow-[0_8px_20px_rgba(0,0,0,0.4)]"
         }`}
         style={{
@@ -288,27 +290,30 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
             : isComp
             ? "linear-gradient(160deg, rgba(16,40,30,0.96), rgba(8,20,16,0.98))"
             : isAct
-            ? "linear-gradient(160deg, rgba(20,40,70,0.96), rgba(10,20,38,0.98))"
+            ? "linear-gradient(160deg, rgba(64,34,18,0.96), rgba(30,16,8,0.98))"
             : "linear-gradient(160deg, rgba(32,38,50,0.96), rgba(18,22,30,0.98))",
+          ...dimStyle,
         }}
       >
         <div className="flex items-center justify-between gap-1">
           <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
-            isBlk ? "bg-rose-400/20 text-rose-200" : isComp ? "bg-emerald-400/20 text-emerald-200" : isAct ? "bg-cyan-400/20 text-cyan-200" : "bg-white/10 text-slate-300"
+            isBlk ? "bg-rose-400/20 text-rose-200" : isComp ? "bg-emerald-400/20 text-emerald-200" : isAct ? "bg-orange-400/20 text-orange-200" : "bg-white/10 text-slate-300"
           }`}>
             {stepLabel}
           </span>
-          <span className={`h-2 w-2 rounded-full ${isBlk ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.9)]" : isComp ? "bg-emerald-400" : isAct ? "animate-pulse bg-cyan-400 shadow-[0_0_6px_rgba(56,189,248,0.9)]" : "bg-slate-600"}`} />
+          <span className={`h-2 w-2 rounded-full ${isBlk ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.9)]" : isComp ? "bg-emerald-400" : isAct ? "animate-pulse bg-orange-400 shadow-[0_0_6px_rgba(251,146,60,0.9)]" : "bg-slate-600"}`} />
         </div>
-        <div className="mt-1.5 truncate text-[12.5px] font-semibold text-white group-hover:text-cyan-100">
+        <div className="mt-1.5 truncate text-[12.5px] font-semibold text-white group-hover:text-orange-100">
           {n.title}
         </div>
-        <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
-          <span className="truncate max-w-[95px]">{n.subtitle ?? (n.owner ? agentName(n.owner) : "Governed")}</span>
-          <span className={`font-mono font-semibold ${isBlk ? "text-rose-300" : isComp ? "text-emerald-300" : isAct ? "text-cyan-200" : "text-slate-400"}`}>
-            {isAct ? "ACTIVE" : isBlk ? "BLOCKED" : isComp ? "DONE" : "WAITING"}
-          </span>
-        </div>
+        {detail && (
+          <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
+            <span className="truncate max-w-[95px]">{n.subtitle ?? (n.owner ? agentName(n.owner) : "Governed")}</span>
+            <span className={`font-mono font-semibold ${isBlk ? "text-rose-300" : isComp ? "text-emerald-300" : isAct ? "text-orange-200" : "text-slate-400"}`}>
+              {isAct ? "ACTIVE" : isBlk ? "BLOCKED" : isComp ? "DONE" : "WAITING"}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -325,6 +330,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
         style={{
           left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
           background: "linear-gradient(160deg, rgba(48,32,10,0.96), rgba(24,16,6,0.98))",
+          ...dimStyle,
         }}
       >
         <div className="flex items-center justify-between">
@@ -357,6 +363,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
         background: n.type === "outcome"
           ? "linear-gradient(160deg, rgba(18,42,32,0.96), rgba(10,22,16,0.98))"
           : "linear-gradient(160deg, rgba(42,50,68,0.96), rgba(20,24,34,0.98))",
+        ...dimStyle,
       }}
     >
       <div className="flex items-center justify-between">
@@ -366,7 +373,7 @@ function NodeCard({ n, selected, badge, onClick, onDoubleClick }: {
       <div className="mt-1.5 truncate text-[13px] font-semibold text-white group-hover:text-cyan-100">
         {m.title}
       </div>
-      {m.sub && <div className="truncate text-[10px] text-slate-300/80">{m.sub}</div>}
+      {detail && m.sub && <div className="truncate text-[10px] text-slate-300/80">{m.sub}</div>}
     </div>
   );
 }
@@ -873,12 +880,34 @@ export default function FlowDesktop({
   const badgeFor = (node: FlowNode): ReactNode => {
     if (node.type === "approval") return <CountBadge n={decisions.length} tone="amber" />;
     if (node.id === "core") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
-    if (node.id === "ops" || node.id === "finance" || node.id === "pm") {
+    if (node.id === "thorne" || node.id === "maya" || node.id === "julian") {
       const ag = agents.find((a) => a.id === node.id);
       if (ag) return <StateDot state={ag.state} />;
     }
     return null;
   };
+
+  // Direct-relationship focus: selecting a node highlights its edges + neighbors
+  // and subtly de-emphasizes everything unrelated.
+  const related = useMemo(() => {
+    if (!selected) return null;
+    const ids = new Set<string>([selected.id]);
+    for (const e of graph.edges) {
+      if (e.from === selected.id || e.to === selected.id) {
+        ids.add(e.from);
+        ids.add(e.to);
+      }
+    }
+    return ids;
+  }, [selected, graph]);
+
+  useEffect(() => {
+    engineRef.current?.setFocus(related ?? null);
+  }, [related]);
+
+  // Label level-of-detail: high zoom reveals detail; low zoom reduces labels.
+  const detail = cam.k >= 0.42;
+  const headers = cam.k >= 0.26;
 
   return (
     <div className="flex h-full w-full flex-col gap-2 overflow-hidden bg-[#04060d] p-2 sm:gap-2.5 sm:p-2.5">
@@ -967,6 +996,8 @@ export default function FlowDesktop({
           >
             {gridOn && (
               <>
+                {/* micro-dot grid — a dot at every minor intersection */}
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(130,180,255,0.10) 1px, transparent 1.2px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.35 : 0.7 }} />
                 <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.08) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
                 <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.12) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
               </>
@@ -975,20 +1006,24 @@ export default function FlowDesktop({
 
             {/* world layer */}
             <div className="absolute left-0 top-0 h-0 w-0" style={{ transform: `translate(${tx}px, ${ty}px) scale(${cam.k})`, transformOrigin: "0 0" }}>
-              {/* Category section titles */}
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-slate-400" style={{ left: 180, top: 290 }}>INPUTS & DIRECTIVES</div>
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-orange-300/80" style={{ left: 460, top: 290 }}>COO & ORCHESTRATOR</div>
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-cyan-300/80" style={{ left: 740, top: 290 }}>ACTIVE SPECIALISTS</div>
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-sky-300/80" style={{ left: 1010, top: 290 }}>PROTOCOL STEPS</div>
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1280, top: 290 }}>CONSTITUTIONAL VERIFIER</div>
-              <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1500, top: 290 }}>GOVERNED VAULT</div>
-              {graph.nodes.some((n) => n.type === "approval") && (
+              {/* Category section titles (hidden at low zoom — label LOD) */}
+              {headers && (
+                <>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-slate-400" style={{ left: 180, top: 290 }}>INPUTS & DIRECTIVES</div>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-orange-300/80" style={{ left: 460, top: 290 }}>COO & ORCHESTRATOR</div>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-cyan-300/80" style={{ left: 740, top: 290 }}>EMPLOYED SPECIALISTS</div>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-sky-300/80" style={{ left: 1010, top: 290 }}>PROTOCOL STEPS</div>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1280, top: 290 }}>CONSTITUTIONAL VERIFIER</div>
+                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1500, top: 290 }}>GOVERNED VAULT</div>
+                </>
+              )}
+              {headers && graph.nodes.some((n) => n.type === "approval") && (
                 <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-amber-300/90" style={{ left: 620, top: 615 }}>FOUNDER APPROVAL GATE</div>
               )}
 
               {/* Dynamic Living Nodes */}
               {graph.nodes.map((n) => (
-                <NodeCard key={n.id} n={n} selected={selected?.id === n.id} badge={badgeFor(n)} onClick={handleNodeClick} onDoubleClick={focusNode} />
+                <NodeCard key={n.id} n={n} selected={selected?.id === n.id} badge={badgeFor(n)} dimmed={!!related && !related.has(n.id)} detail={detail} onClick={handleNodeClick} onDoubleClick={focusNode} />
               ))}
 
               {/* Spatial Contextual Cards */}

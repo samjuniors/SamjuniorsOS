@@ -93,22 +93,42 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 const AGENTS: Agent[] = [
   {
-    id: "sophia", name: "Sophia", role: "Planner",
-    remit: "Plans founder directives, routes work to Thorne, and returns verified outcomes or decisions requiring Founder approval.",
-    canDo: ["Plan directives", "Route work to Thorne", "Escalate decisions", "Brief the Founder"],
-    tools: ["Directive planning", "Decision queue", "Workflow context"],
+    id: "sophia", name: "Sophia Vance", role: "COO & Master Orchestrator",
+    remit: "Analyzes founder directives, decomposes them into structured tasks for specialist agents, routes outputs between agents, enforces operational standards, and synthesizes final executive reports.",
+    canDo: ["Decompose directives", "Route work to specialists", "Audit compliance", "Synthesize executive reports"],
+    tools: ["Directive planning", "Decision queue", "Pipeline coordination"],
     escalates: "Any consequential action requiring authenticated Founder approval.",
     state: "ready", tint: "text-cyan-300", glow: "rgba(56,189,248,0.4)",
   },
   {
-    id: "ops", name: "Thorne", role: "Systems Worker",
-    remit: "Executes structured work planned by Sophia and produces a typed artifact for deterministic verification.",
-    canDo: ["Execute structured work", "Produce typed artifacts", "Report blockers"],
-    tools: ["Workflow runtime", "Verification context", "Artifact handoff"],
+    id: "thorne", name: "Dr. Aris Thorne", role: "Lead Market & Technology Researcher",
+    remit: "Provides rigorous market intelligence, competitive landscape analysis, technical feasibility assessments, and data-grounded strategic evaluations.",
+    canDo: ["Market landscape assessment", "Technical feasibility modeling", "Risk matrix evaluation", "Competitive analysis"],
+    tools: ["Market intelligence", "Repository research", "Risk evaluation"],
     escalates: "A failed verification, blocked workflow, or action requiring Founder approval.",
     state: "ready", tint: "text-amber-300", glow: "rgba(251,146,60,0.4)",
   },
+  {
+    id: "maya", name: "Maya Lin", role: "Principal Product Manager",
+    remit: "Translates strategic directives and research insights into high-clarity PRDs, functional specifications, user workflows, and phased implementation roadmaps.",
+    canDo: ["Draft PRDs & specifications", "Design user workflows", "Define acceptance criteria", "Prioritize backlogs"],
+    tools: ["PRD engine", "Workflow architecture", "Acceptance criteria"],
+    escalates: "Deploying unverified code or bypassing human-in-the-loop triggers.",
+    state: "ready", tint: "text-emerald-300", glow: "rgba(52,211,153,0.35)",
+  },
+  {
+    id: "julian", name: "Julian Cruz", role: "Chief Financial Analyst",
+    remit: "Analyzes unit economics, compute cost structures, pricing models, token consumption sensitivity, and capital runway with transparent, explicit assumptions.",
+    canDo: ["Unit economics modeling", "Compute burn projections", "Pricing tier analysis", "Capital efficiency audits"],
+    tools: ["Unit economics engine", "Pricing simulator", "Margin guardrails"],
+    escalates: "Any live financial mutation or pricing change without Founder authorization.",
+    state: "ready", tint: "text-violet-300", glow: "rgba(167,139,250,0.35)",
+  },
 ];
+
+/** Map legacy persisted owner ids onto the authoritative roster ids. */
+const OWNER_MIGRATION: Record<string, string> = { ops: "thorne", pm: "maya", finance: "julian" };
+const migrateOwner = (owner: string) => OWNER_MIGRATION[owner] ?? owner;
 
 const SEED: OSState = {
   attention: [],
@@ -137,10 +157,20 @@ function load(): OSState {
     const raw = localStorage.getItem(KEY);
     if (!raw) return SEED;
     const saved = JSON.parse(raw) as Partial<OSState>;
+    // Merge persisted agent runtime state onto the authoritative SEED roster,
+    // dropping any stale/unknown agent ids from older sessions.
+    const savedAgents = saved.agents ?? [];
+    const agents: Agent[] = SEED.agents.map((seed) => {
+      const hit = savedAgents.find((a) => a && a.id === seed.id);
+      return hit ? { ...seed, state: hit.state ?? seed.state, current: hit.current } : { ...seed };
+    });
     return {
       ...SEED,
       ...saved,
-      agents: (saved.agents ?? SEED.agents).map((a) => ({ ...SEED.agents.find((s) => s.id === a.id), ...a })) as Agent[],
+      agents,
+      // Migrate legacy owner ids ("ops"/"pm"/"finance") to the authoritative roster.
+      work: (saved.work ?? SEED.work).map((w) => ({ ...w, owner: migrateOwner(w.owner) })),
+      attention: (saved.attention ?? SEED.attention).map((a) => ({ ...a, from: migrateOwner(a.from) })),
       company: { ...SEED.company, ...(saved.company ?? {}) },
       sophia: "idle",
       sessionStart: Date.now(),
@@ -264,7 +294,7 @@ export const os = {
     return status;
   },
 
-  addWork(title: string, owner = "ops", note?: string) {
+  addWork(title: string, owner = "thorne", note?: string) {
     const w: Workstream = { id: uid(), title, owner, stage: "discovery", state: "active", note, at: Date.now() };
     set((s) => ({ work: [w, ...s.work] }));
     os.assign(owner, title);
@@ -304,7 +334,15 @@ export const os = {
   refreshAgents() {
     set((s) => ({
       agents: s.agents.map((a) => {
-        if (a.id === "sophia" || a.state === "offline") return a;
+        if (a.state === "offline") return a;
+        if (a.id === "sophia") {
+          // Sophia orchestrates whenever any workstream is in flight.
+          const blocked = s.work.find((w) => w.state === "blocked");
+          const active = s.work.find((w) => w.state === "active");
+          if (blocked) return { ...a, state: "waiting", current: blocked.title };
+          if (active) return { ...a, state: "working", current: active.title };
+          return { ...a, state: "ready", current: undefined };
+        }
         const mine = s.work.filter((w) => w.owner === a.id && w.state !== "done");
         const blocked = mine.find((w) => w.state === "blocked");
         if (blocked) return { ...a, state: "waiting", current: blocked.title };
@@ -344,7 +382,7 @@ export const os = {
     }
     if (/^(work|start|build|do)\b/.test(lower)) {
       const t = strip(/^(work( on)?|start|build|do)\b/i);
-      os.addWork(t || "Untitled workstream", "ops");
+      os.addWork(t || "Untitled workstream", "thorne");
       return `Started a workstream: ${t || "untitled"}. Operations owns it.`;
     }
     if (/^(focus|this week)\b/.test(lower)) {

@@ -207,12 +207,12 @@ export function generateSystemMetrics(state: OSState): MetricItem[] {
     },
     {
       id: "workforce",
-      label: "Implemented roles",
-      value: "2",
+      label: "Employed AI roles",
+      value: "4",
       unit: "v1",
       status: "active",
       confidence: "verified",
-      source: "PRODUCT.md §5",
+      source: "agents/definitions.ts",
     },
   ];
 }
@@ -228,7 +228,12 @@ export function generateCompanyMilestones(): TimelineMilestone[] {
 
 export function generateAgentRelationships(): RelationshipLink[] {
   return [
-    { id: "r1", fromId: "sophia", fromName: "Sophia", toId: "ops", toName: "Thorne", type: "delegates" },
-    { id: "r2", fromId: "ops", fromName: "Thorne", toId: "sophia", toName: "Sophia", type: "escalates-to" },
+    { id: "r1", fromId: "sophia", fromName: "Sophia Vance", toId: "thorne", toName: "Dr. Aris Thorne", type: "delegates" },
+    { id: "r2", fromId: "sophia", fromName: "Sophia Vance", toId: "maya", toName: "Maya Lin", type: "delegates" },
+    { id: "r3", fromId: "sophia", fromName: "Sophia Vance", toId: "julian", toName: "Julian Cruz", type: "delegates" },
+    { id: "r4", fromId: "maya", fromName: "Maya Lin", toId: "thorne", toName: "Dr. Aris Thorne", type: "depends-on" },
+    { id: "r5", fromId: "thorne", fromName: "Dr. Aris Thorne", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
+    { id: "r6", fromId: "maya", fromName: "Maya Lin", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
+    { id: "r7", fromId: "julian", fromName: "Julian Cruz", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
   ];
 }

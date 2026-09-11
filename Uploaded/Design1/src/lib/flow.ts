@@ -26,7 +26,7 @@ export type GraphRelationship =
   | "escalates-to"
   | "feeds";
 
-export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose";
+export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose" | "fire";
 
 export type FlowNode = {
   id: string;
@@ -299,16 +299,24 @@ export function deriveGraph(state: {
     )
   );
 
-  // 3. Column 2: Specialists Column (Collision-Aware)
+  // 3. Column 2: Employed Specialists (collision-aware) — all four authoritative v1
+  //    employees render permanently; per PRODUCT.md §5 Sophia+Thorne are the implemented
+  //    v1 critical path, Maya/Julian are employed (defined + profiled) and activate only
+  //    when real work is assigned to them. No standby/target-state employees are shown.
   const specialistNodes: FlowNode[] = [];
 
-  // Dr. Aris Thorne (Research & Intelligence) — permanent v1 specialist
-  const thorneWork = activeWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
-  const thorneBlocked = blockedWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
-  const thorneState: GraphNodeState = thorneWork ? "active" : thorneBlocked ? "blocked" : "idle";
+  const workFor = (...ids: string[]) =>
+    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state !== "done");
+  const activeFor = (...ids: string[]) =>
+    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state === "active");
+
+  // Dr. Aris Thorne — Lead Market & Technology Researcher (permanent v1 specialist)
+  const thorneWork = workFor("thorne", "ops", "researcher") ?? (!state.work.some((w) => w.owner) && activeWork[0]);
+  const thorneBlocked = state.work.find((w) => (w.owner === "thorne" || w.owner === "ops") && w.state === "blocked");
+  const thorneState: GraphNodeState = thorneWork && thorneWork.state === "active" ? "active" : thorneBlocked ? "blocked" : thorneWork ? "idle" : "idle";
 
   const thorneNode: FlowNode = {
-    id: "ops",
+    id: "thorne",
     x: 710,
     y: 440,
     w: 112,
@@ -318,99 +326,106 @@ export function deriveGraph(state: {
     state: thorneState,
     title: "Dr. Aris Thorne",
     subtitle: "Research & Intelligence",
-    activity: thorneWork ? thorneWork.title : thorneBlocked ? "Blocked on research" : undefined,
+    activity: thorneWork && thorneWork.state === "active" ? thorneWork.title : thorneBlocked ? "Blocked on research" : undefined,
     relevance: thorneWork || thorneBlocked ? 1 : 0.7,
-    owner: "ops",
+    owner: "thorne",
   };
   specialistNodes.push(thorneNode);
 
-  // Contextual Specialists: include Julian Cruz (Finance) or Maya Lin (Product) ONLY when actively working/assigned
-  const financeWork = state.work.find((w) => w.owner === "finance" && w.state !== "done");
-  let financeNode: FlowNode | undefined;
-  if (financeWork) {
-    const isAct = financeWork.state === "active";
-    const isBlk = financeWork.state === "blocked";
-    financeNode = {
-      id: "finance",
-      x: 710,
-      y: 440,
-      w: 112,
-      h: 88,
-      kind: "round",
-      type: "agent",
-      state: isBlk ? "blocked" : isAct ? "active" : "idle",
-      title: "Julian Cruz",
-      subtitle: "Finance & Economics",
-      activity: financeWork.title,
-      relevance: 1,
-      owner: "finance",
-    };
-    specialistNodes.push(financeNode);
-  }
+  // Maya Lin — Principal Product Manager (employed; active only with assigned work)
+  const mayaWork = workFor("maya", "pm");
+  const mayaActive = !!activeFor("maya", "pm");
+  const mayaBlocked = state.work.find((w) => (w.owner === "maya" || w.owner === "pm") && w.state === "blocked");
+  const mayaNode: FlowNode = {
+    id: "maya",
+    x: 710,
+    y: 440,
+    w: 112,
+    h: 88,
+    kind: "round",
+    type: "agent",
+    state: mayaBlocked ? "blocked" : mayaActive ? "active" : "idle",
+    title: "Maya Lin",
+    subtitle: "Product Architecture & PRD",
+    activity: mayaActive && mayaWork ? mayaWork.title : mayaBlocked ? "Blocked on specifications" : undefined,
+    relevance: mayaWork || mayaBlocked ? 1 : 0.7,
+    owner: "maya",
+  };
+  specialistNodes.push(mayaNode);
 
-  const pmWork = state.work.find((w) => w.owner === "pm" && w.state !== "done");
-  let pmNode: FlowNode | undefined;
-  if (pmWork) {
-    const isAct = pmWork.state === "active";
-    const isBlk = pmWork.state === "blocked";
-    pmNode = {
-      id: "pm",
-      x: 710,
-      y: 440,
-      w: 112,
-      h: 88,
-      kind: "round",
-      type: "agent",
-      state: isBlk ? "blocked" : isAct ? "active" : "idle",
-      title: "Maya Lin",
-      subtitle: "Product Architecture",
-      activity: pmWork.title,
-      relevance: 1,
-      owner: "pm",
-    };
-    specialistNodes.push(pmNode);
-  }
+  // Julian Cruz — Chief Financial Analyst (employed; active only with assigned work)
+  const julianWork = workFor("julian", "finance");
+  const julianActive = !!activeFor("julian", "finance");
+  const julianBlocked = state.work.find((w) => (w.owner === "julian" || w.owner === "finance") && w.state === "blocked");
+  const julianNode: FlowNode = {
+    id: "julian",
+    x: 710,
+    y: 440,
+    w: 112,
+    h: 88,
+    kind: "round",
+    type: "agent",
+    state: julianBlocked ? "blocked" : julianActive ? "active" : "idle",
+    title: "Julian Cruz",
+    subtitle: "Finance & Unit Economics",
+    activity: julianActive && julianWork ? julianWork.title : julianBlocked ? "Blocked on margin audit" : undefined,
+    relevance: julianWork || julianBlocked ? 1 : 0.7,
+    owner: "julian",
+  };
+  specialistNodes.push(julianNode);
 
   // Layout specialists collision-free
   layoutColumn(specialistNodes, 440, 24);
   specialistNodes.forEach((node) => nodes.push(node));
 
-  // Connect Sophia to specialists
+  // Connect Sophia to each specialist — genuine delegation authority (cyan = AI/data pathway)
   edges.push(
     connectNodes(
       coreNode,
       thorneNode,
       "e-core-thorne",
-      hasActiveWork ? "cyan" : "white",
+      thorneState === "active" || thorneState === "blocked" ? "cyan" : "white",
       "delegates",
-      hasActiveWork ? "active" : "idle",
-      hasActiveWork ? "Delegating research" : undefined
+      thorneState === "active" ? "active" : thorneState === "blocked" ? "blocked" : "idle",
+      thorneState === "active" ? "Delegating research" : thorneState === "blocked" ? "Awaiting unblock" : undefined
     )
   );
 
-  if (financeNode) {
-    edges.push(
-      connectNodes(
-        coreNode,
-        financeNode,
-        "e-core-finance",
-        financeNode.state === "active" ? "cyan" : "white",
-        "models_finance",
-        financeNode.state,
-        "Modeling unit economics"
-      )
-    );
-  }
+  edges.push(
+    connectNodes(
+      coreNode,
+      mayaNode,
+      "e-core-maya",
+      mayaNode.state === "active" || mayaNode.state === "blocked" ? "cyan" : "white",
+      "delegates",
+      mayaNode.state,
+      mayaActive ? "Delegating product architecture" : undefined
+    )
+  );
 
-  if (pmNode) {
+  edges.push(
+    connectNodes(
+      coreNode,
+      julianNode,
+      "e-core-julian",
+      julianNode.state === "active" || julianNode.state === "blocked" ? "cyan" : "white",
+      "models_finance",
+      julianNode.state,
+      julianActive ? "Requesting unit economics audit" : undefined
+    )
+  );
+
+  // Research feeds product: Thorne's intelligence flows into Maya's PRDs —
+  // contextual: rendered only while Maya is actively authoring.
+  if (mayaActive) {
     edges.push(
       connectNodes(
         thorneNode,
-        pmNode,
-        "e-thorne-pm",
-        pmNode.state === "active" ? "cyan" : "white",
-        "authors_prd",
-        pmNode.state,
+        mayaNode,
+        "e-thorne-maya",
+        "cyan",
+        "feeds",
+        "active",
         "Feeding research into PRD"
       )
     );
@@ -425,6 +440,10 @@ export function deriveGraph(state: {
     const isBlk = w.state === "blocked";
     const wState: GraphNodeState = isBlk ? "blocked" : isAct ? "active" : "waiting";
 
+    // Route each protocol step to the genuinely responsible specialist.
+    const ownerIsMaya = w.owner === "maya" || w.owner === "pm";
+    const ownerIsJulian = w.owner === "julian" || w.owner === "finance";
+
     let stepName = "Research & Reconnaissance";
     let stepCode = "step-research";
     let assignedSpecialist = thorneNode;
@@ -436,26 +455,32 @@ export function deriveGraph(state: {
       assignedSpecialist = thorneNode;
       relationship = "researches";
     } else if (w.stage === "build") {
-      if (w.owner === "finance" && financeNode) {
+      if (ownerIsJulian) {
         stepName = "Unit Economics Audit";
         stepCode = "step-finance";
-        assignedSpecialist = financeNode;
+        assignedSpecialist = julianNode;
         relationship = "models_finance";
-      } else {
+      } else if (ownerIsMaya) {
         stepName = "Product Architecture & PRD";
         stepCode = "step-pm-prd";
-        assignedSpecialist = pmNode || thorneNode;
+        assignedSpecialist = mayaNode;
         relationship = "authors_prd";
+      } else {
+        // Thorne-led build: research synthesis artifact
+        stepName = "Research Synthesis";
+        stepCode = "step-research";
+        assignedSpecialist = thorneNode;
+        relationship = "researches";
       }
     } else if (w.stage === "review") {
       stepName = "Council Peer Review";
       stepCode = "step-review";
-      assignedSpecialist = thorneNode;
+      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
       relationship = "checks";
     } else if (w.stage === "ship") {
       stepName = "Executive Synthesis";
       stepCode = "step-report";
-      assignedSpecialist = thorneNode;
+      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
       relationship = "synthesizes";
     }
 
@@ -477,8 +502,10 @@ export function deriveGraph(state: {
     };
     protocolStepNodes.push(stepNode);
 
-    // Edge from assigned specialist to this protocol step
-    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "cyan" : "white";
+    // Edge from the responsible specialist into live execution.
+    // fire = white-hot execution energy (per reference spec); cyan is reserved
+    // for AI/data pathways; rose = blocked; white = idle conduit.
+    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "fire" : "white";
     edges.push(
       connectNodes(
         assignedSpecialist,
@@ -648,15 +675,15 @@ export function deriveGraph(state: {
       x: coreNode.x,
       y: coreNode.y - coreNode.h / 2 - 24,
       actor: "Sophia Vance",
-      action: "Delegating research",
+      action: "Orchestrating specialist workstreams",
       target: "Dr. Aris Thorne",
       tone: "cyan",
     });
   }
-  if (thorneWork) {
+  if (thorneWork && thorneWork.state === "active") {
     spatialCards.push({
       id: "sp-thorne",
-      nodeId: "ops",
+      nodeId: "thorne",
       x: thorneNode.x,
       y: thorneNode.y - thorneNode.h / 2 - 24,
       actor: "Dr. Aris Thorne",
@@ -664,23 +691,23 @@ export function deriveGraph(state: {
       tone: "cyan",
     });
   }
-  if (financeNode && financeWork && financeWork.state === "active") {
+  if (julianWork && julianWork.state === "active") {
     spatialCards.push({
-      id: "sp-finance",
-      nodeId: "finance",
-      x: financeNode.x,
-      y: financeNode.y - financeNode.h / 2 - 24,
+      id: "sp-julian",
+      nodeId: "julian",
+      x: julianNode.x,
+      y: julianNode.y - julianNode.h / 2 - 24,
       actor: "Julian Cruz",
       action: "Stress-testing margin floor ≥ 80%",
       tone: "cyan",
     });
   }
-  if (pmNode && pmWork && pmWork.state === "active") {
+  if (mayaWork && mayaWork.state === "active") {
     spatialCards.push({
-      id: "sp-pm",
-      nodeId: "pm",
-      x: pmNode.x,
-      y: pmNode.y - pmNode.h / 2 - 24,
+      id: "sp-maya",
+      nodeId: "maya",
+      x: mayaNode.x,
+      y: mayaNode.y - mayaNode.h / 2 - 24,
       actor: "Maya Lin",
       action: "Drafting PRD & architecture specs",
       tone: "cyan",
@@ -754,6 +781,9 @@ export class FlowEngine {
   coreHeat = 0.3;
   spawnTimer = 0;
   emberAcc = 0;
+  /** When set (node-selection focus), edges/nodes unrelated to the focused
+   *  node's direct relationships render at reduced emphasis. */
+  focusNodes: Set<string> | null = null;
 
   blueSprite = sprite(56, 189, 248);
   fireSprite = sprite(249, 115, 22);
@@ -792,6 +822,10 @@ export class FlowEngine {
       if (!this.outgoing.has(e.from)) this.outgoing.set(e.from, []);
       this.outgoing.get(e.from)!.push(index);
     });
+  }
+
+  setFocus(nodeIds: Set<string> | null) {
+    this.focusNodes = nodeIds && nodeIds.size > 0 ? nodeIds : null;
   }
 
   setScale(scale: number) {
@@ -838,13 +872,20 @@ export class FlowEngine {
     if (!activePaths.length) return;
     const p = activePaths[Math.floor(Math.random() * activePaths.length)];
     const tone: PacketTone =
-      p.edge.style === "rose"
+      p.edge.style === "fire"
+        ? "fire"
+        : p.edge.style === "rose"
         ? "rose"
         : p.edge.style === "amber"
         ? "amber"
         : p.edge.style === "emerald"
         ? "emerald"
         : "cyan";
+
+    // Source-node ignition: dispatch visibly energizes the emitting node's
+    // perimeter (matches reference frame 2 — C-arc border light-up).
+    const src = this.energy.get(p.edge.from) || 0;
+    this.energy.set(p.edge.from, Math.max(src, 0.72));
 
     this.packets.push({
       e: p.index,
@@ -862,7 +903,7 @@ export class FlowEngine {
     this.energy.set(nodeId, 1);
     const isCore = nodeId === "core";
     const isBlocked = tone === "rose" || this.nodeMap.get(nodeId)?.state === "blocked";
-    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
+    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "fire" ? "fire" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
 
     // Primary fast shockwave ring
     this.rings.push({
@@ -1007,7 +1048,9 @@ export class FlowEngine {
         pk.speed = rnd(150, 230);
         const nextEdge = this.paths[pk.e].edge;
         pk.tone =
-          nextEdge.style === "rose"
+          nextEdge.style === "fire"
+            ? "fire"
+            : nextEdge.style === "rose"
             ? "rose"
             : nextEdge.style === "amber"
             ? "amber"
@@ -1133,11 +1176,34 @@ export class FlowEngine {
       const eTo = this.energy.get(e.to) || 0;
       const lit = Math.max(eFrom, eTo);
 
+      // Selection focus: unrelated edges de-emphasize (related = either endpoint
+      // belongs to the focused node's direct relationship set).
+      const related = !this.focusNodes || this.focusNodes.has(e.from) || this.focusNodes.has(e.to);
+      const dim = related ? 1 : 0.3;
+
+      g.save();
+      g.globalAlpha = dim;
+
       g.beginPath();
       g.moveTo(p.pts[0].x, p.pts[0].y);
       for (let i = 1; i < p.pts.length; i++) g.lineTo(p.pts[i].x, p.pts[i].y);
 
-      if (e.style === "rose" || e.state === "blocked") {
+      if (e.style === "fire" && e.state === "active") {
+        // White-hot execution conduit: orange corona + bright interior core
+        // (reference frames 3–5 — execution energy transiting the edge).
+        g.save();
+        g.globalCompositeOperation = "lighter";
+        g.strokeStyle = `rgba(249,115,22,${0.3 + lit * 0.38})`;
+        g.lineWidth = 9;
+        g.stroke();
+        g.strokeStyle = `rgba(255,214,170,${0.72 + lit * 0.28})`;
+        g.lineWidth = 2.2;
+        g.setLineDash([12, 14]);
+        g.lineDashOffset = -this.time * 85;
+        g.stroke();
+        g.setLineDash([]);
+        g.restore();
+      } else if (e.style === "rose" || e.state === "blocked") {
         g.save();
         g.globalCompositeOperation = "lighter";
         g.strokeStyle = `rgba(244,63,94,${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
@@ -1231,6 +1297,8 @@ export class FlowEngine {
             ? `rgba(52,211,153,${0.85 + lit * 0.15})`
             : e.style === "cyan"
             ? `rgba(125,211,252,${0.85 + lit * 0.15})`
+            : e.style === "fire"
+            ? `rgba(255,214,170,${0.85 + lit * 0.15})`
             : `rgba(180,210,240,${0.55 + ambientBreath + lit * 0.2})`;
 
         g.beginPath();
@@ -1240,6 +1308,33 @@ export class FlowEngine {
         g.closePath();
         g.fill();
       }
+
+      // Connection ports — small circles anchoring the conduit to its endpoints
+      // (reference frame 1 — precise connection points on node borders).
+      {
+        const s = p.pts[0],
+          t = p.pts[p.pts.length - 1];
+        const portAlpha = 0.35 + lit * 0.5;
+        const portColor =
+          e.style === "fire" && e.state === "active"
+            ? `rgba(255,200,150,${portAlpha})`
+            : e.style === "rose"
+            ? `rgba(251,113,133,${portAlpha})`
+            : e.style === "amber"
+            ? `rgba(252,211,77,${portAlpha})`
+            : e.style === "emerald"
+            ? `rgba(52,211,153,${portAlpha})`
+            : `rgba(150,190,235,${portAlpha})`;
+        g.fillStyle = portColor;
+        g.beginPath();
+        g.arc(s.x, s.y, 2.6, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.arc(t.x, t.y, 2.6, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      g.restore(); // focus dim scope
     }
 
     g.globalCompositeOperation = "lighter";
@@ -1248,16 +1343,23 @@ export class FlowEngine {
     for (const n of this.nodeMap.values()) {
       const en = this.energy.get(n.id) || 0;
       if (en < 0.02) continue;
-      const r = Math.max(n.w, n.h) * (0.85 + en * 0.35);
+      const related = !this.focusNodes || this.focusNodes.has(n.id);
+      const glowEn = en * (related ? 1 : 0.3);
+      if (glowEn < 0.02) continue;
+      const r = Math.max(n.w, n.h) * (0.85 + glowEn * 0.35);
       const isCore = n.id === "core";
       const isBlocked = n.state === "blocked";
+      const isExecuting = this.nodeMap.get(n.id)?.state === "active" && n.type === "agent";
       const gr = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
       if (isCore) {
-        gr.addColorStop(0, `rgba(255,170,80,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(255,170,80,${0.45 * glowEn})`);
       } else if (isBlocked) {
-        gr.addColorStop(0, `rgba(244,63,94,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(244,63,94,${0.45 * glowEn})`);
+      } else if (isExecuting) {
+        // Executing specialists radiate warm execution energy.
+        gr.addColorStop(0, `rgba(255,170,90,${0.4 * glowEn})`);
       } else {
-        gr.addColorStop(0, `rgba(56,189,248,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(56,189,248,${0.45 * glowEn})`);
       }
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr;

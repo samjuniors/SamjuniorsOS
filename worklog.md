@@ -284,3 +284,38 @@ Stage Summary:
 - Sandbox now mirrors remote main @ 76be88d functionally: root route = V2 Design1 exclusive shell; V4.1/V5 prototypes served statically; upstream docs/configs present
 - No upstream bugs found — the pull ported cleanly; the only "fixes" were sandbox-layout adaptations (entry paths, tsconfig/eslint/gitignore parity)
 - Nothing pushed back to remote: remote is already the source of truth for this content; sandbox-specific adaptations (src/ layout) don't apply to the remote's root app/ layout
+
+---
+Task ID: graph-1
+Agent: main (Z.ai Code)
+Task: PHASE — Premium SamJuniorsOS Operating Graph + reference frame pull ("nine screenshots for reference flow frames")
+
+Work Log:
+- Pulled remote 7d0622e "Add files via upload": 9 sequential reference frames (Uploaded/Screenshot_20260911-1800*.png, 1220×2712 WhatsApp video captures). Cropped chrome, analyzed each frame in sequence with VLM to extract the exact animation grammar: ① dormant state ② source node ignites orange C-arc border ③ comet particle (white-hot core → #FF6B00 → #FF4500, 8px head/3px tail, corona, perpendicular micro-sparks) transits edge leaving residual glow ④ impact: white-hot contact + ripple/shockwave ⑤ node fully lit, next dispatch ⑥ cyan beam on data pathway, destination port glows ⑦ cyan ring propagation, processing agent wrapped in gold sparks ⑧ golden spark-burst at terminal ⑨ settled decay to baseline. Grid: faint squares + "+" crosshair intersections + micro-dots + starry dust.
+- BOOT inspection: src/lib/server/agents/definitions.ts (4 authoritative agents: Sophia Vance coo, Dr. Aris Thorne researcher, Maya Lin pm, Julian Cruz finance — closed AgentRole union), employee-profiles.ts (all four have DETAILED_AI_EMPLOYEE_PROFILES), PRODUCT.md §4/§5 (Sophia+Thorne implemented v1 critical path; Maya/Julian employed but out of critical path; Elena Rostova/Marcus Vance = target-state, excluded), surfaceSchema, osStore, flow.ts, FlowDesktop.tsx, DESIGN.md
+- osStore.ts: replaced 2-agent roster (sophia/ops) with the four authoritative (sophia/thorne/maya/julian) using honest remits/canDo from definitions.ts; load() now migrates legacy owner ids (ops→thorne, pm→maya, finance→julian) and merges agent state onto the SEED roster dropping stale ids; addWork/ask default owner thorne; refreshAgents gives Sophia orchestration state from any active work
+- flow.ts deriveGraph: all four specialists render PERMANENTLY (relevance 0.7 idle / 1 active; no standby/target-state employees); genuine edges: founder→core delegates, core→{thorne,maya,julian}, contextual thorne→maya feeds (research→PRD, only while Maya active); protocol steps routed by real owner+stage (discovery→Thorne, build+owner→Julian/Maya/Thorne, review/ship→owner specialist); execution edges now style "fire" (orange/white-hot execution energy) vs cyan (AI/data pathways); spatial cards keyed to new node ids; EdgeStyle + "fire"
+- flow.ts FlowEngine: fire tone mapping in spawn()/packet continuation; source-node ignition on dispatch (frame 2 C-arc); fire conduit render (orange corona + bright core + animated dashes); connection ports (small circles at edge endpoints, frame 1); focusNodes de-emphasis API (unrelated edges ×0.3 alpha, unrelated node glows ×0.3); executing-agent warm radial glow; fire arrowheads/ports
+- FlowDesktop.tsx: META keys thorne/julian/maya; NodeCard dimmed+detail props (dim 0.32 opacity + saturate 0.6 on ALL five node branches incl. approval/card); related-set useMemo (selected + direct edge endpoints) wired to engine.setFocus; label LOD (detail ≥0.42 hides subtitles; headers ≥0.26 hides section titles); micro-dot CSS grid layer; "ACTIVE SPECIALISTS"→"EMPLOYED SPECIALISTS"; Sophia core sub "COO · ORCHESTRATOR"; badgeFor new ids; round-node julian/maya styling
+- surfaceSchema.ts: workforce metric "Employed AI roles 4 (agents/definitions.ts)"; generateAgentRelationships full four-agent web (delegates/depends-on/escalates-to)
+- ChatPanel.tsx: thorne/maya/julian honest reply branches + per-agent prompts; TodoDrawer default owner thorne; DesktopOS node→agent map (thorne/maya/julian) + spotlight workstream owner
+- DESIGN.md §14: binding invariants — closed four-agent roster, genuine topology, dual energy color semantics (fire=execution, cyan=data), canvas interaction grammar, truth boundary
+
+Verification (browser, agent-browser 1600×1000, zero console errors throughout):
+- All four agents render as graph nodes + workforce panels with authoritative names/roles; Founder/Verifier/Vault present; no standby/target-state employees
+- Ownership routing proven: Maya-owned PRD workstream → review step assigned to Maya (fire edge); Julian-owned Q4 audit → julian owner (re-created after initial scripted-input race was diagnosed as test-script stale-closure, not a product bug)
+- Execution energy: VLM-verified orange/white-hot comets with trails on execution edges, cyan delegation pathways, glowing borders/rings on active nodes; impact shockwaves; smooth decay
+- Pan: drag 200px verified (world coords under cursor changed; comets follow graph — VLM verified no glitches)
+- Cursor-centered zoom: mathematically exact — world point under cursor (358,104) IDENTICAL before/after zoom at that point
+- Zoom limits: clamped 0.16/2.4; fit (0) restores base scale 0.6063
+- Selection de-emphasis: Founder selected → 7/9 nodes dimmed (0.32 opacity), only direct relationships bright; after card-branch fix Vault dims too
+- LOD: subtitles hidden below k 0.42; section headers hidden below 0.26 (headerCount 0)
+- Idle truthfulness: Reset OS state → graph calm, ZERO particles/fake activity (VLM verified), "ALL QUIET"
+- Grid quality: VLM "Excellent — subtle square grid and micro-dots at intersections"
+- bunx tsc -p Uploaded/Design1: src clean (only pre-existing vite.config devDep resolution errors, environmental)
+- bun run lint: 0 errors, 2 pre-existing warnings in inactive legacy components
+- Mobile 420×900: renders usable
+
+Stage Summary:
+- The operating graph now shows the real company: Founder → Sophia (COO) → {Thorne, Maya, Julian} → contextual protocol steps → Verifier → Vault, with dual-energy semantics matching the reference frames (orange/white-hot execution, cyan AI/data pathways) and genuine pan/zoom/fit/selection/de-emphasis/LOD interaction grammar
+- No backend/API/database/auth files touched; Desktop shell and approved navigation preserved; DESIGN.md §14 added as the new UX invariant record

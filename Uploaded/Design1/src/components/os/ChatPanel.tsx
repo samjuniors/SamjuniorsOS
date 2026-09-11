@@ -16,7 +16,9 @@ const INITIAL_MESSAGES: Message[] = [];
 
 const PROMPTS: Record<string, string[]> = {
   sophia: ["What needs my attention?", "Summarize this UI session", "What is the execution path?"],
-  ops: ["Are any tasks blocked?", "What is my current assignment?", "What requires Founder approval?"],
+  thorne: ["Are any tasks blocked?", "What is my current assignment?", "What requires Founder approval?"],
+  maya: ["Draft a PRD outline", "What depends on research?", "Acceptance criteria status?"],
+  julian: ["Margin floor status?", "Current unit economics?", "Pricing assumptions?"],
 };
 
 function fmtTime(ts: number) {
@@ -117,7 +119,7 @@ export default function ChatPanel() {
       return `Captured in this UI session: "${text}". This surface is not connected to the workflow runtime, so no work was dispatched.`;
     }
 
-    if (agent.id === "ops") {
+    if (agent.id === "thorne") {
       if (lower.includes("block")) {
         const blocked = work.filter((w) => w.state === "blocked");
         return blocked.length
@@ -125,6 +127,14 @@ export default function ChatPanel() {
           : "No blocked workstreams. All active execution pipelines are progressing through discovery and review stages.";
       }
       return "This UI session has no live Thorne execution state. The implemented path is Sophia → Thorne → typed artifact → deterministic verification → Founder approval when consequential.";
+    }
+
+    if (agent.id === "maya") {
+      return "No live PRD drafting state in this UI session. When product work is assigned, I translate Thorne's research into structured specifications and acceptance criteria.";
+    }
+
+    if (agent.id === "julian") {
+      return "No live financial model in this UI session. When COO requests it, I run unit economics and margin-floor analysis with explicit, transparent assumptions.";
     }
 
     return "Received and noted. Operating strictly within constitutional constraints.";

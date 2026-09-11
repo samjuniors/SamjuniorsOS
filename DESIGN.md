@@ -363,3 +363,27 @@ The living operating graph visually communicates the dynamic state of SamJuniors
    - Cards smoothly animate into view on relevant events and collapse/fade out when the event completes.
 4. **Zero Random Decoration**: No particle or animation fires without an authentic causal event in the operating state.
 
+
+---
+
+## 14. Operating Graph — Authoritative Workforce & Execution Energy Semantics
+
+*Added in the Premium Operating Graph phase. These are binding UX invariants.*
+
+1. **Four Authoritative Employees (closed roster)**: The operating graph renders exactly the four employed v1 AI employees defined by the repository (`src/lib/server/agents/definitions.ts`):
+   - **Sophia Vance** — COO & Master Orchestrator (central orchestration node)
+   - **Dr. Aris Thorne** — Lead Market & Technology Researcher
+   - **Maya Lin** — Principal Product Manager
+   - **Julian Cruz** — Chief Financial Analyst
+   No other person/agent may appear as active workforce. Deferred/target-state employees (e.g. Elena Rostova, Marcus Vance) are prohibited. Maya/Julian render as employed nodes that visibly *activate only when real work is assigned to them* — never fake activity.
+
+2. **Genuine Relationship Topology**: Founder/Inputs → Sophia → {Thorne, Maya, Julian} → contextual protocol steps → Constitutional Verifier → Governed Vault → Founder (approval gate appears only when open decisions exist). Thorne → Maya "research feeds PRD" renders contextually (only while Maya is actively authoring). Protocol steps remain contextual — never permanently rendered.
+
+3. **Dual Energy Color Semantics** (matches the supplied reference frames):
+   - **Orange / white-hot** (`fire`): *execution energy* — a specialist actively executing a protocol step. Comet streak = white-hot core with orange corona, velocity-aligned trailing sparks, arrival shockwave rings, and smooth glow decay.
+   - **Cyan / electric blue**: *AI & data pathways* — delegation, research routing, context/verification flows.
+   - Amber = founder approval/attention; rose = blocked; emerald = completed/governed; white = quiet idle conduits.
+
+4. **Canvas Interaction Grammar**: Click-drag = pan; wheel/trackpad = cursor-centered zoom with smooth clamped limits; fit (0) / recenter; node selection highlights direct relationships while unrelated graph elements subtly de-emphasize (nodes dim to 32% opacity, non-adjacent edges dim); the graph remains pannable/zoomable while execution runs; execution particles follow current transformed graph coordinates; label LOD — high zoom reveals node detail, low zoom reduces labels and hides section headers.
+
+5. **Truth Boundary (unchanged)**: The graph is a *visual projection* of the operating system, never the source of truth. Authoritative state lives in the existing backend architecture. Zero synthetic packets, fake counters, or invented events — kinetics fire only from real state transitions.

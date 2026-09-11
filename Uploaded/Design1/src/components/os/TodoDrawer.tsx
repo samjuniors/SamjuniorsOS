@@ -13,7 +13,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
   const work = useOS((s) => s.work);
   const agents = useOS((s) => s.agents);
   const [draft, setDraft] = useState("");
-  const [owner, setOwner] = useState("ops");
+  const [owner, setOwner] = useState("thorne");
   const [filter, setFilter] = useState<Filter>("open");
   const [search, setSearch] = useState("");
 
