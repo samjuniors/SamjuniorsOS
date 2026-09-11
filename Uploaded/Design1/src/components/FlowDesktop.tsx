@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bot, ListTree, PackageCheck, ClipboardList, Scale, ChevronDown, Check,
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
@@ -14,6 +14,67 @@ import {
 } from "../lib/osStore";
 import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
+
+/* -------------------------------------------------- atmosphere layer */
+
+/**
+ * Static atmospheric depth — seeded dust, soft bokeh, and technical crosshairs
+ * at major-grid intersections. Rendered once in world space (parallaxes with
+ * pan/zoom, scales with LOD). Purely ambient: zero motion, zero activity —
+ * all energy remains strictly state-driven on the canvas engine.
+ */
+const AtmosphereLayer = memo(function AtmosphereLayer() {
+  const field = useMemo(() => {
+    // Deterministic seeded PRNG — stable, art-directed field across reloads.
+    let seed = 20260911;
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const ox = WORLD.MIN_X - 100;
+    const oy = WORLD.MIN_Y - 100;
+    const W = WORLD.MAX_X - WORLD.MIN_X + 200;
+    const H = WORLD.MAX_Y - WORLD.MIN_Y + 200;
+
+    const dust = Array.from({ length: 96 }, () => ({
+      x: rand() * W,
+      y: rand() * H,
+      r: 0.5 + rand() * 0.9,
+      o: 0.04 + rand() * 0.1,
+    }));
+    const bokeh = Array.from({ length: 16 }, () => ({
+      x: rand() * W,
+      y: rand() * H,
+      r: 7 + rand() * 11,
+      o: 0.02 + rand() * 0.03,
+    }));
+    const crosses: Array<{ x: number; y: number }> = [];
+    for (let gx = Math.ceil(ox / 220) * 220; gx <= ox + W; gx += 220) {
+      for (let gy = Math.ceil(oy / 220) * 220; gy <= oy + H; gy += 220) {
+        crosses.push({ x: gx - ox, y: gy - oy });
+      }
+    }
+    return { ox, oy, W, H, dust, bokeh, crosses };
+  }, []);
+
+  return (
+    <svg
+      className="pointer-events-none absolute"
+      aria-hidden="true"
+      style={{ left: field.ox, top: field.oy, width: field.W, height: field.H, overflow: "visible" }}
+    >
+      {field.bokeh.map((b, i) => (
+        <circle key={`b${i}`} cx={b.x} cy={b.y} r={b.r} fill="rgb(120,170,255)" opacity={b.o} />
+      ))}
+      {field.dust.map((d, i) => (
+        <circle key={`d${i}`} cx={d.x} cy={d.y} r={d.r} fill="rgb(185,215,255)" opacity={d.o} />
+      ))}
+      {field.crosses.map((c, i) => (
+        <path key={`c${i}`} d={`M ${c.x - 4.5} ${c.y} H ${c.x + 4.5} M ${c.x} ${c.y - 4.5} V ${c.y + 4.5}`} stroke="rgb(120,190,255)" strokeWidth={1} opacity={0.13} />
+      ))}
+    </svg>
+  );
+});
 
 /* ------------------------------------------------------------- node meta */
 
@@ -170,10 +231,10 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
           left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
           background: "linear-gradient(160deg, rgba(60,40,30,0.95), rgba(25,18,14,0.98))",
           boxShadow: selected
-            ? "inset 0 0 30px rgba(255,140,60,0.4), 0 0 60px rgba(255,120,40,0.65), 0 0 0 2px rgba(255,200,140,0.5)"
+            ? "inset 0 1px 0 rgba(255,225,190,0.22), inset 0 0 30px rgba(255,140,60,0.4), 0 0 60px rgba(255,120,40,0.65), 0 0 0 2px rgba(255,200,140,0.5)"
             : isActive
-            ? "inset 0 0 30px rgba(255,140,60,0.35), 0 0 45px rgba(255,120,40,0.45)"
-            : "inset 0 0 20px rgba(255,140,60,0.15), 0 0 25px rgba(0,0,0,0.6)",
+            ? "inset 0 1px 0 rgba(255,225,190,0.18), inset 0 0 30px rgba(255,140,60,0.35), 0 0 45px rgba(255,120,40,0.45)"
+            : "inset 0 1px 0 rgba(255,225,190,0.12), inset 0 0 20px rgba(255,140,60,0.15), 0 0 25px rgba(0,0,0,0.6)",
           ...dimStyle,
         }}
       >
@@ -212,24 +273,25 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
       : "1px solid rgba(120,190,255,0.4)";
 
     const shadow = selected
-      ? "0 0 34px rgba(103,232,249,0.6), inset 0 0 18px rgba(103,232,249,0.3)"
+      ? "inset 0 1px 0 rgba(255,255,255,0.16), 0 0 34px rgba(103,232,249,0.6), inset 0 0 18px rgba(103,232,249,0.3)"
       : isBlk
-      ? "0 0 28px rgba(244,63,94,0.45), inset 0 0 16px rgba(244,63,94,0.25)"
+      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(244,63,94,0.45), inset 0 0 16px rgba(244,63,94,0.25)"
       : isComp || isJulian
-      ? "0 0 28px rgba(52,211,153,0.4), inset 0 0 16px rgba(52,211,153,0.2)"
+      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(52,211,153,0.4), inset 0 0 16px rgba(52,211,153,0.2)"
       : isMaya
-      ? "0 0 28px rgba(192,132,252,0.4), inset 0 0 16px rgba(192,132,252,0.2)"
+      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(192,132,252,0.4), inset 0 0 16px rgba(192,132,252,0.2)"
       : isAct
-      ? "0 0 30px rgba(56,189,248,0.5), inset 0 0 16px rgba(56,189,248,0.25)"
-      : "0 10px 25px rgba(0,0,0,0.5), inset 0 0 14px rgba(56,189,248,0.15)";
+      ? "inset 0 1px 0 rgba(255,255,255,0.14), 0 0 30px rgba(56,189,248,0.5), inset 0 0 16px rgba(56,189,248,0.25)"
+      : "inset 0 1px 0 rgba(255,255,255,0.1), 0 10px 28px rgba(0,0,0,0.55), inset 0 0 14px rgba(56,189,248,0.15)";
 
+    // Glass material: identity tint base + specular dome highlight near the top
     const bgGradient = isVerifier
-      ? "radial-gradient(circle at 50% 40%, rgba(20,55,45,0.94), rgba(8,20,16,0.98))"
+      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(20,55,45,0.94), rgba(8,20,16,0.98))"
       : isJulian
-      ? "radial-gradient(circle at 50% 40%, rgba(18,50,40,0.94), rgba(7,20,16,0.98))"
+      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(18,50,40,0.94), rgba(7,20,16,0.98))"
       : isMaya
-      ? "radial-gradient(circle at 50% 40%, rgba(55,22,75,0.94), rgba(20,8,28,0.98))"
-      : "radial-gradient(circle at 50% 40%, rgba(35,65,115,0.94), rgba(12,20,38,0.98))";
+      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(55,22,75,0.94), rgba(20,8,28,0.98))"
+      : "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(35,65,115,0.94), rgba(12,20,38,0.98))";
 
     return (
       <div
@@ -292,9 +354,20 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
             : isAct
             ? "linear-gradient(160deg, rgba(64,34,18,0.96), rgba(30,16,8,0.98))"
             : "linear-gradient(160deg, rgba(32,38,50,0.96), rgba(18,22,30,0.98))",
+          boxShadow: selected
+            ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 30px rgba(56,189,248,0.45)"
+            : isBlk
+            ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px rgba(244,63,94,0.35)"
+            : isComp
+            ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 20px rgba(52,211,153,0.25)"
+            : isAct
+            ? "inset 0 1px 0 rgba(255,225,190,0.14), 0 0 28px rgba(255,140,60,0.4)"
+            : "inset 0 1px 0 rgba(255,255,255,0.07), 0 8px 22px rgba(0,0,0,0.45)",
           ...dimStyle,
         }}
       >
+        {/* specular top-edge light catch */}
+        <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-white/12 to-transparent" />
         <div className="flex items-center justify-between gap-1">
           <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
             isBlk ? "bg-rose-400/20 text-rose-200" : isComp ? "bg-emerald-400/20 text-emerald-200" : isAct ? "bg-orange-400/20 text-orange-200" : "bg-white/10 text-slate-300"
@@ -330,9 +403,14 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
         style={{
           left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
           background: "linear-gradient(160deg, rgba(48,32,10,0.96), rgba(24,16,6,0.98))",
+          boxShadow: selected
+            ? "inset 0 1px 0 rgba(255,240,200,0.2), 0 0 34px rgba(245,158,11,0.4)"
+            : "inset 0 1px 0 rgba(255,240,200,0.14), 0 0 35px rgba(245,158,11,0.35)",
           ...dimStyle,
         }}
       >
+        {/* specular top-edge light catch */}
+        <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-amber-100/15 to-transparent" />
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-amber-300">
             <Scale size={16} />
@@ -363,9 +441,14 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
         background: n.type === "outcome"
           ? "linear-gradient(160deg, rgba(18,42,32,0.96), rgba(10,22,16,0.98))"
           : "linear-gradient(160deg, rgba(42,50,68,0.96), rgba(20,24,34,0.98))",
+        boxShadow: selected
+          ? "inset 0 1px 0 rgba(255,255,255,0.14), 0 0 26px rgba(103,232,249,0.4)"
+          : "inset 0 1px 0 rgba(255,255,255,0.09), 0 10px 32px rgba(0,0,0,0.55)",
         ...dimStyle,
       }}
     >
+      {/* specular top-edge light catch */}
+      <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-white/12 to-transparent" />
       <div className="flex items-center justify-between">
         <span style={{ color: m.tint ?? "#f3f7ff" }}>{m.icon}</span>
         {badge}
@@ -380,12 +463,12 @@ function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }
 
 function SpatialCardOverlay({ card }: { card: SpatialCard }) {
   const toneClasses = card.tone === "amber"
-    ? "border-amber-400/40 bg-[#120d04]/94 text-amber-200 shadow-[0_8px_28px_rgba(245,158,11,0.3)]"
+    ? "border-amber-400/28 bg-[#120d04]/88 text-amber-200 shadow-[0_8px_24px_rgba(245,158,11,0.22)]"
     : card.tone === "rose"
-    ? "border-rose-400/40 bg-[#140608]/94 text-rose-200 shadow-[0_8px_28px_rgba(244,63,94,0.3)]"
+    ? "border-rose-400/28 bg-[#140608]/88 text-rose-200 shadow-[0_8px_24px_rgba(244,63,94,0.22)]"
     : card.tone === "emerald"
-    ? "border-emerald-400/40 bg-[#04140c]/94 text-emerald-200 shadow-[0_8px_28px_rgba(16,185,129,0.3)]"
-    : "border-cyan-400/40 bg-[#06101e]/94 text-cyan-200 shadow-[0_8px_28px_rgba(56,189,248,0.3)]";
+    ? "border-emerald-400/28 bg-[#04140c]/88 text-emerald-200 shadow-[0_8px_24px_rgba(16,185,129,0.22)]"
+    : "border-cyan-400/28 bg-[#06101e]/88 text-cyan-200 shadow-[0_8px_24px_rgba(56,189,248,0.22)]";
 
   const dotClass = card.tone === "amber"
     ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]"
@@ -397,7 +480,7 @@ function SpatialCardOverlay({ card }: { card: SpatialCard }) {
 
   return (
     <div
-      className={`pointer-events-none absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-1.5 text-[11px] backdrop-blur-md transition-all duration-300 ${toneClasses}`}
+      className={`pointer-events-none absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl border px-2.5 py-1 text-[10.5px] backdrop-blur-md transition-all duration-300 ${toneClasses}`}
       style={{ left: card.x, top: card.y, animation: `os-in 240ms ${EASE}` }}
     >
       <span className={`h-1.5 w-1.5 animate-pulse rounded-full ${dotClass}`} />
@@ -998,14 +1081,17 @@ export default function FlowDesktop({
               <>
                 {/* micro-dot grid — a dot at every minor intersection */}
                 <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(130,180,255,0.10) 1px, transparent 1.2px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.35 : 0.7 }} />
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.08) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.12) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.07) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.14) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
               </>
             )}
-            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.25), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.22), transparent 55%)" }} />
+            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 28%, rgba(30,60,120,0.3), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.26), transparent 55%)" }} />
 
             {/* world layer */}
             <div className="absolute left-0 top-0 h-0 w-0" style={{ transform: `translate(${tx}px, ${ty}px) scale(${cam.k})`, transformOrigin: "0 0" }}>
+              {/* Static atmospheric depth — dust, bokeh, crosshairs (under everything) */}
+              <AtmosphereLayer />
+
               {/* Category section titles (hidden at low zoom — label LOD) */}
               {headers && (
                 <>

@@ -94,6 +94,8 @@ type Packet = { e: number; d: number; speed: number; tone: PacketTone; trail: nu
 type Ember = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; heat: number; color: string };
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string };
 type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone; isSecondary?: boolean };
+/** White-hot contact flash at the instant a packet impacts a node. */
+type Flash = { x: number; y: number; life: number; max: number; tone: PacketTone };
 
 function samplePath(raw: [number, number][], radius = 22, step = 4): P[] {
   const pts = raw.map(([x, y]) => ({ x, y }));
@@ -777,6 +779,7 @@ export class FlowEngine {
   embers: Ember[] = [];
   sparks: Spark[] = [];
   rings: Ring[] = [];
+  flashes: Flash[] = [];
   energy = new Map<string, number>();
   coreHeat = 0.3;
   spawnTimer = 0;
@@ -890,14 +893,14 @@ export class FlowEngine {
     this.packets.push({
       e: p.index,
       d: randomStart ? Math.random() * p.len : 0,
-      speed: rnd(160, 240),
+      speed: rnd(210, 290),
       tone,
-      trail: rnd(45, 70),
+      trail: rnd(105, 135),
     });
   }
 
   /**
-   * Dual-ring arrival shockwave and target perimeter illumination.
+   * Dual-ring arrival shockwave, white-hot contact flash, and target perimeter illumination.
    */
   arrive(nodeId: string, x: number, y: number, tone: PacketTone = "cyan") {
     this.energy.set(nodeId, 1);
@@ -905,7 +908,10 @@ export class FlowEngine {
     const isBlocked = tone === "rose" || this.nodeMap.get(nodeId)?.state === "blocked";
     const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "fire" ? "fire" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
 
-    // Primary fast shockwave ring
+    // White-hot contact flash — the instant of impact (reference frame 4)
+    this.flashes.push({ x, y, life: 0, max: 0.16, tone: ringTone });
+
+    // Primary fast shockwave ring (gold-leaning for execution energy)
     this.rings.push({
       x,
       y,
@@ -926,7 +932,7 @@ export class FlowEngine {
       isSecondary: true,
     });
 
-    const count = isCore ? 32 : 18;
+    const count = isCore ? 42 : 26;
     this.burstFire(x, y, count, ringTone);
 
     if (isCore) {
@@ -964,15 +970,15 @@ export class FlowEngine {
 
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = rnd(35, 170);
+      const sp = rnd(45, 175);
       this.embers.push({
         x: x + rnd(-8, 8),
         y: y + rnd(-8, 8),
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
         life: 0,
-        max: rnd(0.35, 0.85),
-        size: rnd(1.0, 2.8),
+        max: rnd(0.4, 0.95),
+        size: rnd(1.4, 3.4),
         heat: Math.random(),
         color: col,
       });
@@ -988,7 +994,7 @@ export class FlowEngine {
     if (hasActiveEdges) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && this.packets.length < 24) {
-        this.spawnTimer = rnd(0.7, 1.3);
+        this.spawnTimer = rnd(0.5, 0.95);
         this.spawn();
       }
     } else {
@@ -996,7 +1002,7 @@ export class FlowEngine {
       this.spawnTimer = 0;
     }
 
-    // Packet advance, directional angle & trail physics
+    // Packet advance with cinematic ease (launch slow, transit fast, arrive decelerating)
     for (let i = this.packets.length - 1; i >= 0; i--) {
       const pk = this.packets[i];
       const path = this.paths[pk.e];
@@ -1004,14 +1010,18 @@ export class FlowEngine {
         this.packets.splice(i, 1);
         continue;
       }
-      pk.d += pk.speed * dt;
+      const prog = Math.min(1, pk.d / path.len);
+      const ease = 0.5 + 0.95 * Math.sin(Math.PI * prog);
+      pk.d += pk.speed * ease * dt;
 
-      // Trailing micro-spark emission along motion vector
-      if (Math.random() < 0.4) {
+      // Trailing micro-spark emission along motion vector — varied sizes &
+      // occasional larger "pop" sparks for organic high-velocity texture
+      if (Math.random() < 0.44) {
         const head = this.pointAt(path, pk.d);
         const prev = this.pointAt(path, Math.max(0, pk.d - 6));
         const ang = Math.atan2(head.y - prev.y, head.x - prev.x);
-        const spMag = rnd(25, 55);
+        const spMag = rnd(25, 60);
+        const pop = Math.random() < 0.16;
 
         this.sparks.push({
           x: head.x + rnd(-2, 2),
@@ -1019,8 +1029,8 @@ export class FlowEngine {
           vx: -Math.cos(ang) * spMag + Math.sin(ang) * rnd(-15, 15),
           vy: -Math.sin(ang) * spMag - Math.cos(ang) * rnd(-15, 15),
           life: 0,
-          max: rnd(0.18, 0.4),
-          size: rnd(1.0, 2.2),
+          max: pop ? rnd(0.3, 0.55) : rnd(0.18, 0.4),
+          size: pop ? rnd(2.4, 3.6) : rnd(1.1, 2.6),
           color:
             pk.tone === "amber"
               ? "#fde68a"
@@ -1028,6 +1038,10 @@ export class FlowEngine {
               ? "#fca5a5"
               : pk.tone === "emerald"
               ? "#a7f3d0"
+              : pk.tone === "fire"
+              ? pop
+                ? "#fff1dd"
+                : "#ffd9a0"
               : "#7dd3fc",
         });
       }
@@ -1045,7 +1059,8 @@ export class FlowEngine {
       if (candidates.length && Math.random() < 0.85 && this.packets.length < 36) {
         pk.e = candidates[Math.floor(Math.random() * candidates.length)];
         pk.d = 0;
-        pk.speed = rnd(150, 230);
+        pk.speed = rnd(200, 280);
+        pk.trail = rnd(105, 135);
         const nextEdge = this.paths[pk.e].edge;
         pk.tone =
           nextEdge.style === "fire"
@@ -1138,6 +1153,15 @@ export class FlowEngine {
         this.rings.splice(i, 1);
       }
     }
+
+    // Contact flashes update
+    for (let i = this.flashes.length - 1; i >= 0; i--) {
+      const fl = this.flashes[i];
+      fl.life += dt;
+      if (fl.life >= fl.max) {
+        this.flashes.splice(i, 1);
+      }
+    }
   }
 
   render() {
@@ -1150,21 +1174,8 @@ export class FlowEngine {
     g.lineCap = "round";
     g.lineJoin = "round";
 
-    // --- Technical Circuit Crosshairs & Coordinates
-    g.save();
-    g.strokeStyle = "rgba(56, 189, 248, 0.05)";
-    g.lineWidth = 1;
-    for (let gx = 180; gx <= 1520; gx += 260) {
-      for (let gy = 200; gy <= 780; gy += 240) {
-        g.beginPath();
-        g.moveTo(gx - 4, gy);
-        g.lineTo(gx + 4, gy);
-        g.moveTo(gx, gy - 4);
-        g.lineTo(gx, gy + 4);
-        g.stroke();
-      }
-    }
-    g.restore();
+    // (Grid crosshairs & micro-dots render in the DOM layers beneath the nodes —
+    // the canvas reserves itself strictly for energy, so nothing occludes nodes.)
 
     // Ambient breathing oscillation (sine wave)
     const ambientBreath = Math.sin(this.time * 1.5) * 0.04;
@@ -1189,69 +1200,79 @@ export class FlowEngine {
       for (let i = 1; i < p.pts.length; i++) g.lineTo(p.pts[i].x, p.pts[i].y);
 
       if (e.style === "fire" && e.state === "active") {
-        // White-hot execution conduit: orange corona + bright interior core
-        // (reference frames 3–5 — execution energy transiting the edge).
+        // White-hot execution conduit — continuous layered energy
+        // (reference frames 3–5). Motion is carried by the comet itself,
+        // so the conduit stays a precise continuous beam.
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(249,115,22,${0.3 + lit * 0.38})`;
-        g.lineWidth = 9;
+        // Ambient light cast onto the canvas beneath the active path
+        g.strokeStyle = `rgba(255,150,50,${0.07 + lit * 0.06})`;
+        g.lineWidth = 24;
         g.stroke();
-        g.strokeStyle = `rgba(255,214,170,${0.72 + lit * 0.28})`;
-        g.lineWidth = 2.2;
-        g.setLineDash([12, 14]);
-        g.lineDashOffset = -this.time * 85;
+        // Outer corona
+        g.strokeStyle = `rgba(249,115,22,${0.24 + lit * 0.28})`;
+        g.lineWidth = 7;
         g.stroke();
-        g.setLineDash([]);
+        // Mid sheath
+        g.strokeStyle = `rgba(255,150,70,${0.38 + lit * 0.32})`;
+        g.lineWidth = 3.6;
+        g.stroke();
+        // Bright interior core — continuous, hairline-precise
+        g.strokeStyle = `rgba(255,236,214,${0.78 + lit * 0.22})`;
+        g.lineWidth = 1.8;
+        g.stroke();
         g.restore();
       } else if (e.style === "rose" || e.state === "blocked") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(244,63,94,${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
-        g.lineWidth = 8;
+        g.strokeStyle = `rgba(244,63,94,${0.16 + lit * 0.26 + Math.sin(this.time * 5) * 0.08})`;
+        g.lineWidth = 6;
         g.stroke();
-        g.strokeStyle = `rgba(251,113,133,${0.68 + lit * 0.32})`;
-        g.lineWidth = 2.2;
+        g.strokeStyle = `rgba(251,113,133,${0.6 + lit * 0.32})`;
+        g.lineWidth = 1.7;
         g.stroke();
         g.restore();
       } else if (e.style === "amber") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(245,158,11,${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
-        g.lineWidth = 8;
+        g.strokeStyle = `rgba(245,158,11,${0.16 + lit * 0.24 + Math.sin(this.time * 4) * 0.06})`;
+        g.lineWidth = 6;
         g.stroke();
-        g.strokeStyle = `rgba(252,211,77,${0.68 + lit * 0.3})`;
-        g.lineWidth = 2.2;
+        g.strokeStyle = `rgba(252,211,77,${0.6 + lit * 0.3})`;
+        g.lineWidth = 1.7;
         g.stroke();
         g.restore();
       } else if (e.style === "emerald" || e.state === "complete") {
         g.save();
-        g.strokeStyle = `rgba(16,185,129,${0.18 + lit * 0.22})`;
-        g.lineWidth = 5;
+        g.strokeStyle = `rgba(16,185,129,${0.13 + lit * 0.17})`;
+        g.lineWidth = 4;
         g.stroke();
-        g.strokeStyle = `rgba(52,211,153,${0.55 + lit * 0.3})`;
-        g.lineWidth = 1.8;
+        g.strokeStyle = `rgba(52,211,153,${0.48 + lit * 0.3})`;
+        g.lineWidth = 1.4;
         g.stroke();
         g.restore();
       } else if (e.style === "cyan" || e.state === "active") {
+        // Cyan AI/data pathway — continuous neon beam
+        // (reference frame 6: core filament + sheath + soft outer bloom).
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(56,189,248,${0.28 + lit * 0.35})`;
-        g.lineWidth = 9;
+        g.strokeStyle = `rgba(0,102,204,${0.1 + lit * 0.12})`;
+        g.lineWidth = 8;
         g.stroke();
-        g.strokeStyle = `rgba(125,211,252,${0.68 + lit * 0.32})`;
-        g.lineWidth = 2.2;
-        g.setLineDash([8, 10]);
-        g.lineDashOffset = -this.time * 65;
+        g.strokeStyle = `rgba(56,189,248,${0.24 + lit * 0.3})`;
+        g.lineWidth = 3.2;
         g.stroke();
-        g.setLineDash([]);
+        g.strokeStyle = `rgba(215,245,255,${0.6 + lit * 0.32})`;
+        g.lineWidth = 1.5;
+        g.stroke();
         g.restore();
       } else {
         // Quiet idle baseline conduit (ambient breathing, no flurry)
-        g.strokeStyle = `rgba(40,55,80,${0.16 + ambientBreath + lit * 0.1})`;
-        g.lineWidth = 4;
+        g.strokeStyle = `rgba(40,55,80,${0.14 + ambientBreath + lit * 0.08})`;
+        g.lineWidth = 2.6;
         g.stroke();
-        g.strokeStyle = `rgba(130,165,205,${0.24 + ambientBreath + lit * 0.2})`;
-        g.lineWidth = 1.4;
+        g.strokeStyle = `rgba(130,165,205,${0.22 + ambientBreath + lit * 0.18})`;
+        g.lineWidth = 1;
         g.stroke();
       }
 
@@ -1282,56 +1303,79 @@ export class FlowEngine {
         g.restore();
       }
 
-      // Arrowheads
+      // Arrowheads — slim aerodynamic taper (reference: sleek technical points)
       if (e.arrow) {
         const n = p.pts.length;
         const b = p.pts[n - 1],
           a = p.pts[n - 4] || p.pts[0];
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        const hot = e.style === "fire" || e.style === "cyan" || e.style === "rose" || e.style === "amber";
         g.fillStyle =
           e.style === "rose"
-            ? `rgba(251,113,133,${0.85 + lit * 0.15})`
+            ? `rgba(251,113,133,${0.8 + lit * 0.2})`
             : e.style === "amber"
-            ? `rgba(252,211,77,${0.85 + lit * 0.15})`
+            ? `rgba(252,211,77,${0.8 + lit * 0.2})`
             : e.style === "emerald"
-            ? `rgba(52,211,153,${0.85 + lit * 0.15})`
+            ? `rgba(52,211,153,${0.75 + lit * 0.25})`
             : e.style === "cyan"
-            ? `rgba(125,211,252,${0.85 + lit * 0.15})`
+            ? `rgba(215,245,255,${0.8 + lit * 0.2})`
             : e.style === "fire"
-            ? `rgba(255,214,170,${0.85 + lit * 0.15})`
-            : `rgba(180,210,240,${0.55 + ambientBreath + lit * 0.2})`;
+            ? `rgba(255,224,190,${0.8 + lit * 0.2})`
+            : `rgba(185,215,245,${0.62 + ambientBreath + lit * 0.22})`;
 
+        const ah = hot ? 7 : 6.2;
         g.beginPath();
         g.moveTo(b.x, b.y);
-        g.lineTo(b.x - Math.cos(ang - 0.45) * 9.5, b.y - Math.sin(ang - 0.45) * 9.5);
-        g.lineTo(b.x - Math.cos(ang + 0.45) * 9.5, b.y - Math.sin(ang + 0.45) * 9.5);
+        g.lineTo(b.x - Math.cos(ang - 0.36) * ah, b.y - Math.sin(ang - 0.36) * ah);
+        g.lineTo(b.x - Math.cos(ang + 0.36) * ah, b.y - Math.sin(ang + 0.36) * ah);
         g.closePath();
         g.fill();
       }
 
-      // Connection ports — small circles anchoring the conduit to its endpoints
-      // (reference frame 1 — precise connection points on node borders).
+      // Connection ports — crisp technical anchors: outer ring + bright core dot
+      // (reference frame 1 — precise connection points on node borders; the
+      // destination port pulses softly while a packet is inbound — frame 6).
       {
         const s = p.pts[0],
           t = p.pts[p.pts.length - 1];
-        const portAlpha = 0.35 + lit * 0.5;
-        const portColor =
-          e.style === "fire" && e.state === "active"
-            ? `rgba(255,200,150,${portAlpha})`
+        const inbound = this.packets.some((pk) => this.paths[pk.e] === p && pk.d > p.len * 0.45);
+        const pulse = inbound ? 0.55 + 0.45 * Math.sin(this.time * 6.5) : 0;
+        const portAlpha = 0.35 + lit * 0.45 + pulse * 0.4;
+        const ringAlpha = 0.22 + lit * 0.3 + pulse * 0.3;
+        const fire = e.style === "fire" && e.state === "active";
+        const dotColor =
+          fire
+            ? `rgba(255,214,170,${portAlpha})`
             : e.style === "rose"
             ? `rgba(251,113,133,${portAlpha})`
             : e.style === "amber"
             ? `rgba(252,211,77,${portAlpha})`
             : e.style === "emerald"
             ? `rgba(52,211,153,${portAlpha})`
-            : `rgba(150,190,235,${portAlpha})`;
-        g.fillStyle = portColor;
-        g.beginPath();
-        g.arc(s.x, s.y, 2.6, 0, Math.PI * 2);
-        g.fill();
-        g.beginPath();
-        g.arc(t.x, t.y, 2.6, 0, Math.PI * 2);
-        g.fill();
+            : `rgba(170,215,250,${portAlpha})`;
+        const ringColor =
+          fire
+            ? `rgba(255,170,110,${ringAlpha})`
+            : `rgba(120,185,235,${ringAlpha})`;
+
+        for (const pt of [s, t]) {
+          // soft socket glow where an energized beam plugs into the port
+          if (fire || (e.style === "cyan" && e.state === "active") || e.style === "amber" || (e.style === "rose" && e.state === "blocked")) {
+            const gs = fire ? this.fireSprite : e.style === "amber" ? this.amberSprite : e.style === "rose" ? this.roseSprite : this.blueSprite;
+            g.globalAlpha = 0.3 + lit * 0.3 + pulse * 0.25;
+            g.drawImage(gs, pt.x - 8.5, pt.y - 8.5, 17, 17);
+            g.globalAlpha = 1;
+          }
+          g.strokeStyle = ringColor;
+          g.lineWidth = 1;
+          g.beginPath();
+          g.arc(pt.x, pt.y, 3.1, 0, Math.PI * 2);
+          g.stroke();
+          g.fillStyle = dotColor;
+          g.beginPath();
+          g.arc(pt.x, pt.y, 1.5, 0, Math.PI * 2);
+          g.fill();
+        }
       }
 
       g.restore(); // focus dim scope
@@ -1416,12 +1460,11 @@ export class FlowEngine {
     }
     g.globalAlpha = 1;
 
-    // --- Directional Laser Streaks (Packets)
+    // --- Directional Laser Streaks (Packets) — white-hot comet with volumetric tail
     for (const pk of this.packets) {
       const p = this.paths[pk.e];
       if (!p) continue;
       const head = this.pointAt(p, pk.d);
-      const steps = 12;
       const spr =
         pk.tone === "amber"
           ? this.amberSprite
@@ -1435,42 +1478,97 @@ export class FlowEngine {
           ? this.whiteSprite
           : this.blueSprite;
 
-      const rgb =
-        pk.tone === "amber"
-          ? "245,158,11"
-          : pk.tone === "rose"
-          ? "244,63,94"
-          : pk.tone === "emerald"
-          ? "16,185,129"
-          : pk.tone === "fire"
-          ? "249,115,22"
-          : pk.tone === "white"
-          ? "255,255,255"
-          : "56,189,248";
-
-      // Directional laser streak trail
+      const isFire = pk.tone === "fire";
+      // Volumetric tail — smooth gradient: transparent ember tip → saturated
+      // body → white-hot head base (reference spec: 0%/40%/90%/100% stops).
+      // Drawn in two passes per segment: soft gaseous halo + dense core.
+      const steps = 28;
       for (let i = steps; i >= 1; i--) {
         const d = pk.d - (pk.trail * i) / steps;
         if (d < 0) continue;
         const q = this.pointAt(p, d);
-        const t = 1 - i / steps;
-        const r = 0.8 + t * 2.6;
-        g.fillStyle = `rgba(${rgb},${t * t * 0.85})`;
+        const t = 1 - i / steps; // 0 tail tip → 1 head base
+        const rCore = 0.8 + t * 4.2;
+        const rHalo = rCore + 2.6 * t + 1.2;
+        let col: string;
+        if (isFire) {
+          if (t < 0.4) {
+            const u = t / 0.4;
+            col = `rgba(255,${Math.round(68 + 102 * u)},0,${(u * 0.6).toFixed(3)})`;
+          } else {
+            const u = (t - 0.4) / 0.6;
+            col = `rgba(255,${Math.round(170 + 54 * u)},${Math.round(0 + 190 * u)},${(0.6 + 0.4 * u).toFixed(3)})`;
+          }
+        } else {
+          const rgb =
+            pk.tone === "amber"
+              ? "245,158,11"
+              : pk.tone === "rose"
+              ? "244,63,94"
+              : pk.tone === "emerald"
+              ? "16,185,129"
+              : "56,189,248";
+          col = `rgba(${rgb},${(t * t * 0.85).toFixed(3)})`;
+        }
+        // soft gaseous halo pass
+        g.fillStyle = col.replace(/,([\d.]+)\)$/, "," + (parseFloat(col.match(/([\d.]+)\)$/)![1]) * 0.28).toFixed(3) + ")");
         g.beginPath();
-        g.arc(q.x, q.y, r, 0, Math.PI * 2);
+        g.arc(q.x, q.y, rHalo, 0, Math.PI * 2);
+        g.fill();
+        // dense core pass
+        g.fillStyle = col;
+        g.beginPath();
+        g.arc(q.x, q.y, rCore, 0, Math.PI * 2);
         g.fill();
       }
 
-      // White-hot laser core pip
-      const s = 12;
-      g.drawImage(spr, head.x - s, head.y - s, s * 2, s * 2);
+      // Residual heat along the freshly traversed path (soft corona under-glow)
+      {
+        const back = this.pointAt(p, Math.max(0, pk.d - pk.trail * 1.9));
+        const grad = g.createLinearGradient(back.x, back.y, head.x, head.y);
+        const base = isFire ? "255,140,60" : pk.tone === "amber" ? "245,158,11" : pk.tone === "rose" ? "244,63,94" : pk.tone === "emerald" ? "16,185,129" : "56,189,248";
+        grad.addColorStop(0, `rgba(${base},0)`);
+        grad.addColorStop(1, `rgba(${base},${isFire ? 0.3 : 0.18})`);
+        g.save();
+        g.strokeStyle = grad;
+        g.lineWidth = isFire ? 11 : 7;
+        g.beginPath();
+        let began = false;
+        for (let i = 0; i < p.pts.length; i++) {
+          if (p.cum[i] < Math.max(0, pk.d - pk.trail * 1.9)) continue;
+          if (!began) {
+            g.moveTo(back.x, back.y);
+            began = true;
+          }
+          g.lineTo(p.pts[i].x, p.pts[i].y);
+        }
+        g.lineTo(head.x, head.y);
+        g.stroke();
+        g.restore();
+      }
+
+      // Comet head — layered corona: wide soft bloom + tight hot glow + blinding white core
+      const s = isFire ? 23 : 18;
+      g.globalAlpha = 0.6;
+      g.drawImage(spr, head.x - s * 1.7, head.y - s * 1.7, s * 3.4, s * 3.4);
+      g.globalAlpha = 0.95;
+      g.drawImage(spr, head.x - s * 0.9, head.y - s * 0.9, s * 1.8, s * 1.8);
+      g.globalAlpha = 1;
+      // tight white-hot plasma center
+      g.drawImage(this.whiteSprite, head.x - s * 0.42, head.y - s * 0.42, s * 0.84, s * 0.84);
       g.fillStyle = "#ffffff";
       g.beginPath();
-      g.arc(head.x, head.y, 2.2, 0, Math.PI * 2);
+      g.arc(head.x, head.y, isFire ? 4.1 : 3.2, 0, Math.PI * 2);
       g.fill();
+      if (isFire) {
+        g.fillStyle = "rgba(255,248,236,0.95)";
+        g.beginPath();
+        g.arc(head.x, head.y, 6.4, 0, Math.PI * 2);
+        g.fill();
+      }
     }
 
-    // --- Arrival Shockwave Rings (Dual concentric rings)
+    // --- Arrival Shockwave Rings (Dual concentric rings, gold-leaning for execution)
     for (const r of this.rings) {
       const k2 = r.life / r.max;
       const alpha = r.isSecondary ? (1 - k2) * 0.45 : (1 - k2) * 0.8;
@@ -1482,11 +1580,11 @@ export class FlowEngine {
           : r.tone === "emerald"
           ? `rgba(16,185,129,${alpha})`
           : r.tone === "fire"
-          ? `rgba(255,170,90,${alpha})`
+          ? `rgba(255,204,102,${alpha})`
           : `rgba(56,189,248,${alpha})`;
 
       g.strokeStyle = strokeCol;
-      g.lineWidth = r.isSecondary ? 1.4 * (1 - k2) + 0.3 : 2.4 * (1 - k2) + 0.5;
+      g.lineWidth = r.isSecondary ? 1.6 * (1 - k2) + 0.35 : 3 * (1 - k2) + 0.6;
       g.beginPath();
       if (r.tone === "fire") {
         g.roundRect(r.x - r.r * k2 * 1.5, r.y - r.r * k2 * 0.7, r.r * k2 * 3, r.r * k2 * 1.4, 18);
@@ -1494,6 +1592,104 @@ export class FlowEngine {
         g.arc(r.x, r.y, r.r * Math.pow(k2, r.isSecondary ? 0.8 : 0.6), 0, Math.PI * 2);
       }
       g.stroke();
+    }
+
+    // --- Contact Flashes (white-hot impact instant — reference frame 4)
+    for (const fl of this.flashes) {
+      const k2 = fl.life / fl.max;
+      const fade = 1 - k2;
+      const rad = 10 + 30 * k2;
+      const spr =
+        fl.tone === "rose"
+          ? this.roseSprite
+          : fl.tone === "amber"
+          ? this.amberSprite
+          : fl.tone === "emerald"
+          ? this.emeraldSprite
+          : fl.tone === "fire"
+          ? this.fireSprite
+          : this.blueSprite;
+      g.globalAlpha = fade;
+      g.drawImage(spr, fl.x - rad, fl.y - rad, rad * 2, rad * 2);
+      g.globalAlpha = fade * 0.9;
+      g.drawImage(this.whiteSprite, fl.x - rad * 0.5, fl.y - rad * 0.5, rad, rad);
+      g.globalAlpha = fade;
+      g.fillStyle = "#ffffff";
+      g.beginPath();
+      g.arc(fl.x, fl.y, 2.6 + 3.2 * fade, 0, Math.PI * 2);
+      g.fill();
+      g.globalAlpha = 1;
+    }
+
+    // --- Source-Node Ignition Arcs (reference frame 2 — C-arc border light-up)
+    // A short luminous arc sweeps the emitting node's perimeter while dispatch
+    // energy is fresh. Strictly state-driven: fades with real energy decay.
+    for (const n of this.nodeMap.values()) {
+      const en = this.energy.get(n.id) || 0;
+      if (en < 0.3) continue;
+      const related = !this.focusNodes || this.focusNodes.has(n.id);
+      const arcEn = en * (related ? 1 : 0.3);
+      if (arcEn < 0.3) continue;
+      const isCore = n.id === "core";
+      const isBlocked = n.state === "blocked";
+      const executing = n.type === "agent" && n.state === "active";
+      const col = isBlocked ? "251,113,133" : isCore || executing ? "255,170,90" : "125,211,252";
+      const alpha = 0.35 + arcEn * 0.5;
+      g.save();
+      g.strokeStyle = `rgba(${col},${alpha})`;
+      g.lineWidth = 2.2;
+      if (n.kind === "round") {
+        const rr = n.w / 2 + 5;
+        const a0 = this.time * 2.2 + (n.x % 7);
+        g.beginPath();
+        g.arc(n.x, n.y, rr, a0, a0 + 1.0);
+        g.stroke();
+        g.beginPath();
+        g.arc(n.x, n.y, rr + 3.5, a0 + Math.PI, a0 + Math.PI + 0.7);
+        g.stroke();
+      } else {
+        const x = n.x - n.w / 2 - 5,
+          y = n.y - n.h / 2 - 5,
+          w = n.w + 10,
+          h = n.h + 10;
+        const per = 2 * (w + h);
+        g.setLineDash([per * 0.22, per * 0.78]);
+        g.lineDashOffset = -this.time * 90;
+        g.beginPath();
+        g.roundRect(x, y, w, h, 14);
+        g.stroke();
+        g.setLineDash([]);
+      }
+      g.restore();
+    }
+
+    // --- Executing Specialist Gold Spark Halo (reference frame 7 — processing
+    // agent wrapped in gold sparks). Deterministic orbital swarm derived purely
+    // from live node state + time: zero activity when nobody is executing.
+    for (const n of this.nodeMap.values()) {
+      if (n.type !== "agent" || n.id === "core" || n.state !== "active") continue;
+      const related = !this.focusNodes || this.focusNodes.has(n.id);
+      if (!related) continue;
+      const R = n.w / 2;
+      for (let i = 0; i < 11; i++) {
+        const omega = 0.55 + 0.9 * ((i * 37) % 10) / 10;
+        const phase = (i * 2.399) % (Math.PI * 2);
+        const ang = this.time * omega + phase;
+        const rr = R + 7 + ((i * 53) % 12);
+        const yy = Math.sin(this.time * 1.7 + i * 1.9) * 9;
+        const x = n.x + Math.cos(ang) * rr;
+        const y = n.y + Math.sin(ang) * rr * 0.92 + yy;
+        const flick = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.time * 9 + i * 2.7));
+        const size = 1.6 + ((i * 29) % 10) / 10 * 2.2;
+        g.globalAlpha = flick * 0.85;
+        g.drawImage(i % 3 === 0 ? this.whiteSprite : this.fireSprite, x - size * 2.2, y - size * 2.2, size * 4.4, size * 4.4);
+        g.globalAlpha = flick;
+        g.fillStyle = i % 3 === 0 ? "#fff6e8" : "#ffcf6e";
+        g.beginPath();
+        g.arc(x, y, size * 0.6, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
     }
 
     g.globalCompositeOperation = "source-over";
