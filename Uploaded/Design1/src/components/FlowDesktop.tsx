@@ -4,10 +4,10 @@ import {
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
   Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
-  Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target,
-  Mail, Send, Search, Database, Terminal, Globe, GitBranch,
+  Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target, Clock,
+  Mail, Send, GitBranch,
 } from "lucide-react";
-import { FlowEngine, WORLD, deriveGraph, mapGraphDTOToFlowModel, type FlowNode, type SpatialCard } from "../lib/flow";
+import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
@@ -17,6 +17,7 @@ import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 import {
   Node as Phase4Node,
+  IconContainer,
   IconOnlyContent,
   IconTitleContent,
   IconMetaContent,
@@ -25,7 +26,6 @@ import {
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
-  type NodePortProps,
 } from "../../../../src/components/workflow";
 import type { GraphDTO } from "../../../../src/types/graph";
 import { fetchGraphOverview, decideApproval } from "../lib/runtime";
@@ -50,7 +50,23 @@ const META: Record<string, Meta> = {
     desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
     agent: "sophia",
   },
+  coo: {
+    title: "Sophia",
+    sub: "COO & Orchestrator",
+    icon: <Bot size={28} strokeWidth={1.8} />,
+    tint: "#fb923c",
+    desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
+    agent: "sophia",
+  },
   ops: {
+    title: "Dr. Aris Thorne",
+    sub: "Research & Intelligence",
+    icon: <ClipboardList size={26} strokeWidth={1.8} />,
+    tint: "#38bdf8",
+    desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
+    agent: "ops",
+  },
+  researcher: {
     title: "Dr. Aris Thorne",
     sub: "Research & Intelligence",
     icon: <ClipboardList size={26} strokeWidth={1.8} />,
@@ -81,9 +97,23 @@ const META: Record<string, Meta> = {
     tint: "#34d399",
     desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, safe mock isolation, and single-use cryptographic signature binding.",
   },
+  verifier: {
+    title: "Constitutional Verifier",
+    sub: "Deterministic Safety Gate",
+    icon: <ShieldCheck size={26} strokeWidth={1.8} />,
+    tint: "#34d399",
+    desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, safe mock isolation, and single-use cryptographic signature binding.",
+  },
   outcome: {
     title: "Governed Outcome",
     sub: "Immutable Vault",
+    icon: <PackageCheck size={26} strokeWidth={1.8} />,
+    tint: "#34d399",
+    desc: "Cryptographically verified deliverables and historical outcomes safely committed to durable company memory.",
+  },
+  vault: {
+    title: "Governed Vault",
+    sub: "Immutable Memory",
     icon: <PackageCheck size={26} strokeWidth={1.8} />,
     tint: "#34d399",
     desc: "Cryptographically verified deliverables and historical outcomes safely committed to durable company memory.",
@@ -106,13 +136,17 @@ const META: Record<string, Meta> = {
 
 const getMeta = (n: FlowNode): Meta => {
   if (n.type === "workflow") {
-    const stepLabel = n.subtitle ?? "Protocol Step";
+    const stepLabel = n.subtitle ?? "Work";
+    const steps = n.dtoNode?.metadata?.executionSteps;
+    const doneCount = steps?.filter((s) => s.status === "done" || s.status === "failed").length ?? 0;
     return {
       title: n.title,
       sub: stepLabel,
-      icon: <Activity size={24} strokeWidth={1.8} />,
+      icon: n.state === "complete" ? <PackageCheck size={24} strokeWidth={1.8} /> : <Activity size={24} strokeWidth={1.8} />,
       tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : n.state === "active" ? "#38bdf8" : "#94a3b8",
-      desc: n.activity ?? `${stepLabel} actively governed under SamJuniorsOS protocol invariants.`,
+      desc: steps
+        ? `${stepLabel} · execution trail ${doneCount}/${steps.length} stages${n.activity ? ` · ${n.activity}` : ""}`
+        : n.activity ?? `${stepLabel} actively governed under SamJuniorsOS protocol invariants.`,
       agent: n.owner,
     };
   }
@@ -166,10 +200,104 @@ type EntityVisual = {
   serviceBrand?: string;
 };
 
+/**
+ * Phase 4.3B.1 — Entity-identity-first visual resolution.
+ *
+ * PRECEDENCE (locked):
+ *   1. Actual entity identity — id / type / role / owner (founder, Sophia,
+ *      Thorne, Cruz, Lin, approval, verifier, vault). Resolved BEFORE any
+ *      keyword matching so employees can never be misrendered as external
+ *      services ("research" must not contain "search" into a Google card).
+ *   2. Work objects — rendered as work cards with their own visual.
+ *   3. Service keyword fallback — ONLY for genuinely unmatched external
+ *      service nodes; never consulted for known company entities.
+ */
 function getEntityVisual(n: FlowNode): EntityVisual {
-  const text = `${n.id} ${n.title} ${n.subtitle ?? ""} ${n.activity ?? ""}`.toLowerCase();
+  // ---- 1. Actual entity identity (authoritative id/type/role/owner) ----
+  if (n.id === "founder" || n.type === "founder" || n.dtoNode?.role === "founder") {
+    return {
+      icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
+      tint: "#38bdf8",
+      primaryLabel: "Founder / Authority",
+      subLabel: "DIRECTIVES",
+    };
+  }
+  if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.dtoNode?.role === "coo") {
+    return {
+      icon: <Bot size={26} strokeWidth={1.8} className="text-orange-300" />,
+      tint: "#fb923c",
+      primaryLabel: "Sophia",
+      subLabel: "COO & ORCHESTRATOR",
+    };
+  }
+  if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher" || n.dtoNode?.role === "researcher") {
+    return {
+      icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
+      tint: "#38bdf8",
+      primaryLabel: "Dr. Aris Thorne",
+      subLabel: "RESEARCH SPECIALIST",
+    };
+  }
+  if (n.id === "finance" || n.owner === "finance" || n.dtoNode?.role === "finance") {
+    return {
+      icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
+      tint: "#34d399",
+      primaryLabel: "Julian Cruz",
+      subLabel: "FINANCE SPECIALIST",
+    };
+  }
+  if (n.id === "pm" || n.owner === "pm" || n.dtoNode?.role === "pm") {
+    return {
+      icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
+      tint: "#c084fc",
+      primaryLabel: "Maya Lin",
+      subLabel: "PRODUCT ARCHITECT",
+    };
+  }
+  if (n.type === "approval" || n.id === "approval") {
+    return {
+      icon: <Scale size={24} strokeWidth={1.8} className="text-amber-300" />,
+      tint: "#fbbf24",
+      primaryLabel: "Founder Approval",
+      subLabel: "RATIFICATION GATE",
+    };
+  }
+  if (n.type === "verification" || n.id === "verification" || n.id === "verifier") {
+    return {
+      icon: <ShieldCheck size={24} strokeWidth={1.8} className={n.state === "blocked" ? "text-rose-400" : "text-emerald-400"} />,
+      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
+      primaryLabel: "Constitutional Verifier",
+      subLabel: "SAFETY GATE",
+    };
+  }
+  if (n.type === "outcome" || n.id === "outcome" || n.id === "vault") {
+    return {
+      icon: <PackageCheck size={24} strokeWidth={1.8} className="text-emerald-400" />,
+      tint: "#34d399",
+      primaryLabel: "Governed Vault",
+      subLabel: "IMMUTABLE MEMORY",
+    };
+  }
 
-  // 1. External Services (Real recognizable icons)
+  // ---- 2. Work objects — first-class work cards ----
+  if (n.type === "workflow") {
+    const isDone = n.state === "complete";
+    return {
+      icon: isDone
+        ? <PackageCheck size={22} strokeWidth={1.8} className="text-emerald-300" />
+        : n.state === "blocked"
+        ? <AlertTriangle size={22} strokeWidth={1.8} className="text-rose-300" />
+        : n.state === "waiting"
+        ? <Clock size={22} strokeWidth={1.8} className="text-amber-200" />
+        : <Activity size={22} strokeWidth={1.8} className="text-cyan-300" />,
+      tint: isDone ? "#34d399" : n.state === "blocked" ? "#fb7185" : n.state === "waiting" ? "#fbbf24" : "#38bdf8",
+      primaryLabel: n.title,
+      subLabel: (n.subtitle ?? "WORK").toUpperCase(),
+    };
+  }
+
+  // ---- 3. External service fallback (ONLY for genuinely unmatched nodes) ----
+  const text = `${n.id} ${n.title}`.toLowerCase();
   if (text.includes("github") || text.includes("git")) {
     return {
       icon: <GitBranch size={24} strokeWidth={1.8} className="text-white" />,
@@ -188,16 +316,16 @@ function getEntityVisual(n: FlowNode): EntityVisual {
       serviceBrand: "Slack",
     };
   }
-  if (text.includes("telegram") || text.includes("reply to lead") || text.includes("send message")) {
+  if (text.includes("telegram")) {
     return {
       icon: <Send size={22} strokeWidth={1.8} className="text-[#2AABEE]" />,
       tint: "#2AABEE",
-      primaryLabel: n.title.toLowerCase().includes("reply") ? "Reply to Lead" : "Telegram",
+      primaryLabel: "Telegram",
       subLabel: "COMMUNICATION",
       serviceBrand: "Telegram",
     };
   }
-  if (text.includes("gmail") || text.includes("email") || text.includes("mail")) {
+  if (text.includes("gmail") || text.includes("email")) {
     return {
       icon: <Mail size={22} strokeWidth={1.8} className="text-[#EA4335]" />,
       tint: "#EA4335",
@@ -206,105 +334,305 @@ function getEntityVisual(n: FlowNode): EntityVisual {
       serviceBrand: "Gmail",
     };
   }
-  if (text.includes("google") || text.includes("search") || text.includes("reconnaissance") || text.includes("market")) {
-    return {
-      icon: <Search size={24} strokeWidth={1.8} className="text-[#4285F4]" />,
-      tint: "#4285F4",
-      primaryLabel: n.title.toLowerCase().includes("market") ? "Market Reconnaissance" : "Google Search",
-      subLabel: "RESEARCH SERVICE",
-      serviceBrand: "Google",
-    };
-  }
-  if (text.includes("terminal") || text.includes("cli") || text.includes("sandbox")) {
-    return {
-      icon: <Terminal size={22} strokeWidth={1.8} className="text-emerald-400" />,
-      tint: "#34d399",
-      primaryLabel: n.title,
-      subLabel: "RUNTIME EXECUTION",
-    };
-  }
-  if (text.includes("database") || text.includes("postgres") || text.includes("memory")) {
-    return {
-      icon: <Database size={22} strokeWidth={1.8} className="text-blue-400" />,
-      tint: "#38bdf8",
-      primaryLabel: n.title,
-      subLabel: "DATA STORAGE",
-    };
-  }
 
-  // 2. Core OS Roles
-  if (n.id === "founder" || n.type === "founder") {
-    return {
-      icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
-      tint: "#38bdf8",
-      primaryLabel: "Founder / Authority",
-      subLabel: "DIRECTIVES",
-    };
-  }
-  if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.dtoNode?.role === "coo") {
-    return {
-      icon: <Bot size={28} strokeWidth={1.8} className="text-orange-300" />,
-      tint: "#fb923c",
-      primaryLabel: "Sophia",
-      subLabel: "COO & ORCHESTRATOR",
-    };
-  }
-  if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher") {
-    return {
-      icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
-      tint: "#38bdf8",
-      primaryLabel: "Dr. Aris Thorne",
-      subLabel: "RESEARCH SPECIALIST",
-    };
-  }
-  if (n.id === "finance" || n.owner === "finance") {
-    return {
-      icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
-      tint: "#34d399",
-      primaryLabel: "Julian Cruz",
-      subLabel: "FINANCE SPECIALIST",
-    };
-  }
-  if (n.id === "pm" || n.owner === "pm") {
-    return {
-      icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
-      tint: "#c084fc",
-      primaryLabel: "Maya Lin",
-      subLabel: "PRODUCT ARCHITECT",
-    };
-  }
-  if (n.type === "approval" || n.id === "approval") {
-    return {
-      icon: <Scale size={24} strokeWidth={1.8} className="text-amber-300" />,
-      tint: "#fbbf24",
-      primaryLabel: "Founder Approval",
-      subLabel: "RATIFICATION GATE",
-    };
-  }
-  if (n.type === "verification" || n.id === "verification") {
-    return {
-      icon: <ShieldCheck size={24} strokeWidth={1.8} className={n.state === "blocked" ? "text-rose-400" : "text-emerald-400"} />,
-      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
-      primaryLabel: "Constitutional Verifier",
-      subLabel: "SAFETY GATE",
-    };
-  }
-  if (n.type === "outcome" || n.id === "outcome") {
-    return {
-      icon: <PackageCheck size={24} strokeWidth={1.8} className="text-emerald-400" />,
-      tint: "#34d399",
-      primaryLabel: "Governed Vault",
-      subLabel: "IMMUTABLE MEMORY",
-    };
-  }
-
-  // 3. General Workflow Steps / Actions
+  // ---- 4. General unmatched node ----
   return {
-    icon: <Activity size={22} strokeWidth={1.8} className="text-cyan-300" />,
+    icon: <Bot size={22} strokeWidth={1.8} className="text-cyan-300" />,
     tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : "#38bdf8",
     primaryLabel: n.title,
-    subLabel: n.protocolStep ? n.protocolStep.replace("step-", "").toUpperCase() : n.subtitle ?? "WORKFLOW ACTION",
+    subLabel: n.subtitle ?? "COMPANY NODE",
   };
+}
+
+/** Owner metadata chip — execution metadata attached to work, per the locked model. */
+const OWNER_VISUALS: Record<string, { label: string; tint: string; icon: ReactNode }> = {
+  coo: { label: "Sophia", tint: "#fb923c", icon: <Bot size={11} strokeWidth={2} /> },
+  researcher: { label: "Thorne", tint: "#38bdf8", icon: <ClipboardList size={11} strokeWidth={2} /> },
+  ops: { label: "Thorne", tint: "#38bdf8", icon: <ClipboardList size={11} strokeWidth={2} /> },
+  finance: { label: "Cruz", tint: "#34d399", icon: <Coins size={11} strokeWidth={2} /> },
+  pm: { label: "Lin", tint: "#c084fc", icon: <FileText size={11} strokeWidth={2} /> },
+};
+
+const WORK_STATE_LABEL: Record<string, string> = {
+  running: "RUNNING",
+  active: "RUNNING",
+  processing: "PROCESSING",
+  waiting: "WAITING",
+  paused: "PARKED",
+  halted: "DECISION",
+  blocked: "BLOCKED",
+  failed: "BLOCKED",
+  completed: "DELIVERED",
+  complete: "DELIVERED",
+  idle: "PARKED",
+};
+
+/**
+ * Phase 4.3B.1 — WorkCard: the first-class actionable visual object.
+ * Title · state · progress (from the authoritative execution trail) ·
+ * owner metadata · blocked/waiting indication. No ports (no automation
+ * wire-building affordances on the company canvas).
+ */
+function WorkCard({
+  n,
+  selected,
+  hasSelection,
+  badge,
+  onClick,
+  onDoubleClick,
+}: {
+  n: FlowNode;
+  selected?: boolean;
+  hasSelection?: boolean;
+  badge?: ReactNode;
+  onClick?: (n: FlowNode) => void;
+  onDoubleClick?: (n: FlowNode) => void;
+}) {
+  const dto = n.dtoNode;
+  const visual = getEntityVisual(n);
+  const steps = dto?.metadata?.executionSteps;
+  const settledCount = steps?.filter((s) => s.status === "done" || s.status === "failed").length ?? 0;
+  const total = steps?.length ?? 0;
+  const progress = total > 0 ? settledCount / total : 0;
+  const owner = OWNER_VISUALS[dto?.owner ?? n.owner ?? ""];
+
+  const runtime = dto?.runtimeState ?? n.state;
+  const stateLabel = WORK_STATE_LABEL[runtime] ?? runtime.toUpperCase();
+  const isBlocked = runtime === "failed" || runtime === "blocked";
+  const isWaiting = runtime === "waiting" || runtime === "halted" || dto?.governanceState === "awaiting_founder_approval";
+  const isDelivered = runtime === "completed" || runtime === "complete" || n.state === "complete";
+
+  // Phase 4.1 presentation state mapping
+  let nodeState: NodeStateType = "default";
+  if (selected) {
+    nodeState = "selected";
+  } else if (dto?.presentationState) {
+    nodeState = dto.presentationState === "waiting" ? "processing" : (dto.presentationState as NodeStateType);
+  } else {
+    if (n.state === "waiting") nodeState = "processing";
+    else if (n.state === "blocked") nodeState = "error";
+    else if (n.state === "active") nodeState = "active";
+    else if (n.state === "complete") nodeState = "success";
+  }
+
+  let indicator: NodeIndicator | undefined = undefined;
+  if (isWaiting) indicator = { status: "waiting", glow: true };
+  else if (dto?.runtimeState === "running" || n.state === "active") indicator = { status: "active", glow: true };
+  else if (isBlocked) indicator = { status: "error", glow: true };
+  else if (isDelivered) indicator = { status: "success" };
+
+  const stateChipClass = isBlocked
+    ? "border-rose-400/40 bg-rose-400/10 text-rose-200"
+    : isWaiting
+    ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+    : isDelivered
+    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
+    : "border-cyan-400/40 bg-cyan-400/10 text-cyan-200";
+
+  const content = (
+    <div className="flex h-full w-full flex-col justify-between p-3">
+      <div className="flex items-start gap-2.5">
+        <div className="shrink-0 pt-0.5">
+          <IconContainer variant="glass" color={visual.tint} glow={selected || nodeState === "active"} size="md">
+            {visual.icon}
+          </IconContainer>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div
+            className={`truncate text-left text-[12.5px] font-semibold leading-tight transition-colors duration-200 ${
+              selected ? "text-cyan-100" : "text-slate-100"
+            }`}
+            title={n.title}
+          >
+            {n.title}
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className={`rounded border px-1.5 py-px font-mono text-[8.5px] font-semibold tracking-[0.1em] ${stateChipClass}`}>
+              {stateLabel}
+            </span>
+            {owner && (
+              <span
+                className="flex items-center gap-1 rounded border border-white/10 bg-white/[0.04] px-1.5 py-px text-[8.5px] font-medium tracking-wide text-slate-300"
+                style={{ color: owner.tint }}
+                title={`Owner · ${owner.label}`}
+              >
+                {owner.icon}
+                {owner.label}
+              </span>
+            )}
+            {isWaiting && (
+              <span className="flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-px font-mono text-[8.5px] font-semibold tracking-[0.1em] text-amber-200">
+                <Clock size={9} /> DECISION POINT
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      {total > 0 && (
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isBlocked
+                  ? "bg-rose-400 shadow-[0_0_6px_rgba(251,113,133,0.8)]"
+                  : isDelivered
+                  ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
+                  : "bg-cyan-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]"
+              }`}
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+          <span className="tnum shrink-0 font-mono text-[8.5px] tracking-wider text-slate-500">
+            {settledCount}/{total}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const externalLabel = (
+    <div className="flex flex-col items-center pointer-events-none select-none transition-all duration-200">
+      <span className={`text-[9px] tracking-[0.16em] uppercase font-mono transition-colors duration-200 ${selected ? "text-cyan-300 font-medium" : "text-slate-500"}`}>
+        {(n.subtitle ?? "work").toUpperCase()}
+      </span>
+    </div>
+  );
+
+  const isDimmed = hasSelection && !selected;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Work: ${n.title}`}
+      className={`group absolute cursor-pointer select-none transition-all duration-200 hover:-translate-y-0.5 active:scale-98 ${
+        isDimmed ? "opacity-45 hover:opacity-85" : "opacity-100"
+      }`}
+      style={{
+        left: n.x - n.w / 2,
+        top: n.y - n.h / 2,
+        width: n.w,
+        height: n.h,
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(n);
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDoubleClick?.(n);
+      }}
+    >
+      <div className="relative h-full w-full">
+        <Phase4Node
+          id={`work-node-${n.id}`}
+          geometry="squircle"
+          state={nodeState}
+          customWidth={n.w}
+          customHeight={n.h}
+          indicator={indicator}
+          ports={[]}
+          externalLabel={externalLabel}
+          className="!m-0 h-full w-full"
+        >
+          {content}
+        </Phase4Node>
+        {badge && <div className="pointer-events-none absolute -right-1 -top-1 z-30">{badge}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Phase 4.3B.1 — Focus-reveal: the local workflow of a focused work object,
+ * rendered on-canvas beneath the work card. Stages come exclusively from the
+ * authoritative execution trail (dtoNode.metadata.executionSteps) — the
+ * workflow is NOT a globally visible pipeline.
+ */
+function ExecutionTrailOverlay({ n }: { n: FlowNode }) {
+  const steps = n.dtoNode?.metadata?.executionSteps;
+  if (!steps || steps.length === 0) return null;
+  const width = Math.max(n.w, steps.length * 96 + 32);
+
+  return (
+    <div
+      className="pointer-events-none absolute z-20 rounded-2xl border border-cyan-300/20 bg-[#06101e]/94 p-2.5 shadow-[0_16px_44px_-14px_rgba(0,0,0,0.85)] backdrop-blur-md"
+      style={{
+        left: n.x - width / 2,
+        top: n.y + n.h / 2 + 18,
+        width,
+        animation: `os-in 260ms ${EASE}`,
+      }}
+    >
+      <div className="mb-2 flex items-center justify-between px-1">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-cyan-200/90">Local workflow · execution trail</span>
+        <span className="tnum font-mono text-[8.5px] tracking-wider text-slate-500">
+          {steps.filter((s) => s.status === "done" || s.status === "failed").length}/{steps.length} STAGES
+        </span>
+      </div>
+      <div className="flex items-stretch gap-1.5">
+        {steps.map((s, i) => {
+          const dotClass =
+            s.status === "done"
+              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+              : s.status === "failed"
+              ? "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]"
+              : s.status === "current"
+              ? "bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.9)] animate-pulse"
+              : s.status === "waiting"
+              ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.8)]"
+              : "bg-slate-600";
+          const owner = OWNER_VISUALS[s.ownerAgentId ?? ""];
+          return (
+            <div key={`${s.step}-${i}`} className="flex flex-1 flex-col items-center gap-1.5">
+              <div className="flex w-full items-center gap-1">
+                {i > 0 && <div className={`h-px flex-1 ${i <= steps.findIndex((x) => x.status !== "done") ? "bg-emerald-400/40" : "bg-white/10"}`} />}
+                <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+                {i < steps.length - 1 && <div className="h-px flex-1 bg-white/10" />}
+              </div>
+              <span
+                className={`text-center text-[8.5px] font-medium leading-tight ${
+                  s.status === "pending" ? "text-slate-600" : s.status === "failed" ? "text-rose-200" : "text-slate-300"
+                }`}
+              >
+                {s.label}
+              </span>
+              {owner ? (
+                <span className="text-[7.5px] font-mono uppercase tracking-wide" style={{ color: `${owner.tint}cc` }}>
+                  {owner.label}
+                </span>
+              ) : (
+                <span className="text-[7.5px] font-mono uppercase tracking-wide text-slate-700">—</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Phase 4.3B.1 — semantic region zone chrome. Pure presentation: labels the
+ * spatial structure of the company context; contains no fabricated data.
+ */
+function RegionZone({ label, sub, x, y, w, h, quiet }: { label: string; sub?: string; x: number; y: number; w: number; h: number; quiet?: boolean }) {
+  return (
+    <div
+      className="pointer-events-none absolute rounded-[26px] border border-white/[0.06]"
+      style={{ left: x - w / 2, top: y - h / 2, width: w, height: h }}
+    >
+      <div className="absolute left-4 top-3 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-slate-600">{label}</span>
+        {sub && <span className="max-w-[420px] truncate text-[9px] tracking-[0.14em] text-slate-700">{sub}</span>}
+      </div>
+      {quiet && (
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] tracking-[0.24em] text-slate-700">
+          — NO ACTIVE WORK · COMPANY CALM —
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Phase4NodeCard({
@@ -361,26 +689,9 @@ function Phase4NodeCard({
     indicator = { status: "success" };
   }
 
-  // 4. Ports based on role / topology
-  const ports: NodePortProps[] = [];
-  const isPortActive = nodeState === "active" || nodeState === "selected";
-  if (n.id === "founder") {
-    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
-    ports.push({ position: "bottom", shape: "circle", state: isPortActive ? "active" : "default" });
-  } else if (n.id === "core" || n.dtoNode?.role === "coo") {
-    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
-    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
-    ports.push({ position: "bottom", shape: "circle", state: isPortActive ? "active" : "default" });
-  } else if (n.type === "approval") {
-    ports.push({ position: "top", shape: "square", state: "active" });
-    ports.push({ position: "right", shape: "square", state: "active" });
-  } else if (n.type === "outcome") {
-    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
-  } else {
-    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
-    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
-    ports.push({ position: "top", shape: "circle", state: isPortActive ? "active" : "default" });
-  }
+  // 4. Phase 4.3B.1 — NO ports on the company canvas: port affordances belong
+  // to the automation-builder aesthetic (see /design-system/workflow specimen),
+  // not to the founder-facing spatial company context.
 
   // 5. External Semantic Label (Sitting outside/below node)
   const externalLabel = (
@@ -413,7 +724,7 @@ function Phase4NodeCard({
       iconVariant={geometry === "squircle" ? "squircle" : "glass"}
       color={visual.tint}
       glow={selected || nodeState === "active"}
-      size={n.kind === "core" ? "lg" : "md"}
+      size={n.kind === "core" ? "lg" : n.w <= 56 ? "sm" : "md"}
     />
   );
 
@@ -449,7 +760,7 @@ function Phase4NodeCard({
           customWidth={n.w}
           customHeight={n.h}
           indicator={indicator}
-          ports={ports}
+          ports={[]}
           externalLabel={externalLabel}
           className="!m-0 h-full w-full"
         >
@@ -713,7 +1024,7 @@ function Minimap({ vw, vh, k, pan, nodes, onJump }: {
         <rect x={0} y={0} width={MW} height={MH} fill="rgba(10,20,36,0.6)" />
         {nodes.map((n) => {
           const p = toMini(n.x, n.y);
-          const color = n.id === "core"
+          const color = n.id === "core" || n.id === "coo"
             ? "#fb923c"
             : n.state === "blocked"
             ? "#fb7185"
@@ -725,8 +1036,10 @@ function Minimap({ vw, vh, k, pan, nodes, onJump }: {
             ? "#34d399"
             : n.id === "pm"
             ? "#c084fc"
+            : n.type === "workflow"
+            ? "#67e8f9"
             : "#7dd3fc";
-          return <circle key={n.id} cx={p.x} cy={p.y} r={n.id === "core" ? 3.4 : n.kind === "round" ? 2.4 : 1.8} fill={color} opacity={0.9} />;
+          return <circle key={n.id} cx={p.x} cy={p.y} r={n.type === "workflow" ? 3 : n.id === "core" || n.id === "coo" ? 3.2 : n.kind === "round" ? 2.4 : 1.8} fill={color} opacity={0.9} />;
         })}
         <rect x={Math.min(a.x, b.x)} y={Math.min(a.y, b.y)} width={Math.max(6, Math.abs(b.x - a.x))} height={Math.max(6, Math.abs(b.y - a.y))} fill="rgba(103,232,249,0.12)" stroke="rgba(103,232,249,0.7)" strokeWidth={1} rx={2} />
       </svg>
@@ -844,6 +1157,58 @@ export default function FlowDesktop({
     return deriveGraph(osState);
   }, [graphState.data, graphState.status, osState]);
 
+  // Phase 4.3B.1 — semantic work zones from the view model (deterministic)
+  const workNodes = useMemo(() => graph.nodes.filter((n) => n.type === "workflow"), [graph.nodes]);
+  const activeWorkNodes = useMemo(
+    () => workNodes.filter((n) => { const r = n.dtoNode?.runtimeState ?? n.state; return !(r === "completed" || r === "complete" || r === "paused" || r === "idle" || r === "waiting"); }),
+    [workNodes]
+  );
+  const parkedWorkNodes = useMemo(
+    () => workNodes.filter((n) => { const r = n.dtoNode?.runtimeState ?? n.state; return r === "paused" || r === "idle" || r === "waiting"; }),
+    [workNodes]
+  );
+  const deliveredWorkNodes = useMemo(
+    () => workNodes.filter((n) => { const r = n.dtoNode?.runtimeState ?? n.state; return r === "completed" || r === "complete"; }),
+    [workNodes]
+  );
+
+  /**
+   * Phase 4.3B.1 — default canvas edge visibility by semantic layer:
+   *   context (delegates plumbing)  → never drawn (inspector-only)
+   *   governance (escalations)      → always drawn (amber)
+   *   structural (verifier→vault)   → always drawn (faint)
+   *   ownership (agent↔work)        → drawn when live/blocked or focused
+   */
+  const nodeById = useMemo(() => {
+    const m = new Map<string, FlowNode>();
+    for (const n of graph.nodes) m.set(n.id, n);
+    return m;
+  }, [graph.nodes]);
+
+  const isEdgeVisible = useCallback(
+    (e: FlowEdge): boolean => {
+      switch (e.layer) {
+        case "context":
+          return false;
+        case "governance":
+        case "structural":
+          return true;
+        case "ownership":
+        default: {
+          if (e.state === "active" || e.state === "blocked") return true;
+          if (selected && (e.from === selected.id || e.to === selected.id)) return true;
+          return false;
+        }
+      }
+    },
+    [selected]
+  );
+
+  const visibleEdges = useMemo(
+    () => graph.edges.filter((e) => isEdgeVisible(e)),
+    [graph.edges, isEdgeVisible]
+  );
+
   const metrics = generateSystemMetrics(osState);
   const milestones = generateCompanyMilestones();
 
@@ -869,8 +1234,10 @@ export default function FlowDesktop({
   }, []);
 
   useEffect(() => {
-    engineRef.current?.setGraph(graph);
-  }, [graph]);
+    // Only visibly-drawn edges participate in canvas kinetics — packets never
+    // travel along hidden orchestration plumbing.
+    engineRef.current?.setGraph({ nodes: graph.nodes, edges: visibleEdges, spatialCards: graph.spatialCards });
+  }, [graph, visibleEdges]);
 
   useEffect(() => {
     const el = viewportRef.current!;
@@ -939,13 +1306,23 @@ export default function FlowDesktop({
 
   const focusActiveWork = useCallback(() => {
     osSound.click();
-    const activeNode = graph.nodes.find(
-      (n) =>
-        n.dtoNode?.runtimeState === "running" ||
-        n.state === "active" ||
-        n.dtoNode?.governanceState === "awaiting_founder_approval" ||
-        n.type === "approval"
+    // Phase 4.3B.1 — work objects first: the founder's actionable focus
+    const runningWork = graph.nodes.find(
+      (n) => n.type === "workflow" && (n.dtoNode?.runtimeState === "running" || n.state === "active")
     );
+    const activeNode = runningWork ??
+      graph.nodes.find(
+        (n) =>
+          n.type === "workflow" &&
+          (n.dtoNode?.governanceState === "awaiting_founder_approval" || n.dtoNode?.runtimeState === "failed" || n.state === "blocked")
+      ) ??
+      graph.nodes.find(
+        (n) =>
+          n.dtoNode?.runtimeState === "running" ||
+          n.state === "active" ||
+          n.dtoNode?.governanceState === "awaiting_founder_approval" ||
+          n.type === "approval"
+      );
     if (activeNode) {
       focusNode(activeNode);
       setSelected(activeNode);
@@ -1108,9 +1485,9 @@ export default function FlowDesktop({
   // Real per-node badges from state
   const badgeFor = (node: FlowNode): ReactNode => {
     if (node.type === "approval") return <CountBadge n={decisions.length} tone="amber" />;
-    if (node.id === "core") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
-    if (node.id === "ops" || node.id === "finance" || node.id === "pm") {
-      const ag = agents.find((a) => a.id === node.id);
+    if (node.id === "core" || node.id === "coo") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
+    if (node.id === "ops" || node.id === "researcher" || node.id === "finance" || node.id === "pm") {
+      const ag = agents.find((a) => a.id === node.id || (node.id === "researcher" && a.id === "ops"));
       if (ag) return <StateDot state={ag.state} />;
     }
     return null;
@@ -1133,7 +1510,7 @@ export default function FlowDesktop({
         </div>
 
         <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] tracking-[0.18em] text-slate-400 md:flex">
-          <Layers size={12} className="text-cyan-300" /> LIVING OPERATING GRAPH
+          <Layers size={12} className="text-cyan-300" /> COMPANY CONTEXT · SPATIAL
           <span className="text-slate-700">·</span>
           <span className="tnum font-mono text-cyan-200">{zoomPct}%</span>
         </div>
@@ -1219,14 +1596,22 @@ export default function FlowDesktop({
                 willChange: "transform",
               }}
             >
-              {/* Dynamic Living Connectors (Phase 4.1 Primitive) */}
+              {/* Phase 4.3B.1 — semantic region zones (spatial company context) */}
+              <RegionZone label="COMPANY CONTEXT" sub={`${company.name}${company.focus ? ` · FOCUS: ${company.focus}` : ""}`} x={REGIONS.company.x} y={REGIONS.company.y} w={REGIONS.company.w} h={REGIONS.company.h} />
+              <RegionZone label="ACTIVE WORK" x={REGIONS.active.x} y={REGIONS.active.y} w={REGIONS.active.w} h={REGIONS.active.h} quiet={activeWorkNodes.length === 0} />
+              {parkedWorkNodes.length > 0 && (
+                <RegionZone label="RELATED · DEPENDENCIES" x={REGIONS.related.x} y={REGIONS.related.y} w={REGIONS.related.w} h={REGIONS.related.h} />
+              )}
+              <RegionZone label="GOVERNED OUTCOMES" x={REGIONS.outcomes.x} y={REGIONS.outcomes.y} w={REGIONS.outcomes.w} h={REGIONS.outcomes.h} />
+
+              {/* Dynamic Living Connectors (Phase 4.1 Primitive — semantic layers) */}
               <svg
                 className="pointer-events-none absolute inset-0 overflow-visible"
                 style={{ width: WORLD.W, height: WORLD.H }}
               >
-                {graph.edges.map((e) => {
-                  const fromNode = graph.nodes.find((n) => n.id === e.from);
-                  const toNode = graph.nodes.find((n) => n.id === e.to);
+                {visibleEdges.map((e) => {
+                  const fromNode = nodeById.get(e.from);
+                  const toNode = nodeById.get(e.to);
                   const x1 = e.pts[0]?.[0] ?? (fromNode ? fromNode.x + fromNode.w / 2 : 0);
                   const y1 = e.pts[0]?.[1] ?? (fromNode ? fromNode.y : 0);
                   const x2 = e.pts[e.pts.length - 1]?.[0] ?? (toNode ? toNode.x - toNode.w / 2 : 0);
@@ -1247,9 +1632,11 @@ export default function FlowDesktop({
                   if (e.dtoEdge?.presentationState === "active" || e.dtoEdge?.runtimeState === "running" || e.activity || e.state === "active") connType = "animated";
                   else if (e.relationship === "depends-on") connType = "dashed";
                   else if (e.relationship === "escalates-to") connType = "branch";
+                  else if (e.layer === "ownership") connType = "dashed"; // revealed execution metadata
 
                   const isEdgeSelected = selected?.id === e.from || selected?.id === e.to;
                   const isEdgeDimmed = !!selected && !isEdgeSelected;
+                  const isStructural = e.layer === "structural";
 
                   return (
                     <Phase4Connector
@@ -1262,26 +1649,45 @@ export default function FlowDesktop({
                       tone={tone}
                       hasArrow={e.arrow ?? true}
                       label={isEdgeSelected ? e.relationship : undefined}
-                      className={isEdgeDimmed ? "opacity-25 transition-opacity duration-200" : "opacity-90 transition-opacity duration-200"}
+                      className={`${
+                        isEdgeDimmed ? "opacity-20" : isStructural ? "opacity-50" : "opacity-90"
+                      } transition-opacity duration-200`}
                     />
                   );
                 })}
               </svg>
 
-              {/* Dynamic Living Nodes */}
-              {graph.nodes.map((n) => (
-                <Phase4NodeCard
-                  key={n.id}
-                  n={n}
-                  selected={selected?.id === n.id}
-                  hasSelection={!!selected}
-                  badge={badgeFor(n)}
-                  onClick={(node: FlowNode) => {
-                    if (!panStart.current?.moved) handleNodeClick(node);
-                  }}
-                  onDoubleClick={focusNode}
-                />
-              ))}
+              {/* Dynamic Living Nodes — work cards (first-class) & company nodes */}
+              {graph.nodes.map((n) =>
+                n.type === "workflow" ? (
+                  <WorkCard
+                    key={n.id}
+                    n={n}
+                    selected={selected?.id === n.id}
+                    hasSelection={!!selected}
+                    badge={badgeFor(n)}
+                    onClick={(node: FlowNode) => {
+                      if (!panStart.current?.moved) handleNodeClick(node);
+                    }}
+                    onDoubleClick={focusNode}
+                  />
+                ) : (
+                  <Phase4NodeCard
+                    key={n.id}
+                    n={n}
+                    selected={selected?.id === n.id}
+                    hasSelection={!!selected}
+                    badge={badgeFor(n)}
+                    onClick={(node: FlowNode) => {
+                      if (!panStart.current?.moved) handleNodeClick(node);
+                    }}
+                    onDoubleClick={focusNode}
+                  />
+                )
+              )}
+
+              {/* Focus-reveal: the local workflow of the focused work object */}
+              {selected?.type === "workflow" && <ExecutionTrailOverlay n={selected} />}
 
               {/* Spatial Contextual Cards */}
               {graph.spatialCards.map((card) => (
@@ -1444,6 +1850,62 @@ export default function FlowDesktop({
                     </span>
                   </div>
                 </div>
+
+                {/* Phase 4.3B.1 — Authoritative Execution Trail (work objects) */}
+                {selected.type === "workflow" && selected.dtoNode?.metadata?.executionSteps && selected.dtoNode.metadata.executionSteps.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                    <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-400">
+                      <span>Execution Trail · Local Workflow</span>
+                      <span className="font-mono text-cyan-200">
+                        {selected.dtoNode.metadata.executionSteps.filter((s) => s.status === "done" || s.status === "failed").length}/{selected.dtoNode.metadata.executionSteps.length} STAGES
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {selected.dtoNode.metadata.executionSteps.map((s, i) => {
+                        const stepColor =
+                          s.status === "done" ? "text-emerald-300"
+                          : s.status === "failed" ? "text-rose-300"
+                          : s.status === "current" ? "text-cyan-300"
+                          : s.status === "waiting" ? "text-amber-200"
+                          : "text-slate-500";
+                        const stepBg =
+                          s.status === "failed" ? "border-rose-500/25 bg-rose-500/[0.06]"
+                          : s.status === "current" ? "border-cyan-400/25 bg-cyan-400/[0.06]"
+                          : s.status === "waiting" ? "border-amber-400/25 bg-amber-400/[0.05]"
+                          : s.status === "done" ? "border-emerald-400/20 bg-emerald-400/[0.04]"
+                          : "border-white/[0.06] bg-white/[0.02]";
+                        const stepOwner = OWNER_VISUALS[s.ownerAgentId ?? ""];
+                        return (
+                          <div key={`${s.step}-${i}`} className={`flex items-center justify-between rounded-lg border px-2 py-1 text-[10.5px] ${stepBg}`}>
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className={`font-mono text-[9px] ${stepColor}`}>
+                                {s.status === "done" ? "✓" : s.status === "failed" ? "✗" : s.status === "current" ? "▶" : s.status === "waiting" ? "⏸" : "○"}
+                              </span>
+                              <span className="truncate text-slate-200">{s.label}</span>
+                              {stepOwner && (
+                                <span className="shrink-0 rounded bg-white/[0.06] px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wide" style={{ color: stepOwner.tint }}>
+                                  {stepOwner.label}
+                                </span>
+                              )}
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2">
+                              {typeof s.durationMs === "number" && s.durationMs > 0 && (
+                                <span className="tnum font-mono text-[9px] text-slate-500">{(s.durationMs / 1000).toFixed(1)}s</span>
+                              )}
+                              <span className={`font-mono text-[9px] uppercase tracking-wider ${stepColor}`}>{s.status}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {selected.dtoNode?.owner && (
+                      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-slate-500">
+                        <Bot size={10} className="text-slate-500" />
+                        Owner metadata · <span className="font-mono text-slate-400">{selected.dtoNode.owner}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Authoritative Founder Approval Gate (Zero Optimistic Illusion) */}
                 {(selected.type === "approval" || selected.dtoNode?.governanceState === "awaiting_founder_approval") && (

@@ -109,6 +109,30 @@ export interface GraphNodeGeometry {
   y: number;
 }
 
+/**
+ * Phase 4.3B.1 — Authoritative execution trail for a work object.
+ * Derived deterministically from the actual AgentRun group (or
+ * WorkflowInstance.stepStates) by the server read model. The client
+ * must NEVER fabricate or infer these values.
+ */
+export type GraphExecutionStepStatus =
+  | 'pending'
+  | 'current'
+  | 'done'
+  | 'failed'
+  | 'waiting';
+
+export interface GraphExecutionStepDTO {
+  /** Canonical protocol step id (understand | research | ... | report) or workflow stepId */
+  step: string;
+  /** Human-readable stage label */
+  label: string;
+  status: GraphExecutionStepStatus;
+  /** Execution metadata: the agent that executed (or is executing) this step */
+  ownerAgentId?: string;
+  durationMs?: number;
+}
+
 export interface GraphNodeMetadata {
   runId?: string;
   stepId?: string;
@@ -118,6 +142,8 @@ export interface GraphNodeMetadata {
   classification?: string;
   protocolStep?: string;
   evidenceCount?: number;
+  /** Phase 4.3B.1: local workflow of a work object, revealed on focus (never global) */
+  executionSteps?: GraphExecutionStepDTO[];
 }
 
 export interface GraphNodeDTO {

@@ -1,13 +1,14 @@
 /**
- * FlowEngine — Living SamJuniorsOS operating graph canvas & kinetics.
- * Inspired by REF.mp4 & verified repository definitions:
- *  - Real SamJuniorsOS operational chain: Founder ➜ Sophia ➜ Active Specialists ➜ Contextual Protocol Steps ➜ Verifier ➜ Vault
- *  - Contextual revelation: active DAG steps reveal only as real work progresses; idle remains calm
- *  - Scalable collision-aware column positioning: zero overlap regardless of task count
- *  - Strictly state-driven kinetics: NO synthetic packets when idle; idle breathes ambiently
- *  - Directional laser streaks with velocity-aligned trailing spark emitters
- *  - Dual-ring arrival shockwaves and target perimeter illumination
- *  - Sophia core combustion with procedural ember physics
+ * FlowEngine — Living SamJuniorsOS company-context canvas & kinetics.
+ * Phase 4.3B.1 — spatial company-context model:
+ *  - Semantic regions (company / active work / related / governed outcomes)
+ *    replace the execution-pipeline column grammar.
+ *  - Work objects are first-class visual citizens; their local workflow is
+ *    revealed on focus (never a globally persistent pipeline).
+ *  - Agents are execution metadata (workforce chips), not the primary flow.
+ *  - Edge layers separate structural / ownership / governance truth from
+ *    orchestration plumbing (delegates), which stays inspector-only.
+ * All positions are deterministic functions of authoritative GraphDTO state.
  */
 
 import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "../../../../src/types/graph";
@@ -30,6 +31,15 @@ export type GraphRelationship =
   | "depends-on";
 
 export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose";
+
+/**
+ * Phase 4.3B.1 — semantic edge layer. Determines default canvas visibility:
+ *  - structural:  company structure truth (e.g. verifier feeds vault) — drawn faint
+ *  - ownership:   agent↔work execution metadata — drawn when live or focused
+ *  - governance:  authority escalation (approval gates) — always drawn (amber)
+ *  - context:     orchestration plumbing (delegates) — inspector-only, never drawn
+ */
+export type FlowEdgeLayer = "structural" | "ownership" | "governance" | "context";
 
 export type FlowNode = {
   id: string;
@@ -61,6 +71,7 @@ export type FlowEdge = {
   relationship: GraphRelationship;
   state: GraphNodeState;
   activity?: string;
+  layer?: FlowEdgeLayer;
   dtoEdge?: GraphEdgeDTO;
 };
 
@@ -81,73 +92,123 @@ export type GraphModel = {
   spatialCards: SpatialCard[];
 };
 
+// ---------------------------------------------------------------------------
+// Phase 4.3B.1 — Semantic Spatial Regions (deterministic, stable)
+// ---------------------------------------------------------------------------
+
+/** The three work regions of the company spatial context. */
+export type WorkZone = "active" | "related" | "outcomes";
+
+/** Region zone rectangles (center + size) for canvas chrome. */
+export const REGIONS = {
+  company: { x: 800, y: 240, w: 920, h: 252, label: "COMPANY CONTEXT" },
+  active: { x: 850, y: 646, w: 900, h: 468, label: "ACTIVE WORK" },
+  related: { x: 253, y: 640, w: 266, h: 456, label: "RELATED · DEPENDENCIES" },
+  outcomes: { x: 1485, y: 600, w: 306, h: 552, label: "GOVERNED OUTCOMES" },
+} as const;
+
+const WORK_CARD = { w: 240, h: 104 };
+
+/** Company-band anchors: identity, authority, invariants, workforce metadata. */
+function placeCompanyNode(
+  which: "founder" | "approval" | "coo" | "researcher" | "finance" | "pm" | "verifier" | "vault"
+): { x: number; y: number; w: number; h: number; kind: NodeKind } {
+  switch (which) {
+    case "founder":
+      return { x: 430, y: 190, w: 76, h: 76, kind: "round" };
+    case "approval":
+      return { x: 430, y: 318, w: 68, h: 68, kind: "card" };
+    case "coo":
+      return { x: 620, y: 255, w: 64, h: 64, kind: "core" };
+    case "researcher":
+      return { x: 745, y: 255, w: 54, h: 54, kind: "round" };
+    case "finance":
+      return { x: 855, y: 255, w: 54, h: 54, kind: "round" };
+    case "pm":
+      return { x: 965, y: 255, w: 54, h: 54, kind: "round" };
+    case "verifier":
+      return { x: 1160, y: 190, w: 68, h: 68, kind: "round" };
+    case "vault":
+      return { x: 1450, y: 372, w: 124, h: 74, kind: "card" };
+  }
+}
+
+/** Deterministic collision-free placement of work cards within a zone. */
+function placeWorkCard(index: number, zone: WorkZone): { x: number; y: number; w: number; h: number; kind: NodeKind } {
+  if (zone === "active") {
+    const col = index % 3;
+    const row = Math.floor(index / 3);
+    return { x: 560 + col * 300, y: 478 + row * 170, w: WORK_CARD.w, h: WORK_CARD.h, kind: "card" };
+  }
+  if (zone === "related") {
+    return { x: 252, y: 478 + Math.min(index, 2) * 150, w: 216, h: 96, kind: "card" };
+  }
+  return { x: 1450, y: 500 + Math.min(index, 2) * 160, w: WORK_CARD.w, h: WORK_CARD.h, kind: "card" };
+}
+
+const isWorkDtoNode = (n: GraphNodeDTO): boolean =>
+  n.type === "workflow" || n.id.startsWith("step-") || n.id.startsWith("ws-") || n.id.startsWith("wf-");
+
+/** Resolves which semantic work zone a node belongs to from authoritative state. */
+function resolveWorkZone(n: GraphNodeDTO | FlowNode): WorkZone {
+  const runtime = (n as GraphNodeDTO).runtimeState ?? (n as FlowNode).dtoNode?.runtimeState;
+  const clientState = (n as FlowNode).state;
+  const effective: string = runtime ?? clientState ?? "idle";
+  if (effective === "completed" || effective === "complete" || effective === "done") return "outcomes";
+  if (effective === "paused" || effective === "idle" || effective === "waiting") return "related";
+  return "active"; // running | failed | halted | processing | active | blocked
+}
+
 /**
- * Computes deterministic, balanced spatial positions and compact icon-first geometries
- * for authoritative GraphDTO nodes across the 1600x900 operating canvas.
+ * Computes deterministic semantic-region positions for authoritative GraphDTO
+ * nodes across the 1600x900 company-context canvas. The DTO geometry stays
+ * the server's canonical projection; these positions are the client's
+ * spatial view-model (a pure function of DTO state — no fabrication).
  */
 function computeSpatialNode(
   n: GraphNodeDTO,
   allNodes: GraphNodeDTO[],
-  edges: GraphEdgeDTO[]
+  _edges: GraphEdgeDTO[]
 ): { x: number; y: number; w: number; h: number; kind: NodeKind } {
-  // 1. Fixed strategic anchors
+  // 1. Company identity / authority / governance
   if (n.id === "founder" || n.type === "founder" || n.role === "founder") {
-    return { x: 280, y: 240, w: 64, h: 64, kind: "round" };
+    return placeCompanyNode("founder");
   }
   if (n.id === "coo" || n.id === "core" || n.role === "coo") {
-    return { x: 760, y: 240, w: 76, h: 76, kind: "core" };
+    return placeCompanyNode("coo");
   }
   if (n.id === "approval" || n.type === "approval" || n.governanceState === "awaiting_founder_approval") {
-    return { x: 380, y: 600, w: 68, h: 68, kind: "card" };
+    return placeCompanyNode("approval");
   }
-  if (n.id === "verification" || n.type === "verification") {
-    return { x: 1320, y: 360, w: 64, h: 64, kind: "round" };
+  if (n.id === "verifier" || n.id === "verification" || n.type === "verification") {
+    return placeCompanyNode("verifier");
   }
-  if (n.id === "outcome" || n.type === "outcome") {
-    return { x: 1520, y: 360, w: 64, h: 64, kind: "card" };
+  if (n.id === "vault" || n.id === "outcome" || n.type === "outcome") {
+    return placeCompanyNode("vault");
   }
 
-  // 2. Specialists Tier
+  // 2. Workforce chips (execution metadata attached to work, not primary flow)
   if (n.id === "researcher" || n.id === "ops" || n.role === "researcher") {
-    return { x: 620, y: 520, w: 64, h: 64, kind: "round" };
+    return placeCompanyNode("researcher");
   }
   if (n.id === "finance" || n.role === "finance") {
-    return { x: 880, y: 620, w: 64, h: 64, kind: "round" };
+    return placeCompanyNode("finance");
   }
   if (n.id === "pm" || n.role === "pm") {
-    return { x: 1060, y: 520, w: 64, h: 64, kind: "round" };
+    return placeCompanyNode("pm");
   }
 
-  // 3. Workflow Steps & Service Actions (Cluster near their upstream parent)
-  const incomingEdge = edges.find((e) => e.target === n.id);
-  const sourceId = incomingEdge?.source;
-
-  const workflowSteps = allNodes.filter(
-    (item) =>
-      item.type === "workflow" ||
-      item.id.startsWith("step-") ||
-      item.id.startsWith("ws-") ||
-      item.id.startsWith("wf-")
-  );
-  const stepIdx = Math.max(0, workflowSteps.findIndex((item) => item.id === n.id));
-
-  if (sourceId === "researcher" || sourceId === "ops" || n.owner === "researcher" || n.owner === "ops") {
-    const offsetX = (stepIdx % 2) * 130;
-    const offsetY = Math.floor(stepIdx / 2) * 90;
-    return { x: 620 + offsetX, y: 700 + offsetY, w: 64, h: 64, kind: "card" };
-  }
-  if (sourceId === "finance" || n.owner === "finance") {
-    return { x: 880, y: 780, w: 64, h: 64, kind: "card" };
-  }
-  if (sourceId === "pm" || n.owner === "pm") {
-    return { x: 1060, y: 700, w: 64, h: 64, kind: "card" };
+  // 3. Work objects — first-class citizens placed by semantic zone
+  if (isWorkDtoNode(n)) {
+    const zone = resolveWorkZone(n);
+    const zonePeers = allNodes.filter((item) => isWorkDtoNode(item) && resolveWorkZone(item) === zone);
+    const idx = Math.max(0, zonePeers.findIndex((item) => item.id === n.id));
+    return placeWorkCard(idx, zone);
   }
 
-  // Fallback for general workflow steps or unassigned tasks
-  const cols = Math.min(3, Math.max(1, workflowSteps.length));
-  const col = stepIdx % cols;
-  const row = Math.floor(stepIdx / cols);
-  return { x: 680 + col * 180, y: 560 + row * 120, w: 64, h: 64, kind: "card" };
+  // 4. Unknown nodes — quiet fallback band below active work
+  const unknownIdx = allNodes.filter((item) => !isWorkDtoNode(item) && !item.role && item.type === "workflow").findIndex((item) => item.id === n.id);
+  return { x: 700 + (unknownIdx % 3) * 260, y: 860, w: 64, h: 64, kind: "card" };
 }
 
 /**
@@ -190,8 +251,39 @@ function computeEdgePoints(fromNode: FlowNode, toNode: FlowNode): [number, numbe
 }
 
 /**
- * Maps authoritative GraphDTO (Phase 4.3A server projection) into FlowEngine GraphModel.
- * Preserves exact node geometries, relationship taxonomies, and spatial cards.
+ * Phase 4.3B.1 — semantic layer by relationship taxonomy (shared by both
+ * the authoritative DTO mapping and the client fallback projection).
+ */
+function layerForRelationship(rel: GraphRelationship): FlowEdgeLayer {
+  switch (rel) {
+    case "escalates-to":
+      return "governance";
+    case "feeds":
+    case "depends-on":
+      return "structural";
+    case "delegates":
+      // Founder→Sophia / Sophia→specialist delegation is orchestration
+      // plumbing: authoritative inspector topology, never the default canvas.
+      return "context";
+    case "checks":
+    default:
+      // researches / models_finance / authors_prd / checks / synthesizes:
+      // agent↔work execution metadata — revealed when live or focused.
+      return "ownership";
+  }
+}
+
+/**
+ * Phase 4.3B.1 — semantic layer for an authoritative DTO edge.
+ */
+function computeEdgeLayer(e: GraphEdgeDTO): FlowEdgeLayer {
+  return layerForRelationship(e.relationship);
+}
+
+/**
+ * Maps authoritative GraphDTO (Phase 4.3A server projection) into FlowEngine
+ * GraphModel under the Phase 4.3B.1 spatial company-context grammar.
+ * Preserves exact relationship taxonomies, edge layers, and spatial cards.
  */
 export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
   const nodeMap = new Map<string, FlowNode>();
@@ -264,6 +356,7 @@ export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
       relationship: e.relationship,
       state: edgeState,
       activity: e.activity,
+      layer: computeEdgeLayer(e),
       dtoEdge: e,
     };
   });
@@ -413,19 +506,17 @@ function connectNodes(
     relationship,
     state,
     activity,
+    layer: layerForRelationship(relationship),
   };
 }
 
 /**
- * Dynamic operating graph projection derived strictly from live OS state.
- * Real operational chain:
- *   Founder / Inputs
- *   → Sophia Vance (COO / Orchestrator)
- *   → Active Specialists (Dr. Thorne, Julian Cruz, Maya Lin)
- *   → Contextual Protocol Steps & Services
- *   → Constitutional Verifier (Margin ≥ 80% & Safe Mock Sandbox)
- *   → Founder Approval Gate (when consequential decisions require wet signature ratification)
- *   → Governed Outcome (Immutable Vault)
+ * Dynamic company-context projection derived strictly from live OS state
+ * (client fallback when the authoritative /api/graph projection is
+ * unreachable — same spatial grammar as mapGraphDTOToFlowModel):
+ *   Company band: Founder · Workforce (Sophia, Thorne, Cruz, Lin) · Verifier
+ *   ACTIVE WORK · RELATED/DEPENDENCIES · GOVERNED OUTCOMES regions
+ *   Escalation gate attaches to the founder inside the company band.
  */
 export function deriveGraph(state: {
   work: Array<{ id: string; title: string; state: string; stage: string; owner?: string }>;
@@ -447,13 +538,13 @@ export function deriveGraph(state: {
   const hasBlockedWork = blockedWork.length > 0;
   const hasReviewWork = state.work.some((w) => (w.stage === "review" || w.stage === "ship") && w.state === "active");
 
-  // 1. Founder / Inputs (Authority Boundary — Upper West)
+  // 1. Founder / Inputs (Authority — company band west)
   const founderNode: FlowNode = {
     id: "founder",
-    x: 280,
-    y: 240,
-    w: 64,
-    h: 64,
+    x: 430,
+    y: 190,
+    w: 76,
+    h: 76,
     kind: "round",
     type: "founder",
     state: hasOpenDecisions ? "waiting" : "idle",
@@ -464,14 +555,14 @@ export function deriveGraph(state: {
   };
   nodes.push(founderNode);
 
-  // 2. Sophia Vance (COO & Master Orchestrator — Upper Center)
+  // 2. Sophia Vance (COO — workforce chip, execution metadata)
   const sophiaState: GraphNodeState = hasActiveWork ? "active" : hasBlockedWork ? "blocked" : "idle";
   const coreNode: FlowNode = {
     id: "core",
-    x: 760,
-    y: 240,
-    w: 76,
-    h: 76,
+    x: 620,
+    y: 255,
+    w: 64,
+    h: 64,
     kind: "core",
     type: "agent",
     state: sophiaState,
@@ -496,7 +587,7 @@ export function deriveGraph(state: {
     )
   );
 
-  // 3. Specialists Tier (Mid-Lower Operational Zone)
+  // 3. Workforce chips (execution metadata — company band)
   const specialistNodes: FlowNode[] = [];
 
   // Dr. Aris Thorne (Research & Intelligence)
@@ -506,10 +597,10 @@ export function deriveGraph(state: {
 
   const thorneNode: FlowNode = {
     id: "ops",
-    x: 620,
-    y: 520,
-    w: 64,
-    h: 64,
+    x: 745,
+    y: 255,
+    w: 54,
+    h: 54,
     kind: "round",
     type: "agent",
     state: thorneState,
@@ -529,10 +620,10 @@ export function deriveGraph(state: {
     const isBlk = financeWork.state === "blocked";
     financeNode = {
       id: "finance",
-      x: 880,
-      y: 620,
-      w: 64,
-      h: 64,
+      x: 855,
+      y: 255,
+      w: 54,
+      h: 54,
       kind: "round",
       type: "agent",
       state: isBlk ? "blocked" : isAct ? "active" : "idle",
@@ -553,10 +644,10 @@ export function deriveGraph(state: {
     const isBlk = pmWork.state === "blocked";
     pmNode = {
       id: "pm",
-      x: 1060,
-      y: 520,
-      w: 64,
-      h: 64,
+      x: 965,
+      y: 255,
+      w: 54,
+      h: 54,
       kind: "round",
       type: "agent",
       state: isBlk ? "blocked" : isAct ? "active" : "idle",
@@ -612,81 +703,76 @@ export function deriveGraph(state: {
     );
   }
 
-  // 4. Contextual Protocol Steps & Services (Clustered near their assigned specialist)
+  // 4. Work objects — first-class cards in semantic regions
   const protocolStepNodes: FlowNode[] = [];
-  const activeOrOpenWork = state.work.filter((w) => w.state !== "done").slice(0, 5);
+  const openWorkAll = state.work.filter((w) => w.state !== "done");
+  const doneWorkAll = state.work.filter((w) => w.state === "done");
+  const openWork = openWorkAll.slice(0, 9);
+  const doneWorkCapped = doneWorkAll.slice(0, 3);
 
-  activeOrOpenWork.forEach((w, idx) => {
+  const zoneOf = (w: { state: string }): WorkZone =>
+    w.state === "done" ? "outcomes" : w.state === "active" || w.state === "blocked" ? "active" : "related";
+
+  const workItems = [...openWork, ...doneWorkCapped];
+  const zoneCounters = { active: 0, related: 0, outcomes: 0 };
+
+  workItems.forEach((w) => {
     const isAct = w.state === "active";
     const isBlk = w.state === "blocked";
-    const wState: GraphNodeState = isBlk ? "blocked" : isAct ? "active" : "waiting";
+    const isDone = w.state === "done";
+    const wState: GraphNodeState = isDone ? "complete" : isBlk ? "blocked" : isAct ? "active" : "waiting";
 
     let stepName = "Research & Reconnaissance";
-    let stepCode = "step-research";
     let assignedSpecialist = thorneNode;
     let relationship: GraphRelationship = "researches";
-    let stepX = 620 + (idx % 2) * 130;
-    let stepY = 700 + Math.floor(idx / 2) * 90;
 
     if (w.stage === "discovery") {
       stepName = "Market Reconnaissance";
-      stepCode = "step-research";
       assignedSpecialist = thorneNode;
       relationship = "researches";
-      stepX = 620 + (idx % 2) * 130;
-      stepY = 700;
     } else if (w.stage === "build") {
       if (w.owner === "finance" && financeNode) {
         stepName = "Unit Economics Audit";
-        stepCode = "step-finance";
         assignedSpecialist = financeNode;
         relationship = "models_finance";
-        stepX = 880;
-        stepY = 780;
       } else {
         stepName = "Product Architecture & PRD";
-        stepCode = "step-pm-prd";
         assignedSpecialist = pmNode || thorneNode;
         relationship = "authors_prd";
-        stepX = 1060;
-        stepY = 700;
       }
     } else if (w.stage === "review") {
       stepName = "Council Peer Review";
-      stepCode = "step-review";
       assignedSpecialist = thorneNode;
       relationship = "checks";
-      stepX = 1180;
-      stepY = 440;
     } else if (w.stage === "ship") {
       stepName = "Executive Synthesis";
-      stepCode = "step-report";
       assignedSpecialist = thorneNode;
       relationship = "synthesizes";
-      stepX = 1180;
-      stepY = 440;
     }
+
+    const zone = zoneOf(w);
+    const geom = placeWorkCard(zoneCounters[zone]++, zone);
 
     const stepNode: FlowNode = {
       id: `step-${w.id}`,
-      x: stepX,
-      y: stepY,
-      w: 64,
-      h: 64,
+      x: geom.x,
+      y: geom.y,
+      w: geom.w,
+      h: geom.h,
       kind: "card",
       type: "workflow",
       state: wState,
       title: w.title,
-      subtitle: `${stepName}`,
-      protocolStep: stepCode,
-      activity: isAct ? `${stepName} in execution` : isBlk ? "Attention required" : undefined,
+      subtitle: isDone ? "Governed Outcome" : `${stepName}`,
+      protocolStep: w.stage,
+      activity: isDone ? "Verified & delivered" : isAct ? `${stepName} in execution` : isBlk ? "Attention required" : undefined,
       relevance: isAct || isBlk ? 1 : 0.45,
       owner: w.owner,
     };
     protocolStepNodes.push(stepNode);
 
-    // Edge from assigned specialist to this protocol step
-    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "cyan" : "white";
+    // Ownership edge from assigned specialist to this work object
+    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "cyan" : isDone ? "emerald" : "white";
     edges.push(
       connectNodes(
         assignedSpecialist,
@@ -694,7 +780,7 @@ export function deriveGraph(state: {
         `e-spec-${w.id}`,
         edgeStyle,
         relationship,
-        isBlk ? "blocked" : isAct ? "active" : "idle",
+        isBlk ? "blocked" : isAct ? "active" : isDone ? "complete" : "idle",
         w.title
       )
     );
@@ -702,7 +788,7 @@ export function deriveGraph(state: {
 
   protocolStepNodes.forEach((n) => nodes.push(n));
 
-  // 5. Constitutional Verifier (Governance & Invariants — East Gateway)
+  // 5. Constitutional Verifier (Invariant — company band east)
   const verState: GraphNodeState = hasBlockedWork
     ? "blocked"
     : hasReviewWork
@@ -713,10 +799,10 @@ export function deriveGraph(state: {
 
   const verifierNode: FlowNode = {
     id: "verification",
-    x: 1320,
-    y: 360,
-    w: 64,
-    h: 64,
+    x: 1160,
+    y: 190,
+    w: 68,
+    h: 68,
     kind: "round",
     type: "verification",
     state: verState,
@@ -727,7 +813,7 @@ export function deriveGraph(state: {
   };
   nodes.push(verifierNode);
 
-  // Connect protocol steps to Verifier (or direct Thorne -> Verifier when idle)
+  // Work → verifier execution boundary (ownership layer: revealed on focus / when live)
   if (protocolStepNodes.length === 0) {
     edges.push(
       connectNodes(
@@ -758,14 +844,14 @@ export function deriveGraph(state: {
     });
   }
 
-  // 6. Governed Outcome / Immutable Vault (Eastern Terminal)
+  // 6. Governed Vault (Immutable Memory — outcomes region anchor)
   const outcomeState: GraphNodeState = doneWork.length > 0 ? "complete" : "idle";
   const outcomeNode: FlowNode = {
     id: "outcome",
-    x: 1520,
-    y: 360,
-    w: 64,
-    h: 64,
+    x: 1450,
+    y: 372,
+    w: 124,
+    h: 74,
     kind: "card",
     type: "outcome",
     state: outcomeState,
@@ -776,7 +862,7 @@ export function deriveGraph(state: {
   };
   nodes.push(outcomeNode);
 
-  // Connector from Verifier to Outcome
+  // Structural edge: verifier feeds the vault (company structure truth)
   edges.push(
     connectNodes(
       verifierNode,
@@ -788,12 +874,12 @@ export function deriveGraph(state: {
     )
   );
 
-  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open — Lower West)
+  // 7. Contextual Escalation: Founder Approval Gate (governance — inside company band)
   if (hasOpenDecisions) {
     const approvalNode: FlowNode = {
       id: "approval",
-      x: 380,
-      y: 600,
+      x: 430,
+      y: 318,
       w: 68,
       h: 68,
       kind: "card",

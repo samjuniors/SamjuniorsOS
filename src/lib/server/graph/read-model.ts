@@ -11,6 +11,7 @@ import {
   GraphPresentationState,
   GraphRelationship,
   GraphEdgeStyle,
+  GraphExecutionStepDTO,
 } from '@/types/graph';
 import { AgentRunStore, AgentRunRecord } from '@/lib/server/agents/run-store';
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
@@ -150,6 +151,136 @@ function truncateTitle(text: string, max = 50): string {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 4.3B.1 — Authoritative Execution Trail Derivation (deterministic)
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical 9-step agent work protocol (src/types/os.ts AgentWorkProtocolStep),
+ * in protocol order, with display labels. Used to shape the local workflow
+ * revealed when a work object is focused. Steps without runs are honestly
+ * reported as 'pending' — the protocol is company truth, outcomes are not
+ * fabricated.
+ */
+const CANONICAL_PROTOCOL_STEPS: ReadonlyArray<{
+  step: string;
+  label: string;
+}> = [
+  { step: 'understand', label: 'Understand & Scope' },
+  { step: 'research', label: 'Research' },
+  { step: 'analyze', label: 'Analyze' },
+  { step: 'plan', label: 'Plan' },
+  { step: 'build_execute', label: 'Build & Execute' },
+  { step: 'test', label: 'Test' },
+  { step: 'verify', label: 'Verify' },
+  { step: 'review', label: 'Review' },
+  { step: 'report', label: 'Report' },
+];
+
+function protocolStepLabel(step: string): string {
+  const canonical = CANONICAL_PROTOCOL_STEPS.find((c) => c.step === step);
+  if (canonical) return canonical.label;
+  return step.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function runStepStatus(runs: AgentRunRecord[]): GraphExecutionStepDTO['status'] {
+  if (runs.length === 0) return 'pending';
+  if (runs.some((r) => r.status === 'failed' || !!r.error)) return 'failed';
+  if (runs.some((r) => r.status === 'running')) return 'current';
+  if (runs.some((r) => r.status === 'completed')) return 'done';
+  return 'pending';
+}
+
+/**
+ * Derives the deterministic execution trail of a workstream from its
+ * chronological run group. Unknown protocol steps are appended after the
+ * canonical sequence in first-occurrence order (never dropped, never invented).
+ */
+function deriveExecutionStepsFromRuns(sortedRuns: AgentRunRecord[]): GraphExecutionStepDTO[] {
+  const byStep = new Map<string, AgentRunRecord[]>();
+  for (const r of sortedRuns) {
+    const key = r.protocolStep;
+    if (!key) continue;
+    const list = byStep.get(key) ?? [];
+    list.push(r);
+    byStep.set(key, list);
+  }
+
+  const unknownSteps = [...byStep.keys()].filter(
+    (k) => !CANONICAL_PROTOCOL_STEPS.some((c) => c.step === k)
+  );
+
+  const steps: GraphExecutionStepDTO[] = CANONICAL_PROTOCOL_STEPS.map(({ step, label }) => {
+    const runs = byStep.get(step) ?? [];
+    const latest = runs[runs.length - 1];
+    return {
+      step,
+      label,
+      status: runStepStatus(runs),
+      ownerAgentId: latest?.agentId,
+      durationMs: latest?.durationMs,
+    };
+  });
+
+  for (const step of unknownSteps) {
+    const runs = byStep.get(step) ?? [];
+    const latest = runs[runs.length - 1];
+    steps.push({
+      step,
+      label: protocolStepLabel(step),
+      status: runStepStatus(runs),
+      ownerAgentId: latest?.agentId,
+      durationMs: latest?.durationMs,
+    });
+  }
+
+  return steps;
+}
+
+/** Maps durable WorkflowStepState status onto the execution trail status. */
+function workflowStepStatus(status: string): GraphExecutionStepDTO['status'] {
+  switch (status) {
+    case 'running':
+    case 'ready':
+      return 'current';
+    case 'waiting':
+    case 'blocked':
+    case 'awaiting_approval':
+      return 'waiting';
+    case 'completed':
+      return 'done';
+    case 'failed':
+    case 'cancelled':
+      return 'failed';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * Derives the execution trail of a workstream backed by a durable
+ * WorkflowInstance from its authoritative stepStates.
+ */
+function deriveExecutionStepsFromInstance(wf: WorkflowInstanceState): GraphExecutionStepDTO[] {
+  const skillOrder = (skill: string) => {
+    const idx = CANONICAL_PROTOCOL_STEPS.findIndex((c) => c.step === skill);
+    return idx === -1 ? CANONICAL_PROTOCOL_STEPS.length : idx;
+  };
+  return Object.values(wf.stepStates ?? {})
+    .sort((a, b) => {
+      const sa = skillOrder(a.skill);
+      const sb = skillOrder(b.skill);
+      if (sa !== sb) return sa - sb;
+      return a.stepId.localeCompare(b.stepId);
+    })
+    .map((s) => ({
+      step: s.stepId,
+      label: protocolStepLabel(s.skill),
+      status: workflowStepStatus(s.status),
+      ownerAgentId: s.assignedRole,
+    }));
+}
+
+// ---------------------------------------------------------------------------
 // Pure Projection Engine (Deterministic)
 // ---------------------------------------------------------------------------
 
@@ -192,6 +323,8 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
     runtimeState: GraphRuntimeState;
     hasFailed: boolean;
     hasReport: boolean;
+    latestRunTime: number;
+    executionSteps: GraphExecutionStepDTO[];
   }
 
   const workstreams: DerivedWorkstream[] = [];
@@ -239,6 +372,11 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
       runtimeState,
       hasFailed,
       hasReport,
+      latestRunTime: (() => {
+        const t = (latest as any).timestamp || (latest as any).createdAt;
+        return t ? new Date(t).getTime() : 0;
+      })(),
+      executionSteps: deriveExecutionStepsFromRuns(sorted),
     });
   }
 
@@ -278,6 +416,8 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
       runtimeState: isFailed ? 'failed' : isDone ? 'completed' : isRunning ? 'running' : 'idle',
       hasFailed: isFailed,
       hasReport: isDone,
+      latestRunTime: wf.createdAt ? new Date(wf.createdAt).getTime() : 0,
+      executionSteps: deriveExecutionStepsFromInstance(wf),
     });
   }
 
@@ -517,12 +657,32 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
   }
 
   // -------------------------------------------------------------------------
-  // Column 3: Contextual Protocol Steps (Revealed for active/open workstreams)
+  // Column 3: Work Objects (Phase 4.3B.1 — work is a first-class graph citizen)
+  // Open workstreams (running/paused/failed) are surfaced as actionable work;
+  // completed workstreams are surfaced as governed outcomes. Both derive
+  // strictly from the authoritative run groups — nothing is fabricated.
+  // Placement into ACTIVE / RELATED / OUTCOMES spatial regions is a
+  // deterministic client-side view-model projection (see flow.ts).
   // -------------------------------------------------------------------------
   const protocolStepNodes: GraphNodeDTO[] = [];
-  const activeOrRecentWork = workstreams
+
+  // Deterministic recency ordering (latest run timestamp desc, directive asc)
+  // guarantees stable work-node selection and ordering for identical inputs.
+  const byRecency = (a: DerivedWorkstream, b: DerivedWorkstream) => {
+    if (a.latestRunTime !== b.latestRunTime) return b.latestRunTime - a.latestRunTime;
+    return a.directive.localeCompare(b.directive);
+  };
+
+  const openWork = workstreams
     .filter((w) => w.runtimeState !== 'completed')
-    .slice(0, 5);
+    .sort(byRecency)
+    .slice(0, 9);
+  const completedWork = workstreams
+    .filter((w) => w.runtimeState === 'completed')
+    .sort(byRecency)
+    .slice(0, 3);
+
+  const activeOrRecentWork = openWork;
 
   activeOrRecentWork.forEach((w) => {
     let stepLabel = 'Research & Reconnaissance';
@@ -576,6 +736,7 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
         protocolStep: w.latestRun.protocolStep,
         durationMs: w.latestRun.durationMs,
         error: w.latestRun.error ?? undefined,
+        executionSteps: w.executionSteps,
       },
     };
     protocolStepNodes.push(stepNode);
@@ -600,6 +761,33 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
       ],
       arrow: true,
     });
+  });
+
+  // Completed workstreams become governed-outcome work objects (Phase 4.3B.1):
+  // the company's spatial context includes what has been verified & delivered.
+  completedWork.forEach((w) => {
+    const outcomeWorkNode: GraphNodeDTO = {
+      id: `step-${w.id}`,
+      type: 'workflow',
+      role: 'step',
+      title: w.title,
+      subtitle: 'Governed Outcome',
+      activity: w.hasReport ? 'Verified & delivered' : undefined,
+      owner: w.owner,
+      runtimeState: 'completed',
+      governanceState: 'none',
+      epistemicValidity: 'unverified',
+      presentationState: mapSemanticToPresentationState('completed', 'none', 'unverified'),
+      geometry: { shape: 'rectangle', width: 160, height: 76, x: 1010, y: 640 },
+      relevance: 0.5,
+      metadata: {
+        runId: w.latestRun.runId || (w.latestRun as any).id,
+        protocolStep: w.latestRun.protocolStep,
+        durationMs: w.latestRun.durationMs,
+        executionSteps: w.executionSteps,
+      },
+    };
+    protocolStepNodes.push(outcomeWorkNode);
   });
 
   // Apply deterministic collision-free layout to protocol steps
@@ -661,7 +849,8 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
         stepNode.runtimeState === 'running' &&
         (stepNode.subtitle?.includes('Review') || stepNode.subtitle?.includes('Synthesis'));
       const isFailed = stepNode.runtimeState === 'failed';
-      const edgeStyle: GraphEdgeStyle = isFailed ? 'rose' : isReview ? 'cyan' : 'white';
+      const isComplete = stepNode.runtimeState === 'completed';
+      const edgeStyle: GraphEdgeStyle = isFailed ? 'rose' : isReview ? 'cyan' : isComplete ? 'emerald' : 'white';
 
       edges.push({
         id: `e-ver-${stepNode.id}`,
@@ -932,7 +1121,7 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
   return {
     asOf: new Date(inputs.now ?? Date.now()).toISOString(),
     deterministicHash,
-    topologyVersion: '1.0.0',
+    topologyVersion: '1.1.0',
     company,
     summary: {
       totalNodes: nodes.length,
