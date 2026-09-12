@@ -7,7 +7,60 @@ repository state it describes.
 
 ---
 
-## Phase 3.1 — Operating Graph Truth + UX Polish (UI/UX only, 2026-09-11)
+## Phase 4.1 — SamJuniorsOS Workflow Design System & Specimen Sheet (2026-09-12)
+
+**Status:** COMPLETE. Delivered a production-grade, presentation-only, portable visual component library and 13-section interactive specimen page for node-based graphs inspired by FLOWGRID aesthetics. Built strictly as visual presentation primitives with zero dependencies on APIs, database/Prisma, auth, OS state, or runtime stores. Seamlessly portable to both Next.js and standalone Vite (`Uploaded/Design1`).
+
+### What changed
+
+- **`components/workflow/tokens.ts`**:
+  - Semantic workflow color palette mapped to SamJuniorsOS design tokens (`cyan`, `amber`, `emerald`, `rose`, `obsidian glass`, `slate`).
+  - Node geometries: `square`, `rectangle`, `circle`, `squircle`, `pill`.
+  - Node connection port shapes (`circle`, `square`) and positions (`top`, `bottom`, `left`, `right`).
+  - Depth, shadow, and specular border definitions.
+  - Three-tier Effects & Performance Budget (`full`, `balanced`, `minimal`) + reduced motion support.
+- **`components/workflow/IconContainer.tsx`**:
+  - Portable icon surface container supporting `filled`, `glass`, `outline`, `squircle`, `recessed`, and `floating` surface styles.
+- **`components/workflow/NodePort.tsx`**:
+  - Decoupled, interactive connection port with 24px expanded hit target and state styling (`default`, `hover`, `active`, `connected`, `success`, `error`).
+- **`components/workflow/NodeGeometry.tsx`**:
+  - Structural node shell supporting 5 form factors with obsidian glass background, specular top highlight, and state-driven glows.
+- **`components/workflow/NodeContent.tsx`**:
+  - Presentation-only content layouts: `IconOnlyContent`, `IconLabelContent`, `IconTitleContent`, `IconMetaContent`, `AgentContent`, `ModelContent`.
+- **`components/workflow/Connector.tsx`**:
+  - Vector SVG connectors supporting `straight`, `curved` (S-curve Bezier), `dashed`, `branch`, and `animated` directional laser packet kinetics.
+- **`components/workflow/Effects.tsx`**:
+  - Visual kinetic effects: `FlowParticle`, `ActivationRing`, `PulseEffect`, `ProcessingEffect`, `SuccessBurst`, `ErrorPulse`, `LoadingRing`, `AmbientParticles`.
+- **`components/workflow/Node.tsx`**:
+  - Unified master `<Node>` component composing geometry, content, connection ports, indicator dot, and kinetic effects.
+- **`components/workflow/index.ts`**:
+  - Clean barrel export for all workflow primitives.
+- **`app/design-system/workflow/page.tsx`**:
+  - Comprehensive 13-section interactive specimen page matching the FLOWGRID reference layout. Includes interactive Effects Budget toggle (`full`, `balanced`, `minimal`), live state selector, and generic non-operational illustrative compositions (`Telegram Trigger → AI Agent → Conversation Memory`, etc.).
+- **`DESIGN.md`**:
+  - Added Section 14 documenting the Phase 4.1 Workflow Design System specification.
+
+### Verification actually run
+
+- `npx tsc --noEmit` (Root Next.js project): 0 errors.
+- `npm run lint` (Root ESLint): 0 errors / clean.
+- `npm run build` (Next.js production build): Built successfully in 14.1s; `/design-system/workflow` statically prerendered (`15.8 kB`, `118 kB` First Load JS).
+- `npx tsc --noEmit` (`Uploaded/Design1` Vite application): 0 errors.
+- `npx tsx scripts/test-advisor.ts`: 25/25 passed.
+- `npx tsx tests/governance_security_foundation.test.ts`: 41/41 passed.
+
+### Unresolved problems & remaining risks
+
+- None for Phase 4.1. The design system is strictly presentation-only and decoupled from graph execution.
+
+### Next recommended action
+
+- STOP feature development per Phase 4.1 boundary.
+- Review specimen sheet at `/design-system/workflow`.
+- Phase 4.2: Real graph consumption and layout engine integration when scheduled.
+
+---
+
 
 **Status:** COMPLETE. Audited and aligned the living operating graph strictly with genuine SamJuniorsOS agent/workflow semantics and delivered REF.mp4-inspired visual polish. Outer desktop shell, docking, top bar, side rails, and navigation remain 100% preserved. Zero backend, database, auth, or API changes.
 

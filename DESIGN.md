@@ -363,3 +363,46 @@ The living operating graph visually communicates the dynamic state of SamJuniors
    - Cards smoothly animate into view on relevant events and collapse/fade out when the event completes.
 4. **Zero Random Decoration**: No particle or animation fires without an authentic causal event in the operating state.
 
+---
+
+## 14. Workflow Design System (Phase 4.1 Specification)
+
+The workflow component system (`components/workflow/`) provides presentation-only, portable visual primitives for node-based graphs, inspired by high-end dark ambient modular flow interfaces (such as FLOWGRID).
+
+### Core Principles & Architectural Boundary
+- **Presentation-Only & Portable**: Primitives rely strictly on React, CSS/SVG, and local tokens. They have zero dependencies on Next.js server APIs, Prisma, authentication, or graph execution state, ensuring drop-in portability to the standalone `Uploaded/Design1` Vite environment.
+- **Semantic Mapping**: Workflow tokens map directly to the established SamJuniorsOS semantic color hierarchy (`cyan` primary, `amber` attention/processing, `emerald` healthy/complete, `rose` error/blocked, `obsidian glass` surfaces).
+- **Physical Depth & Optical Balance**: Nodes feature multi-layered obsidian glass backdrops (`rgba(6, 12, 24, 0.88)`), specular hairline top borders (`linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)`), and subtle ambient drop shadows.
+- **Effects & Performance Budget**: Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus automatic `prefers-reduced-motion` compliance to safeguard 60 FPS rendering.
+
+### Node Geometries & Form Factors
+| Geometry | Default Size (W x H) | Border Radius | Typical Node Type |
+|---|---|---|---|
+| `square` | 84 x 84 px | 14px | Micro agent / utility / compact action |
+| `rectangle` | 240 x 96 px | 16px | Standard workflow step / agent executor |
+| `circle` | 84 x 84 px | 50% | Router / trigger / endpoint / gateway |
+| `squircle` | 100 x 100 px | 24px | Core specialist / LLM model node |
+| `pill` | 180 x 52 px | 9999px | Condition gate / lightweight trigger |
+
+### Node Port Architecture
+Connection ports (`NodePort.tsx`) are independent physical terminals placed at compass positions (`top`, `bottom`, `left`, `right`):
+- **Shapes**: `circle` (8px default) or `square` (8px default).
+- **States**: `default` (slate-600 outline), `hover` (cyan outline + glow), `active` (filled cyan), `connected` (filled cyan dot), `success` (emerald), `error` (rose).
+- **Hit Area**: Includes invisible 24px expanded click/hover boundary for micro-precision targeting.
+
+### Reusable Content Styles
+- `IconOnlyContent`: Focused single-glyph presentation with optional status pip.
+- `IconLabelContent`: Icon paired with a bold primary label.
+- `IconTitleContent`: Icon, title, and auxiliary badge.
+- `IconMetaContent`: Full structured card with title, role/type subtitle, and status pill.
+- `AgentContent`: Dedicated specialist representation with avatar container, role tag, and capability badges.
+- `ModelContent`: LLM provider/model block (e.g. Gemini 2.5 Pro, Claude 3.5 Sonnet) with temperature/context tokens.
+
+### Connectors & Vector Kinetics
+- SVG path-based connectors (`Connector.tsx`): `straight`, `curved` (smooth cubic Bezier S-curve), `dashed`, `branch`, and `animated`.
+- Kinetic laser packet flow with speed, color, and dash-offset synchronization matching active operational causality.
+
+### Specimen Sheet
+- Available at `/design-system/workflow` (`app/design-system/workflow/page.tsx`).
+- Features 13 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles, Icon Containers, Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (generic illustrative fixtures), and Responsive Sizes.
+- Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
