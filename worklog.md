@@ -421,3 +421,21 @@ Stage Summary:
 - CERTIFIED: local d92e8d8 contains the complete, genuinely-wired Phase 3.4 implementation (14/14 files) and the full runtime chain works live against the real backend
 - PUSH STATUS: NOT PUSHED — remote is unrelated history at 7d0622e; a plain push is impossible (non-fast-forward) and a force-push would replace the remote's original 60+ commit SamJuniorsOS history (destructive; requires explicit user decision: force-push main, push to a side branch, or user re-uploads via web UI)
 - Residual notes: /api/agents/runs lacks a session gate (pre-existing backend design, unchanged per constraints); presentation-layer derivations (refreshAgents from merged work list, 150s in-flight window) are read-model derivations from real records, not invented activity
+
+---
+Task ID: 3.4-PUSH
+Agent: Z.ai Code (main session)
+Task: Execute approved non-destructive side-branch push of certified Phase 3.4 commit to GitHub
+
+Work Log:
+- Pre-check caught an environment auto-snapshot commit 5ab861d (UUID message 7c043e21-…, matches repo's known auto-commit pattern) sitting on local main above d92e8d8; verified its delta vs d92e8d8 is ONLY: dev.pid PID artifact (1118→1121), three mode-bit changes (0 line diffs), worklog.md +22 (certification entry) — zero Phase 3.4 source changes
+- Created local branch phase-3.4-runtime-wiring pinned at the EXACT certified SHA d92e8d8bc20c5856eda4c6ffcc25218a13e1359f (auto-snapshot commit intentionally excluded from the push)
+- Pushed branch to GitHub via one-shot authenticated URL (no --force, new branch ref only): "* [new branch] phase-3.4-runtime-wiring -> phase-3.4-runtime-wiring"
+- Verified live remote refs via ls-remote: refs/heads/phase-3.4-runtime-wiring = d92e8d8bc20c5856eda4c6ffcc25218a13e1359f ✓; refs/heads/main = 7d0622e2bbadf27cdeb33649667b8e9e8e9cc131 (UNCHANGED) ✓
+- Fetched the branch back from GitHub and verified tree contents: all Phase 3.4 files present with identical blob SHAs (runtime.ts fb2bcd478ef6, api/agents/route.ts 31cc0616568f, osStore.ts 6d32e487d73d, ChatPanel.tsx b8cffdb3655b, etc. — 16/16 checked)
+- Confirmed .git/config and all of .git/ contain no token residue (push used full URL, config untouched); no commits created during this operation; Phase 3.5 not started
+
+Stage Summary:
+- Pushed: branch phase-3.4-runtime-wiring @ d92e8d8bc20c5856eda4c6ffcc25218a13e1359f on github.com/samjuniors/SamjuniorsOS — contains the complete certified Phase 3.4 runtime wiring
+- Remote main untouched at 7d0622e; no force-push, no merge; auto-snapshot 5ab861d remains local-only on main (contains dev.pid artifact + this worklog's entries, deliberately excluded per user constraints)
+- Token: used in one-shot URLs only, never written to any file/config; user advised to rotate it
