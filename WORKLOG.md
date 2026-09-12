@@ -1,5 +1,29 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 4.2 — OS Shell Polish Pass (2026-09-12)
+
+**Status:** COMPLETE. Focused production polish for the dark ambient SamJuniorsOS shell and mode switcher.
+
+### What changed
+
+- Added shared shell tokens for surfaces, lines, ink, muted text, cyan, and amber accents.
+- Refined the persistent Sophia/SamJuniorsOS mode switcher with a clearer glass surface, stronger hierarchy, and responsive spacing.
+- Refined the OS top bar to use the shared shell chrome instead of one-off shadow/background values.
+- Added consistent keyboard focus-visible treatment and reduced-motion-safe backdrop behavior.
+
+### Verification actually run
+
+- `npm run lint` — passed.
+- Browser verification at `http://localhost:3000/` — rendered SamJuniorsOS successfully at the current 1350×851 light preview viewport; screenshot saved to `/tmp/agent-browser/os-shell-polish-final.png`.
+- `npx tsc --noEmit` — blocked by missing generated `.next/types` files after the concurrent production build removed/rebuilt `.next`.
+- `npm run build` — blocked during page data collection by pre-existing missing `/api/advisor` and `/api/agent-collab` page modules.
+
+### Remaining risks
+
+- Root Next.js build has unrelated route-generation failures that should be addressed separately.
+
+---
+
 Per AGENTS.md: this file is the canonical record of what was actually built,
 verified, and decided. Chat history is not a source of truth; this file is what
 a fresh agent must be able to rely on. Every entry is written against the

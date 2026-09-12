@@ -277,7 +277,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
       <div className="pointer-events-none absolute inset-0 z-[1]" style={{ background: "radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.45))" }} />
 
       {/* ----------------- top menu bar ----------------- */}
-      <div className="fixed inset-x-0 top-0 z-50 flex h-11 items-center justify-between border-b border-white/10 bg-[#060c18]/92 px-3 backdrop-blur-2xl sm:px-4" onPointerDown={(e) => e.stopPropagation()} style={{ boxShadow: "0 4px 24px rgba(0,0,0,0.6), inset 0 -1px 0 rgba(255,255,255,0.06)" }}>
+      <div className="os-shell-topbar fixed inset-x-0 top-0 z-50 flex h-11 items-center justify-between border-b px-3 backdrop-blur-2xl sm:px-4" onPointerDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1.5 sm:gap-2">
           <button onClick={() => toggle("start")} className={`group flex h-8 items-center gap-1.5 rounded-lg px-2 text-slate-200 transition-all duration-200 hover:bg-white/10 active:scale-95 sm:px-2.5 ${pop === "start" ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-100 shadow-[0_0_12px_rgba(56,189,248,0.3)]" : "border border-white/5"}`} title="Menu">
             <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400 to-sky-500 font-bold text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.5)] transition-transform duration-300 group-hover:scale-105"><LayoutGrid size={12} /></span>

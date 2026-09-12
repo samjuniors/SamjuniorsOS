@@ -188,8 +188,8 @@ export default function App() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">
       {/* ---------------- Persistent Top Mode Switcher (Zero Flicker, Identical Coordinates) ---------------- */}
-      <div className="fixed left-1/2 top-1.5 z-[60] -translate-x-1/2">
-        <div className="flex items-center rounded-full border border-white/12 bg-[#050b16]/92 p-0.5 shadow-[0_4px_24px_rgba(0,0,0,0.6),0_0_25px_-5px_rgba(56,189,248,0.35)] backdrop-blur-2xl">
+      <div className="fixed left-1/2 top-2 z-[60] -translate-x-1/2">
+        <div className="os-mode-switcher flex items-center rounded-full p-0.5">
           <button
             onClick={() => { osSound.click(); setTab("sophia"); }}
             className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
