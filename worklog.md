@@ -439,3 +439,30 @@ Stage Summary:
 - Pushed: branch phase-3.4-runtime-wiring @ d92e8d8bc20c5856eda4c6ffcc25218a13e1359f on github.com/samjuniors/SamjuniorsOS — contains the complete certified Phase 3.4 runtime wiring
 - Remote main untouched at 7d0622e; no force-push, no merge; auto-snapshot 5ab861d remains local-only on main (contains dev.pid artifact + this worklog's entries, deliberately excluded per user constraints)
 - Token: used in one-shot URLs only, never written to any file/config; user advised to rotate it
+
+---
+Task ID: 3.4-PERSIST
+Agent: Z.ai Code (main session)
+Task: Phase 3.4 final persistence audit — determine whether runtime reads/writes use authoritative DB or .data/*.json; trace UI→API→store→persistence; verify no duplicate persistence layer introduced
+
+Work Log:
+- Read the mode-selection core: src/lib/server/db/authority.ts — getDatabaseMode() precedence: DATABASE_MODE env > NODE_ENV=production→'authoritative' > NODE_ENV=test→'test' > default 'local'; isAuthoritativeMode() gates every store; requireAuthoritativeDatabase() throws DatabaseAuthorityError (fail-closed, 503) when authoritative DB unreachable
+- Runtime mode in this sandbox: NODE_ENV=development + DATABASE_MODE unset → mode='local'; DATABASE_URL=file:/home/z/my-project/db/custom.db (prisma/schema.prisma documents "SQLite port for the sandbox deployment, ported from the upstream PostgreSQL schema")
+- Traced all seven surfaces — every one is dual-mode with identical discipline:
+  * GET /api/agents/runs → AgentRunStore.getInstance().listRuns() → [auth: PostgresAgentRunStore → requireAuthoritativeDatabase → prisma.agentRun] | [local: in-memory Map + DurableFileStore → .data/agent_runs.json]
+  * POST /api/orchestrate → route (founder auth + getIdempotencyStore claim) → MultiAgentOrchestrator → ServerAgentExecutor.saveRun() → AgentRunStore (dual-mode) + ConstitutionalVerifier + SideEffectAuthorizationGate
+  * Workflow state → InMemoryWorkflowStore / PostgresWorkflowStore (dual-mode; local mode also best-effort prisma mirrors for definitions+instances)
+  * Approvals → SideEffectAuthorizationGate → InMemoryApprovalStore / PostgresApprovalStore (dual-mode; local mode best-effort prisma.approvalRecord mirror)
+  * Audit records → InMemoryAuditStore.record() / PostgresAuditStore (dual-mode; local mode best-effort prisma.sideEffectAudit mirror)
+  * Epistemic → EpistemicClaimStore / PostgresEpistemicStore (dual-mode, no local mirror)
+  * Idempotency → getIdempotencyStore() factory → InMemory/PostgresIdempotencyStore (dual-mode, no local mirror)
+- Structural proof (12/12 classes across 5 store files): every Postgres* class uses ONLY requireAuthoritativeDatabase and NEVER references DurableFileStore; every InMemory/dual class checks isAuthoritativeMode() first and delegates in authoritative mode — no production path can touch .data/*.json
+- Live evidence from the earlier orchestration test: 5 runs persisted to .data/agent_runs.json (agent_runs table in SQLite = 0 rows — runs do not mirror in local mode); 1 audit in .data/audits.json AND mirrored to SQLite side_effect_audits (1 row); epistemic/idempotency in .data/*.json only (0 db rows)
+- Phase 3.4 diff re-verified: backend change = ONLY src/app/api/agents/route.ts (+48, read-only GET over in-memory SERVER_AGENTS, no persistence); commit also REMOVED accidentally-tracked .data/*.json + db/custom.db from git; zero store/schema/persistence files touched; UI runtime.ts = pure fetch adapter (no localStorage/sessionStorage/IndexedDB)
+- Residual (pre-existing, unchanged): GET /api/agents/runs has no session gate; local-mode mirrors are best-effort (try/catch swallowed) — both are upstream Phase 2.x design decisions, not Phase 3.4 regressions
+
+Stage Summary:
+- VERDICT: .data/*.json is the sanctioned local/dev persistence mode of the pre-existing dual-mode architecture; the authoritative (production) path is Prisma-only and fail-closed — structurally proven to never write .data/*.json
+- In this sandbox deployment "authoritative" resolves to SQLite (documented port), not PostgreSQL — a deployment configuration fact, not a code defect; upstream repo runs the same code against PostgreSQL
+- Phase 3.4 introduced NO new persistence layer (backend diff = one read-only endpoint; no duplicate stores; no client-side persistence in the adapter)
+- No code changes required; no regression found; no merge, no force-push, Phase 3.5 not started
