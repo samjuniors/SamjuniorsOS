@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Battery, BatteryCharging, Bell, ChevronLeft, ChevronRight, Clock, Maximize2, Mic2, Minus, Monitor,
   Settings as Gear, Volume2, VolumeX, Wifi, WifiOff, X, Search, Power, User, SunMoon, Sparkles, Bot,
-  PanelRightClose, Command as CommandIcon, RefreshCw, Image, LayoutGrid, CheckCircle2, Scale, Activity,
+  PanelRightClose, Command as CommandIcon, RefreshCw, Image as ImageIcon, LayoutGrid, CheckCircle2, Scale, Activity,
   Building2, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import FlowDesktop from "../FlowDesktop";
@@ -175,10 +175,20 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
         if (a.from !== "you") { notify(a.title, `${agentName(a.from)} · ${a.kind}${a.detail ? ` — ${a.detail}` : ""}`); osSound.notify(); }
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attention]);
 
-  useEffect(() => { setAnim(true); const t = setTimeout(() => setAnim(false), 340); return () => clearTimeout(t); }, [win]);
+  // Window-state flash animation: adjust state during render (React-endorsed
+  // pattern) instead of synchronous setState inside an effect body.
+  const [prevWin, setPrevWin] = useState(win);
+  if (prevWin !== win) {
+    setPrevWin(win);
+    setAnim(true);
+  }
+  useEffect(() => {
+    if (!anim) return;
+    const t = setTimeout(() => setAnim(false), 340);
+    return () => clearTimeout(t);
+  }, [anim, win]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -221,7 +231,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
     { id: "focus", group: "Actions", label: focus ? "Exit focus mode" : "Focus mode", hint: "Hide panels · F", icon: <PanelRightClose size={15} />, run: () => setFocus((v) => !v) },
     { id: "min", group: "Actions", label: "Minimize window", icon: <Minus size={15} />, run: minWin },
     { id: "max", group: "Actions", label: win === "max" ? "Restore window" : "Maximize window", icon: <Maximize2 size={15} />, run: maxWin },
-    { id: "wall", group: "Actions", label: "Shuffle wallpaper", icon: <Image size={15} />, run: () => setWallIdx((i) => (i + 1) % WALLS.length) },
+    { id: "wall", group: "Actions", label: "Shuffle wallpaper", icon: <ImageIcon size={15} />, run: () => setWallIdx((i) => (i + 1) % WALLS.length) },
     { id: "voice", group: "Settings", label: voice ? "Sophia voice: on → off" : "Sophia voice: off → on", icon: <Mic2 size={15} />, run: () => setVoice((v) => !v) },
     { id: "mute", group: "Settings", label: muted ? "Unmute interface" : "Mute interface", icon: muted ? <VolumeX size={15} /> : <Volume2 size={15} />, run: () => setMuted((m) => !m) },
     { id: "clock", group: "Settings", label: `Switch to ${h12 ? "24-hour" : "12-hour"} clock`, icon: <Clock size={15} />, run: () => setH12((v) => !v) },
@@ -238,7 +248,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
     { type: "item", label: "Operating graph", icon: <LayoutGrid size={14} />, run: openWin },
     { type: "item", label: "Talk to Sophia", icon: <Sparkles size={14} />, run: onOpenNeural },
     { type: "sep" },
-    { type: "item", label: "Shuffle wallpaper", icon: <Image size={14} />, run: () => setWallIdx((i) => (i + 1) % WALLS.length) },
+    { type: "item", label: "Shuffle wallpaper", icon: <ImageIcon size={14} />, run: () => setWallIdx((i) => (i + 1) % WALLS.length) },
     { type: "item", label: "Refresh", icon: <RefreshCw size={14} />, run: () => os.refreshAgents() },
     { type: "item", label: "Display settings", icon: <Monitor size={14} />, run: () => setPop("settings") },
     { type: "sep" },

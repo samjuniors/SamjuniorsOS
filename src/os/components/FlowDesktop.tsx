@@ -28,8 +28,8 @@ import {
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
-} from "../../../../src/components/workflow";
-import type { GraphDTO } from "../../../../src/types/graph";
+} from "@/components/workflow";
+import type { GraphDTO } from "@/types/graph";
 import { fetchGraphOverview, decideApproval } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
@@ -1288,7 +1288,6 @@ export default function FlowDesktop({
       if (t < 1) animId.current = requestAnimationFrame(tick);
     };
     animId.current = requestAnimationFrame(tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const zoomAt = useCallback((mx: number, my: number, factor: number) => {
@@ -1300,7 +1299,6 @@ export default function FlowDesktop({
       const f = nk / prev.k;
       return clamp(mx - vw / 2 - ((mx - vw / 2 - prev.x) * f), my - vh / 2 - ((my - vh / 2 - prev.y) * f), nk);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fitView = useCallback(() => { osSound.click(); animateTo({ x: 0, y: 0, k: Math.min(vwRef.current / WORLD.W, vhRef.current / WORLD.H) * 0.94 }); }, [animateTo]);
@@ -1375,7 +1373,6 @@ export default function FlowDesktop({
     const up = (e: KeyboardEvent) => { if (e.code === "Space") { spaceRef.current = false; setSpaceDown(false); } };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomAt, fitView]);
 
   const isInteractive = (t: EventTarget | null) => {
@@ -1529,7 +1526,7 @@ export default function FlowDesktop({
           <div className="mr-1 hidden items-center gap-2 text-[10px] tracking-[0.2em] text-slate-300 sm:flex">
             {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.8)]" /> {attention.length} NEED YOU</> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.8)]" /> ALL QUIET</>}
           </div>
-          <button onClick={() => { osSound.click(); onToggleWork ? onToggleWork() : onPanelOpen?.(); }} title="Work drawer (T)" className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 active:scale-95"><Activity size={14} className="text-cyan-300" /><span className="hidden lg:inline">Work</span>{work.length > 0 && <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-200">{work.length}</span>}</button>
+          <button onClick={() => { osSound.click(); if (onToggleWork) onToggleWork(); else onPanelOpen?.(); }} title="Work drawer (T)" className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 active:scale-95"><Activity size={14} className="text-cyan-300" /><span className="hidden lg:inline">Work</span>{work.length > 0 && <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-200">{work.length}</span>}</button>
           <button onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effRight ? "Hide workforce" : "Show workforce"} className={`flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 ${effRight ? "text-cyan-200" : "text-slate-500"}`}><PanelRightClose size={16} /></button>
         </div>
 
@@ -1813,7 +1810,7 @@ export default function FlowDesktop({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={() => { osSound.click(); selected && focusNode(selected); }} title="Center" className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-cyan-200"><Crosshair size={13} /></button>
+                    <button onClick={() => { osSound.click(); if (selected) focusNode(selected); }} title="Center" className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-cyan-200"><Crosshair size={13} /></button>
                     <button onClick={() => { osSound.click(); setSelected(null); }} title="Close" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-white"><X size={13} /></button>
                   </div>
                 </div>

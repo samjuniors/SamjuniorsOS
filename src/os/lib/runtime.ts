@@ -16,7 +16,7 @@
  */
 import { os, presentationFor } from "./osStore";
 import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStore";
-import type { GraphDTO } from "../../../../src/types/graph";
+import type { GraphDTO } from "@/types/graph";
 
 /* ------------------------------------------------------------------ id mapping
  * UI graph/persona ids (used since the graph phase) ↔ authoritative AgentRole

@@ -1,12 +1,13 @@
 'use client';
 
-import V2Design1 from '../../Uploaded/Design1/src/App';
+import SamjuniorsOS from '../os/App';
 
 /**
- * The root route intentionally serves only the V2 Design1 operating surface.
- * Cockpit and classic-desktop code remains in the repository as inactive
- * reference material and is not imported from an active route.
+ * The root route serves the ONE canonical SamjuniorsOS application
+ * (relocated from Uploaded/Design1/src to src/os in Phase 4.3C-B.3).
+ * Historical UI generations live in /old as inert reference material and
+ * are never imported from an active route.
  */
 export default function SamJuniorsOSPage() {
-  return <V2Design1 />;
+  return <SamjuniorsOS />;
 }

@@ -11,14 +11,14 @@
  * All positions are deterministic functions of authoritative GraphDTO state.
  */
 
-import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "../../../../src/types/graph";
+import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "@/types/graph";
 import {
   EXECUTION_LANGUAGE,
   ENTITY_IDENTITY,
   NEUTRAL_CONDUIT,
   CANVAS_CHROME,
   tokenRgbParts,
-} from "../../../../src/components/workflow/execution-language";
+} from "@/components/workflow/execution-language";
 
 /*
  * Phase 4.3C-B.1 — Canonical execution-language palette.

@@ -67,7 +67,6 @@ export default function BootLock({ onUnlock }: { onUnlock: () => void }) {
     const onKey = () => unlock();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, leaving]);
 
   const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

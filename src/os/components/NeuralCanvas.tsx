@@ -13,7 +13,10 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fieldInst = useRef<NeuralField | null>(null);
   const statsRef = useRef(onStats);
-  statsRef.current = onStats;
+  // Latest-ref sync via effect (React-endorsed pattern; no ref writes during render)
+  useEffect(() => {
+    statsRef.current = onStats;
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -76,7 +79,6 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
       canvas.removeEventListener("wheel", wheel);
       fieldRef?.(null);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
