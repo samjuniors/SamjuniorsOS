@@ -1,7 +1,7 @@
 import React, { ReactNode } from 'react';
 import { WORKFLOW_COLORS } from './tokens';
 
-export type IconSurfaceVariant = 'filled' | 'glass' | 'outline' | 'squircle' | 'recessed' | 'floating';
+export type IconSurfaceVariant = 'filled' | 'glass' | 'outline' | 'squircle' | 'recessed' | 'floating' | 'brand';
 
 export interface IconContainerProps {
   children: ReactNode;
@@ -103,6 +103,23 @@ export const IconContainer: React.FC<IconContainerProps> = ({
         border: `1px solid ${color}88`,
         boxShadow: `0 8px 24px -4px rgba(0, 0, 0, 0.8), 0 0 16px ${color}33`,
         transform: 'translateY(-2px)',
+        color: '#FFFFFF',
+      };
+      break;
+
+    /**
+     * BRAND — the clean service disc from the founder-approved reference:
+     * flat dark charcoal fill, thin subtle light border, restrained shadow.
+     * NO glow, NO gradient, NO backdrop chrome — "just the logo and shape,
+     * with the name below". The `color` prop is deliberately ignored here:
+     * brand identity comes from the mark itself, never from a tint overlay.
+     */
+    case 'brand':
+      style = {
+        ...style,
+        background: '#23262E',
+        border: '1px solid rgba(255, 255, 255, 0.14)',
+        boxShadow: '0 2px 6px rgba(0, 0, 0, 0.4)',
         color: '#FFFFFF',
       };
       break;

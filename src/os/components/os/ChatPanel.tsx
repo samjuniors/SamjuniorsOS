@@ -190,7 +190,7 @@ export default function ChatPanel() {
       {/* ---------------- Small Handy Chat Panel ---------------- */}
       {open && (
         <div
-          className="fixed bottom-20 right-5 z-50 flex h-[510px] max-h-[calc(100vh-6.5rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-cyan-400/25 bg-[#060c18]/96 shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_35px_-5px_rgba(56,189,248,0.25)] backdrop-blur-2xl"
+          className="fixed bottom-20 right-5 z-50 flex h-[510px] max-h-[calc(100vh-6.5rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#060c18]/96 shadow-[0_25px_70px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
           style={{ animation: "os-in 220ms cubic-bezier(.16,1,.3,1)" }}
           onPointerDown={(e) => e.stopPropagation()}
         >
@@ -198,11 +198,7 @@ export default function ChatPanel() {
           <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-4 py-3">
             <div className="flex items-center gap-2.5">
               <span
-                className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-white/12"
-                style={{
-                  background: `linear-gradient(135deg, ${activeAgent.glow.replace("0.4", "0.15")}, rgba(255,255,255,0.03))`,
-                  boxShadow: `0 0 14px -2px ${activeAgent.glow}`,
-                }}
+                className="relative flex h-8 w-8 items-center justify-center rounded-full border border-white/14 bg-[#23262E]"
               >
                 {activeAgent.id === "sophia" ? (
                   <Sparkles size={16} className={activeAgent.tint} />

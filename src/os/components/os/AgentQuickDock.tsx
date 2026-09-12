@@ -11,7 +11,9 @@ const STATE_DOT: Record<Agent["state"], string> = {
 };
 const STATE_LABEL: Record<Agent["state"], string> = { working: "Working", waiting: "Waiting on you", ready: "Ready", offline: "Offline" };
 
-/** V2 Bottom workforce dock — richer icon avatars with gradient backgrounds, live state dots, attending text. */
+/** Bottom workforce dock — clean flat identity avatars (Phase 4.3C reference
+ *  language: flat dark disc, thin border, flat identity-tint icon, live state
+ *  dot; no gradient, no glow — the calm-baseline chrome treatment). */
 export default function AgentQuickDock({ onSelectAgent }: { onSelectAgent: (id: string) => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const agents = useOS((s) => s.agents);
@@ -31,7 +33,7 @@ export default function AgentQuickDock({ onSelectAgent }: { onSelectAgent: (id: 
 
         <div
           className="flex items-center gap-1.5 rounded-2xl border border-white/12 bg-[#060c18]/95 p-1.5 backdrop-blur-2xl sm:gap-2"
-          style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 10px 30px rgba(0,0,0,0.8), 0 0 20px -5px rgba(56,189,248,0.25)" }}
+          style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.8)" }}
         >
           {agents.map((a) => (
             <button
@@ -40,13 +42,9 @@ export default function AgentQuickDock({ onSelectAgent }: { onSelectAgent: (id: 
               title={`${a.name} — ${a.role} · ${a.current ?? STATE_LABEL[a.state]}`}
               className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200 hover:bg-white/10 active:scale-90 sm:h-11 sm:w-11 ${a.state === "offline" ? "opacity-50" : ""}`}
             >
-              {/* V2: Gradient background icon avatar */}
+              {/* Clean flat identity avatar — dark disc, thin border, flat tint icon */}
               <span
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 transition-all duration-300 group-hover:-translate-y-1 group-hover:scale-110 group-hover:border-white/30 sm:h-9 sm:w-9"
-                style={{
-                  background: `linear-gradient(135deg, ${a.glow.replace("0.4", "0.15")}, rgba(255,255,255,0.04))`,
-                  boxShadow: `0 4px 15px -2px ${a.glow}`,
-                }}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-white/14 bg-[#23262E] transition-all duration-300 group-hover:-translate-y-0.5 group-hover:scale-105 group-hover:border-white/30 sm:h-9 sm:w-9"
               >
                 <Bot size={17} className={a.tint} />
               </span>

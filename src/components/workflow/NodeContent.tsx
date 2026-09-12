@@ -205,3 +205,68 @@ export const ModelContent: React.FC<ModelContentProps> = ({
     </div>
   </div>
 );
+
+/** 7. Brand Service Content (Phase 4.3C — founder-approved reference) */
+export interface BrandNodeContentProps {
+  /** The official brand logo mark (see BrandLogos.tsx). */
+  logo: ReactNode;
+  /** Service name — renders BELOW the glyph, centered. */
+  label: string;
+  sublabel?: string;
+  /**
+   * 'disc' — open-shaped logo inside the clean brand disc (dark charcoal,
+   * thin border: "just the logo and shape"). 'none' — self-shaped mark
+   * (Telegram/WhatsApp carry their own disc) rendered standalone.
+   */
+  container?: 'disc' | 'none';
+  size?: 'sm' | 'md' | 'lg';
+}
+
+export const BrandNodeContent: React.FC<BrandNodeContentProps> = ({
+  logo,
+  label,
+  sublabel,
+  container = 'disc',
+  size = 'md',
+}) => {
+  const glyph = <span style={{ display: 'flex', lineHeight: 0 }}>{logo}</span>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, textAlign: 'center' }}>
+      {container === 'disc' ? (
+        <IconContainer variant="brand" size={size}>
+          {glyph}
+        </IconContainer>
+      ) : (
+        glyph
+      )}
+      <div style={{ maxWidth: 140 }}>
+        <div
+          style={{
+            fontSize: size === 'lg' ? 13 : 12,
+            fontWeight: 600,
+            color: '#FFFFFF',
+            lineHeight: 1.25,
+            letterSpacing: '-0.01em',
+            wordBreak: 'break-word',
+          }}
+        >
+          {label}
+        </div>
+        {sublabel && (
+          <div
+            style={{
+              fontSize: 9,
+              color: WORKFLOW_COLORS.textMuted,
+              marginTop: 2,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {sublabel}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

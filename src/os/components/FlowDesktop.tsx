@@ -5,7 +5,6 @@ import {
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
   Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
   Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target, Clock,
-  Mail, Send, GitBranch,
 } from "lucide-react";
 import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
@@ -25,6 +24,8 @@ import {
   WORKFLOW_COLORS,
   EXECUTION_LANGUAGE,
   ENTITY_IDENTITY,
+  SERVICE_BRANDS,
+  type ServiceBrandKey,
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
@@ -199,63 +200,86 @@ type EntityVisual = {
   tint: string;
   primaryLabel: string;
   subLabel?: string;
+  /** Service-brand rendering key (official flat logo — approved reference). */
   serviceBrand?: string;
+  /** Brand presentation: 'disc' (clean dark disc) or 'none' (self-shaped mark). */
+  serviceContainer?: "disc" | "none";
 };
 
 /**
- * Phase 4.3B.1 — Entity-identity-first visual resolution.
+ * Phase 4.3C — Entity-identity-first visual resolution (LOCKED precedence).
  *
- * PRECEDENCE (locked):
- *   1. Actual entity identity — id / type / role / owner (founder, Sophia,
- *      Thorne, Cruz, Lin, approval, verifier, vault). Resolved BEFORE any
- *      keyword matching so employees can never be misrendered as external
- *      services ("research" must not contain "search" into a Google card).
- *   2. Work objects — rendered as work cards with their own visual.
- *   3. Service keyword fallback — ONLY for genuinely unmatched external
- *      service nodes; never consulted for known company entities.
+ * PRECEDENCE (founder contract — never regress):
+ *   1. AGENT IDENTITY — resolved from authoritative id / type / role / owner
+ *      BEFORE any activity/service keyword matching. Thorne renders as
+ *      Thorne even when his current activity mentions "Google Search";
+ *      Cruz renders as Cruz even when activity contains a service keyword;
+ *      Lin renders as Lin under the same condition. Service activity text
+ *      can NEVER overwrite agent identity. Unknown agent nodes render as a
+ *      generic agent with their OWN title — still never a service card.
+ *   2. Company/governance entities (founder, approval, verifier, vault).
+ *   3. Work objects — rendered as work cards with their own visual.
+ *   4. External service fallback — ONLY for genuinely unmatched external
+ *      nodes; word-boundary matching on id/title ONLY (never on activity
+ *      or subtitle text); renders the official flat brand logo per the
+ *      approved reference.
  */
 function getEntityVisual(n: FlowNode): EntityVisual {
-  // ---- 1. Actual entity identity (authoritative id/type/role/owner) ----
-  if (n.id === "founder" || n.type === "founder" || n.dtoNode?.role === "founder") {
+  const isAgentNode = n.type === "agent" || n.dtoNode?.type === "agent";
+
+  // ---- 1. AGENT IDENTITY (authoritative id/owner/role — never keywords) ----
+  if (isAgentNode || n.id === "founder" || n.type === "founder" || n.dtoNode?.role === "founder") {
+    if (n.id === "founder" || n.type === "founder" || n.dtoNode?.role === "founder") {
+      return {
+        icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
+        tint: ENTITY_IDENTITY.founder,
+        primaryLabel: "Founder / Authority",
+        subLabel: "DIRECTIVES",
+      };
+    }
+    if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.owner === "sophia" || n.dtoNode?.role === "coo") {
+      return {
+        icon: <Bot size={26} strokeWidth={1.8} className="text-orange-300" />,
+        tint: ENTITY_IDENTITY.sophia,
+        primaryLabel: "Sophia",
+        subLabel: "COO & ORCHESTRATOR",
+      };
+    }
+    if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher" || n.dtoNode?.role === "researcher") {
+      return {
+        icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
+        tint: ENTITY_IDENTITY.thorne,
+        primaryLabel: "Dr. Aris Thorne",
+        subLabel: "RESEARCH SPECIALIST",
+      };
+    }
+    if (n.id === "finance" || n.owner === "finance" || n.dtoNode?.role === "finance") {
+      return {
+        icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
+        tint: ENTITY_IDENTITY.cruz,
+        primaryLabel: "Julian Cruz",
+        subLabel: "FINANCE SPECIALIST",
+      };
+    }
+    if (n.id === "pm" || n.owner === "pm" || n.dtoNode?.role === "pm") {
+      return {
+        icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
+        tint: ENTITY_IDENTITY.lin,
+        primaryLabel: "Maya Lin",
+        subLabel: "PRODUCT ARCHITECT",
+      };
+    }
+    // Unknown agent — generic agent visual with its OWN authoritative title.
+    // Service keyword matching is NEVER consulted for agent nodes.
     return {
-      icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
-      tint: ENTITY_IDENTITY.founder,
-      primaryLabel: "Founder / Authority",
-      subLabel: "DIRECTIVES",
+      icon: <Bot size={22} strokeWidth={1.8} className="text-cyan-300" />,
+      tint: n.state === "blocked" ? EXECUTION_LANGUAGE.blocked.bright : n.state === "complete" ? EXECUTION_LANGUAGE.completed.bright : EXECUTION_LANGUAGE.running.bright,
+      primaryLabel: n.title,
+      subLabel: n.subtitle ?? "COMPANY AGENT",
     };
   }
-  if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.dtoNode?.role === "coo") {
-    return {
-      icon: <Bot size={26} strokeWidth={1.8} className="text-orange-300" />,
-      tint: ENTITY_IDENTITY.sophia,
-      primaryLabel: "Sophia",
-      subLabel: "COO & ORCHESTRATOR",
-    };
-  }
-  if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher" || n.dtoNode?.role === "researcher") {
-    return {
-      icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
-      tint: ENTITY_IDENTITY.thorne,
-      primaryLabel: "Dr. Aris Thorne",
-      subLabel: "RESEARCH SPECIALIST",
-    };
-  }
-  if (n.id === "finance" || n.owner === "finance" || n.dtoNode?.role === "finance") {
-    return {
-      icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
-      tint: ENTITY_IDENTITY.cruz,
-      primaryLabel: "Julian Cruz",
-      subLabel: "FINANCE SPECIALIST",
-    };
-  }
-  if (n.id === "pm" || n.owner === "pm" || n.dtoNode?.role === "pm") {
-    return {
-      icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
-      tint: ENTITY_IDENTITY.lin,
-      primaryLabel: "Maya Lin",
-      subLabel: "PRODUCT ARCHITECT",
-    };
-  }
+
+  // ---- 2. Company/governance entities ----
   if (n.type === "approval" || n.id === "approval") {
     return {
       icon: <Scale size={24} strokeWidth={1.8} className="text-amber-300" />,
@@ -281,7 +305,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
     };
   }
 
-  // ---- 2. Work objects — first-class work cards ----
+  // ---- 3. Work objects — first-class work cards ----
   if (n.type === "workflow") {
     const isDone = n.state === "complete";
     return {
@@ -298,46 +322,29 @@ function getEntityVisual(n: FlowNode): EntityVisual {
     };
   }
 
-  // ---- 3. External service fallback (ONLY for genuinely unmatched nodes) ----
+  // ---- 4. External service fallback (ONLY for genuinely unmatched nodes) ----
+  // Word-boundary matching on id/title ONLY — never on activity text
+  // (service activity must not overwrite identity) — and never for agents.
   const text = `${n.id} ${n.title}`.toLowerCase();
-  if (text.includes("github") || text.includes("git")) {
+  const brandVisual = (key: ServiceBrandKey): EntityVisual => {
+    const brand = SERVICE_BRANDS[key];
     return {
-      icon: <GitBranch size={24} strokeWidth={1.8} className="text-white" />,
-      tint: ENTITY_IDENTITY.github,
-      primaryLabel: "GitHub",
-      subLabel: "VERSION CONTROL",
-      serviceBrand: "GitHub",
+      icon: <brand.Logo size={brand.container === "disc" ? 26 : 34} title={brand.label} />,
+      tint: ENTITY_IDENTITY[key],
+      primaryLabel: brand.label,
+      subLabel: brand.sublabel,
+      serviceBrand: brand.label,
+      serviceContainer: brand.container,
     };
-  }
-  if (text.includes("slack")) {
-    return {
-      icon: <MessageSquare size={24} strokeWidth={1.8} className="text-[#ECB22E]" />,
-      tint: ENTITY_IDENTITY.slack,
-      primaryLabel: "Slack",
-      subLabel: "TEAM CHAT",
-      serviceBrand: "Slack",
-    };
-  }
-  if (text.includes("telegram")) {
-    return {
-      icon: <Send size={22} strokeWidth={1.8} className="text-[#2AABEE]" />,
-      tint: ENTITY_IDENTITY.telegram,
-      primaryLabel: "Telegram",
-      subLabel: "COMMUNICATION",
-      serviceBrand: "Telegram",
-    };
-  }
-  if (text.includes("gmail") || text.includes("email")) {
-    return {
-      icon: <Mail size={22} strokeWidth={1.8} className="text-[#EA4335]" />,
-      tint: ENTITY_IDENTITY.gmail,
-      primaryLabel: "Gmail",
-      subLabel: "EXTERNAL SERVICE",
-      serviceBrand: "Gmail",
-    };
-  }
+  };
+  if (/\bgithub\b/.test(text)) return brandVisual("github");
+  if (/\bslack\b/.test(text)) return brandVisual("slack");
+  if (/\btelegram\b/.test(text)) return brandVisual("telegram");
+  if (/\bwhatsapp\b/.test(text)) return brandVisual("whatsapp");
+  if (/\bgmail\b|\bemail\b/.test(text)) return brandVisual("gmail");
+  if (/\bgoogle\b|\bgemini\b/.test(text)) return brandVisual("google");
 
-  // ---- 4. General unmatched node ----
+  // ---- 5. General unmatched node ----
   return {
     icon: <Bot size={22} strokeWidth={1.8} className="text-cyan-300" />,
     tint: n.state === "blocked" ? EXECUTION_LANGUAGE.blocked.bright : n.state === "complete" ? EXECUTION_LANGUAGE.completed.bright : EXECUTION_LANGUAGE.running.bright,
@@ -722,13 +729,27 @@ function Phase4NodeCard({
   );
 
   // 6. Minimal Icon-First Content
-  const content = (
+  //    External service nodes render the approved brand treatment: ONLY the
+  //    official flat logo in a clean dark disc (no glass, no glow, no tint
+  //    overlay) — "just the logo and shape, with the name below".
+  const iconSize = n.kind === "core" ? "lg" : n.w <= 56 ? "sm" : "md";
+  const content = visual.serviceBrand ? (
+    visual.serviceContainer === "none" ? (
+      <div className="flex items-center justify-center" style={{ filter: "drop-shadow(0 2px 5px rgba(0,0,0,0.45))" }}>
+        {visual.icon}
+      </div>
+    ) : (
+      <IconContainer variant="brand" size={iconSize}>
+        <span style={{ display: "flex", lineHeight: 0 }}>{visual.icon}</span>
+      </IconContainer>
+    )
+  ) : (
     <IconOnlyContent
       icon={visual.icon}
       iconVariant={geometry === "squircle" ? "squircle" : "glass"}
       color={visual.tint}
       glow={selected || nodeState === "active"}
-      size={n.kind === "core" ? "lg" : n.w <= 56 ? "sm" : "md"}
+      size={iconSize}
     />
   );
 
@@ -954,7 +975,7 @@ function WorkforceList({ onOpen }: { onOpen: (id: string) => void }) {
       {agents.map((a) => (
         <li key={a.id}>
           <button onClick={() => { osSound.click(); onOpen(a.id); }} className="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2.5 rounded-lg px-1 py-1.5 text-left transition hover:bg-white/[0.05]">
-            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]" style={{ boxShadow: `0 0 14px -4px ${a.glow}` }}>
+            <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/14 bg-[#23262E]">
               <Bot size={15} className={a.tint} />
               <StateDot state={a.state} />
             </span>

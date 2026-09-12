@@ -200,11 +200,17 @@ export const ENTITY_IDENTITY = {
   verifier: '#34d399',
   verifierBlocked: '#fb7185',
   vault: '#34d399',
-  /** Genuinely unmatched external services (last-resort fallback only). */
+  /** Genuinely unmatched external services (last-resort fallback only).
+   *  Phase 4.3C identity-axis extension (founder-approved reference): the
+   *  brand identity now renders as the official flat logo mark (see
+   *  BrandLogos.tsx); these tints remain for text/metadata accents only. */
   github: '#ffffff',
   slack: '#ECB22E',
   telegram: '#2AABEE',
   gmail: '#EA4335',
+  google: '#4285F4',
+  gemini: '#4285F4',
+  whatsapp: '#25D366',
 } as const;
 
 export type EntityIdentityKey = keyof typeof ENTITY_IDENTITY;

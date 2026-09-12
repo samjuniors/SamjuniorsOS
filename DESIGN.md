@@ -419,7 +419,7 @@ Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus autom
 
 ### Specimen Sheet
 - Certified at `/design-system/workflow` (`src/app/design-system/workflow/page.tsx`).
-- Features 13 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles, Icon Containers, Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (generic illustrative fixtures), and Responsive Sizes.
+- Features 14 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles (incl. Brand Service), Icon Containers (incl. the `brand` disc), Brand Identity (official service marks per the founder-approved reference), Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (real brand marks — Telegram, Google Gemini), and Responsive Sizes.
 - Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
 - Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.
 
@@ -460,9 +460,26 @@ Per-state conduit treatments (stroke widths/alphas, additive composite reserved 
 ### Entity Identity Axis (`ENTITY_IDENTITY`)
 Agent/gate/vault/service identity tints (Sophia `#fb923c`, Thorne `#38bdf8`, Cruz `#34d399`, Lin `#c084fc`, approval `#fbbf24`, …) are deliberately SEPARATE from the execution-state axis: an entity keeps its identity color regardless of the execution state of its work. Identity is expressed as static card/chip tints in the React layer; the canvas energy channel carries execution state ONLY (removing the former Sophia identity-fire engine treatment — identity color no longer appears as execution energy).
 
+### Brand Identity Marks (`BrandLogos.tsx` / `SERVICE_BRANDS`) — Phase 4.3C
+External service identity renders as the **official flat brand mark** — never as a generic Lucide glyph with a service-tinted container:
+
+- Canonical marks: Google (multicolor G), Google Gemini (sparkle), Telegram (blue disc + paper plane), GitHub (octocat), Slack (4-color), Gmail (multicolor M), WhatsApp (green disc + handset) — `src/components/workflow/BrandLogos.tsx`, registered in `SERVICE_BRANDS`.
+- Presentation per the founder-approved reference: **only the logo and the shape, with the name below** — open-shaped marks (Google, GitHub, Slack, Gmail, Gemini) sit flat inside the clean `brand` disc variant (flat dark charcoal `#23262E`, 1px `rgba(255,255,255,0.14)` border, restrained `0 2px 6px` shadow; no glow, no gradient, no tint overlay); self-shaped marks (Telegram, WhatsApp — the mark is already a filled disc) render standalone. The service name renders below the glyph (`BrandNodeContent`).
+- The `brand` IconContainer variant deliberately ignores the `color` prop: brand identity comes from the mark itself, never from a tint overlay. Brand tints in `ENTITY_IDENTITY` (google `#4285F4`, whatsapp `#25D366`, …) remain for text/metadata accents only.
+
+### Entity-Identity Precedence (LOCKED)
+`getEntityVisual` (`src/os/components/FlowDesktop.tsx`) resolves node visuals in this exact order — service activity text can NEVER overwrite agent identity:
+
+1. **Agent identity** — resolved from authoritative id / type / role / owner BEFORE any keyword matching. Thorne renders as Thorne even when his activity mentions "Google Search"; Cruz as Cruz under the same condition; Lin as Lin likewise. Unknown `agent`-type nodes render as a generic agent with their own authoritative title — the service tier is never consulted for agents.
+2. **Company/governance entities** — founder, approval gate, verifier, vault.
+3. **Work objects** — `workflow`-type nodes render as first-class work cards with their own title/state (a work card titled "…via Google Search" stays a work card).
+4. **External services** — LAST-RESORT fallback only: word-boundary matching (`\bgoogle\b`, `\bgithub\b`, …) on id/title ONLY — never on activity or subtitle text; renders the official brand mark per the reference.
+5. **General fallback** — generic company-node visual with the node's own title.
+
 ### Behavioral Contract
 - Clicking/selecting a node MUST NOT fabricate execution animation — all engine energy (comets, rings, arrival glows) is driven exclusively by authoritative runtime state via `setGraph`; comets never continue onto idle relationships.
 - Neutral conduits are strictly static in idle (no ambient breathing); they never carry synthetic traffic.
 - Comet emission is deterministic per authoritative active edge (cadence/speed/trail derive from the edge's graph index via `MOTION_TOKENS.cometCadenceMs` / `signalVelocityPxPerSec`).
 - Motion/easing and glow/animation limits remain governed by `MOTION_TOKENS` and `EFFECTS_BUDGET_CONFIGS`.
 - Components reuse these primitives; they do not invent separate visual/state treatments.
+- Agent identity always resolves before service keyword matching (entity-identity precedence above); OS chrome avatars (workforce dock, sidebar, chat panel) render as clean flat dark discs with thin borders — no gradients, no glow.

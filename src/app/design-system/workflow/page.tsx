@@ -13,8 +13,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Shield,
-  FolderGit2,
   Sliders,
 } from 'lucide-react';
 import {
@@ -27,7 +25,7 @@ import {
   IconTitleContent,
   IconMetaContent,
   AgentContent,
-  ModelContent,
+  BrandNodeContent,
   Connector,
   LoadingRing,
   PulseEffect,
@@ -38,6 +36,10 @@ import {
   NodeGeometryType,
   EffectsBudget,
   WORKFLOW_COLORS,
+  GoogleLogo,
+  TelegramLogo,
+  SERVICE_BRANDS,
+  ServiceBrandKey,
 } from '@/components/workflow';
 
 export default function WorkflowDesignSystemSpecimen() {
@@ -326,12 +328,15 @@ export default function WorkflowDesignSystemSpecimen() {
               </div>
 
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 flex items-center justify-between">
-                <Node geometry="square" size="md" budget={budget}>
-                  <IconLabelContent icon={<Send size={20} />} label="Telegram" sublabel="Trigger" />
-                </Node>
+                <BrandNodeContent
+                  logo={<TelegramLogo size={34} />}
+                  label="Telegram"
+                  sublabel="Trigger"
+                  container="none"
+                />
                 <div className="text-right">
-                  <div className="text-xs font-semibold text-white">Icon + Label</div>
-                  <div className="text-[10px] text-slate-500">Vertical stack</div>
+                  <div className="text-xs font-semibold text-white">Brand Service</div>
+                  <div className="text-[10px] text-slate-500">Official logo · name below</div>
                 </div>
               </div>
 
@@ -387,20 +392,47 @@ export default function WorkflowDesignSystemSpecimen() {
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">05 ICON CONTAINERS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Surface Variations</h2>
             <p className="mt-1.5 text-xs text-slate-400">
-              Six physical surface treatments for internal glyphs and avatars.
+              Seven physical surface treatments for internal glyphs and avatars — including the clean flat brand disc.
             </p>
 
             <div className="mt-6 grid grid-cols-3 gap-4">
-              {(['filled', 'glass', 'outline', 'squircle', 'recessed', 'floating'] as IconSurfaceVariant[]).map(
+              {(['filled', 'glass', 'outline', 'squircle', 'recessed', 'floating', 'brand'] as IconSurfaceVariant[]).map(
                 (v) => (
                   <div key={v} className="flex flex-col items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
                     <IconContainer variant={v} color={WORKFLOW_COLORS.primary} size="md">
-                      <Send size={18} />
+                      {v === 'brand' ? <GoogleLogo size={26} title="Google" /> : <Send size={18} />}
                     </IconContainer>
                     <span className="text-[11px] font-medium capitalize text-slate-300">{v}</span>
                   </div>
                 )
               )}
+            </div>
+          </section>
+
+          {/* SECTION 05B: BRAND IDENTITY (Col 8-12) — founder-approved reference */}
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-5">
+            <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">05B BRAND IDENTITY</div>
+            <h2 className="mt-1 text-base font-semibold text-white">External Service Marks</h2>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Only the official flat logo — no outer chrome, no glow, no service tint overlays. Open-shaped marks sit in the
+              clean dark disc; self-shaped marks (Telegram, WhatsApp) render standalone. The name renders below the glyph.
+            </p>
+
+            <div className="mt-6 grid grid-cols-4 gap-4">
+              {(Object.keys(SERVICE_BRANDS) as ServiceBrandKey[]).map((key) => {
+                const brand = SERVICE_BRANDS[key];
+                return (
+                  <div key={key} className="flex flex-col items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                    <BrandNodeContent
+                      logo={<brand.Logo size={brand.container === 'disc' ? 26 : 34} />}
+                      label={brand.label}
+                      sublabel={brand.sublabel}
+                      container={brand.container}
+                      size="md"
+                    />
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -702,16 +734,15 @@ export default function WorkflowDesignSystemSpecimen() {
             {/* Main Composition A: Telegram Trigger → AI Agent → Save Lead to Sheet → Google Gemini Chat Model */}
             <div className="mt-8 rounded-2xl border border-white/[0.08] bg-[#02050E] p-8 overflow-x-auto">
               <div className="min-w-[880px] flex items-center justify-between gap-4 relative">
-                {/* 1. Telegram Trigger */}
+                {/* 1. Telegram Trigger — official brand mark, clean reference treatment */}
                 <div className="flex flex-col items-center gap-2">
-                  <Node geometry="square" size="md" hasOutputPort budget={budget}>
-                    <IconLabelContent
-                      icon={<Send size={22} className="text-white" />}
-                      label="Telegram"
-                      sublabel="Trigger"
-                      color={WORKFLOW_COLORS.primary}
-                    />
-                  </Node>
+                  <BrandNodeContent
+                    logo={<TelegramLogo size={44} />}
+                    label="Telegram"
+                    sublabel="Trigger"
+                    container="none"
+                    size="lg"
+                  />
                   <span className="text-[11px] font-medium text-slate-400">Telegram Trigger</span>
                 </div>
 
@@ -762,15 +793,15 @@ export default function WorkflowDesignSystemSpecimen() {
                   </svg>
                 </div>
 
-                {/* 4. Google Gemini Chat Model */}
+                {/* 4. Google Gemini Chat Model — official Google mark in the clean brand disc */}
                 <div className="flex flex-col items-center gap-2">
-                  <Node geometry="circle" size="md" hasInputPort budget={budget}>
-                    <ModelContent
-                      icon={<Cpu size={22} className="text-blue-400" />}
-                      modelName="Gemini 2.0"
-                      provider="Google AI"
-                    />
-                  </Node>
+                  <BrandNodeContent
+                    logo={<GoogleLogo size={26} />}
+                    label="Gemini 2.0"
+                    sublabel="Google AI · Chat Model"
+                    container="disc"
+                    size="lg"
+                  />
                   <span className="text-[11px] font-medium text-slate-400">Chat Model</span>
                 </div>
               </div>
