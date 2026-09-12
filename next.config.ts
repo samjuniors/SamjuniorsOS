@@ -24,21 +24,6 @@ const nextConfig: NextConfig = {
     ],
   },
   transpilePackages: ["motion"],
-  async headers() {
-    // The Core V4/V5 prototypes are archived design references served as
-    // static assets under /prototype/*. The active root route serves the
-    // V2 Design1 shell directly (no iframe). Framing is allowed only for
-    // these static prototype assets.
-    return [
-      {
-        source: "/prototype/:path*",
-        headers: [
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
-        ],
-      },
-    ];
-  },
 };
 
 export default nextConfig;

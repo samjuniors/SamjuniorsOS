@@ -7,9 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const htmlPath = path.join(__dirname, '../public/prototype/v5/index.html');
-const cssPath = path.join(__dirname, '../public/prototype/v5/prototype.css');
-const jsPath = path.join(__dirname, '../public/prototype/v5/prototype.js');
+const htmlPath = path.join(__dirname, '../old/prototypes/core-v5/index.html');
+const cssPath = path.join(__dirname, '../old/prototypes/core-v5/prototype.css');
+const jsPath = path.join(__dirname, '../old/prototypes/core-v5/prototype.js');
 
 let failures = 0;
 function assert(condition, message) {

@@ -4,9 +4,9 @@
  */
 const fs = require('fs');
 
-const html = fs.readFileSync('public/prototype/v4/index.html', 'utf8');
-const css = fs.readFileSync('public/prototype/v4/prototype.css', 'utf8');
-const js = fs.readFileSync('public/prototype/v4/prototype.js', 'utf8');
+const html = fs.readFileSync('old/prototypes/core-v4/index.html', 'utf8');
+const css = fs.readFileSync('old/prototypes/core-v4/prototype.css', 'utf8');
+const js = fs.readFileSync('old/prototypes/core-v4/prototype.js', 'utf8');
 
 let failures = 0;
 function check(label, ok) {

@@ -1,1 +1,10 @@
+/*
+ * SamJuniorsOS canonical global CSS entry.
+ *
+ * Phase 4.3C-B.2 boundary guard: exclude the inert /old archive from
+ * Tailwind v4 automatic source detection so archived prototype classes
+ * cannot bloat the canonical stylesheet.
+ */
+@source not "../../old";
+
 @import "../../Uploaded/Design1/src/index.css";
