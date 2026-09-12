@@ -145,7 +145,9 @@ export const AgentContent: React.FC<AgentContentProps> = ({
   statusTone = 'idle',
   color = WORKFLOW_COLORS.primary,
 }) => {
-  const dotColor = statusTone === 'active' ? WORKFLOW_COLORS.processing : statusTone === 'waiting' ? '#FCD34D' : WORKFLOW_COLORS.success;
+  // Canonical execution language: active = RUNNING → primary (blue/cyan),
+  // waiting = APPROVAL → processing (static amber), idle = settled green.
+  const dotColor = statusTone === 'active' ? WORKFLOW_COLORS.primary : statusTone === 'waiting' ? WORKFLOW_COLORS.processing : WORKFLOW_COLORS.success;
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>

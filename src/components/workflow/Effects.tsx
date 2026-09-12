@@ -277,7 +277,7 @@ export const AmbientParticles: React.FC<AmbientParticlesProps> = ({
             width: p.size,
             height: p.size,
             borderRadius: '9999px',
-            backgroundColor: '#00B2FF',
+            backgroundColor: WORKFLOW_COLORS.primary,
             opacity: p.opacity,
             boxShadow: `0 0 6px rgba(0, 178, 255, 0.4)`,
           }}

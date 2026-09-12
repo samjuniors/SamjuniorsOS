@@ -12,6 +12,38 @@
  */
 
 import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "../../../../src/types/graph";
+import {
+  EXECUTION_LANGUAGE,
+  ENTITY_IDENTITY,
+  NEUTRAL_CONDUIT,
+  CANVAS_CHROME,
+  tokenRgbParts,
+} from "../../../../src/components/workflow/execution-language";
+
+/*
+ * Phase 4.3C-B.1 — Canonical execution-language palette.
+ *
+ * All engine colors derive from the Phase 4.1 token library via
+ * EXECUTION_LANGUAGE (running=blue/cyan, externalAction=amber,
+ * completed=green, blocked=red, idle=neutral). Sophia's core heat is her
+ * ENTITY_IDENTITY fire treatment (identity axis, distinct from execution
+ * state). Packet/conduit/ring/glow VALUES changed to the canonical tokens;
+ * every behavioral trigger, threshold, timing, and size is unchanged.
+ */
+const RUNNING = EXECUTION_LANGUAGE.running;
+const EXTERNAL = EXECUTION_LANGUAGE.externalAction;
+const DONE = EXECUTION_LANGUAGE.completed;
+const BLOCKED = EXECUTION_LANGUAGE.blocked;
+/** Sophia identity fire (rgb triplet) — orchestrator heat treatment. */
+const SOPHIA_RGB = sophiaRgb();
+function sophiaRgbParts(): [number, number, number] {
+  const h = ENTITY_IDENTITY.sophia.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function sophiaRgb(): string {
+  // #fb923c identity tint → rgb triplet
+  return sophiaRgbParts().join(',');
+}
 
 export const DESIGN_W = 1600;
 export const DESIGN_H = 900;
@@ -1034,11 +1066,11 @@ export class FlowEngine {
   spawnTimer = 0;
   emberAcc = 0;
 
-  blueSprite = sprite(56, 189, 248);
-  fireSprite = sprite(249, 115, 22);
-  amberSprite = sprite(245, 158, 11);
-  emeraldSprite = sprite(16, 185, 129);
-  roseSprite = sprite(244, 63, 94);
+  blueSprite = sprite(...tokenRgbParts('primary'));
+  fireSprite = sprite(...sophiaRgbParts());
+  amberSprite = sprite(...tokenRgbParts('processing'));
+  emeraldSprite = sprite(...tokenRgbParts('success'));
+  roseSprite = sprite(...tokenRgbParts('error'));
   whiteSprite = sprite(240, 245, 255);
   private raf = 0;
   private lastT = 0;
@@ -1181,7 +1213,7 @@ export class FlowEngine {
             max: rnd(0.45, 0.95),
             size: rnd(1.4, 3.2),
             heat: rnd(0.4, 1),
-            color: "#ffaa55",
+            color: ENTITY_IDENTITY.sophia,
           });
         }
       }
@@ -1191,14 +1223,14 @@ export class FlowEngine {
   burstFire(x: number, y: number, n: number, tone: PacketTone = "cyan") {
     const col =
       tone === "amber"
-        ? "#fbbf24"
+        ? EXTERNAL.bright
         : tone === "rose"
-        ? "#fb7185"
+        ? BLOCKED.bright
         : tone === "emerald"
-        ? "#34d399"
+        ? DONE.bright
         : tone === "fire"
-        ? "#ff8833"
-        : "#38bdf8";
+        ? ENTITY_IDENTITY.sophia
+        : RUNNING.bright;
 
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -1261,12 +1293,12 @@ export class FlowEngine {
           size: rnd(1.0, 2.2),
           color:
             pk.tone === "amber"
-              ? "#fde68a"
+              ? EXTERNAL.bright
               : pk.tone === "rose"
-              ? "#fca5a5"
+              ? BLOCKED.bright
               : pk.tone === "emerald"
-              ? "#a7f3d0"
-              : "#7dd3fc",
+              ? DONE.bright
+              : RUNNING.bright,
         });
       }
 
@@ -1331,7 +1363,7 @@ export class FlowEngine {
         max: rnd(0.35, 0.9),
         size: rnd(0.8, 2.2),
         heat: Math.random(),
-        color: "#fb923c",
+        color: ENTITY_IDENTITY.sophia,
       });
     }
 
@@ -1388,7 +1420,7 @@ export class FlowEngine {
 
     // --- Technical Circuit Crosshairs & Coordinates
     g.save();
-    g.strokeStyle = "rgba(56, 189, 248, 0.05)";
+    g.strokeStyle = CANVAS_CHROME.crosshair;
     g.lineWidth = 1;
     for (let gx = 180; gx <= 1520; gx += 260) {
       for (let gy = 200; gy <= 780; gy += 240) {
@@ -1419,39 +1451,39 @@ export class FlowEngine {
       if (e.style === "rose" || e.state === "blocked") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(244,63,94,${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
+        g.strokeStyle = `rgba(${BLOCKED.rgb},${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
         g.lineWidth = 8;
         g.stroke();
-        g.strokeStyle = `rgba(251,113,133,${0.68 + lit * 0.32})`;
+        g.strokeStyle = `rgba(${BLOCKED.rgbBright},${0.68 + lit * 0.32})`;
         g.lineWidth = 2.2;
         g.stroke();
         g.restore();
       } else if (e.style === "amber") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(245,158,11,${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
+        g.strokeStyle = `rgba(${EXTERNAL.rgb},${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
         g.lineWidth = 8;
         g.stroke();
-        g.strokeStyle = `rgba(252,211,77,${0.68 + lit * 0.3})`;
+        g.strokeStyle = `rgba(${EXTERNAL.rgbBright},${0.68 + lit * 0.3})`;
         g.lineWidth = 2.2;
         g.stroke();
         g.restore();
       } else if (e.style === "emerald" || e.state === "complete") {
         g.save();
-        g.strokeStyle = `rgba(16,185,129,${0.18 + lit * 0.22})`;
+        g.strokeStyle = `rgba(${DONE.rgb},${0.18 + lit * 0.22})`;
         g.lineWidth = 5;
         g.stroke();
-        g.strokeStyle = `rgba(52,211,153,${0.55 + lit * 0.3})`;
+        g.strokeStyle = `rgba(${DONE.rgbBright},${0.55 + lit * 0.3})`;
         g.lineWidth = 1.8;
         g.stroke();
         g.restore();
       } else if (e.style === "cyan" || e.state === "active") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(56,189,248,${0.28 + lit * 0.35})`;
+        g.strokeStyle = `rgba(${RUNNING.rgb},${0.28 + lit * 0.35})`;
         g.lineWidth = 9;
         g.stroke();
-        g.strokeStyle = `rgba(125,211,252,${0.68 + lit * 0.32})`;
+        g.strokeStyle = `rgba(${RUNNING.rgbBright},${0.68 + lit * 0.32})`;
         g.lineWidth = 2.2;
         g.setLineDash([8, 10]);
         g.lineDashOffset = -this.time * 65;
@@ -1460,23 +1492,23 @@ export class FlowEngine {
         g.restore();
       } else {
         // Quiet idle baseline conduit (ambient breathing, no flurry)
-        g.strokeStyle = `rgba(40,55,80,${0.16 + ambientBreath + lit * 0.1})`;
+        g.strokeStyle = `${NEUTRAL_CONDUIT.base}${0.16 + ambientBreath + lit * 0.1})`;
         g.lineWidth = 4;
         g.stroke();
-        g.strokeStyle = `rgba(130,165,205,${0.24 + ambientBreath + lit * 0.2})`;
+        g.strokeStyle = `${NEUTRAL_CONDUIT.core}${0.24 + ambientBreath + lit * 0.2})`;
         g.lineWidth = 1.4;
         g.stroke();
       }
 
-      // Heat gradient entering Sophia core
+      // Heat gradient entering Sophia core (identity fire treatment)
       if (e.to === "core") {
         const tail = 110;
         const start = Math.max(0, p.len - tail);
         const a = this.pointAt(p, start);
         const b = p.pts[p.pts.length - 1];
         const grad = g.createLinearGradient(a.x, a.y, b.x, b.y);
-        grad.addColorStop(0, "rgba(255,150,60,0)");
-        grad.addColorStop(1, `rgba(255,170,80,${0.5 + this.coreHeat * 0.35})`);
+        grad.addColorStop(0, `rgba(${SOPHIA_RGB},0)`);
+        grad.addColorStop(1, `rgba(${SOPHIA_RGB},${0.5 + this.coreHeat * 0.35})`);
         g.save();
         g.globalCompositeOperation = "lighter";
         g.beginPath();
@@ -1503,14 +1535,14 @@ export class FlowEngine {
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
         g.fillStyle =
           e.style === "rose"
-            ? `rgba(251,113,133,${0.85 + lit * 0.15})`
+            ? `rgba(${BLOCKED.rgbBright},${0.85 + lit * 0.15})`
             : e.style === "amber"
-            ? `rgba(252,211,77,${0.85 + lit * 0.15})`
+            ? `rgba(${EXTERNAL.rgbBright},${0.85 + lit * 0.15})`
             : e.style === "emerald"
-            ? `rgba(52,211,153,${0.85 + lit * 0.15})`
+            ? `rgba(${DONE.rgbBright},${0.85 + lit * 0.15})`
             : e.style === "cyan"
-            ? `rgba(125,211,252,${0.85 + lit * 0.15})`
-            : `rgba(180,210,240,${0.55 + ambientBreath + lit * 0.2})`;
+            ? `rgba(${RUNNING.rgbBright},${0.85 + lit * 0.15})`
+            : `${NEUTRAL_CONDUIT.arrow}${0.55 + ambientBreath + lit * 0.2})`;
 
         g.beginPath();
         g.moveTo(b.x, b.y);
@@ -1532,11 +1564,11 @@ export class FlowEngine {
       const isBlocked = n.state === "blocked";
       const gr = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
       if (isCore) {
-        gr.addColorStop(0, `rgba(255,170,80,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(${SOPHIA_RGB},${0.45 * en})`);
       } else if (isBlocked) {
-        gr.addColorStop(0, `rgba(244,63,94,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(${BLOCKED.rgb},${0.45 * en})`);
       } else {
-        gr.addColorStop(0, `rgba(56,189,248,${0.45 * en})`);
+        gr.addColorStop(0, `rgba(${RUNNING.rgb},${0.45 * en})`);
       }
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr;
@@ -1552,9 +1584,9 @@ export class FlowEngine {
         w = c.w + 10,
         h = c.h + 10;
       g.save();
-      g.shadowColor = "rgba(255,140,50,0.95)";
+      g.shadowColor = `rgba(${SOPHIA_RGB},0.95)`;
       g.shadowBlur = 20 + heat * 24;
-      g.strokeStyle = `rgba(255,${Math.round(160 + heat * 50)},80,${0.5 + heat * 0.4})`;
+      g.strokeStyle = `rgba(${SOPHIA_RGB},${0.5 + heat * 0.4})`;
       g.lineWidth = 2.0 + heat * 1.5;
       g.beginPath();
       g.roundRect(x, y, w, h, 16);
@@ -1562,8 +1594,8 @@ export class FlowEngine {
       g.restore();
 
       const gr = g.createRadialGradient(c.x, c.y, c.w * 0.2, c.x, c.y, c.w * 0.8);
-      gr.addColorStop(0, `rgba(255,140,60,${0.1 + heat * 0.1})`);
-      gr.addColorStop(1, "rgba(255,120,40,0)");
+      gr.addColorStop(0, `rgba(${SOPHIA_RGB},${0.1 + heat * 0.1})`);
+      gr.addColorStop(1, `rgba(${SOPHIA_RGB},0)`);
       g.fillStyle = gr;
       g.fillRect(c.x - c.w, c.y - c.w, c.w * 2, c.w * 2);
     }
@@ -1614,16 +1646,16 @@ export class FlowEngine {
 
       const rgb =
         pk.tone === "amber"
-          ? "245,158,11"
+          ? EXTERNAL.rgb
           : pk.tone === "rose"
-          ? "244,63,94"
+          ? BLOCKED.rgb
           : pk.tone === "emerald"
-          ? "16,185,129"
+          ? DONE.rgb
           : pk.tone === "fire"
-          ? "249,115,22"
+          ? SOPHIA_RGB
           : pk.tone === "white"
           ? "255,255,255"
-          : "56,189,248";
+          : RUNNING.rgb;
 
       // Directional laser streak trail
       for (let i = steps; i >= 1; i--) {
@@ -1653,14 +1685,14 @@ export class FlowEngine {
       const alpha = r.isSecondary ? (1 - k2) * 0.45 : (1 - k2) * 0.8;
       const strokeCol =
         r.tone === "rose"
-          ? `rgba(244,63,94,${alpha})`
+          ? `rgba(${BLOCKED.rgb},${alpha})`
           : r.tone === "amber"
-          ? `rgba(245,158,11,${alpha})`
+          ? `rgba(${EXTERNAL.rgb},${alpha})`
           : r.tone === "emerald"
-          ? `rgba(16,185,129,${alpha})`
+          ? `rgba(${DONE.rgb},${alpha})`
           : r.tone === "fire"
-          ? `rgba(255,170,90,${alpha})`
-          : `rgba(56,189,248,${alpha})`;
+          ? `rgba(${SOPHIA_RGB},${alpha})`
+          : `rgba(${RUNNING.rgb},${alpha})`;
 
       g.strokeStyle = strokeCol;
       g.lineWidth = r.isSecondary ? 1.4 * (1 - k2) + 0.3 : 2.4 * (1 - k2) + 0.5;

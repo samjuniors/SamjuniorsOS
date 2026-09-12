@@ -23,6 +23,8 @@ import {
   IconMetaContent,
   Connector as Phase4Connector,
   WORKFLOW_COLORS,
+  EXECUTION_LANGUAGE,
+  ENTITY_IDENTITY,
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
@@ -39,14 +41,14 @@ const META: Record<string, Meta> = {
     title: "Founder / Inputs",
     sub: "Directives & Authority",
     icon: <Building2 size={26} strokeWidth={1.8} />,
-    tint: "#38bdf8",
+    tint: ENTITY_IDENTITY.founder,
     desc: "Founder authority boundary. High-level strategic directives, focus setting, and consequential approval gates originate here.",
   },
   core: {
     title: "Sophia",
     sub: "COO & Orchestrator",
     icon: <Bot size={28} strokeWidth={1.8} />,
-    tint: "#fb923c",
+    tint: ENTITY_IDENTITY.sophia,
     desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
     agent: "sophia",
   },
@@ -54,7 +56,7 @@ const META: Record<string, Meta> = {
     title: "Sophia",
     sub: "COO & Orchestrator",
     icon: <Bot size={28} strokeWidth={1.8} />,
-    tint: "#fb923c",
+    tint: ENTITY_IDENTITY.sophia,
     desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
     agent: "sophia",
   },
@@ -62,7 +64,7 @@ const META: Record<string, Meta> = {
     title: "Dr. Aris Thorne",
     sub: "Research & Intelligence",
     icon: <ClipboardList size={26} strokeWidth={1.8} />,
-    tint: "#38bdf8",
+    tint: ENTITY_IDENTITY.thorne,
     desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
     agent: "ops",
   },
@@ -70,7 +72,7 @@ const META: Record<string, Meta> = {
     title: "Dr. Aris Thorne",
     sub: "Research & Intelligence",
     icon: <ClipboardList size={26} strokeWidth={1.8} />,
-    tint: "#38bdf8",
+    tint: ENTITY_IDENTITY.thorne,
     desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
     agent: "ops",
   },
@@ -78,7 +80,7 @@ const META: Record<string, Meta> = {
     title: "Julian Cruz",
     sub: "Finance & Unit Economics",
     icon: <Coins size={26} strokeWidth={1.8} />,
-    tint: "#34d399",
+    tint: ENTITY_IDENTITY.cruz,
     desc: "Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails.",
     agent: "finance",
   },
@@ -86,7 +88,7 @@ const META: Record<string, Meta> = {
     title: "Maya Lin",
     sub: "Product Architecture & PRD",
     icon: <FileText size={26} strokeWidth={1.8} />,
-    tint: "#c084fc",
+    tint: ENTITY_IDENTITY.lin,
     desc: "Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and DAG protocol milestones.",
     agent: "pm",
   },
@@ -94,42 +96,42 @@ const META: Record<string, Meta> = {
     title: "Constitutional Verifier",
     sub: "Deterministic Safety Gate",
     icon: <ShieldCheck size={26} strokeWidth={1.8} />,
-    tint: "#34d399",
+    tint: ENTITY_IDENTITY.verifier,
     desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, safe mock isolation, and single-use cryptographic signature binding.",
   },
   verifier: {
     title: "Constitutional Verifier",
     sub: "Deterministic Safety Gate",
     icon: <ShieldCheck size={26} strokeWidth={1.8} />,
-    tint: "#34d399",
+    tint: ENTITY_IDENTITY.verifier,
     desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, safe mock isolation, and single-use cryptographic signature binding.",
   },
   outcome: {
     title: "Governed Outcome",
     sub: "Immutable Vault",
     icon: <PackageCheck size={26} strokeWidth={1.8} />,
-    tint: "#34d399",
+    tint: ENTITY_IDENTITY.vault,
     desc: "Cryptographically verified deliverables and historical outcomes safely committed to durable company memory.",
   },
   vault: {
     title: "Governed Vault",
     sub: "Immutable Memory",
     icon: <PackageCheck size={26} strokeWidth={1.8} />,
-    tint: "#34d399",
+    tint: ENTITY_IDENTITY.vault,
     desc: "Cryptographically verified deliverables and historical outcomes safely committed to durable company memory.",
   },
   approval: {
     title: "Founder Approval Gate",
     sub: "Consequential Decision",
     icon: <Scale size={26} strokeWidth={1.8} />,
-    tint: "#fbbf24",
+    tint: ENTITY_IDENTITY.approval,
     desc: "Consequential external, resource, or security actions require authenticated Founder ratification before proceeding.",
   },
   "workflow-standby": {
     title: "Workflow Engine",
     sub: "Standby · Ready",
     icon: <ListTree size={26} strokeWidth={1.8} />,
-    tint: "#94a3b8",
+    tint: WORKFLOW_COLORS.textMuted,
     desc: "Active workflow runtime standing by. Directives from Sophia dispatch structured workstreams through this channel.",
   },
 };
@@ -143,7 +145,7 @@ const getMeta = (n: FlowNode): Meta => {
       title: n.title,
       sub: stepLabel,
       icon: n.state === "complete" ? <PackageCheck size={24} strokeWidth={1.8} /> : <Activity size={24} strokeWidth={1.8} />,
-      tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : n.state === "active" ? "#38bdf8" : "#94a3b8",
+      tint: n.state === "blocked" ? EXECUTION_LANGUAGE.blocked.bright : n.state === "complete" ? EXECUTION_LANGUAGE.completed.bright : n.state === "active" ? EXECUTION_LANGUAGE.running.bright : WORKFLOW_COLORS.textMuted,
       desc: steps
         ? `${stepLabel} · execution trail ${doneCount}/${steps.length} stages${n.activity ? ` · ${n.activity}` : ""}`
         : n.activity ?? `${stepLabel} actively governed under SamJuniorsOS protocol invariants.`,
@@ -155,7 +157,7 @@ const getMeta = (n: FlowNode): Meta => {
       title: n.title,
       sub: n.subtitle ?? "Founder Ratification",
       icon: <Scale size={26} strokeWidth={1.8} />,
-      tint: "#fbbf24",
+      tint: ENTITY_IDENTITY.approval,
       desc: "Consequential action requires authenticated Founder approval before release.",
     };
   }
@@ -164,7 +166,7 @@ const getMeta = (n: FlowNode): Meta => {
       title: n.title,
       sub: n.subtitle ?? "Constitutional Verifier",
       icon: <ShieldCheck size={26} strokeWidth={1.8} />,
-      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
+      tint: n.state === "blocked" ? ENTITY_IDENTITY.verifierBlocked : ENTITY_IDENTITY.verifier,
       desc: "Deterministic verification engine: Gross margin floor ≥ 80.0%, mock sandbox isolation, single-use cryptographic signature binding.",
     };
   }
@@ -173,7 +175,7 @@ const getMeta = (n: FlowNode): Meta => {
       title: n.title,
       sub: n.subtitle ?? "Immutable Vault",
       icon: <PackageCheck size={26} strokeWidth={1.8} />,
-      tint: "#34d399",
+      tint: ENTITY_IDENTITY.vault,
       desc: "Historical deliverables with cryptographic verification signatures committed to company memory.",
     };
   }
@@ -181,7 +183,7 @@ const getMeta = (n: FlowNode): Meta => {
     title: n.title,
     sub: n.subtitle ?? "",
     icon: <Bot size={26} strokeWidth={1.8} />,
-    tint: "#38bdf8",
+    tint: ENTITY_IDENTITY.founder,
     desc: n.activity ?? "Governed operating node.",
   };
 };
@@ -217,7 +219,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.id === "founder" || n.type === "founder" || n.dtoNode?.role === "founder") {
     return {
       icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
-      tint: "#38bdf8",
+      tint: ENTITY_IDENTITY.founder,
       primaryLabel: "Founder / Authority",
       subLabel: "DIRECTIVES",
     };
@@ -225,7 +227,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.dtoNode?.role === "coo") {
     return {
       icon: <Bot size={26} strokeWidth={1.8} className="text-orange-300" />,
-      tint: "#fb923c",
+      tint: ENTITY_IDENTITY.sophia,
       primaryLabel: "Sophia",
       subLabel: "COO & ORCHESTRATOR",
     };
@@ -233,7 +235,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher" || n.dtoNode?.role === "researcher") {
     return {
       icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
-      tint: "#38bdf8",
+      tint: ENTITY_IDENTITY.thorne,
       primaryLabel: "Dr. Aris Thorne",
       subLabel: "RESEARCH SPECIALIST",
     };
@@ -241,7 +243,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.id === "finance" || n.owner === "finance" || n.dtoNode?.role === "finance") {
     return {
       icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
-      tint: "#34d399",
+      tint: ENTITY_IDENTITY.cruz,
       primaryLabel: "Julian Cruz",
       subLabel: "FINANCE SPECIALIST",
     };
@@ -249,7 +251,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.id === "pm" || n.owner === "pm" || n.dtoNode?.role === "pm") {
     return {
       icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
-      tint: "#c084fc",
+      tint: ENTITY_IDENTITY.lin,
       primaryLabel: "Maya Lin",
       subLabel: "PRODUCT ARCHITECT",
     };
@@ -257,7 +259,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.type === "approval" || n.id === "approval") {
     return {
       icon: <Scale size={24} strokeWidth={1.8} className="text-amber-300" />,
-      tint: "#fbbf24",
+      tint: ENTITY_IDENTITY.approval,
       primaryLabel: "Founder Approval",
       subLabel: "RATIFICATION GATE",
     };
@@ -265,7 +267,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.type === "verification" || n.id === "verification" || n.id === "verifier") {
     return {
       icon: <ShieldCheck size={24} strokeWidth={1.8} className={n.state === "blocked" ? "text-rose-400" : "text-emerald-400"} />,
-      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
+      tint: n.state === "blocked" ? ENTITY_IDENTITY.verifierBlocked : ENTITY_IDENTITY.verifier,
       primaryLabel: "Constitutional Verifier",
       subLabel: "SAFETY GATE",
     };
@@ -273,7 +275,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (n.type === "outcome" || n.id === "outcome" || n.id === "vault") {
     return {
       icon: <PackageCheck size={24} strokeWidth={1.8} className="text-emerald-400" />,
-      tint: "#34d399",
+      tint: ENTITY_IDENTITY.vault,
       primaryLabel: "Governed Vault",
       subLabel: "IMMUTABLE MEMORY",
     };
@@ -290,7 +292,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
         : n.state === "waiting"
         ? <Clock size={22} strokeWidth={1.8} className="text-amber-200" />
         : <Activity size={22} strokeWidth={1.8} className="text-cyan-300" />,
-      tint: isDone ? "#34d399" : n.state === "blocked" ? "#fb7185" : n.state === "waiting" ? "#fbbf24" : "#38bdf8",
+      tint: isDone ? EXECUTION_LANGUAGE.completed.bright : n.state === "blocked" ? EXECUTION_LANGUAGE.blocked.bright : n.state === "waiting" ? EXECUTION_LANGUAGE.approval.bright : EXECUTION_LANGUAGE.running.bright,
       primaryLabel: n.title,
       subLabel: (n.subtitle ?? "WORK").toUpperCase(),
     };
@@ -301,7 +303,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (text.includes("github") || text.includes("git")) {
     return {
       icon: <GitBranch size={24} strokeWidth={1.8} className="text-white" />,
-      tint: "#ffffff",
+      tint: ENTITY_IDENTITY.github,
       primaryLabel: "GitHub",
       subLabel: "VERSION CONTROL",
       serviceBrand: "GitHub",
@@ -310,7 +312,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (text.includes("slack")) {
     return {
       icon: <MessageSquare size={24} strokeWidth={1.8} className="text-[#ECB22E]" />,
-      tint: "#ECB22E",
+      tint: ENTITY_IDENTITY.slack,
       primaryLabel: "Slack",
       subLabel: "TEAM CHAT",
       serviceBrand: "Slack",
@@ -319,7 +321,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (text.includes("telegram")) {
     return {
       icon: <Send size={22} strokeWidth={1.8} className="text-[#2AABEE]" />,
-      tint: "#2AABEE",
+      tint: ENTITY_IDENTITY.telegram,
       primaryLabel: "Telegram",
       subLabel: "COMMUNICATION",
       serviceBrand: "Telegram",
@@ -328,7 +330,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   if (text.includes("gmail") || text.includes("email")) {
     return {
       icon: <Mail size={22} strokeWidth={1.8} className="text-[#EA4335]" />,
-      tint: "#EA4335",
+      tint: ENTITY_IDENTITY.gmail,
       primaryLabel: "Gmail",
       subLabel: "EXTERNAL SERVICE",
       serviceBrand: "Gmail",
@@ -338,7 +340,7 @@ function getEntityVisual(n: FlowNode): EntityVisual {
   // ---- 4. General unmatched node ----
   return {
     icon: <Bot size={22} strokeWidth={1.8} className="text-cyan-300" />,
-    tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : "#38bdf8",
+    tint: n.state === "blocked" ? EXECUTION_LANGUAGE.blocked.bright : n.state === "complete" ? EXECUTION_LANGUAGE.completed.bright : EXECUTION_LANGUAGE.running.bright,
     primaryLabel: n.title,
     subLabel: n.subtitle ?? "COMPANY NODE",
   };
@@ -346,11 +348,11 @@ function getEntityVisual(n: FlowNode): EntityVisual {
 
 /** Owner metadata chip — execution metadata attached to work, per the locked model. */
 const OWNER_VISUALS: Record<string, { label: string; tint: string; icon: ReactNode }> = {
-  coo: { label: "Sophia", tint: "#fb923c", icon: <Bot size={11} strokeWidth={2} /> },
-  researcher: { label: "Thorne", tint: "#38bdf8", icon: <ClipboardList size={11} strokeWidth={2} /> },
-  ops: { label: "Thorne", tint: "#38bdf8", icon: <ClipboardList size={11} strokeWidth={2} /> },
-  finance: { label: "Cruz", tint: "#34d399", icon: <Coins size={11} strokeWidth={2} /> },
-  pm: { label: "Lin", tint: "#c084fc", icon: <FileText size={11} strokeWidth={2} /> },
+  coo: { label: "Sophia", tint: ENTITY_IDENTITY.sophia, icon: <Bot size={11} strokeWidth={2} /> },
+  researcher: { label: "Thorne", tint: ENTITY_IDENTITY.thorne, icon: <ClipboardList size={11} strokeWidth={2} /> },
+  ops: { label: "Thorne", tint: ENTITY_IDENTITY.thorne, icon: <ClipboardList size={11} strokeWidth={2} /> },
+  finance: { label: "Cruz", tint: ENTITY_IDENTITY.cruz, icon: <Coins size={11} strokeWidth={2} /> },
+  pm: { label: "Lin", tint: ENTITY_IDENTITY.lin, icon: <FileText size={11} strokeWidth={2} /> },
 };
 
 const WORK_STATE_LABEL: Record<string, string> = {
@@ -421,13 +423,14 @@ function WorkCard({
   else if (isBlocked) indicator = { status: "error", glow: true };
   else if (isDelivered) indicator = { status: "success" };
 
+  // Canonical execution-language chip (single source: EXECUTION_LANGUAGE)
   const stateChipClass = isBlocked
-    ? "border-rose-400/40 bg-rose-400/10 text-rose-200"
+    ? EXECUTION_LANGUAGE.blocked.chip
     : isWaiting
-    ? "border-amber-400/40 bg-amber-400/10 text-amber-200"
+    ? EXECUTION_LANGUAGE.approval.chip
     : isDelivered
-    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200"
-    : "border-cyan-400/40 bg-cyan-400/10 text-cyan-200";
+    ? EXECUTION_LANGUAGE.completed.chip
+    : EXECUTION_LANGUAGE.running.chip;
 
   const content = (
     <div className="flex h-full w-full flex-col justify-between p-3">
@@ -461,7 +464,7 @@ function WorkCard({
               </span>
             )}
             {isWaiting && (
-              <span className="flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-px font-mono text-[8.5px] font-semibold tracking-[0.1em] text-amber-200">
+              <span className={`flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[8.5px] font-semibold tracking-[0.1em] ${EXECUTION_LANGUAGE.approval.chip}`}>
                 <Clock size={9} /> DECISION POINT
               </span>
             )}
@@ -474,10 +477,10 @@ function WorkCard({
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 isBlocked
-                  ? "bg-rose-400 shadow-[0_0_6px_rgba(251,113,133,0.8)]"
+                  ? `${EXECUTION_LANGUAGE.blocked.fill} ${EXECUTION_LANGUAGE.blocked.glow}`
                   : isDelivered
-                  ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"
-                  : "bg-cyan-400 shadow-[0_0_6px_rgba(56,189,248,0.8)]"
+                  ? `${EXECUTION_LANGUAGE.completed.fill} ${EXECUTION_LANGUAGE.completed.glow}`
+                  : `${EXECUTION_LANGUAGE.running.fill} ${EXECUTION_LANGUAGE.running.glow}`
               }`}
               style={{ width: `${Math.round(progress * 100)}%` }}
             />
@@ -572,21 +575,22 @@ function ExecutionTrailOverlay({ n }: { n: FlowNode }) {
       </div>
       <div className="flex items-stretch gap-1.5">
         {steps.map((s, i) => {
+          // Canonical execution-language stage dots (single source)
           const dotClass =
             s.status === "done"
-              ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+              ? `${EXECUTION_LANGUAGE.completed.fill} ${EXECUTION_LANGUAGE.completed.glow}`
               : s.status === "failed"
-              ? "bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.8)]"
+              ? `${EXECUTION_LANGUAGE.blocked.fill} ${EXECUTION_LANGUAGE.blocked.glow}`
               : s.status === "current"
-              ? "bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.9)] animate-pulse"
+              ? `${EXECUTION_LANGUAGE.running.fill} ${EXECUTION_LANGUAGE.running.glow} animate-pulse`
               : s.status === "waiting"
-              ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.8)]"
-              : "bg-slate-600";
+              ? `${EXECUTION_LANGUAGE.approval.fill} ${EXECUTION_LANGUAGE.approval.glow}`
+              : EXECUTION_LANGUAGE.idle.fill;
           const owner = OWNER_VISUALS[s.ownerAgentId ?? ""];
           return (
             <div key={`${s.step}-${i}`} className="flex flex-1 flex-col items-center gap-1.5">
               <div className="flex w-full items-center gap-1">
-                {i > 0 && <div className={`h-px flex-1 ${i <= steps.findIndex((x) => x.status !== "done") ? "bg-emerald-400/40" : "bg-white/10"}`} />}
+                {i > 0 && <div className={`h-px flex-1 ${i <= steps.findIndex((x) => x.status !== "done") ? EXECUTION_LANGUAGE.completed.fillSoft : "bg-white/10"}`} />}
                 <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
                 {i < steps.length - 1 && <div className="h-px flex-1 bg-white/10" />}
               </div>
@@ -813,22 +817,25 @@ function SpatialCardOverlay({ card }: { card: SpatialCard }) {
 
 function CountBadge({ n, tone = "cyan" }: { n: number; tone?: "cyan" | "amber" | "rose" }) {
   if (!n) return null;
+  // Canonical execution-language badges (cyan=running, amber=approval, rose=blocked)
   const c = tone === "amber"
-    ? "bg-amber-300 text-[#1a1200] shadow-[0_0_10px_rgba(252,211,77,0.8)]"
+    ? `bg-amber-300 text-[#1a1200] shadow-[0_0_10px_rgba(252,211,77,0.8)]`
     : tone === "rose"
-    ? "bg-rose-400 text-white shadow-[0_0_10px_rgba(251,113,133,0.8)]"
-    : "bg-cyan-300 text-[#04121b] shadow-[0_0_10px_rgba(103,232,249,0.8)]";
+    ? `${EXECUTION_LANGUAGE.blocked.fill} text-white ${EXECUTION_LANGUAGE.blocked.glow}`
+    : `${EXECUTION_LANGUAGE.running.fill} text-[#04121b] ${EXECUTION_LANGUAGE.running.glow}`;
   return <span className={`tnum absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 font-mono text-[10px] font-bold ${c}`}>{n}</span>;
 }
 
 function StateDot({ state }: { state: Agent["state"] }) {
+  // Canonical execution-language agent-state dots: working=green (on it),
+  // waiting=amber (decision), idle=cyan (available), offline=neutral.
   const c = state === "working"
-    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]"
+    ? `${EXECUTION_LANGUAGE.completed.fill} shadow-[0_0_8px_rgba(34,217,122,0.9)]`
     : state === "waiting"
-    ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.9)]"
+    ? `${EXECUTION_LANGUAGE.approval.fill} shadow-[0_0_8px_rgba(255,196,102,0.9)]`
     : state === "offline"
-    ? "bg-slate-600"
-    : "bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.8)]";
+    ? EXECUTION_LANGUAGE.idle.fill
+    : `${EXECUTION_LANGUAGE.running.fill} shadow-[0_0_8px_rgba(102,209,255,0.8)]`;
   return <span className={`absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border-2 border-[#0a1120] ${c}`} />;
 }
 
@@ -1024,21 +1031,22 @@ function Minimap({ vw, vh, k, pan, nodes, onJump }: {
         <rect x={0} y={0} width={MW} height={MH} fill="rgba(10,20,36,0.6)" />
         {nodes.map((n) => {
           const p = toMini(n.x, n.y);
+          // Canonical minimap dots: identity axis first, then execution state
           const color = n.id === "core" || n.id === "coo"
-            ? "#fb923c"
+            ? ENTITY_IDENTITY.sophia
             : n.state === "blocked"
-            ? "#fb7185"
+            ? EXECUTION_LANGUAGE.blocked.bright
             : n.state === "complete"
-            ? "#34d399"
+            ? EXECUTION_LANGUAGE.completed.bright
             : n.type === "approval"
-            ? "#fbbf24"
+            ? ENTITY_IDENTITY.approval
             : n.id === "finance"
-            ? "#34d399"
+            ? ENTITY_IDENTITY.cruz
             : n.id === "pm"
-            ? "#c084fc"
+            ? ENTITY_IDENTITY.lin
             : n.type === "workflow"
-            ? "#67e8f9"
-            : "#7dd3fc";
+            ? EXECUTION_LANGUAGE.running.bright
+            : ENTITY_IDENTITY.thorne;
           return <circle key={n.id} cx={p.x} cy={p.y} r={n.type === "workflow" ? 3 : n.id === "core" || n.id === "coo" ? 3.2 : n.kind === "round" ? 2.4 : 1.8} fill={color} opacity={0.9} />;
         })}
         <rect x={Math.min(a.x, b.x)} y={Math.min(a.y, b.y)} width={Math.max(6, Math.abs(b.x - a.x))} height={Math.max(6, Math.abs(b.y - a.y))} fill="rgba(103,232,249,0.12)" stroke="rgba(103,232,249,0.7)" strokeWidth={1} rx={2} />
@@ -1468,7 +1476,9 @@ export default function FlowDesktop({
 
   const handleNodeClick = (n: FlowNode) => {
     osSound.open();
-    engineRef.current?.arrive(n.id, n.x, n.y);
+    // Phase 4.3C-B.1 — selection MUST NOT fabricate execution animation.
+    // All engine energy (packets/rings/embers/arrival glows) is driven
+    // exclusively by authoritative runtime state via setGraph.
     setSelected(n);
     onNodeClick?.(n);
   };

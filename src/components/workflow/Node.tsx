@@ -65,15 +65,18 @@ export const Node: React.FC<NodeProps> = ({
     ...(hasOutputPort ? [{ shape: portShape, position: 'right' as const, state: state === 'active' ? 'active' as const : 'default' as const }] : []),
   ];
 
-  // Map indicator color
+  // Map indicator color — canonical execution language:
+  //   active = RUNNING/INTELLIGENCE → primary (blue/cyan)
+  //   waiting = APPROVAL → processing (static amber)
+  //   success = COMPLETED → green · error = BLOCKED → red
   let indicatorColor: string = WORKFLOW_COLORS.primary;
   if (indicator) {
     switch (indicator.status) {
       case 'active':
-        indicatorColor = WORKFLOW_COLORS.processing;
+        indicatorColor = WORKFLOW_COLORS.primary;
         break;
       case 'waiting':
-        indicatorColor = '#FCD34D';
+        indicatorColor = WORKFLOW_COLORS.processing;
         break;
       case 'success':
         indicatorColor = WORKFLOW_COLORS.success;
