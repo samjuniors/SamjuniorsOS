@@ -423,28 +423,46 @@ Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus autom
 - Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
 - Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.
 
-## 15. Canonical Execution Language (Phase 4.3C-B.1)
+## 15. Canonical Execution Language (Phase 4.3C — FROZEN)
 
-The execution-language module (`src/components/workflow/execution-language.ts`) extends the Phase 4.1 token library with the single source of truth for the approved Canvas execution model. It is an extension of the existing design system, not a new one.
+> **STATUS: FROZEN.** The execution language below is consolidated and verified
+> (browser-verified end-to-end, tests 9/9 + 4/4). Any change to these semantics
+> requires explicit founder approval. Single source of truth:
+> `src/components/workflow/execution-language.ts` — an extension of the Phase
+> 4.1 token library, not a new design system.
+
+The language is defined by seven behavioral sections (the Phase 4.3C constraint):
+
+1. **Calm baseline** — idle canvas is predominantly monochrome/neutral: thin gray/white lines (`NEUTRAL_CONDUIT`, token-derived `textDim`/`textMuted`), no particles, no animated dashes, no sparks, no artificial glow, no continuous motion. A clean technical schematic.
+2. **Activity from real system state only** — selection/clicking never emits execution effects. All engine energy (comets, fills, arrival activations) is driven exclusively by authoritative runtime state delivered via `setGraph`.
+3. **Color = runtime state/energy, never agent identity** — neutral gray/white (idle), blue/cyan (running intelligence), amber/gold (external action / side effect), restrained green (settled completion), restrained red (blocked, gentle state pulse only), static amber (founder approval / governance — never animated like execution). Authority is read from entity identity, relationship semantics, ownership metadata and inspector state.
+4. **Execution animation sequence** — source-side fill begins → connection progressively fills (`MOTION_TOKENS.conduitFillMs`, carried across refreshes) → directional comet travels the EXACT rendered edge path → target node receives a short restrained activation (single ring + decaying glow, `ARRIVAL_LANGUAGE`) → settles → the next authoritative relationship may activate. Deterministic and state-driven; never an independent particle system.
+5. **Connection routing** (`src/os/lib/flow.ts` `planRoute`/`insertHops`, `ROUTING_TOKENS`) — deterministic, grid-snapped (8px), obstacle-aware orthogonal routing; port-face-aligned entry/exit (a horizontal-face port is always entered horizontally); lanes strictly between ports (no backward jogs/loops); obstacle-edge escape lanes; crossing + collinear-overlap penalties keep unrelated relationships separated; unavoidable crossings are deliberate line hops drawn by the engine in edge order.
+6. **Visual hierarchy** — the strongest effect occurs ONLY where real execution happens: idle = quiet, running = alive, completed = settled, blocked = clearly interrupted, approval = clearly awaiting founder authority.
+7. **Restraint** — no sparks, no ember bursts, no dual shockwaves, no marching dashes, no constant identity glow. An operational interface, not a promotional animation.
 
 ### Semantic State Map (`EXECUTION_LANGUAGE`)
 | Semantic | Token | Value | Canvas/React treatment |
 |---|---|---|---|
-| `idle` | neutral | — | Neutral gray/white conduits, no particles, no continuous animation |
-| `running` | `primary` | `#00B2FF` | Blue/cyan activation: source node fills, connection fills, directional energy along the actual connection |
-| `externalAction` | `processing` | `#FF8A00` | Amber/gold execution pulse: directional comet follows the actual connection |
-| `completed` | `success` | `#22D97A` | Restrained green settled state |
-| `blocked` | `error` | `#FF4B4B` | Restrained red state |
-| `approval` | `processing` | `#FF8A00` | Static amber governance treatment (no continuous animation) |
+| `idle` | neutral | — | Thin gray/white conduits, strictly static (calm schematic baseline) |
+| `running` | `primary` | `#00B2FF` | Blue/cyan activation: progressive source→target fill + directional comets on the routed path |
+| `externalAction` | `processing` | `#FF8A00` | Amber/gold execution pulse: progressive fill + directional comet while genuinely executing |
+| `completed` | `success` | `#22D97A` | Restrained green settled state (calm) |
+| `blocked` | `error` | `#FF4B4B` | Restrained red state with gentle pulse only (no particles) |
+| `approval` | `processing` | `#FF8A00` | Static amber governance boundary — never animated like execution |
 | `focus` | `primary` | `#00B2FF` | Static selection emphasis ring (focus/selection primitive) |
 
 Each entry provides the token reference, canvas `rgb`/`rgbBright` triplets, and React class bundles (`chip`, `fill`, `fillSoft`, `glow`) — all statically compilable Tailwind literals.
 
+### Conduit & Arrival Language (`CONDUIT_LANGUAGE` / `ARRIVAL_LANGUAGE`)
+Per-state conduit treatments (stroke widths/alphas, additive composite reserved for real execution, fill overlay for running/external-action) and the restrained arrival treatment (single ring radius/alpha/lifetime + decaying node glow) are defined alongside the semantic map so the engine derives every render parameter from tokens — the engine hardcodes no colors, widths, or motion values.
+
 ### Entity Identity Axis (`ENTITY_IDENTITY`)
-Agent/gate/vault/service identity tints (Sophia `#fb923c`, Thorne `#38bdf8`, Cruz `#34d399`, Lin `#c084fc`, approval `#fbbf24`, …) are deliberately SEPARATE from the execution-state axis: an entity keeps its identity color regardless of the execution state of its work. Sophia's core heat derives from her identity tint.
+Agent/gate/vault/service identity tints (Sophia `#fb923c`, Thorne `#38bdf8`, Cruz `#34d399`, Lin `#c084fc`, approval `#fbbf24`, …) are deliberately SEPARATE from the execution-state axis: an entity keeps its identity color regardless of the execution state of its work. Identity is expressed as static card/chip tints in the React layer; the canvas energy channel carries execution state ONLY (removing the former Sophia identity-fire engine treatment — identity color no longer appears as execution energy).
 
 ### Behavioral Contract
-- Clicking/selecting a node MUST NOT fabricate execution animation — all engine energy (packets, rings, embers, arrival glows) is driven exclusively by authoritative runtime state via `setGraph`.
-- Neutral conduits (`NEUTRAL_CONDUIT`) breathe ambiently in idle; they never carry synthetic traffic.
+- Clicking/selecting a node MUST NOT fabricate execution animation — all engine energy (comets, rings, arrival glows) is driven exclusively by authoritative runtime state via `setGraph`; comets never continue onto idle relationships.
+- Neutral conduits are strictly static in idle (no ambient breathing); they never carry synthetic traffic.
+- Comet emission is deterministic per authoritative active edge (cadence/speed/trail derive from the edge's graph index via `MOTION_TOKENS.cometCadenceMs` / `signalVelocityPxPerSec`).
 - Motion/easing and glow/animation limits remain governed by `MOTION_TOKENS` and `EFFECTS_BUDGET_CONFIGS`.
 - Components reuse these primitives; they do not invent separate visual/state treatments.

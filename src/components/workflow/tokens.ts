@@ -127,6 +127,17 @@ export const MOTION_TOKENS = {
   signalVelocityPxPerSec: 160,
   activationDecayMs: 450,
   burstDurationMs: 380,
+  /**
+   * Phase 4.3C — source→target progressive conduit fill duration.
+   * A connection that becomes active fills from source to target over this
+   * window (the fill front is state-driven, never client-fabricated).
+   */
+  conduitFillMs: 700,
+  /**
+   * Phase 4.3C — comet emission cadence per authoritative active edge.
+   * Deterministic (per-edge phase derives from the edge's graph index).
+   */
+  cometCadenceMs: 1500,
 } as const;
 
 /** Performance / Effects Budget Levels */

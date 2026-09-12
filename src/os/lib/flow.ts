@@ -1,49 +1,53 @@
 /**
- * FlowEngine — Living SamJuniorsOS company-context canvas & kinetics.
- * Phase 4.3B.1 — spatial company-context model:
- *  - Semantic regions (company / active work / related / governed outcomes)
- *    replace the execution-pipeline column grammar.
- *  - Work objects are first-class visual citizens; their local workflow is
- *    revealed on focus (never a globally persistent pipeline).
- *  - Agents are execution metadata (workforce chips), not the primary flow.
- *  - Edge layers separate structural / ownership / governance truth from
- *    orchestration plumbing (delegates), which stays inspector-only.
+ * FlowEngine — SamJuniorsOS company-context canvas & kinetics.
+ *
+ * Implements the FROZEN canonical execution language
+ * (src/components/workflow/execution-language.ts — Phase 4.3C):
+ *
+ *   §1 CALM BASELINE      idle = thin neutral gray/white lines, strictly
+ *                         static. No particles, dashes, sparks, glow, or
+ *                         continuous motion. A clean technical schematic.
+ *   §2 REAL STATE ONLY    comets/fills/arrivals are driven exclusively by
+ *                         authoritative runtime state (via setGraph).
+ *                         Clicks never fabricate execution.
+ *   §3 STATE COLOR        blue/cyan=running · amber=external action ·
+ *                         green=settled · red=blocked · STATIC amber=
+ *                         governance. Energy color is NEVER agent identity
+ *                         (identity lives in the React card layer).
+ *   §4 EXECUTION          source fills → connection progressively fills →
+ *                         directional comet travels the EXACT routed edge
+ *                         path → target activates briefly → settles → the
+ *                         next authoritative relationship may activate.
+ *   §5 ROUTING            deterministic obstacle-aware orthogonal routing;
+ *                         avoids lines through nodes and accidental
+ *                         crossings; unavoidable crossings are deliberate
+ *                         (line hops); grid-snapped lanes, minimal bends.
+ *   §6 HIERARCHY          the strongest effect exists only where real
+ *                         execution happens.
+ *   §7 RESTRAINT          no sparks, no ember bursts, no dual shockwaves,
+ *                         no marching dashes, no constant glow.
+ *
+ * Phase 4.3B.1 spatial grammar (unchanged): semantic regions (company /
+ * active work / related / governed outcomes), work objects first-class,
+ * agents as workforce metadata, edge layers separate structural / ownership /
+ * governance truth from orchestration plumbing (delegates = inspector-only).
  * All positions are deterministic functions of authoritative GraphDTO state.
  */
 
 import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "@/types/graph";
 import {
   EXECUTION_LANGUAGE,
-  ENTITY_IDENTITY,
-  NEUTRAL_CONDUIT,
+  CONDUIT_LANGUAGE,
+  ARRIVAL_LANGUAGE,
   CANVAS_CHROME,
+  MOTION_TOKENS,
   tokenRgbParts,
+  type ConduitKey,
 } from "@/components/workflow/execution-language";
 
-/*
- * Phase 4.3C-B.1 — Canonical execution-language palette.
- *
- * All engine colors derive from the Phase 4.1 token library via
- * EXECUTION_LANGUAGE (running=blue/cyan, externalAction=amber,
- * completed=green, blocked=red, idle=neutral). Sophia's core heat is her
- * ENTITY_IDENTITY fire treatment (identity axis, distinct from execution
- * state). Packet/conduit/ring/glow VALUES changed to the canonical tokens;
- * every behavioral trigger, threshold, timing, and size is unchanged.
- */
 const RUNNING = EXECUTION_LANGUAGE.running;
 const EXTERNAL = EXECUTION_LANGUAGE.externalAction;
-const DONE = EXECUTION_LANGUAGE.completed;
 const BLOCKED = EXECUTION_LANGUAGE.blocked;
-/** Sophia identity fire (rgb triplet) — orchestrator heat treatment. */
-const SOPHIA_RGB = sophiaRgb();
-function sophiaRgbParts(): [number, number, number] {
-  const h = ENTITY_IDENTITY.sophia.replace('#', '');
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-function sophiaRgb(): string {
-  // #fb923c identity tint → rgb triplet
-  return sophiaRgbParts().join(',');
-}
 
 export const DESIGN_W = 1600;
 export const DESIGN_H = 900;
@@ -243,43 +247,323 @@ function computeSpatialNode(
   return { x: 700 + (unknownIdx % 3) * 260, y: 860, w: 64, h: 64, kind: "card" };
 }
 
-/**
- * Computes port-matched conduit route points between source and target nodes
- */
-function computeEdgePoints(fromNode: FlowNode, toNode: FlowNode): [number, number][] {
-  const dx = toNode.x - fromNode.x;
-  const dy = toNode.y - fromNode.y;
+// ---------------------------------------------------------------------------
+// Phase 4.3C — Deterministic connection routing (§5)
+//
+// Calm schematic discipline: port-matched orthogonal routes on a snapped
+// grid, scored against node obstacles (lines must not pass through nodes),
+// accidental edge crossings and collinear overlap. Where a crossing is
+// genuinely unavoidable the LATER edge hops over the earlier one, making
+// the crossing deliberate and visually unambiguous.
+// ---------------------------------------------------------------------------
 
-  let x1 = fromNode.x;
-  let y1 = fromNode.y;
-  let x2 = toNode.x;
-  let y2 = toNode.y;
+/** Routing primitives — deterministic, grid-locked, obstacle-aware. */
+export const ROUTING_TOKENS = {
+  /** All route coordinates snap to this grid (px). */
+  grid: 8,
+  /** Candidate lane offsets from anchor lanes (px). */
+  laneStep: 32,
+  /** Lane offsets tried on each side of each anchor. */
+  laneVariants: 4,
+  /** Obstacle bounding-box inflation (px). */
+  obstaclePad: 6,
+  /** Port standoff outside the node rect (px). */
+  portStandoff: 2,
+  /** Line-hop radius where a crossing is unavoidable (px). */
+  hopRadius: 9,
+  /** Line-hop arch height (px). */
+  hopHeight: 7,
+} as const;
 
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    // Horizontal primary flow
-    if (dx >= 0) {
-      x1 = fromNode.x + fromNode.w / 2;
-      x2 = toNode.x - toNode.w / 2;
+type RP = { x: number; y: number };
+interface Rect { x0: number; y0: number; x1: number; y1: number }
+
+const nodeRect = (n: FlowNode, pad: number): Rect => ({
+  x0: n.x - n.w / 2 - pad,
+  y0: n.y - n.h / 2 - pad,
+  x1: n.x + n.w / 2 + pad,
+  y1: n.y + n.h / 2 + pad,
+});
+
+/** Liang–Barsky segment/AABB intersection. */
+function segHitsRect(a: RP, b: RP, r: Rect): boolean {
+  let t0 = 0, t1 = 1;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const p = [-dx, dx, -dy, dy];
+  const q = [a.x - r.x0, r.x1 - a.x, a.y - r.y0, r.y1 - a.y];
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false;
+      continue;
+    }
+    const t = q[i] / p[i];
+    if (p[i] < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
     } else {
-      x1 = fromNode.x - fromNode.w / 2;
-      x2 = toNode.x + toNode.w / 2;
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+  }
+  return true;
+}
+
+/** Interior intersection point of two segments (null if none / near-endpoints). */
+function segSegCross(a1: RP, a2: RP, b1: RP, b2: RP): RP | null {
+  const d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+  const d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+  const den = d1x * d2y - d1y * d2x;
+  if (Math.abs(den) < 1e-9) return null; // parallel or collinear
+  const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / den;
+  const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / den;
+  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return null;
+  return { x: a1.x + d1x * t, y: a1.y + d1y * t };
+}
+
+/** Minimum distance from a point to a polyline. */
+function distToPolyline(p: RP, pts: RP[]): number {
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pts[i - 1].x, ay = pts[i - 1].y, bx = pts[i].x, by = pts[i].y;
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    let t = l2 > 0 ? ((p.x - ax) * dx + (p.y - ay) * dy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    best = Math.min(best, Math.hypot(p.x - (ax + dx * t), p.y - (ay + dy * t)));
+  }
+  return best;
+}
+
+const polylineLength = (pts: RP[]): number => {
+  let len = 0;
+  for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  return len;
+};
+
+const gridSnap = (v: number): number => Math.round(v / ROUTING_TOKENS.grid) * ROUTING_TOKENS.grid;
+
+/** Drops duplicate + collinear interior points (minimal bends, §5). */
+function dedupePts(pts: RP[]): RP[] {
+  const noDupes: RP[] = [];
+  for (const p of pts) {
+    const last = noDupes[noDupes.length - 1];
+    if (last && Math.abs(last.x - p.x) < 0.5 && Math.abs(last.y - p.y) < 0.5) continue;
+    noDupes.push(p);
+  }
+  const out: RP[] = [];
+  for (let i = 0; i < noDupes.length; i++) {
+    const a = out[out.length - 1];
+    const b = noDupes[i];
+    const c = noDupes[i + 1];
+    if (a && c && ((a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y))) continue;
+    out.push(b);
+  }
+  return out;
+}
+
+/** Facing-side port pair (primary travel axis by dominant delta). */
+function portsFor(from: FlowNode, to: FlowNode): [RP, RP] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const s = ROUTING_TOKENS.portStandoff;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? [{ x: from.x + from.w / 2 + s, y: from.y }, { x: to.x - to.w / 2 - s, y: to.y }]
+      : [{ x: from.x - from.w / 2 - s, y: from.y }, { x: to.x + to.w / 2 + s, y: to.y }];
+  }
+  return dy >= 0
+    ? [{ x: from.x, y: from.y + from.h / 2 + s }, { x: to.x, y: to.y - to.h / 2 - s }]
+    : [{ x: from.x, y: from.y - from.h / 2 - s }, { x: to.x, y: to.y + to.h / 2 + s }];
+}
+
+/**
+ * Scores a candidate route: node obstacles dominate, then accidental
+ * crossings, collinear overlap, bends and length. Pure function of
+ * deterministic inputs — same graph ⇒ same routes.
+ */
+function scoreCandidate(pts: RP[], from: FlowNode, to: FlowNode, obstacles: FlowNode[], routed: RP[][]): number {
+  let hits = 0;
+  for (let i = 1; i < pts.length; i++) {
+    for (const o of obstacles) {
+      if (o.id === from.id || o.id === to.id) continue;
+      if (segHitsRect(pts[i - 1], pts[i], nodeRect(o, ROUTING_TOKENS.obstaclePad))) hits++;
+    }
+  }
+  let crossings = 0;
+  let overlap = 0;
+  for (const rp of routed) {
+    if (rp.length < 2) continue;
+    for (let i = 1; i < pts.length; i++) {
+      for (let j = 1; j < rp.length; j++) {
+        if (segSegCross(pts[i - 1], pts[i], rp[j - 1], rp[j])) crossings++;
+      }
+      // Collinear-overlap sampling keeps unrelated relationships separated.
+      const a = pts[i - 1], b = pts[i];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      const n = Math.max(1, Math.floor(len / 24));
+      for (let k = 0; k <= n; k++) {
+        const p = { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n };
+        if (distToPolyline(p, rp) < 3) overlap++;
+      }
+    }
+  }
+  return hits * 1000 + crossings * 8 + overlap * 6 + (pts.length - 2) * 40 + polylineLength(pts) / 50;
+}
+
+/**
+ * Deterministic obstacle-aware orthogonal route between two nodes.
+ *
+ * Port-face discipline (§5): a horizontal-face port is always entered/exited
+ * along a horizontal segment, a vertical-face port along a vertical segment —
+ * relationships never stab sideways into a card. Travel lanes lie strictly
+ * between the two ports (no backward jogs, no loops) on the snapped grid;
+ * lane anchors come from the midpoint, both ports AND the bounding edges of
+ * intervening obstacles (escape lanes), so routes dodge nodes instead of
+ * crossing them. The lowest-scored candidate wins (stable generation order
+ * breaks ties) — same graph ⇒ same routes.
+ */
+function planRoute(from: FlowNode, to: FlowNode, obstacles: FlowNode[], routed: RP[][]): [number, number][] {
+  const [p1, p2] = portsFor(from, to);
+  if (Math.abs(p1.y - p2.y) < 4 || Math.abs(p1.x - p2.x) < 4) {
+    return [[p1.x, p1.y], [p2.x, p2.y]];
+  }
+
+  const { laneStep, laneVariants, grid, obstaclePad } = ROUTING_TOKENS;
+  const dxRaw = to.x - from.x;
+  const dyRaw = to.y - from.y;
+  const horizontalPorts = Math.abs(dxRaw) >= Math.abs(dyRaw);
+
+  // Lane anchors: midpoint, both ports, and obstacle bounding edges (escape
+  // lanes that skirt intervening nodes by a safe clearance).
+  const anchors: number[] = horizontalPorts
+    ? [(p1.x + p2.x) / 2, p1.x, p2.x]
+    : [(p1.y + p2.y) / 2, p1.y, p2.y];
+  for (const o of obstacles) {
+    if (o.id === from.id || o.id === to.id) continue;
+    const r = nodeRect(o, obstaclePad);
+    if (horizontalPorts) {
+      anchors.push(r.x0 - 12, r.x1 + 12);
+    } else {
+      anchors.push(r.y0 - 12, r.y1 + 12);
+    }
+  }
+
+  // Travel lanes strictly between the two ports (forward-only, §5: no loops).
+  const lo = horizontalPorts ? Math.min(p1.x, p2.x) + grid : Math.min(p1.y, p2.y) + grid;
+  const hi = horizontalPorts ? Math.max(p1.x, p2.x) - grid : Math.max(p1.y, p2.y) - grid;
+
+  const lanes = new Set<number>();
+  for (const a of anchors) {
+    lanes.add(a);
+    for (let k = 1; k <= laneVariants; k++) {
+      lanes.add(a - k * laneStep);
+      lanes.add(a + k * laneStep);
+    }
+  }
+
+  const candidates: RP[][] = [];
+  const push = (pts: RP[]) => {
+    const snapped = dedupePts(pts.map((p) => ({ x: gridSnap(p.x), y: gridSnap(p.y) })));
+    if (
+      snapped.length >= 2 &&
+      !candidates.some((c) => c.length === snapped.length && c.every((q, i) => q.x === snapped[i].x && q.y === snapped[i].y))
+    ) {
+      candidates.push(snapped);
+    }
+  };
+
+  if (horizontalPorts) {
+    // Exit p1 horizontally → travel vertically at lane Lx → enter p2 horizontally.
+    for (const Lx of lanes) {
+      if (Lx < lo || Lx > hi) continue;
+      push([p1, { x: Lx, y: p1.y }, { x: Lx, y: p2.y }, p2]);
     }
   } else {
-    // Vertical primary flow
-    if (dy >= 0) {
-      y1 = fromNode.y + fromNode.h / 2;
-      y2 = toNode.y - toNode.h / 2;
-    } else {
-      y1 = fromNode.y - fromNode.h / 2;
-      y2 = toNode.y + toNode.h / 2;
+    // Exit p1 vertically → travel horizontally at lane Ly → enter p2 vertically.
+    for (const Ly of lanes) {
+      if (Ly < lo || Ly > hi) continue;
+      push([p1, { x: p1.x, y: Ly }, { x: p2.x, y: Ly }, p2]);
     }
   }
 
-  if (Math.abs(y1 - y2) < 4 || Math.abs(x1 - x2) < 4) {
-    return [[x1, y1], [x2, y2]];
+  // Degenerate port range (ports nearly stacked): cross at the shared lane.
+  if (!candidates.length) {
+    const lane = horizontalPorts ? (p1.x + p2.x) / 2 : (p1.y + p2.y) / 2;
+    push(
+      horizontalPorts
+        ? [p1, { x: lane, y: p1.y }, { x: lane, y: p2.y }, p2]
+        : [p1, { x: p1.x, y: lane }, { x: p2.x, y: lane }, p2]
+    );
   }
-  const midX = Math.round((x1 + x2) / 2);
-  return [[x1, y1], [midX, y1], [midX, y2], [x2, y2]];
+
+  let best = candidates[0];
+  let bestScore = Infinity;
+  for (const c of candidates) {
+    const s = scoreCandidate(c, from, to, obstacles, routed);
+    if (s < bestScore) {
+      bestScore = s;
+      best = c;
+    }
+  }
+  return best.map((p) => [p.x, p.y] as [number, number]);
+}
+
+/**
+ * §5 deliberate crossings — the later edge hops over earlier ones (in edge
+ * order). Called by the engine on the edges it actually draws, so hops never
+ * reference hidden orchestration plumbing.
+ */
+function insertHops(raw: [number, number][], routed: RP[][]): [number, number][] {
+  if (raw.length < 2 || routed.length === 0) return raw;
+  const out: [number, number][] = [raw[0]];
+  const { hopRadius, hopHeight } = ROUTING_TOKENS;
+
+  for (let i = 1; i < raw.length; i++) {
+    const a = { x: raw[i - 1][0], y: raw[i - 1][1] };
+    const b = { x: raw[i][0], y: raw[i][1] };
+    const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+    if (segLen < 2 * hopRadius + 12) {
+      out.push(raw[i]);
+      continue;
+    }
+
+    const crossings: { t: number; p: RP }[] = [];
+    for (const rp of routed) {
+      for (let j = 1; j < rp.length; j++) {
+        const c = segSegCross(a, b, rp[j - 1], rp[j]);
+        if (c) crossings.push({ t: Math.hypot(c.x - a.x, c.y - a.y) / segLen, p: c });
+      }
+    }
+    if (!crossings.length) {
+      out.push(raw[i]);
+      continue;
+    }
+
+    crossings.sort((u, v) => u.t - v.t);
+    const margin = hopRadius + 4;
+    const usable = crossings.filter((c) => c.t * segLen > margin && (1 - c.t) * segLen > margin);
+    if (!usable.length) {
+      out.push(raw[i]);
+      continue;
+    }
+
+    const dir = { x: (b.x - a.x) / segLen, y: (b.y - a.y) / segLen };
+    const perp = { x: -dir.y, y: dir.x }; // deterministic arch side
+    for (const c of usable) {
+      const enter = { x: c.p.x - dir.x * hopRadius, y: c.p.y - dir.y * hopRadius };
+      const exit = { x: c.p.x + dir.x * hopRadius, y: c.p.y + dir.y * hopRadius };
+      out.push([enter.x, enter.y]);
+      for (let k = 1; k < 6; k++) {
+        const t = k / 6;
+        const bx = enter.x + (exit.x - enter.x) * t;
+        const by = enter.y + (exit.y - enter.y) * t;
+        out.push([bx + perp.x * hopHeight * Math.sin(Math.PI * t), by + perp.y * hopHeight * Math.sin(Math.PI * t)]);
+      }
+      out.push([exit.x, exit.y]);
+    }
+    out.push(raw[i]);
+  }
+  return out;
 }
 
 /**
@@ -312,10 +596,45 @@ function computeEdgeLayer(e: GraphEdgeDTO): FlowEdgeLayer {
   return layerForRelationship(e.relationship);
 }
 
+/** Deferred edge specification (routing happens once all nodes exist). */
+type EdgeSpec = {
+  from: FlowNode;
+  to: FlowNode;
+  id: string;
+  style: EdgeStyle;
+  relationship: GraphRelationship;
+  state: GraphNodeState;
+  activity?: string;
+};
+
+/** Materializes routed edges from specs (deterministic, in spec order). */
+function routeSpecs(specs: EdgeSpec[], nodes: FlowNode[]): FlowEdge[] {
+  const edges: FlowEdge[] = [];
+  const routed: RP[][] = [];
+  for (const s of specs) {
+    const pts = planRoute(s.from, s.to, nodes, routed);
+    routed.push(pts.map(([x, y]) => ({ x, y })));
+    edges.push({
+      id: s.id,
+      from: s.from.id,
+      to: s.to.id,
+      pts,
+      style: s.style,
+      arrow: true,
+      relationship: s.relationship,
+      state: s.state,
+      activity: s.activity,
+      layer: layerForRelationship(s.relationship),
+    });
+  }
+  return edges;
+}
+
 /**
  * Maps authoritative GraphDTO (Phase 4.3A server projection) into FlowEngine
  * GraphModel under the Phase 4.3B.1 spatial company-context grammar.
- * Preserves exact relationship taxonomies, edge layers, and spatial cards.
+ * Preserves exact relationship taxonomies, edge layers, and spatial cards;
+ * routes relationships with the Phase 4.3C deterministic router.
  */
 export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
   const nodeMap = new Map<string, FlowNode>();
@@ -356,16 +675,19 @@ export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
     return flowNode;
   });
 
-  const edges: FlowEdge[] = dto.edges.map((e) => {
+  const edges: FlowEdge[] = [];
+  const routed: RP[][] = [];
+  for (const e of dto.edges) {
     const fromNode = nodeMap.get(e.source);
     const toNode = nodeMap.get(e.target);
 
     let pts: [number, number][] = [];
     if (fromNode && toNode) {
-      pts = computeEdgePoints(fromNode, toNode);
+      pts = planRoute(fromNode, toNode, nodes, routed);
     } else if (e.points && e.points.length >= 2) {
       pts = e.points;
     }
+    routed.push(pts.map(([x, y]) => ({ x, y })));
 
     let edgeState: GraphNodeState = "idle";
     if (e.runtimeState === "running" || e.presentationState === "active" || e.presentationState === "processing") {
@@ -378,7 +700,7 @@ export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
       edgeState = "waiting";
     }
 
-    return {
+    edges.push({
       id: e.id,
       from: e.source,
       to: e.target,
@@ -390,8 +712,8 @@ export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
       activity: e.activity,
       layer: computeEdgeLayer(e),
       dtoEdge: e,
-    };
-  });
+    });
+  }
 
   const spatialCards: SpatialCard[] = dto.spatialCards.map((c) => {
     const targetNode = nodeMap.get(c.nodeId);
@@ -422,12 +744,10 @@ export const WORLD = {
 };
 
 type P = { x: number; y: number };
-type Sampled = { pts: P[]; cum: number[]; len: number; edge: FlowEdge; index: number };
-type PacketTone = "cyan" | "amber" | "emerald" | "rose" | "fire" | "white";
+type Sampled = { pts: P[]; cum: number[]; len: number; edge: FlowEdge; index: number; emit: number };
+type PacketTone = "cyan" | "amber" | "rose";
 type Packet = { e: number; d: number; speed: number; tone: PacketTone; trail: number };
-type Ember = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; heat: number; color: string };
-type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string };
-type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone; isSecondary?: boolean };
+type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone };
 
 function samplePath(raw: [number, number][], radius = 22, step = 4): P[] {
   const pts = raw.map(([x, y]) => ({ x, y }));
@@ -480,68 +800,6 @@ function sprite(r: number, g: number, b: number, size = 64): HTMLCanvasElement {
   return c;
 }
 
-const rnd = (a: number, b: number) => a + Math.random() * (b - a);
-
-/**
- * Collision-aware vertical column layout engine.
- * Computes balanced Y coordinates for nodes in a column respecting their bounding box heights,
- * applying relaxation passes to eliminate any overlap.
- */
-function layoutColumn(nodesInCol: FlowNode[], centerY = 440, minGap = 24) {
-  if (nodesInCol.length === 0) return;
-  if (nodesInCol.length === 1) {
-    nodesInCol[0].y = centerY;
-    return;
-  }
-  const totalH = nodesInCol.reduce((sum, n) => sum + n.h, 0) + (nodesInCol.length - 1) * minGap;
-  let curY = centerY - totalH / 2;
-  for (const n of nodesInCol) {
-    n.y = Math.round(curY + n.h / 2);
-    curY += n.h + minGap;
-  }
-  // Boundary safeguards & relaxation passes
-  for (let iter = 0; iter < 4; iter++) {
-    for (let i = 0; i < nodesInCol.length - 1; i++) {
-      const a = nodesInCol[i];
-      const b = nodesInCol[i + 1];
-      const reqDist = (a.h + b.h) / 2 + minGap;
-      const actualDist = b.y - a.y;
-      if (actualDist < reqDist) {
-        const overlap = (reqDist - actualDist) / 2;
-        a.y = Math.max(120, Math.round(a.y - overlap));
-        b.y = Math.min(780, Math.round(b.y + overlap));
-      }
-    }
-  }
-}
-
-/**
- * Dynamic, collision-aware orthogonal conduit connector.
- */
-function connectNodes(
-  fromNode: FlowNode,
-  toNode: FlowNode,
-  id: string,
-  style: EdgeStyle,
-  relationship: GraphRelationship,
-  state: GraphNodeState,
-  activity?: string
-): FlowEdge {
-  const pts = computeEdgePoints(fromNode, toNode);
-  return {
-    id,
-    from: fromNode.id,
-    to: toNode.id,
-    pts,
-    style,
-    arrow: true,
-    relationship,
-    state,
-    activity,
-    layer: layerForRelationship(relationship),
-  };
-}
-
 /**
  * Dynamic company-context projection derived strictly from live OS state
  * (client fallback when the authoritative /api/graph projection is
@@ -558,7 +816,7 @@ export function deriveGraph(state: {
   attention?: Array<{ id: string; title: string; kind: string; handled?: boolean }>;
 }): GraphModel {
   const nodes: FlowNode[] = [];
-  const edges: FlowEdge[] = [];
+  const specs: EdgeSpec[] = [];
   const spatialCards: SpatialCard[] = [];
 
   const openDecisions = state.decisions.filter((d) => d.status === "open");
@@ -607,17 +865,15 @@ export function deriveGraph(state: {
   nodes.push(coreNode);
 
   // Founder -> Sophia conduit
-  edges.push(
-    connectNodes(
-      founderNode,
-      coreNode,
-      "e-founder-core",
-      hasActiveWork ? "cyan" : "white",
-      "delegates",
-      hasActiveWork ? "active" : "idle",
-      hasActiveWork ? "Dispatching directives" : undefined
-    )
-  );
+  specs.push({
+    from: founderNode,
+    to: coreNode,
+    id: "e-founder-core",
+    style: hasActiveWork ? "cyan" : "white",
+    relationship: "delegates",
+    state: hasActiveWork ? "active" : "idle",
+    activity: hasActiveWork ? "Dispatching directives" : undefined,
+  });
 
   // 3. Workforce chips (execution metadata — company band)
   const specialistNodes: FlowNode[] = [];
@@ -695,44 +951,38 @@ export function deriveGraph(state: {
   specialistNodes.forEach((node) => nodes.push(node));
 
   // Connect Sophia to specialists
-  edges.push(
-    connectNodes(
-      coreNode,
-      thorneNode,
-      "e-core-thorne",
-      hasActiveWork ? "cyan" : "white",
-      "delegates",
-      hasActiveWork ? "active" : "idle",
-      hasActiveWork ? "Delegating research" : undefined
-    )
-  );
+  specs.push({
+    from: coreNode,
+    to: thorneNode,
+    id: "e-core-thorne",
+    style: hasActiveWork ? "cyan" : "white",
+    relationship: "delegates",
+    state: hasActiveWork ? "active" : "idle",
+    activity: hasActiveWork ? "Delegating research" : undefined,
+  });
 
   if (financeNode) {
-    edges.push(
-      connectNodes(
-        coreNode,
-        financeNode,
-        "e-core-finance",
-        financeNode.state === "active" ? "cyan" : "white",
-        "models_finance",
-        financeNode.state,
-        "Modeling unit economics"
-      )
-    );
+    specs.push({
+      from: coreNode,
+      to: financeNode,
+      id: "e-core-finance",
+      style: financeNode.state === "active" ? "cyan" : "white",
+      relationship: "models_finance",
+      state: financeNode.state,
+      activity: "Modeling unit economics",
+    });
   }
 
   if (pmNode) {
-    edges.push(
-      connectNodes(
-        thorneNode,
-        pmNode,
-        "e-thorne-pm",
-        pmNode.state === "active" ? "cyan" : "white",
-        "authors_prd",
-        pmNode.state,
-        "Feeding research into PRD"
-      )
-    );
+    specs.push({
+      from: thorneNode,
+      to: pmNode,
+      id: "e-thorne-pm",
+      style: pmNode.state === "active" ? "cyan" : "white",
+      relationship: "authors_prd",
+      state: pmNode.state,
+      activity: "Feeding research into PRD",
+    });
   }
 
   // 4. Work objects — first-class cards in semantic regions
@@ -805,17 +1055,15 @@ export function deriveGraph(state: {
 
     // Ownership edge from assigned specialist to this work object
     const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "cyan" : isDone ? "emerald" : "white";
-    edges.push(
-      connectNodes(
-        assignedSpecialist,
-        stepNode,
-        `e-spec-${w.id}`,
-        edgeStyle,
-        relationship,
-        isBlk ? "blocked" : isAct ? "active" : isDone ? "complete" : "idle",
-        w.title
-      )
-    );
+    specs.push({
+      from: assignedSpecialist,
+      to: stepNode,
+      id: `e-spec-${w.id}`,
+      style: edgeStyle,
+      relationship,
+      state: isBlk ? "blocked" : isAct ? "active" : isDone ? "complete" : "idle",
+      activity: w.title,
+    });
   });
 
   protocolStepNodes.forEach((n) => nodes.push(n));
@@ -847,32 +1095,27 @@ export function deriveGraph(state: {
 
   // Work → verifier execution boundary (ownership layer: revealed on focus / when live)
   if (protocolStepNodes.length === 0) {
-    edges.push(
-      connectNodes(
-        thorneNode,
-        verifierNode,
-        "e-thorne-verifier",
-        "white",
-        "checks",
-        "idle",
-        undefined
-      )
-    );
+    specs.push({
+      from: thorneNode,
+      to: verifierNode,
+      id: "e-thorne-verifier",
+      style: "white",
+      relationship: "checks",
+      state: "idle",
+    });
   } else {
     protocolStepNodes.forEach((stepNode) => {
       const isReview = stepNode.state === "active" && (stepNode.subtitle?.includes("Review") || stepNode.subtitle?.includes("Synthesis"));
       const isBlk = stepNode.state === "blocked";
       const edgeStyle: EdgeStyle = isBlk ? "rose" : isReview ? "cyan" : "white";
-      edges.push(
-        connectNodes(
-          stepNode,
-          verifierNode,
-          `e-ver-${stepNode.id}`,
-          edgeStyle,
-          "checks",
-          isBlk ? "blocked" : isReview ? "active" : "idle"
-        )
-      );
+      specs.push({
+        from: stepNode,
+        to: verifierNode,
+        id: `e-ver-${stepNode.id}`,
+        style: edgeStyle,
+        relationship: "checks",
+        state: isBlk ? "blocked" : isReview ? "active" : "idle",
+      });
     });
   }
 
@@ -895,16 +1138,14 @@ export function deriveGraph(state: {
   nodes.push(outcomeNode);
 
   // Structural edge: verifier feeds the vault (company structure truth)
-  edges.push(
-    connectNodes(
-      verifierNode,
-      outcomeNode,
-      "e-verifier-outcome",
-      doneWork.length > 0 ? "emerald" : "white",
-      "feeds",
-      doneWork.length > 0 ? "complete" : "idle"
-    )
-  );
+  specs.push({
+    from: verifierNode,
+    to: outcomeNode,
+    id: "e-verifier-outcome",
+    style: doneWork.length > 0 ? "emerald" : "white",
+    relationship: "feeds",
+    state: doneWork.length > 0 ? "complete" : "idle",
+  });
 
   // 7. Contextual Escalation: Founder Approval Gate (governance — inside company band)
   if (hasOpenDecisions) {
@@ -925,30 +1166,26 @@ export function deriveGraph(state: {
     nodes.push(approvalNode);
 
     // Sophia escalates to Approval Gate
-    edges.push(
-      connectNodes(
-        coreNode,
-        approvalNode,
-        "e-sophia-approval",
-        "amber",
-        "escalates-to",
-        "blocked",
-        "Escalating decision"
-      )
-    );
+    specs.push({
+      from: coreNode,
+      to: approvalNode,
+      id: "e-sophia-approval",
+      style: "amber",
+      relationship: "escalates-to",
+      state: "blocked",
+      activity: "Escalating decision",
+    });
 
     // Approval Gate escalates to Founder
-    edges.push(
-      connectNodes(
-        approvalNode,
-        founderNode,
-        "e-approval-founder",
-        "amber",
-        "escalates-to",
-        "blocked",
-        "Requires Founder Ratification"
-      )
-    );
+    specs.push({
+      from: approvalNode,
+      to: founderNode,
+      id: "e-approval-founder",
+      style: "amber",
+      relationship: "escalates-to",
+      state: "blocked",
+      activity: "Requires Founder Ratification",
+    });
   }
 
   // 8. Spatial Contextual Cards (Real operational intent only)
@@ -1031,6 +1268,9 @@ export function deriveGraph(state: {
     });
   }
 
+  // Phase 4.3C — route all relationships once every node exists (§5).
+  const edges = routeSpecs(specs, nodes);
+
   return { nodes, edges, spatialCards };
 }
 
@@ -1038,10 +1278,36 @@ export function deriveGraph(state: {
 export const NODES: FlowNode[] = deriveGraph({ work: [], decisions: [] }).nodes;
 export const EDGES: FlowEdge[] = deriveGraph({ work: [], decisions: [] }).edges;
 
+/* ------------------------------------------------- execution language map */
+
+/** §3/§5 — which conduit treatment an edge renders with. */
+function conduitTreatmentFor(e: FlowEdge): ConduitKey {
+  // Governance relationships render as STATIC amber approval boundaries —
+  // never animated like execution (§3).
+  if (e.layer === "governance" || e.relationship === "escalates-to") return "governance";
+  if (e.state === "blocked" || e.style === "rose") return "blocked";
+  // Amber outside governance = external action/side effect; only animated
+  // (progressive fill + comets) while genuinely executing.
+  if (e.style === "amber") return e.state === "active" ? "externalAction" : "governance";
+  if (e.state === "complete" || e.style === "emerald") return "completed";
+  if (e.state === "active" || e.style === "cyan") return "running";
+  return "idle";
+}
+
+/** §3 — comet tone derives from execution state, never agent identity. */
+function toneForEdge(e: FlowEdge): PacketTone {
+  if (e.state === "blocked" || e.style === "rose") return "rose";
+  if (e.style === "amber" && e.state === "active") return "amber";
+  return "cyan";
+}
+
 /**
- * FlowEngine canvas particle renderer.
- * Produces high-fidelity orthogonal circuit lines, directional laser streaks,
- * trailing spark physics, dual-ring arrival shockwaves, and ambient breathing.
+ * FlowEngine — the canonical company-context canvas renderer.
+ *
+ * Renders the FROZEN execution language: static calm conduits, progressive
+ * source→target activation fills, directional comets constrained to the
+ * exact routed edge paths, and restrained arrival activations — all driven
+ * exclusively by authoritative runtime state delivered via setGraph().
  */
 export class FlowEngine {
   canvas: HTMLCanvasElement;
@@ -1058,20 +1324,16 @@ export class FlowEngine {
   outgoing = new Map<string, number[]>();
   nodeMap = new Map<string, FlowNode>();
   packets: Packet[] = [];
-  embers: Ember[] = [];
-  sparks: Spark[] = [];
   rings: Ring[] = [];
   energy = new Map<string, number>();
-  coreHeat = 0.3;
-  spawnTimer = 0;
-  emberAcc = 0;
+  /** §4 — per-edge progressive fill, carried across graph refreshes. */
+  private fill = new Map<string, { active: boolean; q: number }>();
+  /** Deterministic round-robin for multi-relationship continuation. */
+  private hopSeq = 0;
 
-  blueSprite = sprite(...tokenRgbParts('primary'));
-  fireSprite = sprite(...sophiaRgbParts());
-  amberSprite = sprite(...tokenRgbParts('processing'));
-  emeraldSprite = sprite(...tokenRgbParts('success'));
-  roseSprite = sprite(...tokenRgbParts('error'));
-  whiteSprite = sprite(240, 245, 255);
+  blueSprite = sprite(...tokenRgbParts("primary"));
+  amberSprite = sprite(...tokenRgbParts("processing"));
+  roseSprite = sprite(...tokenRgbParts("error"));
   private raf = 0;
   private lastT = 0;
 
@@ -1090,18 +1352,36 @@ export class FlowEngine {
 
     for (const n of graph.nodes) {
       this.nodeMap.set(n.id, n);
-      this.energy.set(n.id, n.state === "active" || n.state === "blocked" ? 0.4 : 0);
+      // Authoritative activation hint: active/blocked nodes begin with a
+      // brief decaying glow (§2 — state-driven, never interaction-fabricated).
+      this.energy.set(n.id, n.state === "active" || n.state === "blocked" ? 0.3 : 0);
     }
 
+    const prevFill = this.fill;
+    this.fill = new Map();
+
+    // §5 — deliberate crossings: later edges hop over earlier ones, in edge
+    // order. Only the edges the engine actually receives (visible ones)
+    // participate, so hops never reference hidden orchestration plumbing.
+    const routedRaw: RP[][] = [];
     graph.edges.forEach((e, index) => {
-      const pts = samplePath(e.pts);
+      const raw = insertHops(e.pts, routedRaw);
+      routedRaw.push(e.pts.map(([x, y]) => ({ x, y })));
+
+      const pts = samplePath(raw);
       const cum = [0];
       for (let i = 1; i < pts.length; i++) {
         cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
       }
-      this.paths.push({ pts, cum, len: cum[cum.length - 1], edge: e, index });
+      this.paths.push({ pts, cum, len: cum[cum.length - 1], edge: e, index, emit: ((index % 5) * 140) / 1000 });
       if (!this.outgoing.has(e.from)) this.outgoing.set(e.from, []);
       this.outgoing.get(e.from)!.push(index);
+
+      // §4 — progressive fill: newly-active relationships fill 0→1;
+      // relationships that stay active across refreshes stay filled.
+      const active = e.state === "active";
+      const prev = prevFill.get(e.id);
+      this.fill.set(e.id, active ? { active: true, q: prev && prev.active ? prev.q : 0 } : { active: false, q: 1 });
     });
   }
 
@@ -1141,132 +1421,58 @@ export class FlowEngine {
   }
 
   /**
-   * Spawns data packets ONLY when there is actual active or blocked operational activity.
-   * Zero synthetic packets are spawned during idle state.
-   */
-  spawn(randomStart = false) {
-    const activePaths = this.paths.filter((p) => p.edge.state === "active" || p.edge.state === "blocked");
-    if (!activePaths.length) return;
-    const p = activePaths[Math.floor(Math.random() * activePaths.length)];
-    const tone: PacketTone =
-      p.edge.style === "rose"
-        ? "rose"
-        : p.edge.style === "amber"
-        ? "amber"
-        : p.edge.style === "emerald"
-        ? "emerald"
-        : "cyan";
-
-    this.packets.push({
-      e: p.index,
-      d: randomStart ? Math.random() * p.len : 0,
-      speed: rnd(160, 240),
-      tone,
-      trail: rnd(45, 70),
-    });
-  }
-
-  /**
-   * Dual-ring arrival shockwave and target perimeter illumination.
+   * §4 — "target node activates": one restrained ring plus a decaying node
+   * glow. No ember bursts, no dual shockwaves, no sparks (§7).
    */
   arrive(nodeId: string, x: number, y: number, tone: PacketTone = "cyan") {
     this.energy.set(nodeId, 1);
-    const isCore = nodeId === "core";
-    const isBlocked = tone === "rose" || this.nodeMap.get(nodeId)?.state === "blocked";
-    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
-
-    // Primary fast shockwave ring
     this.rings.push({
       x,
       y,
       life: 0,
-      max: isCore ? 0.7 : 0.38,
-      r: isCore ? 140 : 64,
-      tone: ringTone,
+      max: ARRIVAL_LANGUAGE.ringLifeMs / 1000,
+      r: ARRIVAL_LANGUAGE.ringRadius,
+      tone,
     });
-
-    // Secondary soft dissipation halo ring
-    this.rings.push({
-      x,
-      y,
-      life: 0,
-      max: isCore ? 0.9 : 0.6,
-      r: isCore ? 180 : 92,
-      tone: ringTone,
-      isSecondary: true,
-    });
-
-    const count = isCore ? 32 : 18;
-    this.burstFire(x, y, count, ringTone);
-
-    if (isCore) {
-      this.coreHeat = Math.min(1.6, this.coreHeat + 0.6);
-      const c = this.nodeMap.get("core");
-      if (c) {
-        for (let i = 0; i < 18; i++) {
-          this.embers.push({
-            x: c.x - c.w / 2 + Math.random() * c.w,
-            y: c.y - c.h / 2,
-            vx: rnd(-22, 22),
-            vy: rnd(-130, -50),
-            life: 0,
-            max: rnd(0.45, 0.95),
-            size: rnd(1.4, 3.2),
-            heat: rnd(0.4, 1),
-            color: ENTITY_IDENTITY.sophia,
-          });
-        }
-      }
-    }
-  }
-
-  burstFire(x: number, y: number, n: number, tone: PacketTone = "cyan") {
-    const col =
-      tone === "amber"
-        ? EXTERNAL.bright
-        : tone === "rose"
-        ? BLOCKED.bright
-        : tone === "emerald"
-        ? DONE.bright
-        : tone === "fire"
-        ? ENTITY_IDENTITY.sophia
-        : RUNNING.bright;
-
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = rnd(35, 170);
-      this.embers.push({
-        x: x + rnd(-8, 8),
-        y: y + rnd(-8, 8),
-        vx: Math.cos(a) * sp,
-        vy: Math.sin(a) * sp,
-        life: 0,
-        max: rnd(0.35, 0.85),
-        size: rnd(1.0, 2.8),
-        heat: Math.random(),
-        color: col,
-      });
-    }
   }
 
   step(dt: number) {
     this.time += dt;
-    const core = this.nodeMap.get("core");
-    const hasActiveEdges = this.paths.some((p) => p.edge.state === "active" || p.edge.state === "blocked");
 
-    // Dynamic packet spawner: ONLY active when real work is in flight
-    if (hasActiveEdges) {
-      this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && this.packets.length < 24) {
-        this.spawnTimer = rnd(0.7, 1.3);
-        this.spawn();
-      }
-    } else {
-      // Idle state: strictly NO fake packets generated
-      this.spawnTimer = 0;
+    // §4 — progressive source→target conduit fill for active relationships.
+    const fillStep = dt / (MOTION_TOKENS.conduitFillMs / 1000);
+    for (const p of this.paths) {
+      const f = this.fill.get(p.edge.id);
+      if (f && f.active && f.q < 1) f.q = Math.min(1, f.q + fillStep);
     }
 
-    // Packet advance, directional angle & trail physics
+    // §2/§4 — deterministic comet emission. ONLY authoritative active or
+    // blocked relationships emit energy; cadence, speed and trail derive
+    // from the edge's graph index (same graph ⇒ same behavior). Idle
+    // relationships never emit (§1 calm baseline).
+    for (const p of this.paths) {
+      const active = p.edge.state === "active" || p.edge.state === "blocked";
+      if (!active) {
+        p.emit = 0;
+        continue;
+      }
+      p.emit += dt;
+      const cadence = (MOTION_TOKENS.cometCadenceMs + (p.index % 5) * 140) / 1000;
+      if (p.emit >= cadence) {
+        p.emit -= cadence;
+        if (this.packets.length < 24) {
+          this.packets.push({
+            e: p.index,
+            d: 0,
+            speed: MOTION_TOKENS.signalVelocityPxPerSec + (p.index % 4) * 18,
+            tone: toneForEdge(p.edge),
+            trail: 46 + (p.index % 3) * 8,
+          });
+        }
+      }
+    }
+
+    // Comet advance along the exact routed path (§4/§5).
     for (let i = this.packets.length - 1; i >= 0; i--) {
       const pk = this.packets[i];
       const path = this.paths[pk.e];
@@ -1276,135 +1482,45 @@ export class FlowEngine {
       }
       pk.d += pk.speed * dt;
 
-      // Trailing micro-spark emission along motion vector
-      if (Math.random() < 0.4) {
-        const head = this.pointAt(path, pk.d);
-        const prev = this.pointAt(path, Math.max(0, pk.d - 6));
-        const ang = Math.atan2(head.y - prev.y, head.x - prev.x);
-        const spMag = rnd(25, 55);
-
-        this.sparks.push({
-          x: head.x + rnd(-2, 2),
-          y: head.y + rnd(-2, 2),
-          vx: -Math.cos(ang) * spMag + Math.sin(ang) * rnd(-15, 15),
-          vy: -Math.sin(ang) * spMag - Math.cos(ang) * rnd(-15, 15),
-          life: 0,
-          max: rnd(0.18, 0.4),
-          size: rnd(1.0, 2.2),
-          color:
-            pk.tone === "amber"
-              ? EXTERNAL.bright
-              : pk.tone === "rose"
-              ? BLOCKED.bright
-              : pk.tone === "emerald"
-              ? DONE.bright
-              : RUNNING.bright,
-        });
-      }
-
       if (pk.d < path.len) continue;
 
+      // Target node receives a short, restrained activation (§4).
       const to = path.edge.to;
       const end = path.pts[path.pts.length - 1];
       this.arrive(to, end.x, end.y, pk.tone);
 
-      const next = this.outgoing.get(to);
-      const activeNext = next?.filter((idx) => this.paths[idx]?.edge.state === "active" || this.paths[idx]?.edge.state === "blocked");
-      const candidates = (activeNext && activeNext.length ? activeNext : next) || [];
-
-      if (candidates.length && Math.random() < 0.85 && this.packets.length < 36) {
-        pk.e = candidates[Math.floor(Math.random() * candidates.length)];
+      // The next AUTHORITATIVE relationship may activate. Energy never
+      // continues onto idle relationships — no fabricated activity (§2).
+      const next = this.outgoing.get(to) ?? [];
+      const activeNext = next.filter((idx) => {
+        const s = this.paths[idx]?.edge.state;
+        return s === "active" || s === "blocked";
+      });
+      if (activeNext.length && this.packets.length < 36) {
+        this.hopSeq++;
+        const nextIdx = activeNext[this.hopSeq % activeNext.length];
+        const np = this.paths[nextIdx];
+        pk.e = nextIdx;
         pk.d = 0;
-        pk.speed = rnd(150, 230);
-        const nextEdge = this.paths[pk.e].edge;
-        pk.tone =
-          nextEdge.style === "rose"
-            ? "rose"
-            : nextEdge.style === "amber"
-            ? "amber"
-            : nextEdge.style === "emerald"
-            ? "emerald"
-            : "cyan";
+        pk.speed = MOTION_TOKENS.signalVelocityPxPerSec + (nextIdx % 4) * 18;
+        pk.trail = 46 + (nextIdx % 3) * 8;
+        pk.tone = toneForEdge(np.edge);
       } else {
         this.packets.splice(i, 1);
       }
     }
 
-    // Energy decay
+    // §4 — node activation decay (MOTION_TOKENS.activationDecayMs).
+    const decay = 1 / (MOTION_TOKENS.activationDecayMs / 1000);
     for (const [k, v] of this.energy) {
-      this.energy.set(k, v * Math.exp(-2.5 * dt));
-    }
-    this.coreHeat = 0.3 + (this.coreHeat - 0.3) * Math.exp(-1.4 * dt);
-
-    // Sophia Core perimeter combustion: active only when Sophia is orchestrating
-    this.emberAcc += core && core.state === "active" ? dt * 38 : 0;
-    while (core && this.emberAcc > 1) {
-      this.emberAcc -= 1;
-      const per = (core.w + core.h) * 2;
-      let d = Math.random() * per;
-      let x = core.x - core.w / 2,
-        y = core.y - core.h / 2;
-      if (d < core.w) x += d;
-      else if ((d -= core.w) < core.h) {
-        x += core.w;
-        y += d;
-      } else if ((d -= core.h) < core.w) {
-        x += core.w - d;
-        y += core.h;
-      } else {
-        y += d - core.w;
-      }
-      this.embers.push({
-        x: x + rnd(-3, 3),
-        y: y + rnd(-3, 3),
-        vx: rnd(-20, 20),
-        vy: rnd(-70, -15),
-        life: 0,
-        max: rnd(0.35, 0.9),
-        size: rnd(0.8, 2.2),
-        heat: Math.random(),
-        color: ENTITY_IDENTITY.sophia,
-      });
+      this.energy.set(k, v * Math.exp(-decay * dt));
     }
 
-    // Embers update
-    for (let i = this.embers.length - 1; i >= 0; i--) {
-      const em = this.embers[i];
-      em.life += dt;
-      if (em.life >= em.max) {
-        this.embers.splice(i, 1);
-        continue;
-      }
-      em.vy -= 35 * dt;
-      em.vx += Math.sin(this.time * 8 + em.heat * 15) * 25 * dt;
-      const dmp = Math.exp(-1.5 * dt);
-      em.vx *= dmp;
-      em.vy *= dmp;
-      em.x += em.vx * dt;
-      em.y += em.vy * dt;
-    }
-
-    // Sparks update
-    for (let i = this.sparks.length - 1; i >= 0; i--) {
-      const sp = this.sparks[i];
-      sp.life += dt;
-      if (sp.life >= sp.max) {
-        this.sparks.splice(i, 1);
-        continue;
-      }
-      sp.vx *= Math.exp(-2.0 * dt);
-      sp.vy *= Math.exp(-2.0 * dt);
-      sp.x += sp.vx * dt;
-      sp.y += sp.vy * dt;
-    }
-
-    // Rings update
+    // Arrival ring lifetimes.
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const ring = this.rings[i];
       ring.life += dt;
-      if (ring.life >= ring.max) {
-        this.rings.splice(i, 1);
-      }
+      if (ring.life >= ring.max) this.rings.splice(i, 1);
     }
   }
 
@@ -1418,7 +1534,7 @@ export class FlowEngine {
     g.lineCap = "round";
     g.lineJoin = "round";
 
-    // --- Technical Circuit Crosshairs & Coordinates
+    // --- Static technical chrome (grid crosshairs) — §1 calm baseline.
     g.save();
     g.strokeStyle = CANVAS_CHROME.crosshair;
     g.lineWidth = 1;
@@ -1434,116 +1550,82 @@ export class FlowEngine {
     }
     g.restore();
 
-    // Ambient breathing oscillation (sine wave)
-    const ambientBreath = Math.sin(this.time * 1.5) * 0.04;
+    // §3 — blocked state only: restrained slow pulse (no particles, §7).
+    const blockedPulseAngle = (Math.PI * 2) / (MOTION_TOKENS.pulseCycleMs / 1000);
 
-    // --- Connectors (Orthogonal Conduits)
+    // --- Conduits (§1 calm · §3 state color · §4 progressive fill · §5 routed)
     for (const p of this.paths) {
       const e = p.edge;
-      const eFrom = this.energy.get(e.from) || 0;
-      const eTo = this.energy.get(e.to) || 0;
-      const lit = Math.max(eFrom, eTo);
+      const lit = Math.max(this.energy.get(e.from) || 0, this.energy.get(e.to) || 0);
+      const key = conduitTreatmentFor(e);
+      const c = CONDUIT_LANGUAGE[key];
 
       g.beginPath();
       g.moveTo(p.pts[0].x, p.pts[0].y);
       for (let i = 1; i < p.pts.length; i++) g.lineTo(p.pts[i].x, p.pts[i].y);
 
-      if (e.style === "rose" || e.state === "blocked") {
+      if (c.additive) {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(${BLOCKED.rgb},${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
-        g.lineWidth = 8;
-        g.stroke();
-        g.strokeStyle = `rgba(${BLOCKED.rgbBright},${0.68 + lit * 0.32})`;
-        g.lineWidth = 2.2;
-        g.stroke();
+      }
+      const pulse = key === "blocked" ? Math.sin(this.time * blockedPulseAngle) * 0.06 : 0;
+      g.strokeStyle = `rgba(${c.base},${Math.min(1, c.baseAlpha + lit * 0.1 + pulse).toFixed(3)})`;
+      g.lineWidth = c.baseWidth;
+      g.stroke();
+      g.strokeStyle = `rgba(${c.core},${Math.min(1, c.coreAlpha + lit * 0.25 + pulse).toFixed(3)})`;
+      g.lineWidth = c.coreWidth;
+      g.stroke();
+      if (c.additive) {
         g.restore();
-      } else if (e.style === "amber") {
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(${EXTERNAL.rgb},${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
-        g.lineWidth = 8;
-        g.stroke();
-        g.strokeStyle = `rgba(${EXTERNAL.rgbBright},${0.68 + lit * 0.3})`;
-        g.lineWidth = 2.2;
-        g.stroke();
-        g.restore();
-      } else if (e.style === "emerald" || e.state === "complete") {
-        g.save();
-        g.strokeStyle = `rgba(${DONE.rgb},${0.18 + lit * 0.22})`;
-        g.lineWidth = 5;
-        g.stroke();
-        g.strokeStyle = `rgba(${DONE.rgbBright},${0.55 + lit * 0.3})`;
-        g.lineWidth = 1.8;
-        g.stroke();
-        g.restore();
-      } else if (e.style === "cyan" || e.state === "active") {
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(${RUNNING.rgb},${0.28 + lit * 0.35})`;
-        g.lineWidth = 9;
-        g.stroke();
-        g.strokeStyle = `rgba(${RUNNING.rgbBright},${0.68 + lit * 0.32})`;
-        g.lineWidth = 2.2;
-        g.setLineDash([8, 10]);
-        g.lineDashOffset = -this.time * 65;
-        g.stroke();
-        g.setLineDash([]);
-        g.restore();
-      } else {
-        // Quiet idle baseline conduit (ambient breathing, no flurry)
-        g.strokeStyle = `${NEUTRAL_CONDUIT.base}${0.16 + ambientBreath + lit * 0.1})`;
-        g.lineWidth = 4;
-        g.stroke();
-        g.strokeStyle = `${NEUTRAL_CONDUIT.core}${0.24 + ambientBreath + lit * 0.2})`;
-        g.lineWidth = 1.4;
-        g.stroke();
       }
 
-      // Heat gradient entering Sophia core (identity fire treatment)
-      if (e.to === "core") {
-        const tail = 110;
-        const start = Math.max(0, p.len - tail);
-        const a = this.pointAt(p, start);
-        const b = p.pts[p.pts.length - 1];
-        const grad = g.createLinearGradient(a.x, a.y, b.x, b.y);
-        grad.addColorStop(0, `rgba(${SOPHIA_RGB},0)`);
-        grad.addColorStop(1, `rgba(${SOPHIA_RGB},${0.5 + this.coreHeat * 0.35})`);
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        g.beginPath();
-        let began = false;
-        for (let i = 0; i < p.pts.length; i++) {
-          if (p.cum[i] < start) continue;
-          if (!began) {
-            g.moveTo(a.x, a.y);
-            began = true;
+      // §4 — progressive source→target fill (running / external action only).
+      if (c.fillWidth > 0) {
+        const f = this.fill.get(e.id);
+        const q = f ? f.q : 1;
+        const upto = q * p.len;
+        if (upto > 0.5) {
+          if (c.additive) {
+            g.save();
+            g.globalCompositeOperation = "lighter";
           }
-          g.lineTo(p.pts[i].x, p.pts[i].y);
+          g.beginPath();
+          g.moveTo(p.pts[0].x, p.pts[0].y);
+          for (let i = 1; i < p.pts.length; i++) {
+            if (p.cum[i] <= upto) {
+              g.lineTo(p.pts[i].x, p.pts[i].y);
+            } else {
+              const t = (upto - p.cum[i - 1]) / (p.cum[i] - p.cum[i - 1] || 1);
+              g.lineTo(
+                p.pts[i - 1].x + (p.pts[i].x - p.pts[i - 1].x) * t,
+                p.pts[i - 1].y + (p.pts[i].y - p.pts[i - 1].y) * t
+              );
+              break;
+            }
+          }
+          g.strokeStyle = `rgba(${c.bright},${c.fillAlpha})`;
+          g.lineWidth = c.fillWidth;
+          g.stroke();
+          // Fill front — the leading edge of the activation (§4).
+          if (q < 1) {
+            const front = this.pointAt(p, upto);
+            const spr = toneForEdge(e) === "amber" ? this.amberSprite : this.blueSprite;
+            g.drawImage(spr, front.x - 7, front.y - 7, 14, 14);
+          }
+          if (c.additive) {
+            g.restore();
+          }
         }
-        g.strokeStyle = grad;
-        g.lineWidth = 5;
-        g.stroke();
-        g.restore();
       }
 
-      // Arrowheads
+      // Arrowheads — tinted per treatment, strictly static (§1: no idle
+      // oscillation; node energy may brighten them transiently).
       if (e.arrow) {
         const n = p.pts.length;
-        const b = p.pts[n - 1],
-          a = p.pts[n - 4] || p.pts[0];
+        const b = p.pts[n - 1];
+        const a = p.pts[n - 4] || p.pts[0];
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
-        g.fillStyle =
-          e.style === "rose"
-            ? `rgba(${BLOCKED.rgbBright},${0.85 + lit * 0.15})`
-            : e.style === "amber"
-            ? `rgba(${EXTERNAL.rgbBright},${0.85 + lit * 0.15})`
-            : e.style === "emerald"
-            ? `rgba(${DONE.rgbBright},${0.85 + lit * 0.15})`
-            : e.style === "cyan"
-            ? `rgba(${RUNNING.rgbBright},${0.85 + lit * 0.15})`
-            : `${NEUTRAL_CONDUIT.arrow}${0.55 + ambientBreath + lit * 0.2})`;
-
+        g.fillStyle = `rgba(${c.core},${Math.min(1, c.arrowAlpha + lit * 0.2).toFixed(3)})`;
         g.beginPath();
         g.moveTo(b.x, b.y);
         g.lineTo(b.x - Math.cos(ang - 0.45) * 9.5, b.y - Math.sin(ang - 0.45) * 9.5);
@@ -1555,153 +1637,63 @@ export class FlowEngine {
 
     g.globalCompositeOperation = "lighter";
 
-    // --- Node Arrival Energy Glow
+    // --- Node activation glow (§4: destination activates, then settles).
     for (const n of this.nodeMap.values()) {
       const en = this.energy.get(n.id) || 0;
       if (en < 0.02) continue;
       const r = Math.max(n.w, n.h) * (0.85 + en * 0.35);
-      const isCore = n.id === "core";
-      const isBlocked = n.state === "blocked";
+      const rgb = n.state === "blocked" ? BLOCKED.rgb : RUNNING.rgb;
       const gr = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
-      if (isCore) {
-        gr.addColorStop(0, `rgba(${SOPHIA_RGB},${0.45 * en})`);
-      } else if (isBlocked) {
-        gr.addColorStop(0, `rgba(${BLOCKED.rgb},${0.45 * en})`);
-      } else {
-        gr.addColorStop(0, `rgba(${RUNNING.rgb},${0.45 * en})`);
-      }
+      gr.addColorStop(0, `rgba(${rgb},${ARRIVAL_LANGUAGE.glowAlpha * en})`);
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr;
       g.fillRect(n.x - r, n.y - r, r * 2, r * 2);
     }
 
-    // --- Sophia Core Fire Border
-    const c = this.nodeMap.get("core");
-    if (c) {
-      const heat = this.coreHeat;
-      const x = c.x - c.w / 2 - 5,
-        y = c.y - c.h / 2 - 5,
-        w = c.w + 10,
-        h = c.h + 10;
-      g.save();
-      g.shadowColor = `rgba(${SOPHIA_RGB},0.95)`;
-      g.shadowBlur = 20 + heat * 24;
-      g.strokeStyle = `rgba(${SOPHIA_RGB},${0.5 + heat * 0.4})`;
-      g.lineWidth = 2.0 + heat * 1.5;
-      g.beginPath();
-      g.roundRect(x, y, w, h, 16);
-      g.stroke();
-      g.restore();
-
-      const gr = g.createRadialGradient(c.x, c.y, c.w * 0.2, c.x, c.y, c.w * 0.8);
-      gr.addColorStop(0, `rgba(${SOPHIA_RGB},${0.1 + heat * 0.1})`);
-      gr.addColorStop(1, `rgba(${SOPHIA_RGB},0)`);
-      g.fillStyle = gr;
-      g.fillRect(c.x - c.w, c.y - c.w, c.w * 2, c.w * 2);
-    }
-
-    // --- Sparks
-    for (const sp of this.sparks) {
-      const k2 = 1 - sp.life / sp.max;
-      g.globalAlpha = k2 * 0.9;
-      g.fillStyle = sp.color;
-      g.beginPath();
-      g.arc(sp.x, sp.y, sp.size * k2, 0, Math.PI * 2);
-      g.fill();
-    }
-    g.globalAlpha = 1;
-
-    // --- Embers
-    for (const em of this.embers) {
-      const k2 = 1 - em.life / em.max;
-      const s = em.size * (0.6 + k2) * 3;
-      g.globalAlpha = Math.min(1, k2 * 1.3);
-      g.drawImage(em.heat > 0.7 ? this.whiteSprite : this.fireSprite, em.x - s, em.y - s, s * 2, s * 2);
-      g.globalAlpha = k2;
-      g.fillStyle = em.color;
-      g.beginPath();
-      g.arc(em.x, em.y, em.size * 0.55 * (0.5 + k2), 0, Math.PI * 2);
-      g.fill();
-    }
-    g.globalAlpha = 1;
-
-    // --- Directional Laser Streaks (Packets)
+    // --- Comets (§4: directional energy on the exact routed path).
     for (const pk of this.packets) {
       const p = this.paths[pk.e];
       if (!p) continue;
       const head = this.pointAt(p, pk.d);
+      const isAmber = pk.tone === "amber";
+      const isRose = pk.tone === "rose";
+      const spr = isAmber ? this.amberSprite : isRose ? this.roseSprite : this.blueSprite;
+      const rgb = isAmber ? EXTERNAL.rgb : isRose ? BLOCKED.rgb : RUNNING.rgb;
+
+      // Directional streak trail — the comet tail follows the routed path
+      // exactly (never an independent particle system, §4/§8).
       const steps = 12;
-      const spr =
-        pk.tone === "amber"
-          ? this.amberSprite
-          : pk.tone === "rose"
-          ? this.roseSprite
-          : pk.tone === "emerald"
-          ? this.emeraldSprite
-          : pk.tone === "fire"
-          ? this.fireSprite
-          : pk.tone === "white"
-          ? this.whiteSprite
-          : this.blueSprite;
-
-      const rgb =
-        pk.tone === "amber"
-          ? EXTERNAL.rgb
-          : pk.tone === "rose"
-          ? BLOCKED.rgb
-          : pk.tone === "emerald"
-          ? DONE.rgb
-          : pk.tone === "fire"
-          ? SOPHIA_RGB
-          : pk.tone === "white"
-          ? "255,255,255"
-          : RUNNING.rgb;
-
-      // Directional laser streak trail
       for (let i = steps; i >= 1; i--) {
         const d = pk.d - (pk.trail * i) / steps;
         if (d < 0) continue;
         const q = this.pointAt(p, d);
         const t = 1 - i / steps;
-        const r = 0.8 + t * 2.6;
-        g.fillStyle = `rgba(${rgb},${t * t * 0.85})`;
+        const r = 0.8 + t * 2.4;
+        g.fillStyle = `rgba(${rgb},${(t * t * 0.8).toFixed(3)})`;
         g.beginPath();
         g.arc(q.x, q.y, r, 0, Math.PI * 2);
         g.fill();
       }
 
-      // White-hot laser core pip
-      const s = 12;
+      // Comet head.
+      const s = 11;
       g.drawImage(spr, head.x - s, head.y - s, s * 2, s * 2);
-      g.fillStyle = "#ffffff";
+      g.fillStyle = "rgba(255,255,255,0.9)";
       g.beginPath();
-      g.arc(head.x, head.y, 2.2, 0, Math.PI * 2);
+      g.arc(head.x, head.y, 2, 0, Math.PI * 2);
       g.fill();
     }
 
-    // --- Arrival Shockwave Rings (Dual concentric rings)
+    // --- Arrival rings (single, restrained — §7).
     for (const r of this.rings) {
       const k2 = r.life / r.max;
-      const alpha = r.isSecondary ? (1 - k2) * 0.45 : (1 - k2) * 0.8;
-      const strokeCol =
-        r.tone === "rose"
-          ? `rgba(${BLOCKED.rgb},${alpha})`
-          : r.tone === "amber"
-          ? `rgba(${EXTERNAL.rgb},${alpha})`
-          : r.tone === "emerald"
-          ? `rgba(${DONE.rgb},${alpha})`
-          : r.tone === "fire"
-          ? `rgba(${SOPHIA_RGB},${alpha})`
-          : `rgba(${RUNNING.rgb},${alpha})`;
-
-      g.strokeStyle = strokeCol;
-      g.lineWidth = r.isSecondary ? 1.4 * (1 - k2) + 0.3 : 2.4 * (1 - k2) + 0.5;
+      const alpha = (1 - k2) * ARRIVAL_LANGUAGE.ringAlpha;
+      const rgb =
+        r.tone === "amber" ? EXTERNAL.rgb : r.tone === "rose" ? BLOCKED.rgb : RUNNING.rgb;
+      g.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
+      g.lineWidth = 2 * (1 - k2) + 0.4;
       g.beginPath();
-      if (r.tone === "fire") {
-        g.roundRect(r.x - r.r * k2 * 1.5, r.y - r.r * k2 * 0.7, r.r * k2 * 3, r.r * k2 * 1.4, 18);
-      } else {
-        g.arc(r.x, r.y, r.r * Math.pow(k2, r.isSecondary ? 0.8 : 0.6), 0, Math.PI * 2);
-      }
+      g.arc(r.x, r.y, r.r * Math.pow(k2, 0.6), 0, Math.PI * 2);
       g.stroke();
     }
 
