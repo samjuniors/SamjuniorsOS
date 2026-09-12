@@ -136,12 +136,21 @@ export default function WorkflowDesignSystemSpecimen() {
                   backgroundSize: '20px 20px',
                 }}
               />
+              {/* R2: Noise texture grain overlay */}
+              <svg className="absolute inset-0 w-full h-full opacity-[0.035] mix-blend-overlay pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+                <filter id="canvas-noise">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+                  <feColorMatrix type="saturate" values="0" />
+                </filter>
+                <rect width="100%" height="100%" filter="url(#canvas-noise)" />
+              </svg>
               <div className="absolute inset-0 bg-gradient-to-t from-[#02050D] via-transparent to-[#02050D]/60" />
               <div className="absolute bottom-3 left-3 right-3 flex flex-wrap gap-2 text-[10px] text-slate-400">
                 <span className="rounded bg-white/[0.05] px-2 py-0.5 border border-white/[0.08]">Grid Lines</span>
                 <span className="rounded bg-white/[0.05] px-2 py-0.5 border border-white/[0.08]">Subtle Dots</span>
                 <span className="rounded bg-white/[0.05] px-2 py-0.5 border border-white/[0.08]">Depth Layers</span>
                 <span className="rounded bg-white/[0.05] px-2 py-0.5 border border-white/[0.08]">Ambient Glow</span>
+                <span className="rounded bg-white/[0.05] px-2 py-0.5 border border-white/[0.08]">Noise Texture</span>
               </div>
             </div>
           </section>
@@ -234,8 +243,9 @@ export default function WorkflowDesignSystemSpecimen() {
               Structural deconstruction showing the layered composition of obsidian glass, interactive ports, specular highlights, and state glow.
             </p>
 
+            {/* R1: Widened padding, extended leader lines, staggered vertical positions */}
             <div className="mt-8 flex flex-col items-center justify-center">
-              <div className="relative p-12">
+              <div className="relative p-20">
                 {/* Central Specimen Node */}
                 <Node
                   geometry="square"
@@ -255,44 +265,44 @@ export default function WorkflowDesignSystemSpecimen() {
                   />
                 </Node>
 
-                {/* Callout Pointers */}
-                {/* 1. Status Indicator Callout */}
-                <div className="hidden sm:flex absolute -top-1 left-2 items-center gap-3">
+                {/* Callout Pointers — staggered to avoid overlap */}
+                {/* 1. Status Indicator Callout (top-left, pulled outward) */}
+                <div className="hidden sm:flex absolute -top-6 -left-10 items-center gap-3">
                   <div className="rounded-md border border-amber-400/40 bg-amber-950/40 px-2.5 py-1 text-[11px] font-mono text-amber-300">
                     Status Indicator (Warm Glow)
                   </div>
-                  <div className="h-[1px] w-12 bg-amber-400/60" />
+                  <div className="h-[1px] w-20 bg-amber-400/60" />
                 </div>
 
                 {/* 2. Left Connection Port */}
-                <div className="hidden sm:flex absolute top-[52%] -left-16 -translate-y-1/2 items-center gap-3">
+                <div className="hidden sm:flex absolute top-[52%] -left-24 -translate-y-1/2 items-center gap-3">
                   <div className="rounded-md border border-cyan-400/40 bg-cyan-950/40 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
                     Connection Port (Input)
                   </div>
-                  <div className="h-[1px] w-10 bg-cyan-400/60" />
+                  <div className="h-[1px] w-16 bg-cyan-400/60" />
                 </div>
 
                 {/* 3. Right Connection Port */}
-                <div className="hidden sm:flex absolute top-[52%] -right-16 -translate-y-1/2 items-center gap-3">
-                  <div className="h-[1px] w-10 bg-cyan-400/60" />
+                <div className="hidden sm:flex absolute top-[52%] -right-24 -translate-y-1/2 items-center gap-3">
+                  <div className="h-[1px] w-16 bg-cyan-400/60" />
                   <div className="rounded-md border border-cyan-400/40 bg-cyan-950/40 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
                     Connection Port (Output)
                   </div>
                 </div>
 
-                {/* 4. Glass Background */}
-                <div className="hidden sm:flex absolute -top-1 right-2 items-center gap-3">
-                  <div className="h-[1px] w-12 bg-white/40" />
+                {/* 4. Glass Background (top-right, pulled outward) */}
+                <div className="hidden sm:flex absolute -top-6 -right-10 items-center gap-3">
+                  <div className="h-[1px] w-20 bg-white/40" />
                   <div className="rounded-md border border-white/20 bg-slate-900/60 px-2.5 py-1 text-[11px] font-mono text-slate-300">
                     Obsidian Glass / Specular Rim
                   </div>
                 </div>
 
-                {/* 5. Glow / Depth */}
-                <div className="hidden sm:flex absolute -bottom-2 right-6 items-center gap-3">
-                  <div className="h-[1px] w-12 bg-cyan-400/40" />
+                {/* 5. Glow / Depth (bottom-right, lowered) */}
+                <div className="hidden sm:flex absolute -bottom-6 -right-4 items-center gap-3">
+                  <div className="h-[1px] w-20 bg-cyan-400/40" />
                   <div className="rounded-md border border-cyan-400/30 bg-cyan-950/30 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
-                    State-Driven Depth & Glow
+                    State-Driven Depth &amp; Glow
                   </div>
                 </div>
               </div>
@@ -430,7 +440,8 @@ export default function WorkflowDesignSystemSpecimen() {
 
             {/* Side-by-Side Node States */}
             <div className="mt-8 flex flex-wrap items-center justify-around gap-6">
-              {(['default', 'hover', 'selected', 'processing', 'success', 'error'] as NodeStateType[]).map((st) => (
+              {/* R3: All 8 declared states */}
+              {(['default', 'hover', 'selected', 'active', 'processing', 'success', 'error', 'disabled'] as NodeStateType[]).map((st) => (
                 <div key={st} className="flex flex-col items-center gap-2">
                   <Node
                     geometry="square"
@@ -451,9 +462,11 @@ export default function WorkflowDesignSystemSpecimen() {
                       {st === 'default' && 'Quiet / Dark'}
                       {st === 'hover' && 'Elevation'}
                       {st === 'selected' && 'Blue Boundary'}
+                      {st === 'active' && 'Cyan Pulse'}
                       {st === 'processing' && 'Orange Energy'}
                       {st === 'success' && 'Green Halo'}
                       {st === 'error' && 'Red Warning'}
+                      {st === 'disabled' && 'Faded / Locked'}
                     </div>
                   </div>
                 </div>
@@ -511,22 +524,26 @@ export default function WorkflowDesignSystemSpecimen() {
             </p>
 
             <div className="mt-6 rounded-xl border border-white/[0.06] bg-[#02050D] p-4">
-              <svg width="100%" height="240" viewBox="0 0 480 240" className="overflow-visible">
+              <svg width="100%" height="300" viewBox="0 0 480 300" className="overflow-visible">
                 {/* 1. Straight */}
                 <text x="16" y="32" fill="#94A3B8" fontSize="11" fontWeight="500">Straight</text>
                 <Connector x1={100} y1={28} x2={440} y2={28} type="straight" tone="blue" budget={budget} />
 
                 {/* 2. Curved (S-Curve) */}
-                <text x="16" y="86" fill="#94A3B8" fontSize="11" fontWeight="500">Curved</text>
-                <Connector x1={100} y1={82} x2={440} y2={92} type="curved" tone="blue" budget={budget} />
+                <text x="16" y="82" fill="#94A3B8" fontSize="11" fontWeight="500">Curved</text>
+                <Connector x1={100} y1={78} x2={440} y2={88} type="curved" tone="blue" budget={budget} />
 
                 {/* 3. Dashed */}
-                <text x="16" y="142" fill="#94A3B8" fontSize="11" fontWeight="500">Dashed</text>
-                <Connector x1={100} y1={138} x2={440} y2={138} type="dashed" tone="blue" budget={budget} />
+                <text x="16" y="132" fill="#94A3B8" fontSize="11" fontWeight="500">Dashed</text>
+                <Connector x1={100} y1={128} x2={440} y2={128} type="dashed" tone="blue" budget={budget} />
 
-                {/* 4. Animated Signal Flow */}
-                <text x="16" y="200" fill="#FF8A00" fontSize="11" fontWeight="600">Animated Flow</text>
-                <Connector x1={100} y1={196} x2={440} y2={216} type="animated" tone="orange" budget={budget} />
+                {/* R4: 4. Branch */}
+                <text x="16" y="182" fill="#94A3B8" fontSize="11" fontWeight="500">Branch</text>
+                <Connector x1={100} y1={178} x2={440} y2={198} type="branch" tone="blue" budget={budget} />
+
+                {/* 5. Animated Signal Flow */}
+                <text x="16" y="252" fill="#FF8A00" fontSize="11" fontWeight="600">Animated Flow</text>
+                <Connector x1={100} y1={248} x2={440} y2={268} type="animated" tone="orange" budget={budget} />
               </svg>
             </div>
           </section>

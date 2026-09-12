@@ -95,6 +95,7 @@ export const Node: React.FC<NodeProps> = ({
         geometry={geometry}
         state={state}
         size={size}
+        budget={budget}
         customWidth={customWidth}
         customHeight={customHeight}
         style={style}

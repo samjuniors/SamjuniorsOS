@@ -3,6 +3,7 @@ import {
   NodeGeometryType,
   NodeStateType,
   NodeSize,
+  EffectsBudget,
   GEOMETRY_SIZES,
   DEPTH_TOKENS,
   WORKFLOW_COLORS,
@@ -12,6 +13,7 @@ export interface NodeGeometryProps {
   geometry?: NodeGeometryType;
   state?: NodeStateType;
   size?: NodeSize;
+  budget?: EffectsBudget;
   customWidth?: number;
   customHeight?: number;
   children: ReactNode;
@@ -27,6 +29,7 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
   geometry = 'square',
   state = 'default',
   size = 'md',
+  budget = 'full',
   customWidth,
   customHeight,
   children,
@@ -106,8 +109,8 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
     border,
     boxShadow,
     background,
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
+    backdropFilter: budget === 'minimal' ? 'none' : budget === 'balanced' ? 'blur(6px)' : 'blur(12px)',
+    WebkitBackdropFilter: budget === 'minimal' ? 'none' : budget === 'balanced' ? 'blur(6px)' : 'blur(12px)',
     transform,
     opacity,
     cursor,
