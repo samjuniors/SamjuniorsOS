@@ -29,6 +29,7 @@ export interface NodeProps {
   hasOutputPort?: boolean;
   portShape?: 'circle' | 'square';
   budget?: EffectsBudget;
+  externalLabel?: ReactNode;
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
@@ -50,6 +51,7 @@ export const Node: React.FC<NodeProps> = ({
   hasOutputPort = false,
   portShape = 'circle',
   budget = 'full',
+  externalLabel,
   children,
   className = '',
   style,
@@ -145,6 +147,13 @@ export const Node: React.FC<NodeProps> = ({
           onClick={(e) => onPortClick?.(p.id ?? `${p.position}-${idx}`, e)}
         />
       ))}
+
+      {/* External Semantic Label (Sitting outside/below node) */}
+      {externalLabel && (
+        <div className="workflow-node-external-label pointer-events-none absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 select-none text-center z-20 whitespace-nowrap">
+          {externalLabel}
+        </div>
+      )}
     </div>
   );
 };

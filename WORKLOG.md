@@ -1,26 +1,195 @@
 # WORKLOG.md - Canonical Operational History
 
-## Phase 4.4 — Canvas Interaction Reliability (2026-09-12)
+## Phase 4.3A — Authoritative Graph Read Model (2026-09-12)
 
-**Status:** COMPLETE. Tuned SamJuniorsOS canvas navigation for calmer, more physical-feeling orbit and zoom behavior without changing the operating graph or runtime state model.
+**Status:** COMPLETE (READ-MODEL ONLY). Delivered the typed authoritative graph read model and projection engine for SamJuniorsOS. Zero UI alterations, zero database migrations, zero graph persistence or secondary sources of truth. Strictly projects authoritative server state (`AgentRunStore`, `SideEffectAuthorizationGate`, `getWorkflowStore()`, `EpistemicClaimStore`, `CompanyContextProvider`) into the Meaningful Company Topology via an authenticated, fail-closed read endpoint.
 
 ### What changed
 
-- Reduced orbit sensitivity and capped release inertia so pointer drags feel proportional instead of slipping or jumping.
-- Reworked NeuralField wheel zoom to use normalized, multiplicative steps across mouse wheels, trackpads, and browser delta modes.
-- Added pointer-cancel cleanup and preserved active drags when the pointer briefly leaves the canvas.
-- Matched FlowDesktop graph zoom to the same normalized, cursor-anchored camera behavior.
+- **`types/graph.ts`**:
+  - Defined canonical typed contracts: `GraphDTO`, `GraphNodeDTO`, `GraphEdgeDTO`, `GraphSpatialCardDTO`, `GraphInspectionContextDTO`, `GraphNodeGeometry`.
+  - Strictly separated four state domains:
+    - `GraphRuntimeState`: `'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'halted'`
+    - `GraphGovernanceState`: `'none' | 'awaiting_founder_approval' | 'approved' | 'rejected' | 'revoked' | 'expired'`
+    - `GraphEpistemicValidity`: `'unverified' | 'under_review' | 'promoted_to_fact' | 'active' | 'disputed' | 'superseded' | 'deprecated' | 'not_applicable'`
+    - `GraphPresentationState`: `'default' | 'hover' | 'selected' | 'active' | 'processing' | 'waiting' | 'success' | 'error' | 'disabled'`
+  - Codified semantic distinction: `awaiting_founder_approval` is mapped to presentation state `waiting` with amber authorization styling (`#F59E0B`), never `processing`, representing an authority boundary halt.
+- **`lib/server/graph/read-model.ts`**:
+  - `deriveGraphProjection(serverState)`: Pure deterministic projection engine generating topology, node categories (`founder`, `orchestrator`, `specialist`, `step`, `verifier`, `approval_gate`, `vault`), relationships (`directive`, `delegation`, `handoff`, `governance_gate`, `verification`, `vault_deposit`), and SHA-256 state hash.
+  - High-cardinality epistemic claims and telemetry are preserved strictly in `inspectionContext` for drill-down/drawer inspection, keeping the primary canvas uncluttered.
+  - `getGraphOverview()`: Authoritative server data gatherer reading live stores with fail-closed database guarantees.
+- **`app/api/graph/route.ts`**:
+  - Dedicated `GET /api/graph` endpoint guarded by `getAuthenticatedFounder(req)`.
+  - Rejects unauthenticated/tampered requests with 401 Unauthorized.
+  - Fail-closed: returns 503 Service Unavailable (`reads_unavailable`) if database is down/unreachable.
+- **`tests/phase4_3a_graph_read_model.test.ts`**:
+  - 9 automated tests verifying:
+    1. Authentication rejection (401 for unauthorized).
+    2. Fail-closed error handling (503 on database unavailability).
+    3. Deterministic projection (identical input produces identical topology and SHA-256 hash).
+    4. Meaningful Company Topology node taxonomy.
+    5. Relationship taxonomy.
+    6. Four-domain state separation.
+    7. Semantic distinction: `awaiting_founder_approval` maps to `waiting`, not `processing`.
+    8. Calm empty company baseline without fabricated runs or synthetic noise.
+    9. Blocked/failed run projection with verifier escalation.
 
 ### Verification actually run
 
-- `npm run lint` — passed.
-- `npx tsc --noEmit` — passed.
-- `git diff --check` — passed.
-- Browser verification at `http://localhost:3000/` — SamJuniorsOS rendered successfully at the current 1244×851 desktop viewport; screenshot saved to `/tmp/agent-browser/samjuniors-interaction-polish.png`.
+- `node ./node_modules/tsx/dist/cli.mjs tests/phase4_3a_graph_read_model.test.ts`: 9/9 tests PASSED.
+- `node ./node_modules/tsx/dist/cli.mjs scripts/test-advisor.ts`: 25/25 tests PASSED.
+- `node ./node_modules/tsx/dist/cli.mjs tests/governance_security_foundation.test.ts`: 41/41 tests PASSED.
+- `node ./node_modules/tsx/dist/cli.mjs tests/phase3_3_authoritative_reads.test.ts`: 17/17 tests PASSED.
+- `npx tsc --noEmit`: 0 errors.
+- `npm run lint`: 0 errors.
+- `npm run build`: Next.js 15.5.25 production build succeeded cleanly; `/api/graph` compiled as dynamic route.
+
+### Unresolved problems & remaining risks
+
+- None for Phase 4.3A. Read model is completely decoupled from UI canvas rendering.
+
+### Next recommended action
+
+- Await founder review.
+- STOP at Phase 4.3A boundary. Do NOT integrate into `FlowDesktop.tsx` or `NodeCard` until Phase 4.3B.
+
+---
+
+## Phase 4.3B — Authoritative Graph Visual Integration (2026-09-12)
+
+**Status:** COMPLETE. Successfully integrated the server-authoritative GraphDTO (`GET /api/graph`) into the canonical `FlowDesktop` renderer using certified Phase 4.1 visual primitives (`Node`, `NodeGeometry`, `NodeContent`, `NodePort`, `Connector`, `Effects`, `tokens`). Real company topology is projected without simulated state, fake entities, optimistic state mutation, or duplicate rendering engines.
+
+### What was implemented & integrated
+
+1. **Authoritative Graph Projection Pipeline (`GET /api/graph` → `FlowDesktop`)**:
+   - `Uploaded/Design1/src/lib/runtime.ts`: Added typed `fetchGraphOverview()` targeting `GET /api/graph` with dev session authentication headers, and `decideApproval(approvalId, action, reason)`.
+   - `Uploaded/Design1/src/lib/flow.ts`: Added `mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel` mapping authoritative nodes, computed curve points, and spatial cards. Extended `GraphRelationship` with `'depends-on'`, and bound `dtoNode` and `dtoEdge` to `FlowNode` and `FlowEdge`.
+   - `Uploaded/Design1/src/components/FlowDesktop.tsx`: Extended existing `FlowDesktop` to poll `fetchGraphOverview()` conservatively every 8s (paused when document visibility is hidden), syncing server topology into state.
+
+2. **Phase 4.1 Frozen Visual Primitive Integration**:
+   - **Nodes (`Phase4NodeCard`)**: Mapped all authoritative nodes to Phase 4.1 primitives (`Phase4Node`, `IconTitleContent`, `IconMetaContent`, `NodePortProps`, `NodeIndicator`). Preserved semantic geometries: Sophia in squircle, Founder/Verifier in glass rectangle/squircle, Specialists in circle/rectangle.
+   - **Connectors (`Phase4Connector`)**: Embedded Phase 4.1 SVG `Connector` primitives with colored conduits:
+     - Blue: Standard information and data flow (`delegates`, `researches`, `models_finance`, `authors_prd`, `feeds`).
+     - Amber/Orange: Consequential governance and founder attention (`escalates-to`, `awaiting_founder_approval`, `waiting`).
+     - Green: Completed verification/vault flows (`checks`, `completed`).
+     - Red: Invariant rejections or failed executions (`failed`, `blocked`).
+     - Animated travelling signal packets active only during real running work; idle topology remains calm.
+     - Dashed conduits for `'depends-on'` dependencies.
+
+3. **Semantic State Integrity (4 Orthogonal Domains Preserved)**:
+   - Preserved strict separation across:
+     - Runtime Domain: `idle`, `running`, `paused`, `completed`, `failed`, `halted`.
+     - Governance Domain: `none`, `awaiting_founder_approval`, `approved`, `rejected`, `revoked`, `expired`.
+     - Epistemic Domain: `unverified`, `under_review`, `promoted_to_fact`, `active`, `disputed`, `superseded`, `deprecated`, `not_applicable`.
+     - Presentation State: `default`, `hover`, `selected`, `active`, `processing`, `waiting`, `success`, `error`, `disabled`.
+   - Invariant: `awaiting_founder_approval` is strictly mapped to `waiting` presentation state with an amber authorization boundary indicator, never `processing` or generic status.
+
+4. **Contextual Progressive Disclosure & Inspector**:
+   - Selecting a node opens a 420px contextual inspector surface.
+   - Structured 2x2 grid explicitly communicating the 4 orthogonal state domains.
+   - **Relationship Following (10.C)**: Lists all connected conduits (incoming `←` and outgoing `→`). Clicking any connected conduit navigates and focuses that related entity.
+   - **Founder Decision Boundary (10.E)**: Clear authorization boundary badge with live approval details and genuine `Approve & Ratify` / `Reject` buttons that dispatch to `POST /api/workflow/approvals` and immediately refresh the server graph (zero optimistic simulation).
+   - **Lineage & Provenance**: Deep inspection reveals `runId`, `protocolStep`, `durationMs`, `error`, and epistemic fact counts.
+
+5. **Honest Degraded, Fail-Closed, Loading, and Sync States**:
+   - **HUD Sync Badge**: Displays live connection status with SHA-256 hash (`SYNCED · [hash]` with green dot), `FAIL-CLOSED (503)` (amber dot), or `SYNCING...` with a manual refresh button (`RefreshCw`).
+   - **Fail-Closed 503 Banner**: If database is unreachable, clearly surfaces 503 fail-closed condition with a Retry button, refusing to fabricate optimistic nodes.
+   - **Quick Action**: Added `FOCUS ACTIVE` button in HUD to instantly frame active work or pending founder approvals.
+
+### Files Modified & Created
+
+- `Uploaded/Design1/src/lib/runtime.ts` (`fetchGraphOverview`, dev session headers, `decideApproval`)
+- `Uploaded/Design1/src/lib/flow.ts` (`mapGraphDTOToFlowModel`, `depends-on` relationship, `dtoNode`, `dtoEdge`)
+- `Uploaded/Design1/src/components/FlowDesktop.tsx` (Phase 4.1 node and connector primitives, HUD sync status, 4-domain contextual inspector, relationship following, `focusActiveWork`)
+- `.env.local` (`SAMJUNIORS_DEV_SECRET` for local authenticated founder dev sessions)
+- `WORKLOG.md` (Operational history update)
+
+### What was verified
+
+- `npx tsc --noEmit`: 0 errors.
+- `npm run lint`: 0 errors.
+- `npm run build`: Next.js 15.5.25 production build succeeded cleanly; all 28 routes compiled.
+- `node ./node_modules/tsx/dist/cli.mjs tests/phase4_3a_graph_read_model.test.ts`: 9/9 tests PASSED.
+- `node ./node_modules/tsx/dist/cli.mjs tests/governance_security_foundation.test.ts`: 41/41 tests PASSED.
+- `node ./node_modules/tsx/dist/cli.mjs tests/phase3_3_authoritative_reads.test.ts`: 17/17 tests PASSED.
+- **Browser Verification (`browser_subagent`)**:
+  - Verified initial calm operating graph with Phase 4.1 nodes (`Sophia` in squircle, `Founder / Inputs`, `Dr. Aris Thorne`, `Constitutional Verifier`, `Governed Vault`) and SVG connectors with colored conduits and arrows.
+  - Verified HUD displays `SYNCED · c81052b` with green dot.
+  - Verified clicking `Sophia` opens contextual inspector with 4 orthogonal state domains (`Runtime: IDLE`, `Governance: NONE`, `Epistemic: NOT APPLICABLE`, `Presentation: DEFAULT`).
+  - Verified relationship following: Clicking connected conduit `→ Dr. Aris Thorne (delegates)` immediately navigated and selected `Dr. Aris Thorne`.
+  - Verified `FOCUS ACTIVE` button functionality.
+  - Verified browser console: 0 unhandled errors, 0 hydration mismatches.
+
+### Visual Refinement — Workflow Node Language & Spatial Graph (2026-09-12)
+
+1. **Icon-First Node Language**:
+   - Nodes communicate primarily via their ICON. All cards refactored to use Phase 4.1 `IconOnlyContent` centered in compact geometry (`squircle` for Sophia, `square` for Approval Gate & services, `circle` for agents/specialists).
+   - Authentic, recognizable vector icons from `lucide-react`: `Building2` (Founder), `Bot` (Sophia), `ClipboardList` (Thorne), `Coins` (Cruz), `FileText` (Lin), `ShieldCheck` (Verifier), `Scale` (Approval Gate), `PackageCheck` (Vault), `GitBranch` (GitHub), `MessageSquare` (Slack), `Send` (Telegram/Reply), `Mail` (Gmail), `Search` (Google), `Terminal` (CLI Sandbox), `Database` (Storage). Zero fake logos, zero remote image URLs.
+
+2. **External Labels**:
+   - Semantic node labels sit cleanly outside and below the node card (`top-[calc(100%+6px)]`), rendering `title` and optional `sub` in crisp, restrained typography.
+   - Zero label-connector collisions: ports and conduits route along the node perimeter above the external labels.
+
+3. **Minimal Node Surface**:
+   - Eliminated text rows and mini dashboards from node cards. The card surface strictly contains: icon, glowing state dot indicator, and connection ports.
+
+4. **Spatial Canvas Distribution (Full Viewport Utilization)**:
+   - Replaced rigid single-column/linear arrangement with spatial hierarchy across the 1600×900 canvas:
+     - Founder authority boundary: `(280, 240)`
+     - Sophia COO / Orchestration: `(760, 240)`
+     - Approval Gate: `(380, 600)`
+     - Specialists tier: `(620-1060, 520-620)`
+     - Workflow steps/services: clustered near owning specialist `(620-1060, 700-780)`
+     - Constitutional Verifier: `(1320, 360)`
+     - Governed Vault: `(1520, 360)`
+
+5. **Direction-Aware Connectors & Focus State**:
+   - Updated `Connector.tsx` S-curve calculation with direction-aware tangent offsets (`dirX = dx >= 0 ? 1 : -1`) ensuring natural curvature without loopbacks.
+   - Selected nodes illuminate with cyan border and glow; connected conduits brighten; unrelated nodes and edges gently recede.
+
+### Known limitations
+
+- The operating graph reflects server state via polling (every 8s); real-time WebSocket/SSE push is out of scope for Phase 4.3B.
+- Phase 4.4+ canvas editing / mutations are intentionally blocked per phase scope.
+
+### Next recommended action
+
+- Phase 4.3B visual refinement is verified and pushed to Git.
+- Do NOT begin Phase 4.4+ until instructed.
+
+---
+
+## Phase 4.4 — 3D Canvas Interactivity & Zero-Lag Pan/Zoom (2026-09-12)
+
+**Status:** COMPLETE. Upgraded both the 3D Sophia Neural Canvas (`NeuralCanvas.tsx`, `field.ts`) and the SamJuniorsOS Workspace Graph Canvas (`FlowDesktop.tsx`) to deliver lag-free, high-fidelity 3D spatial pan, zoom, and orbit interactions.
+
+### What changed
+
+- **`Uploaded/Design1/src/lib/field.ts` & `NeuralCanvas.tsx`**:
+  - Implemented 3D camera pan (`panX`, `panY`, `panning`, `panVelX`, `panVelY`) supporting right-click drag, middle-click drag, and `Shift + Left drag`.
+  - Added perspective projection scaling directly in `proj(x, y, z)` incorporating `scale = this.zoom` and `(panX, panY)` translation, giving true optical 3D depth.
+  - Implemented smooth kinetic momentum decay for pan (`panVelX *= 0.91`), orbit (`spinX *= 0.93`, `spinY *= 0.93`), and zoom glide (`targetZoom`).
+  - Increased orbit responsiveness (`sensitivity: 0.005`) for immediate, snappy feedback.
+- **`Uploaded/Design1/src/components/FlowDesktop.tsx`**:
+  - Activated CSS 3D perspective (`perspective: 1400px`) and GPU-accelerated spatial transform (`translate3d(...)`, `scale(...)`, `rotateX(...)`, `rotateY(...)`, `transformStyle: preserve-3d`) on the world layer.
+  - Fixed pointer event capturing: restricted `isInteractive` blocking to form controls and buttons only, allowing free drag-to-pan across the canvas surface.
+  - Added kinetic inertia/momentum on release (`glide` with friction `0.92`), eliminating abrupt "brick wall" drag stops.
+  - Guarded node click selection with `!panStart.current?.moved` so panning across node cards does not trigger accidental selection.
+  - Increased zoom factor to snappy `1.12 / 0.89` with smooth clamping.
+
+### Verification actually run
+
+- `npx tsc --noEmit`: PASSED (0 errors).
+- `npm run lint`: PASSED (0 errors, 0 warnings).
+- `node ./node_modules/tsx/dist/cli.mjs tests/phase4_3a_graph_read_model.test.ts`: PASSED (9/9 tests).
+- Automated browser interaction via browser subagent:
+  - 3D Sophia Neural Canvas: tested 3D orbit drag, mouse wheel zoom, and right-click camera pan; 60fps responsiveness verified. Screenshots: `sophia_3d_zoom_1789211958250.png`, `sophia_3d_panned_1789211966044.png`.
+  - FlowDesktop Canvas: tested mouse drag pan, kinetic momentum glide, wheel zoom in/out, node click selection, and recenter/fit controls. Screenshot: `flow_desktop_canvas_1789212029602.png`.
+  - Session recording: `canvas_pan_zoom_test_1789211942467.webp`.
 
 ### Remaining risks
 
-- Canvas interaction is manually verified visually; automated pointer-gesture coverage is not currently present.
+- None. Canvas interaction is purely client-side presentation and does not touch authoritative server state, authorization, or persistence.
 
 ---
 

@@ -50,8 +50,9 @@ export const Connector: React.FC<ConnectorProps> = ({
   if (type === 'straight') {
     pathD = `M ${x1} ${y1} L ${x2} ${y2}`;
   } else if (type === 'curved' || type === 'animated') {
-    // S-curve with horizontal departure and arrival
-    const deltaX = Math.max(40, Math.abs(dx) * 0.5);
+    // S-curve with smooth directional departure and arrival
+    const dirX = dx >= 0 ? 1 : -1;
+    const deltaX = Math.max(32, Math.abs(dx) * 0.45) * dirX;
     const cp1x = x1 + deltaX;
     const cp1y = y1;
     const cp2x = x2 - deltaX;

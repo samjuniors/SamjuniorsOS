@@ -33,14 +33,14 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
     const down = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       const p = pos(e);
-      // e.button: 0 left · 1 middle · 2 right
-      field.pointerDown(p.x, p.y, e.button);
+      // e.button: 0 left · 1 middle · 2 right. Shift + Left or Middle/Right triggers pan.
+      field.pointerDown(p.x, p.y, e.button, e.shiftKey);
     };
     const move = (e: PointerEvent) => {
       const p = pos(e);
       field.pointerMove(p.x, p.y);
       canvas.style.cursor =
-        field.dragIndex >= 0 ? "grabbing" : field.hoverIndex >= 0 ? "grab" : "crosshair";
+        field.panning ? "move" : field.dragIndex >= 0 ? "grabbing" : field.hoverIndex >= 0 ? "grab" : "crosshair";
     };
     const up = (e: PointerEvent) => {
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }

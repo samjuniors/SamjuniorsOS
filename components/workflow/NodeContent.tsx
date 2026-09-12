@@ -8,6 +8,7 @@ export interface IconOnlyContentProps {
   iconVariant?: IconSurfaceVariant;
   color?: string;
   glow?: boolean;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export const IconOnlyContent: React.FC<IconOnlyContentProps> = ({
@@ -15,8 +16,9 @@ export const IconOnlyContent: React.FC<IconOnlyContentProps> = ({
   iconVariant = 'filled',
   color = WORKFLOW_COLORS.primary,
   glow = false,
+  size = 'md',
 }) => (
-  <IconContainer variant={iconVariant} color={color} glow={glow} size="md">
+  <IconContainer variant={iconVariant} color={color} glow={glow} size={size}>
     {icon}
   </IconContainer>
 );

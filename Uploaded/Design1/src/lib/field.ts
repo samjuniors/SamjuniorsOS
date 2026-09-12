@@ -123,6 +123,13 @@ export class NeuralField {
   radius = 300;
   baseRadius = 300;
   zoom = 1;
+  targetZoom = 1;
+  panX = 0;
+  panY = 0;
+  panning = false;
+  panLast = { x: 0, y: 0 };
+  panVelX = 0;
+  panVelY = 0;
   focal = 1100;
 
   rotX = -0.18; rotY = 0;
@@ -362,14 +369,27 @@ export class NeuralField {
 
   /* ----------------------------------------------------------- interaction */
 
-  /** button: 1 = left · 2 = right. Right always orbits and never clicks. */
-  pointerDown(x: number, y: number, button: number) {
+  /**
+   * button: 0 = left · 1 = middle · 2 = right.
+   * Right drag, middle drag, or Shift + Left drag pans the 3D scene.
+   * Left drag without Shift orbits/rotates around the focal sphere.
+   */
+  pointerDown(x: number, y: number, button: number, shiftKey = false) {
     this.mouse.x = x; this.mouse.y = y; this.mouse.active = true;
     this.pressTime = performance.now();
     this.pressPos = { x, y };
     this.pressMoved = 0;
-    let i = -1;
-    if (button !== 2) i = this.pick(x, y);
+
+    // Pan mode: Middle mouse, Right mouse, or Shift + Left click
+    if (button === 1 || button === 2 || (button === 0 && shiftKey)) {
+      this.panning = true;
+      this.panLast = { x, y };
+      this.panVelX = 0;
+      this.panVelY = 0;
+      return;
+    }
+
+    const i = this.pick(x, y);
     if (i >= 0) {
       this.dragIndex = i;
       this.dragDepth = this.nodes[i].z;
@@ -378,25 +398,43 @@ export class NeuralField {
     } else {
       this.orbiting = true;
       this.orbitLast = { x, y };
+      this.spinX = 0;
+      this.spinY = 0;
     }
   }
 
   pointerMove(x: number, y: number) {
     this.pressMoved = Math.max(this.pressMoved, Math.hypot(x - this.pressPos.x, y - this.pressPos.y));
     this.mouse.x = x; this.mouse.y = y; this.mouse.active = true;
+
+    if (this.panning) {
+      const dx = x - this.panLast.x;
+      const dy = y - this.panLast.y;
+      this.panX += dx;
+      this.panY += dy;
+      this.panVelX = dx;
+      this.panVelY = dy;
+      this.panLast = { x, y };
+      return;
+    }
+
     if (this.orbiting) {
       const dx = x - this.orbitLast.x;
       const dy = y - this.orbitLast.y;
-      const sensitivity = 0.0028;
+      // Fluid, natural orbit sensitivity (0.005)
+      const sensitivity = 0.005;
       this.rotY += dx * sensitivity;
-      this.rotX = Math.max(-1.35, Math.min(1.35, this.rotX + dy * sensitivity * 0.78));
-      this.spinY = Math.max(-0.045, Math.min(0.045, dx * sensitivity));
-      this.spinX = Math.max(-0.035, Math.min(0.035, dy * sensitivity * 0.78));
+      this.rotX = Math.max(-1.45, Math.min(1.45, this.rotX + dy * sensitivity));
+      this.spinY = dx * sensitivity;
+      this.spinX = dy * sensitivity;
       this.orbitLast = { x, y };
     }
   }
 
   pointerUp() {
+    if (this.panning) {
+      this.panning = false;
+    }
     if (this.dragIndex >= 0) {
       const n = this.nodes[this.dragIndex];
       const held = performance.now() - this.pressTime;
@@ -415,17 +453,14 @@ export class NeuralField {
     this.mouse.x = -9999; this.mouse.y = -9999;
     this.dragIndex = -1;
     this.orbiting = false;
+    this.panning = false;
     this.hoverIndex = -1;
   }
 
   zoomBy(delta: number) {
-    // Trackpads report small fractional deltas; normalize them into a gentle,
-    // multiplicative camera step instead of allowing a single gesture to jump.
-    const normalized = Math.max(-120, Math.min(120, delta));
-    const factor = Math.exp(-normalized * 0.00065);
-    this.zoom = Math.max(0.5, Math.min(2.1, this.zoom * factor));
-    this.radius = this.baseRadius * this.zoom;
-    this.rescale();
+    // Responsive, silky smooth geometric zoom scaling with natural step
+    const step = delta > 0 ? 0.91 : 1.1;
+    this.targetZoom = Math.max(0.4, Math.min(3.2, (this.targetZoom || this.zoom) * step));
   }
 
   pick(x: number, y: number): number {
@@ -558,14 +593,35 @@ export class NeuralField {
   }
 
   private proj(x: number, y: number, z: number) {
-    const p = this.focal / Math.max(140, this.focal - z);
-    return { x: this.cx + x * p, y: this.cy + y * p, p };
+    const scale = this.zoom;
+    const p = (this.focal * scale) / Math.max(120, this.focal - (z * scale));
+    return {
+      x: this.cx + this.panX + x * p,
+      y: this.cy + this.panY + y * p,
+      p,
+    };
   }
 
   step(dt: number) {
     const s = this.settings;
-    const R = this.radius;
     this.time += dt;
+
+    // Smooth interactive zoom glide
+    if (this.targetZoom) {
+      const dz = this.targetZoom - this.zoom;
+      this.zoom += dz * Math.min(1, dt * 14);
+      this.radius = this.baseRadius * this.zoom;
+    }
+
+    // Pan kinetic momentum
+    if (!this.panning) {
+      this.panX += this.panVelX;
+      this.panY += this.panVelY;
+      this.panVelX *= 0.91;
+      this.panVelY *= 0.91;
+    }
+
+    const R = this.radius;
 
     if (s.autoRotate && !this.orbiting) {
       this.rotY += dt * 0.11 * s.rotationSpeed;
@@ -573,7 +629,7 @@ export class NeuralField {
     }
     if (!this.orbiting) {
       this.rotY += this.spinY;
-      this.rotX = Math.max(-1.35, Math.min(1.35, this.rotX + this.spinX));
+      this.rotX = Math.max(-1.45, Math.min(1.45, this.rotX + this.spinX));
       this.spinY *= 0.93; this.spinX *= 0.93;
     }
     this.cyR = Math.cos(this.rotY); this.syR = Math.sin(this.rotY);

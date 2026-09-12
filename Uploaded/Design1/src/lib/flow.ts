@@ -10,6 +10,8 @@
  *  - Sophia core combustion with procedural ember physics
  */
 
+import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "../../../../types/graph";
+
 export const DESIGN_W = 1600;
 export const DESIGN_H = 900;
 
@@ -24,7 +26,8 @@ export type GraphRelationship =
   | "checks"
   | "synthesizes"
   | "escalates-to"
-  | "feeds";
+  | "feeds"
+  | "depends-on";
 
 export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose";
 
@@ -45,6 +48,7 @@ export type FlowNode = {
   owner?: string;
   tint?: string;
   glow?: string;
+  dtoNode?: GraphNodeDTO;
 };
 
 export type FlowEdge = {
@@ -57,6 +61,7 @@ export type FlowEdge = {
   relationship: GraphRelationship;
   state: GraphNodeState;
   activity?: string;
+  dtoEdge?: GraphEdgeDTO;
 };
 
 export type SpatialCard = {
@@ -76,13 +81,217 @@ export type GraphModel = {
   spatialCards: SpatialCard[];
 };
 
+/**
+ * Computes deterministic, balanced spatial positions and compact icon-first geometries
+ * for authoritative GraphDTO nodes across the 1600x900 operating canvas.
+ */
+function computeSpatialNode(
+  n: GraphNodeDTO,
+  allNodes: GraphNodeDTO[],
+  edges: GraphEdgeDTO[]
+): { x: number; y: number; w: number; h: number; kind: NodeKind } {
+  // 1. Fixed strategic anchors
+  if (n.id === "founder" || n.type === "founder" || n.role === "founder") {
+    return { x: 280, y: 240, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "coo" || n.id === "core" || n.role === "coo") {
+    return { x: 760, y: 240, w: 76, h: 76, kind: "core" };
+  }
+  if (n.id === "approval" || n.type === "approval" || n.governanceState === "awaiting_founder_approval") {
+    return { x: 380, y: 600, w: 68, h: 68, kind: "card" };
+  }
+  if (n.id === "verification" || n.type === "verification") {
+    return { x: 1320, y: 360, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "outcome" || n.type === "outcome") {
+    return { x: 1520, y: 360, w: 64, h: 64, kind: "card" };
+  }
+
+  // 2. Specialists Tier
+  if (n.id === "researcher" || n.id === "ops" || n.role === "researcher") {
+    return { x: 620, y: 520, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "finance" || n.role === "finance") {
+    return { x: 880, y: 620, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "pm" || n.role === "pm") {
+    return { x: 1060, y: 520, w: 64, h: 64, kind: "round" };
+  }
+
+  // 3. Workflow Steps & Service Actions (Cluster near their upstream parent)
+  const incomingEdge = edges.find((e) => e.target === n.id);
+  const sourceId = incomingEdge?.source;
+
+  const workflowSteps = allNodes.filter(
+    (item) =>
+      item.type === "workflow" ||
+      item.id.startsWith("step-") ||
+      item.id.startsWith("ws-") ||
+      item.id.startsWith("wf-")
+  );
+  const stepIdx = Math.max(0, workflowSteps.findIndex((item) => item.id === n.id));
+
+  if (sourceId === "researcher" || sourceId === "ops" || n.owner === "researcher" || n.owner === "ops") {
+    const offsetX = (stepIdx % 2) * 130;
+    const offsetY = Math.floor(stepIdx / 2) * 90;
+    return { x: 620 + offsetX, y: 700 + offsetY, w: 64, h: 64, kind: "card" };
+  }
+  if (sourceId === "finance" || n.owner === "finance") {
+    return { x: 880, y: 780, w: 64, h: 64, kind: "card" };
+  }
+  if (sourceId === "pm" || n.owner === "pm") {
+    return { x: 1060, y: 700, w: 64, h: 64, kind: "card" };
+  }
+
+  // Fallback for general workflow steps or unassigned tasks
+  const cols = Math.min(3, Math.max(1, workflowSteps.length));
+  const col = stepIdx % cols;
+  const row = Math.floor(stepIdx / cols);
+  return { x: 680 + col * 180, y: 560 + row * 120, w: 64, h: 64, kind: "card" };
+}
+
+/**
+ * Computes port-matched conduit route points between source and target nodes
+ */
+function computeEdgePoints(fromNode: FlowNode, toNode: FlowNode): [number, number][] {
+  const dx = toNode.x - fromNode.x;
+  const dy = toNode.y - fromNode.y;
+
+  let x1 = fromNode.x;
+  let y1 = fromNode.y;
+  let x2 = toNode.x;
+  let y2 = toNode.y;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    // Horizontal primary flow
+    if (dx >= 0) {
+      x1 = fromNode.x + fromNode.w / 2;
+      x2 = toNode.x - toNode.w / 2;
+    } else {
+      x1 = fromNode.x - fromNode.w / 2;
+      x2 = toNode.x + toNode.w / 2;
+    }
+  } else {
+    // Vertical primary flow
+    if (dy >= 0) {
+      y1 = fromNode.y + fromNode.h / 2;
+      y2 = toNode.y - toNode.h / 2;
+    } else {
+      y1 = fromNode.y - fromNode.h / 2;
+      y2 = toNode.y + toNode.h / 2;
+    }
+  }
+
+  if (Math.abs(y1 - y2) < 4 || Math.abs(x1 - x2) < 4) {
+    return [[x1, y1], [x2, y2]];
+  }
+  const midX = Math.round((x1 + x2) / 2);
+  return [[x1, y1], [midX, y1], [midX, y2], [x2, y2]];
+}
+
+/**
+ * Maps authoritative GraphDTO (Phase 4.3A server projection) into FlowEngine GraphModel.
+ * Preserves exact node geometries, relationship taxonomies, and spatial cards.
+ */
+export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
+  const nodeMap = new Map<string, FlowNode>();
+  const nodes: FlowNode[] = dto.nodes.map((n) => {
+    let state: GraphNodeState = "idle";
+    if (n.governanceState === "awaiting_founder_approval" || n.presentationState === "waiting") {
+      state = "waiting";
+    } else if (n.presentationState === "error" || n.runtimeState === "failed") {
+      state = "blocked";
+    } else if (n.presentationState === "success" || n.runtimeState === "completed") {
+      state = "complete";
+    } else if (n.presentationState === "processing") {
+      state = "processing";
+    } else if (n.presentationState === "active" || n.runtimeState === "running") {
+      state = "active";
+    }
+
+    const geom = computeSpatialNode(n, dto.nodes, dto.edges);
+
+    const flowNode: FlowNode = {
+      id: n.id,
+      x: geom.x,
+      y: geom.y,
+      w: geom.w,
+      h: geom.h,
+      kind: geom.kind,
+      type: n.type,
+      state,
+      title: n.title,
+      subtitle: n.subtitle,
+      activity: n.activity,
+      protocolStep: n.metadata?.protocolStep,
+      relevance: n.relevance,
+      owner: n.owner,
+      dtoNode: n,
+    };
+    nodeMap.set(n.id, flowNode);
+    return flowNode;
+  });
+
+  const edges: FlowEdge[] = dto.edges.map((e) => {
+    const fromNode = nodeMap.get(e.source);
+    const toNode = nodeMap.get(e.target);
+
+    let pts: [number, number][] = [];
+    if (fromNode && toNode) {
+      pts = computeEdgePoints(fromNode, toNode);
+    } else if (e.points && e.points.length >= 2) {
+      pts = e.points;
+    }
+
+    let edgeState: GraphNodeState = "idle";
+    if (e.runtimeState === "running" || e.presentationState === "active" || e.presentationState === "processing") {
+      edgeState = "active";
+    } else if (e.runtimeState === "failed" || e.presentationState === "error") {
+      edgeState = "blocked";
+    } else if (e.runtimeState === "completed" || e.presentationState === "success") {
+      edgeState = "complete";
+    } else if (e.presentationState === "waiting") {
+      edgeState = "waiting";
+    }
+
+    return {
+      id: e.id,
+      from: e.source,
+      to: e.target,
+      pts,
+      style: e.style as EdgeStyle,
+      arrow: e.arrow ?? true,
+      relationship: e.relationship,
+      state: edgeState,
+      activity: e.activity,
+      dtoEdge: e,
+    };
+  });
+
+  const spatialCards: SpatialCard[] = dto.spatialCards.map((c) => {
+    const targetNode = nodeMap.get(c.nodeId);
+    return {
+      id: c.id,
+      nodeId: c.nodeId,
+      x: targetNode ? targetNode.x : c.x,
+      y: targetNode ? targetNode.y - targetNode.h / 2 - 26 : c.y,
+      actor: c.actor,
+      action: c.action,
+      target: c.target,
+      tone: c.tone,
+    };
+  });
+
+  return { nodes, edges, spatialCards };
+}
+
 export const WORLD = {
-  CX: 840,
-  CY: 440,
+  CX: 800,
+  CY: 450,
   W: 1600,
   H: 900,
-  MIN_X: 80,
-  MAX_X: 1620,
+  MIN_X: 60,
+  MAX_X: 1640,
   MIN_Y: 40,
   MAX_Y: 860,
 };
@@ -193,19 +402,7 @@ function connectNodes(
   state: GraphNodeState,
   activity?: string
 ): FlowEdge {
-  const x1 = fromNode.x + fromNode.w / 2;
-  const y1 = fromNode.y;
-  const x2 = toNode.x - toNode.w / 2;
-  const y2 = toNode.y;
-
-  let pts: [number, number][];
-  if (Math.abs(y1 - y2) < 4) {
-    pts = [[x1, y1], [x2, y2]];
-  } else {
-    const xMid = Math.round((x1 + x2) / 2);
-    pts = [[x1, y1], [xMid, y1], [xMid, y2], [x2, y2]];
-  }
-
+  const pts = computeEdgePoints(fromNode, toNode);
   return {
     id,
     from: fromNode.id,
@@ -224,10 +421,10 @@ function connectNodes(
  * Real operational chain:
  *   Founder / Inputs
  *   → Sophia Vance (COO / Orchestrator)
- *   → Active Specialists (Dr. Thorne, and Maya Lin / Julian Cruz when actively assigned)
- *   → Contextual Protocol Steps (understand, research, test, build_execute, verify, report)
+ *   → Active Specialists (Dr. Thorne, Julian Cruz, Maya Lin)
+ *   → Contextual Protocol Steps & Services
  *   → Constitutional Verifier (Margin ≥ 80% & Safe Mock Sandbox)
- *   → Founder Approval Gate (contextually visible when decisions require wet signature ratification)
+ *   → Founder Approval Gate (when consequential decisions require wet signature ratification)
  *   → Governed Outcome (Immutable Vault)
  */
 export function deriveGraph(state: {
@@ -250,14 +447,14 @@ export function deriveGraph(state: {
   const hasBlockedWork = blockedWork.length > 0;
   const hasReviewWork = state.work.some((w) => (w.stage === "review" || w.stage === "ship") && w.state === "active");
 
-  // 1. Column 0: Founder / Inputs (Authority Boundary)
+  // 1. Founder / Inputs (Authority Boundary — Upper West)
   const founderNode: FlowNode = {
     id: "founder",
-    x: 180,
-    y: 440,
-    w: 124,
-    h: 80,
-    kind: "card",
+    x: 280,
+    y: 240,
+    w: 64,
+    h: 64,
+    kind: "round",
     type: "founder",
     state: hasOpenDecisions ? "waiting" : "idle",
     title: "Founder / Inputs",
@@ -267,14 +464,14 @@ export function deriveGraph(state: {
   };
   nodes.push(founderNode);
 
-  // 2. Column 1: Sophia Vance (COO & Master Orchestrator)
+  // 2. Sophia Vance (COO & Master Orchestrator — Upper Center)
   const sophiaState: GraphNodeState = hasActiveWork ? "active" : hasBlockedWork ? "blocked" : "idle";
   const coreNode: FlowNode = {
     id: "core",
-    x: 430,
-    y: 440,
-    w: 214,
-    h: 96,
+    x: 760,
+    y: 240,
+    w: 76,
+    h: 76,
     kind: "core",
     type: "agent",
     state: sophiaState,
@@ -299,20 +496,20 @@ export function deriveGraph(state: {
     )
   );
 
-  // 3. Column 2: Specialists Column (Collision-Aware)
+  // 3. Specialists Tier (Mid-Lower Operational Zone)
   const specialistNodes: FlowNode[] = [];
 
-  // Dr. Aris Thorne (Research & Intelligence) — permanent v1 specialist
+  // Dr. Aris Thorne (Research & Intelligence)
   const thorneWork = activeWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
   const thorneBlocked = blockedWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
   const thorneState: GraphNodeState = thorneWork ? "active" : thorneBlocked ? "blocked" : "idle";
 
   const thorneNode: FlowNode = {
     id: "ops",
-    x: 710,
-    y: 440,
-    w: 112,
-    h: 88,
+    x: 620,
+    y: 520,
+    w: 64,
+    h: 64,
     kind: "round",
     type: "agent",
     state: thorneState,
@@ -324,7 +521,7 @@ export function deriveGraph(state: {
   };
   specialistNodes.push(thorneNode);
 
-  // Contextual Specialists: include Julian Cruz (Finance) or Maya Lin (Product) ONLY when actively working/assigned
+  // Julian Cruz (Finance & Unit Economics)
   const financeWork = state.work.find((w) => w.owner === "finance" && w.state !== "done");
   let financeNode: FlowNode | undefined;
   if (financeWork) {
@@ -332,10 +529,10 @@ export function deriveGraph(state: {
     const isBlk = financeWork.state === "blocked";
     financeNode = {
       id: "finance",
-      x: 710,
-      y: 440,
-      w: 112,
-      h: 88,
+      x: 880,
+      y: 620,
+      w: 64,
+      h: 64,
       kind: "round",
       type: "agent",
       state: isBlk ? "blocked" : isAct ? "active" : "idle",
@@ -348,6 +545,7 @@ export function deriveGraph(state: {
     specialistNodes.push(financeNode);
   }
 
+  // Maya Lin (Product Architecture & PRD)
   const pmWork = state.work.find((w) => w.owner === "pm" && w.state !== "done");
   let pmNode: FlowNode | undefined;
   if (pmWork) {
@@ -355,10 +553,10 @@ export function deriveGraph(state: {
     const isBlk = pmWork.state === "blocked";
     pmNode = {
       id: "pm",
-      x: 710,
-      y: 440,
-      w: 112,
-      h: 88,
+      x: 1060,
+      y: 520,
+      w: 64,
+      h: 64,
       kind: "round",
       type: "agent",
       state: isBlk ? "blocked" : isAct ? "active" : "idle",
@@ -371,8 +569,6 @@ export function deriveGraph(state: {
     specialistNodes.push(pmNode);
   }
 
-  // Layout specialists collision-free
-  layoutColumn(specialistNodes, 440, 24);
   specialistNodes.forEach((node) => nodes.push(node));
 
   // Connect Sophia to specialists
@@ -416,11 +612,11 @@ export function deriveGraph(state: {
     );
   }
 
-  // 4. Column 3: Contextual Protocol Steps (Revealed ONLY as real work progresses)
+  // 4. Contextual Protocol Steps & Services (Clustered near their assigned specialist)
   const protocolStepNodes: FlowNode[] = [];
   const activeOrOpenWork = state.work.filter((w) => w.state !== "done").slice(0, 5);
 
-  activeOrOpenWork.forEach((w) => {
+  activeOrOpenWork.forEach((w, idx) => {
     const isAct = w.state === "active";
     const isBlk = w.state === "blocked";
     const wState: GraphNodeState = isBlk ? "blocked" : isAct ? "active" : "waiting";
@@ -429,42 +625,54 @@ export function deriveGraph(state: {
     let stepCode = "step-research";
     let assignedSpecialist = thorneNode;
     let relationship: GraphRelationship = "researches";
+    let stepX = 620 + (idx % 2) * 130;
+    let stepY = 700 + Math.floor(idx / 2) * 90;
 
     if (w.stage === "discovery") {
       stepName = "Market Reconnaissance";
       stepCode = "step-research";
       assignedSpecialist = thorneNode;
       relationship = "researches";
+      stepX = 620 + (idx % 2) * 130;
+      stepY = 700;
     } else if (w.stage === "build") {
       if (w.owner === "finance" && financeNode) {
         stepName = "Unit Economics Audit";
         stepCode = "step-finance";
         assignedSpecialist = financeNode;
         relationship = "models_finance";
+        stepX = 880;
+        stepY = 780;
       } else {
         stepName = "Product Architecture & PRD";
         stepCode = "step-pm-prd";
         assignedSpecialist = pmNode || thorneNode;
         relationship = "authors_prd";
+        stepX = 1060;
+        stepY = 700;
       }
     } else if (w.stage === "review") {
       stepName = "Council Peer Review";
       stepCode = "step-review";
       assignedSpecialist = thorneNode;
       relationship = "checks";
+      stepX = 1180;
+      stepY = 440;
     } else if (w.stage === "ship") {
       stepName = "Executive Synthesis";
       stepCode = "step-report";
       assignedSpecialist = thorneNode;
       relationship = "synthesizes";
+      stepX = 1180;
+      stepY = 440;
     }
 
     const stepNode: FlowNode = {
       id: `step-${w.id}`,
-      x: 1010,
-      y: 440,
-      w: 160,
-      h: 76,
+      x: stepX,
+      y: stepY,
+      w: 64,
+      h: 64,
       kind: "card",
       type: "workflow",
       state: wState,
@@ -492,13 +700,9 @@ export function deriveGraph(state: {
     );
   });
 
-  // Layout protocol steps collision-free
-  if (protocolStepNodes.length > 0) {
-    layoutColumn(protocolStepNodes, 440, 22);
-    protocolStepNodes.forEach((n) => nodes.push(n));
-  }
+  protocolStepNodes.forEach((n) => nodes.push(n));
 
-  // 5. Column 4: Constitutional Verifier (Governance & Invariants)
+  // 5. Constitutional Verifier (Governance & Invariants — East Gateway)
   const verState: GraphNodeState = hasBlockedWork
     ? "blocked"
     : hasReviewWork
@@ -509,15 +713,15 @@ export function deriveGraph(state: {
 
   const verifierNode: FlowNode = {
     id: "verification",
-    x: 1280,
-    y: 440,
-    w: 120,
-    h: 84,
+    x: 1320,
+    y: 360,
+    w: 64,
+    h: 64,
     kind: "round",
     type: "verification",
     state: verState,
-    title: "Verifier",
-    subtitle: "Constitutional Safety",
+    title: "Constitutional Verifier",
+    subtitle: "Safety Gate",
     activity: hasReviewWork ? "Evaluating gross margin ≥ 80%" : hasBlockedWork ? "Invariant check failed" : undefined,
     relevance: hasReviewWork || hasBlockedWork ? 1 : 0.5,
   };
@@ -525,7 +729,6 @@ export function deriveGraph(state: {
 
   // Connect protocol steps to Verifier (or direct Thorne -> Verifier when idle)
   if (protocolStepNodes.length === 0) {
-    // Quiet baseline conduit when no active workstream
     edges.push(
       connectNodes(
         thorneNode,
@@ -555,14 +758,14 @@ export function deriveGraph(state: {
     });
   }
 
-  // 6. Column 5: Governed Outcome / Immutable Vault
+  // 6. Governed Outcome / Immutable Vault (Eastern Terminal)
   const outcomeState: GraphNodeState = doneWork.length > 0 ? "complete" : "idle";
   const outcomeNode: FlowNode = {
     id: "outcome",
-    x: 1500,
-    y: 440,
-    w: 130,
-    h: 78,
+    x: 1520,
+    y: 360,
+    w: 64,
+    h: 64,
     kind: "card",
     type: "outcome",
     state: outcomeState,
@@ -585,14 +788,14 @@ export function deriveGraph(state: {
     )
   );
 
-  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open)
+  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open — Lower West)
   if (hasOpenDecisions) {
     const approvalNode: FlowNode = {
       id: "approval",
-      x: 570,
-      y: 680,
-      w: 180,
-      h: 84,
+      x: 380,
+      y: 600,
+      w: 68,
+      h: 68,
       kind: "card",
       type: "approval",
       state: "blocked",
@@ -604,40 +807,30 @@ export function deriveGraph(state: {
     nodes.push(approvalNode);
 
     // Sophia escalates to Approval Gate
-    const p1: [number, number][] = [
-      [coreNode.x, coreNode.y + coreNode.h / 2],
-      [coreNode.x, approvalNode.y],
-      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
-    ];
-    edges.push({
-      id: "e-sophia-approval",
-      from: "core",
-      to: "approval",
-      pts: p1,
-      style: "amber",
-      arrow: true,
-      relationship: "escalates-to",
-      state: "blocked",
-      activity: "Escalating decision",
-    });
+    edges.push(
+      connectNodes(
+        coreNode,
+        approvalNode,
+        "e-sophia-approval",
+        "amber",
+        "escalates-to",
+        "blocked",
+        "Escalating decision"
+      )
+    );
 
     // Approval Gate escalates to Founder
-    const p2: [number, number][] = [
-      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
-      [founderNode.x, approvalNode.y],
-      [founderNode.x, founderNode.y + founderNode.h / 2],
-    ];
-    edges.push({
-      id: "e-approval-founder",
-      from: "approval",
-      to: "founder",
-      pts: p2,
-      style: "amber",
-      arrow: true,
-      relationship: "escalates-to",
-      state: "blocked",
-      activity: "Requires Founder Ratification",
-    });
+    edges.push(
+      connectNodes(
+        approvalNode,
+        founderNode,
+        "e-approval-founder",
+        "amber",
+        "escalates-to",
+        "blocked",
+        "Requires Founder Ratification"
+      )
+    );
   }
 
   // 8. Spatial Contextual Cards (Real operational intent only)
@@ -646,7 +839,7 @@ export function deriveGraph(state: {
       id: "sp-sophia",
       nodeId: "core",
       x: coreNode.x,
-      y: coreNode.y - coreNode.h / 2 - 24,
+      y: coreNode.y - coreNode.h / 2 - 26,
       actor: "Sophia Vance",
       action: "Delegating research",
       target: "Dr. Aris Thorne",
@@ -658,7 +851,7 @@ export function deriveGraph(state: {
       id: "sp-thorne",
       nodeId: "ops",
       x: thorneNode.x,
-      y: thorneNode.y - thorneNode.h / 2 - 24,
+      y: thorneNode.y - thorneNode.h / 2 - 26,
       actor: "Dr. Aris Thorne",
       action: thorneWork.title,
       tone: "cyan",
@@ -669,7 +862,7 @@ export function deriveGraph(state: {
       id: "sp-finance",
       nodeId: "finance",
       x: financeNode.x,
-      y: financeNode.y - financeNode.h / 2 - 24,
+      y: financeNode.y - financeNode.h / 2 - 26,
       actor: "Julian Cruz",
       action: "Stress-testing margin floor ≥ 80%",
       tone: "cyan",
@@ -680,7 +873,7 @@ export function deriveGraph(state: {
       id: "sp-pm",
       nodeId: "pm",
       x: pmNode.x,
-      y: pmNode.y - pmNode.h / 2 - 24,
+      y: pmNode.y - pmNode.h / 2 - 26,
       actor: "Maya Lin",
       action: "Drafting PRD & architecture specs",
       tone: "cyan",
@@ -691,7 +884,7 @@ export function deriveGraph(state: {
       id: "sp-verify",
       nodeId: "verification",
       x: verifierNode.x,
-      y: verifierNode.y - verifierNode.h / 2 - 24,
+      y: verifierNode.y - verifierNode.h / 2 - 26,
       actor: "Constitutional Verifier",
       action: "Auditing gross margin invariant ≥ 80%",
       tone: "emerald",
@@ -701,7 +894,7 @@ export function deriveGraph(state: {
       id: "sp-verify-blocked",
       nodeId: "verification",
       x: verifierNode.x,
-      y: verifierNode.y - verifierNode.h / 2 - 24,
+      y: verifierNode.y - verifierNode.h / 2 - 26,
       actor: "Constitutional Verifier",
       action: "Deterministic check failed — blocked",
       tone: "rose",
@@ -711,8 +904,8 @@ export function deriveGraph(state: {
     spatialCards.push({
       id: "sp-approval",
       nodeId: "approval",
-      x: 570,
-      y: 618,
+      x: 380,
+      y: 600 - 34 - 26,
       actor: "Waiting",
       action: "Founder decision required",
       target: "Founder",

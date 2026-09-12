@@ -16,6 +16,7 @@
  */
 import { os, presentationFor } from "./osStore";
 import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStore";
+import type { GraphDTO } from "../../../../types/graph";
 
 /* ------------------------------------------------------------------ id mapping
  * UI graph/persona ids (used since the graph phase) ↔ authoritative AgentRole
@@ -116,8 +117,31 @@ const IN_FLIGHT_WINDOW_MS = 150_000;
 
 /* ------------------------------------------------------------------ fetch helpers */
 
+function getDevAuthHeaders(): Record<string, string> {
+  const secret = process.env.NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET || "samjuniors_dev_secret_local";
+  if (typeof window !== "undefined") {
+    try {
+      document.cookie = `samjuniors-dev-as=founder; path=/; SameSite=Lax`;
+      document.cookie = `samjuniors-dev-secret=${secret}; path=/; SameSite=Lax`;
+    } catch {
+      /* ignore */
+    }
+  }
+  return {
+    "x-samjuniors-dev-as": "founder",
+    "x-samjuniors-dev-secret": secret,
+  };
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const devHeaders = getDevAuthHeaders();
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...devHeaders,
+      ...init?.headers,
+    },
+  });
   let body: any = null;
   try { body = await res.json(); } catch { /* non-JSON error body */ }
   if (!res.ok) {
@@ -154,6 +178,45 @@ export async function decideApproval(approvalId: string, action: "approve" | "re
     body: JSON.stringify({ action, approvalId, reason: reason || `Founder decision via SamJuniorsOS (${action})` }),
   });
 }
+
+/* ------------------------------------------------------------------ authoritative graph (Phase 4.3B) */
+
+export type GraphFetchResponse =
+  | { success: true; data: GraphDTO }
+  | { success: false; unavailable: boolean; error: string; code?: string };
+
+export async function fetchGraphOverview(): Promise<GraphFetchResponse> {
+  try {
+    const devHeaders = getDevAuthHeaders();
+    const res = await fetch("/api/graph", { headers: devHeaders });
+    let body: any = null;
+    try { body = await res.json(); } catch { /* non-json */ }
+    if (res.status === 401) {
+      return { success: false, unavailable: false, error: "Unauthorized: Session required", code: "unauthorized" };
+    }
+    if (res.status === 503) {
+      return {
+        success: false,
+        unavailable: true,
+        error: body?.error || "Authoritative persistence is unavailable",
+        code: body?.code || "reads_unavailable",
+      };
+    }
+    if (!res.ok) {
+      return {
+        success: false,
+        unavailable: false,
+        error: body?.error || `Graph overview failed (${res.status})`,
+        code: body?.code || "request_failed",
+      };
+    }
+    return { success: true, data: body as GraphDTO };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, unavailable: false, error: msg, code: "network_error" };
+  }
+}
+
 
 /* ------------------------------------------------------------------ chat */
 
