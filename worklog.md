@@ -466,3 +466,22 @@ Stage Summary:
 - In this sandbox deployment "authoritative" resolves to SQLite (documented port), not PostgreSQL — a deployment configuration fact, not a code defect; upstream repo runs the same code against PostgreSQL
 - Phase 3.4 introduced NO new persistence layer (backend diff = one read-only endpoint; no duplicate stores; no client-side persistence in the adapter)
 - No code changes required; no regression found; no merge, no force-push, Phase 3.5 not started
+
+---
+Task ID: 3.4.1
+Agent: Z.ai Code (main session)
+Task: Phase 3.4.1 — Founder-authenticate GET /api/agents/runs with the canonical auth primitive; fail closed 401; preserve response contract; focused tests
+
+Work Log:
+- Inspected branch phase-3.4-runtime-wiring first (at d92e8d8, clean tree); confirmed the runs route was unauthenticated and that the canonical pattern across protected executive APIs is getAuthenticatedFounder(req) → 401 fail-closed (as in /api/orchestrate, /api/agents, /api/epistemic, communication routes)
+- Edited src/app/api/agents/runs/route.ts: added the canonical gate `const founder = await getAuthenticatedFounder(req); if (!founder || founder.role !== 'FOUNDER') → 401 { error, success:false }` before query parsing; response contract (success/count/runs + agentId/status/limit filters) unchanged for authorized callers; no new abstraction, no persistence change, no UI change
+- Added tests/api/agents-runs.auth.test.ts (bun:test, real route handler + real session primitive, no auth mocks): 4 focused tests — (1) authorized dev founder session → 200 + preserved contract; (2) unauthenticated production principal-less request → 401; (3) production with wrong dev secret → 401; (4) production rejects even VALID dev-secret founder headers → 401 (pinned invariant: session.ts prohibits dev bypass headers unconditionally in production, ahead of secret verification — production fails closed for every principal in this deployment; no reachable dev-secret path when NODE_ENV=production)
+- Added tests/api/bun-test.d.ts: minimal ambient type shim for the bun:test surface used (installed @types/bun first but reverted it — its global augmentation changed Node signal typing in examples/websocket/server.ts, drifting the pre-existing baseline; the shim keeps package.json untouched)
+- Results: bunx tsc --noEmit → 0 new errors (exactly the 4 pre-existing baseline errors in examples/ + skills/); bun run lint → 0 errors, 2 warnings (both pre-existing in src/components/os/AgentAvatar.tsx + DesktopIcons.tsx, untouched); bun test tests/api/agents-runs.auth.test.ts → 4 pass / 0 fail (14 expect calls)
+- Live regression on the running dev server: GET /api/agents/runs?limit=3 → 200 with success/count/runs contract; /api/agents → 200; /api/workflow/approvals → 200; / → 200; browser mount-sync calls GET /api/agents/runs?limit=200 → 200 with zero console errors and normal render
+- Committed on branch phase-3.4-runtime-wiring; pushed to origin as a normal (non-force) fast-forward push; origin/main untouched
+
+Stage Summary:
+- GET /api/agents/runs is now Founder-authenticated via the same canonical getAuthenticatedFounder path as the other protected executive APIs; fail-closed 401 for unauthenticated/non-founder principals; response contract preserved; the previously reported ungated-reads residual from the 3.4 certification is closed
+- Tests pin the full gate behavior including the defense-in-depth invariant that production rejects dev bypass headers even with a valid secret
+- No merge, no force-push, no Phase 3.5 work
