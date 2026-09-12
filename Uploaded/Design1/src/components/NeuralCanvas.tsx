@@ -46,15 +46,18 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
       field.pointerUp();
     };
-    const leave = () => field.pointerLeave();
+    const cancel = () => field.pointerUp();
+    const leave = () => { if (!field.orbiting && field.dragIndex < 0) field.pointerLeave(); };
     const ctxMenu = (e: Event) => e.preventDefault();
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      field.zoomBy(e.deltaY);
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+      field.zoomBy(e.deltaY * unit);
     };
 
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointercancel", cancel);
     window.addEventListener("pointerup", up);
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("contextmenu", ctxMenu);
@@ -66,6 +69,7 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
       ro.disconnect();
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointercancel", cancel);
       window.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("contextmenu", ctxMenu);

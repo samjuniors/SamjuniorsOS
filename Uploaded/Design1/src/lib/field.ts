@@ -387,10 +387,11 @@ export class NeuralField {
     if (this.orbiting) {
       const dx = x - this.orbitLast.x;
       const dy = y - this.orbitLast.y;
-      this.rotY += dx * 0.005;
-      this.rotX = Math.max(-1.35, Math.min(1.35, this.rotX + dy * 0.004));
-      this.spinY = dx * 0.005;
-      this.spinX = dy * 0.004;
+      const sensitivity = 0.0028;
+      this.rotY += dx * sensitivity;
+      this.rotX = Math.max(-1.35, Math.min(1.35, this.rotX + dy * sensitivity * 0.78));
+      this.spinY = Math.max(-0.045, Math.min(0.045, dx * sensitivity));
+      this.spinX = Math.max(-0.035, Math.min(0.035, dy * sensitivity * 0.78));
       this.orbitLast = { x, y };
     }
   }
@@ -418,7 +419,11 @@ export class NeuralField {
   }
 
   zoomBy(delta: number) {
-    this.zoom = Math.max(0.5, Math.min(2.1, this.zoom * (1 - delta * 0.0012)));
+    // Trackpads report small fractional deltas; normalize them into a gentle,
+    // multiplicative camera step instead of allowing a single gesture to jump.
+    const normalized = Math.max(-120, Math.min(120, delta));
+    const factor = Math.exp(-normalized * 0.00065);
+    this.zoom = Math.max(0.5, Math.min(2.1, this.zoom * factor));
     this.radius = this.baseRadius * this.zoom;
     this.rescale();
   }

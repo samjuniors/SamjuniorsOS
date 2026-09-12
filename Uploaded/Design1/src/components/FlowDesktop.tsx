@@ -770,7 +770,13 @@ export default function FlowDesktop({
 
   useEffect(() => {
     const el = viewportRef.current!;
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0014)); };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1;
+      const delta = Math.max(-120, Math.min(120, e.deltaY * unit));
+      zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-delta * 0.00075));
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt]);

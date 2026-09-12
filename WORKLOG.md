@@ -1,5 +1,29 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 4.4 — Canvas Interaction Reliability (2026-09-12)
+
+**Status:** COMPLETE. Tuned SamJuniorsOS canvas navigation for calmer, more physical-feeling orbit and zoom behavior without changing the operating graph or runtime state model.
+
+### What changed
+
+- Reduced orbit sensitivity and capped release inertia so pointer drags feel proportional instead of slipping or jumping.
+- Reworked NeuralField wheel zoom to use normalized, multiplicative steps across mouse wheels, trackpads, and browser delta modes.
+- Added pointer-cancel cleanup and preserved active drags when the pointer briefly leaves the canvas.
+- Matched FlowDesktop graph zoom to the same normalized, cursor-anchored camera behavior.
+
+### Verification actually run
+
+- `npm run lint` — passed.
+- `npx tsc --noEmit` — passed.
+- `git diff --check` — passed.
+- Browser verification at `http://localhost:3000/` — SamJuniorsOS rendered successfully at the current 1244×851 desktop viewport; screenshot saved to `/tmp/agent-browser/samjuniors-interaction-polish.png`.
+
+### Remaining risks
+
+- Canvas interaction is manually verified visually; automated pointer-gesture coverage is not currently present.
+
+---
+
 ## Phase 4.3 — SamJuniorsOS + Workflow Design System Polish (2026-09-12)
 
 **Status:** COMPLETE. Focused production polish for the dark ambient OS shell and FLOWGRID workflow specimen.
