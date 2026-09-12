@@ -1585,3 +1585,37 @@ Stage Summary:
 - Design1 TypeScript: `npx tsc --noEmit` passed with 0 errors.
 - Existing backend test suites pass.
 
+---
+
+## Phase 4.1 — SamJuniorsOS Workflow Design System & Specimen Page
+
+**Date:** 2026-09-12 · **Scope:** Visual component system & specimen sheet only (zero backend, API, database, auth, orchestration, or runtime state dependencies).
+
+### What was completed
+- Built the presentation-only workflow component library in `components/workflow/`:
+  - `tokens.ts`: Semantic colors, node geometry dimensions, depth & specular shadow tokens, typography tokens, and `EffectsBudget` types (`full`, `balanced`, `minimal`).
+  - `NodeGeometry.tsx`: Base glass container supporting 5 core geometries (`square`, `rectangle`, `circle`, `squircle`, `pill`) and 8 states (`default`, `hover`, `selected`, `active`, `processing`, `success`, `error`, `disabled`), with budget-aware blur control.
+  - `IconContainer.tsx`: 6 physical surface variants (`filled`, `glass`, `outline`, `squircle`, `recessed`, `floating`).
+  - `NodeContent.tsx`: Structured layout compositions (`IconOnlyContent`, `IconLabelContent`, `IconTitleContent`, `IconMetaContent`, `AgentContent`, `ModelContent`).
+  - `NodePort.tsx`: Independent input/output connection ports (circular and micro-diamond/square) with hover, snap, and connection state visual semantics.
+  - `Node.tsx`: Composite node unifying geometry, content, ports, status indicators, and kinetic effects.
+  - `Connector.tsx`: SVG bezier and stepped signal conduits (`straight`, `curved`, `dashed`, `branch`, `animated`) with budget-aware signal particles.
+  - `Effects.tsx`: Kinetic feedback primitives (`PulseEffect`, `ProcessingEffect`, `SuccessBurst`, `ErrorPulse`, `LoadingRing`, `AmbientParticles`).
+- Built the 13-section specimen page at `app/design-system/workflow/page.tsx` displaying all components, layouts, geometries, states, connectors, tokens, and compositions with live performance budget toggle.
+- Applied Astra Refinements R1–R5:
+  - R1: Refined node anatomy leader lines into dedicated left/right columns (`min-w-[640px]`) with no label collisions.
+  - R2: Added SVG noise texture layer to Section 01 & 02 canvas previews.
+  - R3: Displayed all 8 node states in Section 06 & 07.
+  - R4: Added `type="branch"` connector demonstration to Section 08.
+  - R5: Made `backdrop-filter` budget-aware in `NodeGeometry.tsx` (`minimal` disables blur, `balanced` uses `blur(6px)`, `full` uses `blur(12px)`).
+- Enabled viewport scrolling on the specimen page (`fixed inset-0 overflow-y-auto select-text`), overcoming the root OS desktop `body.overflow-hidden` restriction.
+
+### Verification
+- `npx tsc --noEmit`: 0 errors.
+- `npm run lint`: 0 errors.
+- `npm run build`: 27/27 static & dynamic routes compiled cleanly.
+- `scripts/test-advisor.ts`: 25 passed, 0 failed.
+- `tests/governance_security_foundation.test.ts`: 41 passed, 0 failed.
+- Browser verification via subagent: Full page scrolling verified from top header to bottom footer ("FLOWGRID · DESIGN SYSTEM v1.0"); all 13 sections visually inspected; budget toggles verified.
+- Component isolation: Zero forbidden imports in `components/workflow/`.
+

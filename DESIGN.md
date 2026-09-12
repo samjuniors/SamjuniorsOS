@@ -373,8 +373,6 @@ The workflow component system (`components/workflow/`) provides presentation-onl
 - **Presentation-Only & Portable**: Primitives rely strictly on React, CSS/SVG, and local tokens. They have zero dependencies on Next.js server APIs, Prisma, authentication, or graph execution state, ensuring drop-in portability to the standalone `Uploaded/Design1` Vite environment.
 - **Semantic Mapping**: Workflow tokens map directly to the established SamJuniorsOS semantic color hierarchy (`cyan` primary, `amber` attention/processing, `emerald` healthy/complete, `rose` error/blocked, `obsidian glass` surfaces).
 - **Physical Depth & Optical Balance**: Nodes feature multi-layered obsidian glass backdrops (`rgba(6, 12, 24, 0.88)`), specular hairline top borders (`linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)`), and subtle ambient drop shadows.
-- **Effects & Performance Budget**: Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus automatic `prefers-reduced-motion` compliance to safeguard 60 FPS rendering.
-
 ### Node Geometries & Form Factors
 | Geometry | Default Size (W x H) | Border Radius | Typical Node Type |
 |---|---|---|---|
@@ -402,7 +400,25 @@ Connection ports (`NodePort.tsx`) are independent physical terminals placed at c
 - SVG path-based connectors (`Connector.tsx`): `straight`, `curved` (smooth cubic Bezier S-curve), `dashed`, `branch`, and `animated`.
 - Kinetic laser packet flow with speed, color, and dash-offset synchronization matching active operational causality.
 
+### Node States & Kinetic Feedback
+Nodes transition across 8 discrete visual states:
+- `default`: Quiet, low-contrast obsidian glass with subdued hairline rim.
+- `hover`: Elevated luminance, enhanced specular highlight, subtle lift.
+- `selected`: High-visibility cyan boundary (`#00B2FF`) with crisp outline.
+- `active`: Vibrant cyan pulse with animated perimeter luminescence.
+- `processing`: Kinetic amber energy field (`#FF8A00`) with particle agitation.
+- `success`: Emerald halo (`#22D97A`) indicating completed execution.
+- `error`: Alert rose warning perimeter (`#FF4B4B`) signaling blocked or failed step.
+- `disabled`: Muted opacity and grayscale attenuation for locked or inactive nodes.
+
+### Effects & Performance Budget
+Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus automatic `prefers-reduced-motion` compliance to safeguard 60 FPS rendering:
+- `full`: Complete 12px backdrop-filter blur, dynamic glow particle emitters, active SVG conduit animations.
+- `balanced`: Reduced 6px backdrop-filter blur, halved particle counts, streamlined SVG animations.
+- `minimal`: Disables heavy GPU filters (`backdropFilter: 'none'`), disables floating particles, retains lightweight CSS opacity/color transitions.
+
 ### Specimen Sheet
-- Available at `/design-system/workflow` (`app/design-system/workflow/page.tsx`).
+- Certified at `/design-system/workflow` (`app/design-system/workflow/page.tsx`).
 - Features 13 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles, Icon Containers, Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (generic illustrative fixtures), and Responsive Sizes.
 - Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
+- Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.

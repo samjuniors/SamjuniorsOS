@@ -45,7 +45,7 @@ export default function WorkflowDesignSystemSpecimen() {
   const [budget, setBudget] = useState<EffectsBudget>('full');
 
   return (
-    <div className="min-h-screen w-full bg-[#01040A] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200 relative overflow-x-hidden">
+    <div className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#01040A] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200 select-text">
       {/* Background Ambience & Perspective Grid */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         {/* Deep radial cosmic horizon glow */}
@@ -243,9 +243,9 @@ export default function WorkflowDesignSystemSpecimen() {
               Structural deconstruction showing the layered composition of obsidian glass, interactive ports, specular highlights, and state glow.
             </p>
 
-            {/* R1: Widened padding, extended leader lines, staggered vertical positions */}
+            {/* R1: Balanced spacing, dedicated left/right columns, clean leader lines */}
             <div className="mt-8 flex flex-col items-center justify-center">
-              <div className="relative p-20">
+              <div className="relative inline-flex items-center justify-center py-12 px-24 min-w-[640px]">
                 {/* Central Specimen Node */}
                 <Node
                   geometry="square"
@@ -265,43 +265,43 @@ export default function WorkflowDesignSystemSpecimen() {
                   />
                 </Node>
 
-                {/* Callout Pointers — staggered to avoid overlap */}
-                {/* 1. Status Indicator Callout (top-left, pulled outward) */}
-                <div className="hidden sm:flex absolute -top-6 -left-10 items-center gap-3">
-                  <div className="rounded-md border border-amber-400/40 bg-amber-950/40 px-2.5 py-1 text-[11px] font-mono text-amber-300">
+                {/* Callout Pointers — cleanly positioned around the node */}
+                {/* 1. Status Indicator Callout (top-left) */}
+                <div className="hidden sm:flex absolute top-4 left-4 items-center gap-2">
+                  <div className="rounded-md border border-amber-400/40 bg-amber-950/60 px-2.5 py-1 text-[11px] font-mono text-amber-300 shadow-sm">
                     Status Indicator (Warm Glow)
                   </div>
-                  <div className="h-[1px] w-20 bg-amber-400/60" />
+                  <div className="h-[1px] w-12 bg-amber-400/60" />
                 </div>
 
                 {/* 2. Left Connection Port */}
-                <div className="hidden sm:flex absolute top-[52%] -left-24 -translate-y-1/2 items-center gap-3">
-                  <div className="rounded-md border border-cyan-400/40 bg-cyan-950/40 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
+                <div className="hidden sm:flex absolute top-1/2 -translate-y-1/2 left-6 items-center gap-2">
+                  <div className="rounded-md border border-cyan-400/40 bg-cyan-950/60 px-2.5 py-1 text-[11px] font-mono text-cyan-300 shadow-sm">
                     Connection Port (Input)
                   </div>
-                  <div className="h-[1px] w-16 bg-cyan-400/60" />
+                  <div className="h-[1px] w-10 bg-cyan-400/60" />
                 </div>
 
-                {/* 3. Right Connection Port */}
-                <div className="hidden sm:flex absolute top-[52%] -right-24 -translate-y-1/2 items-center gap-3">
-                  <div className="h-[1px] w-16 bg-cyan-400/60" />
-                  <div className="rounded-md border border-cyan-400/40 bg-cyan-950/40 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
-                    Connection Port (Output)
-                  </div>
-                </div>
-
-                {/* 4. Glass Background (top-right, pulled outward) */}
-                <div className="hidden sm:flex absolute -top-6 -right-10 items-center gap-3">
-                  <div className="h-[1px] w-20 bg-white/40" />
-                  <div className="rounded-md border border-white/20 bg-slate-900/60 px-2.5 py-1 text-[11px] font-mono text-slate-300">
+                {/* 3. Obsidian Glass / Specular Rim (top-right) */}
+                <div className="hidden sm:flex absolute top-4 right-4 items-center gap-2">
+                  <div className="h-[1px] w-12 bg-white/40" />
+                  <div className="rounded-md border border-white/20 bg-slate-900/80 px-2.5 py-1 text-[11px] font-mono text-slate-300 shadow-sm">
                     Obsidian Glass / Specular Rim
                   </div>
                 </div>
 
-                {/* 5. Glow / Depth (bottom-right, lowered) */}
-                <div className="hidden sm:flex absolute -bottom-6 -right-4 items-center gap-3">
-                  <div className="h-[1px] w-20 bg-cyan-400/40" />
-                  <div className="rounded-md border border-cyan-400/30 bg-cyan-950/30 px-2.5 py-1 text-[11px] font-mono text-cyan-300">
+                {/* 4. Right Connection Port */}
+                <div className="hidden sm:flex absolute top-1/2 -translate-y-1/2 right-6 items-center gap-2">
+                  <div className="h-[1px] w-10 bg-cyan-400/60" />
+                  <div className="rounded-md border border-cyan-400/40 bg-cyan-950/60 px-2.5 py-1 text-[11px] font-mono text-cyan-300 shadow-sm">
+                    Connection Port (Output)
+                  </div>
+                </div>
+
+                {/* 5. Glow / Depth (bottom-right) */}
+                <div className="hidden sm:flex absolute bottom-4 right-8 items-center gap-2">
+                  <div className="h-[1px] w-14 bg-cyan-400/40" />
+                  <div className="rounded-md border border-cyan-400/30 bg-cyan-950/60 px-2.5 py-1 text-[11px] font-mono text-cyan-300 shadow-sm">
                     State-Driven Depth &amp; Glow
                   </div>
                 </div>
