@@ -33,28 +33,31 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
     const down = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       const p = pos(e);
-      // e.button: 0 left · 1 middle · 2 right
-      field.pointerDown(p.x, p.y, e.button);
+      // e.button: 0 left · 1 middle · 2 right. Shift + Left or Middle/Right triggers pan.
+      field.pointerDown(p.x, p.y, e.button, e.shiftKey);
     };
     const move = (e: PointerEvent) => {
       const p = pos(e);
       field.pointerMove(p.x, p.y);
       canvas.style.cursor =
-        field.dragIndex >= 0 ? "grabbing" : field.hoverIndex >= 0 ? "grab" : "crosshair";
+        field.panning ? "move" : field.dragIndex >= 0 ? "grabbing" : field.hoverIndex >= 0 ? "grab" : "crosshair";
     };
     const up = (e: PointerEvent) => {
       try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
       field.pointerUp();
     };
-    const leave = () => field.pointerLeave();
+    const cancel = () => field.pointerUp();
+    const leave = () => { if (!field.orbiting && field.dragIndex < 0) field.pointerLeave(); };
     const ctxMenu = (e: Event) => e.preventDefault();
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      field.zoomBy(e.deltaY);
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+      field.zoomBy(e.deltaY * unit);
     };
 
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointercancel", cancel);
     window.addEventListener("pointerup", up);
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("contextmenu", ctxMenu);
@@ -66,6 +69,7 @@ export default function NeuralCanvas({ settings, onStats, fieldRef }: Props) {
       ro.disconnect();
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointercancel", cancel);
       window.removeEventListener("pointerup", up);
       canvas.removeEventListener("pointerleave", leave);
       canvas.removeEventListener("contextmenu", ctxMenu);

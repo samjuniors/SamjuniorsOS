@@ -10,6 +10,8 @@
  *  - Sophia core combustion with procedural ember physics
  */
 
+import type { GraphDTO, GraphNodeDTO, GraphEdgeDTO } from "../../../../src/types/graph";
+
 export const DESIGN_W = 1600;
 export const DESIGN_H = 900;
 
@@ -24,9 +26,10 @@ export type GraphRelationship =
   | "checks"
   | "synthesizes"
   | "escalates-to"
-  | "feeds";
+  | "feeds"
+  | "depends-on";
 
-export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose" | "fire";
+export type EdgeStyle = "white" | "blue" | "cyan" | "amber" | "emerald" | "rose";
 
 export type FlowNode = {
   id: string;
@@ -45,6 +48,7 @@ export type FlowNode = {
   owner?: string;
   tint?: string;
   glow?: string;
+  dtoNode?: GraphNodeDTO;
 };
 
 export type FlowEdge = {
@@ -57,6 +61,7 @@ export type FlowEdge = {
   relationship: GraphRelationship;
   state: GraphNodeState;
   activity?: string;
+  dtoEdge?: GraphEdgeDTO;
 };
 
 export type SpatialCard = {
@@ -76,13 +81,217 @@ export type GraphModel = {
   spatialCards: SpatialCard[];
 };
 
+/**
+ * Computes deterministic, balanced spatial positions and compact icon-first geometries
+ * for authoritative GraphDTO nodes across the 1600x900 operating canvas.
+ */
+function computeSpatialNode(
+  n: GraphNodeDTO,
+  allNodes: GraphNodeDTO[],
+  edges: GraphEdgeDTO[]
+): { x: number; y: number; w: number; h: number; kind: NodeKind } {
+  // 1. Fixed strategic anchors
+  if (n.id === "founder" || n.type === "founder" || n.role === "founder") {
+    return { x: 280, y: 240, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "coo" || n.id === "core" || n.role === "coo") {
+    return { x: 760, y: 240, w: 76, h: 76, kind: "core" };
+  }
+  if (n.id === "approval" || n.type === "approval" || n.governanceState === "awaiting_founder_approval") {
+    return { x: 380, y: 600, w: 68, h: 68, kind: "card" };
+  }
+  if (n.id === "verification" || n.type === "verification") {
+    return { x: 1320, y: 360, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "outcome" || n.type === "outcome") {
+    return { x: 1520, y: 360, w: 64, h: 64, kind: "card" };
+  }
+
+  // 2. Specialists Tier
+  if (n.id === "researcher" || n.id === "ops" || n.role === "researcher") {
+    return { x: 620, y: 520, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "finance" || n.role === "finance") {
+    return { x: 880, y: 620, w: 64, h: 64, kind: "round" };
+  }
+  if (n.id === "pm" || n.role === "pm") {
+    return { x: 1060, y: 520, w: 64, h: 64, kind: "round" };
+  }
+
+  // 3. Workflow Steps & Service Actions (Cluster near their upstream parent)
+  const incomingEdge = edges.find((e) => e.target === n.id);
+  const sourceId = incomingEdge?.source;
+
+  const workflowSteps = allNodes.filter(
+    (item) =>
+      item.type === "workflow" ||
+      item.id.startsWith("step-") ||
+      item.id.startsWith("ws-") ||
+      item.id.startsWith("wf-")
+  );
+  const stepIdx = Math.max(0, workflowSteps.findIndex((item) => item.id === n.id));
+
+  if (sourceId === "researcher" || sourceId === "ops" || n.owner === "researcher" || n.owner === "ops") {
+    const offsetX = (stepIdx % 2) * 130;
+    const offsetY = Math.floor(stepIdx / 2) * 90;
+    return { x: 620 + offsetX, y: 700 + offsetY, w: 64, h: 64, kind: "card" };
+  }
+  if (sourceId === "finance" || n.owner === "finance") {
+    return { x: 880, y: 780, w: 64, h: 64, kind: "card" };
+  }
+  if (sourceId === "pm" || n.owner === "pm") {
+    return { x: 1060, y: 700, w: 64, h: 64, kind: "card" };
+  }
+
+  // Fallback for general workflow steps or unassigned tasks
+  const cols = Math.min(3, Math.max(1, workflowSteps.length));
+  const col = stepIdx % cols;
+  const row = Math.floor(stepIdx / cols);
+  return { x: 680 + col * 180, y: 560 + row * 120, w: 64, h: 64, kind: "card" };
+}
+
+/**
+ * Computes port-matched conduit route points between source and target nodes
+ */
+function computeEdgePoints(fromNode: FlowNode, toNode: FlowNode): [number, number][] {
+  const dx = toNode.x - fromNode.x;
+  const dy = toNode.y - fromNode.y;
+
+  let x1 = fromNode.x;
+  let y1 = fromNode.y;
+  let x2 = toNode.x;
+  let y2 = toNode.y;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    // Horizontal primary flow
+    if (dx >= 0) {
+      x1 = fromNode.x + fromNode.w / 2;
+      x2 = toNode.x - toNode.w / 2;
+    } else {
+      x1 = fromNode.x - fromNode.w / 2;
+      x2 = toNode.x + toNode.w / 2;
+    }
+  } else {
+    // Vertical primary flow
+    if (dy >= 0) {
+      y1 = fromNode.y + fromNode.h / 2;
+      y2 = toNode.y - toNode.h / 2;
+    } else {
+      y1 = fromNode.y - fromNode.h / 2;
+      y2 = toNode.y + toNode.h / 2;
+    }
+  }
+
+  if (Math.abs(y1 - y2) < 4 || Math.abs(x1 - x2) < 4) {
+    return [[x1, y1], [x2, y2]];
+  }
+  const midX = Math.round((x1 + x2) / 2);
+  return [[x1, y1], [midX, y1], [midX, y2], [x2, y2]];
+}
+
+/**
+ * Maps authoritative GraphDTO (Phase 4.3A server projection) into FlowEngine GraphModel.
+ * Preserves exact node geometries, relationship taxonomies, and spatial cards.
+ */
+export function mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel {
+  const nodeMap = new Map<string, FlowNode>();
+  const nodes: FlowNode[] = dto.nodes.map((n) => {
+    let state: GraphNodeState = "idle";
+    if (n.governanceState === "awaiting_founder_approval" || n.presentationState === "waiting") {
+      state = "waiting";
+    } else if (n.presentationState === "error" || n.runtimeState === "failed") {
+      state = "blocked";
+    } else if (n.presentationState === "success" || n.runtimeState === "completed") {
+      state = "complete";
+    } else if (n.presentationState === "processing") {
+      state = "processing";
+    } else if (n.presentationState === "active" || n.runtimeState === "running") {
+      state = "active";
+    }
+
+    const geom = computeSpatialNode(n, dto.nodes, dto.edges);
+
+    const flowNode: FlowNode = {
+      id: n.id,
+      x: geom.x,
+      y: geom.y,
+      w: geom.w,
+      h: geom.h,
+      kind: geom.kind,
+      type: n.type,
+      state,
+      title: n.title,
+      subtitle: n.subtitle,
+      activity: n.activity,
+      protocolStep: n.metadata?.protocolStep,
+      relevance: n.relevance,
+      owner: n.owner,
+      dtoNode: n,
+    };
+    nodeMap.set(n.id, flowNode);
+    return flowNode;
+  });
+
+  const edges: FlowEdge[] = dto.edges.map((e) => {
+    const fromNode = nodeMap.get(e.source);
+    const toNode = nodeMap.get(e.target);
+
+    let pts: [number, number][] = [];
+    if (fromNode && toNode) {
+      pts = computeEdgePoints(fromNode, toNode);
+    } else if (e.points && e.points.length >= 2) {
+      pts = e.points;
+    }
+
+    let edgeState: GraphNodeState = "idle";
+    if (e.runtimeState === "running" || e.presentationState === "active" || e.presentationState === "processing") {
+      edgeState = "active";
+    } else if (e.runtimeState === "failed" || e.presentationState === "error") {
+      edgeState = "blocked";
+    } else if (e.runtimeState === "completed" || e.presentationState === "success") {
+      edgeState = "complete";
+    } else if (e.presentationState === "waiting") {
+      edgeState = "waiting";
+    }
+
+    return {
+      id: e.id,
+      from: e.source,
+      to: e.target,
+      pts,
+      style: e.style as EdgeStyle,
+      arrow: e.arrow ?? true,
+      relationship: e.relationship,
+      state: edgeState,
+      activity: e.activity,
+      dtoEdge: e,
+    };
+  });
+
+  const spatialCards: SpatialCard[] = dto.spatialCards.map((c) => {
+    const targetNode = nodeMap.get(c.nodeId);
+    return {
+      id: c.id,
+      nodeId: c.nodeId,
+      x: targetNode ? targetNode.x : c.x,
+      y: targetNode ? targetNode.y - targetNode.h / 2 - 26 : c.y,
+      actor: c.actor,
+      action: c.action,
+      target: c.target,
+      tone: c.tone,
+    };
+  });
+
+  return { nodes, edges, spatialCards };
+}
+
 export const WORLD = {
-  CX: 840,
-  CY: 440,
+  CX: 800,
+  CY: 450,
   W: 1600,
   H: 900,
-  MIN_X: 80,
-  MAX_X: 1620,
+  MIN_X: 60,
+  MAX_X: 1640,
   MIN_Y: 40,
   MAX_Y: 860,
 };
@@ -94,8 +303,6 @@ type Packet = { e: number; d: number; speed: number; tone: PacketTone; trail: nu
 type Ember = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; heat: number; color: string };
 type Spark = { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: string };
 type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone; isSecondary?: boolean };
-/** White-hot contact flash at the instant a packet impacts a node. */
-type Flash = { x: number; y: number; life: number; max: number; tone: PacketTone };
 
 function samplePath(raw: [number, number][], radius = 22, step = 4): P[] {
   const pts = raw.map(([x, y]) => ({ x, y }));
@@ -195,19 +402,7 @@ function connectNodes(
   state: GraphNodeState,
   activity?: string
 ): FlowEdge {
-  const x1 = fromNode.x + fromNode.w / 2;
-  const y1 = fromNode.y;
-  const x2 = toNode.x - toNode.w / 2;
-  const y2 = toNode.y;
-
-  let pts: [number, number][];
-  if (Math.abs(y1 - y2) < 4) {
-    pts = [[x1, y1], [x2, y2]];
-  } else {
-    const xMid = Math.round((x1 + x2) / 2);
-    pts = [[x1, y1], [xMid, y1], [xMid, y2], [x2, y2]];
-  }
-
+  const pts = computeEdgePoints(fromNode, toNode);
   return {
     id,
     from: fromNode.id,
@@ -226,10 +421,10 @@ function connectNodes(
  * Real operational chain:
  *   Founder / Inputs
  *   → Sophia Vance (COO / Orchestrator)
- *   → Active Specialists (Dr. Thorne, and Maya Lin / Julian Cruz when actively assigned)
- *   → Contextual Protocol Steps (understand, research, test, build_execute, verify, report)
+ *   → Active Specialists (Dr. Thorne, Julian Cruz, Maya Lin)
+ *   → Contextual Protocol Steps & Services
  *   → Constitutional Verifier (Margin ≥ 80% & Safe Mock Sandbox)
- *   → Founder Approval Gate (contextually visible when decisions require wet signature ratification)
+ *   → Founder Approval Gate (when consequential decisions require wet signature ratification)
  *   → Governed Outcome (Immutable Vault)
  */
 export function deriveGraph(state: {
@@ -252,14 +447,14 @@ export function deriveGraph(state: {
   const hasBlockedWork = blockedWork.length > 0;
   const hasReviewWork = state.work.some((w) => (w.stage === "review" || w.stage === "ship") && w.state === "active");
 
-  // 1. Column 0: Founder / Inputs (Authority Boundary)
+  // 1. Founder / Inputs (Authority Boundary — Upper West)
   const founderNode: FlowNode = {
     id: "founder",
-    x: 180,
-    y: 440,
-    w: 124,
-    h: 80,
-    kind: "card",
+    x: 280,
+    y: 240,
+    w: 64,
+    h: 64,
+    kind: "round",
     type: "founder",
     state: hasOpenDecisions ? "waiting" : "idle",
     title: "Founder / Inputs",
@@ -269,14 +464,14 @@ export function deriveGraph(state: {
   };
   nodes.push(founderNode);
 
-  // 2. Column 1: Sophia Vance (COO & Master Orchestrator)
+  // 2. Sophia Vance (COO & Master Orchestrator — Upper Center)
   const sophiaState: GraphNodeState = hasActiveWork ? "active" : hasBlockedWork ? "blocked" : "idle";
   const coreNode: FlowNode = {
     id: "core",
-    x: 430,
-    y: 440,
-    w: 214,
-    h: 96,
+    x: 760,
+    y: 240,
+    w: 76,
+    h: 76,
     kind: "core",
     type: "agent",
     state: sophiaState,
@@ -301,197 +496,183 @@ export function deriveGraph(state: {
     )
   );
 
-  // 3. Column 2: Employed Specialists (collision-aware) — all four authoritative v1
-  //    employees render permanently; per PRODUCT.md §5 Sophia+Thorne are the implemented
-  //    v1 critical path, Maya/Julian are employed (defined + profiled) and activate only
-  //    when real work is assigned to them. No standby/target-state employees are shown.
+  // 3. Specialists Tier (Mid-Lower Operational Zone)
   const specialistNodes: FlowNode[] = [];
 
-  const workFor = (...ids: string[]) =>
-    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state !== "done");
-  const activeFor = (...ids: string[]) =>
-    state.work.find((w) => w.owner != null && ids.includes(w.owner) && w.state === "active");
-
-  // Dr. Aris Thorne — Lead Market & Technology Researcher (permanent v1 specialist)
-  const thorneWork = workFor("thorne", "ops", "researcher") ?? (!state.work.some((w) => w.owner) && activeWork[0]);
-  const thorneBlocked = state.work.find((w) => (w.owner === "thorne" || w.owner === "ops") && w.state === "blocked");
-  const thorneState: GraphNodeState = thorneWork && thorneWork.state === "active" ? "active" : thorneBlocked ? "blocked" : thorneWork ? "idle" : "idle";
+  // Dr. Aris Thorne (Research & Intelligence)
+  const thorneWork = activeWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
+  const thorneBlocked = blockedWork.find((w) => w.owner === "ops" || w.owner === "researcher" || !w.owner);
+  const thorneState: GraphNodeState = thorneWork ? "active" : thorneBlocked ? "blocked" : "idle";
 
   const thorneNode: FlowNode = {
-    id: "thorne",
-    x: 710,
-    y: 440,
-    w: 112,
-    h: 88,
+    id: "ops",
+    x: 620,
+    y: 520,
+    w: 64,
+    h: 64,
     kind: "round",
     type: "agent",
     state: thorneState,
     title: "Dr. Aris Thorne",
     subtitle: "Research & Intelligence",
-    activity: thorneWork && thorneWork.state === "active" ? thorneWork.title : thorneBlocked ? "Blocked on research" : undefined,
+    activity: thorneWork ? thorneWork.title : thorneBlocked ? "Blocked on research" : undefined,
     relevance: thorneWork || thorneBlocked ? 1 : 0.7,
-    owner: "thorne",
+    owner: "ops",
   };
   specialistNodes.push(thorneNode);
 
-  // Maya Lin — Principal Product Manager (employed; active only with assigned work)
-  const mayaWork = workFor("maya", "pm");
-  const mayaActive = !!activeFor("maya", "pm");
-  const mayaBlocked = state.work.find((w) => (w.owner === "maya" || w.owner === "pm") && w.state === "blocked");
-  const mayaNode: FlowNode = {
-    id: "maya",
-    x: 710,
-    y: 440,
-    w: 112,
-    h: 88,
-    kind: "round",
-    type: "agent",
-    state: mayaBlocked ? "blocked" : mayaActive ? "active" : "idle",
-    title: "Maya Lin",
-    subtitle: "Product Architecture & PRD",
-    activity: mayaActive && mayaWork ? mayaWork.title : mayaBlocked ? "Blocked on specifications" : undefined,
-    relevance: mayaWork || mayaBlocked ? 1 : 0.7,
-    owner: "maya",
-  };
-  specialistNodes.push(mayaNode);
+  // Julian Cruz (Finance & Unit Economics)
+  const financeWork = state.work.find((w) => w.owner === "finance" && w.state !== "done");
+  let financeNode: FlowNode | undefined;
+  if (financeWork) {
+    const isAct = financeWork.state === "active";
+    const isBlk = financeWork.state === "blocked";
+    financeNode = {
+      id: "finance",
+      x: 880,
+      y: 620,
+      w: 64,
+      h: 64,
+      kind: "round",
+      type: "agent",
+      state: isBlk ? "blocked" : isAct ? "active" : "idle",
+      title: "Julian Cruz",
+      subtitle: "Finance & Economics",
+      activity: financeWork.title,
+      relevance: 1,
+      owner: "finance",
+    };
+    specialistNodes.push(financeNode);
+  }
 
-  // Julian Cruz — Chief Financial Analyst (employed; active only with assigned work)
-  const julianWork = workFor("julian", "finance");
-  const julianActive = !!activeFor("julian", "finance");
-  const julianBlocked = state.work.find((w) => (w.owner === "julian" || w.owner === "finance") && w.state === "blocked");
-  const julianNode: FlowNode = {
-    id: "julian",
-    x: 710,
-    y: 440,
-    w: 112,
-    h: 88,
-    kind: "round",
-    type: "agent",
-    state: julianBlocked ? "blocked" : julianActive ? "active" : "idle",
-    title: "Julian Cruz",
-    subtitle: "Finance & Unit Economics",
-    activity: julianActive && julianWork ? julianWork.title : julianBlocked ? "Blocked on margin audit" : undefined,
-    relevance: julianWork || julianBlocked ? 1 : 0.7,
-    owner: "julian",
-  };
-  specialistNodes.push(julianNode);
+  // Maya Lin (Product Architecture & PRD)
+  const pmWork = state.work.find((w) => w.owner === "pm" && w.state !== "done");
+  let pmNode: FlowNode | undefined;
+  if (pmWork) {
+    const isAct = pmWork.state === "active";
+    const isBlk = pmWork.state === "blocked";
+    pmNode = {
+      id: "pm",
+      x: 1060,
+      y: 520,
+      w: 64,
+      h: 64,
+      kind: "round",
+      type: "agent",
+      state: isBlk ? "blocked" : isAct ? "active" : "idle",
+      title: "Maya Lin",
+      subtitle: "Product Architecture",
+      activity: pmWork.title,
+      relevance: 1,
+      owner: "pm",
+    };
+    specialistNodes.push(pmNode);
+  }
 
-  // Layout specialists collision-free
-  layoutColumn(specialistNodes, 440, 24);
   specialistNodes.forEach((node) => nodes.push(node));
 
-  // Connect Sophia to each specialist — genuine delegation authority (cyan = AI/data pathway)
+  // Connect Sophia to specialists
   edges.push(
     connectNodes(
       coreNode,
       thorneNode,
       "e-core-thorne",
-      thorneState === "active" || thorneState === "blocked" ? "cyan" : "white",
+      hasActiveWork ? "cyan" : "white",
       "delegates",
-      thorneState === "active" ? "active" : thorneState === "blocked" ? "blocked" : "idle",
-      thorneState === "active" ? "Delegating research" : thorneState === "blocked" ? "Awaiting unblock" : undefined
+      hasActiveWork ? "active" : "idle",
+      hasActiveWork ? "Delegating research" : undefined
     )
   );
 
-  edges.push(
-    connectNodes(
-      coreNode,
-      mayaNode,
-      "e-core-maya",
-      mayaNode.state === "active" || mayaNode.state === "blocked" ? "cyan" : "white",
-      "delegates",
-      mayaNode.state,
-      mayaActive ? "Delegating product architecture" : undefined
-    )
-  );
+  if (financeNode) {
+    edges.push(
+      connectNodes(
+        coreNode,
+        financeNode,
+        "e-core-finance",
+        financeNode.state === "active" ? "cyan" : "white",
+        "models_finance",
+        financeNode.state,
+        "Modeling unit economics"
+      )
+    );
+  }
 
-  edges.push(
-    connectNodes(
-      coreNode,
-      julianNode,
-      "e-core-julian",
-      julianNode.state === "active" || julianNode.state === "blocked" ? "cyan" : "white",
-      "models_finance",
-      julianNode.state,
-      julianActive ? "Requesting unit economics audit" : undefined
-    )
-  );
-
-  // Research feeds product: Thorne's intelligence flows into Maya's PRDs —
-  // contextual: rendered only while Maya is actively authoring.
-  if (mayaActive) {
+  if (pmNode) {
     edges.push(
       connectNodes(
         thorneNode,
-        mayaNode,
-        "e-thorne-maya",
-        "cyan",
-        "feeds",
-        "active",
+        pmNode,
+        "e-thorne-pm",
+        pmNode.state === "active" ? "cyan" : "white",
+        "authors_prd",
+        pmNode.state,
         "Feeding research into PRD"
       )
     );
   }
 
-  // 4. Column 3: Contextual Protocol Steps (Revealed ONLY as real work progresses)
+  // 4. Contextual Protocol Steps & Services (Clustered near their assigned specialist)
   const protocolStepNodes: FlowNode[] = [];
   const activeOrOpenWork = state.work.filter((w) => w.state !== "done").slice(0, 5);
 
-  activeOrOpenWork.forEach((w) => {
+  activeOrOpenWork.forEach((w, idx) => {
     const isAct = w.state === "active";
     const isBlk = w.state === "blocked";
     const wState: GraphNodeState = isBlk ? "blocked" : isAct ? "active" : "waiting";
-
-    // Route each protocol step to the genuinely responsible specialist.
-    const ownerIsMaya = w.owner === "maya" || w.owner === "pm";
-    const ownerIsJulian = w.owner === "julian" || w.owner === "finance";
 
     let stepName = "Research & Reconnaissance";
     let stepCode = "step-research";
     let assignedSpecialist = thorneNode;
     let relationship: GraphRelationship = "researches";
+    let stepX = 620 + (idx % 2) * 130;
+    let stepY = 700 + Math.floor(idx / 2) * 90;
 
     if (w.stage === "discovery") {
       stepName = "Market Reconnaissance";
       stepCode = "step-research";
       assignedSpecialist = thorneNode;
       relationship = "researches";
+      stepX = 620 + (idx % 2) * 130;
+      stepY = 700;
     } else if (w.stage === "build") {
-      if (ownerIsJulian) {
+      if (w.owner === "finance" && financeNode) {
         stepName = "Unit Economics Audit";
         stepCode = "step-finance";
-        assignedSpecialist = julianNode;
+        assignedSpecialist = financeNode;
         relationship = "models_finance";
-      } else if (ownerIsMaya) {
+        stepX = 880;
+        stepY = 780;
+      } else {
         stepName = "Product Architecture & PRD";
         stepCode = "step-pm-prd";
-        assignedSpecialist = mayaNode;
+        assignedSpecialist = pmNode || thorneNode;
         relationship = "authors_prd";
-      } else {
-        // Thorne-led build: research synthesis artifact
-        stepName = "Research Synthesis";
-        stepCode = "step-research";
-        assignedSpecialist = thorneNode;
-        relationship = "researches";
+        stepX = 1060;
+        stepY = 700;
       }
     } else if (w.stage === "review") {
       stepName = "Council Peer Review";
       stepCode = "step-review";
-      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
+      assignedSpecialist = thorneNode;
       relationship = "checks";
+      stepX = 1180;
+      stepY = 440;
     } else if (w.stage === "ship") {
       stepName = "Executive Synthesis";
       stepCode = "step-report";
-      assignedSpecialist = ownerIsMaya ? mayaNode : ownerIsJulian ? julianNode : thorneNode;
+      assignedSpecialist = thorneNode;
       relationship = "synthesizes";
+      stepX = 1180;
+      stepY = 440;
     }
 
     const stepNode: FlowNode = {
       id: `step-${w.id}`,
-      x: 1010,
-      y: 440,
-      w: 160,
-      h: 76,
+      x: stepX,
+      y: stepY,
+      w: 64,
+      h: 64,
       kind: "card",
       type: "workflow",
       state: wState,
@@ -504,10 +685,8 @@ export function deriveGraph(state: {
     };
     protocolStepNodes.push(stepNode);
 
-    // Edge from the responsible specialist into live execution.
-    // fire = white-hot execution energy (per reference spec); cyan is reserved
-    // for AI/data pathways; rose = blocked; white = idle conduit.
-    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "fire" : "white";
+    // Edge from assigned specialist to this protocol step
+    const edgeStyle: EdgeStyle = isBlk ? "rose" : isAct ? "cyan" : "white";
     edges.push(
       connectNodes(
         assignedSpecialist,
@@ -521,13 +700,9 @@ export function deriveGraph(state: {
     );
   });
 
-  // Layout protocol steps collision-free
-  if (protocolStepNodes.length > 0) {
-    layoutColumn(protocolStepNodes, 440, 22);
-    protocolStepNodes.forEach((n) => nodes.push(n));
-  }
+  protocolStepNodes.forEach((n) => nodes.push(n));
 
-  // 5. Column 4: Constitutional Verifier (Governance & Invariants)
+  // 5. Constitutional Verifier (Governance & Invariants — East Gateway)
   const verState: GraphNodeState = hasBlockedWork
     ? "blocked"
     : hasReviewWork
@@ -538,15 +713,15 @@ export function deriveGraph(state: {
 
   const verifierNode: FlowNode = {
     id: "verification",
-    x: 1280,
-    y: 440,
-    w: 120,
-    h: 84,
+    x: 1320,
+    y: 360,
+    w: 64,
+    h: 64,
     kind: "round",
     type: "verification",
     state: verState,
-    title: "Verifier",
-    subtitle: "Constitutional Safety",
+    title: "Constitutional Verifier",
+    subtitle: "Safety Gate",
     activity: hasReviewWork ? "Evaluating gross margin ≥ 80%" : hasBlockedWork ? "Invariant check failed" : undefined,
     relevance: hasReviewWork || hasBlockedWork ? 1 : 0.5,
   };
@@ -554,7 +729,6 @@ export function deriveGraph(state: {
 
   // Connect protocol steps to Verifier (or direct Thorne -> Verifier when idle)
   if (protocolStepNodes.length === 0) {
-    // Quiet baseline conduit when no active workstream
     edges.push(
       connectNodes(
         thorneNode,
@@ -584,14 +758,14 @@ export function deriveGraph(state: {
     });
   }
 
-  // 6. Column 5: Governed Outcome / Immutable Vault
+  // 6. Governed Outcome / Immutable Vault (Eastern Terminal)
   const outcomeState: GraphNodeState = doneWork.length > 0 ? "complete" : "idle";
   const outcomeNode: FlowNode = {
     id: "outcome",
-    x: 1500,
-    y: 440,
-    w: 130,
-    h: 78,
+    x: 1520,
+    y: 360,
+    w: 64,
+    h: 64,
     kind: "card",
     type: "outcome",
     state: outcomeState,
@@ -614,14 +788,14 @@ export function deriveGraph(state: {
     )
   );
 
-  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open)
+  // 7. Contextual Escalation: Founder Approval Gate (ONLY when decisions are open — Lower West)
   if (hasOpenDecisions) {
     const approvalNode: FlowNode = {
       id: "approval",
-      x: 570,
-      y: 680,
-      w: 180,
-      h: 84,
+      x: 380,
+      y: 600,
+      w: 68,
+      h: 68,
       kind: "card",
       type: "approval",
       state: "blocked",
@@ -633,40 +807,30 @@ export function deriveGraph(state: {
     nodes.push(approvalNode);
 
     // Sophia escalates to Approval Gate
-    const p1: [number, number][] = [
-      [coreNode.x, coreNode.y + coreNode.h / 2],
-      [coreNode.x, approvalNode.y],
-      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
-    ];
-    edges.push({
-      id: "e-sophia-approval",
-      from: "core",
-      to: "approval",
-      pts: p1,
-      style: "amber",
-      arrow: true,
-      relationship: "escalates-to",
-      state: "blocked",
-      activity: "Escalating decision",
-    });
+    edges.push(
+      connectNodes(
+        coreNode,
+        approvalNode,
+        "e-sophia-approval",
+        "amber",
+        "escalates-to",
+        "blocked",
+        "Escalating decision"
+      )
+    );
 
     // Approval Gate escalates to Founder
-    const p2: [number, number][] = [
-      [approvalNode.x - approvalNode.w / 2, approvalNode.y],
-      [founderNode.x, approvalNode.y],
-      [founderNode.x, founderNode.y + founderNode.h / 2],
-    ];
-    edges.push({
-      id: "e-approval-founder",
-      from: "approval",
-      to: "founder",
-      pts: p2,
-      style: "amber",
-      arrow: true,
-      relationship: "escalates-to",
-      state: "blocked",
-      activity: "Requires Founder Ratification",
-    });
+    edges.push(
+      connectNodes(
+        approvalNode,
+        founderNode,
+        "e-approval-founder",
+        "amber",
+        "escalates-to",
+        "blocked",
+        "Requires Founder Ratification"
+      )
+    );
   }
 
   // 8. Spatial Contextual Cards (Real operational intent only)
@@ -675,41 +839,41 @@ export function deriveGraph(state: {
       id: "sp-sophia",
       nodeId: "core",
       x: coreNode.x,
-      y: coreNode.y - coreNode.h / 2 - 24,
+      y: coreNode.y - coreNode.h / 2 - 26,
       actor: "Sophia Vance",
-      action: "Orchestrating specialist workstreams",
+      action: "Delegating research",
       target: "Dr. Aris Thorne",
       tone: "cyan",
     });
   }
-  if (thorneWork && thorneWork.state === "active") {
+  if (thorneWork) {
     spatialCards.push({
       id: "sp-thorne",
-      nodeId: "thorne",
+      nodeId: "ops",
       x: thorneNode.x,
-      y: thorneNode.y - thorneNode.h / 2 - 24,
+      y: thorneNode.y - thorneNode.h / 2 - 26,
       actor: "Dr. Aris Thorne",
       action: thorneWork.title,
       tone: "cyan",
     });
   }
-  if (julianWork && julianWork.state === "active") {
+  if (financeNode && financeWork && financeWork.state === "active") {
     spatialCards.push({
-      id: "sp-julian",
-      nodeId: "julian",
-      x: julianNode.x,
-      y: julianNode.y - julianNode.h / 2 - 24,
+      id: "sp-finance",
+      nodeId: "finance",
+      x: financeNode.x,
+      y: financeNode.y - financeNode.h / 2 - 26,
       actor: "Julian Cruz",
       action: "Stress-testing margin floor ≥ 80%",
       tone: "cyan",
     });
   }
-  if (mayaWork && mayaWork.state === "active") {
+  if (pmNode && pmWork && pmWork.state === "active") {
     spatialCards.push({
-      id: "sp-maya",
-      nodeId: "maya",
-      x: mayaNode.x,
-      y: mayaNode.y - mayaNode.h / 2 - 24,
+      id: "sp-pm",
+      nodeId: "pm",
+      x: pmNode.x,
+      y: pmNode.y - pmNode.h / 2 - 26,
       actor: "Maya Lin",
       action: "Drafting PRD & architecture specs",
       tone: "cyan",
@@ -720,7 +884,7 @@ export function deriveGraph(state: {
       id: "sp-verify",
       nodeId: "verification",
       x: verifierNode.x,
-      y: verifierNode.y - verifierNode.h / 2 - 24,
+      y: verifierNode.y - verifierNode.h / 2 - 26,
       actor: "Constitutional Verifier",
       action: "Auditing gross margin invariant ≥ 80%",
       tone: "emerald",
@@ -730,7 +894,7 @@ export function deriveGraph(state: {
       id: "sp-verify-blocked",
       nodeId: "verification",
       x: verifierNode.x,
-      y: verifierNode.y - verifierNode.h / 2 - 24,
+      y: verifierNode.y - verifierNode.h / 2 - 26,
       actor: "Constitutional Verifier",
       action: "Deterministic check failed — blocked",
       tone: "rose",
@@ -740,8 +904,8 @@ export function deriveGraph(state: {
     spatialCards.push({
       id: "sp-approval",
       nodeId: "approval",
-      x: 570,
-      y: 618,
+      x: 380,
+      y: 600 - 34 - 26,
       actor: "Waiting",
       action: "Founder decision required",
       target: "Founder",
@@ -779,14 +943,10 @@ export class FlowEngine {
   embers: Ember[] = [];
   sparks: Spark[] = [];
   rings: Ring[] = [];
-  flashes: Flash[] = [];
   energy = new Map<string, number>();
   coreHeat = 0.3;
   spawnTimer = 0;
   emberAcc = 0;
-  /** When set (node-selection focus), edges/nodes unrelated to the focused
-   *  node's direct relationships render at reduced emphasis. */
-  focusNodes: Set<string> | null = null;
 
   blueSprite = sprite(56, 189, 248);
   fireSprite = sprite(249, 115, 22);
@@ -825,10 +985,6 @@ export class FlowEngine {
       if (!this.outgoing.has(e.from)) this.outgoing.set(e.from, []);
       this.outgoing.get(e.from)!.push(index);
     });
-  }
-
-  setFocus(nodeIds: Set<string> | null) {
-    this.focusNodes = nodeIds && nodeIds.size > 0 ? nodeIds : null;
   }
 
   setScale(scale: number) {
@@ -875,9 +1031,7 @@ export class FlowEngine {
     if (!activePaths.length) return;
     const p = activePaths[Math.floor(Math.random() * activePaths.length)];
     const tone: PacketTone =
-      p.edge.style === "fire"
-        ? "fire"
-        : p.edge.style === "rose"
+      p.edge.style === "rose"
         ? "rose"
         : p.edge.style === "amber"
         ? "amber"
@@ -885,33 +1039,25 @@ export class FlowEngine {
         ? "emerald"
         : "cyan";
 
-    // Source-node ignition: dispatch visibly energizes the emitting node's
-    // perimeter (matches reference frame 2 — C-arc border light-up).
-    const src = this.energy.get(p.edge.from) || 0;
-    this.energy.set(p.edge.from, Math.max(src, 0.72));
-
     this.packets.push({
       e: p.index,
       d: randomStart ? Math.random() * p.len : 0,
-      speed: rnd(210, 290),
+      speed: rnd(160, 240),
       tone,
-      trail: rnd(105, 135),
+      trail: rnd(45, 70),
     });
   }
 
   /**
-   * Dual-ring arrival shockwave, white-hot contact flash, and target perimeter illumination.
+   * Dual-ring arrival shockwave and target perimeter illumination.
    */
   arrive(nodeId: string, x: number, y: number, tone: PacketTone = "cyan") {
     this.energy.set(nodeId, 1);
     const isCore = nodeId === "core";
     const isBlocked = tone === "rose" || this.nodeMap.get(nodeId)?.state === "blocked";
-    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "fire" ? "fire" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
+    const ringTone: PacketTone = isCore ? "fire" : isBlocked ? "rose" : tone === "amber" ? "amber" : tone === "emerald" ? "emerald" : "cyan";
 
-    // White-hot contact flash — the instant of impact (reference frame 4)
-    this.flashes.push({ x, y, life: 0, max: 0.16, tone: ringTone });
-
-    // Primary fast shockwave ring (gold-leaning for execution energy)
+    // Primary fast shockwave ring
     this.rings.push({
       x,
       y,
@@ -932,7 +1078,7 @@ export class FlowEngine {
       isSecondary: true,
     });
 
-    const count = isCore ? 42 : 26;
+    const count = isCore ? 32 : 18;
     this.burstFire(x, y, count, ringTone);
 
     if (isCore) {
@@ -970,15 +1116,15 @@ export class FlowEngine {
 
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = rnd(45, 175);
+      const sp = rnd(35, 170);
       this.embers.push({
         x: x + rnd(-8, 8),
         y: y + rnd(-8, 8),
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
         life: 0,
-        max: rnd(0.4, 0.95),
-        size: rnd(1.4, 3.4),
+        max: rnd(0.35, 0.85),
+        size: rnd(1.0, 2.8),
         heat: Math.random(),
         color: col,
       });
@@ -994,7 +1140,7 @@ export class FlowEngine {
     if (hasActiveEdges) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && this.packets.length < 24) {
-        this.spawnTimer = rnd(0.5, 0.95);
+        this.spawnTimer = rnd(0.7, 1.3);
         this.spawn();
       }
     } else {
@@ -1002,7 +1148,7 @@ export class FlowEngine {
       this.spawnTimer = 0;
     }
 
-    // Packet advance with cinematic ease (launch slow, transit fast, arrive decelerating)
+    // Packet advance, directional angle & trail physics
     for (let i = this.packets.length - 1; i >= 0; i--) {
       const pk = this.packets[i];
       const path = this.paths[pk.e];
@@ -1010,18 +1156,14 @@ export class FlowEngine {
         this.packets.splice(i, 1);
         continue;
       }
-      const prog = Math.min(1, pk.d / path.len);
-      const ease = 0.5 + 0.95 * Math.sin(Math.PI * prog);
-      pk.d += pk.speed * ease * dt;
+      pk.d += pk.speed * dt;
 
-      // Trailing micro-spark emission along motion vector — varied sizes &
-      // occasional larger "pop" sparks for organic high-velocity texture
-      if (Math.random() < 0.44) {
+      // Trailing micro-spark emission along motion vector
+      if (Math.random() < 0.4) {
         const head = this.pointAt(path, pk.d);
         const prev = this.pointAt(path, Math.max(0, pk.d - 6));
         const ang = Math.atan2(head.y - prev.y, head.x - prev.x);
-        const spMag = rnd(25, 60);
-        const pop = Math.random() < 0.16;
+        const spMag = rnd(25, 55);
 
         this.sparks.push({
           x: head.x + rnd(-2, 2),
@@ -1029,8 +1171,8 @@ export class FlowEngine {
           vx: -Math.cos(ang) * spMag + Math.sin(ang) * rnd(-15, 15),
           vy: -Math.sin(ang) * spMag - Math.cos(ang) * rnd(-15, 15),
           life: 0,
-          max: pop ? rnd(0.3, 0.55) : rnd(0.18, 0.4),
-          size: pop ? rnd(2.4, 3.6) : rnd(1.1, 2.6),
+          max: rnd(0.18, 0.4),
+          size: rnd(1.0, 2.2),
           color:
             pk.tone === "amber"
               ? "#fde68a"
@@ -1038,10 +1180,6 @@ export class FlowEngine {
               ? "#fca5a5"
               : pk.tone === "emerald"
               ? "#a7f3d0"
-              : pk.tone === "fire"
-              ? pop
-                ? "#fff1dd"
-                : "#ffd9a0"
               : "#7dd3fc",
         });
       }
@@ -1059,13 +1197,10 @@ export class FlowEngine {
       if (candidates.length && Math.random() < 0.85 && this.packets.length < 36) {
         pk.e = candidates[Math.floor(Math.random() * candidates.length)];
         pk.d = 0;
-        pk.speed = rnd(200, 280);
-        pk.trail = rnd(105, 135);
+        pk.speed = rnd(150, 230);
         const nextEdge = this.paths[pk.e].edge;
         pk.tone =
-          nextEdge.style === "fire"
-            ? "fire"
-            : nextEdge.style === "rose"
+          nextEdge.style === "rose"
             ? "rose"
             : nextEdge.style === "amber"
             ? "amber"
@@ -1153,15 +1288,6 @@ export class FlowEngine {
         this.rings.splice(i, 1);
       }
     }
-
-    // Contact flashes update
-    for (let i = this.flashes.length - 1; i >= 0; i--) {
-      const fl = this.flashes[i];
-      fl.life += dt;
-      if (fl.life >= fl.max) {
-        this.flashes.splice(i, 1);
-      }
-    }
   }
 
   render() {
@@ -1174,8 +1300,21 @@ export class FlowEngine {
     g.lineCap = "round";
     g.lineJoin = "round";
 
-    // (Grid crosshairs & micro-dots render in the DOM layers beneath the nodes —
-    // the canvas reserves itself strictly for energy, so nothing occludes nodes.)
+    // --- Technical Circuit Crosshairs & Coordinates
+    g.save();
+    g.strokeStyle = "rgba(56, 189, 248, 0.05)";
+    g.lineWidth = 1;
+    for (let gx = 180; gx <= 1520; gx += 260) {
+      for (let gy = 200; gy <= 780; gy += 240) {
+        g.beginPath();
+        g.moveTo(gx - 4, gy);
+        g.lineTo(gx + 4, gy);
+        g.moveTo(gx, gy - 4);
+        g.lineTo(gx, gy + 4);
+        g.stroke();
+      }
+    }
+    g.restore();
 
     // Ambient breathing oscillation (sine wave)
     const ambientBreath = Math.sin(this.time * 1.5) * 0.04;
@@ -1187,92 +1326,59 @@ export class FlowEngine {
       const eTo = this.energy.get(e.to) || 0;
       const lit = Math.max(eFrom, eTo);
 
-      // Selection focus: unrelated edges de-emphasize (related = either endpoint
-      // belongs to the focused node's direct relationship set).
-      const related = !this.focusNodes || this.focusNodes.has(e.from) || this.focusNodes.has(e.to);
-      const dim = related ? 1 : 0.3;
-
-      g.save();
-      g.globalAlpha = dim;
-
       g.beginPath();
       g.moveTo(p.pts[0].x, p.pts[0].y);
       for (let i = 1; i < p.pts.length; i++) g.lineTo(p.pts[i].x, p.pts[i].y);
 
-      if (e.style === "fire" && e.state === "active") {
-        // White-hot execution conduit — continuous layered energy
-        // (reference frames 3–5). Motion is carried by the comet itself,
-        // so the conduit stays a precise continuous beam.
+      if (e.style === "rose" || e.state === "blocked") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        // Ambient light cast onto the canvas beneath the active path
-        g.strokeStyle = `rgba(255,150,50,${0.07 + lit * 0.06})`;
-        g.lineWidth = 24;
+        g.strokeStyle = `rgba(244,63,94,${0.25 + lit * 0.35 + Math.sin(this.time * 5) * 0.1})`;
+        g.lineWidth = 8;
         g.stroke();
-        // Outer corona
-        g.strokeStyle = `rgba(249,115,22,${0.24 + lit * 0.28})`;
-        g.lineWidth = 7;
-        g.stroke();
-        // Mid sheath
-        g.strokeStyle = `rgba(255,150,70,${0.38 + lit * 0.32})`;
-        g.lineWidth = 3.6;
-        g.stroke();
-        // Bright interior core — continuous, hairline-precise
-        g.strokeStyle = `rgba(255,236,214,${0.78 + lit * 0.22})`;
-        g.lineWidth = 1.8;
-        g.stroke();
-        g.restore();
-      } else if (e.style === "rose" || e.state === "blocked") {
-        g.save();
-        g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(244,63,94,${0.16 + lit * 0.26 + Math.sin(this.time * 5) * 0.08})`;
-        g.lineWidth = 6;
-        g.stroke();
-        g.strokeStyle = `rgba(251,113,133,${0.6 + lit * 0.32})`;
-        g.lineWidth = 1.7;
+        g.strokeStyle = `rgba(251,113,133,${0.68 + lit * 0.32})`;
+        g.lineWidth = 2.2;
         g.stroke();
         g.restore();
       } else if (e.style === "amber") {
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(245,158,11,${0.16 + lit * 0.24 + Math.sin(this.time * 4) * 0.06})`;
-        g.lineWidth = 6;
+        g.strokeStyle = `rgba(245,158,11,${0.25 + lit * 0.3 + Math.sin(this.time * 4) * 0.08})`;
+        g.lineWidth = 8;
         g.stroke();
-        g.strokeStyle = `rgba(252,211,77,${0.6 + lit * 0.3})`;
-        g.lineWidth = 1.7;
+        g.strokeStyle = `rgba(252,211,77,${0.68 + lit * 0.3})`;
+        g.lineWidth = 2.2;
         g.stroke();
         g.restore();
       } else if (e.style === "emerald" || e.state === "complete") {
         g.save();
-        g.strokeStyle = `rgba(16,185,129,${0.13 + lit * 0.17})`;
-        g.lineWidth = 4;
+        g.strokeStyle = `rgba(16,185,129,${0.18 + lit * 0.22})`;
+        g.lineWidth = 5;
         g.stroke();
-        g.strokeStyle = `rgba(52,211,153,${0.48 + lit * 0.3})`;
-        g.lineWidth = 1.4;
+        g.strokeStyle = `rgba(52,211,153,${0.55 + lit * 0.3})`;
+        g.lineWidth = 1.8;
         g.stroke();
         g.restore();
       } else if (e.style === "cyan" || e.state === "active") {
-        // Cyan AI/data pathway — continuous neon beam
-        // (reference frame 6: core filament + sheath + soft outer bloom).
         g.save();
         g.globalCompositeOperation = "lighter";
-        g.strokeStyle = `rgba(0,102,204,${0.1 + lit * 0.12})`;
-        g.lineWidth = 8;
+        g.strokeStyle = `rgba(56,189,248,${0.28 + lit * 0.35})`;
+        g.lineWidth = 9;
         g.stroke();
-        g.strokeStyle = `rgba(56,189,248,${0.24 + lit * 0.3})`;
-        g.lineWidth = 3.2;
+        g.strokeStyle = `rgba(125,211,252,${0.68 + lit * 0.32})`;
+        g.lineWidth = 2.2;
+        g.setLineDash([8, 10]);
+        g.lineDashOffset = -this.time * 65;
         g.stroke();
-        g.strokeStyle = `rgba(215,245,255,${0.6 + lit * 0.32})`;
-        g.lineWidth = 1.5;
-        g.stroke();
+        g.setLineDash([]);
         g.restore();
       } else {
         // Quiet idle baseline conduit (ambient breathing, no flurry)
-        g.strokeStyle = `rgba(40,55,80,${0.14 + ambientBreath + lit * 0.08})`;
-        g.lineWidth = 2.6;
+        g.strokeStyle = `rgba(40,55,80,${0.16 + ambientBreath + lit * 0.1})`;
+        g.lineWidth = 4;
         g.stroke();
-        g.strokeStyle = `rgba(130,165,205,${0.22 + ambientBreath + lit * 0.18})`;
-        g.lineWidth = 1;
+        g.strokeStyle = `rgba(130,165,205,${0.24 + ambientBreath + lit * 0.2})`;
+        g.lineWidth = 1.4;
         g.stroke();
       }
 
@@ -1303,82 +1409,30 @@ export class FlowEngine {
         g.restore();
       }
 
-      // Arrowheads — slim aerodynamic taper (reference: sleek technical points)
+      // Arrowheads
       if (e.arrow) {
         const n = p.pts.length;
         const b = p.pts[n - 1],
           a = p.pts[n - 4] || p.pts[0];
         const ang = Math.atan2(b.y - a.y, b.x - a.x);
-        const hot = e.style === "fire" || e.style === "cyan" || e.style === "rose" || e.style === "amber";
         g.fillStyle =
           e.style === "rose"
-            ? `rgba(251,113,133,${0.8 + lit * 0.2})`
+            ? `rgba(251,113,133,${0.85 + lit * 0.15})`
             : e.style === "amber"
-            ? `rgba(252,211,77,${0.8 + lit * 0.2})`
+            ? `rgba(252,211,77,${0.85 + lit * 0.15})`
             : e.style === "emerald"
-            ? `rgba(52,211,153,${0.75 + lit * 0.25})`
+            ? `rgba(52,211,153,${0.85 + lit * 0.15})`
             : e.style === "cyan"
-            ? `rgba(215,245,255,${0.8 + lit * 0.2})`
-            : e.style === "fire"
-            ? `rgba(255,224,190,${0.8 + lit * 0.2})`
-            : `rgba(185,215,245,${0.62 + ambientBreath + lit * 0.22})`;
+            ? `rgba(125,211,252,${0.85 + lit * 0.15})`
+            : `rgba(180,210,240,${0.55 + ambientBreath + lit * 0.2})`;
 
-        const ah = hot ? 7 : 6.2;
         g.beginPath();
         g.moveTo(b.x, b.y);
-        g.lineTo(b.x - Math.cos(ang - 0.36) * ah, b.y - Math.sin(ang - 0.36) * ah);
-        g.lineTo(b.x - Math.cos(ang + 0.36) * ah, b.y - Math.sin(ang + 0.36) * ah);
+        g.lineTo(b.x - Math.cos(ang - 0.45) * 9.5, b.y - Math.sin(ang - 0.45) * 9.5);
+        g.lineTo(b.x - Math.cos(ang + 0.45) * 9.5, b.y - Math.sin(ang + 0.45) * 9.5);
         g.closePath();
         g.fill();
       }
-
-      // Connection ports — crisp technical anchors: outer ring + bright core dot
-      // (reference frame 1 — precise connection points on node borders; the
-      // destination port pulses softly while a packet is inbound — frame 6).
-      {
-        const s = p.pts[0],
-          t = p.pts[p.pts.length - 1];
-        const inbound = this.packets.some((pk) => this.paths[pk.e] === p && pk.d > p.len * 0.45);
-        const pulse = inbound ? 0.55 + 0.45 * Math.sin(this.time * 6.5) : 0;
-        const portAlpha = 0.35 + lit * 0.45 + pulse * 0.4;
-        const ringAlpha = 0.22 + lit * 0.3 + pulse * 0.3;
-        const fire = e.style === "fire" && e.state === "active";
-        const dotColor =
-          fire
-            ? `rgba(255,214,170,${portAlpha})`
-            : e.style === "rose"
-            ? `rgba(251,113,133,${portAlpha})`
-            : e.style === "amber"
-            ? `rgba(252,211,77,${portAlpha})`
-            : e.style === "emerald"
-            ? `rgba(52,211,153,${portAlpha})`
-            : `rgba(170,215,250,${portAlpha})`;
-        const ringColor =
-          fire
-            ? `rgba(255,170,110,${ringAlpha})`
-            : `rgba(120,185,235,${ringAlpha})`;
-
-        for (const pt of [s, t]) {
-          // soft socket glow where an energized beam plugs into the port
-          if (fire || (e.style === "cyan" && e.state === "active") || e.style === "amber" || (e.style === "rose" && e.state === "blocked")) {
-            const gs = fire ? this.fireSprite : e.style === "amber" ? this.amberSprite : e.style === "rose" ? this.roseSprite : this.blueSprite;
-            g.globalAlpha = 0.3 + lit * 0.3 + pulse * 0.25;
-            g.drawImage(gs, pt.x - 8.5, pt.y - 8.5, 17, 17);
-            g.globalAlpha = 1;
-          }
-          g.strokeStyle = ringColor;
-          g.lineWidth = 1;
-          g.beginPath();
-          g.arc(pt.x, pt.y, 3.1, 0, Math.PI * 2);
-          g.stroke();
-          g.fillStyle = dotColor;
-          g.beginPath();
-          g.arc(pt.x, pt.y, 1.5, 0, Math.PI * 2);
-          g.fill();
-        }
-      }
-
-      g.restore(); // focus dim scope
     }
 
     g.globalCompositeOperation = "lighter";
@@ -1387,23 +1441,16 @@ export class FlowEngine {
     for (const n of this.nodeMap.values()) {
       const en = this.energy.get(n.id) || 0;
       if (en < 0.02) continue;
-      const related = !this.focusNodes || this.focusNodes.has(n.id);
-      const glowEn = en * (related ? 1 : 0.3);
-      if (glowEn < 0.02) continue;
-      const r = Math.max(n.w, n.h) * (0.85 + glowEn * 0.35);
+      const r = Math.max(n.w, n.h) * (0.85 + en * 0.35);
       const isCore = n.id === "core";
       const isBlocked = n.state === "blocked";
-      const isExecuting = this.nodeMap.get(n.id)?.state === "active" && n.type === "agent";
       const gr = g.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
       if (isCore) {
-        gr.addColorStop(0, `rgba(255,170,80,${0.45 * glowEn})`);
+        gr.addColorStop(0, `rgba(255,170,80,${0.45 * en})`);
       } else if (isBlocked) {
-        gr.addColorStop(0, `rgba(244,63,94,${0.45 * glowEn})`);
-      } else if (isExecuting) {
-        // Executing specialists radiate warm execution energy.
-        gr.addColorStop(0, `rgba(255,170,90,${0.4 * glowEn})`);
+        gr.addColorStop(0, `rgba(244,63,94,${0.45 * en})`);
       } else {
-        gr.addColorStop(0, `rgba(56,189,248,${0.45 * glowEn})`);
+        gr.addColorStop(0, `rgba(56,189,248,${0.45 * en})`);
       }
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr;
@@ -1460,11 +1507,12 @@ export class FlowEngine {
     }
     g.globalAlpha = 1;
 
-    // --- Directional Laser Streaks (Packets) — white-hot comet with volumetric tail
+    // --- Directional Laser Streaks (Packets)
     for (const pk of this.packets) {
       const p = this.paths[pk.e];
       if (!p) continue;
       const head = this.pointAt(p, pk.d);
+      const steps = 12;
       const spr =
         pk.tone === "amber"
           ? this.amberSprite
@@ -1478,97 +1526,42 @@ export class FlowEngine {
           ? this.whiteSprite
           : this.blueSprite;
 
-      const isFire = pk.tone === "fire";
-      // Volumetric tail — smooth gradient: transparent ember tip → saturated
-      // body → white-hot head base (reference spec: 0%/40%/90%/100% stops).
-      // Drawn in two passes per segment: soft gaseous halo + dense core.
-      const steps = 28;
+      const rgb =
+        pk.tone === "amber"
+          ? "245,158,11"
+          : pk.tone === "rose"
+          ? "244,63,94"
+          : pk.tone === "emerald"
+          ? "16,185,129"
+          : pk.tone === "fire"
+          ? "249,115,22"
+          : pk.tone === "white"
+          ? "255,255,255"
+          : "56,189,248";
+
+      // Directional laser streak trail
       for (let i = steps; i >= 1; i--) {
         const d = pk.d - (pk.trail * i) / steps;
         if (d < 0) continue;
         const q = this.pointAt(p, d);
-        const t = 1 - i / steps; // 0 tail tip → 1 head base
-        const rCore = 0.8 + t * 4.2;
-        const rHalo = rCore + 2.6 * t + 1.2;
-        let col: string;
-        if (isFire) {
-          if (t < 0.4) {
-            const u = t / 0.4;
-            col = `rgba(255,${Math.round(68 + 102 * u)},0,${(u * 0.6).toFixed(3)})`;
-          } else {
-            const u = (t - 0.4) / 0.6;
-            col = `rgba(255,${Math.round(170 + 54 * u)},${Math.round(0 + 190 * u)},${(0.6 + 0.4 * u).toFixed(3)})`;
-          }
-        } else {
-          const rgb =
-            pk.tone === "amber"
-              ? "245,158,11"
-              : pk.tone === "rose"
-              ? "244,63,94"
-              : pk.tone === "emerald"
-              ? "16,185,129"
-              : "56,189,248";
-          col = `rgba(${rgb},${(t * t * 0.85).toFixed(3)})`;
-        }
-        // soft gaseous halo pass
-        g.fillStyle = col.replace(/,([\d.]+)\)$/, "," + (parseFloat(col.match(/([\d.]+)\)$/)![1]) * 0.28).toFixed(3) + ")");
+        const t = 1 - i / steps;
+        const r = 0.8 + t * 2.6;
+        g.fillStyle = `rgba(${rgb},${t * t * 0.85})`;
         g.beginPath();
-        g.arc(q.x, q.y, rHalo, 0, Math.PI * 2);
-        g.fill();
-        // dense core pass
-        g.fillStyle = col;
-        g.beginPath();
-        g.arc(q.x, q.y, rCore, 0, Math.PI * 2);
+        g.arc(q.x, q.y, r, 0, Math.PI * 2);
         g.fill();
       }
 
-      // Residual heat along the freshly traversed path (soft corona under-glow)
-      {
-        const back = this.pointAt(p, Math.max(0, pk.d - pk.trail * 1.9));
-        const grad = g.createLinearGradient(back.x, back.y, head.x, head.y);
-        const base = isFire ? "255,140,60" : pk.tone === "amber" ? "245,158,11" : pk.tone === "rose" ? "244,63,94" : pk.tone === "emerald" ? "16,185,129" : "56,189,248";
-        grad.addColorStop(0, `rgba(${base},0)`);
-        grad.addColorStop(1, `rgba(${base},${isFire ? 0.3 : 0.18})`);
-        g.save();
-        g.strokeStyle = grad;
-        g.lineWidth = isFire ? 11 : 7;
-        g.beginPath();
-        let began = false;
-        for (let i = 0; i < p.pts.length; i++) {
-          if (p.cum[i] < Math.max(0, pk.d - pk.trail * 1.9)) continue;
-          if (!began) {
-            g.moveTo(back.x, back.y);
-            began = true;
-          }
-          g.lineTo(p.pts[i].x, p.pts[i].y);
-        }
-        g.lineTo(head.x, head.y);
-        g.stroke();
-        g.restore();
-      }
-
-      // Comet head — layered corona: wide soft bloom + tight hot glow + blinding white core
-      const s = isFire ? 23 : 18;
-      g.globalAlpha = 0.6;
-      g.drawImage(spr, head.x - s * 1.7, head.y - s * 1.7, s * 3.4, s * 3.4);
-      g.globalAlpha = 0.95;
-      g.drawImage(spr, head.x - s * 0.9, head.y - s * 0.9, s * 1.8, s * 1.8);
-      g.globalAlpha = 1;
-      // tight white-hot plasma center
-      g.drawImage(this.whiteSprite, head.x - s * 0.42, head.y - s * 0.42, s * 0.84, s * 0.84);
+      // White-hot laser core pip
+      const s = 12;
+      g.drawImage(spr, head.x - s, head.y - s, s * 2, s * 2);
       g.fillStyle = "#ffffff";
       g.beginPath();
-      g.arc(head.x, head.y, isFire ? 4.1 : 3.2, 0, Math.PI * 2);
+      g.arc(head.x, head.y, 2.2, 0, Math.PI * 2);
       g.fill();
-      if (isFire) {
-        g.fillStyle = "rgba(255,248,236,0.95)";
-        g.beginPath();
-        g.arc(head.x, head.y, 6.4, 0, Math.PI * 2);
-        g.fill();
-      }
     }
 
-    // --- Arrival Shockwave Rings (Dual concentric rings, gold-leaning for execution)
+    // --- Arrival Shockwave Rings (Dual concentric rings)
     for (const r of this.rings) {
       const k2 = r.life / r.max;
       const alpha = r.isSecondary ? (1 - k2) * 0.45 : (1 - k2) * 0.8;
@@ -1580,11 +1573,11 @@ export class FlowEngine {
           : r.tone === "emerald"
           ? `rgba(16,185,129,${alpha})`
           : r.tone === "fire"
-          ? `rgba(255,204,102,${alpha})`
+          ? `rgba(255,170,90,${alpha})`
           : `rgba(56,189,248,${alpha})`;
 
       g.strokeStyle = strokeCol;
-      g.lineWidth = r.isSecondary ? 1.6 * (1 - k2) + 0.35 : 3 * (1 - k2) + 0.6;
+      g.lineWidth = r.isSecondary ? 1.4 * (1 - k2) + 0.3 : 2.4 * (1 - k2) + 0.5;
       g.beginPath();
       if (r.tone === "fire") {
         g.roundRect(r.x - r.r * k2 * 1.5, r.y - r.r * k2 * 0.7, r.r * k2 * 3, r.r * k2 * 1.4, 18);
@@ -1592,104 +1585,6 @@ export class FlowEngine {
         g.arc(r.x, r.y, r.r * Math.pow(k2, r.isSecondary ? 0.8 : 0.6), 0, Math.PI * 2);
       }
       g.stroke();
-    }
-
-    // --- Contact Flashes (white-hot impact instant — reference frame 4)
-    for (const fl of this.flashes) {
-      const k2 = fl.life / fl.max;
-      const fade = 1 - k2;
-      const rad = 10 + 30 * k2;
-      const spr =
-        fl.tone === "rose"
-          ? this.roseSprite
-          : fl.tone === "amber"
-          ? this.amberSprite
-          : fl.tone === "emerald"
-          ? this.emeraldSprite
-          : fl.tone === "fire"
-          ? this.fireSprite
-          : this.blueSprite;
-      g.globalAlpha = fade;
-      g.drawImage(spr, fl.x - rad, fl.y - rad, rad * 2, rad * 2);
-      g.globalAlpha = fade * 0.9;
-      g.drawImage(this.whiteSprite, fl.x - rad * 0.5, fl.y - rad * 0.5, rad, rad);
-      g.globalAlpha = fade;
-      g.fillStyle = "#ffffff";
-      g.beginPath();
-      g.arc(fl.x, fl.y, 2.6 + 3.2 * fade, 0, Math.PI * 2);
-      g.fill();
-      g.globalAlpha = 1;
-    }
-
-    // --- Source-Node Ignition Arcs (reference frame 2 — C-arc border light-up)
-    // A short luminous arc sweeps the emitting node's perimeter while dispatch
-    // energy is fresh. Strictly state-driven: fades with real energy decay.
-    for (const n of this.nodeMap.values()) {
-      const en = this.energy.get(n.id) || 0;
-      if (en < 0.3) continue;
-      const related = !this.focusNodes || this.focusNodes.has(n.id);
-      const arcEn = en * (related ? 1 : 0.3);
-      if (arcEn < 0.3) continue;
-      const isCore = n.id === "core";
-      const isBlocked = n.state === "blocked";
-      const executing = n.type === "agent" && n.state === "active";
-      const col = isBlocked ? "251,113,133" : isCore || executing ? "255,170,90" : "125,211,252";
-      const alpha = 0.35 + arcEn * 0.5;
-      g.save();
-      g.strokeStyle = `rgba(${col},${alpha})`;
-      g.lineWidth = 2.2;
-      if (n.kind === "round") {
-        const rr = n.w / 2 + 5;
-        const a0 = this.time * 2.2 + (n.x % 7);
-        g.beginPath();
-        g.arc(n.x, n.y, rr, a0, a0 + 1.0);
-        g.stroke();
-        g.beginPath();
-        g.arc(n.x, n.y, rr + 3.5, a0 + Math.PI, a0 + Math.PI + 0.7);
-        g.stroke();
-      } else {
-        const x = n.x - n.w / 2 - 5,
-          y = n.y - n.h / 2 - 5,
-          w = n.w + 10,
-          h = n.h + 10;
-        const per = 2 * (w + h);
-        g.setLineDash([per * 0.22, per * 0.78]);
-        g.lineDashOffset = -this.time * 90;
-        g.beginPath();
-        g.roundRect(x, y, w, h, 14);
-        g.stroke();
-        g.setLineDash([]);
-      }
-      g.restore();
-    }
-
-    // --- Executing Specialist Gold Spark Halo (reference frame 7 — processing
-    // agent wrapped in gold sparks). Deterministic orbital swarm derived purely
-    // from live node state + time: zero activity when nobody is executing.
-    for (const n of this.nodeMap.values()) {
-      if (n.type !== "agent" || n.id === "core" || n.state !== "active") continue;
-      const related = !this.focusNodes || this.focusNodes.has(n.id);
-      if (!related) continue;
-      const R = n.w / 2;
-      for (let i = 0; i < 11; i++) {
-        const omega = 0.55 + 0.9 * ((i * 37) % 10) / 10;
-        const phase = (i * 2.399) % (Math.PI * 2);
-        const ang = this.time * omega + phase;
-        const rr = R + 7 + ((i * 53) % 12);
-        const yy = Math.sin(this.time * 1.7 + i * 1.9) * 9;
-        const x = n.x + Math.cos(ang) * rr;
-        const y = n.y + Math.sin(ang) * rr * 0.92 + yy;
-        const flick = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(this.time * 9 + i * 2.7));
-        const size = 1.6 + ((i * 29) % 10) / 10 * 2.2;
-        g.globalAlpha = flick * 0.85;
-        g.drawImage(i % 3 === 0 ? this.whiteSprite : this.fireSprite, x - size * 2.2, y - size * 2.2, size * 4.4, size * 4.4);
-        g.globalAlpha = flick;
-        g.fillStyle = i % 3 === 0 ? "#fff6e8" : "#ffcf6e";
-        g.beginPath();
-        g.arc(x, y, size * 0.6, 0, Math.PI * 2);
-        g.fill();
-      }
-      g.globalAlpha = 1;
     }
 
     g.globalCompositeOperation = "source-over";

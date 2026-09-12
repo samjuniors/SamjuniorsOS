@@ -17,9 +17,7 @@ const INITIAL_MESSAGES: Message[] = [];
 
 const PROMPTS: Record<string, string[]> = {
   sophia: ["What needs my attention?", "Summarize this UI session", "What is the execution path?"],
-  thorne: ["Are any tasks blocked?", "What is my current assignment?", "What requires Founder approval?"],
-  maya: ["Draft a PRD outline", "What depends on research?", "Acceptance criteria status?"],
-  julian: ["Margin floor status?", "Current unit economics?", "Pricing assumptions?"],
+  ops: ["Are any tasks blocked?", "What is my current assignment?", "What requires Founder approval?"],
 };
 
 function fmtTime(ts: number) {
@@ -95,7 +93,7 @@ export default function ChatPanel() {
     setTimeout(() => inputRef.current?.focus(), 60);
   };
 
-  // Real conversational interaction: POST /api/agent-chat resolves the
+// Real conversational interaction: POST /api/agent-chat resolves the
   // authoritative SERVER_AGENTS persona (coo/researcher/pm/finance) with live
   // LLM reasoning. The canned local reply generator was removed in Phase 3.4 —
   // no simulated responses remain in this surface.

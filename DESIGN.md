@@ -363,27 +363,62 @@ The living operating graph visually communicates the dynamic state of SamJuniors
    - Cards smoothly animate into view on relevant events and collapse/fade out when the event completes.
 4. **Zero Random Decoration**: No particle or animation fires without an authentic causal event in the operating state.
 
-
 ---
 
-## 14. Operating Graph — Authoritative Workforce & Execution Energy Semantics
+## 14. Workflow Design System (Phase 4.1 Specification)
 
-*Added in the Premium Operating Graph phase. These are binding UX invariants.*
+The workflow component system (`components/workflow/`) provides presentation-only, portable visual primitives for node-based graphs, inspired by high-end dark ambient modular flow interfaces (such as FLOWGRID).
 
-1. **Four Authoritative Employees (closed roster)**: The operating graph renders exactly the four employed v1 AI employees defined by the repository (`src/lib/server/agents/definitions.ts`):
-   - **Sophia Vance** — COO & Master Orchestrator (central orchestration node)
-   - **Dr. Aris Thorne** — Lead Market & Technology Researcher
-   - **Maya Lin** — Principal Product Manager
-   - **Julian Cruz** — Chief Financial Analyst
-   No other person/agent may appear as active workforce. Deferred/target-state employees (e.g. Elena Rostova, Marcus Vance) are prohibited. Maya/Julian render as employed nodes that visibly *activate only when real work is assigned to them* — never fake activity.
+### Core Principles & Architectural Boundary
+- **Presentation-Only & Portable**: Primitives rely strictly on React, CSS/SVG, and local tokens. They have zero dependencies on Next.js server APIs, Prisma, authentication, or graph execution state, ensuring drop-in portability to the standalone `Uploaded/Design1` Vite environment.
+- **Semantic Mapping**: Workflow tokens map directly to the established SamJuniorsOS semantic color hierarchy (`cyan` primary, `amber` attention/processing, `emerald` healthy/complete, `rose` error/blocked, `obsidian glass` surfaces).
+- **Physical Depth & Optical Balance**: Nodes feature multi-layered obsidian glass backdrops (`rgba(6, 12, 24, 0.88)`), specular hairline top borders (`linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)`), and subtle ambient drop shadows.
+### Node Geometries & Form Factors
+| Geometry | Default Size (W x H) | Border Radius | Typical Node Type |
+|---|---|---|---|
+| `square` | 84 x 84 px | 14px | Micro agent / utility / compact action |
+| `rectangle` | 240 x 96 px | 16px | Standard workflow step / agent executor |
+| `circle` | 84 x 84 px | 50% | Router / trigger / endpoint / gateway |
+| `squircle` | 100 x 100 px | 24px | Core specialist / LLM model node |
+| `pill` | 180 x 52 px | 9999px | Condition gate / lightweight trigger |
 
-2. **Genuine Relationship Topology**: Founder/Inputs → Sophia → {Thorne, Maya, Julian} → contextual protocol steps → Constitutional Verifier → Governed Vault → Founder (approval gate appears only when open decisions exist). Thorne → Maya "research feeds PRD" renders contextually (only while Maya is actively authoring). Protocol steps remain contextual — never permanently rendered.
+### Node Port Architecture
+Connection ports (`NodePort.tsx`) are independent physical terminals placed at compass positions (`top`, `bottom`, `left`, `right`):
+- **Shapes**: `circle` (8px default) or `square` (8px default).
+- **States**: `default` (slate-600 outline), `hover` (cyan outline + glow), `active` (filled cyan), `connected` (filled cyan dot), `success` (emerald), `error` (rose).
+- **Hit Area**: Includes invisible 24px expanded click/hover boundary for micro-precision targeting.
 
-3. **Dual Energy Color Semantics** (matches the supplied reference frames):
-   - **Orange / white-hot** (`fire`): *execution energy* — a specialist actively executing a protocol step. Comet streak = white-hot core with orange corona, velocity-aligned trailing sparks, arrival shockwave rings, and smooth glow decay.
-   - **Cyan / electric blue**: *AI & data pathways* — delegation, research routing, context/verification flows.
-   - Amber = founder approval/attention; rose = blocked; emerald = completed/governed; white = quiet idle conduits.
+### Reusable Content Styles
+- `IconOnlyContent`: Focused single-glyph presentation with optional status pip.
+- `IconLabelContent`: Icon paired with a bold primary label.
+- `IconTitleContent`: Icon, title, and auxiliary badge.
+- `IconMetaContent`: Full structured card with title, role/type subtitle, and status pill.
+- `AgentContent`: Dedicated specialist representation with avatar container, role tag, and capability badges.
+- `ModelContent`: LLM provider/model block (e.g. Gemini 2.5 Pro, Claude 3.5 Sonnet) with temperature/context tokens.
 
-4. **Canvas Interaction Grammar**: Click-drag = pan; wheel/trackpad = cursor-centered zoom with smooth clamped limits; fit (0) / recenter; node selection highlights direct relationships while unrelated graph elements subtly de-emphasize (nodes dim to 32% opacity, non-adjacent edges dim); the graph remains pannable/zoomable while execution runs; execution particles follow current transformed graph coordinates; label LOD — high zoom reveals node detail, low zoom reduces labels and hides section headers.
+### Connectors & Vector Kinetics
+- SVG path-based connectors (`Connector.tsx`): `straight`, `curved` (smooth cubic Bezier S-curve), `dashed`, `branch`, and `animated`.
+- Kinetic laser packet flow with speed, color, and dash-offset synchronization matching active operational causality.
 
-5. **Truth Boundary (unchanged)**: The graph is a *visual projection* of the operating system, never the source of truth. Authoritative state lives in the existing backend architecture. Zero synthetic packets, fake counters, or invented events — kinetics fire only from real state transitions.
+### Node States & Kinetic Feedback
+Nodes transition across 8 discrete visual states:
+- `default`: Quiet, low-contrast obsidian glass with subdued hairline rim.
+- `hover`: Elevated luminance, enhanced specular highlight, subtle lift.
+- `selected`: High-visibility cyan boundary (`#00B2FF`) with crisp outline.
+- `active`: Vibrant cyan pulse with animated perimeter luminescence.
+- `processing`: Kinetic amber energy field (`#FF8A00`) with particle agitation.
+- `success`: Emerald halo (`#22D97A`) indicating completed execution.
+- `error`: Alert rose warning perimeter (`#FF4B4B`) signaling blocked or failed step.
+- `disabled`: Muted opacity and grayscale attenuation for locked or inactive nodes.
+
+### Effects & Performance Budget
+Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus automatic `prefers-reduced-motion` compliance to safeguard 60 FPS rendering:
+- `full`: Complete 12px backdrop-filter blur, dynamic glow particle emitters, active SVG conduit animations.
+- `balanced`: Reduced 6px backdrop-filter blur, halved particle counts, streamlined SVG animations.
+- `minimal`: Disables heavy GPU filters (`backdropFilter: 'none'`), disables floating particles, retains lightweight CSS opacity/color transitions.
+
+### Specimen Sheet
+- Certified at `/design-system/workflow` (`app/design-system/workflow/page.tsx`).
+- Features 13 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles, Icon Containers, Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (generic illustrative fixtures), and Responsive Sizes.
+- Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
+- Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.

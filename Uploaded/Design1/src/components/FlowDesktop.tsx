@@ -1,12 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Bot, ListTree, PackageCheck, ClipboardList, Scale, ChevronDown, Check,
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
   Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
-  Coins, FileText,
+  Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target,
+  Mail, Send, Search, Database, Terminal, Globe, GitBranch,
 } from "lucide-react";
-import { FlowEngine, WORLD, deriveGraph, type FlowNode, type SpatialCard } from "../lib/flow";
+import { FlowEngine, WORLD, deriveGraph, mapGraphDTOToFlowModel, type FlowNode, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
@@ -14,67 +15,20 @@ import {
 } from "../lib/osStore";
 import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
-
-/* -------------------------------------------------- atmosphere layer */
-
-/**
- * Static atmospheric depth — seeded dust, soft bokeh, and technical crosshairs
- * at major-grid intersections. Rendered once in world space (parallaxes with
- * pan/zoom, scales with LOD). Purely ambient: zero motion, zero activity —
- * all energy remains strictly state-driven on the canvas engine.
- */
-const AtmosphereLayer = memo(function AtmosphereLayer() {
-  const field = useMemo(() => {
-    // Deterministic seeded PRNG — stable, art-directed field across reloads.
-    let seed = 20260911;
-    const rand = () => {
-      seed = (seed * 1664525 + 1013904223) % 4294967296;
-      return seed / 4294967296;
-    };
-    const ox = WORLD.MIN_X - 100;
-    const oy = WORLD.MIN_Y - 100;
-    const W = WORLD.MAX_X - WORLD.MIN_X + 200;
-    const H = WORLD.MAX_Y - WORLD.MIN_Y + 200;
-
-    const dust = Array.from({ length: 96 }, () => ({
-      x: rand() * W,
-      y: rand() * H,
-      r: 0.5 + rand() * 0.9,
-      o: 0.04 + rand() * 0.1,
-    }));
-    const bokeh = Array.from({ length: 16 }, () => ({
-      x: rand() * W,
-      y: rand() * H,
-      r: 7 + rand() * 11,
-      o: 0.02 + rand() * 0.03,
-    }));
-    const crosses: Array<{ x: number; y: number }> = [];
-    for (let gx = Math.ceil(ox / 220) * 220; gx <= ox + W; gx += 220) {
-      for (let gy = Math.ceil(oy / 220) * 220; gy <= oy + H; gy += 220) {
-        crosses.push({ x: gx - ox, y: gy - oy });
-      }
-    }
-    return { ox, oy, W, H, dust, bokeh, crosses };
-  }, []);
-
-  return (
-    <svg
-      className="pointer-events-none absolute"
-      aria-hidden="true"
-      style={{ left: field.ox, top: field.oy, width: field.W, height: field.H, overflow: "visible" }}
-    >
-      {field.bokeh.map((b, i) => (
-        <circle key={`b${i}`} cx={b.x} cy={b.y} r={b.r} fill="rgb(120,170,255)" opacity={b.o} />
-      ))}
-      {field.dust.map((d, i) => (
-        <circle key={`d${i}`} cx={d.x} cy={d.y} r={d.r} fill="rgb(185,215,255)" opacity={d.o} />
-      ))}
-      {field.crosses.map((c, i) => (
-        <path key={`c${i}`} d={`M ${c.x - 4.5} ${c.y} H ${c.x + 4.5} M ${c.x} ${c.y - 4.5} V ${c.y + 4.5}`} stroke="rgb(120,190,255)" strokeWidth={1} opacity={0.13} />
-      ))}
-    </svg>
-  );
-});
+import {
+  Node as Phase4Node,
+  IconOnlyContent,
+  IconTitleContent,
+  IconMetaContent,
+  Connector as Phase4Connector,
+  WORKFLOW_COLORS,
+  type NodeGeometryType,
+  type NodeStateType,
+  type NodeIndicator,
+  type NodePortProps,
+} from "../../../../src/components/workflow";
+import type { GraphDTO } from "../../../../src/types/graph";
+import { fetchGraphOverview, decideApproval } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -96,29 +50,29 @@ const META: Record<string, Meta> = {
     desc: "Deconstructs founder directives, dispatches workstreams to governed specialists, and brings only verified outcomes or escalated decisions to you.",
     agent: "sophia",
   },
-  thorne: {
+  ops: {
     title: "Dr. Aris Thorne",
     sub: "Research & Intelligence",
     icon: <ClipboardList size={26} strokeWidth={1.8} />,
     tint: "#38bdf8",
-    desc: "Lead Market & Technology Researcher. Executes structured market intelligence, competitive reconnaissance, and technical feasibility synthesis to produce typed artifacts.",
-    agent: "thorne",
+    desc: "Executes structured research, competitive reconnaissance, and intelligence synthesis to produce typed artifacts.",
+    agent: "ops",
   },
-  julian: {
+  finance: {
     title: "Julian Cruz",
     sub: "Finance & Unit Economics",
     icon: <Coins size={26} strokeWidth={1.8} />,
     tint: "#34d399",
-    desc: "Chief Financial Analyst. Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails with explicit assumptions.",
-    agent: "julian",
+    desc: "Governs deterministic unit economics, 80%+ gross margin floor verification, financial models, and pricing guardrails.",
+    agent: "finance",
   },
-  maya: {
+  pm: {
     title: "Maya Lin",
     sub: "Product Architecture & PRD",
     icon: <FileText size={26} strokeWidth={1.8} />,
     tint: "#c084fc",
-    desc: "Principal Product Manager. Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and phased implementation roadmaps.",
-    agent: "maya",
+    desc: "Transforms research intelligence into structured PRDs, technical scope, acceptance criteria, and DAG protocol milestones.",
+    agent: "pm",
   },
   verification: {
     title: "Constitutional Verifier",
@@ -204,271 +158,321 @@ const MAX_K = 2.4;
 
 /* ------------------------------------------------------------------ nodes */
 
-function NodeCard({ n, selected, badge, dimmed, detail, onClick, onDoubleClick }: {
-  n: FlowNode; selected?: boolean; badge?: ReactNode; dimmed?: boolean; detail?: boolean; onClick?: (n: FlowNode) => void; onDoubleClick?: (n: FlowNode) => void;
+type EntityVisual = {
+  icon: ReactNode;
+  tint: string;
+  primaryLabel: string;
+  subLabel?: string;
+  serviceBrand?: string;
+};
+
+function getEntityVisual(n: FlowNode): EntityVisual {
+  const text = `${n.id} ${n.title} ${n.subtitle ?? ""} ${n.activity ?? ""}`.toLowerCase();
+
+  // 1. External Services (Real recognizable icons)
+  if (text.includes("github") || text.includes("git")) {
+    return {
+      icon: <GitBranch size={24} strokeWidth={1.8} className="text-white" />,
+      tint: "#ffffff",
+      primaryLabel: "GitHub",
+      subLabel: "VERSION CONTROL",
+      serviceBrand: "GitHub",
+    };
+  }
+  if (text.includes("slack")) {
+    return {
+      icon: <MessageSquare size={24} strokeWidth={1.8} className="text-[#ECB22E]" />,
+      tint: "#ECB22E",
+      primaryLabel: "Slack",
+      subLabel: "TEAM CHAT",
+      serviceBrand: "Slack",
+    };
+  }
+  if (text.includes("telegram") || text.includes("reply to lead") || text.includes("send message")) {
+    return {
+      icon: <Send size={22} strokeWidth={1.8} className="text-[#2AABEE]" />,
+      tint: "#2AABEE",
+      primaryLabel: n.title.toLowerCase().includes("reply") ? "Reply to Lead" : "Telegram",
+      subLabel: "COMMUNICATION",
+      serviceBrand: "Telegram",
+    };
+  }
+  if (text.includes("gmail") || text.includes("email") || text.includes("mail")) {
+    return {
+      icon: <Mail size={22} strokeWidth={1.8} className="text-[#EA4335]" />,
+      tint: "#EA4335",
+      primaryLabel: "Gmail",
+      subLabel: "EXTERNAL SERVICE",
+      serviceBrand: "Gmail",
+    };
+  }
+  if (text.includes("google") || text.includes("search") || text.includes("reconnaissance") || text.includes("market")) {
+    return {
+      icon: <Search size={24} strokeWidth={1.8} className="text-[#4285F4]" />,
+      tint: "#4285F4",
+      primaryLabel: n.title.toLowerCase().includes("market") ? "Market Reconnaissance" : "Google Search",
+      subLabel: "RESEARCH SERVICE",
+      serviceBrand: "Google",
+    };
+  }
+  if (text.includes("terminal") || text.includes("cli") || text.includes("sandbox")) {
+    return {
+      icon: <Terminal size={22} strokeWidth={1.8} className="text-emerald-400" />,
+      tint: "#34d399",
+      primaryLabel: n.title,
+      subLabel: "RUNTIME EXECUTION",
+    };
+  }
+  if (text.includes("database") || text.includes("postgres") || text.includes("memory")) {
+    return {
+      icon: <Database size={22} strokeWidth={1.8} className="text-blue-400" />,
+      tint: "#38bdf8",
+      primaryLabel: n.title,
+      subLabel: "DATA STORAGE",
+    };
+  }
+
+  // 2. Core OS Roles
+  if (n.id === "founder" || n.type === "founder") {
+    return {
+      icon: <Building2 size={24} strokeWidth={1.8} className="text-sky-300" />,
+      tint: "#38bdf8",
+      primaryLabel: "Founder / Authority",
+      subLabel: "DIRECTIVES",
+    };
+  }
+  if (n.id === "core" || n.id === "coo" || n.owner === "coo" || n.dtoNode?.role === "coo") {
+    return {
+      icon: <Bot size={28} strokeWidth={1.8} className="text-orange-300" />,
+      tint: "#fb923c",
+      primaryLabel: "Sophia",
+      subLabel: "COO & ORCHESTRATOR",
+    };
+  }
+  if (n.id === "ops" || n.id === "researcher" || n.owner === "ops" || n.owner === "researcher") {
+    return {
+      icon: <ClipboardList size={24} strokeWidth={1.8} className="text-cyan-300" />,
+      tint: "#38bdf8",
+      primaryLabel: "Dr. Aris Thorne",
+      subLabel: "RESEARCH SPECIALIST",
+    };
+  }
+  if (n.id === "finance" || n.owner === "finance") {
+    return {
+      icon: <Coins size={24} strokeWidth={1.8} className="text-emerald-300" />,
+      tint: "#34d399",
+      primaryLabel: "Julian Cruz",
+      subLabel: "FINANCE SPECIALIST",
+    };
+  }
+  if (n.id === "pm" || n.owner === "pm") {
+    return {
+      icon: <FileText size={24} strokeWidth={1.8} className="text-purple-300" />,
+      tint: "#c084fc",
+      primaryLabel: "Maya Lin",
+      subLabel: "PRODUCT ARCHITECT",
+    };
+  }
+  if (n.type === "approval" || n.id === "approval") {
+    return {
+      icon: <Scale size={24} strokeWidth={1.8} className="text-amber-300" />,
+      tint: "#fbbf24",
+      primaryLabel: "Founder Approval",
+      subLabel: "RATIFICATION GATE",
+    };
+  }
+  if (n.type === "verification" || n.id === "verification") {
+    return {
+      icon: <ShieldCheck size={24} strokeWidth={1.8} className={n.state === "blocked" ? "text-rose-400" : "text-emerald-400"} />,
+      tint: n.state === "blocked" ? "#fb7185" : "#34d399",
+      primaryLabel: "Constitutional Verifier",
+      subLabel: "SAFETY GATE",
+    };
+  }
+  if (n.type === "outcome" || n.id === "outcome") {
+    return {
+      icon: <PackageCheck size={24} strokeWidth={1.8} className="text-emerald-400" />,
+      tint: "#34d399",
+      primaryLabel: "Governed Vault",
+      subLabel: "IMMUTABLE MEMORY",
+    };
+  }
+
+  // 3. General Workflow Steps / Actions
+  return {
+    icon: <Activity size={22} strokeWidth={1.8} className="text-cyan-300" />,
+    tint: n.state === "blocked" ? "#fb7185" : n.state === "complete" ? "#34d399" : "#38bdf8",
+    primaryLabel: n.title,
+    subLabel: n.protocolStep ? n.protocolStep.replace("step-", "").toUpperCase() : n.subtitle ?? "WORKFLOW ACTION",
+  };
+}
+
+function Phase4NodeCard({
+  n,
+  selected,
+  hasSelection,
+  badge,
+  onClick,
+  onDoubleClick,
+}: {
+  n: FlowNode;
+  selected?: boolean;
+  hasSelection?: boolean;
+  badge?: ReactNode;
+  onClick?: (n: FlowNode) => void;
+  onDoubleClick?: (n: FlowNode) => void;
 }) {
-  const m = getMeta(n);
-  const dimStyle = dimmed ? { opacity: 0.32, filter: "saturate(0.6)" } : undefined;
+  const visual = getEntityVisual(n);
+  const dto = n.dtoNode;
 
-  // 1. Sophia Core (Centerpiece Orchestrator)
-  if (n.kind === "core") {
-    const isActive = n.state === "active";
-    const isBlocked = n.state === "blocked";
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
-        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-        className={`group absolute flex cursor-pointer select-none items-center justify-center gap-3 rounded-2xl border text-white transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
-          selected
-            ? "border-orange-200/90 ring-2 ring-orange-400/50"
-            : isBlocked
-            ? "border-rose-400/80 shadow-[0_0_30px_rgba(244,63,94,0.4)]"
-            : isActive
-            ? "border-orange-300/80 shadow-[0_0_40px_rgba(255,140,60,0.5)]"
-            : "border-orange-300/40"
-        }`}
-        style={{
-          left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
-          background: "linear-gradient(160deg, rgba(60,40,30,0.95), rgba(25,18,14,0.98))",
-          boxShadow: selected
-            ? "inset 0 1px 0 rgba(255,225,190,0.22), inset 0 0 30px rgba(255,140,60,0.4), 0 0 60px rgba(255,120,40,0.65), 0 0 0 2px rgba(255,200,140,0.5)"
-            : isActive
-            ? "inset 0 1px 0 rgba(255,225,190,0.18), inset 0 0 30px rgba(255,140,60,0.35), 0 0 45px rgba(255,120,40,0.45)"
-            : "inset 0 1px 0 rgba(255,225,190,0.12), inset 0 0 20px rgba(255,140,60,0.15), 0 0 25px rgba(0,0,0,0.6)",
-          ...dimStyle,
-        }}
-      >
-        <span className="text-orange-100 drop-shadow-[0_0_12px_rgba(255,170,80,0.9)] transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
-        <div className="leading-[1.05] drop-shadow-[0_0_14px_rgba(255,190,120,0.8)]">
-          <div className="text-[21px] font-semibold tracking-[-0.01em]">Sophia</div>
-          {detail && <div className="text-[10px] uppercase tracking-[0.24em] text-orange-100/80">COO · ORCHESTRATOR</div>}
-        </div>
-        {badge}
-        {selected && <span className="pointer-events-none absolute -inset-2 animate-pulse rounded-3xl border border-orange-200/40" />}
-      </div>
-    );
+  // 1. Determine Phase 4.1 Presentation State
+  let nodeState: NodeStateType = "default";
+  if (selected) {
+    nodeState = "selected";
+  } else if (dto?.presentationState) {
+    nodeState = dto.presentationState === "waiting" ? "processing" : (dto.presentationState as NodeStateType);
+  } else {
+    if (n.state === "waiting") nodeState = "processing";
+    else if (n.state === "blocked") nodeState = "error";
+    else if (n.state === "active") nodeState = "active";
+    else if (n.state === "processing") nodeState = "processing";
+    else if (n.state === "complete") nodeState = "success";
   }
 
-  // 2. Round Nodes (Dr. Thorne, Maya Lin, Julian Cruz & Constitutional Verifier)
-  if (n.kind === "round") {
-    const isVerifier = n.type === "verification";
-    const isJulian = n.id === "julian";
-    const isMaya = n.id === "maya";
-    const isAct = n.state === "active";
-    const isBlk = n.state === "blocked";
-    const isComp = n.state === "complete";
+  // 2. Determine Geometry Shape from Phase 4.1 Taxonomy
+  let geometry: NodeGeometryType = "circle";
+  if (n.kind === "core" || n.dtoNode?.role === "coo" || n.id === "coo") {
+    geometry = "squircle";
+  } else if (n.type === "workflow" || n.type === "outcome" || n.type === "approval") {
+    geometry = "square";
+  } else {
+    geometry = "circle";
+  }
 
-    const borderColor = selected
-      ? "1px solid rgba(160,230,255,0.95)"
-      : isBlk
-      ? "1px solid rgba(244,63,94,0.8)"
-      : isComp
-      ? "1px solid rgba(52,211,153,0.7)"
-      : isJulian
-      ? "1px solid rgba(52,211,153,0.8)"
-      : isMaya
-      ? "1px solid rgba(192,132,252,0.8)"
-      : isAct
-      ? "1px solid rgba(56,189,248,0.85)"
-      : "1px solid rgba(120,190,255,0.4)";
+  // 3. Status Indicator: Minimal glowing status dot (no bulky text rows)
+  let indicator: NodeIndicator | undefined = undefined;
+  if (dto?.governanceState === "awaiting_founder_approval" || n.type === "approval") {
+    indicator = { status: "waiting", glow: true };
+  } else if (dto?.runtimeState === "running" || n.state === "active") {
+    indicator = { status: "active", glow: true };
+  } else if (dto?.runtimeState === "failed" || n.state === "blocked") {
+    indicator = { status: "error", glow: true };
+  } else if (dto?.runtimeState === "completed" || n.state === "complete") {
+    indicator = { status: "success" };
+  }
 
-    const shadow = selected
-      ? "inset 0 1px 0 rgba(255,255,255,0.16), 0 0 34px rgba(103,232,249,0.6), inset 0 0 18px rgba(103,232,249,0.3)"
-      : isBlk
-      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(244,63,94,0.45), inset 0 0 16px rgba(244,63,94,0.25)"
-      : isComp || isJulian
-      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(52,211,153,0.4), inset 0 0 16px rgba(52,211,153,0.2)"
-      : isMaya
-      ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 28px rgba(192,132,252,0.4), inset 0 0 16px rgba(192,132,252,0.2)"
-      : isAct
-      ? "inset 0 1px 0 rgba(255,255,255,0.14), 0 0 30px rgba(56,189,248,0.5), inset 0 0 16px rgba(56,189,248,0.25)"
-      : "inset 0 1px 0 rgba(255,255,255,0.1), 0 10px 28px rgba(0,0,0,0.55), inset 0 0 14px rgba(56,189,248,0.15)";
+  // 4. Ports based on role / topology
+  const ports: NodePortProps[] = [];
+  const isPortActive = nodeState === "active" || nodeState === "selected";
+  if (n.id === "founder") {
+    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
+    ports.push({ position: "bottom", shape: "circle", state: isPortActive ? "active" : "default" });
+  } else if (n.id === "core" || n.dtoNode?.role === "coo") {
+    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
+    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
+    ports.push({ position: "bottom", shape: "circle", state: isPortActive ? "active" : "default" });
+  } else if (n.type === "approval") {
+    ports.push({ position: "top", shape: "square", state: "active" });
+    ports.push({ position: "right", shape: "square", state: "active" });
+  } else if (n.type === "outcome") {
+    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
+  } else {
+    ports.push({ position: "left", shape: "circle", state: isPortActive ? "active" : "default" });
+    ports.push({ position: "right", shape: "circle", state: isPortActive ? "active" : "default" });
+    ports.push({ position: "top", shape: "circle", state: isPortActive ? "active" : "default" });
+  }
 
-    // Glass material: identity tint base + specular dome highlight near the top
-    const bgGradient = isVerifier
-      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(20,55,45,0.94), rgba(8,20,16,0.98))"
-      : isJulian
-      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(18,50,40,0.94), rgba(7,20,16,0.98))"
-      : isMaya
-      ? "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(55,22,75,0.94), rgba(20,8,28,0.98))"
-      : "radial-gradient(ellipse at 50% 24%, rgba(255,255,255,0.16), rgba(255,255,255,0) 54%), radial-gradient(circle at 50% 42%, rgba(35,65,115,0.94), rgba(12,20,38,0.98))";
-
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
-        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-        className="group absolute cursor-pointer select-none"
-        style={{ left: n.x - 90, top: n.y - n.h / 2, width: 180, ...dimStyle }}
+  // 5. External Semantic Label (Sitting outside/below node)
+  const externalLabel = (
+    <div className="flex flex-col items-center pointer-events-none select-none transition-all duration-200">
+      <span
+        className={`text-[11.5px] tracking-wide transition-all duration-200 ${
+          selected
+            ? "text-cyan-200 font-semibold drop-shadow-[0_0_8px_rgba(0,178,255,0.75)] scale-105"
+            : "text-slate-300 group-hover:text-white font-medium"
+        }`}
       >
-        <div
-          className={`relative mx-auto flex items-center justify-center rounded-full text-white transition-all duration-200 group-hover:-translate-y-1 group-hover:scale-105 active:scale-95 ${selected ? "ring-2 ring-cyan-200/80" : ""}`}
-          style={{
-            width: n.w, height: n.h,
-            color: m.tint ?? "#f3f7ff",
-            background: bgGradient,
-            border: borderColor,
-            boxShadow: shadow,
-          }}
+        {visual.primaryLabel}
+      </span>
+      {visual.subLabel && (
+        <span
+          className={`text-[9px] tracking-wider uppercase font-mono mt-0.5 transition-colors duration-200 ${
+            selected ? "text-cyan-400/90 font-medium" : "text-slate-500"
+          }`}
         >
-          <span className="transition-transform duration-200 group-hover:scale-110">{m.icon}</span>
-          {badge}
-        </div>
-        <div className="pointer-events-none mt-2 text-center">
-          <div className={`text-[14.5px] font-semibold leading-[1.15] tracking-[-0.008em] transition-colors ${selected ? "text-cyan-100" : "text-white group-hover:text-cyan-100"}`} style={{ textShadow: "0 2px 12px rgba(0,0,0,0.9)" }}>
-            {m.title}
-          </div>
-          {detail && m.sub && <div className="mt-0.5 text-[10.5px] text-slate-300/90" style={{ textShadow: "0 1px 8px rgba(0,0,0,0.9)" }}>{m.sub}</div>}
-        </div>
-      </div>
-    );
-  }
+          {visual.subLabel}
+        </span>
+      )}
+    </div>
+  );
 
-  // 3. Workflow Card (Tasks in active progression)
-  if (n.type === "workflow") {
-    const isAct = n.state === "active";
-    const isBlk = n.state === "blocked";
-    const isComp = n.state === "complete";
-    const stepLabel = n.protocolStep ? n.protocolStep.replace("step-", "").toUpperCase() : "PROTOCOL";
+  // 6. Minimal Icon-First Content
+  const content = (
+    <IconOnlyContent
+      icon={visual.icon}
+      iconVariant={geometry === "squircle" ? "squircle" : "glass"}
+      color={visual.tint}
+      glow={selected || nodeState === "active"}
+      size={n.kind === "core" ? "lg" : "md"}
+    />
+  );
 
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
-        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-        className={`group absolute cursor-pointer select-none rounded-2xl border p-2.5 transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
-          selected
-            ? "border-cyan-200/90 ring-2 ring-cyan-300/60 shadow-[0_0_30px_rgba(56,189,248,0.45)]"
-            : isBlk
-            ? "border-rose-400/70 shadow-[0_0_24px_rgba(244,63,94,0.35)]"
-            : isComp
-            ? "border-emerald-400/50 shadow-[0_0_20px_rgba(52,211,153,0.25)]"
-            : isAct
-            ? "border-orange-300/70 shadow-[0_0_28px_rgba(255,140,60,0.4)]"
-            : "border-white/12 shadow-[0_8px_20px_rgba(0,0,0,0.4)]"
-        }`}
-        style={{
-          left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
-          background: isBlk
-            ? "linear-gradient(160deg, rgba(45,16,22,0.96), rgba(20,8,12,0.98))"
-            : isComp
-            ? "linear-gradient(160deg, rgba(16,40,30,0.96), rgba(8,20,16,0.98))"
-            : isAct
-            ? "linear-gradient(160deg, rgba(64,34,18,0.96), rgba(30,16,8,0.98))"
-            : "linear-gradient(160deg, rgba(32,38,50,0.96), rgba(18,22,30,0.98))",
-          boxShadow: selected
-            ? "inset 0 1px 0 rgba(255,255,255,0.12), 0 0 30px rgba(56,189,248,0.45)"
-            : isBlk
-            ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px rgba(244,63,94,0.35)"
-            : isComp
-            ? "inset 0 1px 0 rgba(255,255,255,0.08), 0 0 20px rgba(52,211,153,0.25)"
-            : isAct
-            ? "inset 0 1px 0 rgba(255,225,190,0.14), 0 0 28px rgba(255,140,60,0.4)"
-            : "inset 0 1px 0 rgba(255,255,255,0.07), 0 8px 22px rgba(0,0,0,0.45)",
-          ...dimStyle,
-        }}
-      >
-        {/* specular top-edge light catch */}
-        <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-white/12 to-transparent" />
-        <div className="flex items-center justify-between gap-1">
-          <span className={`rounded-md px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
-            isBlk ? "bg-rose-400/20 text-rose-200" : isComp ? "bg-emerald-400/20 text-emerald-200" : isAct ? "bg-orange-400/20 text-orange-200" : "bg-white/10 text-slate-300"
-          }`}>
-            {stepLabel}
-          </span>
-          <span className={`h-2 w-2 rounded-full ${isBlk ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.9)]" : isComp ? "bg-emerald-400" : isAct ? "animate-pulse bg-orange-400 shadow-[0_0_6px_rgba(251,146,60,0.9)]" : "bg-slate-600"}`} />
-        </div>
-        <div className="mt-1.5 truncate text-[12.5px] font-semibold text-white group-hover:text-orange-100">
-          {n.title}
-        </div>
-        {detail && (
-          <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400">
-            <span className="truncate max-w-[95px]">{n.subtitle ?? (n.owner ? agentName(n.owner) : "Governed")}</span>
-            <span className={`font-mono font-semibold ${isBlk ? "text-rose-300" : isComp ? "text-emerald-300" : isAct ? "text-orange-200" : "text-slate-400"}`}>
-              {isAct ? "ACTIVE" : isBlk ? "BLOCKED" : isComp ? "DONE" : "WAITING"}
-            </span>
+  const isDimmed = hasSelection && !selected;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={`group absolute cursor-pointer select-none transition-all duration-200 hover:-translate-y-0.5 active:scale-98 ${
+        isDimmed ? "opacity-45 hover:opacity-85" : "opacity-100"
+      }`}
+      style={{
+        left: n.x - n.w / 2,
+        top: n.y - n.h / 2,
+        width: n.w,
+        height: n.h,
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(n);
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDoubleClick?.(n);
+      }}
+    >
+      <div className="relative h-full w-full">
+        <Phase4Node
+          id={`wf-node-${n.id}`}
+          geometry={geometry}
+          state={nodeState}
+          customWidth={n.w}
+          customHeight={n.h}
+          indicator={indicator}
+          ports={ports}
+          externalLabel={externalLabel}
+          className="!m-0 h-full w-full"
+        >
+          {content}
+        </Phase4Node>
+        {badge && (
+          <div className="pointer-events-none absolute -right-1 -top-1 z-30">
+            {badge}
           </div>
         )}
       </div>
-    );
-  }
-
-  // 4. Founder Approval Gate
-  if (n.type === "approval") {
-    return (
-      <div
-        onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
-        onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-        className={`group absolute cursor-pointer select-none rounded-2xl border p-3 transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
-          selected ? "border-amber-200 ring-2 ring-amber-300/60" : "border-amber-300/60 shadow-[0_0_35px_rgba(245,158,11,0.35)]"
-        }`}
-        style={{
-          left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
-          background: "linear-gradient(160deg, rgba(48,32,10,0.96), rgba(24,16,6,0.98))",
-          boxShadow: selected
-            ? "inset 0 1px 0 rgba(255,240,200,0.2), 0 0 34px rgba(245,158,11,0.4)"
-            : "inset 0 1px 0 rgba(255,240,200,0.14), 0 0 35px rgba(245,158,11,0.35)",
-          ...dimStyle,
-        }}
-      >
-        {/* specular top-edge light catch */}
-        <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-amber-100/15 to-transparent" />
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-amber-300">
-            <Scale size={16} />
-            <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-amber-200">APPROVAL GATE</span>
-          </span>
-          <span className="h-2 w-2 animate-ping rounded-full bg-amber-400" />
-        </div>
-        <div className="mt-1 truncate text-[13px] font-semibold text-white">
-          {n.activity ?? n.title}
-        </div>
-        <div className="mt-0.5 text-[10.5px] text-amber-100/75">
-          {n.subtitle ?? "Ratification required"}
-        </div>
-      </div>
-    );
-  }
-
-  // 5. Standard Card (Founder / Outcome)
-  return (
-    <div
-      onClick={(e) => { e.stopPropagation(); onClick?.(n); }}
-      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(n); }}
-      className={`group absolute flex cursor-pointer select-none flex-col justify-center rounded-2xl border p-3 text-white transition-all duration-200 hover:-translate-y-1 active:scale-95 ${
-        selected ? "border-cyan-200 ring-2 ring-cyan-300/60" : "border-white/14 shadow-[0_10px_30px_rgba(0,0,0,0.5)]"
-      }`}
-      style={{
-        left: n.x - n.w / 2, top: n.y - n.h / 2, width: n.w, height: n.h,
-        background: n.type === "outcome"
-          ? "linear-gradient(160deg, rgba(18,42,32,0.96), rgba(10,22,16,0.98))"
-          : "linear-gradient(160deg, rgba(42,50,68,0.96), rgba(20,24,34,0.98))",
-        boxShadow: selected
-          ? "inset 0 1px 0 rgba(255,255,255,0.14), 0 0 26px rgba(103,232,249,0.4)"
-          : "inset 0 1px 0 rgba(255,255,255,0.09), 0 10px 32px rgba(0,0,0,0.55)",
-        ...dimStyle,
-      }}
-    >
-      {/* specular top-edge light catch */}
-      <span className="pointer-events-none absolute inset-x-3 top-[3px] h-px rounded-full bg-gradient-to-r from-transparent via-white/12 to-transparent" />
-      <div className="flex items-center justify-between">
-        <span style={{ color: m.tint ?? "#f3f7ff" }}>{m.icon}</span>
-        {badge}
-      </div>
-      <div className="mt-1.5 truncate text-[13px] font-semibold text-white group-hover:text-cyan-100">
-        {m.title}
-      </div>
-      {detail && m.sub && <div className="truncate text-[10px] text-slate-300/80">{m.sub}</div>}
     </div>
   );
 }
 
 function SpatialCardOverlay({ card }: { card: SpatialCard }) {
   const toneClasses = card.tone === "amber"
-    ? "border-amber-400/28 bg-[#120d04]/88 text-amber-200 shadow-[0_8px_24px_rgba(245,158,11,0.22)]"
+    ? "border-amber-400/40 bg-[#120d04]/94 text-amber-200 shadow-[0_8px_28px_rgba(245,158,11,0.3)]"
     : card.tone === "rose"
-    ? "border-rose-400/28 bg-[#140608]/88 text-rose-200 shadow-[0_8px_24px_rgba(244,63,94,0.22)]"
+    ? "border-rose-400/40 bg-[#140608]/94 text-rose-200 shadow-[0_8px_28px_rgba(244,63,94,0.3)]"
     : card.tone === "emerald"
-    ? "border-emerald-400/28 bg-[#04140c]/88 text-emerald-200 shadow-[0_8px_24px_rgba(16,185,129,0.22)]"
-    : "border-cyan-400/28 bg-[#06101e]/88 text-cyan-200 shadow-[0_8px_24px_rgba(56,189,248,0.22)]";
+    ? "border-emerald-400/40 bg-[#04140c]/94 text-emerald-200 shadow-[0_8px_28px_rgba(16,185,129,0.3)]"
+    : "border-cyan-400/40 bg-[#06101e]/94 text-cyan-200 shadow-[0_8px_28px_rgba(56,189,248,0.3)]";
 
   const dotClass = card.tone === "amber"
     ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]"
@@ -480,7 +484,7 @@ function SpatialCardOverlay({ card }: { card: SpatialCard }) {
 
   return (
     <div
-      className={`pointer-events-none absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl border px-2.5 py-1 text-[10.5px] backdrop-blur-md transition-all duration-300 ${toneClasses}`}
+      className={`pointer-events-none absolute z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-1.5 text-[11px] backdrop-blur-md transition-all duration-300 ${toneClasses}`}
       style={{ left: card.x, top: card.y, animation: `os-in 240ms ${EASE}` }}
     >
       <span className={`h-1.5 w-1.5 animate-pulse rounded-full ${dotClass}`} />
@@ -767,8 +771,78 @@ export default function FlowDesktop({
   const company = useOS((s) => s.company);
   const osState = useOS((s) => s);
 
-  // Dynamically derive genuine living SamJuniorsOS graph
-  const graph = useMemo(() => deriveGraph(osState), [osState]);
+  // Authoritative Server-Projected Graph (Phase 4.3B)
+  const [graphState, setGraphState] = useState<{
+    status: "loading" | "success" | "unavailable" | "error";
+    data: GraphDTO | null;
+    error: string | null;
+    lastSync: Date | null;
+  }>({
+    status: "loading",
+    data: null,
+    error: null,
+    lastSync: null,
+  });
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadGraph = useCallback(async (showIndicator = false) => {
+    if (showIndicator) setIsRefreshing(true);
+    try {
+      const res = await fetchGraphOverview();
+      if (res.success) {
+        setGraphState({
+          status: "success",
+          data: res.data,
+          error: null,
+          lastSync: new Date(),
+        });
+      } else if (res.unavailable) {
+        setGraphState((prev) => ({
+          status: "unavailable",
+          data: prev.data,
+          error: res.error,
+          lastSync: new Date(),
+        }));
+      } else {
+        setGraphState((prev) => ({
+          status: prev.data ? "success" : "error",
+          data: prev.data,
+          error: res.error,
+          lastSync: new Date(),
+        }));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setGraphState((prev) => ({
+        status: prev.data ? "success" : "error",
+        data: prev.data,
+        error: msg,
+        lastSync: new Date(),
+      }));
+    } finally {
+      if (showIndicator) setIsRefreshing(false);
+    }
+  }, []);
+
+  // Initial load and conservative refresh (polling every 8 seconds, paused when tab is backgrounded)
+  useEffect(() => {
+    loadGraph();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        loadGraph();
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [loadGraph]);
+
+  // Dynamically derive genuine living SamJuniorsOS graph from server-authoritative GraphDTO
+  const graph = useMemo(() => {
+    if (graphState.data && graphState.status === "success") {
+      return mapGraphDTOToFlowModel(graphState.data);
+    }
+    return deriveGraph(osState);
+  }, [graphState.data, graphState.status, osState]);
 
   const metrics = generateSystemMetrics(osState);
   const milestones = generateCompanyMilestones();
@@ -779,6 +853,8 @@ export default function FlowDesktop({
   const pinch = useRef<{ d: number; k: number; mx: number; my: number; px: number; py: number } | null>(null);
   const panStart = useRef<{ x: number; y: number; px: number; py: number; moved: boolean } | null>(null);
   const animId = useRef(0);
+  const velRef = useRef({ vx: 0, vy: 0, lastX: 0, lastY: 0, lastT: 0 });
+  const momentumRaf = useRef(0);
   vwRef.current = vw; vhRef.current = vh; camRef.current = cam;
 
   const tx = vw / 2 + cam.x - WORLD.CX * cam.k;
@@ -817,15 +893,17 @@ export default function FlowDesktop({
 
   useEffect(() => { engineRef.current?.setViewport(vw, vh, cam.k, tx, ty); }, [vw, vh, cam, tx, ty]);
   useEffect(() => { const t = setTimeout(() => setShowHint(false), 6500); return () => clearTimeout(t); }, []);
-  useEffect(() => () => cancelAnimationFrame(animId.current), []);
+  useEffect(() => () => { cancelAnimationFrame(animId.current); cancelAnimationFrame(momentumRaf.current); }, []);
 
   const clamp = (x: number, y: number, k: number) => {
-    const mx = (WORLD.W * k) / 2 + vwRef.current / 2 + 120, my = (WORLD.H * k) / 2 + vhRef.current / 2 + 120;
-    return { x: Math.max(-mx, Math.min(mx, x)), y: Math.max(-my, Math.min(my, y)), k };
+    const maxX = (WORLD.W * k) / 2 + vwRef.current / 2 + 360;
+    const maxY = (WORLD.H * k) / 2 + vhRef.current / 2 + 360;
+    return { x: Math.max(-maxX, Math.min(maxX, x)), y: Math.max(-maxY, Math.min(maxY, y)), k };
   };
 
   const animateTo = useCallback((target: { x: number; y: number; k: number }, dur = 380) => {
     cancelAnimationFrame(animId.current);
+    cancelAnimationFrame(momentumRaf.current);
     const start = { ...camRef.current };
     const end = clamp(target.x, target.y, Math.min(MAX_K, Math.max(MIN_K, target.k)));
     const t0 = performance.now();
@@ -840,6 +918,7 @@ export default function FlowDesktop({
 
   const zoomAt = useCallback((mx: number, my: number, factor: number) => {
     const vw = vwRef.current, vh = vhRef.current;
+    cancelAnimationFrame(momentumRaf.current);
     setCam((prev) => {
       const nk = Math.min(MAX_K, Math.max(MIN_K, prev.k * factor));
       if (Math.abs(nk - prev.k) < 1e-6) return prev;
@@ -858,9 +937,33 @@ export default function FlowDesktop({
     animateTo({ x: -(n.x - WORLD.CX) * k, y: -(n.y - WORLD.CY) * k, k });
   }, [animateTo]);
 
+  const focusActiveWork = useCallback(() => {
+    osSound.click();
+    const activeNode = graph.nodes.find(
+      (n) =>
+        n.dtoNode?.runtimeState === "running" ||
+        n.state === "active" ||
+        n.dtoNode?.governanceState === "awaiting_founder_approval" ||
+        n.type === "approval"
+    );
+    if (activeNode) {
+      focusNode(activeNode);
+      setSelected(activeNode);
+    } else {
+      recenter();
+    }
+  }, [graph.nodes, focusNode, recenter]);
+
   useEffect(() => {
     const el = viewportRef.current!;
-    const onWheel = (e: WheelEvent) => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0014)); };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      cancelAnimationFrame(momentumRaf.current);
+      const r = el.getBoundingClientRect();
+      const delta = e.deltaY;
+      const factor = delta < 0 ? 1.12 : 0.89;
+      zoomAt(e.clientX - r.left, e.clientY - r.top, factor);
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt]);
@@ -890,7 +993,11 @@ export default function FlowDesktop({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomAt, fitView]);
 
-  const isInteractive = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("button,input,a,textarea,.cursor-pointer");
+  const isInteractive = (t: EventTarget | null) => {
+    const el = t as HTMLElement | null;
+    if (!el) return false;
+    return !!el.closest("button, input, a, textarea, select, [role='button']");
+  };
 
   const updateCursorReadout = (clientX: number, clientY: number) => {
     const el = viewportRef.current; if (!el || !cursorRef.current) return;
@@ -900,7 +1007,10 @@ export default function FlowDesktop({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    cancelAnimationFrame(momentumRaf.current);
+    velRef.current = { vx: 0, vy: 0, lastX: e.clientX, lastY: e.clientY, lastT: performance.now() };
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()]; const r = viewportRef.current!.getBoundingClientRect(); const c = camRef.current;
       pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: c.k, mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top, px: c.x, py: c.y };
@@ -908,10 +1018,14 @@ export default function FlowDesktop({
     }
     const forcePan = e.button === 1 || e.button === 2 || spaceRef.current;
     if (forcePan || (e.button === 0 && !isInteractive(e.target))) {
-      if (e.button === 1) e.preventDefault();
+      if (e.button === 1 || e.button === 2) e.preventDefault();
       const c = camRef.current;
       panStart.current = { x: c.x, y: c.y, px: e.clientX, py: e.clientY, moved: false };
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      } catch {
+        /* noop */
+      }
     }
   };
 
@@ -919,6 +1033,15 @@ export default function FlowDesktop({
     updateCursorReadout(e.clientX, e.clientY);
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const now = performance.now();
+    const dt = Math.max(1, now - velRef.current.lastT);
+    velRef.current.vx = ((e.clientX - velRef.current.lastX) / dt) * 16;
+    velRef.current.vy = ((e.clientY - velRef.current.lastY) / dt) * 16;
+    velRef.current.lastX = e.clientX;
+    velRef.current.lastY = e.clientY;
+    velRef.current.lastT = now;
+
     if (pointers.current.size === 2 && pinch.current) {
       const [a, b] = [...pointers.current.values()]; const r = viewportRef.current!.getBoundingClientRect();
       const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top, d = Math.hypot(a.x - b.x, a.y - b.y) || 1, base = pinch.current;
@@ -931,16 +1054,39 @@ export default function FlowDesktop({
     if (ps) {
       const dx = e.clientX - ps.px, dy = e.clientY - ps.py;
       if (Math.abs(dx) + Math.abs(dy) > 3) { ps.moved = true; setShowHint(false); }
-      setCam((p) => clamp(ps.x + dx, p.y + dy, p.k));
+      setCam((p) => clamp(ps.x + dx, ps.y + dy, p.k));
     }
   };
 
   const endPointer = (e: React.PointerEvent) => {
     const ps = panStart.current;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* noop */
+    }
     pointers.current.delete(e.pointerId);
     if (pointers.current.size < 2) pinch.current = null;
     if (pointers.current.size === 0) panStart.current = null;
-    if (ps && !ps.moved && e.button === 0 && !spaceRef.current && !isInteractive(e.target)) setSelected(null);
+
+    if (ps && ps.moved) {
+      let vx = Math.max(-48, Math.min(48, velRef.current.vx));
+      let vy = Math.max(-48, Math.min(48, velRef.current.vy));
+      if (Math.hypot(vx, vy) > 1.2) {
+        cancelAnimationFrame(momentumRaf.current);
+        const glide = () => {
+          vx *= 0.92;
+          vy *= 0.92;
+          if (Math.hypot(vx, vy) > 0.15) {
+            setCam((p) => clamp(p.x + vx, p.y + vy, p.k));
+            momentumRaf.current = requestAnimationFrame(glide);
+          }
+        };
+        momentumRaf.current = requestAnimationFrame(glide);
+      }
+    } else if (ps && !ps.moved && e.button === 0 && !spaceRef.current && !isInteractive(e.target)) {
+      setSelected(null);
+    }
   };
 
   const handleNodeClick = (n: FlowNode) => {
@@ -963,34 +1109,12 @@ export default function FlowDesktop({
   const badgeFor = (node: FlowNode): ReactNode => {
     if (node.type === "approval") return <CountBadge n={decisions.length} tone="amber" />;
     if (node.id === "core") return <CountBadge n={attention.length} tone={attention.length ? "amber" : "cyan"} />;
-    if (node.id === "thorne" || node.id === "maya" || node.id === "julian") {
+    if (node.id === "ops" || node.id === "finance" || node.id === "pm") {
       const ag = agents.find((a) => a.id === node.id);
       if (ag) return <StateDot state={ag.state} />;
     }
     return null;
   };
-
-  // Direct-relationship focus: selecting a node highlights its edges + neighbors
-  // and subtly de-emphasizes everything unrelated.
-  const related = useMemo(() => {
-    if (!selected) return null;
-    const ids = new Set<string>([selected.id]);
-    for (const e of graph.edges) {
-      if (e.from === selected.id || e.to === selected.id) {
-        ids.add(e.from);
-        ids.add(e.to);
-      }
-    }
-    return ids;
-  }, [selected, graph]);
-
-  useEffect(() => {
-    engineRef.current?.setFocus(related ?? null);
-  }, [related]);
-
-  // Label level-of-detail: high zoom reveals detail; low zoom reduces labels.
-  const detail = cam.k >= 0.42;
-  const headers = cam.k >= 0.26;
 
   return (
     <div className="flex h-full w-full flex-col gap-2 overflow-hidden bg-[#04060d] p-2 sm:gap-2.5 sm:p-2.5">
@@ -1075,41 +1199,88 @@ export default function FlowDesktop({
             onDoubleClick={(e) => { if (isInteractive(e.target)) return; const r = viewportRef.current!.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey ? 1 / 1.35 : 1.35); }}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
             className={`relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#030710] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] outline-none ${spaceDown ? "cursor-grabbing" : "cursor-grab active:cursor-grabbing"}`}
-            style={{ touchAction: "none" }}
+            style={{ touchAction: "none", perspective: "1400px" }}
           >
             {gridOn && (
               <>
-                {/* micro-dot grid — a dot at every minor intersection */}
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(rgba(130,180,255,0.10) 1px, transparent 1.2px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.35 : 0.7 }} />
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.07) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
-                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.14) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,170,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(120,170,255,0.08) 1px, transparent 1px)", backgroundSize: `${gridMinor}px ${gridMinor}px`, backgroundPosition: `${tx}px ${ty}px`, opacity: cam.k < 0.3 ? 0.4 : 0.85 }} />
+                <div className="pointer-events-none absolute inset-0" style={{ backgroundImage: "linear-gradient(rgba(120,190,255,0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(120,190,255,0.12) 1px, transparent 1px)", backgroundSize: `${gridMajor}px ${gridMajor}px`, backgroundPosition: `${tx}px ${ty}px` }} />
               </>
             )}
-            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 28%, rgba(30,60,120,0.3), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.26), transparent 55%)" }} />
+            <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.25), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.22), transparent 55%)" }} />
 
             {/* world layer */}
-            <div className="absolute left-0 top-0 h-0 w-0" style={{ transform: `translate(${tx}px, ${ty}px) scale(${cam.k})`, transformOrigin: "0 0" }}>
-              {/* Static atmospheric depth — dust, bokeh, crosshairs (under everything) */}
-              <AtmosphereLayer />
+            <div
+              className="absolute left-0 top-0 h-0 w-0"
+              style={{
+                transform: `translate3d(${tx}px, ${ty}px, 0px) scale(${cam.k}) rotateX(${Math.max(-6, Math.min(6, -cam.y * 0.005))}deg) rotateY(${Math.max(-6, Math.min(6, cam.x * 0.005))}deg)`,
+                transformOrigin: "0 0",
+                transformStyle: "preserve-3d",
+                willChange: "transform",
+              }}
+            >
+              {/* Dynamic Living Connectors (Phase 4.1 Primitive) */}
+              <svg
+                className="pointer-events-none absolute inset-0 overflow-visible"
+                style={{ width: WORLD.W, height: WORLD.H }}
+              >
+                {graph.edges.map((e) => {
+                  const fromNode = graph.nodes.find((n) => n.id === e.from);
+                  const toNode = graph.nodes.find((n) => n.id === e.to);
+                  const x1 = e.pts[0]?.[0] ?? (fromNode ? fromNode.x + fromNode.w / 2 : 0);
+                  const y1 = e.pts[0]?.[1] ?? (fromNode ? fromNode.y : 0);
+                  const x2 = e.pts[e.pts.length - 1]?.[0] ?? (toNode ? toNode.x - toNode.w / 2 : 0);
+                  const y2 = e.pts[e.pts.length - 1]?.[1] ?? (toNode ? toNode.y : 0);
 
-              {/* Category section titles (hidden at low zoom — label LOD) */}
-              {headers && (
-                <>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-slate-400" style={{ left: 180, top: 290 }}>INPUTS & DIRECTIVES</div>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-orange-300/80" style={{ left: 460, top: 290 }}>COO & ORCHESTRATOR</div>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-cyan-300/80" style={{ left: 740, top: 290 }}>EMPLOYED SPECIALISTS</div>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-sky-300/80" style={{ left: 1010, top: 290 }}>PROTOCOL STEPS</div>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1280, top: 290 }}>CONSTITUTIONAL VERIFIER</div>
-                  <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-emerald-300/80" style={{ left: 1500, top: 290 }}>GOVERNED VAULT</div>
-                </>
-              )}
-              {headers && graph.nodes.some((n) => n.type === "approval") && (
-                <div className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-bold tracking-[0.24em] text-amber-300/90" style={{ left: 620, top: 615 }}>FOUNDER APPROVAL GATE</div>
-              )}
+                  let tone: "blue" | "orange" | "green" | "red" = "blue";
+                  if (e.state === "blocked" || toNode?.state === "blocked" || e.dtoEdge?.runtimeState === "failed") tone = "red";
+                  else if (
+                    e.relationship === "escalates-to" ||
+                    toNode?.dtoNode?.governanceState === "awaiting_founder_approval" ||
+                    e.state === "waiting"
+                  )
+                    tone = "orange";
+                  else if (toNode?.dtoNode?.runtimeState === "completed" || e.state === "complete")
+                    tone = "green";
+
+                  let connType: "straight" | "curved" | "dashed" | "branch" | "animated" = "curved";
+                  if (e.dtoEdge?.presentationState === "active" || e.dtoEdge?.runtimeState === "running" || e.activity || e.state === "active") connType = "animated";
+                  else if (e.relationship === "depends-on") connType = "dashed";
+                  else if (e.relationship === "escalates-to") connType = "branch";
+
+                  const isEdgeSelected = selected?.id === e.from || selected?.id === e.to;
+                  const isEdgeDimmed = !!selected && !isEdgeSelected;
+
+                  return (
+                    <Phase4Connector
+                      key={e.id}
+                      x1={x1}
+                      y1={y1}
+                      x2={x2}
+                      y2={y2}
+                      type={connType}
+                      tone={tone}
+                      hasArrow={e.arrow ?? true}
+                      label={isEdgeSelected ? e.relationship : undefined}
+                      className={isEdgeDimmed ? "opacity-25 transition-opacity duration-200" : "opacity-90 transition-opacity duration-200"}
+                    />
+                  );
+                })}
+              </svg>
 
               {/* Dynamic Living Nodes */}
               {graph.nodes.map((n) => (
-                <NodeCard key={n.id} n={n} selected={selected?.id === n.id} badge={badgeFor(n)} dimmed={!!related && !related.has(n.id)} detail={detail} onClick={handleNodeClick} onDoubleClick={focusNode} />
+                <Phase4NodeCard
+                  key={n.id}
+                  n={n}
+                  selected={selected?.id === n.id}
+                  hasSelection={!!selected}
+                  badge={badgeFor(n)}
+                  onClick={(node: FlowNode) => {
+                    if (!panStart.current?.moved) handleNodeClick(node);
+                  }}
+                  onDoubleClick={focusNode}
+                />
               ))}
 
               {/* Spatial Contextual Cards */}
@@ -1127,12 +1298,84 @@ export default function FlowDesktop({
               <span className="absolute bottom-0 right-0 h-3 w-3 rounded-br-md border-b border-r border-cyan-200/40" />
             </div>
 
+            {/* Fail-Closed 503 Banner */}
+            {graphState.status === "unavailable" && (
+              <div className="absolute inset-x-4 top-14 z-20 mx-auto max-w-lg rounded-xl border border-amber-500/40 bg-[#140e04]/95 p-3 text-center shadow-[0_12px_36px_rgba(245,158,11,0.25)] backdrop-blur-xl">
+                <div className="flex items-center justify-center gap-2 text-[12px] font-semibold text-amber-300">
+                  <AlertTriangle size={14} className="text-amber-400" />
+                  AUTHORITATIVE PERSISTENCE UNAVAILABLE (503 FAIL-CLOSED)
+                </div>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {graphState.error || "Database unavailable. OS fail-closed policy active — refusing to fabricate optimistic state."}
+                </p>
+                <div className="mt-2 flex justify-center gap-2">
+                  <button
+                    onClick={() => { osSound.click(); loadGraph(true); }}
+                    className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[10.5px] font-semibold text-amber-200 hover:bg-amber-400/20 active:scale-95"
+                  >
+                    Retry Connection
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Calm Loading Overlay when no data yet */}
+            {graphState.status === "loading" && !graphState.data && (
+              <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#04060d]/70 backdrop-blur-sm">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-300" />
+                <span className="text-[11px] font-medium tracking-[0.2em] text-cyan-200">
+                  SYNCHRONIZING AUTHORITATIVE GRAPH...
+                </span>
+              </div>
+            )}
+
             {/* HUD */}
             <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-full border border-white/10 bg-[#060c18]/85 py-1.5 pl-3 pr-2.5 text-[10px] tracking-[0.18em] text-slate-300 backdrop-blur-md">
               {spaceDown ? <Hand size={11} className="text-amber-300" /> : <MousePointer2 size={11} className="text-cyan-300" />}
               {spaceDown ? "PAN" : "CANVAS"}
               <span className="tnum rounded bg-white/[0.07] px-1.5 py-0.5 font-mono text-cyan-200">{zoomPct}%</span>
+              <span className="mx-0.5 h-3 w-px bg-white/10" />
+              {/* Authoritative Server Sync Status */}
+              {graphState.status === "success" && graphState.data ? (
+                <div className="flex items-center gap-1.5 text-emerald-300" title={`Deterministic Hash: ${graphState.data.deterministicHash}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                  <span className="font-mono text-[9px]">SYNCED · {graphState.data.deterministicHash.slice(0, 7)}</span>
+                </div>
+              ) : graphState.status === "unavailable" ? (
+                <div className="flex items-center gap-1.5 text-amber-400" title={graphState.error ?? "503 Fail-Closed"}>
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.8)]" />
+                  <span className="font-mono text-[9px]">FAIL-CLOSED (503)</span>
+                </div>
+              ) : graphState.status === "error" ? (
+                <div className="flex items-center gap-1.5 text-rose-400" title={graphState.error ?? "Sync Error"}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+                  <span className="font-mono text-[9px]">SYNC ERROR</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-cyan-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+                  <span className="font-mono text-[9px]">SYNCING...</span>
+                </div>
+              )}
+              {/* Refresh Button */}
+              <button
+                onClick={() => { osSound.click(); loadGraph(true); }}
+                title="Refresh authoritative graph"
+                className="ml-0.5 rounded-md p-0.5 text-slate-400 hover:text-cyan-200 active:scale-90"
+              >
+                <RefreshCw size={10} className={isRefreshing ? "animate-spin text-cyan-300" : ""} />
+              </button>
             </div>
+
+            {/* Quick Action: Focus Active Work */}
+            <button
+              onClick={focusActiveWork}
+              className="absolute left-3 top-12 z-10 flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-[#060c18]/80 px-2.5 py-1 text-[9.5px] font-medium tracking-[0.14em] text-cyan-200 backdrop-blur-md transition hover:border-cyan-300/40 hover:bg-cyan-300/10 active:scale-95"
+              title="Focus graph on active running work or pending founder approvals"
+            >
+              <Target size={11} className="text-cyan-300" />
+              FOCUS ACTIVE
+            </button>
 
             {focus && (
               <button onClick={() => { osSound.click(); onPanelOpen?.(); }} className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-cyan-200/30 bg-[#081120]/90 px-3.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100 backdrop-blur-md transition hover:bg-cyan-300/10 active:scale-95">Focus mode · press F to exit</button>
@@ -1140,7 +1383,7 @@ export default function FlowDesktop({
 
             {/* inspector — contextual, progressive */}
             {selected && selMeta && !focus && (
-              <div className="absolute left-1/2 top-14 z-10 w-[380px] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-cyan-200/25 bg-[#081120]/95 p-4 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:top-3 sm:max-w-[calc(100%-20rem)]" style={{ animation: `os-in 220ms ${EASE}` }}>
+              <div className="absolute left-1/2 top-14 z-10 w-[420px] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-2xl border border-cyan-200/25 bg-[#081120]/95 p-4 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl sm:top-3 sm:max-w-[calc(100%-20rem)]" style={{ animation: `os-in 220ms ${EASE}` }}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-white/[0.05]" style={{ color: selMeta.tint ?? "#fff" }}>{selMeta.icon}</span>
@@ -1161,6 +1404,184 @@ export default function FlowDesktop({
 
                 <p className="mt-2 text-[11.5px] leading-relaxed text-slate-300">{selMeta.desc}</p>
 
+                {/* 4 Orthogonal State Domains (Phase 4.2 / 4.3A) */}
+                <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-xl border border-white/10 bg-black/40 p-2 text-[10px]">
+                  <div className="rounded-lg bg-white/[0.03] p-1.5">
+                    <span className="text-slate-500 uppercase tracking-wider block text-[9px]">Runtime Domain</span>
+                    <span className={`font-mono font-semibold ${
+                      selected.dtoNode?.runtimeState === "running" ? "text-cyan-300 animate-pulse" :
+                      selected.dtoNode?.runtimeState === "completed" ? "text-emerald-300" :
+                      selected.dtoNode?.runtimeState === "failed" ? "text-rose-400" :
+                      "text-slate-300"
+                    }`}>
+                      {(selected.dtoNode?.runtimeState ?? selected.state).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className={`rounded-lg p-1.5 ${
+                    selected.dtoNode?.governanceState === "awaiting_founder_approval" || selected.type === "approval"
+                      ? "bg-amber-400/15 border border-amber-400/30"
+                      : "bg-white/[0.03]"
+                  }`}>
+                    <span className="text-slate-500 uppercase tracking-wider block text-[9px]">Governance Domain</span>
+                    <span className={`font-mono font-semibold ${
+                      selected.dtoNode?.governanceState === "awaiting_founder_approval" || selected.type === "approval"
+                        ? "text-amber-300 font-bold"
+                        : "text-slate-300"
+                    }`}>
+                      {(selected.dtoNode?.governanceState ?? "none").replace(/_/g, " ").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-white/[0.03] p-1.5">
+                    <span className="text-slate-500 uppercase tracking-wider block text-[9px]">Epistemic Domain</span>
+                    <span className="font-mono font-semibold text-slate-300">
+                      {(selected.dtoNode?.epistemicValidity ?? "active").replace(/_/g, " ").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="rounded-lg bg-white/[0.03] p-1.5">
+                    <span className="text-slate-500 uppercase tracking-wider block text-[9px]">Presentation State</span>
+                    <span className="font-mono font-semibold text-cyan-200">
+                      {(selected.dtoNode?.presentationState ?? (selected.state === "waiting" ? "waiting" : "default")).toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Authoritative Founder Approval Gate (Zero Optimistic Illusion) */}
+                {(selected.type === "approval" || selected.dtoNode?.governanceState === "awaiting_founder_approval") && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-amber-400/40 bg-amber-400/[0.08] p-3 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-200">
+                        <Scale size={13} className="text-amber-300" />
+                        Founder Authorization Boundary
+                      </span>
+                      <span className="rounded bg-amber-400/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-200">
+                        GATE
+                      </span>
+                    </div>
+                    {decisions.length > 0 ? (
+                      <div className="space-y-2">
+                        {decisions.map((d) => (
+                          <div key={d.id} className="rounded-lg bg-black/40 p-2 text-[11px]">
+                            <div className="font-medium text-white">{d.title}</div>
+                            {d.context && <div className="mt-0.5 text-[10px] text-slate-400">{d.context}</div>}
+                            <div className="mt-2 flex items-center gap-2">
+                              <button
+                                onClick={async () => {
+                                  osSound.click();
+                                  if (d.approvalId) {
+                                    await decideApproval(d.approvalId, "approve");
+                                    await loadGraph(true);
+                                  } else {
+                                    os.resolveDecision(d.id, "Approve");
+                                  }
+                                }}
+                                className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-400/20 py-1 text-center text-[10.5px] font-semibold text-emerald-200 hover:bg-emerald-400/30 active:scale-95"
+                              >
+                                Approve & Ratify
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  osSound.click();
+                                  if (d.approvalId) {
+                                    await decideApproval(d.approvalId, "reject");
+                                    await loadGraph(true);
+                                  } else {
+                                    os.resolveDecision(d.id, "Reject");
+                                  }
+                                }}
+                                className="flex-1 rounded-lg border border-rose-400/30 bg-rose-400/15 py-1 text-center text-[10.5px] font-semibold text-rose-200 hover:bg-rose-400/25 active:scale-95"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-[10.5px] text-amber-200/80">
+                        Awaiting formal ratification record from orchestration runtime.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Connected Relationships & Conduits (Follow Topology) */}
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                  <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-slate-400">
+                    <span>Connected Topology</span>
+                    <span className="font-mono text-cyan-200">
+                      {graph.edges.filter((e) => e.from === selected.id || e.to === selected.id).length} CONDUITS
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-1.5">
+                    {graph.edges
+                      .filter((e) => e.from === selected.id || e.to === selected.id)
+                      .map((e) => {
+                        const isOut = e.from === selected.id;
+                        const otherId = isOut ? e.to : e.from;
+                        const otherNode = graph.nodes.find((n) => n.id === otherId);
+                        return (
+                          <button
+                            key={e.id}
+                            onClick={() => {
+                              osSound.click();
+                              if (otherNode) {
+                                focusNode(otherNode);
+                                setSelected(otherNode);
+                              }
+                            }}
+                            className="flex w-full items-center justify-between rounded-lg bg-white/[0.03] px-2 py-1.5 text-left text-[11px] transition hover:bg-cyan-400/10 hover:border hover:border-cyan-300/30"
+                          >
+                            <span className="flex items-center gap-1.5 text-slate-300">
+                              <span className="text-[10px] text-cyan-400">{isOut ? "→" : "←"}</span>
+                              <span className="truncate">{otherNode?.title ?? otherId}</span>
+                            </span>
+                            <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-slate-400">
+                              {e.relationship}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Deep Provenance & Audit Information */}
+                {selected.dtoNode?.metadata && (
+                  <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-2.5 text-[10.5px]">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Provenance & Lineage</div>
+                    <div className="mt-1.5 space-y-1 font-mono text-[10px] text-slate-300">
+                      {selected.dtoNode.metadata.runId && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Run ID:</span>
+                          <span className="truncate max-w-[180px] text-cyan-200">{selected.dtoNode.metadata.runId}</span>
+                        </div>
+                      )}
+                      {selected.dtoNode.metadata.protocolStep && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Protocol Step:</span>
+                          <span className="text-slate-200">{selected.dtoNode.metadata.protocolStep}</span>
+                        </div>
+                      )}
+                      {typeof selected.dtoNode.metadata.durationMs === "number" && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Duration:</span>
+                          <span className="text-slate-200">{selected.dtoNode.metadata.durationMs}ms</span>
+                        </div>
+                      )}
+                      {selected.dtoNode.metadata.error && (
+                        <div className="mt-1 rounded bg-rose-500/10 p-1.5 text-rose-300 border border-rose-500/20">
+                          {selected.dtoNode.metadata.error}
+                        </div>
+                      )}
+                      {typeof selected.dtoNode.metadata.evidenceCount === "number" && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Epistemic Evidence:</span>
+                          <span className="text-emerald-300">{selected.dtoNode.metadata.evidenceCount} facts</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Workflow specific actions */}
                 {selWork && (
                   <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
@@ -1180,9 +1601,6 @@ export default function FlowDesktop({
                         );
                       })}
                     </div>
-                    {/* Local stage controls only: server-origin workstreams are
-                        read-only projections of real agent-run records — their
-                        stage/state refresh from the runtime sync, never bumped locally. */}
                     {selWork.origin !== "server" && (
                     <div className="flex items-center gap-2 pt-1">
                       <button
@@ -1210,24 +1628,6 @@ export default function FlowDesktop({
                   </div>
                 )}
 
-                {/* Approval specific actions */}
-                {selected.type === "approval" && decisions.length > 0 && (
-                  <div className="mt-3 space-y-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.06] p-2.5">
-                    <div className="text-[11px] font-medium text-amber-100">{decisions.length} Open Consequential Decision{decisions.length > 1 ? "s" : ""}</div>
-                    <div className="space-y-1.5">
-                      {decisions.slice(0, 2).map((d) => (
-                        <div key={d.id} className="flex items-center justify-between rounded-lg bg-black/30 px-2 py-1.5 text-[11px]">
-                          <span className="truncate text-slate-200">{d.title}</span>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => { osSound.click(); os.resolveDecision(d.id, "Approve"); }} className="rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] text-cyan-200 hover:bg-cyan-400/30">Approve</button>
-                            <button onClick={() => { osSound.click(); os.resolveDecision(d.id, "Defer"); }} className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-slate-300 hover:bg-white/20">Defer</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Verification specific metrics */}
                 {selected.type === "verification" && (
                   <div className="mt-3 space-y-1.5 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.04] p-2.5 text-[11px]">
@@ -1243,6 +1643,7 @@ export default function FlowDesktop({
                 )}
               </div>
             )}
+
 
             <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/85 p-1 backdrop-blur-md">
               <button onClick={() => { osSound.click(); setGridOn((v) => !v); }} title="Toggle grid" className={`rounded-lg p-1.5 transition active:scale-90 ${gridOn ? "bg-cyan-300/15 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}><Layers size={13} /></button>
