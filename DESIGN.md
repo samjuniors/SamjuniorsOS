@@ -1,7 +1,7 @@
 # DESIGN.md — SamJuniorsOS V2 Design System
 
-**Status:** Active · V2 prototype (`Uploaded/Design1/`)
-**Last updated:** 2026-09-11
+**Status:** Active · Canonical application at `src/os` (relocated from `Uploaded/Design1/` in Phase 4.3C)
+**Last updated:** 2026-09-13
 
 ---
 
@@ -370,7 +370,7 @@ The living operating graph visually communicates the dynamic state of SamJuniors
 The workflow component system (`components/workflow/`) provides presentation-only, portable visual primitives for node-based graphs, inspired by high-end dark ambient modular flow interfaces (such as FLOWGRID).
 
 ### Core Principles & Architectural Boundary
-- **Presentation-Only & Portable**: Primitives rely strictly on React, CSS/SVG, and local tokens. They have zero dependencies on Next.js server APIs, Prisma, authentication, or graph execution state, ensuring drop-in portability to the standalone `Uploaded/Design1` Vite environment.
+- **Presentation-Only & Portable**: Primitives rely strictly on React, CSS/SVG, and local tokens. They have zero dependencies on Next.js server APIs, Prisma, authentication, or graph execution state. The original Vite harness is archived under `old/prototypes/design1-harness/`.
 - **Semantic Mapping**: Workflow tokens map directly to the established SamJuniorsOS semantic color hierarchy (`cyan` primary, `amber` attention/processing, `emerald` healthy/complete, `rose` error/blocked, `obsidian glass` surfaces).
 - **Physical Depth & Optical Balance**: Nodes feature multi-layered obsidian glass backdrops (`rgba(6, 12, 24, 0.88)`), specular hairline top borders (`linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent)`), and subtle ambient drop shadows.
 ### Node Geometries & Form Factors
@@ -418,7 +418,33 @@ Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus autom
 - `minimal`: Disables heavy GPU filters (`backdropFilter: 'none'`), disables floating particles, retains lightweight CSS opacity/color transitions.
 
 ### Specimen Sheet
-- Certified at `/design-system/workflow` (`app/design-system/workflow/page.tsx`).
+- Certified at `/design-system/workflow` (`src/app/design-system/workflow/page.tsx`).
 - Features 13 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles, Icon Containers, Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (generic illustrative fixtures), and Responsive Sizes.
 - Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
 - Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.
+
+## 15. Canonical Execution Language (Phase 4.3C-B.1)
+
+The execution-language module (`src/components/workflow/execution-language.ts`) extends the Phase 4.1 token library with the single source of truth for the approved Canvas execution model. It is an extension of the existing design system, not a new one.
+
+### Semantic State Map (`EXECUTION_LANGUAGE`)
+| Semantic | Token | Value | Canvas/React treatment |
+|---|---|---|---|
+| `idle` | neutral | — | Neutral gray/white conduits, no particles, no continuous animation |
+| `running` | `primary` | `#00B2FF` | Blue/cyan activation: source node fills, connection fills, directional energy along the actual connection |
+| `externalAction` | `processing` | `#FF8A00` | Amber/gold execution pulse: directional comet follows the actual connection |
+| `completed` | `success` | `#22D97A` | Restrained green settled state |
+| `blocked` | `error` | `#FF4B4B` | Restrained red state |
+| `approval` | `processing` | `#FF8A00` | Static amber governance treatment (no continuous animation) |
+| `focus` | `primary` | `#00B2FF` | Static selection emphasis ring (focus/selection primitive) |
+
+Each entry provides the token reference, canvas `rgb`/`rgbBright` triplets, and React class bundles (`chip`, `fill`, `fillSoft`, `glow`) — all statically compilable Tailwind literals.
+
+### Entity Identity Axis (`ENTITY_IDENTITY`)
+Agent/gate/vault/service identity tints (Sophia `#fb923c`, Thorne `#38bdf8`, Cruz `#34d399`, Lin `#c084fc`, approval `#fbbf24`, …) are deliberately SEPARATE from the execution-state axis: an entity keeps its identity color regardless of the execution state of its work. Sophia's core heat derives from her identity tint.
+
+### Behavioral Contract
+- Clicking/selecting a node MUST NOT fabricate execution animation — all engine energy (packets, rings, embers, arrival glows) is driven exclusively by authoritative runtime state via `setGraph`.
+- Neutral conduits (`NEUTRAL_CONDUIT`) breathe ambiently in idle; they never carry synthetic traffic.
+- Motion/easing and glow/animation limits remain governed by `MOTION_TOKENS` and `EFFECTS_BUDGET_CONFIGS`.
+- Components reuse these primitives; they do not invent separate visual/state treatments.
