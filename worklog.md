@@ -485,3 +485,26 @@ Stage Summary:
 - GET /api/agents/runs is now Founder-authenticated via the same canonical getAuthenticatedFounder path as the other protected executive APIs; fail-closed 401 for unauthenticated/non-founder principals; response contract preserved; the previously reported ungated-reads residual from the 3.4 certification is closed
 - Tests pin the full gate behavior including the defense-in-depth invariant that production rejects dev bypass headers even with a valid secret
 - No merge, no force-push, no Phase 3.5 work
+
+---
+Task ID: 4.X-PULL
+Agent: main (Z.ai Code)
+Task: Pull upstream origin/main (bc7b038..af1aab4 — Phase 4.1/4.3A/4.3B/4.4) into the sandbox; inspect current Canvas; STOP before implementing Phase 4.3B.1; produce implementation proposal only.
+
+Work Log:
+- git fetch origin: main advanced 7d0622e -> af1aab4; remote branch phase-3.4-runtime-wiring deleted after merge via bc7b038 (Phase 3.4 & 3.4.1 reconciliation onto origin/main)
+- Read remote WORKLOG.md: Phase 4.1 (workflow visual primitives + FLOWGRID specimen), 4.3A (authoritative graph read model + GET /api/graph), 4.3B (FlowDesktop integration of GraphDTO, icon-first nodes, spatial distribution), 4.4 (3D pan/zoom)
+- Verified reconciliation fidelity: local runtime.ts == remote@bc7b038 + exactly af1aab4's +65; all store APIs (AgentRunStore/SideEffectAuthorizationGate/getWorkflowStore/EpistemicClaimStore/CompanyContextProvider/DatabaseAuthorityError) match the read-model's imports — zero backend adaptation needed
+- Ported to sandbox src/ layout: src/types/graph.ts, src/lib/server/graph/read-model.ts, src/app/api/graph/route.ts, src/components/workflow/* (9 files), src/app/design-system/workflow/page.tsx, tests/phase4_3a_graph_read_model.test.ts
+- Took remote versions of shared Uploaded/Design1 files (FlowDesktop, NeuralCanvas, field/flow/runtime, index.css, App, DesktopOS, ChatPanel, TodoDrawer, osStore) + DESIGN.md + WORKLOG.md; local 0fc7adb premium-graph variant of flow.ts/FlowDesktop is superseded by canonical remote lineage (history preserved in git)
+- Remapped 4 cross-boundary imports (root components/workflow + types/graph -> src/...); adapted test auth case to sandbox session primitive (production -> 401, test-mode founder session -> 200) and OutputProvenance shape (7 objects)
+- Verification: bunx tsc --noEmit clean for all pull files (pre-existing examples/ + skills/ errors unrelated); bun run lint 0 errors (2 pre-existing warnings); bun tests/phase4_3a_graph_read_model.test.ts 9/9 PASSED; bun test tests/api/agents-runs.auth.test.ts 4/4 PASSED
+- Browser (agent-browser): / renders Sophia mode clean; SamJuniorsOS mode canvas renders Founder/Sophia/specialists/Verifier/Vault + SYNCED·<hash> HUD matching server deterministicHash; /design-system/workflow specimen renders; zero console errors throughout
+- Incident + fix: 4.3A test writes to the shared .data/ durable files (DurableFileStore has no test isolation; remote ran against isolated Postgres test DB) — wiped original agent_runs.json/epistemic_claims.json. Restored both (+audits.json) from git history (e962e2d), removed stale instance.lock, restarted dev server (now pid 3081/3082/3095), updated .zscripts/dev.pid, re-verified graph shows original 5-run state (hash 34367fbc, Julian Cruz revealed, no test pollution)
+- Committed as 0034ba0 on local main. Nothing pushed; origin/main untouched at af1aab4
+- Inspection findings for the proposal (factual): getEntityVisual keyword matching renders specialist agents as external service cards ("research" contains "search"; workstream activity "Google Search..." matches google) — Dr. Thorne and Julian Cruz both currently display as "Google Search / RESEARCH SERVICE" brand icons; canvas primary axis is the execution pipeline Founder->Sophia->specialists->steps->Verifier->Vault; side rails duplicate ATTENTION/DECISIONS/WORKFORCE list surfaces; specimen page is FLOWGRID automation-builder aesthetic ("Telegram Trigger -> AI Agent -> Conversation Memory", connectable NodePort affordances)
+
+Stage Summary:
+- Sandbox is now at canonical remote content af1aab4 (Phase 4.1/4.3A/4.3B/4.4) adapted to src/ layout; all tests pass; live canvas verified server-authoritative with matching deterministic hash
+- Phase 4.3B.1 NOT implemented (per instruction); Canvas/FlowGrid revision proposal delivered in chat for founder review
+- Known sandbox caveat documented: phase4_3a test pollutes shared .data/ durable files when run while dev server is live — restore from e962e2d or stop dev server before running it
