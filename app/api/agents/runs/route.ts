@@ -6,13 +6,22 @@ import { getAuthenticatedFounder } from "@/lib/server/auth/session";
  * PHASE 13: PERSISTED AGENT RUNS API (FounderOS & OptimalEngine Pattern)
  * 
  * Provides transparent, durable audit log of all specialist executions.
+ * Phase 3.4.1: Founder-authenticated via the canonical session primitive
+ * (getAuthenticatedFounder) — fail-closed 401 for unauthenticated or
+ * non-founder principals. Response contract unchanged for authorized callers.
  */
 export async function GET(req: NextRequest) {
   try {
-    const session = await getAuthenticatedFounder(req);
-    if (!session) {
+    // Canonical founder gate — same primitive as /api/orchestrate and the
+    // other protected executive APIs. Fails closed (401) for any principal
+    // that is not an authenticated Founder.
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder || founder.role !== 'FOUNDER') {
       return NextResponse.json(
-        { success: false, error: "Unauthorized: Session required" },
+        {
+          error: "Unauthorized: Valid Founder session required to read agent execution runs",
+          success: false,
+        },
         { status: 401 }
       );
     }

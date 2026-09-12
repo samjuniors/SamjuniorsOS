@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
-import { useOS, type Agent } from "../../lib/osStore";
+import { useOS } from "../../lib/osStore";
 import { osSound } from "../../lib/osAudio";
+import { agentChat, toServerAgentId } from "../../lib/runtime";
 
 type Message = {
   id: string;
@@ -32,10 +33,6 @@ export default function ChatPanel() {
   const [isTyping, setIsTyping] = useState(false);
 
   const agents = useOS((s) => s.agents);
-  const attention = useOS((s) => s.attention);
-  const decisions = useOS((s) => s.decisions);
-  const work = useOS((s) => s.work);
-  const company = useOS((s) => s.company);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -96,39 +93,10 @@ export default function ChatPanel() {
     setTimeout(() => inputRef.current?.focus(), 60);
   };
 
-  const getAgentReply = (text: string, agent: Agent): string => {
-    const lower = text.toLowerCase();
-    if (agent.id === "sophia") {
-      if (lower.includes("attention") || lower.includes("need")) {
-        return attention.length
-          ? `You have ${attention.length} item${attention.length > 1 ? "s" : ""} needing you right now (${decisions.length} open decision${decisions.length > 1 ? "s" : ""}). Check your Briefing pill.`
-          : "All quiet across the board. No items currently require founder intervention.";
-      }
-      if (lower.includes("decision")) {
-        return decisions.length
-          ? `There are ${decisions.length} decision${decisions.length > 1 ? "s" : ""} waiting for your direction. I have drafted context for each.`
-          : "Zero open decisions waiting. The workforce is operating within its defined guardrails.";
-      }
-      if (lower.includes("focus")) {
-        return company.focus
-          ? `Current focus is set to: "${company.focus}". All inputs are triaged against this standard.`
-          : "Focus is not currently set. You can set it in the Company Card or Settings.";
-      }
-      return `Captured in this UI session: "${text}". This surface is not connected to the workflow runtime, so no work was dispatched.`;
-    }
-
-    if (agent.id === "ops") {
-      if (lower.includes("block")) {
-        const blocked = work.filter((w) => w.state === "blocked");
-        return blocked.length
-          ? `${blocked.length} workstream is currently marked as blocked. Immediate unblocking review recommended.`
-          : "No blocked workstreams. All active execution pipelines are progressing through discovery and review stages.";
-      }
-      return "This UI session has no live Thorne execution state. The implemented path is Sophia → Thorne → typed artifact → deterministic verification → Founder approval when consequential.";
-    }
-
-    return "Received and noted. Operating strictly within constitutional constraints.";
-  };
+// Real conversational interaction: POST /api/agent-chat resolves the
+  // authoritative SERVER_AGENTS persona (coo/researcher/pm/finance) with live
+  // LLM reasoning. The canned local reply generator was removed in Phase 3.4 —
+  // no simulated responses remain in this surface.
 
   const handleSend = (textToSend?: string) => {
     const raw = textToSend ?? input;
@@ -149,20 +117,43 @@ export default function ChatPanel() {
     if (!textToSend) setInput("");
     setIsTyping(true);
 
-    setTimeout(() => {
-      setIsTyping(false);
-      osSound.notify();
-      const replyText = getAgentReply(txt, activeAgent);
-      const agentMsg: Message = {
-        id: `m-agent-${Date.now()}`,
-        sender: "agent",
-        agentId: activeContactId,
-        text: replyText,
-        at: Date.now(),
-        read: open,
-      };
-      setMessages((prev) => [...prev, agentMsg]);
-    }, 550);
+    // Thread history for genuine multi-turn context (server-side personas).
+    const history = activeThread.slice(-10).map((m) => ({
+      sender: m.sender === "user" ? ("user" as const) : ("agent" as const),
+      text: m.text,
+    }));
+
+    void agentChat({ agentId: toServerAgentId(activeContactId), message: txt, history })
+      .then((res) => {
+        setIsTyping(false);
+        osSound.notify();
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `m-agent-${Date.now()}`,
+            sender: "agent",
+            agentId: activeContactId,
+            text: res.reply,
+            at: Date.now(),
+            read: open,
+          },
+        ]);
+      })
+      .catch((err: unknown) => {
+        // Honest failure — no simulated agent reply.
+        setIsTyping(false);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `m-agent-${Date.now()}`,
+            sender: "agent",
+            agentId: activeContactId,
+            text: `⚠ Couldn't reach ${activeAgent.name} on the server — nothing was simulated. ${err instanceof Error ? err.message : String(err)}`,
+            at: Date.now(),
+            read: open,
+          },
+        ]);
+      });
   };
 
   const activeThread = messages.filter((m) => m.agentId === activeContactId);

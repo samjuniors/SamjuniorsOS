@@ -61,6 +61,7 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
       const v = window.prompt("This week's focus — one sentence:", "");
       if (v && v.trim()) os.setCompany({ focus: v.trim() });
     }
+    if (status === "pending") { onSpeak(`Sent to the governance gate: ${d?.title ?? "decision"} → ${opt}. I'll confirm once the server records it.`); return; }
     onSpeak(status === "approved" ? `${d?.title ?? "Decision"}: ${opt}.` : `Deferred: ${d?.title ?? "decision"}.`);
   };
 

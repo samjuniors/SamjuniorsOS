@@ -1059,6 +1059,10 @@ export default function FlowDesktop({
                         );
                       })}
                     </div>
+                    {/* Local stage controls only: server-origin workstreams are
+                        read-only projections of real agent-run records — their
+                        stage/state refresh from the runtime sync, never bumped locally. */}
+                    {selWork.origin !== "server" && (
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() => { osSound.click(); os.advanceWork(selWork.id); }}
@@ -1076,6 +1080,12 @@ export default function FlowDesktop({
                         {selWork.state === "active" ? <Pause size={11} /> : <Play size={11} />}
                       </button>
                     </div>
+                    )}
+                    {selWork.origin === "server" && (
+                      <div className="pt-1 text-[10px] leading-relaxed text-slate-500">
+                        Server-authoritative execution · {selWork.note ?? "state refreshed from /api/agents/runs"}
+                      </div>
+                    )}
                   </div>
                 )}
 

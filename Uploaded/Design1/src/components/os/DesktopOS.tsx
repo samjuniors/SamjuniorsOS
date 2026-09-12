@@ -15,6 +15,7 @@ import PersonaModal from "./PersonaModal";
 import { osSound, setOsMuted, setOsVolume } from "../../lib/osAudio";
 import { type FlowNode } from "../../lib/flow";
 import { os, useOS, openAttention, openDecisions, activeWork, agentName } from "../../lib/osStore";
+import { dispatchDirective } from "../../lib/runtime";
 
 type Win = "max" | "win" | "min";
 type Pop = null | "start" | "cal" | "vol" | "net" | "bell" | "settings";
@@ -216,7 +217,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
     { id: "company", group: "Workspace", label: "Company context", hint: company.focus ? `Focus: ${company.focus}` : "Focus not set", icon: <Building2 size={15} />, run: () => { const v = window.prompt("This week's focus — one sentence:", company.focus); if (v !== null) os.setCompany({ focus: v.trim() }); } },
     ...agents.map((a) => ({ id: `agent-${a.id}`, group: "Workforce", label: `${a.name} · ${a.role}`, hint: a.current ?? a.state, icon: <Bot size={15} />, run: () => setAgentId(a.id) })),
     { id: "decide", group: "Actions", label: "Raise a decision", hint: `${decisions.length} open`, icon: <Scale size={15} />, run: () => { const t = window.prompt("What needs deciding?"); if (t && t.trim()) os.addDecision(t.trim()); } },
-    { id: "newwork", group: "Actions", label: "Start a workstream", icon: <Activity size={15} />, run: () => { const t = window.prompt("New workstream:"); if (t && t.trim()) os.addWork(t.trim(), "ops"); } },
+{ id: "newwork", group: "Actions", label: "Start a workstream", icon: <Activity size={15} />, run: () => { const t = window.prompt("New directive for the executive council:"); if (t && t.trim()) void dispatchDirective(t.trim()).catch((err: unknown) => { os.log(`Directive failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`); }); } },
     { id: "focus", group: "Actions", label: focus ? "Exit focus mode" : "Focus mode", hint: "Hide panels · F", icon: <PanelRightClose size={15} />, run: () => setFocus((v) => !v) },
     { id: "min", group: "Actions", label: "Minimize window", icon: <Minus size={15} />, run: minWin },
     { id: "max", group: "Actions", label: win === "max" ? "Restore window" : "Maximize window", icon: <Maximize2 size={15} />, run: maxWin },

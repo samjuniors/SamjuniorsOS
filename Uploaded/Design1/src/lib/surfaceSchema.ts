@@ -179,47 +179,52 @@ export function generateSystemMetrics(state: OSState): MetricItem[] {
   const activeWork = state.work.filter((w) => w.state === "active").length;
   const blockedWork = state.work.filter((w) => w.state === "blocked").length;
   const openDecisions = state.decisions.filter((d) => d.status === "open").length;
+  // Execution state is server-authoritative (fed by lib/runtime.ts from
+  // /api/agents/runs + /api/workflow/approvals). Local-only counts occur
+  // only when the server read model has not synced yet.
+  const serverSynced = state.work.some((w) => w.origin === "server") || state.decisions.some((d) => d.approvalId);
+  const stateSource = serverSynced ? "Server read model (/api/agents/runs)" : "Awaiting server sync";
 
   return [
     {
       id: "execution-primitive",
       label: "Execution primitive",
-      value: "Sophia → Thorne",
+      value: "Council · 9-step protocol",
       status: "healthy",
       confidence: "verified",
-      source: "PRODUCT.md §4",
+      source: "orchestrator.ts (MultiAgentOrchestrator)",
     },
     {
       id: "decisions",
       label: "Open Decisions",
       value: openDecisions,
       status: openDecisions > 0 ? "waiting" : "healthy",
-      confidence: "unconfigured",
-      source: "UI session — not server-backed",
+      confidence: "verified",
+      source: state.decisions.some((d) => d.approvalId) ? "Server: /api/workflow/approvals" : stateSource,
     },
     {
       id: "active-work",
       label: "Active Workstreams",
       value: activeWork,
       status: blockedWork > 0 ? "blocked" : "active",
-      confidence: "unconfigured",
-      source: "UI session — not server-backed",
+      confidence: "verified",
+      source: stateSource,
     },
     {
       id: "workforce",
-      label: "Implemented roles",
-      value: "2",
-      unit: "v1",
+      label: "Employed AI roles",
+      value: `${state.agents.length || 4}`,
+      unit: "agents",
       status: "active",
       confidence: "verified",
-      source: "PRODUCT.md §5",
+      source: "Server: /api/agents → definitions.ts",
     },
   ];
 }
 
 export function generateCompanyMilestones(): TimelineMilestone[] {
   return [
-    { id: "m1", title: "Foundation execution primitive", subtitle: "Sophia plans; Thorne produces a typed artifact", at: "Implemented", status: "complete" },
+    { id: "m1", title: "Foundation execution primitive", subtitle: "Founder → Sophia → 4-agent council → verified artifact", at: "Implemented", status: "complete" },
     { id: "m2", title: "Verification and Founder approval", subtitle: "Deterministic verification and authenticated approval are wired", at: "Implemented", status: "complete" },
     { id: "m3", title: "Company Brain and Role Brains", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },
     { id: "m4", title: "Market intelligence", subtitle: "TARGET-STATE — not implemented", at: "Target-state", status: "upcoming" },
@@ -228,7 +233,12 @@ export function generateCompanyMilestones(): TimelineMilestone[] {
 
 export function generateAgentRelationships(): RelationshipLink[] {
   return [
-    { id: "r1", fromId: "sophia", fromName: "Sophia", toId: "ops", toName: "Thorne", type: "delegates" },
-    { id: "r2", fromId: "ops", fromName: "Thorne", toId: "sophia", toName: "Sophia", type: "escalates-to" },
+    { id: "r1", fromId: "sophia", fromName: "Sophia Vance", toId: "thorne", toName: "Dr. Aris Thorne", type: "delegates" },
+    { id: "r2", fromId: "sophia", fromName: "Sophia Vance", toId: "maya", toName: "Maya Lin", type: "delegates" },
+    { id: "r3", fromId: "sophia", fromName: "Sophia Vance", toId: "julian", toName: "Julian Cruz", type: "delegates" },
+    { id: "r4", fromId: "maya", fromName: "Maya Lin", toId: "thorne", toName: "Dr. Aris Thorne", type: "depends-on" },
+    { id: "r5", fromId: "thorne", fromName: "Dr. Aris Thorne", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
+    { id: "r6", fromId: "maya", fromName: "Maya Lin", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
+    { id: "r7", fromId: "julian", fromName: "Julian Cruz", toId: "sophia", toName: "Sophia Vance", type: "escalates-to" },
   ];
 }

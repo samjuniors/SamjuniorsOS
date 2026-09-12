@@ -6,6 +6,7 @@ import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import { defaultSettings, type NeuralField, type Settings } from "./lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork } from "./lib/osStore";
+import { agentChat, dispatchDirective, looksLikeDirective, summarizeRun, syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
 
 type Tab = "sophia" | "os";
@@ -50,13 +51,38 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
     else f?.pulseAll();
   }, [settings.voice]);
 
-  const submit = () => {
+  const submit = async () => {
     const text = ask.trim();
     if (!text) return;
     setAsk("");
     os.setSophia("thinking");
-    const response = os.ask(text);
-    setTimeout(() => { os.setSophia("idle"); say(response); }, 380);
+    try {
+      // 1. Local founder records (hand-raised decisions, focus, notes) and
+      //    briefings derived from real synced state.
+      const local = os.localCommand(text);
+      if (local !== null) { os.setSophia("idle"); say(local); return; }
+
+      // 2. Founder command → the REAL orchestration path
+      //    (POST /api/orchestrate → MultiAgentOrchestrator 9-step council).
+      //    Live progress surfaces from durable agent-run records while it runs.
+      if (looksLikeDirective(text)) {
+        const run = await dispatchDirective(text);
+        os.setSophia("idle");
+        say(summarizeRun(run));
+        return;
+      }
+
+      // 3. Conversational → the REAL Sophia persona (POST /api/agent-chat).
+      const res = await agentChat({ agentId: "coo", message: text });
+      os.setSophia("idle");
+      say(res.reply);
+    } catch (err) {
+      // Honest failure — nothing is simulated on the local machine.
+      os.setSophia("idle");
+      const msg = err instanceof Error ? err.message : String(err);
+      os.log(`Execution failed: ${msg}`);
+      say(`That failed on the server — nothing was simulated locally. ${msg}`);
+    }
   };
 
   // "/" focuses the ask bar
@@ -87,7 +113,8 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
           <span className={`h-1.5 w-1.5 rounded-full ${modeDot} ${mode === "speaking" ? "animate-pulse" : ""}`} />
           Sophia · {modeLabel}
         </div>
-        <h1 className="text-3xl font-light leading-tight tracking-tight text-white sm:text-4xl">
+        {/* suppressHydrationWarning: time-of-day greeting is legitimately time-dependent (SSR render time ≠ client hydration time) */}
+        <h1 suppressHydrationWarning className="text-3xl font-light leading-tight tracking-tight text-white sm:text-4xl">
           Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"},{" "}
           <span className="bg-gradient-to-r from-cyan-200 via-sky-300 to-blue-400 bg-clip-text font-medium text-transparent">Sam</span>
         </h1>
@@ -112,7 +139,7 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
       {/* ask bar — clean, calm conversational input */}
       <div className="absolute bottom-8 left-1/2 z-20 w-[min(540px,calc(100vw-2rem))] -translate-x-1/2">
         <form
-          onSubmit={(e) => { e.preventDefault(); submit(); }}
+          onSubmit={(e) => { e.preventDefault(); void submit(); }}
           className="flex items-center gap-2 rounded-2xl border border-cyan-200/15 bg-[#040a14]/80 p-1.5 pl-3 shadow-[0_0_50px_-12px_rgba(56,189,248,0.35)] backdrop-blur-xl transition duration-200 focus-within:border-cyan-300/50 focus-within:shadow-[0_0_60px_-10px_rgba(56,189,248,0.5)]"
         >
           <button
@@ -148,6 +175,15 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("sophia");
+
+  // Apply persisted OS state after mount (hydration-safe: SSR and the first
+  // client render both start from SEED; localStorage state lands post-mount),
+  // then pull the server-authoritative read model (roster, durable agent runs,
+  // approval gate records) so execution state is never UI-only.
+  useEffect(() => {
+    os.rehydrate();
+    syncFromServer().catch(() => { /* runtime logs the honest failure */ });
+  }, []);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">

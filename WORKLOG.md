@@ -1445,3 +1445,90 @@ Deployment posture unchanged: single instance (min=1, max=1) +
 - Phase 3.15: wire `SophiaConversationalBar` to `POST /api/orchestrate` under Phase 3.2 command-terminal semantics
 - Phase 3.15: wire `WorkQueueDrawer` to live 9-Step DAG execution state (not just topology)
 - Phase 3.15: wire `onApprovalRequested` callback back from Sophia → approval inbox refresh
+
+---
+
+## Phase 3.3 — Repository Cleanup & Dead-Code Audit
+
+**Date:** 2026-09-12 · **Scope:** audit + cleanup only — graph visual implementation accepted and untouched; no backend/API/database/auth changes.
+
+### Audit method
+Every candidate was traced by imports/references before classification (no name-based assumptions). Root route verified as V2 Design1 shell (self-contained; zero imports from sandbox `src/components`); API routes verified to depend only on `src/lib/server/**` + `src/types/**`; `src/proxy.ts` confirmed as the active Next 16 middleware. Upstream `app/page.tsx` documents that cockpit/classic-desktop code is deliberately retained as inactive reference material — honored.
+
+### Deleted (confirmed dead/obsolete)
+- `upload/` — 9 PNGs byte-identical to `Uploaded/` (md5-verified duplicate)
+- `qa-shots/` — Phase 3.2 QA screenshots/videos (preserved in git history)
+- `tool-results/` — transient tool output junk
+- `scripts/capture-v4-1-screenshots.js`, `scripts/capture-v5-screenshots.js` — one-time capture tools bound to the original author's Windows paths; not executable here
+
+### Untracked from git (kept on disk, now gitignored)
+`db/custom.db`, `.data/*.json`, `.zscripts/dev.pid` — runtime artifacts previously captured by auto-commits.
+
+### Archived in place (reference material — founder approval required to delete)
+Classic cockpit/desktop UI (`src/components/{apps,cockpit,hq,os,ui}`, hooks, client stores, `globals.css`), `Uploaded/Design2`, `Uploaded/interactive-3d-particle-lattice`, `Uploaded/samjuniors-os-web-interface`, `Uploaded/astra.html`, `Uploaded/REF.mp4`, `Uploaded/Screenshot_*` reference frames, `public/prototype/v4` + `v5`.
+
+### Docs fixed
+`next.config.ts` stale iframe comment; `PROGRESS.md` "Now" section; this entry.
+
+### Bonus fix surfaced by mandated verification (pre-existing, proven via stash A/B)
+Hydration failure on every load for returning users: `osStore` used a `typeof window` server/client branch at module init. Fixed hydration-safe: both sides start from `SEED`, persisted localStorage state now applied post-mount via `os.rehydrate()` (called from App root effect); greeting `<h1>` got `suppressHydrationWarning` for the time-dependent text. Zero visual/graph changes — `flow.ts`/`FlowDesktop.tsx` untouched.
+
+### Verification
+- Broken-reference search: clean (only historical log mentions)
+- `tsc --noEmit`: 0 errors in `src/` + `Uploaded/` (pre-existing `examples/`+`skills/` env noise unchanged)
+- `bun run lint`: 0 errors (same 2 pre-existing warnings in inactive legacy components)
+- `verify-prototype-v4.js`: ALL PASS · `verify-prototype-v5.js`: ALL PASS
+- Browser E2E: root renders fully (VLM clean); OS graph shows all 7 nodes + edges, calm idle; node selection → inspector + de-emphasis verified; hydration errors 0 for both fresh and returning users; 0 console errors
+
+---
+Task ID: wiring-1 (Phase 3.4)
+Agent: main (Z.ai Code)
+Task: PHASE 3.4 — Real runtime wiring audit (graph/visuals frozen; UI must run on the real SamJuniorsOS backend)
+
+Work Log:
+- Full-path audit first: App.tsx → osStore → Sophia/Chat → deriveGraph → zero fetch() in the entire active UI (Uploaded/Design1); backend path verified live (/api/orchestrate → MultiAgentOrchestrator 9-step council → executor saveRun per step → AgentRunStore durable .data/agent_runs.json → SideEffectAuthorizationGate approvals → ConstitutionalVerifier)
+- Audit table produced (12 rows): ask-bar directive NOT WIRED (os.ask regex → localStorage addWork = fake progress), ChatPanel simulated replies (550ms canned), roster DUPLICATED (SEED copies definitions.ts), agent runtime/workstreams/decisions/approvals NOT WIRED, reload persistence localStorage-only, PRODUCT.md conflicts (v1 = "Sophia+Thorne only" + Cockpit UI vs implemented 4-agent council + V2 shell)
+- NEW src/app/api/agents/route.ts: GET /api/agents — authoritative roster read model from SERVER_AGENTS (additive; session-gated; no DB/auth/architecture change)
+- NEW Uploaded/Design1/src/lib/runtime.ts: client adapter/read model — id mapping (sophia↔coo, thorne↔researcher, maya↔pm, julian↔finance), fetchRoster/fetchRuns/fetchApprovals/decideApproval/agentChat/orchestrate/dispatchDirective (3s run-poll during execution), workstreamsFromRuns (groups durable agent runs by directive → stage from furthest protocol step, owner from latest specialist, state from real recency: active<150s/paused/done), agentStatesFromRuns, syncFromServer, summarizeRun, looksLikeDirective (mirrors backend directive heuristics)
+- osStore.ts: types gained origin/directive (Workstream), approvalId (Decision), server (AttentionItem), dismissed[] (OSState); os.applyServerState (server-origin work/decisions/attention REPLACE local projections; preserves founder-owned records + offline choices); os.localCommand replaces os.ask (fake work branch REMOVED — decide/focus/status/note only); resolveDecision routes approvalId decisions to POST /api/workflow/approvals via dynamic import (stays open until SERVER confirms; honest failure log); removeWork dismisses server work durably; presentationFor exported (UI presentation constants)
+- App.tsx: submit() async — localCommand → directive? dispatchDirective (real orchestration + live run-poll) : agentChat (real coo persona); honest failure bubble; mount: rehydrate + syncFromServer
+- ChatPanel.tsx: getAgentReply + setTimeout REMOVED → real POST /api/agent-chat with mapped agentId + 10-message history; typing indicator until real reply; catch → honest error message
+- TodoDrawer/DesktopOS/PersonaModal: all work-creation surfaces now dispatch REAL directives (owner selector transmits requested council via real `agents` API field — backend currently runs full council regardless, reported as backend nuance); server work renders read-only (no local Advance/Pause — WorkSurface conditional controls)
+- FlowDesktop.tsx inspector: server-origin work hides local stage-mutation controls, shows "Server-authoritative execution" provenance line (visual design untouched; conditional render only)
+- SophiaPanel: pending-gate decision speaks honest "sent to governance gate" message; surfaceSchema metrics/milestones updated to truthful sources (council primitive, server read model, /api/agents)
+- PRODUCT.md reconciled with conflict reported first: §4 execution primitive now documents the implemented council path with evidence; §5 v1 = four roles + V2 Design1 shell (Cockpit archived reference); §10 success criteria updated to wired state; Current Repository State refreshed (runtime wiring IMPLEMENTED + WIRED; dev founder session documented as sandbox adaptation)
+- flow.ts / FlowDesktop render layer: ZERO changes (visuals preserved exactly — graph derives from the same osStore shapes now fed by server state)
+
+Verification (browser E2E, agent-browser 1600×1000 + 420×900, zero page errors throughout):
+- Fresh user: mount sync populates server roster + persisted workstream from durable store; log clean
+- Conversational ask bar → REAL Sophia LLM reply (liveAi, persona + company context)
+- DIRECTIVE E2E: "Research the EU AI Act compliance landscape..." dispatched → POST /api/orchestrate 200 in 108s; runs grew 5→10 (coo understand → researcher research → pm build_execute → finance test → coo report, all completed); workstream transitioned discovery/active → done/done live; VLM verified REAL execution energy mid-run (orange comet on Sophia→Maya edge, pulsing borders, WORK 1) and calm settled state after (all four agents visible, Vault complete with checkmark, zero glitches)
+- founderDecision from run surfaced as real attention ("1 Item need you" pill; status command briefs from real state)
+- Reload persistence: both server workstreams + attention restored FROM SERVER (not localStorage); zero errors
+- ChatPanel Thorne: real researcher persona reply referencing the actual completed EU AI Act research
+- Work drawer: Done(2) filter shows both server workstreams read-only with full stage tracks; no fake Advance/Pause on server work
+- Mobile 420×900: base layout clean (no overflow, ask bar correct); open chat panel with long content shows narrow-screen text overflow (pre-existing tradeoff, not a wiring regression)
+- bunx tsc root: 0 errors; bunx tsc Design1: 0 errors; bun run lint: 0 errors (2 pre-existing warnings in inactive legacy components); verify-prototype-v4 ALL PASS; verify-prototype-v5 ALL PASS; dev.log clean apart from pre-existing Composio-stub notice + old EADDRINUSE noise
+
+Stage Summary:
+- The V2 UI now runs on the real backend: founder commands reach /api/orchestrate, chat uses /api/agent-chat, execution state is server-authoritative (durable agent-run read model), approvals route to the governance gate, the graph visualizes only authoritative state (idle stays provably calm), and refresh restores state from the server
+- Capabilities now REAL: directive orchestration, live run-poll progress visualization, roster read model, agent-chat personas, approval gate wiring, server-state persistence. NOT WIRED by design: chat transcript persistence (session-local; /api/communication exists for a future phase). LOCAL by design: hand-raised decisions/notes/focus (founder-owned records, never presented as server state)
+- Backend domain untouched apart from one additive read endpoint; graph visual implementation 100% preserved
+
+---
+
+## Phase 3.4.1 — Founder-Authenticate GET /api/agents/runs
+
+**Date:** 2026-09-12 · **Scope:** Security fix — founder-authenticate the agent-runs read model.
+
+### What changed
+- `app/api/agents/runs/route.ts`: Added canonical `getAuthenticatedFounder(req)` gate (same primitive as `/api/orchestrate` and other protected executive APIs); fail-closed 401 for unauthenticated/non-founder principals. Response contract (`success`, `count`, `runs` + filters) unchanged for authorized callers.
+- `tests/api/agents-runs.auth.test.ts`: Added focused security test suite covering authorized dev session (200), unauthenticated request (401), invalid credentials (401), and production mode rejection of dev-secret bypass headers (401).
+- `tests/api/bun-test.d.ts`: Added minimal ambient type declarations for the `bun:test` runner.
+
+### Verification
+- `bun test tests/api/agents-runs.auth.test.ts`: 4 passed, 0 failed.
+- Root TypeScript: `npx tsc --noEmit` passed with 0 errors.
+- Design1 TypeScript: `npx tsc --noEmit` passed with 0 errors.
+- Existing backend test suites pass.
+
