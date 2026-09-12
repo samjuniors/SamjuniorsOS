@@ -399,3 +399,25 @@ Stage Summary:
 - The V2 UI now runs on the real backend: founder commands reach /api/orchestrate, chat uses /api/agent-chat, execution state is server-authoritative (durable agent-run read model), approvals route to the governance gate, the graph visualizes only authoritative state (idle stays provably calm), and refresh restores state from the server
 - Capabilities now REAL: directive orchestration, live run-poll progress visualization, roster read model, agent-chat personas, approval gate wiring, server-state persistence. NOT WIRED by design: chat transcript persistence (session-local; /api/communication exists for a future phase). LOCAL by design: hand-raised decisions/notes/focus (founder-owned records, never presented as server state)
 - Backend domain untouched apart from one additive read endpoint; graph visual implementation 100% preserved
+
+---
+Task ID: 3.4-CERT
+Agent: Z.ai Code (main session)
+Task: Repository certification — verify Phase 3.4 commit/push state against live GitHub remote and re-audit all runtime wiring code paths (user STOP order: no new commits, no Phase 3.5, no UI changes)
+
+Work Log:
+- git rev-parse HEAD → d92e8d8bc20c5856eda4c6ffcc25218a13e1359f (local); git log -3: d92e8d8 (3.4 wiring) / e962e2d (3.3 cleanup) / 06092b2
+- git status --short: only mode-bit changes (644→755) on runtime.ts, api/agents/route.ts, Uploaded bun.lock + .zscripts/dev.pid — zero content drift from the commit
+- One-shot authenticated fetch of live origin/main (token used in URL only, never stored): remote HEAD = 7d0622e2bbadf27cdeb33649667b8e9e8e9cc131 "Add files via upload" — d92e8d8 is NOT on the remote; merge-base(local main, origin/main) = none (unrelated histories: local Initial 6e3c231 vs remote Initial 830720d)
+- origin/main reflog: only 3 fetch entries, no push ever recorded from this repo — the Phase 3.4 report's push claim was false
+- Verified all 14 reported source files present in d92e8d8 tree (blob SHAs confirmed)
+- Remote tree at 7d0622e contains only pre-3.4 ChatPanel/osStore and no runtime.ts / /api/agents roster route — Phase 3.4 content never reached GitHub
+- Re-audited code paths: App.tsx (rehydrate+syncFromServer on mount; localCommand → looksLikeDirective → dispatchDirective → /api/orchestrate; else agentChat) ✓; ChatPanel (real agent-chat with history, honest failure, canned generator removed) ✓; /api/agents → SERVER_AGENTS roster ✓; /api/agents/runs → AgentRunStore ✓; /api/workflow/approvals → SideEffectAuthorizationGate GET/POST ✓; FlowDesktop reads only osStore via useOS, flow.ts idle = no fake packets ✓
+- Static sweep: localStorage confined to osStore.ts founder-owned session records (notes/focus/dismissed/offline); no canned/mock/simulated reply paths remain (matches are comments documenting removal + backend's real "safe mock sandbox" verifier concept)
+- LIVE verification: GET /api/agents → 4 real definitions; POST /api/orchestrate → HTTP 200 in 80s, liveAi=true, 4 agents, 5 steps, verification compliant, 4 deliverables; GET /api/agents/runs → 5 durable records (understand→research→build_execute→test→report) persisted to .data/agent_runs.json + audits/epistemic/idempotency stores; POST /api/agent-chat → Sophia persona, liveAi=true, contextually grounded reply
+- No commit created, no push executed (per user order); token not persisted anywhere
+
+Stage Summary:
+- CERTIFIED: local d92e8d8 contains the complete, genuinely-wired Phase 3.4 implementation (14/14 files) and the full runtime chain works live against the real backend
+- PUSH STATUS: NOT PUSHED — remote is unrelated history at 7d0622e; a plain push is impossible (non-fast-forward) and a force-push would replace the remote's original 60+ commit SamJuniorsOS history (destructive; requires explicit user decision: force-push main, push to a side branch, or user re-uploads via web UI)
+- Residual notes: /api/agents/runs lacks a session gate (pre-existing backend design, unchanged per constraints); presentation-layer derivations (refreshAgents from merged work list, 150s in-flight window) are read-model derivations from real records, not invented activity
