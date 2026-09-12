@@ -477,7 +477,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
       {/* window */}
       {win !== "min" && (
         <div
-          className={`absolute z-20 flex flex-col overflow-hidden bg-[#050a14] ${anim ? "os-win-in" : ""} ${win === "max" ? "bottom-0 left-0 right-0 top-11" : "rounded-2xl border border-white/15 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)]"}`}
+          className={`absolute z-20 flex flex-col overflow-hidden bg-[#050a14] ${anim ? "os-win-in" : ""} ${win === "max" ? "bottom-0 left-0 right-0 top-11" : "rounded-2xl border border-white/15 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)]"} sj-surface`}
           style={win === "max" ? undefined : { left: pos.x, top: pos.y, width: "min(1340px, calc(100vw - 32px))", height: "min(820px, calc(100vh - 72px))" }}
           onPointerDown={(e) => e.stopPropagation()}
         >

@@ -1,26 +1,28 @@
 # WORKLOG.md - Canonical Operational History
 
-## Phase 4.2 — OS Shell Polish Pass (2026-09-12)
+## Phase 4.3 — SamJuniorsOS + Workflow Design System Polish (2026-09-12)
 
-**Status:** COMPLETE. Focused production polish for the dark ambient SamJuniorsOS shell and mode switcher.
+**Status:** COMPLETE. Focused production polish for the dark ambient OS shell and FLOWGRID workflow specimen.
 
 ### What changed
 
 - Added shared shell tokens for surfaces, lines, ink, muted text, cyan, and amber accents.
-- Refined the persistent Sophia/SamJuniorsOS mode switcher with a clearer glass surface, stronger hierarchy, and responsive spacing.
-- Refined the OS top bar to use the shared shell chrome instead of one-off shadow/background values.
-- Added consistent keyboard focus-visible treatment and reduced-motion-safe backdrop behavior.
+- Refined the persistent Sophia/SamJuniorsOS mode switcher with clearer glass hierarchy and responsive spacing.
+- Refined OS window chrome with the shared surface treatment.
+- Refined the workflow specimen header, section cards, node geometry surfaces, state controls, focus-visible states, and reduced-motion behavior.
+- Restarted the preview server after a stale `.next` manifest caused an unstyled browser render.
 
 ### Verification actually run
 
 - `npm run lint` — passed.
-- Browser verification at `http://localhost:3000/` — rendered SamJuniorsOS successfully at the current 1350×851 light preview viewport; screenshot saved to `/tmp/agent-browser/os-shell-polish-final.png`.
-- `npx tsc --noEmit` — blocked by missing generated `.next/types` files after the concurrent production build removed/rebuilt `.next`.
-- `npm run build` — blocked during page data collection by pre-existing missing `/api/advisor` and `/api/agent-collab` page modules.
+- `npx tsc --noEmit` — passed.
+- `npm run build` — passed; `/design-system/workflow` statically prerendered.
+- Browser verification at `http://localhost:3000/` — SamJuniorsOS rendered successfully at 1350×851; screenshot saved to `/tmp/agent-browser/samjuniors-os-shell-final.png`.
+- Browser verification at `http://localhost:3000/design-system/workflow` — styled FLOWGRID specimen rendered successfully; screenshot saved to `/tmp/agent-browser/workflow-polished-restarted.png`.
 
 ### Remaining risks
 
-- Root Next.js build has unrelated route-generation failures that should be addressed separately.
+- Preview initially served stale unstyled output while `.next` was being rebuilt; restarting the dev server resolved it.
 
 ---
 
@@ -1497,7 +1499,7 @@ Deployment posture unchanged: single instance (min=1, max=1) +
 
 | Check | Result |
 |---|---|
-| `bun x tsc --noEmit` | ✅ exit 0 |
+| `bun x tsc --noEmit` | �� exit 0 |
 | `bun test phase3_2_command_terminal.test.ts` | ✅ 22/22 pass |
 | `bun test phase3_3_authoritative_reads.test.ts` | ✅ 17/17 pass (Group G: fabricated-data removal + authoritative read wired in) |
 | `bun run build` (Next.js prod) | ✅ exit 0 · Compiled in 18.4s · 25 static pages |

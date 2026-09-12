@@ -45,7 +45,7 @@ export default function WorkflowDesignSystemSpecimen() {
   const [budget, setBudget] = useState<EffectsBudget>('full');
 
   return (
-    <div className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#01040A] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200 select-text">
+    <div className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#030711] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200 select-text">
       {/* Background Ambience & Perspective Grid */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         {/* Deep radial cosmic horizon glow */}
@@ -72,11 +72,11 @@ export default function WorkflowDesignSystemSpecimen() {
       {/* Main Container */}
       <div className="relative z-10 mx-auto max-w-[1520px] px-4 py-8 sm:px-6 lg:px-10">
         {/* ===================== TOP HEADER ===================== */}
-        <header className="mb-12 border-b border-white/[0.08] pb-8">
+        <header className="mb-10 border-b border-white/[0.1] pb-8">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div>
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-300">
+                <span className="sj-control inline-flex items-center gap-1.5 rounded-full border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-300">
                   <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
                   SamJuniorsOS Primitives
                 </span>
@@ -91,7 +91,7 @@ export default function WorkflowDesignSystemSpecimen() {
             </div>
 
             {/* Performance Budget Switcher */}
-            <div className="flex items-center gap-4 rounded-xl border border-white/[0.1] bg-[#050A14]/80 p-2 backdrop-blur-md">
+            <div className="sj-surface flex items-center gap-4 rounded-xl p-2">
               <div className="flex items-center gap-2 pl-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <Sliders size={14} className="text-cyan-400" />
                 <span>Effects Budget:</span>
@@ -101,11 +101,8 @@ export default function WorkflowDesignSystemSpecimen() {
                   <button
                     key={lvl}
                     onClick={() => setBudget(lvl)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider transition-all duration-150 ${
-                      budget === lvl
-                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 shadow-[0_0_12px_rgba(0,178,255,0.3)]'
-                        : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                    }`}
+                    className={`sj-control rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${budget === lvl ? 'text-cyan-200' : 'text-slate-400'}`}
+                    data-active={budget === lvl}
                   >
                     {lvl}
                   </button>
@@ -118,7 +115,7 @@ export default function WorkflowDesignSystemSpecimen() {
         {/* ===================== GRID SECTIONS ===================== */}
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
           {/* SECTION 01: CANVAS & BACKGROUND (Col 1-4) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-4 flex flex-col justify-between">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-4 flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">01 CANVAS & BACKGROUND</div>
               <h2 className="mt-1 text-base font-semibold text-white">Grid, Depth & Environment</h2>
@@ -156,7 +153,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 02: NODE GEOMETRY (Col 5-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-8">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-8">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">02 NODE GEOMETRY</div>
             <h2 className="mt-1 text-base font-semibold text-white">Core Shapes Used in Workflows</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -236,7 +233,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 03: NODE ANATOMY (Col 1-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-12">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">03 NODE ANATOMY</div>
             <h2 className="mt-1 text-base font-semibold text-white">Layer Breakdown & Component Anatomy</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -310,7 +307,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 04: NODE CONTENT STYLES (Col 1-7) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-7">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-7">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">04 NODE CONTENT STYLES</div>
             <h2 className="mt-1 text-base font-semibold text-white">Reusable Content Compositions</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -386,7 +383,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 05: ICON CONTAINERS (Col 8-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-5">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-5">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">05 ICON CONTAINERS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Surface Variations</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -408,7 +405,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 06: NODE STATES (Col 1-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-12">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">06 NODE STATES</div>
@@ -475,7 +472,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 07: CONNECTION PORTS (Col 1-6) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-6">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-6">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">07 CONNECTION PORTS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Input / Output Port Styles</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -516,7 +513,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 08: CONNECTORS & FLOWS (Col 7-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-6">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-6">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">08 CONNECTORS & FLOWS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Conduit Styles & Directional Signals</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -549,7 +546,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 09: EFFECTS & ANIMATIONS (Col 1-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-12">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">09 EFFECTS & ANIMATIONS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Visual Kinetics & State Feedback</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -628,7 +625,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 10: COLOR TOKENS (Col 1-6) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-6">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-6">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">10 COLOR TOKENS</div>
             <h2 className="mt-1 text-base font-semibold text-white">Semantic Color System</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -662,7 +659,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 11: TYPOGRAPHY (Col 7-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-6">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-6">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">11 TYPOGRAPHY</div>
             <h2 className="mt-1 text-base font-semibold text-white">Hierarchical Text Styles</h2>
             <p className="mt-1.5 text-xs text-slate-400">
@@ -688,7 +685,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 12: REAL COMPOSITIONS (Col 1-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-12">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">12 REAL COMPOSITIONS</div>
@@ -781,7 +778,7 @@ export default function WorkflowDesignSystemSpecimen() {
           </section>
 
           {/* SECTION 13: RESPONSIVE SIZES (Col 1-12) */}
-          <section className="rounded-2xl border border-white/[0.08] bg-[#050A14]/85 p-6 backdrop-blur-xl lg:col-span-12">
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
             <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">13 RESPONSIVE SIZES</div>
             <h2 className="mt-1 text-base font-semibold text-white">Scale & Proportional Hierarchy</h2>
             <p className="mt-1.5 text-xs text-slate-400">
