@@ -751,3 +751,23 @@ Stage Summary:
 - Bundle verified intact and matches the founder-named transfer head 0b6941e; transferring via the bundle yields a repo whose product content is IDENTICAL to cc66870
 - TRANSFER SAFE: YES — with the disclosure that the newest checkpoint 1ecbf8d is not in the bundle; founder may either transfer 0b6941e (bundle as-is) or authorize a refreshed bundle for 1ecbf8d in a later phase
 - STOP honored: no reset, no commit, no push, no merge, no rebase, no source modification, bundle unaltered
+
+---
+Task ID: 4.3G-T
+Agent: Z.ai Code (main session)
+Task: Phase 4.3G — Reconciliation Transfer / Remote Recovery Preparation. Founder decisions: canonical product snapshot cc66870; current checkpoint 1ecbf8d; use existing bundle AS-IS (no refresh; HEAD 0b6941e is product-identical to cc66870); origin/main must remain untouched at af1aab4. Target remote refs (two-sided safety net): recovery branch → bundle HEAD 0b6941e; legacy/pre-reconciliation tag → preserved af1aab4 history. Sandbox has no GitHub write credentials → phase's own rule applies: do not improvise or weaken security; report exact blocker and stop.
+
+Work Log:
+- Sandbox state: HEAD = 9c9a420 (ONE more platform checkpoint d029b5ca-4b17-4b47-9a3e-c402acc5fb4b on top of founder-named 1ecbf8d; content = worklog.md +20 = the 4.3G identity-verification entry ONLY; diff 1ecbf8d..9c9a420 numstat = 20/0 worklog, nothing else); worktree CLEAN; full lineage now b163c92 → cbbbea1 → cc66870 → 0b6941e → 1ecbf8d → 9c9a420, cc66870 intact
+- Credential barrier re-verified conclusively (per phase rule, no improvisation): no ~/.git-credentials, no ~/.netrc, no ~/.ssh, no credential.helper, zero GITHUB/GH_* env vars, no gh CLI, remote URL clean https — sandbox CANNOT push; NO push attempted
+- Bundle as-is verification: stat unchanged (44,749,162 bytes @ 2026-09-13 03:23:31 — NOT refreshed/rebuilt, per instruction); git bundle verify → okay, complete history, sha1; list-heads = refs/tags/legacy/pre-reconciliation → 16ce68cc024ada4432540d5354718a61b45fa6cb + HEAD → 0b6941e458fe502e87b8ab67a14792fcbaaab878
+- Remote untouched verification: anonymous fetch origin --prune (read-only) → origin/main == af1aab41142dfbd7fbeaed27b74b5ae6119de171; ls-remote confirms refs/heads/archive/pre-reconciliation-main + refs/tags/legacy/pre-reconciliation STILL ABSENT on origin (clean slate for the credentialed execution)
+- TRANSFER REHEARSAL (read-only mechanism proof, /tmp/bundle-import-rehearsal, repo/remote/bundle untouched): fresh git init → fetched tag + HEAD from the bundle → imported head = 0b6941e EXACT; imported tag object = 16ce68cc EXACT (cat-file -t = tag; tagger samjuniors <arena.class007@gmail.com> + message preserved verbatim); tag peels to af1aab4 EXACT; merge-base --is-ancestor cc66870 imported-head → EXIT=0; product neutrality re-proven inside the import: numstat cc66870..0b6941e = 0/0 both .tsx + 20/0 worklog only; imported log shows full canonical lineage. The exact credentialed-environment sequence is therefore PROVEN to work as written
+- Credentialed runbook delivered (see phase report): pre-check fetch/ls-remote → bundle verify → import (HEAD:refs/heads/canonical-import + tag refspec) → push refs/heads/canonical-import:refs/heads/archive/pre-reconciliation-main (recovery branch → 0b6941e per this phase's authoritative instruction, superseding 4.3F's af1aab4 target; af1aab4 remains preserved via the tag) → push tag → ls-remote verification of all refs incl. peeled tag → STOP before main replacement
+
+Stage Summary:
+- REMOTE RECOVERY BRANCH: NOT CREATED from sandbox — exact blocker: no GitHub write credentials (conclusively re-verified); expected ref after founder execution: refs/heads/archive/pre-reconciliation-main → 0b6941e458fe502e87b8ab67a14792fcbaaab878 (new remote ref, additive, no force needed — unrelated-history branch creation is a plain ref add)
+- REMOTE LEGACY TAG: NOT CREATED from sandbox — same blocker; expected ref: refs/tags/legacy/pre-reconciliation → tag object 16ce68cc024ada4432540d5354718a61b45fa6cb peeling to af1aab41142dfbd7fbeaed27b74b5ae6119de171
+- Verification results: bundle intact+okay (as-is, unaltered); rehearsal import PASSED on every SHA; mechanism proven; origin/main confirmed af1aab4 and UNTOUCHED; worktree clean; zero source/product files modified (only worklog.md process entry + /tmp rehearsal artifacts)
+- Recommendation appended for founder: after both refs exist, consider GitHub tag-deletion + branch protection on the legacy tag and recovery branch BEFORE main replacement authorization
+- STOPPED at the credential barrier per the phase's own rule; no reset/rebase/merge/amend/product commits/source modification/bundle refresh/force-push/main replacement; no credential improvisation
