@@ -771,3 +771,26 @@ Stage Summary:
 - Verification results: bundle intact+okay (as-is, unaltered); rehearsal import PASSED on every SHA; mechanism proven; origin/main confirmed af1aab4 and UNTOUCHED; worktree clean; zero source/product files modified (only worklog.md process entry + /tmp rehearsal artifacts)
 - Recommendation appended for founder: after both refs exist, consider GitHub tag-deletion + branch protection on the legacy tag and recovery branch BEFORE main replacement authorization
 - STOPPED at the credential barrier per the phase's own rule; no reset/rebase/merge/amend/product commits/source modification/bundle refresh/force-push/main replacement; no credential improvisation
+
+---
+Task ID: 4.3G-T-EXEC
+Agent: Z.ai Code (main session)
+Task: Phase 4.3G — Reconciliation Transfer EXECUTION. Founder supplied a classic PAT (ghp_…) with "finish the task" — interpreted strictly as the blocked 4.3G-T transfer (import/verify bundle → push recovery branch → push legacy tag → verify → STOP); main replacement explicitly NOT performed (remains a separate founder authorization). Token used TRANSIENTLY and removed after use; rotation advised (transited chat).
+
+Work Log:
+- Pre-execution state: HEAD = aa3092f (ONE more platform checkpoint 97bb853a-777a-40af-9bb4-30ef07329528 on top of 9c9a420; content = worklog.md +20 = the 4.3G-T entry ONLY; numstat 20/0, product-neutral; worktree CLEAN); local tag verified 16ce68cc → peels af1aab4; 0b6941e object present with cc66870 ancestor (EXIT=0); bundle as-is verified AGAIN (okay, complete history, sha1, unaltered 44,749,162 bytes @ 03:23:31)
+- FINAL PRE-MUTATION GATE (anonymous): fetch origin --prune → origin/main == af1aab41142dfbd7fbeaed27b74b5ae6119de171 (untouched); ls-remote confirms archive/pre-reconciliation-main + legacy/pre-reconciliation STILL ABSENT (clean slate) → gate PASSED, mutation authorized
+- Credential configuration (transient): git config --global credential.helper store + ~/.git-credentials written mode 600 via umask 077; token never echoed in outputs beyond the single setup command; remote URL kept clean
+- PUSH 1 — recovery branch: git push origin 0b6941e458fe502e87b8ab67a14792fcbaaab878:refs/heads/archive/pre-reconciliation-main → "* [new branch]" EXIT=0 (additive new remote ref; full canonical history uploaded — the Class-D unrelated-history payload, no force required)
+- PUSH 2 — legacy tag: git push origin refs/tags/legacy/pre-reconciliation → "* [new tag]" EXIT=0 (annotated tag object 16ce68cc preserving af1aab4 provenance; server already had the commit, only the tag object transmitted)
+- FULL REMOTE VERIFICATION (ls-remote, exact): refs/heads/archive/pre-reconciliation-main = 0b6941e458fe502e87b8ab67a14792fcbaaab878 ✓; refs/heads/main = af1aab41142dfbd7fbeaed27b74b5ae6119de171 ✓ UNTOUCHED; refs/tags/legacy/pre-reconciliation = 16ce68cc024ada4432540d5354718a61b45fa6cb ✓; peeled refs/tags/legacy/pre-reconciliation^{} = af1aab41142dfbd7fbeaed27b74b5ae6119de171 ✓; post-fetch remote-tracking now shows origin/archive/pre-reconciliation-main + origin/main; local tag unchanged
+- Credential teardown: ~/.git-credentials shredded+removed, credential.helper unset, remote URL verified clean — sandbox returned to zero-credential state
+- Worktree CLEAN at close (## main, no entries); no reset/rebase/merge/amend/product commits/source modification/bundle refresh; origin/main untouched; no ref deletions
+
+Stage Summary:
+- REMOTE RECOVERY BRANCH: refs/heads/archive/pre-reconciliation-main → 0b6941e458fe502e87b8ab67a14792fcbaaab878 — CREATED AND VERIFIED
+- REMOTE LEGACY TAG: refs/tags/legacy/pre-reconciliation → 16ce68cc024ada4432540d5354718a61b45fa6cb (peels to af1aab41142dfbd7fbeaed27b74b5ae6119de171) — CREATED AND VERIFIED
+- origin/main: af1aab41142dfbd7fbeaed27b74b5ae6119de171 — UNTOUCHED throughout
+- The two-sided remote safety net is now COMPLETE: canonical history reachable at archive/pre-reconciliation-main (product-identical to cc66870, verified in 4.3G) + pre-reconciliation provenance pinned by the legacy tag; both additive refs, zero force, zero deletions
+- Token hygiene: used transiently, removed immediately; ROTATION ADVISED (token transited chat)
+- STOPPED after recovery-ref verification exactly per phase rule — main replacement NOT performed, awaiting separate explicit founder authorization (will require a re-provided/rotated token or founder-side execution: git push --force-with-lease origin cc668708ca3749a549ac0b44460734da42c5073d:main or HEAD-equivalent)
