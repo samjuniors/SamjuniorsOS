@@ -794,3 +794,25 @@ Stage Summary:
 - The two-sided remote safety net is now COMPLETE: canonical history reachable at archive/pre-reconciliation-main (product-identical to cc66870, verified in 4.3G) + pre-reconciliation provenance pinned by the legacy tag; both additive refs, zero force, zero deletions
 - Token hygiene: used transiently, removed immediately; ROTATION ADVISED (token transited chat)
 - STOPPED after recovery-ref verification exactly per phase rule — main replacement NOT performed, awaiting separate explicit founder authorization (will require a re-provided/rotated token or founder-side execution: git push --force-with-lease origin cc668708ca3749a549ac0b44460734da42c5073d:main or HEAD-equivalent)
+
+---
+Task ID: 4.3H
+Agent: Z.ai Code (main session)
+Task: Phase 4.3H — Main Replacement PRE-FLIGHT (AUDIT ONLY). Read-only verification against the actual remote; compute the exact force-with-lease replacement command but DO NOT execute; report old remote SHA / replacement SHA / recovery SHA / tag SHA / tree-identity evidence; STOP and await explicit founder authorization.
+
+Work Log:
+- Local state at audit: HEAD = 6f4d7a8 (ONE more platform checkpoint be480145-1be0-4ea5-aa32-0b4e4b2cff7b on top of aa3092f; content = worklog.md +23 = the 4.3G-T-EXEC entry ONLY; product-neutral; worktree CLEAN; lineage cc66870 → 0b6941e → 1ecbf8d → 9c9a420 → aa3092f → 6f4d7a8)
+- Fresh fetch origin --prune (anonymous, read-only) → EXIT=0; full remote inventory EXACTLY five lines and nothing else: HEAD symref → af1aab4 (default branch), refs/heads/main → af1aab4, refs/heads/archive/pre-reconciliation-main → 0b6941e, refs/tags/legacy/pre-reconciliation → 16ce68cc, peeled tag → af1aab4 — ZERO unexpected refs, ZERO drift
+- Remote-tracking verification post-fetch: origin/main == af1aab41142dfbd7fbeaed27b74b5ae6119de171 ✓ EXACT; origin/archive/pre-reconciliation-main == 0b6941e458fe502e87b8ab67a14792fcbaaab878 ✓ EXACT
+- Tree-identity evidence (replacement candidate 0b6941e vs canonical cc66870): tree SHAs e5d6a803… (cc66870) vs e67bef8c… (0b6941e) — differ ONLY by (a) two .tsx mode fields 100644→100755 with IDENTICAL blob SHAs (898005a→898005a, 7a3ca2d→7a3ca2d — byte-identical files), (b) worklog.md blob b6457b4→16e7a7d (+20 process lines); numstat = 0/0 + 0/0 + 20/0; UNEXPECTED_COUNT = 0 (nothing outside worklog.md / BrandLogos.tsx / ExecutionPerimeter.tsx) — PRODUCT/SOURCE CONTENT BYTE-IDENTICAL, all differences are process-log text + known exec bits
+- Context check: current local HEAD 6f4d7a8 also product-identical to cc66870 (numstat = worklog +105 only + the two 0/0 mode entries; tree a929b41)
+- Replacement command COMPUTED, NOT EXECUTED (see phase report): git push --force-with-lease=refs/heads/main:af1aab41142dfbd7fbeaed27b74b5ae6119de171 origin 0b6941e458fe502e87b8ab67a14792fcbaaab878:refs/heads/main — lease pins expected remote main to af1aab4 so ANY drift aborts the push; alternatives documented (cc66870 exact, or current product-identical checkpoint)
+- Zero mutations this phase: no reset/rebase/merge/amend/commit/source modification/branch deletion/tag deletion/push of main; bundle untouched; remote untouched (read-only operations only); dev server unaffected
+
+Stage Summary:
+- OLD REMOTE SHA: af1aab41142dfbd7fbeaed27b74b5ae6119de171 (verified live, unchanged)
+- REPLACEMENT SHA (recommended): 0b6941e458fe502e87b8ab67a14792fcbaaab878 — remote-resident (equals the recovery branch, zero upload needed), product-identical to canonical cc66870 with full blob-level proof
+- RECOVERY SHA: 0b6941e458fe502e87b8ab67a14792fcbaaab878 (archive/pre-reconciliation-main, verified live)
+- TAG SHA: 16ce68cc024ada4432540d5354718a61b45fa6cb peeling to af1aab41142dfbd7fbeaed27b74b5ae6119de171 (verified live)
+- REMOTE DRIFT: NONE — complete inventory matches the expected five refs exactly
+- PRE-FLIGHT VERDICT: ALL GREEN — ready for founder-authorized main replacement; exact lease-guarded command computed and staged for the next phase; STOPPED as ordered
