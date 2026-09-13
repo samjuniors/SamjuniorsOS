@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUp, Mic, MicOff, Sparkles, LayoutGrid } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowUp, Mic, MicOff, Sparkles, LayoutGrid, Palette } from "lucide-react";
 import NeuralCanvas from "./components/NeuralCanvas";
 import SophiaPanel from "./components/SophiaPanel";
 import DesktopOS from "./components/os/DesktopOS";
@@ -175,6 +176,7 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("sophia");
+  const router = useRouter();
 
   // Apply persisted OS state after mount (hydration-safe: SSR and the first
   // client render both start from SEED; localStorage state lands post-mount),
@@ -211,6 +213,18 @@ export default function App() {
           >
             <LayoutGrid size={12} className={tab === "os" ? "text-cyan-300" : "text-slate-400"} />
             <span>SamJuniorsOS</span>
+          </button>
+
+          {/* Route toggle: main canvas ⇄ design-system specimen (navigation, not a mode) */}
+          <span aria-hidden="true" className="mx-0.5 h-3 w-px bg-white/10" />
+          <button
+            onClick={() => { osSound.click(); router.push("/design-system/workflow"); }}
+            title="Open the workflow design-system specimen"
+            aria-label="Open the workflow design-system specimen"
+            className="group flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-slate-400 transition-all duration-200 hover:text-cyan-100 active:scale-95"
+          >
+            <Palette size={12} className="text-slate-400 transition-colors duration-200 group-hover:text-cyan-300" />
+            <span>Design</span>
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Send,
   Bot,
@@ -16,6 +17,7 @@ import {
   Sliders,
   Scale,
   ShieldCheck,
+  LayoutGrid,
 } from 'lucide-react';
 import {
   Node,
@@ -47,9 +49,20 @@ import {
 export default function WorkflowDesignSystemSpecimen() {
   const [activeTabState, setActiveTabState] = useState<NodeStateType>('processing');
   const [budget, setBudget] = useState<EffectsBudget>('full');
+  const router = useRouter();
 
   return (
     <div className="fixed inset-0 overflow-y-auto overflow-x-hidden bg-[#030711] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-cyan-200 select-text">
+      {/* Route toggle: design-system specimen ⇄ main canvas (navigation) */}
+      <button
+        onClick={() => router.push('/')}
+        title="Back to the SamJuniorsOS canvas"
+        aria-label="Back to the SamJuniorsOS canvas"
+        className="group fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300 backdrop-blur-md transition-all duration-200 hover:border-cyan-400/30 hover:bg-cyan-400/10 hover:text-cyan-100 active:scale-95"
+      >
+        <LayoutGrid size={12} className="text-slate-400 transition-colors duration-200 group-hover:text-cyan-300" />
+        <span>Canvas</span>
+      </button>
       {/* Background Ambience & Perspective Grid */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         {/* Deep radial cosmic horizon glow */}
