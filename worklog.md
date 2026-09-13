@@ -816,3 +816,27 @@ Stage Summary:
 - TAG SHA: 16ce68cc024ada4432540d5354718a61b45fa6cb peeling to af1aab41142dfbd7fbeaed27b74b5ae6119de171 (verified live)
 - REMOTE DRIFT: NONE — complete inventory matches the expected five refs exactly
 - PRE-FLIGHT VERDICT: ALL GREEN — ready for founder-authorized main replacement; exact lease-guarded command computed and staged for the next phase; STOPPED as ordered
+
+---
+Task ID: 4.3I
+Agent: Z.ai Code (main session)
+Task: Phase 4.3I — MAIN REPLACEMENT under EXPLICIT FOUNDER AUTHORIZATION. Execute exactly the lease-protected command: git push --force-with-lease=refs/heads/main:af1aab41142dfbd7fbeaed27b74b5ae6119de171 origin 0b6941e458fe502e87b8ab67a14792fcbaaab878:refs/heads/main — no SHA substitution; immediate ls-remote gate first (abort on drift, never override the lease); post-push verification battery; no additional cleanup/rebase/merge/delete/source changes; STOP after verification report.
+
+Work Log:
+- IMMEDIATE PRE-PUSH GATE (anonymous ls-remote): refs/heads/main == af1aab41142dfbd7fbeaed27b74b5ae6119de171 → GATE PASSED; archive/pre-reconciliation-main == 0b6941e + tag 16ce68cc→af1aab4 both confirmed intact; local 0b6941e object available
+- Transient credential re-configuration (founder's PAT from this session, same hygiene: umask 077, mode-600 store, token kept out of outputs, remote URL clean); ROTATION still advised (transited chat)
+- EXECUTED THE EXACT AUTHORIZED COMMAND (verbatim, no substitution): git push --force-with-lease=refs/heads/main:af1aab41142dfbd7fbeaed27b74b5ae6119de171 origin 0b6941e458fe502e87b8ab67a14792fcbaaab878:refs/heads/main → server accepted: "+ af1aab4...0b6941e 0b6941e458fe502e87b8ab67a14792fcbaaab878 -> main (forced update)" EXIT=0 — the lease matched af1aab4 exactly (a drift would have aborted automatically); push was metadata-only (0b6941e already remote-resident via the recovery branch)
+- Credential teardown: ~/.git-credentials shredded+removed, credential.helper unset — sandbox back to zero-credential state
+- POST-PUSH VERIFICATION: fresh fetch origin --prune EXIT=0; full remote inventory = EXACTLY five lines: HEAD symref → 0b6941e (follows main), refs/heads/main → 0b6941e458fe502e87b8ab67a14792fcbaaab878 ✓, refs/heads/archive/pre-reconciliation-main → 0b6941e458fe502e87b8ab67a14792fcbaaab878 ✓ UNMODIFIED, refs/tags/legacy/pre-reconciliation → 16ce68cc024ada4432540d5354718a61b45fa6cb ✓ UNMODIFIED, peeled tag → af1aab41142dfbd7fbeaed27b74b5ae6119de171 ✓ UNMODIFIED — NO recovery ref deleted or modified, NO unexpected refs
+- Remote-tracking verification: origin/main == 0b6941e ✓ EXACT; origin/archive/pre-reconciliation-main == 0b6941e ✓ EXACT
+- RESULTING MAIN TREE PRODUCT-IDENTITY vs canonical cc66870: main tree e67bef8c5794e2aa39e0b7b1decef6094f15bdbd vs cc66870 tree e5d6a80384976862801fcc229dd720434cfe6a68; raw diff = ONLY the three known entries (BrandLogos.tsx + ExecutionPerimeter.tsx with IDENTICAL blob SHAs 898005a/7a3ca2d — mode-bit-only, byte-identical — + worklog.md b6457b4→16e7a7d = +20 process lines); numstat 0/0, 0/0, 20/0; UNEXPECTED_COUNT = 0 — product/source content BYTE-IDENTICAL to canonical
+- Local state at close: worktree CLEAN (## main); local HEAD = c9d19b9 (platform checkpoint of the 4.3H entry on 6f4d7a8 — product-neutral, +worklog only); local main lineage continues independently of the replaced remote main (expected Class-D consequence); no local reset performed (explicitly out of scope)
+- Constraints honored: no cleanup, no rebase, no merge, no amend, no commit, no branch/tag deletion, no source changes, no lease override
+
+Stage Summary:
+- BEFORE: refs/heads/main → af1aab41142dfbd7fbeaed27b74b5ae6119de171; archive → 0b6941e; tag 16ce68cc → af1aab4
+- EXECUTED (verbatim authorized command, lease-protected): main af1aab4 → 0b6941e, forced update, EXIT=0
+- AFTER: refs/heads/main → 0b6941e458fe502e87b8ab67a14792fcbaaab878; refs/heads/archive/pre-reconciliation-main → 0b6941e (UNMODIFIED); refs/tags/legacy/pre-reconciliation → 16ce68cc peeling to af1aab4 (UNMODIFIED); remote HEAD symref follows main → 0b6941e
+- RECONCILIATION COMPLETE: origin/main now carries the canonical SamJuniorsOS history (product-identical to cc66870, blob-level proof), with full pre-reconciliation provenance preserved by the legacy tag and the identical-commit recovery branch — the Class-D reconciliation goal achieved end-to-end
+- Token hygiene: transient use again; rotate the PAT (transited chat twice now)
+- STOPPED after post-push verification as ordered
