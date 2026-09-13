@@ -640,3 +640,27 @@ Stage Summary:
 - Graph contract UNCHANGED (no parallel model, no DTO extension — inspection proved the authoritative graph already expresses the required semantics); execution-language freeze intact (identity-axis additions only)
 - OS chrome cleaned: flat disc avatars in dock/sidebar/chat — no gradients, no glow
 - Committed on local main. Nothing pushed; origin/main untouched at af1aab4
+
+---
+Task ID: 4.3D
+Agent: Z.ai Code (main session)
+Task: Phase 4.3D — Repository reconciliation audit (READ-ONLY protocol: no source/config/dependency/git mutations, no fetch, no push)
+
+Work Log:
+- Verified 4.3C completion state first: HEAD = b163c92 (4.3C-BRAND), working tree clean, no stash; all B.0–B.6 + VISUAL + BRAND commits present on local main
+- Git topology: LOCAL HEAD b163c92 (40 commits, root 6e3c231 sandbox template) vs ORIGIN/MAIN af1aab4 (68 commits, root 830720d upstream); git merge-base HEAD origin/main = EMPTY → unrelated histories → HISTORY CLASS D; origin-only=68 / HEAD-only=40 (rev-list --left-right --count); af1aab4 is NOT an ancestor of HEAD (content was ported, not merged)
+- Divergence content analysis: tree diff 476 files +15,424/−47,876 with ~217 detected renames (R053–R100 — relocation-consistent); local is the semantic superset (all upstream phases ported with SQLite/session-proxy/z-ai-sdk adaptations) plus local-only 4.3B.1 + full 4.3C; 19 of 40 local commits are UUID environment auto-checkpoints (noise)
+- Found stale local branch phase-3.4-runtime-wiring @ cdf4300 — NOT an ancestor of HEAD, content superseded on main (duplicate commit messages exist in main history), never pushed → cleanup candidate, NOT touched
+- Canonical runtime audit: one runtime chain page.tsx→src/os/App via layout/v2-globals→src/os/index.css; 10 API domains under src/app/api; src/lib/server 21 modules; src/lib/db.ts single PrismaClient; mini-services empty (.gitkeep); dev server healthy (GET / 200, GET /api/graph 200, all-200 dev.log)
+- Legacy/duplication: /old 129 tracked files certified inert — boundary script 6/6 PASS (zero src→old imports, tsconfig/eslint/@source guards, no app-router in old, README rules); zero live duplicate authorities; residue noted: dual worklogs (WORKLOG.md upstream-history vs worklog.md sandbox), package.json name still template default, upload/download sandbox artifacts tracked
+- Security: .env untracked & contains only DATABASE_URL (local SQLite path); secret scan of tracked source clean (no sk-/AIza/xox-); proxy.ts posture = security headers verbatim + dev-open/fail-closed executive gating; auth test present (tests/api/agents-runs.auth.test.ts, last certified 4/4); push authority genuine (samjuniors <arena.class007@gmail.com>) but policy-blocked
+- Upstream hygiene defects discovered (origin side): origin/main TRACKS .data/*.json runtime artifacts (13 files) and .env.example with GEMINI_API_KEY placeholder — must never be re-imported; local correctly gitignores .data/
+- Dropped-vs-origin inventory (intentional, documented): .github/workflows/ci.yml (CI not adapted — must be re-authored pre-reliance), docker-compose.yml, prisma/migrations (db-push workflow), 16 Postgres-era tests (replaced by sandbox tests), .claude/, AGENTS.md, middleware.ts (→src/proxy.ts), root layout (→src/)
+- Validation battery (read-only only): boundaries 6/6 PASS; bun run lint exit 0 (0/0); dev health 2×200; destructive test battery NOT re-run (requires dev-stop + .data mutation — incompatible with audit-only); last certified 4.3A 9/9 + 3.4.1 4/4 at 4.3C-BRAND stands
+- Reconciliation recommendation formulated: Class-D canonical-snapshot strategy (tag af1aab4 → force-with-lease main push under founder authorization → re-add adapted CI) with mandatory pre-push fetch to detect remote drift; merge/rebase rejected as meaningless across unrelated histories
+
+Stage Summary:
+- HISTORY CLASS D confirmed: local and origin share NO common ancestor; push would be rejected non-fast-forward; reconciliation requires an authorized canonical-snapshot push (or perpetuating a dual-authority fork — not recommended)
+- Local tree is the single canonical superset, clean, verified (boundaries 6/6, lint 0/0, dev healthy, zero secrets); origin untouched at af1aab4, no fetch performed, zero mutations, zero pushes
+- Key pre-reconciliation gaps identified: CI absent locally, upstream tracks runtime .data artifacts, stale branch + 19 checkpoint commits + template package name = optional hygiene items
+- Next operation (founder-gated, NOT executed): fetch → verify af1aab4 unmoved → tag legacy/pre-reconciliation → push tag → force-with-lease main → verify
