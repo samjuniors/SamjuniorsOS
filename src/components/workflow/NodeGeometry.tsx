@@ -8,6 +8,8 @@ import {
   DEPTH_TOKENS,
   WORKFLOW_COLORS,
 } from './tokens';
+import { ExecutionPerimeter, type ExecutionPerimeterSpec } from './ExecutionPerimeter';
+import { PERIMETER_LANGUAGE } from './execution-language';
 
 export interface NodeGeometryProps {
   geometry?: NodeGeometryType;
@@ -16,6 +18,8 @@ export interface NodeGeometryProps {
   budget?: EffectsBudget;
   customWidth?: number;
   customHeight?: number;
+  /** Phase 4.3E — progressive execution perimeter on THIS shape. */
+  perimeter?: ExecutionPerimeterSpec;
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
@@ -32,6 +36,7 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
   budget = 'full',
   customWidth,
   customHeight,
+  perimeter,
   children,
   className = '',
   style: customStyle,
@@ -44,6 +49,16 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
   const width = customWidth ?? dims.width;
   const height = customHeight ?? dims.height;
   const radius = dims.radius;
+
+  // Phase 4.3E — the perimeter stroke follows THIS node's own shape: the
+  // exact same width/height/border-radius the geometry renders with. A
+  // circular/pill geometry traces its own circle; everything else traces
+  // its rounded-rectangle outline. Never a second decorative shape.
+  const parsedRadius = parseInt(radius, 10) || 0;
+  const effectiveRadius =
+    geometry === 'circle' || geometry === 'pill'
+      ? Math.min(width, height) / 2
+      : Math.min(parsedRadius, Math.min(width, height) / 2);
 
   // Determine state-driven border, shadow, and background
   let border = `1px solid ${WORKFLOW_COLORS.borderDefault}`;
@@ -146,6 +161,18 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
           pointerEvents: 'none',
         }}
       />
+
+      {/* Phase 4.3E — progressive execution perimeter, ON this shape */}
+      {perimeter && state !== 'disabled' && (
+        <ExecutionPerimeter
+          width={width}
+          height={height}
+          radius={effectiveRadius}
+          semantic={perimeter.semantic}
+          progress={perimeter.progress}
+          strokeWidth={PERIMETER_LANGUAGE.strokeWidth}
+        />
+      )}
 
       {/* Internal node contents */}
       <div

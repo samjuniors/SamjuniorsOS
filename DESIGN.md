@@ -483,3 +483,24 @@ External service identity renders as the **official flat brand mark** — never 
 - Motion/easing and glow/animation limits remain governed by `MOTION_TOKENS` and `EFFECTS_BUDGET_CONFIGS`.
 - Components reuse these primitives; they do not invent separate visual/state treatments.
 - Agent identity always resolves before service keyword matching (entity-identity precedence above); OS chrome avatars (workforce dock, sidebar, chat panel) render as clean flat dark discs with thin borders — no gradients, no glow.
+
+### Execution Perimeter (`PERIMETER_LANGUAGE` / `ExecutionPerimeter.tsx`) — Phase 4.3E
+
+The progressive execution perimeter: a **loading/progress ring rendered ON the node's own shape** — never a second decorative circle around it, never a circular ring inside a rectangle. The stroke hugs the exact geometry of the node (a circular node traces its own circle; a work card traces its rounded-rectangle outline) and represents authoritative execution progress:
+
+```
+execution starts → perimeter begins filling at the top → advances clockwise
+→ reaches 100% → execution completes/verifies → the active treatment settles
+```
+
+- **Geometry** — the perimeter SVG overlays the node geometry 1:1 (same width/height/border-radius; stroke inset by half the stroke width so it sits ON the existing border). The generated path always starts at top-center (12 o'clock) and travels clockwise; it degenerates exactly to the circle for circular nodes.
+- **Direction** — one deterministic direction system-wide: start at top, fill clockwise, complete back at the top (`PERIMETER_LANGUAGE.start/direction`). No node may reverse or randomize direction.
+- **Progress** — normalized 0→1 derived ONLY from the authoritative execution trail (settled stages / total) via `perimeterForNode()` (`src/os/lib/flow.ts`) — a pure function of GraphDTO state; never fabricated. 0% renders NO perimeter; 100% is the complete perimeter; transitions interpolate smoothly between authoritative states (`stroke-dasharray`/`stroke-dashoffset` with `pathLength` normalization).
+- **Unmeasured honesty** — genuinely executing nodes without a measurable trail render a restrained quarter arc (`unmeasuredArc`) that orbits slowly clockwise (spinner semantics) ONLY while execution is real; it never implies a percentage and stops when the state settles. Blocked-unmeasured is a static arc.
+- **State mapping** — running = blue/cyan progressive fill (amber when an attached authoritative relationship is in a genuine external-action state); external action = amber/gold; completed = full perimeter in restrained green, settled; blocked = restrained red stopped at the last known progress; approval = STATIC amber boundary (full ring at `approvalAlpha`) — governance, never animated as execution, never fake progress; idle = no perimeter.
+- **Identity separation** — brand logos and identity tints are untouched: the logo is the identity, the perimeter is execution state, the edge signal is execution movement (§6 of the 4.3E founder clarification).
+- **Edge signal + perimeter** — the canvas comets (deterministic, state-driven) are the edge signal; the perimeter reflects the destination's authoritative state. Arrival continues to produce the restrained single-ring activation; nothing fabricates progress from arrival events.
+- **Reduced motion** — `prefers-reduced-motion` disables perimeter transitions and the unmeasured orbit (correct static progress state renders directly), and the FlowEngine freezes to static final states (fills complete, no comets/rings/pulse). Covered by the global CSS kill switch plus an explicit `.execution-perimeter` guard in `src/os/index.css`.
+- **Work cards** — the WorkCard's former linear progress bar was removed: the perimeter on the card's own shape is the single progress visual; the honest numeric trail count (settled/total) remains.
+
+Specimen: `/design-system/workflow` Section 14 (progress scale 0/25/50/75/100% on circle + card shapes, the six canonical states, edge-signal composition, verifier trio, behavioral contract).

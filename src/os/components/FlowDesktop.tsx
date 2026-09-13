@@ -6,7 +6,7 @@ import {
   Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
   Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target, Clock,
 } from "lucide-react";
-import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
+import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, perimeterForNode, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
@@ -29,6 +29,7 @@ import {
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
+  type ExecutionPerimeterSpec,
 } from "@/components/workflow";
 import type { GraphDTO } from "@/types/graph";
 import { fetchGraphOverview, decideApproval } from "../lib/runtime";
@@ -378,15 +379,19 @@ const WORK_STATE_LABEL: Record<string, string> = {
 
 /**
  * Phase 4.3B.1 — WorkCard: the first-class actionable visual object.
- * Title · state · progress (from the authoritative execution trail) ·
- * owner metadata · blocked/waiting indication. No ports (no automation
- * wire-building affordances on the company canvas).
+ * Title · state · owner metadata · blocked/waiting indication. Phase 4.3E:
+ * execution progress renders as the PROGRESSIVE PERIMETER on the card's own
+ * rounded-rectangle shape (see ExecutionPerimeter) — the linear progress bar
+ * was removed so the perimeter is the single progress visual; the honest
+ * numeric trail count (settled/total authoritative stages) remains.
+ * No ports (no automation wire-building affordances on the company canvas).
  */
 function WorkCard({
   n,
   selected,
   hasSelection,
   badge,
+  perimeter,
   onClick,
   onDoubleClick,
 }: {
@@ -394,6 +399,7 @@ function WorkCard({
   selected?: boolean;
   hasSelection?: boolean;
   badge?: ReactNode;
+  perimeter?: ExecutionPerimeterSpec | null;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -402,7 +408,6 @@ function WorkCard({
   const steps = dto?.metadata?.executionSteps;
   const settledCount = steps?.filter((s) => s.status === "done" || s.status === "failed").length ?? 0;
   const total = steps?.length ?? 0;
-  const progress = total > 0 ? settledCount / total : 0;
   const owner = OWNER_VISUALS[dto?.owner ?? n.owner ?? ""];
 
   const runtime = dto?.runtimeState ?? n.state;
@@ -479,21 +484,9 @@ function WorkCard({
         </div>
       </div>
       {total > 0 && (
-        <div className="mt-1.5 flex items-center gap-2">
-          <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isBlocked
-                  ? `${EXECUTION_LANGUAGE.blocked.fill} ${EXECUTION_LANGUAGE.blocked.glow}`
-                  : isDelivered
-                  ? `${EXECUTION_LANGUAGE.completed.fill} ${EXECUTION_LANGUAGE.completed.glow}`
-                  : `${EXECUTION_LANGUAGE.running.fill} ${EXECUTION_LANGUAGE.running.glow}`
-              }`}
-              style={{ width: `${Math.round(progress * 100)}%` }}
-            />
-          </div>
-          <span className="tnum shrink-0 font-mono text-[8.5px] tracking-wider text-slate-500">
-            {settledCount}/{total}
+        <div className="mt-1.5 flex items-center justify-end">
+          <span className="tnum font-mono text-[8.5px] tracking-wider text-slate-500" title="Authoritative execution trail">
+            TRAIL {settledCount}/{total}
           </span>
         </div>
       )}
@@ -541,6 +534,7 @@ function WorkCard({
           customWidth={n.w}
           customHeight={n.h}
           indicator={indicator}
+          perimeter={perimeter ?? undefined}
           ports={[]}
           externalLabel={externalLabel}
           className="!m-0 h-full w-full"
@@ -651,6 +645,7 @@ function Phase4NodeCard({
   selected,
   hasSelection,
   badge,
+  perimeter,
   onClick,
   onDoubleClick,
 }: {
@@ -658,6 +653,7 @@ function Phase4NodeCard({
   selected?: boolean;
   hasSelection?: boolean;
   badge?: ReactNode;
+  perimeter?: ExecutionPerimeterSpec | null;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -785,6 +781,7 @@ function Phase4NodeCard({
           customWidth={n.w}
           customHeight={n.h}
           indicator={indicator}
+          perimeter={perimeter ?? undefined}
           ports={[]}
           externalLabel={externalLabel}
           className="!m-0 h-full w-full"
@@ -1685,15 +1682,19 @@ export default function FlowDesktop({
                 })}
               </svg>
 
-              {/* Dynamic Living Nodes — work cards (first-class) & company nodes */}
-              {graph.nodes.map((n) =>
-                n.type === "workflow" ? (
+              {/* Dynamic Living Nodes — work cards (first-class) & company nodes.
+                  Phase 4.3E: every node carries its authoritative execution
+                  perimeter (progressive fill on its own shape; null = idle). */}
+              {graph.nodes.map((n) => {
+                const perimeter = perimeterForNode(n, visibleEdges);
+                return n.type === "workflow" ? (
                   <WorkCard
                     key={n.id}
                     n={n}
                     selected={selected?.id === n.id}
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
+                    perimeter={perimeter}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}
@@ -1706,13 +1707,14 @@ export default function FlowDesktop({
                     selected={selected?.id === n.id}
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
+                    perimeter={perimeter}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}
                     onDoubleClick={focusNode}
                   />
-                )
-              )}
+                );
+              })}
 
               {/* Focus-reveal: the local workflow of the focused work object */}
               {selected?.type === "workflow" && <ExecutionTrailOverlay n={selected} />}

@@ -172,6 +172,29 @@ input:focus-visible,
   50% { transform: translateY(-16px); }
 }
 
+/* ── Phase 4.3E — Execution Perimeter ────────────────────── */
+/* Unmeasured ACTIVE nodes: slow deterministic clockwise orbit of the
+   quarter arc (spinner semantics). Measured progress NEVER orbits — it is
+   a fixed arc at the authoritative value. Blocked/approval never animate. */
+@keyframes wf-perimeter-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Reduced motion: the correct final/static progress state renders with no
+   continuous animation (explicit guard — the global kill switch below also
+   covers this, but the perimeter primitive stays self-documenting and
+   portable outside this stylesheet). */
+@media (prefers-reduced-motion: reduce) {
+  .execution-perimeter path,
+  .execution-perimeter circle {
+    transition: none !important;
+  }
+  .execution-perimeter g {
+    animation: none !important;
+  }
+}
+
 /* ── Shared SamJuniorsOS surface language ───────────────── */
 :root {
   --sj-bg: #030711;

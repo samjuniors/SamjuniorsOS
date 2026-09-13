@@ -17,6 +17,8 @@
  *   - entity identity tints (agents, governance gates, vault, services)
  *   - canvas-engine rgba derivations (packets, conduits, rings, energy glows)
  *   - conduit + arrival treatments (stroke widths/alphas per state)
+ *   - execution perimeter treatments (Phase 4.3E progressive perimeter —
+ *     geometry/direction/arc/alpha rules, see PERIMETER_LANGUAGE)
  *
  * CANONICAL EXECUTION LANGUAGE (Phase 4.3C constraint, behavioral contract):
  *
@@ -339,6 +341,76 @@ export const ARRIVAL_LANGUAGE = {
   ringLifeMs: 380,
   /** Node activation glow peak alpha (decays per activationDecayMs). */
   glowAlpha: 0.4,
+} as const;
+
+/* ------------------------------------------------------ perimeter language */
+
+/**
+ * PERIMETER_LANGUAGE (Phase 4.3E) — the progressive execution perimeter.
+ *
+ * The perimeter is a LOADING/PROGRESS RING ON THE NODE'S OWN SHAPE — never a
+ * second decorative circle around it (founder contract, §2 of the 4.3E
+ * clarification). The stroke hugs the exact geometry of the node (a circular
+ * node uses its own circle; a card uses its rounded-rectangle outline) and
+ * represents AUTHORITATIVE EXECUTION PROGRESS:
+ *
+ *   execution starts → perimeter begins filling at the top → advances
+ *   clockwise around the entire node → reaches 100% → execution completes /
+ *   verifies → the active treatment settles.
+ *
+ * CONTRACT (extends the frozen execution language; state semantics above are
+ * unchanged — this section is presentation-only and additive):
+ *
+ *   - GEOMETRY: the stroke follows the node's ACTUAL shape. Never a nested
+ *     ring inside a rectangle; never an extra circle around a circle; never
+ *     a second DOM node sized like a decoration.
+ *   - START/DIRECTION: 12 o'clock (top-center), CLOCKWISE — one deterministic
+ *     direction shared by every node in the system. Complete at the top.
+ *   - PROGRESS: a normalized 0→1 value derived ONLY from authoritative state
+ *     (execution trail: settled stages / total). 0% renders NO perimeter;
+ *     100% is the complete perimeter. Progress is NEVER fabricated.
+ *   - UNMEASURED: when authoritative progress is unavailable for a genuinely
+ *     executing node, a restrained quarter arc renders (spinner semantics:
+ *     "active, unmeasured") and orbits slowly ONLY while execution is real —
+ *     it never implies a measured percentage.
+ *   - STATE COLORS (same §3 axis): running = blue/cyan · external action =
+ *     amber/gold · completed = restrained green settled · blocked =
+ *     restrained red, stopped at the last known progress · approval = STATIC
+ *     amber boundary — never animated, never fake progress.
+ *   - IDENTITY SEPARATION (§6): brand logos and identity tints are untouched.
+ *     The logo is the identity; the perimeter is execution state; the edge
+ *     signal is execution movement.
+ *   - MOTION (§11): state/event driven — transitions interpolate smoothly
+ *     between authoritative progress states, then settle. Under
+ *     prefers-reduced-motion the correct final/static progress state renders
+ *     with no continuous animation.
+ */
+export const PERIMETER_LANGUAGE = {
+  /** Perimeter stroke width (px). */
+  strokeWidth: 2.5,
+  /** Start point (12 o'clock) and fill direction — system-wide constants. */
+  start: 'top' as const,
+  direction: 'clockwise' as const,
+  /** Arc fraction for active-but-unmeasured nodes (quarter arc). */
+  unmeasuredArc: 0.25,
+  /** Slow clockwise orbit for unmeasured ACTIVE nodes only (spinner). */
+  unmeasuredOrbitMs: 2600,
+  /** Approval governance boundary renders the complete perimeter, static. */
+  approvalArc: 1,
+  /** Approval boundary alpha — restrained, clearly "a gate, not progress". */
+  approvalAlpha: 0.45,
+  /** Executing-state stroke alpha (running / external action). */
+  activeAlpha: 0.95,
+  /** Settled (completed) perimeter alpha. */
+  settledAlpha: 0.7,
+  /** Blocked perimeter alpha. */
+  blockedAlpha: 0.9,
+  /** Leading-edge ("fill front") dot radius (px); hidden once settled. */
+  headDotRadius: 2.5,
+  /** Smooth interpolation between authoritative progress states (ms). */
+  transitionMs: 620,
+  /** Arcs below this fraction render nothing (0% = no active perimeter). */
+  epsilon: 0.02,
 } as const;
 
 /**

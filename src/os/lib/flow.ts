@@ -44,6 +44,7 @@ import {
   tokenRgbParts,
   type ConduitKey,
 } from "@/components/workflow/execution-language";
+import type { ExecutionPerimeterSpec } from "@/components/workflow/ExecutionPerimeter";
 
 const RUNNING = EXECUTION_LANGUAGE.running;
 const EXTERNAL = EXECUTION_LANGUAGE.externalAction;
@@ -1301,6 +1302,65 @@ function toneForEdge(e: FlowEdge): PacketTone {
   return "cyan";
 }
 
+/* --------------------------------------------------- execution perimeter */
+
+/**
+ * Phase 4.3E — resolve the progressive execution perimeter for a node from
+ * AUTHORITATIVE state only (GraphDTO runtime/governance/execution trail, or
+ * the client fallback view-model). Pure function of its inputs; NEVER
+ * fabricates a progress value.
+ *
+ *   approval  → static amber boundary (never animated, never fake progress)
+ *   blocked   → restrained red, stopped at the last KNOWN progress
+ *   completed → full perimeter, restrained green, settled
+ *   running   → blue/cyan progressive fill (amber when an attached
+ *               relationship is in a genuine external-action state)
+ *   idle      → no perimeter (§1 calm baseline)
+ *
+ * Measured progress = settled stages / total (execution trail). Nodes
+ * without a trail carry `progress: undefined` ("executing, unmeasured") —
+ * the perimeter component decides how that renders; this mapper only passes
+ * authoritative facts.
+ */
+export function perimeterForNode(n: FlowNode, edges: FlowEdge[] = []): ExecutionPerimeterSpec | null {
+  const dto = n.dtoNode;
+  const runtime = dto?.runtimeState;
+  const governance = dto?.governanceState;
+
+  const steps = dto?.metadata?.executionSteps;
+  const measured =
+    steps && steps.length > 0
+      ? steps.filter((s) => s.status === "done" || s.status === "failed").length / steps.length
+      : undefined;
+
+  // Approval / authority boundary — static amber, never animated (§3/§5).
+  if (governance === "awaiting_founder_approval" || n.type === "approval" || dto?.presentationState === "waiting") {
+    return { semantic: "approval" };
+  }
+  // Blocked — restrained red, stopped at the actual known progress.
+  if (runtime === "failed" || n.state === "blocked") {
+    return { semantic: "blocked", progress: measured };
+  }
+  // Completed / verified — full perimeter, settled green.
+  if (runtime === "completed" || n.state === "complete") {
+    return { semantic: "completed", progress: 1 };
+  }
+  // Executing — blue/cyan; amber when an attached relationship is in a
+  // genuine external-action state (authoritative edge semantics only).
+  if (runtime === "running" || n.state === "active" || n.state === "processing") {
+    const external = edges.some(
+      (e) =>
+        (e.from === n.id || e.to === n.id) &&
+        e.style === "amber" &&
+        e.state === "active" &&
+        e.layer !== "governance"
+    );
+    return { semantic: external ? "externalAction" : "running", progress: measured };
+  }
+  // Idle / paused / parked — no perimeter (§1 calm baseline).
+  return null;
+}
+
 /**
  * FlowEngine — the canonical company-context canvas renderer.
  *
@@ -1334,6 +1394,8 @@ export class FlowEngine {
   blueSprite = sprite(...tokenRgbParts("primary"));
   amberSprite = sprite(...tokenRgbParts("processing"));
   roseSprite = sprite(...tokenRgbParts("error"));
+  /** Phase 4.3E — reduced motion: static final states, no continuous animation. */
+  private reducedMotion = false;
   private raf = 0;
   private lastT = 0;
 
@@ -1437,6 +1499,22 @@ export class FlowEngine {
   }
 
   step(dt: number) {
+    // Phase 4.3E — prefers-reduced-motion: render the correct FINAL/STATIC
+    // state only. Active conduit fills complete instantly, no comets, no
+    // arrival rings, no glow decay/pulse oscillation, time frozen. The
+    // React perimeter layer applies the same policy via CSS guards.
+    if (this.reducedMotion) {
+      for (const p of this.paths) {
+        const f = this.fill.get(p.edge.id);
+        if (f && f.active) f.q = 1;
+        p.emit = 0;
+      }
+      this.packets = [];
+      this.rings = [];
+      for (const [k] of this.energy) this.energy.set(k, 0);
+      return;
+    }
+
     this.time += dt;
 
     // §4 — progressive source→target conduit fill for active relationships.
@@ -1701,6 +1779,13 @@ export class FlowEngine {
   }
 
   start() {
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+      this.reducedMotion = mq.matches;
+      mq.addEventListener?.("change", (e) => {
+        this.reducedMotion = e.matches;
+      });
+    }
     this.lastT = performance.now();
     const loop = (now: number) => {
       const dt = Math.min(0.04, Math.max(0.001, (now - this.lastT) / 1000));

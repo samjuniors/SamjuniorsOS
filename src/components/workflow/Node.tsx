@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react';
 import { NodeGeometry } from './NodeGeometry';
 import { NodePort, NodePortProps } from './NodePort';
 import { PulseEffect, ProcessingEffect, SuccessBurst, ErrorPulse } from './Effects';
+import { ExecutionPerimeterSpec } from './ExecutionPerimeter';
 import {
   NodeGeometryType,
   NodeStateType,
@@ -24,6 +25,8 @@ export interface NodeProps {
   customWidth?: number;
   customHeight?: number;
   indicator?: NodeIndicator;
+  /** Phase 4.3E — progressive execution perimeter on this node's own shape. */
+  perimeter?: ExecutionPerimeterSpec;
   ports?: NodePortProps[];
   hasInputPort?: boolean;
   hasOutputPort?: boolean;
@@ -46,6 +49,7 @@ export const Node: React.FC<NodeProps> = ({
   customWidth,
   customHeight,
   indicator,
+  perimeter,
   ports,
   hasInputPort = false,
   hasOutputPort = false,
@@ -103,6 +107,7 @@ export const Node: React.FC<NodeProps> = ({
         budget={budget}
         customWidth={customWidth}
         customHeight={customHeight}
+        perimeter={perimeter}
         style={style}
         onClick={onClick}
         onDoubleClick={onDoubleClick}

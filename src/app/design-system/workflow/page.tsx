@@ -14,6 +14,8 @@ import {
   AlertCircle,
   Clock,
   Sliders,
+  Scale,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Node,
@@ -884,6 +886,259 @@ export default function WorkflowDesignSystemSpecimen() {
                   <div className="text-[10px] font-mono text-slate-500">240 × 80</div>
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* SECTION 14: EXECUTION PERIMETER (Col 1-12) — Phase 4.3E */}
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
+            <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">14 EXECUTION PERIMETER</div>
+            <h2 className="mt-1 text-base font-semibold text-white">Progressive Execution Perimeter</h2>
+            <p className="mt-1.5 text-xs text-slate-400">
+              The perimeter is a loading/progress ring rendered ON the node's own shape — never a second decorative
+              circle. The stroke starts at 12 o'clock and fills clockwise; 0% renders no perimeter, 100% completes
+              back at the top. The logo is the identity; the perimeter speaks execution state only. Progress values
+              shown here are explicit specimen values — the canvas derives them exclusively from the authoritative
+              execution trail and never fabricates them.
+            </p>
+
+            {/* 14A — Progressive fill, circular node (brand identity preserved) */}
+            <div className="mt-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                14A · Progressive fill — circular node (identity preserved)
+              </div>
+              <div className="mt-5 flex flex-wrap items-start justify-around gap-6">
+                {[0, 0.25, 0.5, 0.75, 1].map((p) => (
+                  <div key={p} className="flex flex-col items-center gap-2.5">
+                    <Node geometry="circle" size="md" budget={budget} perimeter={{ semantic: 'running', progress: p }}>
+                      <IconContainer variant="brand" size="md">
+                        <span style={{ display: 'flex', lineHeight: 0 }}>
+                          <GoogleLogo size={22} />
+                        </span>
+                      </IconContainer>
+                    </Node>
+                    <div className="text-center">
+                      <div className="text-xs font-semibold font-mono text-slate-200">{Math.round(p * 100)}%</div>
+                      <div className="text-[10px] text-slate-500">{p === 0 ? 'no perimeter' : p === 1 ? 'complete · settles' : 'clockwise fill'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[10px] text-slate-600">
+                The Google mark stays recognizable in every state — identity is the logo; blue/cyan is execution state.
+              </p>
+            </div>
+
+            {/* 14B — Progressive fill, rounded-rectangle work object */}
+            <div className="mt-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                14B · Progressive fill — rounded-rectangle work object (the shape itself owns the perimeter)
+              </div>
+              <div className="mt-5 flex flex-wrap items-start justify-around gap-6">
+                {[0.25, 0.5, 0.75, 1].map((p) => (
+                  <div key={p} className="flex flex-col items-center gap-2.5">
+                    <Node geometry="rectangle" size="md" budget={budget} perimeter={{ semantic: 'running', progress: p }}>
+                      <div className="flex items-center gap-2.5">
+                        <IconContainer variant="glass" size="sm" color={WORKFLOW_COLORS.primary}>
+                          <Activity size={14} className="text-cyan-300" />
+                        </IconContainer>
+                        <div className="text-left">
+                          <div className="text-[11px] font-semibold text-slate-200">Work object</div>
+                          <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">Trail {Math.round(p * 9)}/9</div>
+                        </div>
+                      </div>
+                    </Node>
+                    <div className="text-center">
+                      <div className="text-xs font-semibold font-mono text-slate-200">{Math.round(p * 100)}%</div>
+                      <div className="text-[10px] text-slate-500">rounded-rect outline</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[10px] text-slate-600">
+                The progress stroke follows the card's rounded-rectangle outline — never a circular ring inside the
+                rectangle.
+              </p>
+            </div>
+
+            {/* 14C — The six canonical states */}
+            <div className="mt-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                14C · State + progress relationship
+              </div>
+              <div className="mt-5 flex flex-wrap items-start justify-around gap-6">
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" budget={budget}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.textMuted}>
+                      <Clock size={20} className="text-slate-400" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-slate-200">IDLE</div>
+                    <div className="text-[10px] text-slate-500">no perimeter · calm</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="active" budget={budget} perimeter={{ semantic: 'running', progress: 0.5 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.primary}>
+                      <Bot size={20} className="text-cyan-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-cyan-200">RUNNING</div>
+                    <div className="text-[10px] text-slate-500">blue · progressive</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="processing" budget={budget} perimeter={{ semantic: 'externalAction', progress: 0.6 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.processing}>
+                      <Zap size={20} className="text-orange-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-orange-200">EXTERNAL ACTION</div>
+                    <div className="text-[10px] text-slate-500">amber · strongest</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="success" budget={budget} perimeter={{ semantic: 'completed', progress: 1 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.success}>
+                      <CheckCircle2 size={20} className="text-emerald-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-emerald-200">COMPLETED</div>
+                    <div className="text-[10px] text-slate-500">100% · settled green</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="error" budget={budget} perimeter={{ semantic: 'blocked', progress: 0.35 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.error}>
+                      <AlertCircle size={20} className="text-rose-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-rose-200">BLOCKED</div>
+                    <div className="text-[10px] text-slate-500">stops at known progress</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node
+                    geometry="circle"
+                    size="md"
+                    budget={budget}
+                    indicator={{ status: 'waiting', glow: true }}
+                    perimeter={{ semantic: 'approval' }}
+                  >
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.processing}>
+                      <Scale size={20} className="text-amber-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-amber-200">APPROVAL REQUIRED</div>
+                    <div className="text-[10px] text-slate-500">static amber · never progress</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 14D — Edge signal + perimeter work together */}
+            <div className="mt-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                14D · Edge signal + perimeter (source active → signal travels → destination fills)
+              </div>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-4">
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" budget={budget}>
+                    <span style={{ display: 'flex', lineHeight: 0, filter: 'drop-shadow(0 2px 5px rgba(0,0,0,0.45))' }}>
+                      <TelegramLogo size={34} />
+                    </span>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-slate-200">SOURCE</div>
+                    <div className="text-[10px] text-slate-500">identity mark</div>
+                  </div>
+                </div>
+                <svg width={240} height={64} className="overflow-visible">
+                  <Connector x1={0} y1={32} x2={240} y2={32} type="animated" tone="orange" hasArrow budget={budget} />
+                </svg>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="processing" budget={budget} perimeter={{ semantic: 'externalAction', progress: 0.35 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.processing}>
+                      <Zap size={20} className="text-orange-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-orange-200">DESTINATION</div>
+                    <div className="text-[10px] text-slate-500">perimeter begins filling</div>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-[10px] text-slate-600">
+                The amber signal travels the authoritative relationship; when it arrives the destination's perimeter
+                reflects its authoritative execution state. Controlled amber — no fireworks, no random particles.
+              </p>
+            </div>
+
+            {/* 14E — Constitutional verifier */}
+            <div className="mt-8">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                14E · Constitutional verifier — VERIFYING → VERIFIED (not gray-icon → suddenly-green)
+              </div>
+              <div className="mt-5 flex flex-wrap items-start justify-around gap-8">
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" budget={budget}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.textMuted}>
+                      <ShieldCheck size={20} className="text-slate-400" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-slate-200">IDLE</div>
+                    <div className="text-[10px] text-slate-500">neutral · no perimeter</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="active" budget={budget} perimeter={{ semantic: 'running' }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.primary}>
+                      <ShieldCheck size={20} className="text-cyan-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-cyan-200">VERIFYING</div>
+                    <div className="text-[10px] text-slate-500">unmeasured — state-driven</div>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-2.5">
+                  <Node geometry="circle" size="md" state="success" budget={budget} perimeter={{ semantic: 'completed', progress: 1 }}>
+                    <IconContainer variant="glass" size="md" color={WORKFLOW_COLORS.success}>
+                      <ShieldCheck size={20} className="text-emerald-300" />
+                    </IconContainer>
+                  </Node>
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-emerald-200">VERIFIED</div>
+                    <div className="text-[10px] text-slate-500">100% · settles green</div>
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-[10px] text-slate-600">
+                The center verifier carries <span className="font-mono">progress: undefined</span> — genuinely
+                executing but unmeasured, so a restrained quarter arc orbits slowly (spinner semantics). It never
+                implies a percentage, and it stops the moment verification settles.
+              </p>
+            </div>
+
+            {/* Contract notes */}
+            <div className="mt-8 rounded-xl border border-white/[0.06] bg-black/40 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Behavioral contract</div>
+              <ul className="mt-2 grid gap-1.5 text-[10.5px] text-slate-400 sm:grid-cols-2">
+                <li>· Start 12 o'clock · CLOCKWISE · one direction system-wide · completes at the top</li>
+                <li>· The stroke follows the node's actual shape — never a nested ring, never an extra circle</li>
+                <li>· 0% = no perimeter · 100% = complete perimeter · progress ONLY from the authoritative trail</li>
+                <li>· Unmeasured active = restrained quarter arc (spinner) — never a fabricated percentage</li>
+                <li>· Approval = static amber boundary — governance, never animated as execution</li>
+                <li>· Logo = identity · perimeter = execution state · edge signal = movement</li>
+                <li>· Blocked stops at the last known progress · completed settles into restrained green</li>
+                <li>· prefers-reduced-motion: correct static progress state, no orbit, no transitions</li>
+              </ul>
             </div>
           </section>
         </div>
