@@ -731,3 +731,23 @@ Stage Summary:
 - READY FOR MAIN REPLACEMENT: NO — blockers: (1) provenance tag + recovery branch not yet pushed (credential barrier by design), (2) HEAD drift 0b6941e vs required cc66870 awaiting founder disposition, (3) main replacement itself remains a separately-approved operation (absolute rule honored)
 - Credentialed-environment sequence (ready to run): fetch origin --prune → verify origin/main == af1aab4 → import /tmp/samjuniors-canonical.bundle (or recreate tag) → git push origin legacy/pre-reconciliation → git push origin af1aab4:refs/heads/archive/pre-reconciliation-main → ls-remote verification of both → report → await explicit main-replacement approval
 - Token hygiene: chat-pasted PAT removed from sandbox; rotation recommended
+
+---
+Task ID: 4.3G
+Agent: Z.ai Code (main session)
+Task: Phase 4.3G — Canonical Tree Identity Verification (READ-ONLY: no reset, no commit, no push, no merge, no rebase, no source modification, bundle untouched). Founder reconfirms cc66870 = canonical PRODUCT SNAPSHOT; verify (not trust) that the platform checkpoint is a content-neutral ancestor carrying only worklog/process entries + the two known mode bits.
+
+Work Log:
+- §1 relationship: git merge-base --is-ancestor cc66870 HEAD → EXIT=0 (ancestor CONFIRMED). Material disclosure: current HEAD = 1ecbf8d, NOT the phase-stated 0b6941e — one additional platform checkpoint (UUID fd9e1a67-22b6-434b-b115-01348188d431, parent 0b6941e) landed at the 4.3F session boundary, containing EXACTLY the 4.3F worklog entry (+22 lines, nothing else; verified by show --stat + line-level diff). Full lineage: b163c92 → cbbbea1 → cc66870 → 0b6941e → 1ecbf8d; 0b6941e also confirmed ancestor of HEAD (EXIT=0)
+- §1 diffs cc66870..HEAD(1ecbf8d): --stat = 3 files +42 (all worklog.md); --numstat = 0/0 BrandLogos.tsx, 0/0 ExecutionPerimeter.tsx, 42/0 worklog.md (ZERO content lines in any source file); --summary = exactly two mode changes 100644→100755
+- §2 tree identity: cc66870^{tree} = e5d6a80384976862801fcc229dd720434cfe6a68 vs HEAD^{tree} = 0433c18d2e1a1577477b90b74927dcc0ac43ce96 (differ, as expected from worklog text + modes being tree state). diff-tree -r name-status = only M on the 2 .tsx + worklog.md. diff --raw PROOF of content neutrality: the two .tsx entries show IDENTICAL blob SHAs (898005a→898005a, 7a3ca2d→7a3ca2d) with mode-field-only change 100644→100755 — byte-identical files; worklog.md blob b6457b4→fb384c8 = process-log text only (added lines verified = the 4.3E-RECON + 4.3F entries)
+- §3 classification: ALL criteria met (ancestor + zero product/source content + only accepted differences) → CANONICAL PRODUCT CONTENT = VERIFIED; CURRENT CHECKPOINT = ACCEPTABLE TRANSFER HEAD (1ecbf8d — or 0b6941e, both provably content-neutral vs cc66870)
+- §4 bundle (NOT altered, stat confirms 44,749,162 bytes @ 03:23:31): git bundle verify → "okay", complete history, sha1; list-heads = refs/tags/legacy/pre-reconciliation → 16ce68cc + HEAD → 0b6941e. cc66870 object-confirmed reachable from the bundle's HEAD ref; merge-base --is-ancestor cc66870 0b6941e → EXIT=0. Note: bundle HEAD matches the founder-NAMED checkpoint 0b6941e exactly; it does not contain the newer 1ecbf8d (refreshing the bundle was forbidden this phase — reported as an option for a future founder instruction)
+- Worktree clean at phase start (## main, no entries); remote untouched throughout (read-only phase, no fetch needed); dev server unaffected
+
+Stage Summary:
+- CANONICAL PRODUCT SNAPSHOT: cc66870 — VERIFIED at tree-content level (product/source blobs byte-identical across cc66870 → 1ecbf8d; only worklog process text + two 644→755 mode bits differ)
+- Current checkpoint = 1ecbf8d (drifted +1 from phase premise 0b6941e; predictable platform checkpointing; zero product impact)
+- Bundle verified intact and matches the founder-named transfer head 0b6941e; transferring via the bundle yields a repo whose product content is IDENTICAL to cc66870
+- TRANSFER SAFE: YES — with the disclosure that the newest checkpoint 1ecbf8d is not in the bundle; founder may either transfer 0b6941e (bundle as-is) or authorize a refreshed bundle for 1ecbf8d in a later phase
+- STOP honored: no reset, no commit, no push, no merge, no rebase, no source modification, bundle unaltered
