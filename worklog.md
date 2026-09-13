@@ -689,3 +689,23 @@ Stage Summary:
 - WorkCard's linear progress bar removed — the perimeter is the single progress visual, with the honest numeric trail count retained
 - Architecture untouched: no DTO change, no read-model change, no second graph model; perimeterForNode is a pure view-model function of existing authoritative fields; engine reduced-motion freezes to static final states
 - Committed locally; nothing pushed; origin/main untouched
+
+---
+Task ID: 4.3E-RECON
+Agent: Z.ai Code (main session)
+Task: Phase 4.3E — Controlled Repository Reconciliation (Class-D canonical-snapshot PRE-FLIGHT, founder verdict received). Protocol: resolve worktree/worklog discrepancy → fresh fetch → tag + push legacy/pre-reconciliation → push archive/pre-reconciliation-main → final checks → STOP before main replacement. NO force-push authorized in this operation.
+
+Work Log:
+- STEP 0 discrepancy resolution: git status showed HEAD=cc66870 (NOT the approved b163c92) and 2 modified files. Investigation: cbbbea1 = deliberate commit of the 4.3D worklog entry ONLY (worklog.md +24, no source) — precisely the resolution Step 0 prescribed, nothing discarded; cc66870 = the founder-ordered 4.3E Execution Perimeter implementation (11 files, +857/−25, presentation-only, its own worklog entry present above). Verified b163c92 IS an ancestor of HEAD (strict superset, no history rewritten). Remaining uncommitted delta: BrandLogos.tsx + ExecutionPerimeter.tsx mode-bit-only 644→755, ZERO content (diff --stat: 0 insertions/0 deletions) — deliberately left uncommitted and reported (recording exec bits on .tsx sources is wrong; discarding violates no-silent-discard; pushes transmit commits, not worktree state)
+- STEP 1: git fetch origin --prune → exit 0, silent (no remote change). GATE PASSED: origin/main == af1aab41142dfbd7fbeaed27b74b5ae6119de171, no remote drift; remote log + show --stat match last-known state exactly
+- STEP 2: annotated tag legacy/pre-reconciliation created at af1aab4 (tag object 16ce68cc, verified dereference → commit af1aab4). PUSH BLOCKED: "fatal: could not read Username for 'https://github.com'" — sandbox has ZERO GitHub write credentials (no credential helper, no GITHUB/GH_* env tokens, no ~/.ssh, no gh CLI, no ~/.git-credentials, no ~/.netrc). Fetch works only because the repo is public. Tag exists LOCAL ONLY; git ls-remote confirms absent on origin
+- STEP 3: BLOCKED by the same credential barrier — archive/pre-reconciliation-main NOT created on remote; git ls-remote confirms absent
+- STEP 4: verification battery: HEAD=cc66870; origin/main=af1aab4; legacy tag →af1aab4; merge-base origin/main HEAD empty (Class-D unrelated histories confirmed); git diff --stat origin/main HEAD = 477 files, +16,280/−47,876; worktree = 2 mode-bit-only files
+- STEP 5: pre-flight report issued; STOPPED. No force-push, no main mutation, no remote tag/branch deletion, no local history rewrite, no merge/rebase/cherry-pick, no source/architecture/Canvas/design-system changes, old/ untouched, dependencies untouched, database untouched
+
+Stage Summary:
+- Remote provenance verified: fresh fetch confirms origin/main unmoved at af1aab4 (zero drift). Local annotated tag legacy/pre-reconciliation created and verified but UNPUSHED (credential barrier).
+- Material local drift discovered and reported: approved snapshot b163c92 → actual HEAD cc66870 (strict superset: +cbbbea1 worklog commit, +cc66870 4.3E perimeter work; both founder-ordered; no rewrites). Founder must re-approve the snapshot identity before any main replacement.
+- Remote safety net (pushed tag + archive branch) NOT established — impossible without GitHub write credentials in this sandbox.
+- READY FOR MAIN REPLACEMENT: NO — three independent blockers: (1) no write credentials (Steps 2–3 push legs failed); (2) HEAD ≠ approved b163c92; (3) founder confirmation for main replacement not yet given (by design).
+- Founder options: (a) provide a GitHub token to the sandbox and re-run the two blocked pushes; (b) execute the recorded push commands from any credentialed environment: `git push origin legacy/pre-reconciliation` and `git push origin af1aab4:refs/heads/archive/pre-reconciliation-main` (local tag already exists and is verified); (c) re-approve cc66870 as the canonical snapshot. Main replacement remains a separate, explicitly-approved operation.
