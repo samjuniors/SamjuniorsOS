@@ -18,25 +18,31 @@
  * specimen values; the OS derives them exclusively from authoritative state.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Activity, AlertCircle, AlertTriangle, ArrowRight, Bot, Check, CheckCircle2,
-  ClipboardList, Clock, Coins, Crosshair, FileText, Hand, LayoutGrid, Layers,
-  Maximize, MousePointer2, PackageCheck, Pause, Play, Scale, ShieldCheck,
-  Sliders, X, Zap,
+  ChevronLeft, ChevronRight, ClipboardList, Clock, Coins, Copy, Crosshair, Eye,
+  FileText, Hand, LayoutGrid, Layers, Maximize, MousePointer2, PackageCheck, Pause,
+  Play, Scale, ShieldCheck, Sliders, X, Zap,
 } from 'lucide-react';
 import {
   Node,
   IconContainer,
   Connector,
   IconLabelContent,
+  AmbientParticles,
+  useGrainTileUrl,
+  usePrefersReducedMotion,
   WORKFLOW_COLORS,
   EXECUTION_LANGUAGE,
   CONDUIT_LANGUAGE,
+  ARRIVAL_LANGUAGE,
   PERIMETER_LANGUAGE,
   ENTITY_IDENTITY,
   DEPTH_TOKENS,
+  SPATIAL_TOKENS,
+  MOTION_TOKENS,
   type EffectsBudget,
   type NodeGeometryType,
   type ConduitKey,
@@ -185,21 +191,135 @@ function EpistemicStageChip({ stage }: { stage: string }) {
   );
 }
 
+/* ------------------------------------ Phase 4.5 specimen instrumentation */
+
+/** Copy-to-clipboard control with honest copied feedback. Copies static
+ *  token/CSS snippets only — never secrets or runtime data. */
+function CopyButton({ text, title }: { text: string; title?: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1400);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <button
+      type="button"
+      title={title ?? 'Copy token snippet'}
+      aria-label={title ?? 'Copy token snippet'}
+      onClick={(e) => {
+        e.stopPropagation();
+        // Honest feedback: "copied" appears ONLY on a real successful write.
+        // Clipboard denial/unavailability shows nothing (no fake feedback).
+        const p = navigator.clipboard?.writeText(text);
+        if (p && typeof p.then === 'function') {
+          p.then(() => setCopied(true)).catch(() => { /* denied — no fake feedback */ });
+        }
+      }}
+      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition active:scale-90 ${
+        copied
+          ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
+          : 'border-white/10 bg-white/[0.03] text-slate-500 hover:border-cyan-300/30 hover:text-cyan-200'
+      }`}
+    >
+      {copied ? <Check size={10} /> : <Copy size={10} />}
+    </button>
+  );
+}
+
+/* ------------------------------------ contrast audit (derived, honest) */
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+/** WCAG 2.1 relative luminance. */
+function relLum(rgb: [number, number, number]): number {
+  const f = (v: number) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  };
+  const [r, g, b] = rgb.map(f) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG 2.1 contrast ratio between two opaque colors. */
+function contrastRatio(fg: string, bg: string): number {
+  const l1 = relLum(hexToRgb(fg));
+  const l2 = relLum(hexToRgb(bg));
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+/** Alpha-composite fg over bg — the resulting opaque hex (chip surfaces). */
+function compositeOver(fg: string, alpha: number, bg: string): string {
+  const [r1, g1, b1] = hexToRgb(fg);
+  const [r2, g2, b2] = hexToRgb(bg);
+  const m = (a: number, b: number) => Math.round(a * alpha + b * (1 - alpha));
+  return `#${[m(r1, r2), m(g1, g2), m(b1, b2)].map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** The actual opaque surface a semantic chip renders on (token at /10 over
+ *  the sidecard glass) — derived from the frozen language map. */
+function chipSurface(semantic: keyof typeof EXECUTION_LANGUAGE, surface = '#0a1120'): string {
+  return compositeOver(WORKFLOW_COLORS[EXECUTION_LANGUAGE[semantic].token], 0.1, surface);
+}
+
+/* -------------------------------------------------- state scrubber states */
+
+/**
+ * Phase 4.5 — the seven canonical workstream presentation states the state
+ * scrubber steps through, mapped onto the FROZEN execution language. The
+ * progress values are EXPLICIT SPECIMEN VALUES; the OS derives every state
+ * and progress figure exclusively from authoritative execution records.
+ */
+type ScrubState = {
+  key: string;
+  perimeter?: { semantic: keyof typeof EXECUTION_LANGUAGE; progress?: number };
+  nodeState: 'default' | 'active' | 'processing' | 'success' | 'error';
+  connectorType: 'curved' | 'animated' | 'branch' | 'dashed';
+  tone: 'blue' | 'green' | 'orange' | 'red';
+  note: string;
+};
+const SCRUB_STATES: ScrubState[] = [
+  { key: 'IDLE', nodeState: 'default', connectorType: 'curved', tone: 'blue', note: 'No perimeter · calm schematic baseline (§1). Nothing pretends to run.' },
+  { key: 'UNDERSTANDING', perimeter: { semantic: 'running' }, nodeState: 'active', connectorType: 'animated', tone: 'blue', note: 'Executing, unmeasured — restrained quarter arc orbits slowly; never implies a percentage.' },
+  { key: 'WORKING', perimeter: { semantic: 'running', progress: 0.45 }, nodeState: 'active', connectorType: 'animated', tone: 'blue', note: 'Measured fill — settled stages / total (TRAIL 4/9), clockwise from 12 o\u2019clock.' },
+  { key: 'WAITING_FOR_FOUNDER', perimeter: { semantic: 'approval' }, nodeState: 'processing', connectorType: 'branch', tone: 'orange', note: 'Static amber governance boundary — a gate, never progress. Never animated.' },
+  { key: 'EXECUTING', perimeter: { semantic: 'externalAction', progress: 0.6 }, nodeState: 'processing', connectorType: 'animated', tone: 'orange', note: 'External action in flight — amber execution pulse on the real relationship.' },
+  { key: 'COMPLETED', perimeter: { semantic: 'completed', progress: 1 }, nodeState: 'success', connectorType: 'curved', tone: 'green', note: 'Settled green — verified result; the full perimeter rests, nothing loops.' },
+  { key: 'BLOCKED', perimeter: { semantic: 'blocked', progress: 0.35 }, nodeState: 'error', connectorType: 'curved', tone: 'red', note: 'Stops at the last known progress — intervention required, no fabricated percentage.' },
+];
+
 /* ------------------------------------------------------------------ fixtures */
+
+/** Hydration-safe mounted flag (useSyncExternalStore — no setState-in-effect).
+ *  Specimen fixture times are relative to the CLIENT's clock, so they must
+ *  render only after hydration: SSR and the first client render both show
+ *  the placeholder, then the fixtures mount. (A module-level Date.now()
+ *  fixture hydrating directly produced text mismatches — pre-existing latent
+ *  specimen bug fixed in 4.5.) */
+const mountedSubscribe = (): (() => void) => () => {};
+function useMounted(): boolean {
+  return useSyncExternalStore(mountedSubscribe, () => true, () => false);
+}
+
+const FIXTURE_MIN = 60000;
+const FIXTURE_NOW = Math.floor(Date.now() / (FIXTURE_MIN * 10)) * (FIXTURE_MIN * 10);
 
 const FIXTURE_ACTIVITY: ActivityEvent[] = [
   {
-    id: 'spec-1', at: Date.now() - 1000 * 60 * 4, actor: 'sophia', text: 'Workstream completed all protocol stages',
+    id: 'spec-1', at: FIXTURE_NOW - FIXTURE_MIN * 4, actor: 'sophia', text: 'Workstream completed all protocol stages',
     status: 'completed', server: true, kind: 'work',
     provenance: { workstreamTitle: 'Margin model v2', agentRunId: 'run_spec_000000000000', workflowInstanceId: 'wfi_spec_00000000' },
   },
   {
-    id: 'spec-2', at: Date.now() - 1000 * 60 * 26, actor: 'founder', text: 'Founder approved external action',
+    id: 'spec-2', at: FIXTURE_NOW - FIXTURE_MIN * 26, actor: 'founder', text: 'Founder approved external action',
     status: 'approved', server: true, kind: 'decision',
     provenance: { approvalId: 'apr_spec_0000000000', agentRunId: 'run_spec_000000000001' },
   },
   {
-    id: 'spec-3', at: Date.now() - 1000 * 60 * 61, actor: 'scheduler', text: 'Scheduled occurrence executed',
+    id: 'spec-3', at: FIXTURE_NOW - FIXTURE_MIN * 61, actor: 'scheduler', text: 'Scheduled occurrence executed',
     status: 'in_flight', server: true, kind: 'info',
     provenance: { scheduleId: 'sch_spec_000000000', occurrenceNumber: 14 },
   },
@@ -209,8 +329,21 @@ const FIXTURE_ACTIVITY: ActivityEvent[] = [
 
 export default function WorkflowDesignSystemSpecimen() {
   const [budget, setBudget] = useState<EffectsBudget>('full');
-  const [reduced, setReduced] = useState(false);
+  // Phase 4.5 — motion preview: 'browser' follows the REAL OS preference,
+  // 'normal' forces motion on, 'reduced' forces reduced motion. The derived
+  // `reduced` below preserves the genuine prefers-reduced-motion behavior.
+  const [motion, setMotion] = useState<'browser' | 'normal' | 'reduced'>('browser');
+  const realReduced = usePrefersReducedMotion();
+  const reduced = motion === 'reduced' || (motion === 'browser' && realReduced);
   const [lens, setLens] = useState(false);
+  // Phase 4.5 — specimen validation controls (design-system only, never
+  // production settings): spatial scale, node density, ambient isolation.
+  const [canvasScale, setCanvasScale] = useState(1);
+  const [dense, setDense] = useState(false);
+  const [ambient, setAmbient] = useState({ grain: true, dust: false, glow: true, depth: false });
+  const [scrub, setScrub] = useState(2); // WORKING — the canonical mid state
+  const grainUrl = useGrainTileUrl();
+  const mounted = useMounted(); // fixture activity renders post-hydration only
   const router = useRouter();
 
   return (
@@ -269,8 +402,9 @@ export default function WorkflowDesignSystemSpecimen() {
               </div>
             </div>
 
-            {/* Budget + reduced-motion controls */}
-            <div className="sj-surface flex flex-wrap items-center gap-4 rounded-xl p-2">
+            {/* Budget + motion preview controls (Phase 4.5: three-state
+                motion preview preserving the real browser preference). */}
+            <div className="sj-surface flex flex-wrap items-center gap-3 rounded-xl p-2 sm:gap-4">
               <div className="flex items-center gap-2 pl-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <Sliders size={14} className="text-cyan-400" />
                 <span>Budget:</span>
@@ -287,14 +421,27 @@ export default function WorkflowDesignSystemSpecimen() {
                   </button>
                 ))}
               </div>
-              <button
-                onClick={() => setReduced((v) => !v)}
-                title="Demonstrate prefers-reduced-motion rendering (static final states, no orbit, no transitions)"
-                className={`sj-control rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${reduced ? 'text-amber-200' : 'text-slate-400'}`}
-                data-active={reduced}
-              >
-                Reduced motion
-              </button>
+              <span className="mx-1 hidden h-4 w-px bg-white/10 sm:block" />
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <Eye size={13} className="text-cyan-400" />
+                <span>Motion:</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {(['browser', 'normal', 'reduced'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMotion(m)}
+                    title={m === 'browser' ? 'Follow the real browser prefers-reduced-motion preference' : m === 'normal' ? 'Force normal motion on (preview)' : 'Force reduced motion on (preview — static final states, no orbit, no transitions)'}
+                    className={`sj-control rounded-lg px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${motion === m ? 'text-cyan-200' : 'text-slate-400'}`}
+                    data-active={motion === m}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              <span className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                prefers-reduced-motion: {realReduced ? 'reduce' : 'no-preference'}
+              </span>
             </div>
           </div>
 
@@ -331,7 +478,8 @@ export default function WorkflowDesignSystemSpecimen() {
                     { hex: WORKFLOW_COLORS.bgGlass, label: 'bgGlass', use: 'floating panels' },
                     { hex: WORKFLOW_COLORS.background, label: 'background', use: 'node fill base' },
                   ].map((c) => (
-                    <div key={c.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                    <div key={c.label} className="relative rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                      <span className="absolute right-2 top-2"><CopyButton text={c.hex} title={`Copy ${c.label} hex`} /></span>
                       <span className="block h-8 w-full rounded-lg border border-white/15" style={{ backgroundColor: c.hex }} />
                       <div className="mt-2 text-[11px] font-semibold text-white">{c.label}</div>
                       <div className="text-[9px] font-mono text-slate-500">{c.hex}</div>
@@ -703,9 +851,94 @@ export default function WorkflowDesignSystemSpecimen() {
               </div>
             </div>
 
+            {/* C6 — Phase 4.5 state scrubber */}
+            <div className="mt-7 rounded-xl border border-white/[0.06] bg-black/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <SubHead>C6 · State scrubber — step through the canonical states</SubHead>
+                <span className="rounded border border-amber-400/25 bg-amber-400/[0.06] px-1.5 py-px font-mono text-[8.5px] font-semibold uppercase tracking-[0.14em] text-amber-200/90">
+                  specimen state · not live operational data
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  aria-label="Previous state"
+                  onClick={() => setScrub((s) => Math.max(0, s - 1))}
+                  className="sj-control flex h-6 w-6 items-center justify-center rounded-lg text-slate-400"
+                >
+                  <ChevronLeft size={12} />
+                </button>
+                {SCRUB_STATES.map((s, i) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setScrub(i)}
+                    title={s.note}
+                    className={`sj-control rounded-lg px-2 py-1 font-mono text-[9px] font-semibold tracking-[0.1em] ${scrub === i ? 'text-cyan-200' : 'text-slate-500'}`}
+                    data-active={scrub === i}
+                  >
+                    {s.key}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-label="Next state"
+                  onClick={() => setScrub((s) => Math.min(SCRUB_STATES.length - 1, s + 1))}
+                  className="sj-control flex h-6 w-6 items-center justify-center rounded-lg text-slate-400"
+                >
+                  <ChevronRight size={12} />
+                </button>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={SCRUB_STATES.length - 1}
+                step={1}
+                value={scrub}
+                onChange={(e) => setScrub(Number(e.target.value))}
+                aria-label={`Specimen state scrubber — ${SCRUB_STATES[scrub].key}`}
+                className="mt-3 w-full accent-cyan-400"
+              />
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+                <NodeSpecimen top={SCRUB_STATES[scrub].key} bottom={SCRUB_STATES[scrub].perimeter ? (SCRUB_STATES[scrub].perimeter.progress !== undefined ? `progress ${(SCRUB_STATES[scrub].perimeter.progress ?? 0) * 100}%` : 'unmeasured') : 'no perimeter'}>
+                  <Node
+                    geometry="rectangle"
+                    size="md"
+                    state={SCRUB_STATES[scrub].nodeState}
+                    budget={budget}
+                    perimeter={SCRUB_STATES[scrub].perimeter}
+                    forceReducedMotion={reduced}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <IconContainer variant="glass" size="sm" color={WORKFLOW_COLORS.primary}><Activity size={14} className="text-cyan-300" /></IconContainer>
+                      <div className="text-left">
+                        <div className="text-[11px] font-semibold text-slate-200">Workstream specimen</div>
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500">scrub · {SCRUB_STATES[scrub].key}</div>
+                      </div>
+                    </div>
+                  </Node>
+                </NodeSpecimen>
+                <svg width={120} height={44} className="shrink-0 overflow-visible">
+                  <Connector x1={0} y1={22} x2={120} y2={22} type={SCRUB_STATES[scrub].connectorType} tone={SCRUB_STATES[scrub].tone} budget={budget} />
+                </svg>
+                <div className="max-w-[280px]">
+                  <StateChip semantic={SCRUB_STATES[scrub].perimeter?.semantic ?? 'idle'} />
+                  <p className="mt-1.5 text-[10.5px] leading-relaxed text-slate-400">{SCRUB_STATES[scrub].note}</p>
+                </div>
+              </div>
+              <Caption>
+                The scrubber drives the REAL perimeter and conduit primitives with explicit specimen values so the
+                actual visual state language can be audited state-by-state. In the OS these states — and every
+                progress figure — derive exclusively from authoritative execution records.
+              </Caption>
+            </div>
+
             {/* Contract notes */}
             <div className="mt-7 rounded-xl border border-white/[0.06] bg-black/40 p-4">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Behavioral contract (frozen)</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Behavioral contract (frozen)</div>
+                <CopyButton text={JSON.stringify(PERIMETER_LANGUAGE, null, 2)} title="Copy PERIMETER_LANGUAGE tokens" />
+              </div>
               <ul className="mt-2 grid gap-1.5 text-[10.5px] text-slate-400 sm:grid-cols-2">
                 <li>· Start 12 o'clock · CLOCKWISE · one direction system-wide · completes at the top</li>
                 <li>· The stroke follows the node's actual shape — never a nested ring, never an extra circle</li>
@@ -747,6 +980,7 @@ export default function WorkflowDesignSystemSpecimen() {
                     <span className="w-36 shrink-0 font-mono text-[10px] font-semibold tracking-[0.14em] text-slate-300">{label}</span>
                     <ConduitSample state={key} />
                     <span className="min-w-0 flex-1 text-[10px] leading-snug text-slate-500">{note}</span>
+                    <CopyButton text={JSON.stringify(CONDUIT_LANGUAGE[key], null, 2)} title={`Copy CONDUIT_LANGUAGE.${key} tokens`} />
                   </div>
                 ))}
               </div>
@@ -879,8 +1113,88 @@ export default function WorkflowDesignSystemSpecimen() {
               </button>
             </div>
 
+            {/* Phase 4.5 — specimen validation controls. DESIGN-SYSTEM
+                CONTROLS ONLY: they stress readability at smaller sizes and
+                higher node counts and isolate ambient layers for auditing.
+                They are not production settings. */}
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2.5 rounded-xl border border-white/[0.06] bg-black/30 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Scale</span>
+                <div className="flex items-center gap-1">
+                  {[0.75, 0.9, 1, 1.15].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setCanvasScale(s)}
+                      title={`Validate readability at ${Math.round(s * 100)}% spatial scale`}
+                      className={`sj-control rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold ${canvasScale === s ? 'text-cyan-200' : 'text-slate-500'}`}
+                      data-active={canvasScale === s}
+                    >
+                      {Math.round(s * 100)}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Density</span>
+                <div className="flex items-center gap-1">
+                  {([false, true] as const).map((d) => (
+                    <button
+                      key={String(d)}
+                      type="button"
+                      onClick={() => setDense(d)}
+                      title={d ? 'Stress-test with more specimen nodes' : 'The calm default node count'}
+                      className={`sj-control rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase ${dense === d ? 'text-cyan-200' : 'text-slate-500'}`}
+                      data-active={dense === d}
+                    >
+                      {d ? 'dense' : 'calm'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ambient</span>
+                <div className="flex items-center gap-1">
+                  {([
+                    ['grain', 'grain'],
+                    ['dust', 'dust'],
+                    ['glow', 'glow'],
+                    ['depth', 'depth'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setAmbient((a) => ({ ...a, [key]: !a[key] }))}
+                      title={`Isolate the ${label} ambient layer for visual audit`}
+                      className={`sj-control rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold ${ambient[key] ? 'text-cyan-200' : 'text-slate-500'}`}
+                      data-active={ambient[key]}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Bounded canvas specimen */}
             <div className="relative mt-6 h-[440px] overflow-hidden rounded-2xl border border-white/10 bg-[#030710] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)]">
+              {/* Phase 4.5 ambient layers, isolated for audit: grain (static
+                  seeded tile ≤4%), dust (the AmbientParticles primitive),
+                  glow (ambient radial gradient). Toggles above. */}
+              {ambient.glow && (
+                <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.22), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.18), transparent 55%)" }} />
+              )}
+              {ambient.grain && grainUrl && (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={{ backgroundImage: `url(${grainUrl})`, backgroundRepeat: 'repeat', opacity: SPATIAL_TOKENS.grain.strength }}
+                />
+              )}
+              {ambient.dust && <AmbientParticles width={900} height={440} count={18} budget={budget} />}
+              <div
+                className="absolute inset-0"
+                style={{ transform: `scale(${canvasScale})`, transformOrigin: 'center center' }}
+              >
               {/* grid */}
               <div
                 className="absolute inset-0 opacity-[0.5]"
@@ -912,14 +1226,23 @@ export default function WorkflowDesignSystemSpecimen() {
                 <Connector x1={740} y1={275} x2={820} y2={330} type="curved" tone="green" budget={budget} />
               </svg>
 
-              {/* nodes */}
-              <div className={`absolute left-[8%] top-[13%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+              {/* nodes — Phase 4.5 'depth' ambient toggle demonstrates the
+                  production depth-of-field bands: far corners defocus ~2px,
+                  mid content ~1px, the focus region stays crisp (filter blur
+                  never affects hit testing). */}
+              <div
+                className={`absolute left-[8%] top-[13%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}
+                style={ambient.depth ? { filter: `blur(${SPATIAL_TOKENS.depthOfField.blurPx[2]}px)` } : undefined}
+              >
                 <Node geometry="circle" size="sm" budget={budget}>
                   <IconContainer variant="glass" size="sm" color={ENTITY_IDENTITY.founder}><ClipboardList size={15} className="text-sky-300" /></IconContainer>
                 </Node>
                 <div className="mt-2 text-center text-[9px] uppercase tracking-[0.14em] text-slate-600">FOUNDER</div>
               </div>
-              <div className={`absolute left-[24%] top-[20%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+              <div
+                className={`absolute left-[24%] top-[20%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}
+                style={ambient.depth ? { filter: `blur(${SPATIAL_TOKENS.depthOfField.blurPx[1]}px)` } : undefined}
+              >
                 <Node geometry="circle" size="sm" budget={budget}>
                   <IconContainer variant="glass" size="sm" color={ENTITY_IDENTITY.sophia}><Bot size={15} className="text-orange-300" /></IconContainer>
                 </Node>
@@ -977,23 +1300,63 @@ export default function WorkflowDesignSystemSpecimen() {
               </div>
 
               {/* verifier + vault */}
-              <div className={`absolute left-[68%] top-[46%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+              <div
+                className={`absolute left-[68%] top-[46%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}
+                style={ambient.depth ? { filter: `blur(${SPATIAL_TOKENS.depthOfField.blurPx[1]}px)` } : undefined}
+              >
                 <Node geometry="circle" size="sm" budget={budget}>
                   <IconContainer variant="glass" size="sm" color={ENTITY_IDENTITY.verifier}><ShieldCheck size={15} className="text-emerald-300" /></IconContainer>
                 </Node>
                 <div className="mt-2 text-center text-[9px] uppercase tracking-[0.14em] text-slate-600">VERIFIER</div>
               </div>
-              <div className="absolute right-[9%] bottom-[14%]">
+              <div
+                className="absolute right-[9%] bottom-[14%]"
+                style={ambient.depth ? { filter: `blur(${SPATIAL_TOKENS.depthOfField.blurPx[2]}px)` } : undefined}
+              >
                 <Node geometry="squircle" size="sm" state="success" budget={budget} perimeter={{ semantic: 'completed', progress: 1 }}>
                   <IconContainer variant="glass" size="sm" color={ENTITY_IDENTITY.vault}><PackageCheck size={15} className="text-emerald-300" /></IconContainer>
                 </Node>
                 <div className="mt-2 text-center text-[9px] uppercase tracking-[0.14em] text-slate-600">VAULT</div>
               </div>
 
+              {/* Phase 4.5 density stress fixtures — parked / queued / blocked
+                  / completed specimen nodes shown only in 'dense' mode, to
+                  validate readability under a fuller canvas. */}
+              {dense && (
+                <>
+                  <div className={`absolute left-[12%] top-[56%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`} style={ambient.depth ? { filter: `blur(${SPATIAL_TOKENS.depthOfField.blurPx[2]}px)` } : undefined}>
+                    <Node geometry="squircle" customWidth={132} customHeight={72} budget={budget}>
+                      <IconLabelContent icon={<Clock size={14} className="text-slate-400" />} label="Pricing audit" sublabel="parked" color={WORKFLOW_COLORS.textMuted} />
+                    </Node>
+                  </div>
+                  <div className={`absolute left-[42%] top-[26%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+                    <Node geometry="squircle" customWidth={132} customHeight={72} state="active" budget={budget} perimeter={{ semantic: 'running' }} forceReducedMotion={reduced}>
+                      <IconLabelContent icon={<Layers size={14} className="text-cyan-300" />} label="Benchmark scan" sublabel="unmeasured" color={WORKFLOW_COLORS.primary} />
+                    </Node>
+                  </div>
+                  <div className={`absolute left-[74%] top-[64%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+                    <Node geometry="squircle" customWidth={132} customHeight={72} state="error" budget={budget} perimeter={{ semantic: 'blocked', progress: 0.35 }}>
+                      <IconLabelContent icon={<AlertCircle size={14} className="text-rose-300" />} label="Vendor sync" sublabel="blocked" color={WORKFLOW_COLORS.error} />
+                    </Node>
+                  </div>
+                  <div className={`absolute left-[30%] top-[78%] transition-opacity duration-300 ${lens ? 'opacity-45' : 'opacity-100'}`}>
+                    <Node geometry="squircle" customWidth={132} customHeight={72} state="success" budget={budget} perimeter={{ semantic: 'completed', progress: 1 }}>
+                      <IconLabelContent icon={<FileText size={14} className="text-emerald-300" />} label="Ops report" sublabel="delivered" color={WORKFLOW_COLORS.success} />
+                    </Node>
+                  </div>
+                  <svg className="absolute inset-0 h-full w-full overflow-visible">
+                    <Connector x1={300} y1={120} x2={420} y2={150} type="dashed" tone="blue" budget={budget} className="opacity-40" />
+                    <Connector x1={690} y1={300} x2={770} y2={310} type="curved" tone="red" budget={budget} className="opacity-60" />
+                  </svg>
+                </>
+              )}
+              </div>
+              {/* /scale wrapper */}
+
               {/* canvas chrome: zoom readout + hint */}
               <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/88 p-1 backdrop-blur-md">
                 <span className="rounded-lg p-1.5 text-slate-300"><MousePointer2 size={13} /></span>
-                <span className="tnum min-w-[46px] text-center font-mono text-[11px] font-semibold text-cyan-200">62%</span>
+                <span className="tnum min-w-[46px] text-center font-mono text-[11px] font-semibold text-cyan-200">{Math.round(canvasScale * 100)}%</span>
                 <span className="rounded-lg p-1.5 text-slate-300"><Maximize size={13} /></span>
               </div>
               <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/10 bg-[#060c18]/85 px-3.5 py-1.5 text-[10.5px] tracking-wide text-slate-400 backdrop-blur-md">
@@ -1007,7 +1370,10 @@ export default function WorkflowDesignSystemSpecimen() {
             <Caption>
               Spatial, zoomable, calm. Selection expands contextually (inspector + local trail); the focus lens dims
               unrelated work and reveals the authoritative execution trail beneath the focused object. Selected node carries
-              the static primary ring — selection never emits execution energy.
+              the static primary ring — selection never emits execution energy. Scale, density, ambient (grain · dust ·
+              glow) and depth are DESIGN-SYSTEM VALIDATION CONTROLS — they stress readability and isolate ambient layers
+              for audit; they are not production settings, and ambient isolation must not become a production preference
+              unless the existing architecture already supports it.
             </Caption>
           </section>
 
@@ -1024,9 +1390,13 @@ export default function WorkflowDesignSystemSpecimen() {
               <div>
                 <SubHead>G1 · Company Activity (4.4C)</SubHead>
                 <div className="mt-3">
-                  <SideCardSpec title="Company Activity" icon={<Activity size={13} />} count={3} footer="Server-authoritative · /api/activity">
+                  <SideCardSpec title="Company Activity" icon={<Activity size={13} />} count={mounted ? 3 : 0} footer="Server-authoritative · /api/activity">
                     <div className="os-scroll max-h-[260px] overflow-y-auto pr-0.5">
-                      {FIXTURE_ACTIVITY.map((e) => <ActivitySurface key={e.id} event={e} />)}
+                      {mounted ? (
+                        FIXTURE_ACTIVITY.map((e) => <ActivitySurface key={e.id} event={e} />)
+                      ) : (
+                        <p className="py-3 text-center text-[10.5px] text-slate-600">loading specimen fixtures…</p>
+                      )}
                     </div>
                   </SideCardSpec>
                 </div>
@@ -1246,6 +1616,110 @@ export default function WorkflowDesignSystemSpecimen() {
               These are the production strings. An empty board renders zero counts; an unselected canvas renders no
               inspector; a claim without recorded external evidence says so — the system never invents a source.
             </Caption>
+          </section>
+          {/* ============ J. CONTRAST AUDIT & TOKENS (4.5) ============ */}
+          <section className="sj-surface rounded-2xl p-6 lg:col-span-12">
+            <SectionHead
+              id="J · CONTRAST & TOKENS"
+              title="Derived Contrast Audit & Copyable Token Snippets"
+              blurb="Specimen instrumentation: contrast ratios DERIVED from the canonical token hex values via the WCAG 2.1 relative-luminance formula (alpha layers composited first), and copyable token/CSS snippets for the sections above. No fabricated scores — anything not derived here is explicitly marked for manual review."
+            />
+
+            <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {/* J1 — derived contrast audit */}
+              <div>
+                <SubHead>J1 · Derived contrast audit (WCAG 2.1 formula)</SubHead>
+                <div className="mt-3 overflow-x-auto">
+                  <div className="min-w-[520px] space-y-1">
+                    {(() => {
+                      const rows = [
+                        { combo: 'Primary text · white on canvas void', fg: '#ffffff', bg: '#030711', std: 4.5, manual: false, note: '' },
+                        { combo: 'Body · slate-300 on sidecard glass', fg: '#cbd5e1', bg: '#0a1120', std: 4.5, manual: false, note: '' },
+                        { combo: 'Meta · slate-400 on rail glass', fg: '#94a3b8', bg: '#060c18', std: 4.5, manual: false, note: '' },
+                        { combo: 'Mono meta · slate-500 on sidecard', fg: '#64748b', bg: '#0a1120', std: 4.5, manual: true, note: 'deliberate low-emphasis metadata — not body copy' },
+                        { combo: 'Active state · cyan-200 on rail glass', fg: '#a5f3fc', bg: '#060c18', std: 4.5, manual: false, note: '' },
+                        { combo: 'Running chip · bright on token/10 chip surface', fg: EXECUTION_LANGUAGE.running.bright, bg: chipSurface('running'), std: 4.5, manual: false, note: '' },
+                        { combo: 'External-action chip · bright on token/10', fg: EXECUTION_LANGUAGE.externalAction.bright, bg: chipSurface('externalAction'), std: 4.5, manual: false, note: '' },
+                        { combo: 'Completed chip · bright on token/10', fg: EXECUTION_LANGUAGE.completed.bright, bg: chipSurface('completed'), std: 4.5, manual: false, note: '' },
+                        { combo: 'Blocked chip · bright on token/10', fg: EXECUTION_LANGUAGE.blocked.bright, bg: chipSurface('blocked'), std: 4.5, manual: false, note: '' },
+                        { combo: 'Perimeter stroke · running bright on canvas', fg: EXECUTION_LANGUAGE.running.bright, bg: '#030711', std: 3, manual: false, note: 'non-text / graphical object' },
+                        { combo: 'Region label · textDim on canvas', fg: WORKFLOW_COLORS.textDim, bg: '#030711', std: 3, manual: true, note: 'ambient spatial chrome' },
+                        { combo: 'Idle conduit core · textMuted @ 0.22 on canvas', fg: compositeOver(WORKFLOW_COLORS.textMuted, 0.22, '#030711'), bg: '#030711', std: 3, manual: true, note: 'calm baseline by design (§1)' },
+                      ];
+                      return rows.map((r) => {
+                        const ratio = contrastRatio(r.fg, r.bg);
+                        const pass = ratio >= r.std;
+                        const verdict = pass ? 'PASS' : r.manual ? 'REVIEW' : 'FAIL';
+                        const verdictCls = pass
+                          ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
+                          : verdict === 'REVIEW'
+                          ? 'border-amber-400/40 bg-amber-400/10 text-amber-300'
+                          : 'border-rose-400/40 bg-rose-400/10 text-rose-300';
+                        return (
+                          <div key={r.combo} className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-black/30 px-3 py-1.5">
+                            <span className="flex h-5 w-9 shrink-0 overflow-hidden rounded border border-white/15" title={`fg ${r.fg} · bg ${r.bg}`}>
+                              <span className="flex-1" style={{ backgroundColor: r.fg }} />
+                              <span className="flex-1" style={{ backgroundColor: r.bg }} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[10.5px] text-slate-300">{r.combo}</span>
+                              <span className="block truncate font-mono text-[8.5px] text-slate-600">{r.fg} on {r.bg}{r.note ? ` · ${r.note}` : ''}</span>
+                            </span>
+                            <span className="tnum shrink-0 font-mono text-[10.5px] font-semibold text-slate-200" title="Derived WCAG 2.1 contrast ratio">{ratio.toFixed(2)}:1</span>
+                            <span className="shrink-0 font-mono text-[8.5px] text-slate-600" title="Applicable threshold">{r.std.toFixed(1)}</span>
+                            <span className={`shrink-0 rounded border px-1.5 py-px font-mono text-[8.5px] font-bold tracking-wider ${verdictCls}`}>{verdict}</span>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                <Caption>
+                  Ratios are computed at render time from the actual token hex values (WCAG 2.1 relative luminance;
+                  alpha-composited chip surfaces composited first). This is a derived reference, NOT an axe-core audit —
+                  compliance claims require a full accessibility tool run. REVIEW rows are deliberate low-emphasis
+                  meta/decoration layers (§1 calm baseline), flagged for manual design review rather than silently passing.
+                </Caption>
+              </div>
+
+              {/* J2 — copyable token snippets */}
+              <div>
+                <SubHead>J2 · Copyable token snippets</SubHead>
+                <div className="mt-3 space-y-2">
+                  {[
+                    {
+                      label: 'Canvas backdrop stack',
+                      code: 'background: #030710;\n/* micro-grain — static seeded tile, \u22644% strength */\nbackground-image: url(grain-tile.png);\nbackground-repeat: repeat;\nopacity: 0.038;\n/* depth-of-field bands (peripheral defocus) */\n/* near 0px \u00b7 mid 1px \u00b7 far 2px \u00b7 quantized, never animated */',
+                    },
+                    {
+                      label: 'Rail glass surface',
+                      code: 'background: rgba(6, 12, 24, 0.80);\nborder: 1px solid rgba(255, 255, 255, 0.08);\nbackdrop-filter: blur(12px);\nbox-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);',
+                    },
+                    {
+                      label: 'SideCard glass',
+                      code: 'background: rgba(10, 17, 32, 0.85);\nborder: 1px solid rgba(255, 255, 255, 0.10);\nbackdrop-filter: blur(12px);\nbox-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 20px 50px -18px rgba(0, 0, 0, 0.75);',
+                    },
+                    { label: 'PERIMETER_LANGUAGE (frozen 4.3E)', code: JSON.stringify(PERIMETER_LANGUAGE, null, 2) },
+                    { label: 'ARRIVAL_LANGUAGE (4.5 refinement)', code: JSON.stringify(ARRIVAL_LANGUAGE, null, 2) },
+                    { label: 'SPATIAL_TOKENS (4.5 depth)', code: JSON.stringify(SPATIAL_TOKENS, null, 2) },
+                    { label: 'MOTION_TOKENS (conduit/comet timing)', code: JSON.stringify(MOTION_TOKENS, null, 2) },
+                  ].map((s) => (
+                    <div key={s.label} className="rounded-xl border border-white/[0.06] bg-black/40 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{s.label}</div>
+                        <CopyButton text={s.code} title={`Copy ${s.label}`} />
+                      </div>
+                      <pre className="os-scroll mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-black/40 p-2.5 font-mono text-[9px] leading-relaxed text-slate-400">{s.code}</pre>
+                    </div>
+                  ))}
+                </div>
+                <Caption>
+                  Static token/CSS snippets only — no secrets, no runtime data. Copy buttons also live on the A1 background
+                  swatches, the C behavioral contract, and every D conduit row. Depth tokens document the 4.5 spatial
+                  language (DOF bands · critically-damped spring camera \u03c9 = {SPATIAL_TOKENS.springCamera.omega} rad/s, \u03b6 = {SPATIAL_TOKENS.springCamera.dampingRatio} · micro-grain \u2264 {(SPATIAL_TOKENS.grain.strength * 100).toFixed(1)}%).
+                </Caption>
+              </div>
+            </div>
           </section>
         </div>
 

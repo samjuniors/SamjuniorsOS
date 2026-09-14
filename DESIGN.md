@@ -515,3 +515,50 @@ execution starts → perimeter begins filling at the top → advances clockwise
 - **Work cards** — the WorkCard's former linear progress bar was removed: the perimeter on the card's own shape is the single progress visual; the honest numeric trail count (settled/total) remains.
 
 Specimen: `/design-system/workflow` Section 14 (progress scale 0/25/50/75/100% on circle + card shapes, the six canonical states, edge-signal composition, verifier trio, behavioral contract).
+
+## 16. Spatial Depth & Specimen Instrumentation (Phase 4.5)
+
+Presentation-quality refinement of the spatial canvas. Depth comes from **hierarchy, scale, focus, translucency, layering and semantic motion** — never from excessive glow, particle density, gradients or animation quantity. All 4.3C/4.3E execution-language semantics are PRESERVED; every change below is presentation-only.
+
+### Spatial Depth of Field (`SPATIAL_TOKENS.depthOfField`)
+- Three **quantized focus bands** measured in normalized screen-space distance from the viewport focus (center): near content stays crisp; the mid band receives ~1px defocus; the far band ~2px (`blurPx [0, 1, 2]`, band edges `nearBand 0.62` / `midBand 0.98`).
+- Quantization is deliberate: the blur value only changes when a node crosses a band boundary — blur is never animated continuously, and DOM style writes stay rare during pan/zoom.
+- CSS `filter: blur()` never affects hit testing — interaction geometry is untouched.
+- The **selected node is always crisp** (attention overrides depth).
+- Graceful degradation: viewports under 700px derive the `minimal` effects budget, which disables depth-of-field entirely (`EFFECTS_BUDGET_CONFIGS.enableDepthOfField`) — small screens get the flat crisp schematic.
+
+### Spring Camera (`SPATIAL_TOKENS.springCamera`)
+- Programmatic camera transitions (focus, fit, recenter, minimap jump, double-click zoom, keyboard +/-) travel through a **critically-damped spring** (damping ratio = 1, ω = 15 rad/s, semi-implicit Euler, dt clamped ≤ 50ms): no overshoot, no oscillation — physical coherence, not spectacle.
+- Deterministic: converges to the exact clamped target and **snaps on settle** (`settleEpsilon`), so end states are identical to the previous cubic implementation.
+- Direct manipulation (drag / wheel / pinch / momentum) is untouched and stays 1:1.
+- `prefers-reduced-motion`: programmatic camera moves snap directly to the final state (no glide).
+
+### Conduit / Comet Refinement
+- The comet keeps its exact semantics (real signals on real relationships only; deterministic cadence/speed/emission unchanged) with a refined treatment: a **short soft trail** of sprite samples with Gaussian-like falloff along the exact routed path, plus one **restrained low-alpha halo** pass beneath the head sprite. The existing additive (`lighter`) composite provides the low-alpha additive pass — no extra composite pass is added.
+- No network-packet decoration, no density increase, no random traffic: comet emission remains exclusively state-driven.
+
+### Arrival Treatment (`ARRIVAL_LANGUAGE` 4.5 fields)
+Still spawned ONLY by a real arrival event (a packet completing an authoritative edge), still exactly one of each:
+1. **Fast thin wave** — the legacy single ring, refined: quicker expansion (`waveLifeMs 240`, fast-out easing), thinner stroke (`waveWidth 1.6`).
+2. **Slower soft bloom** — additive radial glow with a short attack ramp (`bloomAttackMs 90`) and a slower decay (`bloomDecayMs 640`, `bloomAlpha 0.32`).
+3. **Specular sweep** — one restrained ~60ms diagonal light band (`sweepMs 60`, `sweepAlpha 0.13`), clipped to the arriving node's bounds, additive, deterministic direction.
+
+Reduced motion replaces the animated treatment with the static final state (the engine clears waves/blooms/sweeps and freezes). No large shockwaves, no flashy explosions, no persistent glow, no repeated loops.
+
+### Perimeter Material Depth
+- A **faint inner shadow** beneath the perimeter stroke: the exact same arc geometry (never a second ring, never a percentage indicator) offset ~1px down, dark low-alpha — the stroke reads as resting slightly above the node surface. Dash semantics, progress mapping and state colors are untouched.
+- A restrained **head-dot opacity breathing** (`wf-head-breathe`, 1800ms) renders only while EXECUTING (the fill front is alive); settled/blocked/approval states stay static, and reduced motion renders it solid (guarded in `src/os/index.css`).
+
+### Micro-Grain (`SPATIAL_TOKENS.grain` + `grainTileUrl()` / `useGrainTileUrl()`)
+- A **static, seeded** noise tile (128px, mulberry32, fixed seed ⇒ identical every load) rendered once to an offscreen canvas, composited at ≤4% strength (`strength 0.038`) as the canvas backdrop beneath the world layer.
+- Never on semantic surfaces or text; a static texture implies no motion and is safe under reduced motion; hydration-safe via `useSyncExternalStore`.
+
+### Specimen Instrumentation (`/design-system/workflow`)
+The specimen is an engineering/design laboratory:
+- **C6 State scrubber** — step/scrub through IDLE · UNDERSTANDING · WORKING · WAITING_FOR_FOUNDER · EXECUTING · COMPLETED · BLOCKED, driving the REAL perimeter + conduit primitives with explicit specimen values (clearly banner-labeled as specimen state, not live operational data).
+- **F validation controls** — spatial scale (75/90/100/115%), node density (calm/dense fixtures), and ambient isolation toggles (grain · dust · glow · depth). DESIGN-SYSTEM CONTROLS ONLY — they are not production settings.
+- **Motion preview** — three-state control (browser / normal / reduced) with a live `prefers-reduced-motion` readout; the genuine browser preference is preserved.
+- **J1 Derived contrast audit** — WCAG 2.1 ratios computed at render time from the actual token hex values (alpha chip surfaces composited first). A derived reference, not an axe-core audit; non-passing deliberate meta/decoration rows are flagged REVIEW for manual design review rather than silently passing.
+- **J2 + inline Token copy** — copyable token/CSS snippets (static tokens only, never secrets or runtime data) on the J2 block, the A1 background swatches, the C behavioral contract and every D conduit row.
+
+Explicitly NOT implemented (4.5 exclusion list): WebGL, decorative conduit packets, continuous ambient horizon drift, random particle activity, extra progress rings, RUNNING micro-ring, audio/WebAudio, workflow-builder interactions, agent pipeline visualization, new persistence, new API routes, new database models, new state stores, new execution/authorization/epistemic semantics.

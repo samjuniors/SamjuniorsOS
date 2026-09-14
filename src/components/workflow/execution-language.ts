@@ -331,6 +331,12 @@ export const CONDUIT_LANGUAGE = {
  * ARRIVAL_LANGUAGE (§4 "target node activates") — the restrained short
  * activation a destination receives when real energy arrives: one small
  * ring + a decaying node glow. No ember bursts, no dual shockwaves (§7).
+ *
+ * Phase 4.5 presentation refinement (semantics UNCHANGED — still exactly
+ * one wave + one glow per real arrival, plus one optional ~60ms specular
+ * sweep): the ring reads as a fast thin wave, the glow as a slower soft
+ * bloom. The legacy fields below remain the frozen 4.3C values; the 4.5
+ * renderer derives its wave/bloom/sweep timings from the refinement fields.
  */
 export const ARRIVAL_LANGUAGE = {
   /** Single restrained ring radius (px). */
@@ -341,6 +347,24 @@ export const ARRIVAL_LANGUAGE = {
   ringLifeMs: 380,
   /** Node activation glow peak alpha (decays per activationDecayMs). */
   glowAlpha: 0.4,
+
+  /* ---- Phase 4.5 arrival refinement (additive, presentation-only) ---- */
+  /** Fast thin wave: quicker expansion than the legacy ring, thinner stroke. */
+  waveLifeMs: 240,
+  /** Wave stroke alpha at emission. */
+  waveAlpha: 0.5,
+  /** Wave stroke width at emission (px). */
+  waveWidth: 1.6,
+  /** Slower soft bloom: attack ramp (rise to peak) in ms. */
+  bloomAttackMs: 90,
+  /** Slower soft bloom: decay to zero in ms (after the attack). */
+  bloomDecayMs: 640,
+  /** Soft bloom peak alpha (additive radial gradient). */
+  bloomAlpha: 0.32,
+  /** Restrained specular light sweep across the arriving node (ms). */
+  sweepMs: 60,
+  /** Sweep peak alpha (additive, clipped to the node bounds). */
+  sweepAlpha: 0.13,
 } as const;
 
 /* ------------------------------------------------------ perimeter language */

@@ -25,11 +25,15 @@ import {
   EXECUTION_LANGUAGE,
   ENTITY_IDENTITY,
   SERVICE_BRANDS,
+  SPATIAL_TOKENS,
+  EFFECTS_BUDGET_CONFIGS,
+  useGrainTileUrl,
   type ServiceBrandKey,
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
   type ExecutionPerimeterSpec,
+  type EffectsBudget,
 } from "@/components/workflow";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
@@ -393,6 +397,7 @@ function WorkCard({
   hasSelection,
   badge,
   perimeter,
+  depthBlur = 0,
   onClick,
   onDoubleClick,
 }: {
@@ -401,6 +406,8 @@ function WorkCard({
   hasSelection?: boolean;
   badge?: ReactNode;
   perimeter?: ExecutionPerimeterSpec | null;
+  /** Phase 4.5 — peripheral depth-of-field defocus (px; 0 = crisp). */
+  depthBlur?: number;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -514,6 +521,9 @@ function WorkCard({
         top: n.y - n.h / 2,
         width: n.w,
         height: n.h,
+        // Phase 4.5 — spatial depth-of-field (peripheral defocus bands).
+        // Filter blur never affects hit testing or interaction geometry.
+        ...(depthBlur > 0 ? { filter: `blur(${depthBlur}px)` } : null),
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -644,6 +654,7 @@ function Phase4NodeCard({
   hasSelection,
   badge,
   perimeter,
+  depthBlur = 0,
   onClick,
   onDoubleClick,
 }: {
@@ -652,6 +663,8 @@ function Phase4NodeCard({
   hasSelection?: boolean;
   badge?: ReactNode;
   perimeter?: ExecutionPerimeterSpec | null;
+  /** Phase 4.5 — peripheral depth-of-field defocus (px; 0 = crisp). */
+  depthBlur?: number;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -761,6 +774,9 @@ function Phase4NodeCard({
         top: n.y - n.h / 2,
         width: n.w,
         height: n.h,
+        // Phase 4.5 — spatial depth-of-field (peripheral defocus bands).
+        // Filter blur never affects hit testing or interaction geometry.
+        ...(depthBlur > 0 ? { filter: `blur(${depthBlur}px)` } : null),
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -1691,6 +1707,34 @@ export default function FlowDesktop({
   const tx = vw / 2 + cam.x - WORLD.CX * cam.k;
   const ty = vh / 2 + cam.y - WORLD.CY * cam.k;
 
+  /* Phase 4.5 — spatial depth-of-field. Presentation-only: quantized
+     focus bands around the viewport focus (center) so near content stays
+     crisp while peripheral work receives ~1px / ~2px defocus. Bands are
+     quantized so blur only changes at a boundary crossing (never animated
+     continuously), and CSS filter blur does not affect hit testing. The
+     SELECTED node is always crisp — attention overrides depth. Degrades
+     gracefully: small viewports derive the minimal effects budget, which
+     disables depth-of-field entirely (flat crisp schematic). */
+  const effectsBudget: EffectsBudget = vw < 700 ? "minimal" : "full";
+  const dofEnabled = EFFECTS_BUDGET_CONFIGS[effectsBudget].enableDepthOfField;
+  const dofBlurFor = useCallback(
+    (n: FlowNode): number => {
+      if (!dofEnabled || selected?.id === n.id) return 0;
+      const sx = n.x * cam.k + tx;
+      const sy = n.y * cam.k + ty;
+      const nd = Math.hypot(sx - vw / 2, sy - vh / 2) / (Math.min(vw, vh) / 2);
+      const { nearBand, midBand, blurPx } = SPATIAL_TOKENS.depthOfField;
+      if (nd < nearBand) return blurPx[0];
+      if (nd < midBand) return blurPx[1];
+      return blurPx[2];
+    },
+    [dofEnabled, selected, cam.k, tx, ty, vw, vh]
+  );
+
+  // Phase 4.5 — micro-grain backdrop: rendered once to an offscreen tile
+  // (hydration-safe shared hook), composited beneath the world layer.
+  const grainUrl = useGrainTileUrl();
+
   useEffect(() => {
     const engine = new FlowEngine(canvasRef.current!);
     engineRef.current = engine;
@@ -1734,16 +1778,52 @@ export default function FlowDesktop({
     return { x: Math.max(-maxX, Math.min(maxX, x)), y: Math.max(-maxY, Math.min(maxY, y)), k };
   };
 
-  const animateTo = useCallback((target: { x: number; y: number; k: number }, dur = 380) => {
+  const animateTo = useCallback((target: { x: number; y: number; k: number }) => {
     cancelAnimationFrame(animId.current);
     cancelAnimationFrame(momentumRaf.current);
-    const start = { ...camRef.current };
     const end = clamp(target.x, target.y, Math.min(MAX_K, Math.max(MIN_K, target.k)));
-    const t0 = performance.now();
+    // Phase 4.5 — reduced motion: programmatic camera moves snap directly
+    // to the deterministic final state (no glide).
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setCam(end);
+      return;
+    }
+    // Phase 4.5 — critically-damped spring (damping ratio = 1): no
+    // overshoot, no oscillation — physical coherence, not spectacle.
+    // Direct manipulation (drag / wheel / pinch) is untouched and stays 1:1.
+    // The spring converges to the EXACT clamped target (snap on settle), so
+    // target positions stay deterministic.
+    const { omega, dampingRatio, settleEpsilon } = SPATIAL_TOKENS.springCamera;
+    let px = camRef.current.x, py = camRef.current.y, pk = camRef.current.k;
+    let vx = 0, vy = 0, vk = 0;
+    let last = performance.now();
+    const kEps = settleEpsilon * 0.02;
     const tick = (now: number) => {
-      const t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
-      setCam({ x: start.x + (end.x - start.x) * e, y: start.y + (end.y - start.y) * e, k: start.k + (end.k - start.k) * e });
-      if (t < 1) animId.current = requestAnimationFrame(tick);
+      const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
+      last = now;
+      // Semi-implicit Euler per axis: a = −2ζω·v − ω²·(p − target). With
+      // ζ = 1 the approach is monotonic (stable for ω·dt ≤ 2; dt ≤ 0.05).
+      const c = 2 * dampingRatio * omega;
+      vx += (-c * vx - omega * omega * (px - end.x)) * dt;
+      vy += (-c * vy - omega * omega * (py - end.y)) * dt;
+      vk += (-c * vk - omega * omega * (pk - end.k)) * dt;
+      px += vx * dt;
+      py += vy * dt;
+      pk += vk * dt;
+      const settled =
+        Math.abs(px - end.x) < settleEpsilon &&
+        Math.abs(py - end.y) < settleEpsilon &&
+        Math.abs(pk - end.k) < kEps &&
+        Math.abs(vx) < settleEpsilon &&
+        Math.abs(vy) < settleEpsilon &&
+        Math.abs(vk) < kEps;
+      if (settled) {
+        setCam(end); // deterministic snap to the exact target
+        return;
+      }
+      setCam(clamp(px, py, pk));
+      animId.current = requestAnimationFrame(tick);
     };
     animId.current = requestAnimationFrame(tick);
   }, []);
@@ -1759,9 +1839,26 @@ export default function FlowDesktop({
     });
   }, []);
 
+  /** Phase 4.5 — discrete zoom transitions (double-click, keyboard +/-)
+   *  travel through the critically-damped spring camera; continuous wheel
+   *  and pinch gestures keep the direct 1:1 zoomAt path. Same anchored-zoom
+   *  target math as zoomAt — deterministic end state. */
+  const zoomToAnimated = useCallback((mx: number, my: number, factor: number) => {
+    const vw = vwRef.current, vh = vhRef.current;
+    const prev = camRef.current;
+    const nk = Math.min(MAX_K, Math.max(MIN_K, prev.k * factor));
+    if (Math.abs(nk - prev.k) < 1e-6) return;
+    const f = nk / prev.k;
+    animateTo({
+      x: mx - vw / 2 - ((mx - vw / 2 - prev.x) * f),
+      y: my - vh / 2 - ((my - vh / 2 - prev.y) * f),
+      k: nk,
+    });
+  }, [animateTo]);
+
   const fitView = useCallback(() => { osSound.click(); animateTo({ x: 0, y: 0, k: Math.min(vwRef.current / WORLD.W, vhRef.current / WORLD.H) * 0.94 }); }, [animateTo]);
   const recenter = useCallback(() => { osSound.click(); animateTo({ x: 0, y: 0, k: camRef.current.k }); }, [animateTo]);
-  const jumpTo = useCallback((wx: number, wy: number) => { osSound.click(); const k = camRef.current.k; animateTo({ x: -(wx - WORLD.CX) * k, y: -(wy - WORLD.CY) * k, k }, 320); }, [animateTo]);
+  const jumpTo = useCallback((wx: number, wy: number) => { osSound.click(); const k = camRef.current.k; animateTo({ x: -(wx - WORLD.CX) * k, y: -(wy - WORLD.CY) * k, k }); }, [animateTo]);
   const focusNode = useCallback((n: FlowNode) => {
     const fit = Math.min(vwRef.current / WORLD.W, vhRef.current / WORLD.H) * 0.94;
     const k = Math.min(1.5, Math.max(camRef.current.k, fit * 1.7));
@@ -1816,8 +1913,8 @@ export default function FlowDesktop({
       if (e.code === "Space" && !typing) { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur?.(); spaceRef.current = true; setSpaceDown(true); return; }
       if (typing) return;
       const vw = vwRef.current, vh = vhRef.current;
-      if (e.key === "+" || e.key === "=") zoomAt(vw / 2, vh / 2, 1.15);
-      else if (e.key === "-" || e.key === "_") zoomAt(vw / 2, vh / 2, 1 / 1.15);
+      if (e.key === "+" || e.key === "=") zoomToAnimated(vw / 2, vh / 2, 1.15);
+      else if (e.key === "-" || e.key === "_") zoomToAnimated(vw / 2, vh / 2, 1 / 1.15);
       else if (e.key === "0") fitView();
       else if (e.key === "Escape") { setSelected(null); setCompanyOpen(false); }
       else if (e.key.startsWith("Arrow")) {
@@ -1831,7 +1928,7 @@ export default function FlowDesktop({
     const up = (e: KeyboardEvent) => { if (e.code === "Space") { spaceRef.current = false; setSpaceDown(false); } };
     window.addEventListener("keydown", down); window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, [zoomAt, fitView]);
+  }, [zoomAt, zoomToAnimated, fitView]);
 
   const isInteractive = (t: EventTarget | null) => {
     const el = t as HTMLElement | null;
@@ -2038,7 +2135,7 @@ export default function FlowDesktop({
             onPointerUp={endPointer}
             onPointerCancel={endPointer}
             onPointerLeave={endPointer}
-            onDoubleClick={(e) => { if (isInteractive(e.target)) return; const r = viewportRef.current!.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.shiftKey ? 1 / 1.35 : 1.35); }}
+            onDoubleClick={(e) => { if (isInteractive(e.target)) return; const r = viewportRef.current!.getBoundingClientRect(); zoomToAnimated(e.clientX - r.left, e.clientY - r.top, e.shiftKey ? 1 / 1.35 : 1.35); }}
             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
             className={`relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-[#030710] shadow-[0_30px_80px_-24px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.06)] outline-none ${spaceDown ? "cursor-grabbing" : "cursor-grab active:cursor-grabbing"}`}
             style={{ touchAction: "none", perspective: "1400px" }}
@@ -2050,6 +2147,17 @@ export default function FlowDesktop({
               </>
             )}
             <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.25), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.22), transparent 55%)" }} />
+
+            {/* Phase 4.5 — micro-grain backdrop: static seeded noise tile at
+                ≤4% strength, beneath the world layer (never on semantic
+                surfaces or text); a static texture implies no motion and is
+                safe under reduced motion. */}
+            {grainUrl && (
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{ backgroundImage: `url(${grainUrl})`, backgroundRepeat: "repeat", opacity: SPATIAL_TOKENS.grain.strength }}
+              />
+            )}
 
             {/* world layer */}
             <div
@@ -2127,6 +2235,7 @@ export default function FlowDesktop({
                   perimeter (progressive fill on its own shape; null = idle). */}
               {graph.nodes.map((n) => {
                 const perimeter = perimeterForNode(n, visibleEdges);
+                const depthBlur = dofBlurFor(n);
                 return n.type === "workflow" ? (
                   <WorkCard
                     key={n.id}
@@ -2135,6 +2244,7 @@ export default function FlowDesktop({
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
                     perimeter={perimeter}
+                    depthBlur={depthBlur}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}
@@ -2148,6 +2258,7 @@ export default function FlowDesktop({
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
                     perimeter={perimeter}
+                    depthBlur={depthBlur}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}

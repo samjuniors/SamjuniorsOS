@@ -181,6 +181,17 @@ input:focus-visible,
   to { transform: rotate(360deg); }
 }
 
+/* Phase 4.5 — restrained head-dot opacity breathing while EXECUTING only
+   (the fill front is alive while real execution advances). Measured and
+   settled states stay static; reduced motion renders it solid. */
+@keyframes wf-head-breathe {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+.wf-head-breathe {
+  animation: wf-head-breathe 1800ms ease-in-out infinite;
+}
+
 /* Reduced motion: the correct final/static progress state renders with no
    continuous animation (explicit guard — the global kill switch below also
    covers this, but the perimeter primitive stays self-documenting and
@@ -189,6 +200,7 @@ input:focus-visible,
   .execution-perimeter path,
   .execution-perimeter circle {
     transition: none !important;
+    animation: none !important;
   }
   .execution-perimeter g {
     animation: none !important;

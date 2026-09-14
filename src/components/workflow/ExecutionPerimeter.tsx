@@ -285,6 +285,22 @@ export const ExecutionPerimeter: React.FC<ExecutionPerimeterProps> = ({
             : undefined
         }
       >
+        {/* Phase 4.5 — faint inner shadow beneath the perimeter stroke:
+            MATERIAL DEPTH ONLY. It traces the exact same arc geometry (never
+            a second ring, never a progress indicator) offset ~1px down, so
+            the stroke reads as resting slightly above the node surface.
+            Dash semantics, progress mapping and state colors are untouched. */}
+        <path
+          d={d}
+          pathLength={1}
+          fill="none"
+          stroke="rgba(0,0,0,0.32)"
+          strokeWidth={strokeWidth + 0.5}
+          strokeLinecap="round"
+          strokeDasharray={1}
+          strokeDashoffset={1 - arc}
+          transform="translate(0, 1.1)"
+        />
         <path
           d={d}
           pathLength={1}
@@ -300,6 +316,7 @@ export const ExecutionPerimeter: React.FC<ExecutionPerimeterProps> = ({
         {head && (
           <circle
             r={PERIMETER_LANGUAGE.headDotRadius}
+            className={isExecuting && !reduced ? 'wf-head-breathe' : undefined}
             fill={lang.bright}
             fillOpacity={0.95}
             style={{

@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import { WORKFLOW_COLORS, EffectsBudget, EFFECTS_BUDGET_CONFIGS } from './tokens';
+import { usePrefersReducedMotion } from './ExecutionPerimeter';
 
 export type ConnectorType = 'straight' | 'curved' | 'dashed' | 'branch' | 'animated';
 export type SignalTone = 'blue' | 'orange' | 'green' | 'red';
@@ -32,6 +33,12 @@ export const Connector: React.FC<ConnectorProps> = ({
 }) => {
   const markerId = useId();
   const config = EFFECTS_BUDGET_CONFIGS[budget];
+  // Phase 4.5 — prefers-reduced-motion: the SMIL traveling packet is a
+  // CSS-independent animation mechanism, so it is gated explicitly here.
+  // Under reduced motion the conduit renders its static final state (base +
+  // core strokes, arrow) with no traveling packet — matching the FlowEngine's
+  // reduced-motion policy for canvas comets. Presentation-only.
+  const reduced = usePrefersReducedMotion();
 
   const color =
     tone === 'blue'
@@ -71,7 +78,7 @@ export const Connector: React.FC<ConnectorProps> = ({
   const midY = (y1 + y2) / 2;
 
   const isDashed = type === 'dashed';
-  const isAnimated = type === 'animated' && config.maxParticlesPerConduit > 0;
+  const isAnimated = type === 'animated' && config.maxParticlesPerConduit > 0 && !reduced;
 
   return (
     <g className={`workflow-connector ${className}`}>

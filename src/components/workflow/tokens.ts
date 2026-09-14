@@ -149,6 +149,12 @@ export interface PerformanceBudgetConfig {
   enableComplexGlowFilters: boolean;
   enableShockwaves: boolean;
   pulseDurationMultiplier: number;
+  /**
+   * Phase 4.5 — spatial depth-of-field (peripheral 1–2px defocus bands on
+   * the spatial canvas). Presentation-only; disabled on the minimal budget
+   * so the canvas degrades to a flat crisp schematic.
+   */
+  enableDepthOfField: boolean;
 }
 
 export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConfig> = {
@@ -158,6 +164,7 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: true,
     enableShockwaves: true,
     pulseDurationMultiplier: 1.0,
+    enableDepthOfField: true,
   },
   balanced: {
     maxParticlesPerConduit: 3,
@@ -165,6 +172,7 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: false,
     enableShockwaves: true,
     pulseDurationMultiplier: 1.2,
+    enableDepthOfField: true,
   },
   minimal: {
     maxParticlesPerConduit: 1,
@@ -172,5 +180,57 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: false,
     enableShockwaves: false,
     pulseDurationMultiplier: 1.5,
+    enableDepthOfField: false,
   },
 };
+
+/* ------------------------------------------------------ spatial depth (4.5) */
+
+/**
+ * SPATIAL_TOKENS (Phase 4.5) — presentation-only constants for the spatial
+ * canvas' restrained depth hierarchy. Depth comes from hierarchy, scale,
+ * focus, translucency and layering — never from spectacle.
+ *
+ *  - DEPTH OF FIELD: three quantized focus bands measured in normalized
+ *    screen-space distance from the viewport focus (center). Near content
+ *    stays crisp; the mid band receives ~1px defocus; the far band ~2px.
+ *    Bands are quantized on purpose: the blur value only changes when a
+ *    node crosses a band boundary, so nothing animates blur continuously
+ *    and DOM style writes stay rare. CSS filter blur does not affect hit
+ *    testing, so interaction geometry is untouched.
+ *  - SPRING CAMERA: critically-damped (damping ratio 1) spring for
+ *    programmatic camera transitions. No overshoot, no oscillation —
+ *    physical coherence, not animation spectacle. Deterministic target
+ *    positions (snap-to-target on settle).
+ *  - MICRO-GRAIN: a static, seeded, offscreen-rendered noise tile for the
+ *    canvas background at ≤4% visual strength. Never animated, never on
+ *    semantic surfaces or text.
+ */
+export const SPATIAL_TOKENS = {
+  depthOfField: {
+    /** Normalized distance (viewport-center = 0, half-min-dimension = 1)
+     *  below which content renders crisp. */
+    nearBand: 0.62,
+    /** Upper bound of the ~1px mid band. */
+    midBand: 0.98,
+    /** Defocus radii per band: near, mid, far (px). */
+    blurPx: [0, 1, 2] as const,
+  },
+  springCamera: {
+    /** Natural frequency ω (rad/s). Settling (≈ within 0.1%) ~ 6/ω ≈ 400ms. */
+    omega: 15,
+    /** Damping ratio — exactly 1 = critically damped (no overshoot). */
+    dampingRatio: 1,
+    /** Position/velocity epsilon for the deterministic snap-to-target. */
+    settleEpsilon: 0.05,
+  },
+  grain: {
+    /** Noise tile edge (px) — small enough to tile cheaply, large enough to
+     *  avoid visible repetition at canvas zoom levels. */
+    tileSize: 128,
+    /** Deterministic PRNG seed — the tile is identical on every load. */
+    seed: 20260914,
+    /** Composite strength cap (≤ the 4% doctrine). */
+    strength: 0.038,
+  },
+} as const;

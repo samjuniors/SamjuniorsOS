@@ -749,6 +749,10 @@ type Sampled = { pts: P[]; cum: number[]; len: number; edge: FlowEdge; index: nu
 type PacketTone = "cyan" | "amber" | "rose";
 type Packet = { e: number; d: number; speed: number; tone: PacketTone; trail: number };
 type Ring = { x: number; y: number; life: number; max: number; r: number; tone: PacketTone };
+/** Phase 4.5 — slower soft arrival bloom (attack ramp then decay). */
+type Bloom = { x: number; y: number; r: number; life: number; max: number; tone: PacketTone };
+/** Phase 4.5 — one restrained ~60ms specular sweep across the arriving node. */
+type Sweep = { x: number; y: number; w: number; h: number; life: number; max: number; tone: PacketTone };
 
 function samplePath(raw: [number, number][], radius = 22, step = 4): P[] {
   const pts = raw.map(([x, y]) => ({ x, y }));
@@ -1385,6 +1389,8 @@ export class FlowEngine {
   nodeMap = new Map<string, FlowNode>();
   packets: Packet[] = [];
   rings: Ring[] = [];
+  blooms: Bloom[] = [];
+  sweeps: Sweep[] = [];
   energy = new Map<string, number>();
   /** §4 — per-edge progressive fill, carried across graph refreshes. */
   private fill = new Map<string, { active: boolean; q: number }>();
@@ -1483,8 +1489,10 @@ export class FlowEngine {
   }
 
   /**
-   * §4 — "target node activates": one restrained ring plus a decaying node
-   * glow. No ember bursts, no dual shockwaves, no sparks (§7).
+   * §4 — "target node activates": one restrained fast thin wave, a slower
+   * soft bloom and one ~60ms specular sweep across the node — all spawned
+   * ONLY by a real arrival event (packet completing an authoritative edge).
+   * No ember bursts, no dual shockwaves, no sparks (§7).
    */
   arrive(nodeId: string, x: number, y: number, tone: PacketTone = "cyan") {
     this.energy.set(nodeId, 1);
@@ -1492,10 +1500,31 @@ export class FlowEngine {
       x,
       y,
       life: 0,
-      max: ARRIVAL_LANGUAGE.ringLifeMs / 1000,
+      max: ARRIVAL_LANGUAGE.waveLifeMs / 1000,
       r: ARRIVAL_LANGUAGE.ringRadius,
       tone,
     });
+    const n = this.nodeMap.get(nodeId);
+    const bloomR = n ? Math.max(n.w, n.h) * 0.92 : ARRIVAL_LANGUAGE.ringRadius;
+    this.blooms.push({
+      x,
+      y,
+      r: bloomR,
+      life: 0,
+      max: (ARRIVAL_LANGUAGE.bloomAttackMs + ARRIVAL_LANGUAGE.bloomDecayMs) / 1000,
+      tone,
+    });
+    if (n) {
+      this.sweeps.push({
+        x: n.x,
+        y: n.y,
+        w: n.w,
+        h: n.h,
+        life: 0,
+        max: ARRIVAL_LANGUAGE.sweepMs / 1000,
+        tone,
+      });
+    }
   }
 
   step(dt: number) {
@@ -1511,6 +1540,8 @@ export class FlowEngine {
       }
       this.packets = [];
       this.rings = [];
+      this.blooms = [];
+      this.sweeps = [];
       for (const [k] of this.energy) this.energy.set(k, 0);
       return;
     }
@@ -1594,11 +1625,21 @@ export class FlowEngine {
       this.energy.set(k, v * Math.exp(-decay * dt));
     }
 
-    // Arrival ring lifetimes.
+    // Arrival wave / bloom / sweep lifetimes.
     for (let i = this.rings.length - 1; i >= 0; i--) {
       const ring = this.rings[i];
       ring.life += dt;
       if (ring.life >= ring.max) this.rings.splice(i, 1);
+    }
+    for (let i = this.blooms.length - 1; i >= 0; i--) {
+      const bloom = this.blooms[i];
+      bloom.life += dt;
+      if (bloom.life >= bloom.max) this.blooms.splice(i, 1);
+    }
+    for (let i = this.sweeps.length - 1; i >= 0; i--) {
+      const sweep = this.sweeps[i];
+      sweep.life += dt;
+      if (sweep.life >= sweep.max) this.sweeps.splice(i, 1);
     }
   }
 
@@ -1729,6 +1770,12 @@ export class FlowEngine {
     }
 
     // --- Comets (§4: directional energy on the exact routed path).
+    // Phase 4.5 — refined treatment: a short soft trail of sprite samples
+    // with Gaussian-like falloff along the exact routed path (never an
+    // independent particle system, §4/§8), plus one restrained low-alpha
+    // halo pass beneath the head. The additive "lighter" composite above
+    // provides the low-alpha additive pass; semantics (cadence, speed,
+    // emission — real signals on real relationships only) are unchanged.
     for (const pk of this.packets) {
       const p = this.paths[pk.e];
       if (!p) continue;
@@ -1736,22 +1783,27 @@ export class FlowEngine {
       const isAmber = pk.tone === "amber";
       const isRose = pk.tone === "rose";
       const spr = isAmber ? this.amberSprite : isRose ? this.roseSprite : this.blueSprite;
-      const rgb = isAmber ? EXTERNAL.rgb : isRose ? BLOCKED.rgb : RUNNING.rgb;
 
-      // Directional streak trail — the comet tail follows the routed path
-      // exactly (never an independent particle system, §4/§8).
-      const steps = 12;
+      // Soft trail — sprite samples behind the head, Gaussian alpha profile.
+      const steps = 8;
+      const sigma = 0.42;
       for (let i = steps; i >= 1; i--) {
         const d = pk.d - (pk.trail * i) / steps;
         if (d < 0) continue;
+        const u = i / steps;
         const q = this.pointAt(p, d);
-        const t = 1 - i / steps;
-        const r = 0.8 + t * 2.4;
-        g.fillStyle = `rgba(${rgb},${(t * t * 0.8).toFixed(3)})`;
-        g.beginPath();
-        g.arc(q.x, q.y, r, 0, Math.PI * 2);
-        g.fill();
+        const a = Math.exp(-(u * u) / (2 * sigma * sigma)) * 0.5;
+        const r = 2.2 + (1 - u) * 3.2;
+        g.globalAlpha = a;
+        g.drawImage(spr, q.x - r, q.y - r, r * 2, r * 2);
       }
+      g.globalAlpha = 1;
+
+      // Restrained halo — one wider low-alpha pass beneath the head sprite.
+      g.globalAlpha = 0.3;
+      const hs = 15;
+      g.drawImage(spr, head.x - hs, head.y - hs, hs * 2, hs * 2);
+      g.globalAlpha = 1;
 
       // Comet head.
       const s = 11;
@@ -1762,16 +1814,62 @@ export class FlowEngine {
       g.fill();
     }
 
-    // --- Arrival rings (single, restrained — §7).
+    // --- Phase 4.5 arrival blooms (slower soft glow: attack, then decay).
+    for (const b of this.blooms) {
+      const attack = ARRIVAL_LANGUAGE.bloomAttackMs / 1000;
+      const t = b.life;
+      let a: number;
+      if (t < attack) a = t / attack;
+      else a = Math.max(0, 1 - (t - attack) / Math.max(0.001, b.max - attack));
+      a *= ARRIVAL_LANGUAGE.bloomAlpha;
+      if (a <= 0.004) continue;
+      const rgb =
+        b.tone === "amber" ? EXTERNAL.rgb : b.tone === "rose" ? BLOCKED.rgb : RUNNING.rgb;
+      const rr = b.r * (0.92 + 0.22 * (t / b.max));
+      const gr = g.createRadialGradient(b.x, b.y, 0, b.x, b.y, rr);
+      gr.addColorStop(0, `rgba(${rgb},${a.toFixed(3)})`);
+      gr.addColorStop(0.55, `rgba(${rgb},${(a * 0.35).toFixed(3)})`);
+      gr.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = gr;
+      g.fillRect(b.x - rr, b.y - rr, rr * 2, rr * 2);
+    }
+
+    // --- Phase 4.5 specular sweeps (~60ms, clipped to the arriving node,
+    //     additive, deterministic diagonal direction — real arrivals only).
+    for (const sw of this.sweeps) {
+      const k2 = sw.life / sw.max;
+      const a = Math.sin(Math.PI * (0.15 + 0.7 * k2)) * ARRIVAL_LANGUAGE.sweepAlpha;
+      if (a <= 0.004) continue;
+      const rgb =
+        sw.tone === "amber" ? EXTERNAL.rgbBright : sw.tone === "rose" ? BLOCKED.rgbBright : RUNNING.rgbBright;
+      g.save();
+      g.beginPath();
+      g.rect(sw.x - sw.w / 2, sw.y - sw.h / 2, sw.w, sw.h);
+      g.clip();
+      const band = 0.5;
+      const lead = -band + (1 + band) * k2;
+      const x0 = sw.x - sw.w / 2;
+      const g0 = x0 + lead * sw.w;
+      const g1 = g0 + band * sw.w;
+      const gr = g.createLinearGradient(g0, sw.y - sw.h, g1, sw.y + sw.h);
+      gr.addColorStop(0, `rgba(${rgb},0)`);
+      gr.addColorStop(0.5, `rgba(${rgb},${a.toFixed(3)})`);
+      gr.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = gr;
+      g.fillRect(sw.x - sw.w / 2, sw.y - sw.h / 2, sw.w, sw.h);
+      g.restore();
+    }
+
+    // --- Arrival waves (fast, thin, single — §7 restraint).
     for (const r of this.rings) {
       const k2 = r.life / r.max;
-      const alpha = (1 - k2) * ARRIVAL_LANGUAGE.ringAlpha;
+      const alpha = (1 - k2) * ARRIVAL_LANGUAGE.waveAlpha;
       const rgb =
         r.tone === "amber" ? EXTERNAL.rgb : r.tone === "rose" ? BLOCKED.rgb : RUNNING.rgb;
       g.strokeStyle = `rgba(${rgb},${alpha.toFixed(3)})`;
-      g.lineWidth = 2 * (1 - k2) + 0.4;
+      g.lineWidth = ARRIVAL_LANGUAGE.waveWidth * (1 - k2) + 0.3;
       g.beginPath();
-      g.arc(r.x, r.y, r.r * Math.pow(k2, 0.6), 0, Math.PI * 2);
+      g.arc(r.x, r.y, r.r * Math.pow(k2, 0.45), 0, Math.PI * 2);
       g.stroke();
     }
 
