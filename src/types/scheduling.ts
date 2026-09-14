@@ -40,11 +40,23 @@ export interface CancellationState {
 
 /** Phase 4.4B — pause provenance for a founder-paused schedule. Paused items
  *  are excluded from due-work evaluation (listDue only returns 'scheduled')
- *  but remain resumable; unlike cancellation this is NOT terminal. */
+ *  but remain resumable; unlike cancellation this is NOT terminal.
+ *
+ *  Phase 4.4C — resume provenance: resuming a paused schedule records
+ *  `resumedAt`/`resumedBy` on the retained pausedState (the pause window's
+ *  provenance). This is the AUTHORITATIVE record the Activity projection
+ *  derives "automation resumed" events from — previously a resume left no
+ *  derivable timestamp (updatedAt is overwritten by later executions and is
+ *  not a resume signal). Only the LATEST pause window is retained by the
+ *  model (existing 4.4B semantics); earlier windows are honestly not
+ *  projectable. */
 export interface PausedState {
   pausedAt: string; // ISO 8601 UTC
   pausedBy: string;
   reason?: string;
+  /** Set when the schedule was resumed (Phase 4.4C provenance). */
+  resumedAt?: string; // ISO 8601 UTC
+  resumedBy?: string;
 }
 
 export interface ScheduledWorkItem {

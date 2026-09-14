@@ -26,6 +26,7 @@ const EXECUTIVE_API_PATTERNS = [
   "/api/agent-collab",
   "/api/epistemic",
   "/api/agents",
+  "/api/activity", // Phase 4.4C — authoritative Activity projection (founder-only)
   "/api/communication/contacts",
   "/api/communication/conversations",
   "/api/communication/drafts",

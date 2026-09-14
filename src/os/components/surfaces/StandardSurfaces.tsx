@@ -415,19 +415,60 @@ export function DecisionSurface({
 
 /* ------------------------------------------------------------------ 5. ActivitySurface */
 
+const ACTIVITY_STATUS_TONE: Record<string, string> = {
+  completed: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10",
+  failed: "text-rose-300 border-rose-400/30 bg-rose-400/10",
+  awaiting_approval: "text-amber-200 border-amber-300/30 bg-amber-300/10",
+  in_flight: "text-cyan-200 border-cyan-300/30 bg-cyan-300/10",
+  approved: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10",
+  rejected: "text-rose-300 border-rose-400/30 bg-rose-400/10",
+  pending: "text-amber-200 border-amber-300/30 bg-amber-300/10",
+  allowed: "text-emerald-300 border-emerald-400/30 bg-emerald-400/10",
+  denied: "text-rose-300 border-rose-400/30 bg-rose-400/10",
+  paused: "text-slate-300 border-white/15 bg-white/5",
+  resumed: "text-cyan-200 border-cyan-300/30 bg-cyan-300/10",
+  cancelled: "text-slate-400 border-white/10 bg-white/[0.03]",
+};
+
+/** Phase 4.4C — the company Activity surface. Server-authoritative projection
+ *  events render with a status chip and a provenance trace (existing source
+ *  ids); local ambient log entries (server !== true) render without one —
+ *  they are browser-session context, never company history. */
 export function ActivitySurface({ event }: { event: ActivityEvent }) {
+  const statusTone = event.status ? ACTIVITY_STATUS_TONE[event.status] : undefined;
+  const provenanceBits: string[] = [];
+  if (event.provenance) {
+    const p = event.provenance;
+    if (p.workstreamTitle) provenanceBits.push(`workstream ${p.workstreamTitle}`);
+    if (p.occurrenceNumber) provenanceBits.push(`occurrence ${p.occurrenceNumber}`);
+    if (p.agentRunId) provenanceBits.push(`run ${p.agentRunId.slice(0, 18)}`);
+    if (p.approvalId) provenanceBits.push(`approval ${p.approvalId.slice(0, 14)}`);
+    if (p.auditId) provenanceBits.push(`audit ${p.auditId.slice(0, 14)}`);
+    if (p.scheduleId) provenanceBits.push(`schedule ${p.scheduleId.slice(0, 14)}`);
+    if (p.workflowInstanceId) provenanceBits.push(`wf ${p.workflowInstanceId.slice(0, 14)}`);
+  }
   return (
     <div className="flex items-start gap-2.5 py-2 px-1 border-b border-slate-800/40 text-xs group">
       <span className="text-[10px] font-mono text-slate-500 shrink-0 mt-0.5 tabular-nums">
         {new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
       </span>
       {event.actor && (
-        <span className="text-[10px] font-mono uppercase tracking-wider px-1 rounded bg-slate-800 border border-slate-700/60 text-cyan-300 shrink-0">
+        <span className="text-[10px] font-mono uppercase tracking-wider px-1 rounded bg-slate-800 border border-slate-700/60 text-cyan-300 shrink-0 max-w-[110px] truncate" title={event.actor}>
           {event.actor}
         </span>
       )}
       <p className="text-[11px] text-slate-300 leading-snug flex-1 min-w-0 group-hover:text-slate-100 transition-colors">
         {event.text}
+        {event.status && statusTone && (
+          <span className={`ml-1.5 inline-block align-middle rounded border px-1 py-px text-[9px] font-mono uppercase tracking-wider ${statusTone}`}>
+            {event.status.replace(/_/g, " ")}
+          </span>
+        )}
+        {event.server && provenanceBits.length > 0 && (
+          <span className="mt-0.5 block text-[9px] font-mono text-slate-600 truncate" title={provenanceBits.join(" · ")}>
+            {provenanceBits.join(" · ")}
+          </span>
+        )}
       </p>
     </div>
   );

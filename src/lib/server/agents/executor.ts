@@ -16,6 +16,15 @@ export interface AgentExecutionContext {
   retrievedContext?: TaskRetrievedContextBundle;
   assembledContext?: AssembledEmployeeContext;
   currentEvidence?: import('@/types/context').CurrentEvidenceInput[];
+  /** Phase 4.4C — authoritative workflow execution context. Set ONLY by the
+   *  WorkflowRuntime (which owns instance/step identity); never
+   *  client-supplied. Persisted into the run's provenance so completed/failed
+   *  AgentRuns trace deterministically to their workflow instance, step and
+   *  scheduled occurrence. */
+  workflowInstanceId?: string;
+  stepId?: string;
+  occurrenceId?: string;
+  occurrenceNumber?: number;
   upstreamContext?: {
     cooScope?: string;
     researchFindings?: string;
@@ -233,6 +242,13 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
           isVerified: true,
           evidenceBasis: basis,
           modelUsed: model,
+          // Phase 4.4C — authoritative workflow execution context (present
+          // only when the WorkflowRuntime executed this run as a workflow
+          // step; honest absence otherwise).
+          workflowInstanceId: context.workflowInstanceId,
+          stepId: context.stepId,
+          occurrenceId: context.occurrenceId,
+          occurrenceNumber: context.occurrenceNumber,
         };
 
         await AgentRunStore.getInstance().saveRun({
@@ -282,6 +298,13 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       timestamp,
       isVerified: false,
       evidenceBasis: 'unverified',
+      // Phase 4.4C — workflow execution context preserved on failure too, so
+      // failed runs trace to their instance/step/occurrence exactly like
+      // completed ones (scheduler retry semantics depend on this visibility).
+      workflowInstanceId: context.workflowInstanceId,
+      stepId: context.stepId,
+      occurrenceId: context.occurrenceId,
+      occurrenceNumber: context.occurrenceNumber,
     };
 
     await AgentRunStore.getInstance().saveRun({

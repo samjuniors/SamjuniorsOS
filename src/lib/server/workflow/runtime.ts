@@ -558,6 +558,15 @@ export class WorkflowRuntime {
               protocolStep: step.skill,
               taskTitle: stepDef.name,
               taskDescription: stepDef.description,
+              // Phase 4.4C — authoritative workflow execution context: the
+              // runtime owns instance/step identity and stamps it into the
+              // run's provenance (never client-supplied) so completed/failed
+              // AgentRuns trace deterministically to their workflow step and
+              // scheduled occurrence.
+              workflowInstanceId: instanceId,
+              stepId,
+              occurrenceId: occurrenceContext?.occurrenceId,
+              occurrenceNumber: occurrenceContext?.occurrenceNumber,
             },
             `Execute workflow step: ${stepDef.name}`
           );

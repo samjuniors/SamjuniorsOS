@@ -63,6 +63,39 @@ export interface ActivityEvent {
   actor?: string;
   kind?: "info" | "warn" | "decision" | "work" | "security";
   tags?: string[];
+  /** Phase 4.4C — server-authoritative projection fields. Present on events
+   *  from GET /api/activity (the authoritative company Activity); absent on
+   *  local ambient log entries (logToActivity), which are a browser-session
+   *  supplement and are NEVER presented as company history. */
+  category?: string;
+  status?:
+    | "completed"
+    | "failed"
+    | "awaiting_approval"
+    | "in_flight"
+    | "approved"
+    | "rejected"
+    | "pending"
+    | "allowed"
+    | "denied"
+    | "paused"
+    | "resumed"
+    | "cancelled";
+  /** Traceability pointers to the authoritative source records. */
+  provenance?: {
+    workstreamId?: string;
+    workstreamTitle?: string;
+    workflowInstanceId?: string;
+    stepId?: string;
+    agentRunId?: string;
+    approvalId?: string;
+    auditId?: string;
+    scheduleId?: string;
+    occurrenceId?: string;
+    occurrenceNumber?: number;
+  };
+  /** True when the event is projected from server-authoritative records. */
+  server?: boolean;
 }
 
 export interface MetricItem {
@@ -166,13 +199,59 @@ export function attentionToAttentionData(a: AttentionItem, onAction?: (actionId?
   };
 }
 
+/** Local ambient log entry → Activity-shaped event. This is the BROWSER-SESSION
+ *  supplement (Phase 4.4C): never the authoritative company Activity — that is
+ *  the server projection fetched via GET /api/activity and set with
+ *  os.setServerActivity. */
 export function logToActivity(l: { id: string; at: number; text: string }): ActivityEvent {
   return {
     id: l.id,
     at: l.at,
     text: l.text,
     kind: "info",
+    server: false,
   };
+}
+
+/** Server-authoritative Activity projection event (GET /api/activity) →
+ *  Activity-shaped event for the Activity surface. `at` is the authoritative
+ *  event time from the source record. */
+export function serverActivityToEvent(
+  e: import("@/types/activity").ActivityEventDTO
+): ActivityEvent {
+  return {
+    id: e.id,
+    at: new Date(e.at).getTime(),
+    text: e.summary,
+    actor: e.actor,
+    kind: categoryToKind(e.category),
+    category: e.category,
+    status: e.status,
+    provenance: e.provenance,
+    server: true,
+  };
+}
+
+function categoryToKind(category: string): ActivityEvent["kind"] {
+  switch (category) {
+    case "work_started":
+    case "work_completed":
+    case "work_failed":
+    case "scheduled_execution":
+      return "work";
+    case "approval_requested":
+    case "approval_approved":
+    case "approval_rejected":
+      return "decision";
+    case "side_effect_authorized":
+    case "side_effect_denied":
+    case "automation_paused":
+    case "automation_resumed":
+    case "automation_cancelled":
+      return "security";
+    default:
+      return "info";
+  }
 }
 
 export function generateSystemMetrics(state: OSState): MetricItem[] {

@@ -12,7 +12,7 @@ import {
   os, useOS, openAttention, openDecisions, activeWork, agentName,
   type AttentionKind, type Agent, STAGES,
 } from "../lib/osStore";
-import { MetricSurface, TimelineSurface } from "./surfaces/StandardSurfaces";
+import { MetricSurface, TimelineSurface, ActivitySurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 import {
   Node as Phase4Node,
@@ -988,6 +988,30 @@ function WorkforceList({ onOpen }: { onOpen: (id: string) => void }) {
   );
 }
 
+/** Phase 4.4C — the AUTHORITATIVE company Activity list. Server-projected
+ *  events from GET /api/activity (what the company actually did, from
+ *  persisted records — survives reload/restart by construction). The client
+ *  os.log is NOT merged in here: it remains an ambient browser-session
+ *  supplement and is never presented as company history. */
+function CompanyActivityList() {
+  const activity = useOS((s) => s.activity);
+  if (activity.length === 0) {
+    return (
+      <p className="py-2 text-[11.5px] leading-snug text-slate-500">
+        No company activity recorded yet. Real executions, approvals and
+        automation lifecycle events will appear here — nothing is simulated.
+      </p>
+    );
+  }
+  return (
+    <div className="os-scroll max-h-[340px] overflow-y-auto pr-0.5">
+      {activity.map((e) => (
+        <ActivitySurface key={e.id} event={e} />
+      ))}
+    </div>
+  );
+}
+
 function CompanyCard({ onClose }: { onClose: () => void }) {
   const company = useOS((s) => s.company);
   const edit = (field: "oneLiner" | "focus", label: string) => {
@@ -1109,6 +1133,7 @@ export default function FlowDesktop({
   const work = useOS(activeWork);
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
+  const activity = useOS((s) => s.activity);
   const osState = useOS((s) => s);
 
   // Authoritative Server-Projected Graph (Phase 4.3B)
@@ -2573,6 +2598,15 @@ export default function FlowDesktop({
           <div className="w-[248px] max-lg:w-[266px]">
             <SideCard title="Workforce" icon={<Bot size={13} />} count={agents.filter((a) => a.state === "working").length}>
               <WorkforceList onOpen={(id) => onOpenAgent?.(id)} />
+            </SideCard>
+          </div>
+          {/* Phase 4.4C — authoritative company Activity (server projection; NOT the client os.log) */}
+          <div className="w-[248px] max-lg:w-[266px]">
+            <SideCard title="Company Activity" icon={<Activity size={13} />} count={activity.length} defaultOpen={false}>
+              <CompanyActivityList />
+              <p className="mt-1.5 border-t border-white/[0.06] pt-1.5 text-[8.5px] uppercase tracking-[0.18em] text-slate-600">
+                Server-authoritative · /api/activity
+              </p>
             </SideCard>
           </div>
           <div className="mt-auto w-[248px] pt-1 text-right text-[9px] tracking-[0.22em] text-slate-700 max-lg:w-[266px]">SAMJUNIORSOS</div>

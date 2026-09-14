@@ -426,7 +426,11 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
             </div>
             {log.length > 0 && (
               <div className="border-t border-white/10 px-3.5 py-2">
-                <div className="mb-1 text-[9.5px] font-bold uppercase tracking-[0.18em] text-slate-500">Recent</div>
+                {/* Phase 4.4C — honest labeling: this is the LOCAL browser-session
+                    log (ambient supplement), NOT the company Activity history.
+                    The authoritative Activity lives in the Company Activity card
+                    (server projection, GET /api/activity). */}
+                <div className="mb-1 text-[9.5px] font-bold uppercase tracking-[0.18em] text-slate-500">This browser session</div>
                 {log.slice(0, 3).map((l) => <div key={l.id} className="truncate text-[11px] text-slate-500">{l.text}</div>)}
               </div>
             )}

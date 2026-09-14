@@ -202,6 +202,16 @@ export interface OutputProvenance {
   isVerified: boolean;
   evidenceBasis: EvidenceBasis;
   modelUsed?: string;
+  /** Phase 4.4C — authoritative workflow execution context, stamped by the
+   *  WorkflowRuntime when the run executes a workflow step (scheduled or
+   *  manual). Council/orchestrate runs carry none (they have no workflow
+   *  instance — honest absence, never fabricated). Lets the Activity
+   *  projection trace a completed/failed AgentRun back to its workflow
+   *  instance, step and scheduled occurrence deterministically. */
+  workflowInstanceId?: string;
+  stepId?: string;
+  occurrenceId?: string;
+  occurrenceNumber?: number;
 }
 
 // ----------------------------------------------------------------------------

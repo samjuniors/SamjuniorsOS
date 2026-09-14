@@ -137,7 +137,13 @@ function layoutColumn(
   }
 }
 
-function deterministicIdHash(prefix: string, text: string): string {
+/**
+ * Deterministic identity hash for derived graph entities (workstreams).
+ * Exported since Phase 4.4C: the authoritative Activity projection reuses the
+ * EXACT same derivation so Activity provenance traces to the same workstream
+ * identities the canvas read-model projects — no parallel identity scheme.
+ */
+export function deterministicIdHash(prefix: string, text: string): string {
   let h = 5381;
   for (let i = 0; i < text.length; i++) {
     h = ((h << 5) + h + text.charCodeAt(i)) | 0;

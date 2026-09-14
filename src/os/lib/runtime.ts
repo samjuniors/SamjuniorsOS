@@ -8,6 +8,7 @@
  *   GET  /api/agents/runs          — durable per-step agent execution records (AgentRunStore)
  *   GET  /api/workflow/approvals   — Founder approval gate records (SideEffectAuthorizationGate)
  *   POST /api/workflow/approvals   — approve / reject a real approval record
+ *   GET  /api/activity             — authoritative company Activity projection (Phase 4.4C)
  *
  * The UI store (osStore) is fed from this adapter; the store never invents
  * server state and the graph therefore only ever visualizes authoritative
@@ -18,6 +19,8 @@ import { os, presentationFor } from "./osStore";
 import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStore";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
+import type { ActivityEventDTO, ActivityResponseDTO } from "@/types/activity";
+import { serverActivityToEvent } from "./surfaceSchema";
 
 /* ------------------------------------------------------------------ id mapping
  * UI graph/persona ids (used since the graph phase) ↔ authoritative AgentRole
@@ -178,6 +181,18 @@ export async function decideApproval(approvalId: string, action: "approve" | "re
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, approvalId, reason: reason || `Founder decision via SamJuniorsOS (${action})` }),
   });
+}
+
+/* ------------------------------------------------------------------ company activity (Phase 4.4C) */
+
+/** Authoritative company Activity projection (GET /api/activity). This is
+ *  what the Activity surface presents as the company's actual history —
+ *  replacing the client-only os.log as the primary Activity source. The
+ *  server projects it deterministically from authoritative records, so it
+ *  survives browser reload/restart by construction. */
+export async function fetchActivity(limit = 60): Promise<ActivityEventDTO[]> {
+  const data = await jsonFetch<ActivityResponseDTO>(`/api/activity?limit=${limit}`);
+  return data.events ?? [];
 }
 
 /* ------------------------------------------------------------------ authoritative graph (Phase 4.3B) */
@@ -498,15 +513,29 @@ export function agentStatesFromRuns(runs: AgentRunRecord[], work: Workstream[]):
 
 let syncing: Promise<void> | null = null;
 
-/** Pulls roster + runs + approvals from the server and feeds the OS store.
- *  Server-origin state REPLACES local projections; local founder records
- *  (notes, focus, offline choices) are preserved. */
+/** Pulls roster + runs + approvals + the company Activity projection from the
+ *  server and feeds the OS store. Server-origin state REPLACES local
+ *  projections; local founder records (notes, focus, offline choices) are
+ *  preserved. The Activity projection (Phase 4.4C) is the AUTHORITATIVE
+ *  company Activity source — the client os.log remains only an ambient
+ *  browser-session supplement. */
 export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> {
   if (syncing) return syncing;
   syncing = (async () => {
     try {
-      const [roster, runs, approvals] = await Promise.all([fetchRoster(), fetchRuns(), fetchApprovals()]);
+      const [roster, runs, approvals, activity] = await Promise.all([
+        fetchRoster(),
+        fetchRuns(),
+        fetchApprovals(),
+        fetchActivity().catch((err) => {
+          // Activity is additive to the core sync: an activity-specific failure
+          // must not take down roster/runs/approvals sync. Honest signal only.
+          os.log(`Company activity unavailable: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }),
+      ]);
       applyServerReadModel({ roster, runs, approvals });
+      if (activity) os.setServerActivity(activity.map(serverActivityToEvent));
     } catch (err) {
       if (!opts?.quiet) {
         // Honest signal — never fake a successful sync.

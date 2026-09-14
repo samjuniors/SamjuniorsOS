@@ -86,6 +86,11 @@ export type OSState = {
   lastSaid: string;
   sessionStart: number;
   log: { id: string; at: number; text: string }[];
+  /** Phase 4.4C — server-authoritative company Activity projection
+   *  (GET /api/activity → lib/runtime.ts). REPLACED on every sync; never
+   *  merged with the local ambient log, which is a browser-session supplement
+   *  and is never presented as company history. */
+  activity: import("./surfaceSchema").ActivityEvent[];
   /** Server-derived workstream ids the founder dismissed from view
    *  (the server records themselves are never deleted). */
   dismissed: string[];
@@ -160,6 +165,7 @@ const SEED: OSState = {
   lastSaid: "",
   sessionStart: now,
   log: [],
+  activity: [],
   dismissed: [],
 };
 
@@ -203,6 +209,9 @@ function load(): OSState {
     return {
       ...SEED,
       ...saved,
+      // Server-authoritative Activity projection is never persisted —
+      // always starts empty and is re-projected from /api/activity on sync.
+      activity: [],
       dismissed: saved.dismissed ?? [],
       agents,
       // Migrate legacy owner ids ("ops"/"pm"/"finance") to the authoritative roster.
@@ -246,8 +255,13 @@ const listeners = new Set<() => void>();
 
 function persist() {
   try {
-    const { sophia: _s, sessionStart: _t, ...rest } = state;
-    void _s; void _t;
+    // Phase 4.4C: the server-authoritative Activity projection is NEVER
+    // persisted client-side — a cached copy would masquerade as company
+    // history between reload and the next server sync. It is re-projected
+    // from authoritative records on every sync (activity survives browser
+    // reload/restart BECAUSE the server records are the source, not the UI).
+    const { sophia: _s, sessionStart: _t, activity: _a, ...rest } = state;
+    void _s; void _t; void _a;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch { /* storage unavailable */ }
 }
@@ -322,12 +336,16 @@ export const os = {
   /** Merge a server read model (lib/runtime.ts) into the store.
    *  Server-origin work/decisions/attention REPLACE local projections — the
    *  server is authoritative for execution state. Founder-owned local records
-   *  (notes, focus, hand-raised decisions, offline choices) are preserved. */
+   *  (notes, focus, hand-raised decisions, offline choices) are preserved.
+   *  Phase 4.4C: the authoritative company Activity projection REPLACES the
+   *  activity list wholesale (server-origin only, never merged with the local
+   *  ambient log). */
   applyServerState(srv: {
     agents?: Agent[];
     work?: Workstream[];
     decisions?: Decision[];
     attention?: AttentionItem[];
+    activity?: import("./surfaceSchema").ActivityEvent[];
   }) {
     set((s) => {
       const agents = srv.agents
@@ -346,8 +364,15 @@ export const os = {
         ],
         decisions: [...(srv.decisions ?? []), ...s.decisions.filter((d) => !d.approvalId)],
         attention: [...(srv.attention ?? []), ...s.attention.filter((a) => !a.server)],
+        ...(srv.activity ? { activity: srv.activity } : {}),
       };
     });
+  },
+
+  /** Phase 4.4C — set the server-authoritative company Activity projection
+   *  (replaces the previous projection; re-fetched on every server sync). */
+  setServerActivity(events: import("./surfaceSchema").ActivityEvent[]) {
+    set({ activity: events });
   },
 
   getDismissed(): string[] {
@@ -555,7 +580,7 @@ export const os = {
 
   reset() {
     try { localStorage.removeItem(KEY); } catch { /* noop */ }
-    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })), dismissed: [] };
+    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })), activity: [], dismissed: [] };
     updateCaches();
     listeners.forEach((l) => l());
   },

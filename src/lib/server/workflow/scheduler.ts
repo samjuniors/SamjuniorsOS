@@ -692,6 +692,14 @@ export class WorkflowScheduler {
     item.status = 'scheduled';
     item.updatedAt = new Date().toISOString();
     // pausedState is retained as provenance of the pause window.
+    // Phase 4.4C — the resume itself is recorded on that provenance
+    // (resumedAt/resumedBy): the authoritative signal the Activity projection
+    // derives "automation resumed" from. Without it a resume left no derivable
+    // timestamp (updatedAt is not a resume signal).
+    if (item.pausedState) {
+      item.pausedState.resumedAt = item.updatedAt;
+      item.pausedState.resumedBy = resumedBy;
+    }
     await this.schedulerStore.update(item);
     return item;
   }
