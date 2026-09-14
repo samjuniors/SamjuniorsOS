@@ -113,6 +113,9 @@ export class SideEffectAuthorizationGate {
 
   /**
    * Request a new Founder Approval for an intended side effect.
+   * When params.scope carries an occurrenceId (scheduled per-occurrence
+   * approval, Phase 4.4B.1), the dedupe lookup is occurrence-bound: a prior
+   * occurrence's approval never satisfies this occurrence's request.
    */
   public async requestApproval(params: RequestApprovalParams): Promise<FounderApprovalRecord> {
     const existing = await this.approvalStore.findActiveMatching({
@@ -121,6 +124,7 @@ export class SideEffectAuthorizationGate {
       employeeRole: params.employeeRole,
       actionName: params.actionName,
       classification: params.classification,
+      occurrenceId: params.scope?.occurrenceId,
     });
 
     // If there is already a pending or approved approval, return it
@@ -138,6 +142,7 @@ export class SideEffectAuthorizationGate {
       campaignId: params.scope?.campaignId,
       targetSystem: params.target?.targetSystem || params.scope?.targetSystem,
       operationPattern: params.scope?.operationPattern,
+      occurrenceId: params.scope?.occurrenceId,
       maxUses: params.scope?.maxUses || 1,
       usedCount: 0,
     };
@@ -628,8 +633,16 @@ export class SideEffectAuthorizationGate {
       }
     }
 
-    // 5. Consume single-use approval only after authorization + idempotency claim pass
-    if (decision.approvalId && approval && approval.scope.scopeType === 'single_action') {
+    // 5. Consume single-use approval only after authorization + idempotency claim pass.
+    // Phase 4.4B.1: occurrence-bound approvals are single-use BY DEFINITION (one
+    // founder authorization per scheduled occurrence) — consume them at
+    // execution regardless of the recorded scopeType, in addition to the
+    // existing single_action rule.
+    if (
+      decision.approvalId &&
+      approval &&
+      (approval.scope.scopeType === 'single_action' || Boolean(approval.scope.occurrenceId))
+    ) {
       await this.approvalStore.consume(decision.approvalId);
     }
 

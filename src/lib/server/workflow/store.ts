@@ -144,6 +144,26 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
 
   async saveInstance(instance: WorkflowInstanceState): Promise<void> {
     const db = await requireAuthoritativeDatabase();
+
+    // PHASE 4.4B.1 — founder attribution write-guard: `initiatedById` mirrors
+    // the authoritative Prisma column (FK → User). The column is written ONLY
+    // when the attributed identity resolves to a REAL User row; otherwise it
+    // is omitted rather than fabricating an identity that would violate the
+    // foreign key. Attribution is set at creation and never overwritten by
+    // later status updates.
+    let initiatedById: string | null = null;
+    if (instance.initiatedById) {
+      try {
+        const user = await db.user.findUnique({
+          where: { id: instance.initiatedById },
+          select: { id: true },
+        });
+        initiatedById = user ? user.id : null;
+      } catch {
+        initiatedById = null;
+      }
+    }
+
     await db.workflowInstance.upsert({
       where: { id: instance.instanceId },
       create: {
@@ -160,6 +180,7 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
         error: instance.failureReason || null,
         startedAt: instance.createdAt ? new Date(instance.createdAt) : null,
         completedAt: instance.status === 'completed' && instance.updatedAt ? new Date(instance.updatedAt) : null,
+        initiatedById,
       },
       update: {
         status: instance.status,
@@ -356,6 +377,8 @@ export class PostgresWorkflowStore implements WorkflowDefinitionStore, WorkflowI
       outputs: {},
       evidenceReferences: [],
       failureReason: dbInst.error || undefined,
+      // PHASE 4.4B.1 — authoritative founder attribution round-trip.
+      initiatedById: dbInst.initiatedById || undefined,
     };
   }
 

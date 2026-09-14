@@ -99,6 +99,16 @@ export interface WorkflowInstanceState {
   updatedAt: string;
   outputs: Record<string, any>;
   evidenceReferences: string[];
+  /**
+   * PHASE 4.4B.1 — FOUNDER ATTRIBUTION.
+   * Mirrors the authoritative Prisma `WorkflowInstance.initiatedById` column
+   * (FK → User). Populated at creation from the AUTHENTICATED founder
+   * identity (runtime.createInstance options). Never client-supplied; never
+   * fabricated. Persisted through the dev DurableFileStore round-trip; the
+   * authoritative Postgres store writes the column only when it resolves to a
+   * real User row.
+   */
+  initiatedById?: string;
   approvalState?: 'pending' | 'approved' | 'rejected';
   failureReason?: string;
   escalationState?: string;

@@ -29,6 +29,16 @@ import { v4 as uuidv4 } from 'uuid';
 /** Step id of the single objective step synthesized for a directive. */
 export const DIRECTIVE_STEP_ID = 'step-objective';
 
+/**
+ * Phase 4.4B.1 — authenticated founder identity for attribution.
+ * Comes from the server-side session (getAuthenticatedFounder); never from
+ * client-supplied payload fields. Populates the authoritative
+ * WorkflowInstance.initiatedById column (mirrors the Prisma schema).
+ */
+export interface FounderInitiator {
+  userId: string;
+}
+
 export interface DirectiveScheduleRequest {
   directive: string;
   scheduleType: 'recurring' | 'one_time';
@@ -186,10 +196,19 @@ export function buildDirectiveWorkflowDefinition(
  * Creates the full authoritative chain for a scheduled directive using ONLY
  * existing runtime/scheduler APIs. Every artifact lands in the same stores
  * immediate execution uses — no parallel work authority is introduced.
+ *
+ * Phase 4.4B.1: `deps.founder` (authenticated founder identity) populates
+ * WorkflowInstance.initiatedById — authoritative founder attribution for the
+ * scheduled work. Schedule provenance (createdByRole) is preserved as
+ * supporting audit context, not a second attribution system.
  */
 export async function createScheduledDirective(
   input: DirectiveScheduleRequest,
-  deps?: { runtime?: WorkflowRuntime; scheduler?: WorkflowScheduler }
+  deps?: {
+    runtime?: WorkflowRuntime;
+    scheduler?: WorkflowScheduler;
+    founder?: FounderInitiator;
+  }
 ): Promise<DirectiveScheduleResult> {
   const validated = validateDirectiveSchedule(input);
   if (!input.directive || typeof input.directive !== 'string' || !input.directive.trim()) {
@@ -203,7 +222,14 @@ export async function createScheduledDirective(
   const definition = buildDirectiveWorkflowDefinition(directive, validated.requiresApproval);
   await runtime.registerWorkflow(definition);
 
-  const instance = await runtime.createInstance(definition.id, definition.version);
+  const instance = await runtime.createInstance(definition.id, definition.version, {
+    initiatedById: deps?.founder?.userId,
+    // Phase 4.4B.1 — scheduled work defers readiness evaluation to the
+    // scheduler's due-work pass, which evaluates WITH occurrence context (the
+    // per-occurrence approval authority). An immediate cascade here would
+    // request an UNBOUND approval before any occurrence is due.
+    deferReadinessEvaluation: true,
+  });
   const schedule = await scheduler.scheduleWork({
     workflowInstanceId: instance.instanceId,
     stepId: DIRECTIVE_STEP_ID,

@@ -118,16 +118,24 @@ export async function POST(req: NextRequest) {
 
       let created;
       try {
-        created = await createScheduledDirective({
-          directive: directive.trim(),
-          scheduleType: schedule.scheduleType,
-          executeAt: schedule.executeAt,
-          intervalUnit: schedule.intervalUnit,
-          intervalValue: schedule.intervalValue,
-          maxOccurrences: schedule.maxOccurrences,
-          endDate: schedule.endDate,
-          requiresApproval: schedule.requiresApproval,
-        });
+        created = await createScheduledDirective(
+          {
+            directive: directive.trim(),
+            scheduleType: schedule.scheduleType,
+            executeAt: schedule.executeAt,
+            intervalUnit: schedule.intervalUnit,
+            intervalValue: schedule.intervalValue,
+            maxOccurrences: schedule.maxOccurrences,
+            endDate: schedule.endDate,
+            requiresApproval: schedule.requiresApproval,
+          },
+          {
+            // Phase 4.4B.1 — authoritative founder attribution: the
+            // AUTHENTICATED session identity (never a client-supplied payload
+            // field) populates WorkflowInstance.initiatedById.
+            founder: { userId: founder.userId },
+          }
+        );
       } catch (err: any) {
         if (err instanceof DirectiveScheduleValidationError) {
           return NextResponse.json({ error: err.message, success: false }, { status: err.statusCode });

@@ -26,6 +26,10 @@ export interface IApprovalStore {
     employeeRole?: string;
     actionName?: string;
     classification?: SideEffectClassification;
+    /** Phase 4.4B.1: when set, only approvals bound to EXACTLY this scheduled
+     * occurrence match (consumed approvals never match — each occurrence
+     * requires a fresh founder approval). */
+    occurrenceId?: string;
   }): Promise<FounderApprovalRecord | null>;
   decide(
     id: string,
@@ -139,6 +143,7 @@ export class PostgresApprovalStore implements IApprovalStore {
     employeeRole?: string;
     actionName?: string;
     classification?: SideEffectClassification;
+    occurrenceId?: string;
   }): Promise<FounderApprovalRecord | null> {
     const db = await requireAuthoritativeDatabase();
     const where: any = {
@@ -158,6 +163,15 @@ export class PostgresApprovalStore implements IApprovalStore {
       const record = this.mapPrismaToApproval(raw);
       if (record.scope.scopeType === 'step' || record.scope.scopeType === 'single_action') {
         if (record.stepId !== params.stepId) continue;
+      }
+
+      // Phase 4.4B.1 — occurrence-bound matching: an approval bound to a
+      // different occurrence never matches this one, and a CONSUMED
+      // per-occurrence approval is no longer active (the failed attempt that
+      // consumed it must re-request founder authorization to retry).
+      if (params.occurrenceId) {
+        if (record.scope?.occurrenceId !== params.occurrenceId) continue;
+        if (record.isConsumed) continue;
       }
 
       // Check TTL expiration
@@ -276,6 +290,8 @@ export class PostgresApprovalStore implements IApprovalStore {
         workflowInstanceId: r.workflowInstanceId || undefined,
         stepId: r.stepId || undefined,
         campaignId: r.campaignId || undefined,
+        // Phase 4.4B.1 — preserve the occurrence binding through persistence.
+        occurrenceId: scope.occurrenceId || undefined,
         allowedUses: scope.allowedUses ?? 1,
         usedCount: scope.usedCount ?? (r.consumedAt ? 1 : 0),
       } as any,
@@ -560,6 +576,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
     employeeRole?: string;
     actionName?: string;
     classification?: SideEffectClassification;
+    occurrenceId?: string;
   }): Promise<FounderApprovalRecord | null> {
     if (isAuthoritativeMode()) {
       return PostgresApprovalStore.getInstance().findActiveMatching(params);
@@ -571,6 +588,15 @@ export class InMemoryApprovalStore implements IApprovalStore {
 
       if (record.scope.scopeType === 'step' || record.scope.scopeType === 'single_action') {
         if (record.stepId !== params.stepId) continue;
+      }
+
+      // Phase 4.4B.1 — occurrence-bound matching: an approval bound to a
+      // different occurrence never matches this one, and a CONSUMED
+      // per-occurrence approval is no longer active (the failed attempt that
+      // consumed it must re-request founder authorization to retry).
+      if (params.occurrenceId) {
+        if (record.scope?.occurrenceId !== params.occurrenceId) continue;
+        if (record.isConsumed) continue;
       }
 
       if (params.classification && record.classification !== params.classification) continue;

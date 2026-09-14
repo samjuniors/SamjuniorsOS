@@ -60,6 +60,18 @@ afterAll(async () => {
   await purgeRealDbArtifacts();
 });
 
+// One-time: the env copy snapshots the real dev DB, and the LIVE heartbeat
+// service legitimately accumulates scheduler_heartbeats rows over time. Once
+// the copy carries ≥100 rows, [9]'s bounded-window (listHeartbeats(100))
+// relative assertion saturates. Wipe the COPIED heartbeat table so the
+// relative assertions stay deterministic regardless of live-service activity
+// (the copy is throwaway; the real DB is never touched by this wipe).
+{
+  const db = new PrismaClient();
+  await db.schedulerHeartbeat.deleteMany({}).catch(() => {});
+  await db.$disconnect().catch(() => {});
+}
+
 /* ------------------------------------------------------------------ fakes */
 
 /** Map-backed workflow store (never touches DurableFileStore / Prisma). */

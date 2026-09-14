@@ -11,6 +11,7 @@ import { WorkflowRuntime } from './runtime';
 import { v4 as uuidv4 } from 'uuid';
 import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordination/lease-manager';
 import { validateStepTransition, validateInstanceTransition } from './state-machine';
+import type { ScheduledOccurrenceContext } from './runtime';
 
 export interface ScheduleWorkParams {
   workflowInstanceId: string;
@@ -149,9 +150,28 @@ export class WorkflowScheduler {
       },
     };
 
-    // Transition step to 'waiting' if currently pending
+    // Transition step to 'waiting' if currently pending.
+    //
+    // Phase 4.4B.1 — park the step WITHOUT the transitionStep readiness
+    // cascade: that cascade evaluates the step with NO occurrence context and
+    // would manufacture an unbound approval request at schedule time, before
+    // any occurrence is due. A scheduled step's readiness is evaluated
+    // authoritatively by the due-work pass below (with occurrence context).
+    // Validated direct transition (pending/ready → waiting).
     if (stepState.status === 'pending' || stepState.status === 'ready') {
-      await this.runtime.transitionStep(workflowInstanceId, stepId, 'waiting');
+      try {
+        const parkWorkflow = await this.workflowStore.getInstance(workflowInstanceId);
+        const parkStep = parkWorkflow?.stepStates[stepId];
+        if (parkWorkflow && parkStep && (parkStep.status === 'pending' || parkStep.status === 'ready')) {
+          validateStepTransition(parkStep.status, 'waiting');
+          parkStep.status = 'waiting';
+          parkWorkflow.updatedAt = new Date().toISOString();
+          await this.workflowStore.saveInstance(parkWorkflow);
+        }
+      } catch {
+        // Best-effort park: the step stays pending/ready — execution is still
+        // gated by the schedule's executeAt in the due-work evaluation.
+      }
     }
 
     await this.schedulerStore.save(scheduledItem);
@@ -186,6 +206,14 @@ export class WorkflowScheduler {
         item.executionHistory.filter(h => h.status === 'failed').length + 1
       );
       const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
+      // Phase 4.4B.1 — the occurrence identity is threaded into EVERY runtime
+      // and gate call below, binding approval requests and authorizations to
+      // exactly this occurrence (per-occurrence founder approval invariant).
+      const occurrenceContext: ScheduledOccurrenceContext = {
+        occurrenceId,
+        occurrenceNumber,
+        scheduleId: item.id,
+      };
       const leaseKey = `sched-item:${item.id}`;
 
       // Acquire distributed lease before evaluating or executing this work item
@@ -282,13 +310,39 @@ export class WorkflowScheduler {
           continue;
         }
 
-        // If recurring and step was completed from a prior occurrence, reset status to ready for this new occurrence
+        // If recurring and step was completed from a prior occurrence, reset
+        // status to ready for this new occurrence.
+        //
+        // Phase 4.4B.1 — the reset ALSO clears the step's approval state: the
+        // prior occurrence's approval is single-use and occurrence-bound, so
+        // it must never authorize THIS occurrence. Without this reset the
+        // scheduler's own approval check (step 8) would be satisfied by the
+        // stale `approvalState: 'approved'` and the occurrence could execute
+        // without a fresh founder approval. Uses the same validated
+        // direct-patch style as the retry recovery below (completed→ready is
+        // a sanctioned recurring transition in the state machine).
         if (item.scheduleType === 'recurring' && stepState.status === 'completed') {
-          await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'ready');
+          try {
+            const resetWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+            const resetStep = resetWorkflow?.stepStates[item.stepId];
+            if (resetWorkflow && resetStep && resetStep.status === 'completed') {
+              validateStepTransition(resetStep.status, 'ready');
+              resetStep.status = 'ready';
+              resetStep.approvalState = undefined;
+              resetStep.approvalId = undefined;
+              resetStep.blockedReason = undefined;
+              resetStep.authorizationReasonCode = undefined;
+              resetWorkflow.updatedAt = new Date().toISOString();
+              await this.workflowStore.saveInstance(resetWorkflow);
+            }
+          } catch {
+            // Best-effort: on failure the next wake surfaces honest blocked /
+            // awaiting_approval state — never silent re-execution.
+          }
         }
 
         // 6. Wake Workflow Runtime & Re-evaluate Readiness
-        await this.runtime.evaluateReadiness(item.workflowInstanceId);
+        await this.runtime.evaluateReadiness(item.workflowInstanceId, occurrenceContext);
         const recheckedWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
         const recheckedStepState = recheckedWorkflow.stepStates[item.stepId];
 
@@ -319,6 +373,9 @@ export class WorkflowScheduler {
             workflowInstanceId: item.workflowInstanceId,
             stepId: item.stepId,
             objective: def.objective,
+            // Phase 4.4B.1 — wake-time re-authorization is occurrence-bound:
+            // a prior occurrence's approval cannot authorize this wake.
+            occurrenceId,
           },
           target: stepDef.targetContext,
           requestedBy: stepDef.assignedRole,
@@ -396,7 +453,12 @@ export class WorkflowScheduler {
 
         try {
           // Execute Ready Step via Runtime (which delegates to ServerAgentExecutor)
-          await this.runtime.executeReadyStep(item.workflowInstanceId, item.stepId);
+          await this.runtime.executeReadyStep(
+            item.workflowInstanceId,
+            item.stepId,
+            `scheduler-${this.workerId}`,
+            occurrenceContext
+          );
 
           // Fetch final step state after execution
           const finalWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
@@ -483,6 +545,10 @@ export class WorkflowScheduler {
               // transition), advance the runtime-owned retryCount (nothing
               // else increments it), and reopen the parent instance so the
               // schedule survives to actually retry.
+              //
+              // Phase 4.4B.1 — the retry reset ALSO clears the approval state:
+              // a consumed occurrence approval must never authorize the retry
+              // attempt (fresh founder approval per execution attempt).
               try {
                 const retryWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
                 const retryStep = retryWorkflow?.stepStates[item.stepId];
@@ -490,6 +556,10 @@ export class WorkflowScheduler {
                   validateStepTransition(retryStep.status, 'ready');
                   retryStep.status = 'ready';
                   retryStep.retryCount = (retryStep.retryCount ?? 0) + 1;
+                  retryStep.approvalState = undefined;
+                  retryStep.approvalId = undefined;
+                  retryStep.blockedReason = undefined;
+                  retryStep.authorizationReasonCode = undefined;
                   if (retryWorkflow.status === 'failed') {
                     validateInstanceTransition(retryWorkflow.status, 'running');
                     retryWorkflow.status = 'running';

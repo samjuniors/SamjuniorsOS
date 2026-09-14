@@ -86,6 +86,17 @@ export async function POST(req: NextRequest) {
     const verifiedActor = session.email || session.userId || 'founder';
     const gate = SideEffectAuthorizationGate.getInstance();
 
+    // Phase 4.4B.1 (defect D3): relay the AUTHENTICATED session role through
+    // the gate's existing userContext mechanism. The route already verified
+    // the founder cryptographically (getAuthenticatedFounder + FOUNDER role
+    // check above); without userContext the gate's identity allowlist only
+    // recognizes username-style ids, so the session EMAIL identity
+    // ("founder@samjuniors.com") was wrongly rejected — the authenticated
+    // founder could never approve/reject through the live product path.
+    // The gate remains the sole authority; its own FOUNDER-role check now
+    // receives the authenticated role.
+    const userContext = { role: session.role, userId: session.userId };
+
     if (action === 'approve') {
       const record = await gate.decideApproval({
         approvalId,
@@ -93,6 +104,7 @@ export async function POST(req: NextRequest) {
         decidedBy: verifiedActor,
         reason: reason || 'Approved by Founder',
         expiresAt,
+        userContext,
       });
       return NextResponse.json({ success: true, record });
     } else if (action === 'reject') {
@@ -101,6 +113,7 @@ export async function POST(req: NextRequest) {
         decision: 'rejected',
         decidedBy: verifiedActor,
         reason: reason || 'Rejected by Founder',
+        userContext,
       });
       return NextResponse.json({ success: true, record });
     } else if (action === 'revoke') {

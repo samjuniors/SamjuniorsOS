@@ -87,6 +87,11 @@ export class SideEffectPolicyEvaluator {
         employeeRole: request.employeeRole,
         actionName: request.actionName,
         classification: request.classification,
+        // Phase 4.4B.1 — occurrence-bound lookup: when evaluating a specific
+        // scheduled occurrence, only approvals bound to THAT occurrence can
+        // match (a prior occurrence's approval — consumed or not — never
+        // authorizes this one).
+        occurrenceId: request.workflowContext.occurrenceId,
       });
     }
 
@@ -164,8 +169,8 @@ export class SideEffectPolicyEvaluator {
         if (scopeMismatch) {
           return {
             effect: 'denied',
-            reasonCode: 'APPROVAL_SCOPE_MISMATCH',
-            reason: `Action blocked due to approval scope mismatch: ${scopeMismatch}`,
+            reasonCode: scopeMismatch.code,
+            reason: `Action blocked due to ${scopeMismatch.code === 'APPROVAL_OCCURRENCE_MISMATCH' ? 'approval occurrence binding mismatch' : 'approval scope mismatch'}: ${scopeMismatch.reason}`,
             approvalId: approval.id,
             approvalStatus: 'approved',
             evaluatedAt,
@@ -243,22 +248,28 @@ export class SideEffectPolicyEvaluator {
 
   /**
    * Verify that the approval scope encompasses the requested action.
-   * Returns error string if mismatch, or null if matched.
+   * Returns a typed mismatch (with denial reason code) or null if matched.
    */
   private verifyScopeMatch(
     approval: FounderApprovalRecord,
     request: AuthorizationEvaluationRequest
-  ): string | null {
+  ): { code: 'APPROVAL_SCOPE_MISMATCH' | 'APPROVAL_OCCURRENCE_MISMATCH'; reason: string } | null {
     const scope = approval.scope;
 
     // Check Employee Role matching
     if (approval.employeeRole !== request.employeeRole && approval.employeeRole !== 'system') {
-      return `Approval was granted for role "${approval.employeeRole}", but requested by role "${request.employeeRole}"`;
+      return {
+        code: 'APPROVAL_SCOPE_MISMATCH',
+        reason: `Approval was granted for role "${approval.employeeRole}", but requested by role "${request.employeeRole}"`,
+      };
     }
 
     // Check Classification matching
     if (approval.classification !== request.classification) {
-      return `Approval classification is "${approval.classification}", but requested action classification is "${request.classification}"`;
+      return {
+        code: 'APPROVAL_SCOPE_MISMATCH',
+        reason: `Approval classification is "${approval.classification}", but requested action classification is "${request.classification}"`,
+      };
     }
 
     // Check Workflow Instance matching
@@ -268,7 +279,10 @@ export class SideEffectPolicyEvaluator {
         request.workflowContext?.workflowInstanceId &&
         scope.workflowInstanceId !== request.workflowContext.workflowInstanceId
       ) {
-        return `Approval is scoped to workflow instance "${scope.workflowInstanceId}", but action is executing in instance "${request.workflowContext.workflowInstanceId}"`;
+        return {
+          code: 'APPROVAL_SCOPE_MISMATCH',
+          reason: `Approval is scoped to workflow instance "${scope.workflowInstanceId}", but action is executing in instance "${request.workflowContext.workflowInstanceId}"`,
+        };
       }
     }
 
@@ -279,20 +293,49 @@ export class SideEffectPolicyEvaluator {
         request.workflowContext?.stepId &&
         scope.stepId !== request.workflowContext.stepId
       ) {
-        return `Approval is scoped to step "${scope.stepId}", but action is executing in step "${request.workflowContext.stepId}"`;
+        return {
+          code: 'APPROVAL_SCOPE_MISMATCH',
+          reason: `Approval is scoped to step "${scope.stepId}", but action is executing in step "${request.workflowContext.stepId}"`,
+        };
+      }
+    }
+
+    // PHASE 4.4B.1 — Occurrence binding (deterministic per-occurrence approval):
+    // a scheduled occurrence can ONLY be authorized by an approval bound to
+    // exactly that occurrence, and an occurrence-bound approval can never
+    // authorize an unbound (ad-hoc) execution. A prior occurrence's approval
+    // therefore cannot authorize a later occurrence — regardless of scope
+    // type, remaining uses, or decision state.
+    const requestOccurrenceId = request.workflowContext?.occurrenceId;
+    if (requestOccurrenceId || scope.occurrenceId) {
+      if (
+        !requestOccurrenceId ||
+        !scope.occurrenceId ||
+        requestOccurrenceId !== scope.occurrenceId
+      ) {
+        return {
+          code: 'APPROVAL_OCCURRENCE_MISMATCH',
+          reason: `Approval is bound to scheduled occurrence "${scope.occurrenceId || 'none'}", but the action is executing for occurrence "${requestOccurrenceId || 'unbound (ad-hoc execution)'}"`,
+        };
       }
     }
 
     // Check Campaign matching
     if (scope.scopeType === 'campaign') {
       if (scope.campaignId && request.target?.resourceId && scope.campaignId !== request.target.resourceId) {
-        return `Approval is scoped to campaign "${scope.campaignId}", but action targets campaign "${request.target.resourceId}"`;
+        return {
+          code: 'APPROVAL_SCOPE_MISMATCH',
+          reason: `Approval is scoped to campaign "${scope.campaignId}", but action targets campaign "${request.target.resourceId}"`,
+        };
       }
     }
 
     // Check Target System matching
     if (scope.targetSystem && request.target?.targetSystem && scope.targetSystem !== request.target.targetSystem) {
-      return `Approval is scoped to target system "${scope.targetSystem}", but action targets "${request.target.targetSystem}"`;
+      return {
+        code: 'APPROVAL_SCOPE_MISMATCH',
+        reason: `Approval is scoped to target system "${scope.targetSystem}", but action targets "${request.target.targetSystem}"`,
+      };
     }
 
     return null;

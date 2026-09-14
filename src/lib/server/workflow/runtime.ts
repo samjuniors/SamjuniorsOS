@@ -5,7 +5,7 @@ import {
   WorkflowStepStatus,
   WorkflowInstanceStatus
 } from '../../../types/workflow';
-import { SideEffectClassification, AuthorizationEvaluationRequest } from '@/types/authorization';
+import { SideEffectClassification, AuthorizationEvaluationRequest, ApprovalScope } from '@/types/authorization';
 import { getWorkflowStore, WorkflowDefinitionStore, WorkflowInstanceStore } from './store';
 import { ServerAgentExecutor } from '../agents/executor';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
@@ -13,14 +13,31 @@ import { validateStepTransition, validateInstanceTransition } from './state-mach
 import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
+/**
+ * PHASE 4.4B.1 — Scheduled occurrence context.
+ * Supplied ONLY by the WorkflowScheduler (server-derived occurrence identity:
+ * `<scheduleId>-occ-<n>`). Threading it through evaluateReadiness /
+ * executeReadyStep binds every gate evaluation, approval request and approval
+ * consumption to exactly one scheduled occurrence, so a prior occurrence's
+ * approval can never authorize a later one. Never client-supplied.
+ */
+export interface ScheduledOccurrenceContext {
+  occurrenceId: string;
+  occurrenceNumber: number;
+  scheduleId: string;
+}
+
 export class WorkflowRuntime {
   private store: WorkflowDefinitionStore & WorkflowInstanceStore;
   private executor: ServerAgentExecutor;
   private gate: SideEffectAuthorizationGate;
 
-  constructor(store?: WorkflowDefinitionStore & WorkflowInstanceStore) {
+  constructor(
+    store?: WorkflowDefinitionStore & WorkflowInstanceStore,
+    executor?: ServerAgentExecutor
+  ) {
     this.store = store || getWorkflowStore();
-    this.executor = new ServerAgentExecutor();
+    this.executor = executor || new ServerAgentExecutor();
     this.gate = SideEffectAuthorizationGate.getInstance();
   }
 
@@ -33,8 +50,23 @@ export class WorkflowRuntime {
 
   /**
    * Creates a new Workflow Instance from a Definition.
+   * Phase 4.4B.1: `options.initiatedById` records the AUTHENTICATED founder
+   * identity that initiated the work (mirrors the authoritative Prisma
+   * WorkflowInstance.initiatedById column). Server-supplied only.
+   *
+   * `options.deferReadinessEvaluation` (scheduled work): skips the immediate
+   * readiness cascade. A SCHEDULED instance's readiness is evaluated
+   * authoritatively by the WorkflowScheduler's due-work pass WITH occurrence
+   * context — running the cascade at creation time would evaluate the step
+   * with NO occurrence identity and manufacture an unbound (non-per-
+   * occurrence) approval request before any occurrence is due. Immediate
+   * execution (the default) keeps the pre-existing cascade unchanged.
    */
-  async createInstance(workflowId: string, version?: string): Promise<WorkflowInstanceState> {
+  async createInstance(
+    workflowId: string,
+    version?: string,
+    options?: { initiatedById?: string; deferReadinessEvaluation?: boolean }
+  ): Promise<WorkflowInstanceState> {
     const definition = await this.store.getDefinition(workflowId, version);
     if (!definition) {
       throw new Error(`Workflow definition not found: ${workflowId}`);
@@ -70,12 +102,17 @@ export class WorkflowRuntime {
       updatedAt: now,
       outputs: {},
       evidenceReferences: [],
+      initiatedById: options?.initiatedById,
     };
 
     await this.store.saveInstance(instance);
-    
-    // Evaluate readiness for all steps
-    await this.evaluateReadiness(instanceId);
+
+    // Evaluate readiness for all steps — UNLESS the work is scheduled: a
+    // scheduled instance's readiness is scheduler-driven (occurrence-bound,
+    // Phase 4.4B.1).
+    if (!options?.deferReadinessEvaluation) {
+      await this.evaluateReadiness(instanceId);
+    }
 
     return (await this.store.getInstance(instanceId))!;
   }
@@ -150,8 +187,17 @@ export class WorkflowRuntime {
   /**
    * Evaluates and updates the readiness of all pending steps in an instance.
    * Enforces centralized Side-Effect Gate authorization policies before advancing to ready.
+   *
+   * Phase 4.4B.1: when `occurrenceContext` is supplied (scheduled execution),
+   * every gate evaluation carries the occurrence identity and any approval
+   * request is BOUND to that occurrence (single_action scope + occurrenceId) —
+   * a deterministic per-occurrence approval identity. Without context, the
+   * behavior is identical to the pre-existing immediate-execution path.
    */
-  async evaluateReadiness(instanceId: string): Promise<void> {
+  async evaluateReadiness(
+    instanceId: string,
+    occurrenceContext?: ScheduledOccurrenceContext
+  ): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
     if (!instance) return;
 
@@ -162,13 +208,20 @@ export class WorkflowRuntime {
 
     for (const stepDef of def.steps) {
       const stepState = instance.stepStates[stepDef.id];
-      if (
-        stepState.status !== 'pending' && 
-        stepState.status !== 'blocked' && 
-        stepState.status !== 'awaiting_approval' && 
-        stepState.status !== 'waiting'
-      ) {
-        continue; // Only pending, blocked, awaiting_approval, or waiting steps can become ready
+      // Only pending, blocked, awaiting_approval, or waiting steps can become ready.
+      //
+      // Phase 4.4B.1 — a SCHEDULED wake (occurrenceContext present) also
+      // re-establishes readiness for 'ready' steps: after the scheduler's
+      // occurrence reset the step is 'ready', but THIS occurrence's
+      // authorization/approval has not been established yet — the gate
+      // evaluation below requests the occurrence-bound approval in the same
+      // heartbeat the occurrence becomes due. Without this, the occurrence's
+      // approval request would lag one heartbeat behind.
+      const isEligible = occurrenceContext
+        ? ['pending', 'blocked', 'awaiting_approval', 'waiting', 'ready'].includes(stepState.status)
+        : ['pending', 'blocked', 'awaiting_approval', 'waiting'].includes(stepState.status);
+      if (!isEligible) {
+        continue;
       }
 
       let dependenciesMet = true;
@@ -217,6 +270,7 @@ export class WorkflowRuntime {
             workflowInstanceId: instance.instanceId,
             stepId: stepDef.id,
             objective: def.objective,
+            occurrenceId: occurrenceContext?.occurrenceId,
           },
           target: stepDef.targetContext,
         };
@@ -232,13 +286,27 @@ export class WorkflowRuntime {
         } else if (decision.effect === 'approval_required') {
           // If requires approval and not approved, create or link approval request
           if (stepState.approvalState !== 'approved') {
+            // Phase 4.4B.1 — per-occurrence approval identity: a scheduled
+            // occurrence's approval request is single-use and BOUND to exactly
+            // this occurrence (server-derived occurrenceId). Any definition-
+            // level approvalScope is overridden for scheduled occurrences:
+            // "require approval before each execution" is the invariant.
+            const requestScope: ApprovalScope | undefined = occurrenceContext
+              ? {
+                  ...(stepDef.approvalScope || {}),
+                  scopeType: 'single_action',
+                  occurrenceId: occurrenceContext.occurrenceId,
+                  maxUses: 1,
+                }
+              : stepDef.approvalScope;
+
             const approvalRecord = await this.gate.requestApproval({
               actionName: stepDef.name,
               classification,
               workflowInstanceId: instance.instanceId,
               stepId: stepDef.id,
               employeeRole: stepDef.assignedRole,
-              scope: stepDef.approvalScope,
+              scope: requestScope,
               notes: stepDef.description,
               target: stepDef.targetContext,
               requestedBy: stepDef.assignedRole,
@@ -381,8 +449,26 @@ export class WorkflowRuntime {
   /**
    * Execute a Ready step via SideEffectAuthorizationGate and existing orchestration.
    * Atomically claims the step before external execution and persists transitions atomically.
+   *
+   * Phase 4.4B.1:
+   *  - `occurrenceContext` binds the pre-execution gate evaluation to the
+   *    scheduled occurrence (per-occurrence approval enforcement).
+   *  - Deterministic failure semantics: an executor result with
+   *    `success: false` (provider failure — the executor has already
+   *    persisted a FAILED AgentRun) is surfaced as a RETRYABLE step failure
+   *    by throwing inside the gate's executeFn. The gate marks its idempotency
+   *    key 'failed' (re-invocable on retry), this runtime transitions the step
+   *    to 'failed', and the scheduler's retry/backoff operates on that
+   *    authoritative execution state. A provider failure can therefore never
+   *    masquerade as a completed step with error-marked output, and can never
+   *    suppress scheduler retry.
    */
-  async executeReadyStep(instanceId: string, stepId: string, workerId: string = 'worker-default'): Promise<void> {
+  async executeReadyStep(
+    instanceId: string,
+    stepId: string,
+    workerId: string = 'worker-default',
+    occurrenceContext?: ScheduledOccurrenceContext
+  ): Promise<void> {
     const instance = await this.store.getInstance(instanceId);
     if (!instance) throw new Error(`Instance not found: ${instanceId}`);
     
@@ -414,6 +500,7 @@ export class WorkflowRuntime {
         workflowInstanceId: instance.instanceId,
         stepId: stepDef.id,
         objective: def.objective,
+        occurrenceId: occurrenceContext?.occurrenceId,
       },
       target: stepDef.targetContext,
       requestedBy: step.assignedRole,
@@ -464,7 +551,7 @@ export class WorkflowRuntime {
           },
         },
         executeFn: async () => {
-          return this.executor.executeAgentTask(
+          const result = await this.executor.executeAgentTask(
             step.assignedRole,
             {
               directive: def.objective,
@@ -474,6 +561,24 @@ export class WorkflowRuntime {
             },
             `Execute workflow step: ${stepDef.name}`
           );
+
+          // PHASE 4.4B.1 — deterministic failure semantics at the workflow
+          // boundary. The ServerAgentExecutor's contract (unchanged) reports
+          // provider failures as { success: false, error } with a FAILED
+          // AgentRun already persisted. Treating that as a completed step
+          // with error-marked output misrepresents failed work as completed
+          // and suppresses scheduler retry. Throwing here routes the failure
+          // through the authoritative chain instead:
+          //   gate idempotency key → 'failed' (retry re-invokes the provider)
+          //   step → 'failed' → scheduler retry/backoff (retryable failure)
+          //   retries exhausted → terminal schedule failure (honest)
+          if (!result.success) {
+            throw new Error(
+              result.error ||
+                `Agent execution failed for step "${stepDef.name}"${result.runId ? ` (failed agent run ${result.runId} persisted)` : ''}`
+            );
+          }
+          return result;
         }
       });
 

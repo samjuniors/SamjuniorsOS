@@ -32,6 +32,13 @@ export type ApprovalScopeType =
   | 'campaign'
   | 'bounded_operation';
 
+/**
+ * PHASE 4.4B.1 — OCCURRENCE BINDING.
+ * A per-occurrence scheduled approval authorizes exactly ONE scheduler
+ * occurrence (scopeType 'single_action' + occurrenceId). It is single-use
+ * (consumed at execution) and can never authorize a later occurrence or an
+ * ad-hoc (unbound) execution of the same step.
+ */
 export interface ApprovalScope {
   scopeType: ApprovalScopeType;
   workflowInstanceId?: string;
@@ -39,6 +46,9 @@ export interface ApprovalScope {
   campaignId?: string;
   targetSystem?: string;
   operationPattern?: string;
+  /** Scheduler occurrence identity ("<scheduleId>-occ-<n>") this approval is
+   * bound to. Set ONLY by the scheduled execution path; server-derived. */
+  occurrenceId?: string;
   maxUses?: number;
   usedCount?: number;
 }
@@ -67,6 +77,7 @@ export type AuthorizationReasonCode =
   | 'APPROVAL_REVOKED'
   | 'APPROVAL_EXPIRED'
   | 'APPROVAL_SCOPE_MISMATCH'
+  | 'APPROVAL_OCCURRENCE_MISMATCH'
   | 'APPROVAL_CONSUMED'
   | 'APPROVAL_PAYLOAD_HASH_MISMATCH'
   | 'APPROVAL_PAYLOAD_HASH_MISSING'
@@ -115,6 +126,10 @@ export interface AuthorizationEvaluationRequest {
     workflowInstanceId: string;
     stepId: string;
     objective?: string;
+    /** Server-derived scheduler occurrence identity when this evaluation is
+     * for a specific scheduled occurrence (Phase 4.4B.1). Client-supplied
+     * values are never trusted — only the WorkflowScheduler sets this. */
+    occurrenceId?: string;
   };
   target?: ActionTargetContext;
   payload?: any;
@@ -159,6 +174,8 @@ export interface ApprovalFilter {
   stepId?: string;
   employeeRole?: string;
   classification?: SideEffectClassification;
+  /** Filter to approvals bound to a specific scheduled occurrence. */
+  occurrenceId?: string;
 }
 
 export interface AuditFilter {
