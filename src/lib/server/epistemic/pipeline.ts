@@ -394,12 +394,37 @@ export class EpistemicPipeline {
   // STAGE 6: MEMORY PACKAGING & PROMOTION
   // =========================================================================
 
+  /**
+   * Phase 4.4E — governance invariant: Fact → Memory advances ONLY through a
+   * founder-authorized path. The promoter principal is enforced at the
+   * pipeline layer with the SAME strict checks as promoteClaimToFact (defense
+   * in depth under the route-level founder gate): string identities are
+   * prohibited unconditionally, and only role FOUNDER + isVerified true may
+   * promote. This adds NO new authority — it hardens the existing rule that
+   * only the founder can advance epistemic state.
+   */
   public async promoteFactToMemory(params: {
     factId: string;
     approvedAction: string;
     executionOutcome: string;
     category?: string;
+    promoter: FactPromotionAuthority | any;
   }): Promise<CompanyMemory> {
+    // 1. Unconditionally eliminate string-based promotion authority.
+    if (typeof params.promoter === 'string') {
+      throw new Error(
+        `Unauthorized memory promotion: String-based promoter identities are strictly prohibited. Company memory promotion requires an explicit authenticated Founder principal object. Attempted by "${params.promoter}".`
+      );
+    }
+
+    // 2. Strict invariant: a verified FOUNDER principal is REQUIRED (the
+    //    /api/epistemic route always supplies the authenticated founder).
+    if (!params.promoter || typeof params.promoter !== 'object' || params.promoter.role !== 'FOUNDER' || params.promoter.isVerified !== true) {
+      throw new Error(
+        `Unauthorized memory promotion: Only an authenticated and verified Founder principal can promote canonical facts to company memory. Attempted by identity "${params.promoter?.userId}" with role "${params.promoter?.role}" (isVerified: ${params.promoter?.isVerified}).`
+      );
+    }
+
     const fact = await this.claimStore.getFact(params.factId);
     if (!fact) {
       throw new Error(`Fact not found: ${params.factId}`);
@@ -421,6 +446,70 @@ export class EpistemicPipeline {
 
     await this.memoryStore.recordMemory(companyMemory);
     return companyMemory;
+  }
+
+  // =========================================================================
+  // STAGE 4b: FOUNDER REJECTION (Phase 4.4E)
+  // =========================================================================
+
+  /**
+   * Founder-attributed claim rejection. The existing epistemic model already
+   * supports the 'rejected' claim status and the ClaimVerificationInputSchema
+   * already defines a 'reject' decision — this completes that existing
+   * lifecycle path with the same strict founder-principal enforcement used by
+   * promoteClaimToFact. No new authority: rejection can only ever NARROW what
+   * the system treats as candidate truth.
+   */
+  public async rejectClaim(
+    claimId: string,
+    rejector: FactPromotionAuthority | any,
+    reason?: string
+  ): Promise<EpistemicClaim> {
+    const claim = await this.claimStore.getClaim(claimId);
+    if (!claim) {
+      throw new Error(`Claim not found: ${claimId}`);
+    }
+
+    // 1. Unconditionally eliminate string-based rejection authority.
+    if (typeof rejector === 'string') {
+      throw new Error(
+        `Unauthorized rejection: String-based rejector identities are strictly prohibited. Claim rejection requires an explicit authenticated Founder principal object. Attempted by "${rejector}".`
+      );
+    }
+
+    // 2. Strict invariant: FOUNDER + isVerified, no environment bypass.
+    if (!rejector || typeof rejector !== 'object' || rejector.role !== 'FOUNDER' || rejector.isVerified !== true) {
+      throw new Error(
+        `Unauthorized rejection: Only an authenticated and verified Founder principal can reject claims. Attempted by identity "${rejector?.userId}" with role "${rejector?.role}" (isVerified: ${rejector?.isVerified}).`
+      );
+    }
+
+    // 3. Terminal-state honesty: a promoted fact is not undone by claim
+    //    rejection (fact supersession is the separate existing mechanism).
+    if (claim.verificationStatus === 'promoted_to_fact') {
+      throw new Error(
+        `Claim ${claimId} is already promoted to a canonical fact. Rejection cannot undo a promotion — supersede the fact through the existing verification path instead.`
+      );
+    }
+
+    const now = new Date().toISOString();
+    const rejection: VerificationPolicyResult = {
+      claimId,
+      passed: false,
+      policyOutcome: 'rejected_by_founder',
+      reason: reason?.trim() || 'Founder reviewed the claim and rejected it as company truth.',
+      verifiedAt: now,
+      verifiedBy: rejector.userId,
+      precedenceNote: 'Founder rejection is terminal for the claim lifecycle (pending → rejected).',
+    };
+
+    claim.verificationStatus = 'rejected';
+    claim.reviewedAt = now;
+    claim.reviewedBy = rejector.userId;
+    claim.rejectionReason = rejection.reason;
+    await this.claimStore.saveClaim(claim);
+    await this.claimStore.recordVerification(rejection);
+    return claim;
   }
 
   // =========================================================================

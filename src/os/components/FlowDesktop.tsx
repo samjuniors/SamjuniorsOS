@@ -33,7 +33,7 @@ import {
 } from "@/components/workflow";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
-import { fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, type ScheduleListItem } from "../lib/runtime";
+import { fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, epistemicAction, refreshEpistemicBoard, type ScheduleListItem } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -1012,6 +1012,263 @@ function CompanyActivityList() {
   );
 }
 
+/* ------------------------------------------------------------------------
+ * Phase 4.4E — FOUNDER EPISTEMIC BOARD.
+ *
+ * The smallest founder surface needed to operate the EXISTING epistemic
+ * pipeline: review pending claims (with their provenance/evidence lineage),
+ * verify or reject them, promote verified claims to Facts, and promote
+ * Facts to Memory. Everything advances ONLY through the founder-gated
+ * /api/epistemic actions; the board is a server projection and is never
+ * optimistically mutated locally.
+ *
+ * Visual honesty rules (governance):
+ * - PENDING claims are always labeled "AI proposed — not company truth".
+ * - VERIFIED means the founder verification passed — the fact promotion is
+ *   a separate explicit step.
+ * - FACTS are labeled "Founder-verified company truth".
+ * - MEMORY is labeled "historical precedent — NOT new empirical evidence".
+ * - Seed/demo memories are labeled as having no fact lineage.
+ * ------------------------------------------------------------------------- */
+
+const EPISTEMIC_STAGE_STYLE: Record<string, string> = {
+  pending: "border-amber-400/40 bg-amber-400/10 text-amber-200",
+  verified: "border-cyan-300/40 bg-cyan-300/10 text-cyan-200",
+  fact: "border-emerald-400/40 bg-emerald-400/10 text-emerald-200",
+  rejected: "border-rose-400/40 bg-rose-400/10 text-rose-200",
+};
+
+function EpistemicStageChip({ stage }: { stage: string }) {
+  return (
+    <span className={`shrink-0 rounded border px-1 py-px font-mono text-[8.5px] font-semibold uppercase tracking-[0.14em] ${EPISTEMIC_STAGE_STYLE[stage] ?? EPISTEMIC_STAGE_STYLE.pending}`}>
+      {stage}
+    </span>
+  );
+}
+
+function EpistemicBoardCard() {
+  const board = useOS((s) => s.epistemic);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const act = async (key: string, action: "verify_claim" | "reject_claim" | "promote_to_fact" | "promote_to_memory", payload: Record<string, unknown>) => {
+    if (busy) return;
+    setBusy(key);
+    try {
+      const res = await epistemicAction(action, payload);
+      if (res.ok) {
+        osSound.click();
+        os.log(`Epistemic board: ${action.replace(/_/g, " ")} accepted by the server.`);
+      } else {
+        os.log(`Epistemic ${action.replace(/_/g, " ")} failed: ${res.error}`);
+      }
+      // The board is ALWAYS re-projected from the server — the UI never
+      // locally advances governed epistemic state.
+      await refreshEpistemicBoard();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!board) {
+    return (
+      <p className="py-2 text-[11.5px] leading-snug text-slate-500">
+        Epistemic board not synced yet. Claims, facts and governed memory will
+        appear here once the server projection loads — nothing is simulated.
+      </p>
+    );
+  }
+
+  const pendingClaims = board.claims.filter((c) => c.stage === "pending");
+  const verifiedClaims = board.claims.filter((c) => c.stage === "verified");
+  const settledClaims = board.claims.filter((c) => c.stage === "fact" || c.stage === "rejected");
+  const reviewable = [...pendingClaims, ...verifiedClaims, ...settledClaims];
+
+  return (
+    <div>
+      {/* Lifecycle strip: PENDING → VERIFIED → FACT → MEMORY */}
+      <div className="mb-2 flex items-center justify-between gap-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[9px] font-mono uppercase tracking-[0.12em]">
+        <span className="text-amber-200/90">{board.counts.pending} pend</span>
+        <ArrowRight size={9} className="text-slate-600" />
+        <span className="text-cyan-200/90">{board.counts.verified} verif</span>
+        <ArrowRight size={9} className="text-slate-600" />
+        <span className="text-emerald-200/90">{board.counts.activeFacts} fact</span>
+        <ArrowRight size={9} className="text-slate-600" />
+        <span className="text-violet-200/90">{board.counts.memoriesWithFactLineage} mem</span>
+      </div>
+
+      {/* Claims — AI-proposed, never silently company truth */}
+      <div className="os-scroll max-h-[340px] space-y-1.5 overflow-y-auto pr-0.5">
+        {reviewable.length === 0 && (
+          <p className="py-1 text-[11px] leading-snug text-slate-500">
+            No epistemic claims recorded yet. Agent work and gated research
+            will submit candidate claims here for founder verification.
+          </p>
+        )}
+        {reviewable.map((c) => {
+          const isOpen = expanded === c.id;
+          const canVerify = c.stage === "pending" && !busy;
+          const canReject = (c.stage === "pending" || c.stage === "verified") && !busy;
+          const canPromote = c.stage === "verified" && !busy;
+          return (
+            <div key={c.id} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-1.5">
+              <button
+                type="button"
+                onClick={() => { osSound.click(); setExpanded(isOpen ? null : c.id); }}
+                className="w-full text-left"
+              >
+                <span className="flex items-start gap-1.5">
+                  <EpistemicStageChip stage={c.stage} />
+                  <span className={`min-w-0 flex-1 text-[10.5px] leading-snug ${c.stage === "fact" ? "text-emerald-100/90" : c.stage === "rejected" ? "text-slate-500 line-through decoration-rose-400/40" : "text-slate-300"}`}>
+                    {c.statement.length > 150 && !isOpen ? `${c.statement.slice(0, 150)}…` : c.statement}
+                  </span>
+                </span>
+                <span className="mt-1 block truncate font-mono text-[8.5px] text-slate-600" title={`${c.proposedBy} proposed this claim${c.agentRunId ? ` · run ${c.agentRunId}` : ""}`}>
+                  AI proposed ({c.proposedBy}){c.agentRunId ? ` · run ${c.agentRunId.slice(0, 16)}` : ""} · {c.category}
+                </span>
+                <span className="mt-0.5 flex items-center gap-1 truncate font-mono text-[8.5px] text-slate-600" title={c.lineage ? `Source: ${c.lineage.source.title}` : "No evidence source — model takeaway without recorded external evidence"}>
+                  {c.lineage ? (
+                    <>
+                      <span className="text-cyan-300/70">evidence:</span>
+                      <span className="truncate">{c.lineage.source.sourceSystem}{c.lineage.signal ? ` → ${c.lineage.signal.signalType}` : ""}</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-600/80">no evidence source (AI takeaway)</span>
+                  )}
+                </span>
+              </button>
+
+              {isOpen && (
+                <div className="mt-1.5 space-y-1.5 border-t border-white/[0.06] pt-1.5">
+                  {c.lineage && (
+                    <div className="rounded bg-black/30 p-1.5 font-mono text-[8.5px] leading-relaxed text-slate-400">
+                      <div className="text-cyan-300/80">SOURCE</div>
+                      <div className="truncate" title={c.lineage.source.title}>{c.lineage.source.title}</div>
+                      {c.lineage.source.uri && (
+                        <a href={c.lineage.source.uri} target="_blank" rel="noreferrer" className="block truncate text-cyan-400/80 underline decoration-cyan-400/30 hover:text-cyan-300" onClick={(e) => e.stopPropagation()}>
+                          {c.lineage.source.uri}
+                        </a>
+                      )}
+                      <div className="mt-1 text-slate-600">captured {new Date(c.lineage.source.capturedAt).toLocaleString()} · {c.lineage.source.provenanceKind}</div>
+                      {c.lineage.signal && (
+                        <>
+                          <div className="mt-1 text-cyan-300/80">SIGNAL</div>
+                          <div className="line-clamp-3">{c.lineage.signal.extractedObservation}</div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {c.verification && (
+                    <div className={`rounded p-1.5 font-mono text-[8.5px] leading-relaxed ${c.verification.passed ? "bg-cyan-400/5 text-cyan-200/70" : "bg-rose-400/5 text-rose-200/70"}`}>
+                      <div>{c.verification.passed ? "VERIFIED" : "NOT PASSED"} · {c.verification.policyOutcome}</div>
+                      <div className="text-slate-500">by {c.verification.verifiedBy}</div>
+                    </div>
+                  )}
+                  {c.rejectionReason && (
+                    <p className="rounded bg-rose-400/5 p-1.5 text-[9px] leading-snug text-rose-200/70">{c.rejectionReason}</p>
+                  )}
+                  {c.stage === "fact" && (
+                    <p className="text-[9px] leading-snug text-emerald-200/70">Founder verification established this as company truth.</p>
+                  )}
+                  {(canVerify || canReject || canPromote) && (
+                    <div className="flex gap-1">
+                      {canVerify && (
+                        <button
+                          onClick={() => act(c.id, "verify_claim", { claimId: c.id, decision: "approve_and_promote", reason: "Founder verification via SamJuniorsOS epistemic board" })}
+                          className="flex-1 rounded-lg border border-cyan-300/40 bg-cyan-400/15 py-1 text-center text-[9.5px] font-semibold text-cyan-100 hover:bg-cyan-400/25 active:scale-95"
+                        >
+                          Verify
+                        </button>
+                      )}
+                      {canReject && (
+                        <button
+                          onClick={() => act(c.id, "reject_claim", { claimId: c.id, reason: "Founder rejected this claim from the SamJuniorsOS epistemic board" })}
+                          className="flex-1 rounded-lg border border-rose-400/30 bg-rose-400/15 py-1 text-center text-[9.5px] font-semibold text-rose-200 hover:bg-rose-400/25 active:scale-95"
+                        >
+                          Reject
+                        </button>
+                      )}
+                      {canPromote && (
+                        <button
+                          onClick={() => act(c.id, "promote_to_fact", { claimId: c.id })}
+                          className="flex-1 rounded-lg border border-emerald-400/40 bg-emerald-400/15 py-1 text-center text-[9.5px] font-semibold text-emerald-200 hover:bg-emerald-400/25 active:scale-95"
+                        >
+                          Promote to Fact
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {busy === c.id && <p className="text-center font-mono text-[8.5px] text-slate-500">advancing via server…</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Facts — founder-verified company truth */}
+      {board.facts.length > 0 && (
+        <div className="mt-2 border-t border-white/[0.06] pt-2">
+          <div className="mb-1 flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">
+            <span>Founder-Verified Facts</span>
+            <span className="text-emerald-300/80">{board.counts.activeFacts}</span>
+          </div>
+          <div className="os-scroll max-h-[180px] space-y-1 overflow-y-auto pr-0.5">
+            {board.facts.map((f) => (
+              <div key={f.id} className="rounded-lg border border-emerald-400/15 bg-emerald-400/[0.04] p-1.5">
+                <p className="text-[10px] leading-snug text-emerald-100/80">{f.statement}</p>
+                <div className="mt-1 flex items-center justify-between gap-1">
+                  <span className="truncate font-mono text-[8px] text-slate-600" title={`Promoted by ${f.promotedBy} at ${f.promotedAt}`}>
+                    by {f.promotedBy} · {new Date(f.promotedAt).toLocaleDateString()}
+                  </span>
+                  {f.promotedToMemory ? (
+                    <span className="shrink-0 rounded border border-violet-300/30 bg-violet-300/10 px-1 py-px font-mono text-[8px] uppercase tracking-wide text-violet-200">in memory</span>
+                  ) : (
+                    <button
+                      disabled={!!busy}
+                      onClick={() => act(f.id, "promote_to_memory", { factId: f.id, approvedAction: f.statement, executionOutcome: `Promoted canonical fact regarding ${f.subject}` })}
+                      className="shrink-0 rounded border border-violet-300/40 bg-violet-300/15 px-1.5 py-px font-mono text-[8px] uppercase tracking-wide text-violet-100 hover:bg-violet-300/25 active:scale-95 disabled:opacity-40"
+                    >
+                      → memory
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Memory — historical precedent, never new evidence */}
+      {board.memories.length > 0 && (
+        <div className="mt-2 border-t border-white/[0.06] pt-2">
+          <div className="mb-1 flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em] text-slate-500">
+            <span>Company Memory</span>
+            <span className="text-violet-300/80">{board.counts.memoriesWithFactLineage + board.counts.seedMemories}</span>
+          </div>
+          <div className="os-scroll max-h-[160px] space-y-1 overflow-y-auto pr-0.5">
+            {board.memories.map((m) => (
+              <div key={m.id} className={`rounded-lg border p-1.5 ${m.origin === "fact_lineage" ? "border-violet-300/20 bg-violet-300/[0.04]" : "border-white/[0.07] bg-white/[0.02]"}`}>
+                <p className={`text-[10px] leading-snug ${m.origin === "fact_lineage" ? "text-violet-100/80" : "text-slate-400"}`}>{m.approvedAction}</p>
+                <p className="mt-0.5 font-mono text-[8px] text-slate-600">
+                  {m.origin === "fact_lineage"
+                    ? "historical precedent — NOT new evidence · fact lineage"
+                    : "seed/demo record — no fact lineage (unverified origin)"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="mt-1.5 border-t border-white/[0.06] pt-1.5 text-[8.5px] uppercase tracking-[0.18em] text-slate-600">
+        AI proposed · Founder verifies · /api/epistemic
+      </p>
+    </div>
+  );
+}
+
+
 function CompanyCard({ onClose }: { onClose: () => void }) {
   const company = useOS((s) => s.company);
   const edit = (field: "oneLiner" | "focus", label: string) => {
@@ -1134,6 +1391,7 @@ export default function FlowDesktop({
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
   const activity = useOS((s) => s.activity);
+  const epistemic = useOS((s) => s.epistemic);
   const osState = useOS((s) => s);
 
   // Authoritative Server-Projected Graph (Phase 4.3B)
@@ -2607,6 +2865,12 @@ export default function FlowDesktop({
               <p className="mt-1.5 border-t border-white/[0.06] pt-1.5 text-[8.5px] uppercase tracking-[0.18em] text-slate-600">
                 Server-authoritative · /api/activity
               </p>
+            </SideCard>
+          </div>
+          {/* Phase 4.4E — founder epistemic board (claims → facts → governed memory) */}
+          <div className="w-[248px] max-lg:w-[266px]">
+            <SideCard title="Epistemic Board" icon={<ShieldCheck size={13} />} count={epistemic?.counts.pending ?? 0} tone="amber" defaultOpen={false}>
+              <EpistemicBoardCard />
             </SideCard>
           </div>
           <div className="mt-auto w-[248px] pt-1 text-right text-[9px] tracking-[0.22em] text-slate-700 max-lg:w-[266px]">SAMJUNIORSOS</div>

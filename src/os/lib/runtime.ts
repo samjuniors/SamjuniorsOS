@@ -20,6 +20,7 @@ import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStor
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
 import type { ActivityEventDTO, ActivityResponseDTO } from "@/types/activity";
+import type { EpistemicBoardDTO } from "@/types/epistemic";
 import { serverActivityToEvent } from "./surfaceSchema";
 
 /* ------------------------------------------------------------------ id mapping
@@ -194,6 +195,53 @@ export async function fetchActivity(limit = 60): Promise<ActivityEventDTO[]> {
   const data = await jsonFetch<ActivityResponseDTO>(`/api/activity?limit=${limit}`);
   return data.events ?? [];
 }
+
+/* ------------------------------------------------------------------ epistemic board (Phase 4.4E) */
+
+/** Authoritative founder epistemic board projection
+ *  (GET /api/epistemic?view=board): claims with resolved Source→Signal
+ *  lineage, active facts and memories — the read model behind the founder
+ *  epistemic surface. Server-authoritative; never persisted client-side. */
+export async function fetchEpistemicBoard(): Promise<EpistemicBoardDTO> {
+  const data = await jsonFetch<{ success: boolean; data: EpistemicBoardDTO }>("/api/epistemic?view=board");
+  return data.data;
+}
+
+/** Founder epistemic action through the EXISTING founder-gated
+ *  /api/epistemic POST surface (verify_claim | reject_claim |
+ *  promote_to_fact | promote_to_memory). Returns an honest success/error —
+ *  the caller refreshes the board from the server afterwards so the UI never
+ *  optimistically mutates governed epistemic state. */
+export async function epistemicAction(
+  action: "verify_claim" | "reject_claim" | "promote_to_fact" | "promote_to_memory",
+  payload: Record<string, unknown>
+): Promise<{ ok: true; data?: unknown } | { ok: false; error: string }> {
+  try {
+    const data = await jsonFetch<{ success: boolean; data?: unknown }>("/api/epistemic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    return { ok: true, data: data.data };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Refresh the epistemic board from the server into the OS store. Used after
+ *  every founder epistemic action (the board is re-projected, never locally
+ *  mutated — governed state advances only through the server). */
+export async function refreshEpistemicBoard(): Promise<boolean> {
+  try {
+    const board = await fetchEpistemicBoard();
+    os.setServerEpistemic(board);
+    return true;
+  } catch (err) {
+    os.log(`Epistemic board unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
 
 /* ------------------------------------------------------------------ authoritative graph (Phase 4.3B) */
 
@@ -523,7 +571,7 @@ export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> 
   if (syncing) return syncing;
   syncing = (async () => {
     try {
-      const [roster, runs, approvals, activity] = await Promise.all([
+      const [roster, runs, approvals, activity, epistemic] = await Promise.all([
         fetchRoster(),
         fetchRuns(),
         fetchApprovals(),
@@ -533,9 +581,17 @@ export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> 
           os.log(`Company activity unavailable: ${err instanceof Error ? err.message : String(err)}`);
           return null;
         }),
+        fetchEpistemicBoard().catch((err) => {
+          // Phase 4.4E: the epistemic board is likewise additive — a
+          // board-specific failure degrades honestly without breaking the
+          // core sync. Governed epistemic state is never faked locally.
+          os.log(`Epistemic board unavailable: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }),
       ]);
       applyServerReadModel({ roster, runs, approvals });
       if (activity) os.setServerActivity(activity.map(serverActivityToEvent));
+      if (epistemic) os.setServerEpistemic(epistemic);
     } catch (err) {
       if (!opts?.quiet) {
         // Honest signal — never fake a successful sync.

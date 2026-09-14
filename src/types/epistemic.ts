@@ -95,7 +95,7 @@ export interface EpistemicClaim {
 export interface VerificationPolicyResult {
   claimId: string;
   passed: boolean;
-  policyOutcome: 'approved_for_promotion' | 'rejected_contradiction' | 'rejected_unverified' | 'requires_founder_review';
+  policyOutcome: 'approved_for_promotion' | 'rejected_contradiction' | 'rejected_unverified' | 'rejected_by_founder' | 'requires_founder_review';
   conflictingFactIds?: string[];
   reason: string;
   verifiedAt: string;
@@ -141,4 +141,107 @@ export interface GovernedMemoryObject {
   timestamp: string;
   recordedAt: string;
   provenance: ContextItemProvenance;
+}
+
+/* ============================================================================
+ * PHASE 4.4E — FOUNDER EPISTEMIC BOARD READ MODEL (DTOs)
+ *
+ * Server-side read projection of the epistemic lifecycle for the founder
+ * surface (GET /api/epistemic?view=board). Pure derivation over the EXISTING
+ * stores — no new persistence, no second evidence store. Lineage is resolved
+ * ONLY from real Source/Signal records referenced by the claim; claims
+ * without lineage honestly carry none (never fabricated).
+ * ============================================================================
+ */
+
+/** Resolved Source→Signal lineage for a claim (present only when the claim
+ *  actually references real records; absent otherwise — honest absence). */
+export interface EpistemicLineageDTO {
+  source: {
+    id: string;
+    sourceSystem: string;
+    title: string;
+    uri?: string;
+    capturedAt: string;
+    provenanceKind: string;
+  };
+  /** Present only when the claim references a real signal record. */
+  signal?: {
+    id: string;
+    signalType: string;
+    extractedObservation: string;
+    confidence: string;
+  };
+}
+
+/** Lifecycle stage of a claim as projected onto the founder board. */
+export type EpistemicBoardStage = 'pending' | 'verified' | 'rejected' | 'fact';
+
+export interface EpistemicBoardClaimDTO {
+  id: string;
+  statement: string;
+  subject: string;
+  category: string;
+  proposedBy: string;
+  confidence: string;
+  /** Derived: pending | verified (passed verification, not yet promoted) |
+   *  rejected | fact (promoted to a canonical fact). */
+  stage: EpistemicBoardStage;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  rejectionReason?: string;
+  agentRunId?: string;
+  evidenceReferences: string[];
+  /** Latest founder/policy verification record, when one exists. */
+  verification?: {
+    passed: boolean;
+    policyOutcome: string;
+    reason: string;
+    verifiedAt: string;
+    verifiedBy: string;
+  };
+  /** Resolved Source→Signal lineage (only when real records exist). */
+  lineage?: EpistemicLineageDTO;
+}
+
+export interface EpistemicBoardFactDTO {
+  id: string;
+  claimId: string;
+  statement: string;
+  subject: string;
+  category: string;
+  promotedAt: string;
+  promotedBy: string;
+  /** True when a CompanyMemory record carries this fact's lineage. */
+  promotedToMemory: boolean;
+}
+
+export interface EpistemicBoardMemoryDTO {
+  id: string;
+  approvedAction: string;
+  executionOutcome: string;
+  recordedAt: string;
+  epistemicConfidence: string;
+  /** Derived provenance classification:
+   *  - 'fact_lineage': promoted from a canonical fact (founder path).
+   *  - 'seed_or_unattributed': no fact lineage (static seed / demo record). */
+  origin: 'fact_lineage' | 'seed_or_unattributed';
+  factId?: string;
+}
+
+export interface EpistemicBoardDTO {
+  asOfTime: string;
+  claims: EpistemicBoardClaimDTO[];
+  facts: EpistemicBoardFactDTO[];
+  memories: EpistemicBoardMemoryDTO[];
+  counts: {
+    pending: number;
+    verified: number;
+    rejected: number;
+    promotedToFacts: number;
+    activeFacts: number;
+    memoriesWithFactLineage: number;
+    seedMemories: number;
+  };
 }

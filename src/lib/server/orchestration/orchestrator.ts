@@ -25,6 +25,7 @@ import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEv
 import { determineSkillForTask } from '@/lib/skills/skill-registry';
 import { ConstitutionalVerifier } from './verifier';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
+import { EpistemicPipeline } from '../epistemic/pipeline';
 
 const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
   {
@@ -88,6 +89,93 @@ export interface OrchestrationRequest {
   agents?: AgentRole[];
   autonomyLevel?: string;
   executeTools?: boolean;
+}
+
+/**
+ * PHASE 4.4E — EVIDENCE LINEAGE (Source → Signal → Claim).
+ *
+ * Wires REAL gated tool execution output into the EXISTING epistemic pipeline
+ * (ingestSource → extractSignal → submitClaim). No second evidence store is
+ * created: the raw retrieved content becomes an EvidenceSource, each grounded
+ * research claim becomes an EpistemicSignal, and a PENDING claim is submitted
+ * referencing both — so the founder board can answer "what source produced
+ * this claim / what signal produced it / what evidence supports it".
+ *
+ * Honesty rules:
+ * - Only claims the tool path actually grounded ('claim_supported') receive
+ *   lineage. Unverified model output never gets a fabricated source.
+ * - Lineage persistence failure must NEVER break orchestration — the failure
+ *   is logged honestly and the run proceeds.
+ * - Bounded: at most 6 claims per execution (claim spam protection).
+ */
+const MAX_LINEAGE_CLAIMS_PER_EXECUTION = 6;
+
+async function persistResearchEvidenceLineage(params: {
+  directive: string;
+  sourceSystem: string;
+  sourceTitle: string;
+  uri?: string;
+  rawContent: string;
+  signalType: 'system_event' | 'code_analysis' | 'metric_observation';
+  groundedClaims: Array<{
+    statement: string;
+    supportingSourceUrls: string[];
+    evidenceExcerpt?: string;
+  }>;
+  subject: string;
+  category: 'market_research' | 'architectural';
+  agentRunId?: string;
+  metadata?: Record<string, any>;
+}): Promise<void> {
+  try {
+    const pipeline = EpistemicPipeline.getInstance();
+
+    const source = await pipeline.ingestSource({
+      sourceSystem: params.sourceSystem,
+      uri: params.uri,
+      title: params.sourceTitle,
+      rawContent: params.rawContent,
+      capturedBy: 'researcher',
+      provenanceKind: 'live_operational',
+      metadata: {
+        capturedVia: 'gated_orchestration_tool_execution',
+        directive: params.directive,
+        ...(params.metadata || {}),
+      },
+    });
+
+    for (const grounded of params.groundedClaims.slice(0, MAX_LINEAGE_CLAIMS_PER_EXECUTION)) {
+      const signal = await pipeline.extractSignal({
+        sourceId: source.id,
+        signalType: params.signalType,
+        extractedObservation: grounded.evidenceExcerpt || grounded.statement,
+        data: {
+          statement: grounded.statement,
+          supportingSourceUrls: grounded.supportingSourceUrls,
+          ...(grounded.evidenceExcerpt ? { evidenceExcerpt: grounded.evidenceExcerpt } : {}),
+        },
+        confidence: 'high_confidence',
+      });
+
+      await pipeline.submitClaim({
+        sourceId: source.id,
+        signalId: signal.id,
+        statement: grounded.statement,
+        subject: params.subject,
+        category: params.category,
+        proposedBy: 'researcher',
+        confidence: 'high_confidence',
+        evidenceReferences: grounded.supportingSourceUrls,
+        verificationNotes: `Source-backed observation persisted from gated ${params.sourceSystem} execution${params.agentRunId ? ` (agent run ${params.agentRunId})` : ''}. Pending founder verification — NOT company truth.`,
+        agentRunId: params.agentRunId,
+      });
+    }
+  } catch (lineageErr) {
+    console.error(
+      `[ORCHESTRATOR] Epistemic evidence lineage persistence failed (run continues honestly without lineage):`,
+      lineageErr
+    );
+  }
 }
 
 export class MultiAgentOrchestrator {
@@ -286,6 +374,45 @@ Focus on:
             researchToolEvidence = intelResult.evidence;
             const epistemic = intelResult.epistemicBreakdown;
 
+            // Phase 4.4E — persist repository observation evidence with full
+            // Source→Signal→Claim lineage into the EXISTING epistemic pipeline.
+            // Only FACT-grounded claims (claim_supported) receive lineage; the
+            // specialist's inferences honestly carry none (they are deductions,
+            // not retrieved facts).
+            const repositoryTarget =
+              intelResult.intelligenceTopic.evidence?.repositoryTarget ||
+              `${intelResult.intelligenceTopic.title}`;
+            await persistResearchEvidenceLineage({
+              directive,
+              sourceSystem: 'github',
+              sourceTitle: `GitHub repository intelligence: ${repositoryTarget}`,
+              uri: epistemic.sources[0]?.url,
+              rawContent: JSON.stringify(
+                {
+                  repository: repositoryTarget,
+                  summary: epistemic.summary,
+                  facts: epistemic.facts,
+                  inferences: epistemic.inferences,
+                  uncertainties: epistemic.uncertainties,
+                  limitations: epistemic.limitations,
+                },
+                null,
+                2
+              ),
+              signalType: 'code_analysis',
+              groundedClaims: epistemic.claims
+                .filter((c) => c.verificationState === 'claim_supported')
+                .map((c) => ({
+                  statement: c.statement,
+                  supportingSourceUrls: c.supportingSourceUrls || [],
+                  evidenceExcerpt: undefined,
+                })),
+              subject: `repository: ${repositoryTarget}`,
+              category: 'architectural',
+              agentRunId: researcherResult.runId,
+              metadata: { repository: repositoryTarget },
+            });
+
             researcherResult.structuredData = researcherResult.structuredData || {};
             researcherResult.structuredData.summary = epistemic.summary;
             researcherResult.structuredData.facts = epistemic.facts;
@@ -355,6 +482,44 @@ Focus on:
           } else {
             const result = authResult.result;
             const supportedClaimsCount = result.claims?.filter((c) => c.verificationState === 'claim_supported').length || 0;
+
+            // Phase 4.4E — persist the retrieved web observation with full
+            // Source→Signal→Claim lineage into the EXISTING epistemic pipeline.
+            // Only claims the verification engine grounded against the real
+            // retrieved sources ('claim_supported') receive lineage.
+            await persistResearchEvidenceLineage({
+              directive,
+              sourceSystem: 'web_research',
+              sourceTitle: `Web research: ${searchInput.query}`,
+              uri: result.sources[0]?.url,
+              rawContent: JSON.stringify(
+                {
+                  query: searchInput.query,
+                  summary: result.summary,
+                  sources: result.sources.map((s) => ({
+                    title: s.title,
+                    url: s.url,
+                    excerpt: s.excerpt,
+                  })),
+                  limitations: result.limitations,
+                  verificationState: result.verificationState,
+                },
+                null,
+                2
+              ),
+              signalType: 'system_event',
+              groundedClaims: (result.claims || [])
+                .filter((c) => c.verificationState === 'claim_supported')
+                .map((c) => ({
+                  statement: c.statement,
+                  supportingSourceUrls: c.supportingSourceUrls || [],
+                  evidenceExcerpt: c.evidenceExcerpt,
+                })),
+              subject: `market research: ${directive.slice(0, 80)}`,
+              category: 'market_research',
+              agentRunId: researcherResult.runId,
+              metadata: { query: searchInput.query, sourceCount: result.sources.length },
+            });
 
             researchToolEvidence = {
               toolId: 'web_research',

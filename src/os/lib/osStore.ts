@@ -91,6 +91,12 @@ export type OSState = {
    *  merged with the local ambient log, which is a browser-session supplement
    *  and is never presented as company history. */
   activity: import("./surfaceSchema").ActivityEvent[];
+  /** Phase 4.4E — server-authoritative epistemic board projection
+   *  (GET /api/epistemic?view=board → lib/runtime.ts): claims with resolved
+   *  Source→Signal lineage, facts, and memories. REPLACED on every sync and
+   *  NEVER persisted client-side — a cached copy would masquerade as
+   *  governed epistemic state between reload and the next server sync. */
+  epistemic: import("@/types/epistemic").EpistemicBoardDTO | null;
   /** Server-derived workstream ids the founder dismissed from view
    *  (the server records themselves are never deleted). */
   dismissed: string[];
@@ -166,6 +172,7 @@ const SEED: OSState = {
   sessionStart: now,
   log: [],
   activity: [],
+  epistemic: null,
   dismissed: [],
 };
 
@@ -212,6 +219,9 @@ function load(): OSState {
       // Server-authoritative Activity projection is never persisted —
       // always starts empty and is re-projected from /api/activity on sync.
       activity: [],
+      // Phase 4.4E: same rule for the epistemic board projection — never
+      // persisted, always re-projected from /api/epistemic on sync.
+      epistemic: null,
       dismissed: saved.dismissed ?? [],
       agents,
       // Migrate legacy owner ids ("ops"/"pm"/"finance") to the authoritative roster.
@@ -260,8 +270,10 @@ function persist() {
     // history between reload and the next server sync. It is re-projected
     // from authoritative records on every sync (activity survives browser
     // reload/restart BECAUSE the server records are the source, not the UI).
-    const { sophia: _s, sessionStart: _t, activity: _a, ...rest } = state;
-    void _s; void _t; void _a;
+    // Phase 4.4E: same rule for the epistemic board projection — governed
+    // epistemic state (claims/facts/memories) is server-authoritative only.
+    const { sophia: _s, sessionStart: _t, activity: _a, epistemic: _e, ...rest } = state;
+    void _s; void _t; void _a; void _e;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch { /* storage unavailable */ }
 }
@@ -373,6 +385,13 @@ export const os = {
    *  (replaces the previous projection; re-fetched on every server sync). */
   setServerActivity(events: import("./surfaceSchema").ActivityEvent[]) {
     set({ activity: events });
+  },
+
+  /** Phase 4.4E — set the server-authoritative epistemic board projection
+   *  (claims/facts/memories with lineage; replaces wholesale on every sync
+   *  or after a founder epistemic action; never persisted client-side). */
+  setServerEpistemic(board: import("@/types/epistemic").EpistemicBoardDTO | null) {
+    set({ epistemic: board });
   },
 
   getDismissed(): string[] {
@@ -580,7 +599,7 @@ export const os = {
 
   reset() {
     try { localStorage.removeItem(KEY); } catch { /* noop */ }
-    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })), activity: [], dismissed: [] };
+    state = { ...SEED, sessionStart: Date.now(), attention: SEED.attention.map((a) => ({ ...a })), decisions: SEED.decisions.map((d) => ({ ...d })), work: SEED.work.map((w) => ({ ...w })), agents: SEED.agents.map((a) => ({ ...a })), activity: [], epistemic: null, dismissed: [] };
     updateCaches();
     listeners.forEach((l) => l());
   },

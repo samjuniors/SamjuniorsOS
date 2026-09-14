@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { EpistemicPipeline } from "@/lib/server/epistemic/pipeline";
 import { EpistemicClaimStore } from "@/lib/server/epistemic/claim-store";
+import { deriveEpistemicBoard } from "@/lib/server/epistemic/board";
 import {
   EpistemicClaimInputSchema,
   ClaimVerificationInputSchema,
@@ -16,6 +17,15 @@ import { getAuthenticatedFounder } from "@/lib/server/auth/session";
  * - Verifying claims against contradiction and constitutional policies
  * - Promoting verified claims to canonical facts (Founder-only)
  * - Promoting canonical facts to durable company memory (Founder-only)
+ *
+ * PHASE 4.4E — FOUNDER EPISTEMIC SURFACE:
+ * - GET ?view=board — deterministic board projection (claims with resolved
+ *   Source→Signal lineage, facts, memories with seed/fact-lineage
+ *   classification) backing the in-OS founder surface.
+ * - POST action=reject_claim — founder-attributed claim rejection (the
+ *   existing model's 'rejected' lifecycle state; no new authority).
+ * - promote_to_memory now passes the authenticated founder principal into
+ *   the pipeline (defense-in-depth founder enforcement, Phase 4.4E).
  */
 
 export async function GET(req: NextRequest) {
@@ -26,8 +36,16 @@ export async function GET(req: NextRequest) {
     }
 
     const { searchParams } = new URL(req.url);
-    const view = searchParams.get('view') || 'claims'; // 'claims' | 'facts' | 'sources'
+    const view = searchParams.get('view') || 'claims'; // 'claims' | 'facts' | 'sources' | 'board'
     const claimStore = EpistemicClaimStore.getInstance();
+
+    if (view === 'board') {
+      // Phase 4.4E — deterministic founder board projection over the existing
+      // stores (lineage resolved only from real referenced records; honest
+      // absence otherwise). Fail-closed on store errors (500, never fabricated).
+      const board = await deriveEpistemicBoard();
+      return NextResponse.json({ success: true, data: board });
+    }
 
     if (view === 'facts') {
       const category = searchParams.get('category') as any;
@@ -97,6 +115,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, data: verification });
     }
 
+    if (action === 'reject_claim') {
+      // Phase 4.4E — founder-attributed rejection of a pending/under-review
+      // claim. The existing epistemic model already defines the 'rejected'
+      // status; this completes that lifecycle path with the same strict
+      // founder principal enforcement as promote_to_fact.
+      if (founder.role !== 'FOUNDER') {
+        return NextResponse.json(
+          { success: false, error: 'Forbidden: Only Founder can reject claims' },
+          { status: 403 }
+        );
+      }
+
+      const { claimId, reason } = body;
+      if (!claimId) {
+        return NextResponse.json({ success: false, error: 'claimId is required' }, { status: 400 });
+      }
+
+      const claim = await pipeline.rejectClaim(claimId, founder, reason);
+      return NextResponse.json({ success: true, data: claim });
+    }
+
     if (action === 'promote_to_fact') {
       if (founder.role !== 'FOUNDER') {
         return NextResponse.json(
@@ -128,13 +167,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'factId is required' }, { status: 400 });
       }
 
+      // Phase 4.4E — the authenticated founder principal is passed into the
+      // pipeline so Fact→Memory is founder-authorized at BOTH layers.
       const memory = await pipeline.promoteFactToMemory({
         factId,
         approvedAction,
         executionOutcome,
         category,
+        promoter: founder,
       });
-
       return NextResponse.json({ success: true, data: memory });
     }
 
