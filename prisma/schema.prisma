@@ -157,6 +157,31 @@ model ScheduledWorkItem {
   @@map("scheduled_work_items")
 }
 
+// Phase 4.4A — Automation heartbeat evaluation log.
+// Append-only record of every scheduler evaluation pass (whether triggered by
+// the external cron heartbeat or by the Founder). Written exclusively by the
+// scheduling evaluation path (ScheduledWorkStore authority); read by the
+// honest founder-facing scheduler status projection. No scheduler internals
+// beyond outcome counts are persisted here.
+model SchedulerHeartbeat {
+  id                    String   @id @default(uuid())
+  evaluatedAt           DateTime @default(now())
+  triggerSource         String // "cron" (external heartbeat) | "founder" (manual founder invocation)
+  workerId              String
+  asOfTime              DateTime
+  processedCount        Int      @default(0)
+  executedCount         Int      @default(0)
+  skippedCount          Int      @default(0)
+  failedCount           Int      @default(0)
+  awaitingApprovalCount Int      @default(0)
+  cancelledCount        Int      @default(0)
+  durationMs            Int      @default(0)
+  results               Json     @default(dbgenerated("'{}'")) // per-occurrence outcome summaries (scheduleId, occurrenceId, status, error?)
+
+  @@index([evaluatedAt])
+  @@map("scheduler_heartbeats")
+}
+
 // ---------------------------------------------------------
 // 6. GOVERNANCE, APPROVALS & AUDIT LEDGER
 // ---------------------------------------------------------

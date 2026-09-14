@@ -1,6 +1,52 @@
-import { ScheduledWorkItem, ScheduledWorkFilter, ScheduledWorkStatus } from '../../../types/scheduling';
+import {
+  ScheduledWorkItem,
+  ScheduledWorkFilter,
+  ScheduledWorkStatus,
+  SchedulerHeartbeatRecord,
+} from '../../../types/scheduling';
 import { prisma } from '@/lib/server/db/prisma';
 import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
+
+/** Bounded in-memory retention of heartbeat records (dev/local mode). */
+const HEARTBEAT_RETENTION = 100;
+
+function countsFromRecord(record: SchedulerHeartbeatRecord) {
+  return {
+    id: record.id,
+    processedCount: record.processedCount,
+    executedCount: record.executedCount,
+    skippedCount: record.skippedCount,
+    failedCount: record.failedCount,
+    awaitingApprovalCount: record.awaitingApprovalCount,
+    cancelledCount: record.cancelledCount,
+    durationMs: record.durationMs,
+    results: record.results as any,
+    triggerSource: record.triggerSource,
+    workerId: record.workerId,
+    asOfTime: new Date(record.asOfTime),
+    evaluatedAt: new Date(record.evaluatedAt),
+  };
+}
+
+/** Maps a persisted heartbeat row back to the canonical record type. */
+function mapHeartbeatRow(row: any): SchedulerHeartbeatRecord {
+  const toIso = (v: any): string => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
+  return {
+    id: row.id,
+    evaluatedAt: toIso(row.evaluatedAt),
+    triggerSource: row.triggerSource === 'cron' ? 'cron' : 'founder',
+    workerId: row.workerId,
+    asOfTime: toIso(row.asOfTime),
+    processedCount: row.processedCount ?? 0,
+    executedCount: row.executedCount ?? 0,
+    skippedCount: row.skippedCount ?? 0,
+    failedCount: row.failedCount ?? 0,
+    awaitingApprovalCount: row.awaitingApprovalCount ?? 0,
+    cancelledCount: row.cancelledCount ?? 0,
+    durationMs: row.durationMs ?? 0,
+    results: Array.isArray(row.results) ? row.results : [],
+  };
+}
 
 /**
  * Interface for persisting Scheduled Work items.
@@ -13,6 +59,9 @@ export interface ScheduledWorkStore {
   cancel(id: string, cancelledBy?: string, reason?: string): Promise<ScheduledWorkItem>;
   update(item: ScheduledWorkItem): Promise<void>;
   clear(): void;
+  /** Phase 4.4A — append-only automation heartbeat log (same scheduling authority). */
+  recordHeartbeat(record: SchedulerHeartbeatRecord): Promise<void>;
+  listHeartbeats(limit?: number): Promise<SchedulerHeartbeatRecord[]>;
 }
 
 /**
@@ -136,6 +185,20 @@ export class PostgresScheduledWorkStore implements ScheduledWorkStore {
     });
   }
 
+  async recordHeartbeat(record: SchedulerHeartbeatRecord): Promise<void> {
+    const db = await requireAuthoritativeDatabase();
+    await db.schedulerHeartbeat.create({ data: countsFromRecord(record) });
+  }
+
+  async listHeartbeats(limit: number = 20): Promise<SchedulerHeartbeatRecord[]> {
+    const db = await requireAuthoritativeDatabase();
+    const rows = await db.schedulerHeartbeat.findMany({
+      orderBy: { evaluatedAt: 'desc' },
+      ...(limit > 0 ? { take: limit } : {}),
+    });
+    return rows.map(mapHeartbeatRow);
+  }
+
   clear(): void {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('Scheduled work items cannot be cleared in production.');
@@ -150,6 +213,8 @@ export class PostgresScheduledWorkStore implements ScheduledWorkStore {
  */
 export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   public items: Map<string, ScheduledWorkItem> = new Map();
+  /** Phase 4.4A — bounded heartbeat log (dev/local mode). */
+  public heartbeats: SchedulerHeartbeatRecord[] = [];
   private static instance: InMemoryScheduledWorkStore;
 
   private constructor() {}
@@ -332,10 +397,57 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     }
   }
 
+  async recordHeartbeat(record: SchedulerHeartbeatRecord): Promise<void> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().recordHeartbeat(record);
+    }
+
+    this.heartbeats.unshift(JSON.parse(JSON.stringify(record)));
+    if (this.heartbeats.length > HEARTBEAT_RETENTION) {
+      this.heartbeats.length = HEARTBEAT_RETENTION;
+    }
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.schedulerHeartbeat.create({ data: countsFromRecord(record) });
+      } catch {
+        // Offline fallback — in-memory log remains authoritative for this mode
+      }
+    }
+  }
+
+  async listHeartbeats(limit: number = 20): Promise<SchedulerHeartbeatRecord[]> {
+    if (isAuthoritativeMode()) {
+      return PostgresScheduledWorkStore.getInstance().listHeartbeats(limit);
+    }
+
+    const local = this.heartbeats.slice(0, limit > 0 ? limit : this.heartbeats.length);
+    if (local.length > 0) return JSON.parse(JSON.stringify(local));
+
+    // Cold-start dev process: recover the persisted tail so the status
+    // projection stays honest across dev-server restarts.
+    if (process.env.DATABASE_URL) {
+      try {
+        const rows = await prisma.schedulerHeartbeat.findMany({
+          orderBy: { evaluatedAt: 'desc' },
+          ...(limit > 0 ? { take: limit } : {}),
+        });
+        const recovered = rows.map(mapHeartbeatRow);
+        this.heartbeats = recovered;
+        return JSON.parse(JSON.stringify(recovered));
+      } catch {
+        // Offline fallback
+      }
+    }
+
+    return [];
+  }
+
   clear(): void {
     if (process.env.NODE_ENV === 'production') {
       throw new Error('Scheduled work items cannot be cleared in production.');
     }
     this.items.clear();
+    this.heartbeats = [];
   }
 }

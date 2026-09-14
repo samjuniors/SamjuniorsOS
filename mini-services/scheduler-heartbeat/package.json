@@ -1,0 +1,9 @@
+{
+  "name": "samjuniors-scheduler-heartbeat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SamJuniorsOS automation heartbeat — external cron-style invoker of the existing scheduler endpoint (Phase 4.4A). Contains NO scheduling logic, NO persistence, NO workflow knowledge: it only POSTs /api/workflow/scheduling with the cron secret. All authority remains in the Next.js scheduler.",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  }
+}

@@ -17,6 +17,7 @@
 import { os, presentationFor } from "./osStore";
 import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStore";
 import type { GraphDTO } from "@/types/graph";
+import type { SchedulerStatusProjection } from "@/types/scheduling";
 
 /* ------------------------------------------------------------------ id mapping
  * UI graph/persona ids (used since the graph phase) ↔ authoritative AgentRole
@@ -217,6 +218,34 @@ export async function fetchGraphOverview(): Promise<GraphFetchResponse> {
   }
 }
 
+
+/* ------------------------------------------------------------------ automation heartbeat status (Phase 4.4A) */
+
+export type SchedulerStatusFetch =
+  | { success: true; data: SchedulerStatusProjection }
+  | { success: false; error: string; code?: string };
+
+/** Fetches the honest scheduler status projection. Never fabricates: on any
+ *  failure the caller is expected to keep (or show) "unavailable" rather
+ *  than inventing automation state. */
+export async function fetchSchedulerStatus(): Promise<SchedulerStatusFetch> {
+  try {
+    const devHeaders = getDevAuthHeaders();
+    const res = await fetch("/api/workflow/scheduling/status", { headers: devHeaders });
+    let body: any = null;
+    try { body = await res.json(); } catch { /* non-json */ }
+    if (res.status === 401) {
+      return { success: false, error: "Unauthorized: Session required", code: "unauthorized" };
+    }
+    if (!res.ok) {
+      return { success: false, error: body?.error || `Scheduler status failed (${res.status})`, code: "request_failed" };
+    }
+    return { success: true, data: body as SchedulerStatusProjection };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: msg, code: "network_error" };
+  }
+}
 
 /* ------------------------------------------------------------------ chat */
 

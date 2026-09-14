@@ -8,11 +8,16 @@
 declare module "bun:test" {
   export function describe(name: string, fn: () => void): void;
   export function test(name: string, fn: () => void | Promise<void>): void;
+  export function beforeEach(fn: () => void | Promise<void>): void;
   export function afterEach(fn: () => void | Promise<void>): void;
 
   export interface ExpectMatchers {
     toBe(expected: unknown): void;
     toMatch(pattern: RegExp | string): void;
+    toHaveLength(expected: number): void;
+    toEqual(expected: unknown): void;
+    toBeGreaterThanOrEqual(expected: number): void;
+    toBeGreaterThan(expected: number): void;
   }
   export function expect(actual: unknown): ExpectMatchers;
 }

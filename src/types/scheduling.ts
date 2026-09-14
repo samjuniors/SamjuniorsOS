@@ -60,3 +60,67 @@ export interface ScheduledWorkFilter {
   status?: ScheduledWorkStatus;
   scheduleType?: ScheduleType;
 }
+
+// ---------------------------------------------------------
+// Phase 4.4A — Automation heartbeat records & honest status projection
+// ---------------------------------------------------------
+
+export type SchedulerTriggerSource = 'cron' | 'founder';
+
+/** Append-only record of one scheduler evaluation pass. Written exclusively
+ *  by the scheduling evaluation path; never fabricated client-side. */
+export interface SchedulerHeartbeatRecord {
+  id: string;
+  evaluatedAt: string; // ISO 8601 UTC
+  triggerSource: SchedulerTriggerSource;
+  workerId: string;
+  asOfTime: string; // ISO 8601 UTC
+  processedCount: number;
+  executedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  awaitingApprovalCount: number;
+  cancelledCount: number;
+  durationMs: number;
+  results: Array<{
+    scheduleId: string;
+    occurrenceId: string;
+    status: 'completed' | 'failed' | 'awaiting_approval' | 'skipped' | 'cancelled';
+    error?: string;
+  }>;
+}
+
+/** Founder-facing honest scheduler status projection (Phase 4.4A).
+ *  Every field is derived from persisted scheduler state or explicitly null —
+ *  values the authoritative model does not contain are NEVER invented. */
+export interface SchedulerStatusProjection {
+  asOfTime: string;
+  /** Latest persisted evaluation pass, or null when no evaluation has ever run. */
+  lastHeartbeat: SchedulerHeartbeatRecord | null;
+  /** Earliest pending scheduled occurrence, or null when nothing is scheduled. */
+  nextDue: {
+    scheduleId: string;
+    workflowInstanceId: string;
+    stepId: string;
+    executeAt: string;
+    scheduleType: ScheduleType;
+    isOverdue: boolean;
+    recurrence?: {
+      intervalUnit: RecurrenceIntervalUnit;
+      intervalValue: number;
+      currentOccurrence: number;
+      maxOccurrences?: number;
+    };
+  } | null;
+  counts: {
+    scheduled: number;
+    cancelled: number;
+    completed: number;
+    failed: number;
+  };
+  /** Scheduled occurrences currently blocked pending Founder approval. */
+  awaitingApproval: number;
+  /** Most recent evaluation passes, newest first (bounded). */
+  recentHeartbeats: SchedulerHeartbeatRecord[];
+}
+

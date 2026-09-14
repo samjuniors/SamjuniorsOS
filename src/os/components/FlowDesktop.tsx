@@ -4,7 +4,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Crosshair, PanelLeftClose, PanelRightClose, Layers,
   MousePointer2, X, Activity, Hand, Map as MapIcon, AlertTriangle, Circle, StickyNote,
   Building2, Pencil, ArrowRight, Flag, ShieldCheck, Play, Pause, MessageSquare,
-  Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target, Clock,
+  Coins, FileText, RefreshCw, ShieldAlert, Sparkles, Target, Clock, Timer,
 } from "lucide-react";
 import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, perimeterForNode, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
@@ -32,7 +32,8 @@ import {
   type ExecutionPerimeterSpec,
 } from "@/components/workflow";
 import type { GraphDTO } from "@/types/graph";
-import { fetchGraphOverview, decideApproval } from "../lib/runtime";
+import type { SchedulerStatusProjection } from "@/types/scheduling";
+import { fetchGraphOverview, decideApproval, fetchSchedulerStatus } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -1175,6 +1176,52 @@ export default function FlowDesktop({
     return () => clearInterval(interval);
   }, [loadGraph]);
 
+  // Phase 4.4A — honest automation heartbeat status (authoritative projection;
+  // never fabricated — failures keep the previous real state or show unavailable).
+  const [autoStatus, setAutoStatus] = useState<{
+    status: "loading" | "ok" | "unavailable";
+    data: SchedulerStatusProjection | null;
+    error: string | null;
+  }>({ status: "loading", data: null, error: null });
+  const [autoPanelOpen, setAutoPanelOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadAuto = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const res = await fetchSchedulerStatus();
+      if (cancelled) return;
+      if (res.success) {
+        setAutoStatus({ status: "ok", data: res.data, error: null });
+      } else {
+        setAutoStatus((prev) => ({
+          status: prev.data ? "ok" : "unavailable",
+          data: prev.data,
+          error: res.error,
+        }));
+      }
+    };
+    loadAuto();
+    const interval = setInterval(loadAuto, 8000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Derived presentation for the AUTO chip — computed from real timestamps only.
+  const autoView = useMemo(() => {
+    if (autoStatus.status === "loading") return { tone: "loading" as const, label: "AUTO", detail: "Automation status loading…" };
+    if (autoStatus.status === "unavailable") return { tone: "offline" as const, label: "AUTO OFFLINE", detail: autoStatus.error ?? "Scheduler status unavailable" };
+    const hb = autoStatus.data?.lastHeartbeat ?? null;
+    if (!hb) return { tone: "silent" as const, label: "AUTO · NO BEAT", detail: "No scheduler evaluation has been recorded yet — shown honestly, not fabricated." };
+    const ageMs = Date.now() - new Date(hb.evaluatedAt).getTime();
+    const ageLabel = ageMs < 60_000 ? `${Math.max(1, Math.round(ageMs / 1000))}s` : ageMs < 3_600_000 ? `${Math.round(ageMs / 60_000)}m` : `${Math.round(ageMs / 3_600_000)}h`;
+    const stale = ageMs > 300_000; // conservative staleness hint, derived from the real timestamp
+    return {
+      tone: stale ? ("stale" as const) : ("live" as const),
+      label: `AUTO · ${ageLabel}`,
+      detail: `Last evaluation ${ageLabel} ago (${hb.triggerSource}) · ${hb.processedCount} due item(s) · ${hb.executedCount} executed${hb.awaitingApprovalCount ? ` · ${hb.awaitingApprovalCount} awaiting approval` : ""}${stale ? " · stale: expected a more recent beat" : ""}`,
+    };
+  }, [autoStatus]);
+
   // Dynamically derive genuine living SamJuniorsOS graph from server-authoritative GraphDTO
   const graph = useMemo(() => {
     if (graphState.data && graphState.status === "success") {
@@ -1793,6 +1840,20 @@ export default function FlowDesktop({
                   <span className="font-mono text-[9px]">SYNCING...</span>
                 </div>
               )}
+              {/* Phase 4.4A — Automation heartbeat status chip (restrained, real) */}
+              <span className="mx-0.5 h-3 w-px bg-white/10" />
+              <button
+                onClick={() => { osSound.click(); setAutoPanelOpen((o) => !o); }}
+                title={autoView.detail}
+                aria-label={`Automation heartbeat status: ${autoView.detail}`}
+                aria-expanded={autoPanelOpen}
+                className="flex items-center gap-1.5 rounded-full px-1.5 py-0.5 transition hover:bg-white/[0.07] active:scale-95"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${autoView.tone === "live" ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : autoView.tone === "stale" ? "bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.8)]" : autoView.tone === "silent" ? "bg-slate-500" : autoView.tone === "offline" ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]" : "animate-pulse bg-cyan-400"}`} />
+                <span className={`font-mono text-[9px] ${autoView.tone === "live" ? "text-emerald-300" : autoView.tone === "stale" ? "text-amber-300" : autoView.tone === "offline" ? "text-rose-300" : "text-slate-400"}`}>
+                  {autoView.label}
+                </span>
+              </button>
               {/* Refresh Button */}
               <button
                 onClick={() => { osSound.click(); loadGraph(true); }}
@@ -1802,6 +1863,88 @@ export default function FlowDesktop({
                 <RefreshCw size={10} className={isRefreshing ? "animate-spin text-cyan-300" : ""} />
               </button>
             </div>
+
+            {/* Phase 4.4A — Automation heartbeat detail panel (restrained, honest) */}
+            {autoPanelOpen && (
+              <div
+                className="absolute left-3 top-[84px] z-20 w-[300px] max-w-[calc(100%-1.5rem)] rounded-2xl border border-white/12 bg-[#081120]/96 p-3.5 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl"
+                style={{ animation: `os-in 220ms ${EASE}` }}
+                role="dialog"
+                aria-label="Automation heartbeat details"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Timer size={12} className="text-cyan-300" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Automation</span>
+                  </div>
+                  <button
+                    onClick={() => { osSound.close(); setAutoPanelOpen(false); }}
+                    className="flex h-5 w-5 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"
+                    title="Close automation details"
+                    aria-label="Close automation details"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+
+                {autoStatus.status === "unavailable" ? (
+                  <p className="mt-2.5 text-[10.5px] leading-relaxed text-rose-300/90">
+                    Scheduler status unavailable — {autoStatus.error ?? "the authoritative projection could not be read."} Nothing is fabricated here.
+                  </p>
+                ) : (
+                  <div className="mt-2.5 space-y-2.5">
+                    {/* Last evaluation */}
+                    <div>
+                      <div className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-slate-500">Last evaluation</div>
+                      {autoStatus.data?.lastHeartbeat ? (
+                        <div className="tnum mt-0.5 text-[10.5px] text-slate-300">
+                          {new Date(autoStatus.data.lastHeartbeat.evaluatedAt).toLocaleTimeString()} · {autoStatus.data.lastHeartbeat.triggerSource === "cron" ? "heartbeat" : "founder"}
+                          <span className="text-slate-500"> · {autoStatus.data.lastHeartbeat.durationMs}ms</span>
+                          <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[9.5px]">
+                            <span className="text-emerald-300/90">{autoStatus.data.lastHeartbeat.executedCount} executed</span>
+                            <span className="text-slate-400">{autoStatus.data.lastHeartbeat.skippedCount} skipped</span>
+                            {autoStatus.data.lastHeartbeat.failedCount > 0 && <span className="text-rose-300/90">{autoStatus.data.lastHeartbeat.failedCount} failed</span>}
+                            {autoStatus.data.lastHeartbeat.awaitingApprovalCount > 0 && <span className="text-amber-300/90">{autoStatus.data.lastHeartbeat.awaitingApprovalCount} awaiting approval</span>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[10.5px] text-slate-400">No evaluation recorded yet — the heartbeat has not run.</div>
+                      )}
+                    </div>
+
+                    {/* Next due */}
+                    <div>
+                      <div className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-slate-500">Next due</div>
+                      {autoStatus.data?.nextDue ? (
+                        <div className="tnum mt-0.5 text-[10.5px] text-slate-300">
+                          {new Date(autoStatus.data.nextDue.executeAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          {autoStatus.data.nextDue.isOverdue && <span className="ml-1.5 rounded bg-amber-400/15 px-1 py-px text-[8.5px] font-semibold uppercase tracking-wide text-amber-300">overdue</span>}
+                          {autoStatus.data.nextDue.recurrence && (
+                            <div className="text-[9.5px] text-slate-500">
+                              recurring · every {autoStatus.data.nextDue.recurrence.intervalValue} {autoStatus.data.nextDue.recurrence.intervalUnit}
+                              {autoStatus.data.nextDue.recurrence.maxOccurrences ? ` · occurrence ${autoStatus.data.nextDue.recurrence.currentOccurrence}/${autoStatus.data.nextDue.recurrence.maxOccurrences}` : ""}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[10.5px] text-slate-400">Nothing scheduled.</div>
+                      )}
+                    </div>
+
+                    {/* Approval-gate tie-in */}
+                    {(autoStatus.data?.awaitingApproval ?? 0) > 0 && (
+                      <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.07] px-2 py-1.5 text-[10px] text-amber-200/90">
+                        {autoStatus.data?.awaitingApproval} scheduled occurrence{autoStatus.data && autoStatus.data.awaitingApproval > 1 ? "s" : ""} blocked pending your approval — execution will not proceed until decided.
+                      </div>
+                    )}
+
+                    <p className="border-t border-white/8 pt-2 text-[9px] leading-relaxed text-slate-500">
+                      Background machinery: due-work evaluation, leases, idempotency and side-effect authorization all run server-side on each heartbeat. This panel only reports authoritative state.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Quick Action: Focus Active Work */}
             <button

@@ -171,7 +171,19 @@ export class WorkflowScheduler {
     };
 
     for (const item of dueItems) {
-      const occurrenceNumber = item.recurrence?.currentOccurrence || (item.executionHistory.length + 1);
+      // Occurrence identity (Phase 4.4A correctness fix):
+      // - recurring items: occurrence = recurrence.currentOccurrence (stable until
+      //   completion advances it).
+      // - one-time items: occurrence = 1 + number of FAILED attempts — retries
+      //   legitimately advance the occurrence. Records that are NOT execution
+      //   attempts (repeated awaiting_approval entries, or an in-flight/crashed
+      //   'triggered' claim) must NOT consume the occurrence number: deriving it
+      //   from raw history length fabricated phantom occurrences on repeated
+      //   heartbeats and could re-execute an already-claimed occurrence under a
+      //   new number (at-least-once instead of at-most-once).
+      const occurrenceNumber = item.recurrence?.currentOccurrence || (
+        item.executionHistory.filter(h => h.status === 'failed').length + 1
+      );
       const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
       const leaseKey = `sched-item:${item.id}`;
 
@@ -370,7 +382,15 @@ export class WorkflowScheduler {
         };
 
         item.lastTriggeredAt = triggerTime;
-        item.executionHistory.push(occRecord);
+        // Replace any prior non-attempt record for this occurrence (e.g. the
+        // awaiting_approval entry is superseded once approval is granted) —
+        // never append duplicate records for the same occurrence.
+        const recIdx = item.executionHistory.findIndex(h => h.occurrenceId === occurrenceId);
+        if (recIdx >= 0) {
+          item.executionHistory[recIdx] = occRecord;
+        } else {
+          item.executionHistory.push(occRecord);
+        }
         await this.schedulerStore.update(item);
 
         try {
