@@ -10,6 +10,7 @@ import { InMemoryWorkflowStore } from './store';
 import { WorkflowRuntime } from './runtime';
 import { v4 as uuidv4 } from 'uuid';
 import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordination/lease-manager';
+import { validateStepTransition, validateInstanceTransition } from './state-machine';
 
 export interface ScheduleWorkParams {
   workflowInstanceId: string;
@@ -423,6 +424,29 @@ export class WorkflowScheduler {
                 item.status = 'scheduled';
                 item.executeAt = nextExecuteAt;
                 item.recurrence.currentOccurrence = nextOccNumber;
+
+                // Phase 4.4B fix (defect D1): with the REAL runtime a
+                // single-step workflow instance reaches terminal 'completed'
+                // when its step completes, which caused the next heartbeat's
+                // parent-terminal check to CANCEL the recurring schedule after
+                // its first occurrence. Reopen the instance for the next
+                // occurrence (completed→running is a sanctioned recurring
+                // transition in the state machine, mirroring step completed→
+                // ready). The instance reload is required: the pre-execution
+                // snapshot is stale after executeReadyStep persisted new state.
+                try {
+                  const postExecWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+                  if (postExecWorkflow && postExecWorkflow.status === 'completed') {
+                    validateInstanceTransition(postExecWorkflow.status, 'running');
+                    postExecWorkflow.status = 'running';
+                    postExecWorkflow.updatedAt = new Date().toISOString();
+                    await this.workflowStore.saveInstance(postExecWorkflow);
+                  }
+                } catch {
+                  // Reopen is best-effort: if it fails, the next wake's
+                  // parent-terminal check will surface the schedule as
+                  // cancelled — honest, never silent re-execution.
+                }
               }
             } else {
               item.status = 'completed';
@@ -449,6 +473,34 @@ export class WorkflowScheduler {
               const backoffTime = new Date(Date.now() + retryPolicy.backoffMs).toISOString();
               item.status = 'scheduled';
               item.executeAt = backoffTime;
+
+              // Phase 4.4B retry recovery (defect D1-family): with the REAL
+              // runtime the failed attempt also drives the parent instance to
+              // terminal 'failed' and leaves the step 'failed' — the retry
+              // wake would then be CANCELLED by the parent-terminal check and
+              // executeReadyStep rejects non-'ready' steps. Reset the step for
+              // the retry (failed→ready is a sanctioned scheduler-recovery
+              // transition), advance the runtime-owned retryCount (nothing
+              // else increments it), and reopen the parent instance so the
+              // schedule survives to actually retry.
+              try {
+                const retryWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+                const retryStep = retryWorkflow?.stepStates[item.stepId];
+                if (retryWorkflow && retryStep) {
+                  validateStepTransition(retryStep.status, 'ready');
+                  retryStep.status = 'ready';
+                  retryStep.retryCount = (retryStep.retryCount ?? 0) + 1;
+                  if (retryWorkflow.status === 'failed') {
+                    validateInstanceTransition(retryWorkflow.status, 'running');
+                    retryWorkflow.status = 'running';
+                  }
+                  retryWorkflow.updatedAt = new Date().toISOString();
+                  await this.workflowStore.saveInstance(retryWorkflow);
+                }
+              } catch {
+                // Recovery is best-effort: on failure the next wake's
+                // parent-terminal check cancels the schedule honestly.
+              }
             } else {
               // Retries exhausted
               item.status = 'failed';
@@ -524,6 +576,54 @@ export class WorkflowScheduler {
    */
   async cancelSchedule(id: string, cancelledBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
     return this.schedulerStore.cancel(id, cancelledBy, reason);
+  }
+
+  /**
+   * Phase 4.4B — Pause a scheduled work item (founder action).
+   * Paused items are excluded from due-work evaluation (listDue only returns
+   * status 'scheduled') so they can never execute while paused. Pausing is
+   * only valid from 'scheduled' — a 'triggered' occurrence is already
+   * executing and must not be silently halted mid-flight.
+   */
+  async pauseSchedule(id: string, pausedBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
+    const item = await this.schedulerStore.get(id);
+    if (!item) {
+      throw new Error(`Scheduled work item not found: ${id}`);
+    }
+    if (item.status !== 'scheduled') {
+      throw new Error(`Cannot pause schedule in status '${item.status}' (only active 'scheduled' items can be paused)`);
+    }
+    const now = new Date().toISOString();
+    item.status = 'paused';
+    item.updatedAt = now;
+    item.pausedState = {
+      pausedAt: now,
+      pausedBy,
+      reason: reason || 'Paused by Founder',
+    };
+    await this.schedulerStore.update(item);
+    return item;
+  }
+
+  /**
+   * Phase 4.4B — Resume a paused schedule (founder action).
+   * Restores 'scheduled' exactly as persisted: if the next occurrence is
+   * already overdue it will execute on the next heartbeat (honest catch-up,
+   * never silently skipped or fabricated as fresh).
+   */
+  async resumeSchedule(id: string, resumedBy: string = 'founder'): Promise<ScheduledWorkItem> {
+    const item = await this.schedulerStore.get(id);
+    if (!item) {
+      throw new Error(`Scheduled work item not found: ${id}`);
+    }
+    if (item.status !== 'paused') {
+      throw new Error(`Cannot resume schedule in status '${item.status}' (only 'paused' items can be resumed)`);
+    }
+    item.status = 'scheduled';
+    item.updatedAt = new Date().toISOString();
+    // pausedState is retained as provenance of the pause window.
+    await this.schedulerStore.update(item);
+    return item;
   }
 
   /**

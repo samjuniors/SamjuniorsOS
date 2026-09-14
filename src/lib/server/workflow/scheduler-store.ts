@@ -215,6 +215,8 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
   public items: Map<string, ScheduledWorkItem> = new Map();
   /** Phase 4.4A — bounded heartbeat log (dev/local mode). */
   public heartbeats: SchedulerHeartbeatRecord[] = [];
+  /** Phase 4.4B — one-shot cold-start item recovery (dev/local mode). */
+  private itemsRecovered = false;
   private static instance: InMemoryScheduledWorkStore;
 
   private constructor() {}
@@ -224,6 +226,35 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
       InMemoryScheduledWorkStore.instance = new InMemoryScheduledWorkStore();
     }
     return InMemoryScheduledWorkStore.instance;
+  }
+
+  /** Phase 4.4B — reload persisted scheduled items after a process restart.
+   *  Runs ONLY on a true cold start: an EMPTY in-memory map with the recovery
+   *  flag unset (a non-empty map cannot be a restart — completed/cancelled
+   *  items are retained in memory, and test suites clear() the map explicitly
+   *  to simulate process death). A failed pass retries on the next qualifying
+   *  call; a successful pass sets the flag even for zero rows. Authoritative
+   *  mode never reaches this path (all reads go through
+   *  PostgresScheduledWorkStore directly). */
+  private async ensureRecovered(): Promise<void> {
+    if (this.itemsRecovered || this.items.size > 0) return;
+    if (isAuthoritativeMode() || !process.env.DATABASE_URL) {
+      this.itemsRecovered = true; // no recovery path in this mode
+      return;
+    }
+    try {
+      const rows = await prisma.scheduledWorkItem.findMany();
+      for (const row of rows) {
+        const mapped = row.metadata as unknown as ScheduledWorkItem | null;
+        if (mapped && mapped.id && mapped.workflowInstanceId) {
+          this.items.set(mapped.id, mapped);
+        }
+      }
+      this.itemsRecovered = true; // success — even zero rows means "nothing to recover"
+    } catch {
+      // Offline / unreachable database: leave the flag unset so a later
+      // cold-start-shaped call can retry once the database is reachable.
+    }
   }
 
   async save(item: ScheduledWorkItem): Promise<void> {
@@ -287,6 +318,8 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
       return PostgresScheduledWorkStore.getInstance().listDue(asOfTime, limit);
     }
 
+    await this.ensureRecovered();
+
     const cutoff = asOfTime ? new Date(asOfTime).getTime() : Date.now();
     const results: ScheduledWorkItem[] = [];
 
@@ -310,6 +343,8 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     if (isAuthoritativeMode()) {
       return PostgresScheduledWorkStore.getInstance().list(filter);
     }
+
+    await this.ensureRecovered();
 
     let results = Array.from(this.items.values());
 
@@ -449,5 +484,11 @@ export class InMemoryScheduledWorkStore implements ScheduledWorkStore {
     }
     this.items.clear();
     this.heartbeats = [];
+    // A deliberate in-memory wipe is NOT a process restart: arm the recovery
+    // flag so this process never cold-start-recovers persisted items again.
+    // (Otherwise the next empty-map listDue would resurrect rows the caller
+    // just explicitly cleared.) A GENUINE restart constructs a fresh singleton
+    // in a new process, where the flag starts false and recovery runs once.
+    this.itemsRecovered = true;
   }
 }

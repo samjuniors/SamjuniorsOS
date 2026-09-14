@@ -33,7 +33,7 @@ import {
 } from "@/components/workflow";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
-import { fetchGraphOverview, decideApproval, fetchSchedulerStatus } from "../lib/runtime";
+import { fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, type ScheduleListItem } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -1222,6 +1222,119 @@ export default function FlowDesktop({
     };
   }, [autoStatus]);
 
+  // ---------------------------------------------------------------- Phase 4.4B
+  // Minimal founder-facing automation lifecycle on the EXISTING automation
+  // surface: create a scheduled directive + pause/resume/cancel. Every value
+  // comes from the authoritative server; failures surface honestly and never
+  // fake success. This is deliberately NOT a canvas/builder UI.
+  const [schedules, setSchedules] = useState<ScheduleListItem[] | null>(null);
+  const [schedulesBusy, setSchedulesBusy] = useState(false);
+  const [schedFormOpen, setSchedFormOpen] = useState(false);
+  const [schedDraft, setSchedDraft] = useState({
+    directive: "",
+    intervalValue: "1",
+    intervalUnit: "weeks" as "minutes" | "hours" | "days" | "weeks",
+    startAt: "",
+    requiresApproval: false,
+  });
+  const [schedError, setSchedError] = useState<string | null>(null);
+
+  const loadSchedules = useCallback(async () => {
+    try {
+      const list = await fetchSchedules();
+      setSchedules(list);
+    } catch {
+      // Honest: keep previous real list (or null) — never fabricate.
+      setSchedules((prev) => prev);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (autoPanelOpen) {
+      loadSchedules();
+    }
+  }, [autoPanelOpen, loadSchedules]);
+
+  const submitSchedule = useCallback(async () => {
+    const directive = schedDraft.directive.trim();
+    if (!directive) {
+      setSchedError("Write the directive first — e.g. “Research our competitors and recommend pricing.”");
+      return;
+    }
+    setSchedulesBusy(true);
+    setSchedError(null);
+    try {
+      const intervalValue = Math.max(1, Math.round(Number(schedDraft.intervalValue) || 1));
+      const created = await createScheduledDirective({
+        directive,
+        scheduleType: "recurring",
+        intervalUnit: schedDraft.intervalUnit,
+        intervalValue,
+        executeAt: schedDraft.startAt ? new Date(schedDraft.startAt).toISOString() : undefined,
+        requiresApproval: schedDraft.requiresApproval,
+      });
+      osSound.click();
+      os.log(`Directive scheduled — automation will run it every ${intervalValue} ${schedDraft.intervalUnit.replace(/s$/, "")}${intervalValue > 1 ? "s" : ""} (next: ${new Date(created.executeAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}).`);
+      setSchedDraft((d) => ({ ...d, directive: "", startAt: "" }));
+      setSchedFormOpen(false);
+      await loadSchedules();
+      // Refresh the honest heartbeat projection so Next due reflects creation.
+      fetchSchedulerStatus().then((res) => {
+        if (res.success) setAutoStatus({ status: "ok", data: res.data, error: null });
+      }).catch(() => undefined);
+    } catch (err) {
+      setSchedError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }, [schedDraft, loadSchedules]);
+
+  const onScheduleAction = useCallback(async (scheduleId: string, action: "pause" | "resume" | "cancel") => {
+    setSchedulesBusy(true);
+    setSchedError(null);
+    try {
+      await applyScheduleAction(scheduleId, action);
+      osSound.click();
+      os.log(`Automation schedule ${action}d.`);
+      await loadSchedules();
+      fetchSchedulerStatus().then((res) => {
+        if (res.success) setAutoStatus({ status: "ok", data: res.data, error: null });
+      }).catch(() => undefined);
+    } catch (err) {
+      setSchedError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSchedulesBusy(false);
+    }
+  }, [loadSchedules]);
+
+  const scheduleStatusView = useCallback((s: ScheduleListItem): { label: string; cls: string } => {
+    const latest = s.executionHistory?.[s.executionHistory.length - 1];
+    if (s.status === "scheduled" && latest?.status === "awaiting_approval") {
+      return { label: "AWAITING YOUR APPROVAL", cls: "text-amber-300 bg-amber-400/10 border-amber-400/25" };
+    }
+    switch (s.status) {
+      case "scheduled": return { label: "ACTIVE", cls: "text-emerald-300 bg-emerald-400/10 border-emerald-400/25" };
+      case "paused": return { label: "PAUSED", cls: "text-slate-300 bg-white/8 border-white/15" };
+      case "completed": return { label: "COMPLETED", cls: "text-cyan-300 bg-cyan-400/10 border-cyan-400/25" };
+      case "failed": return { label: "FAILED", cls: "text-rose-300 bg-rose-400/10 border-rose-400/25" };
+      case "cancelled": return { label: "CANCELLED", cls: "text-slate-400 bg-white/5 border-white/10" };
+      default: return { label: s.status.toUpperCase(), cls: "text-slate-300 bg-white/8 border-white/15" };
+    }
+  }, []);
+
+  const nextRunLabel = useCallback((s: ScheduleListItem): string => {
+    if (s.status === "completed" || s.status === "cancelled" || s.status === "failed") {
+      const hist = s.executionHistory ?? [];
+      const last = hist[hist.length - 1];
+      return last?.triggeredAt
+        ? `last run ${new Date(last.triggeredAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+        : "never ran";
+    }
+    const when = new Date(s.executeAt);
+    const overdue = when.getTime() <= Date.now();
+    return `${overdue ? "due now" : `next ${when.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`}`;
+  }, []);
+
   // Dynamically derive genuine living SamJuniorsOS graph from server-authoritative GraphDTO
   const graph = useMemo(() => {
     if (graphState.data && graphState.status === "success") {
@@ -1929,6 +2042,145 @@ export default function FlowDesktop({
                       ) : (
                         <div className="mt-0.5 text-[10.5px] text-slate-400">Nothing scheduled.</div>
                       )}
+                      {(autoStatus.data?.counts.paused ?? 0) > 0 && (
+                        <div className="mt-0.5 text-[9.5px] text-slate-500">{autoStatus.data?.counts.paused} paused</div>
+                      )}
+                    </div>
+
+                    {/* Phase 4.4B — Founder schedule lifecycle (create + manage) */}
+                    <div className="border-t border-white/8 pt-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[8.5px] font-bold uppercase tracking-[0.16em] text-slate-500">Scheduled directives</div>
+                        <button
+                          onClick={() => { osSound.click(); setSchedFormOpen((o) => !o); setSchedError(null); }}
+                          className="flex items-center gap-1 rounded-md border border-cyan-400/25 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-cyan-200 transition hover:bg-cyan-300/20 active:scale-95"
+                          title="Schedule a recurring founder directive"
+                          aria-expanded={schedFormOpen}
+                        >
+                          <Sparkles size={9} /> NEW
+                        </button>
+                      </div>
+
+                      {schedFormOpen && (
+                        <div className="mt-2 space-y-1.5 rounded-xl border border-white/10 bg-white/[0.03] p-2" style={{ animation: `os-in 200ms ${EASE}` }}>
+                          <textarea
+                            value={schedDraft.directive}
+                            onChange={(e) => setSchedDraft((d) => ({ ...d, directive: e.target.value }))}
+                            placeholder="Every week: research our competitors and recommend pricing…"
+                            rows={2}
+                            className="w-full resize-none rounded-lg border border-white/12 bg-[#040813]/80 px-2 py-1.5 text-[10.5px] text-slate-200 placeholder:text-slate-600 focus:border-cyan-400/40 focus:outline-none"
+                            aria-label="Directive to schedule"
+                          />
+                          <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400">
+                            <span className="shrink-0">Every</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={schedDraft.intervalValue}
+                              onChange={(e) => setSchedDraft((d) => ({ ...d, intervalValue: e.target.value }))}
+                              className="w-10 rounded-md border border-white/12 bg-[#040813]/80 px-1 py-0.5 text-center text-slate-200 focus:border-cyan-400/40 focus:outline-none"
+                              aria-label="Interval value"
+                            />
+                            <select
+                              value={schedDraft.intervalUnit}
+                              onChange={(e) => setSchedDraft((d) => ({ ...d, intervalUnit: e.target.value as typeof d.intervalUnit }))}
+                              className="flex-1 rounded-md border border-white/12 bg-[#040813]/80 px-1 py-0.5 text-slate-200 focus:border-cyan-400/40 focus:outline-none"
+                              aria-label="Interval unit"
+                            >
+                              <option value="minutes">minutes</option>
+                              <option value="hours">hours</option>
+                              <option value="days">days</option>
+                              <option value="weeks">weeks</option>
+                            </select>
+                          </div>
+                          <input
+                            type="datetime-local"
+                            value={schedDraft.startAt}
+                            onChange={(e) => setSchedDraft((d) => ({ ...d, startAt: e.target.value }))}
+                            className="w-full rounded-md border border-white/12 bg-[#040813]/80 px-2 py-1 text-[9.5px] text-slate-300 focus:border-cyan-400/40 focus:outline-none"
+                            aria-label="First occurrence (optional — defaults to the next heartbeat)"
+                          />
+                          <label className="flex cursor-pointer items-center gap-1.5 text-[9.5px] text-slate-400">
+                            <input
+                              type="checkbox"
+                              checked={schedDraft.requiresApproval}
+                              onChange={(e) => setSchedDraft((d) => ({ ...d, requiresApproval: e.target.checked }))}
+                              className="h-3 w-3 accent-cyan-400"
+                            />
+                            Require my approval before each execution
+                          </label>
+                          <button
+                            onClick={submitSchedule}
+                            disabled={schedulesBusy}
+                            className="w-full rounded-lg border border-cyan-400/30 bg-cyan-400/15 px-2 py-1 text-[10px] font-semibold tracking-wide text-cyan-100 transition hover:bg-cyan-300/25 disabled:opacity-50 active:scale-[0.98]"
+                          >
+                            {schedulesBusy ? "Scheduling…" : "Schedule directive"}
+                          </button>
+                          {schedError && <p className="text-[9px] leading-relaxed text-rose-300/90">{schedError}</p>}
+                        </div>
+                      )}
+
+                      <div className="mt-1.5 max-h-44 overflow-y-auto pr-0.5 os-scroll [scrollbar-width:thin]">
+                        {schedules === null ? (
+                          <div className="py-1 text-[10px] text-slate-500">Loading schedules…</div>
+                        ) : schedules.length === 0 ? (
+                          <div className="py-1 text-[10px] text-slate-500">No schedules yet — create one with NEW.</div>
+                        ) : (
+                          schedules.map((s) => {
+                            const view = scheduleStatusView(s);
+                            const objective = s.workflowObjective || s.provenance?.stepName || "Scheduled directive";
+                            return (
+                              <div key={s.id} className="mb-1 rounded-lg border border-white/8 bg-white/[0.02] px-1.5 py-1">
+                                <div className="flex items-start justify-between gap-1.5">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[9.5px] text-slate-300" title={objective}>
+                                      {objective.length > 56 ? `${objective.slice(0, 54)}…` : objective}
+                                    </div>
+                                    <div className="tnum text-[8.5px] text-slate-500">
+                                      {nextRunLabel(s)}
+                                      {s.recurrence ? ` · every ${s.recurrence.intervalValue ?? 1} ${s.recurrence.intervalUnit ?? "weeks"}` : ""}
+                                      {s.recurrence?.maxOccurrences ? ` · ${s.recurrence.currentOccurrence ?? 1}/${s.recurrence.maxOccurrences}` : ""}
+                                    </div>
+                                  </div>
+                                  <span className={`shrink-0 rounded border px-1 py-px text-[7.5px] font-bold tracking-wide ${view.cls}`}>{view.label}</span>
+                                </div>
+                                {(s.status === "scheduled" || s.status === "paused") && (
+                                  <div className="mt-1 flex gap-1">
+                                    {s.status === "scheduled" ? (
+                                      <button
+                                        onClick={() => onScheduleAction(s.id, "pause")}
+                                        disabled={schedulesBusy}
+                                        className="flex items-center gap-0.5 rounded border border-white/12 bg-white/5 px-1.5 py-px text-[8px] tracking-wide text-slate-300 transition hover:bg-white/10 disabled:opacity-50 active:scale-95"
+                                        title="Pause this schedule"
+                                      >
+                                        <Pause size={8} /> Pause
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => onScheduleAction(s.id, "resume")}
+                                        disabled={schedulesBusy}
+                                        className="flex items-center gap-0.5 rounded border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-px text-[8px] tracking-wide text-emerald-300 transition hover:bg-emerald-400/20 disabled:opacity-50 active:scale-95"
+                                        title="Resume this schedule"
+                                      >
+                                        <Play size={8} /> Resume
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => onScheduleAction(s.id, "cancel")}
+                                      disabled={schedulesBusy}
+                                      className="flex items-center gap-0.5 rounded border border-rose-400/20 bg-rose-400/8 px-1.5 py-px text-[8px] tracking-wide text-rose-300/90 transition hover:bg-rose-400/15 disabled:opacity-50 active:scale-95"
+                                      title="Cancel this schedule permanently"
+                                    >
+                                      <X size={8} /> Cancel
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      {schedError && !schedFormOpen && <p className="mt-1 text-[9px] leading-relaxed text-rose-300/90">{schedError}</p>}
                     </div>
 
                     {/* Approval-gate tie-in */}
@@ -1939,7 +2191,7 @@ export default function FlowDesktop({
                     )}
 
                     <p className="border-t border-white/8 pt-2 text-[9px] leading-relaxed text-slate-500">
-                      Background machinery: due-work evaluation, leases, idempotency and side-effect authorization all run server-side on each heartbeat. This panel only reports authoritative state.
+                      Background machinery: due-work evaluation, leases, idempotency and side-effect authorization all run server-side on each heartbeat. Scheduled directives execute through the same governed workflow runtime as immediate directives. This panel only reports and manages authoritative state.
                     </p>
                   </div>
                 )}

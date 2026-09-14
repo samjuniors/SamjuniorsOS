@@ -60,6 +60,13 @@ export function parseJsonLoose(raw: string): any {
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
+    // Phase 4.4B: models occasionally emit RAW control characters inside
+    // string literals (e.g. a literal newline or tab in a report), which is
+    // illegal JSON and made JSON.parse fail the whole completion ("Bad
+    // control character in string literal"). Valid JSON never contains raw
+    // control chars (they must be escaped), so replacing them with spaces can
+    // never corrupt a well-formed response — it only rescues malformed ones.
+    .replace(/[\x00-\x1F]/g, ' ')
     .trim();
 
   try {

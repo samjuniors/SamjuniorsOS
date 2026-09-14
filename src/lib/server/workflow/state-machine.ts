@@ -74,7 +74,10 @@ export const VALID_STEP_TRANSITIONS: Record<WorkflowStepStatus, readonly Workflo
   blocked: ['ready', 'running', 'cancelled', 'failed'],
   awaiting_approval: ['ready', 'running', 'blocked', 'cancelled', 'failed'],
   completed: ['ready'], // Terminal for single run; allowed to reset to ready for recurring workflows
-  failed: [], // Terminal
+  // Terminal unless the WorkflowScheduler schedules a retry for a scheduled
+  // occurrence (Phase 4.4B retry recovery): the failed attempt is recorded in
+  // the schedule's execution history and the step is reset for the retry.
+  failed: ['ready'],
   cancelled: [], // Terminal
 };
 
@@ -84,8 +87,14 @@ export const VALID_INSTANCE_TRANSITIONS: Record<WorkflowInstanceStatus, readonly
   waiting: ['running', 'failed', 'cancelled'],
   blocked: ['running', 'failed', 'cancelled'],
   awaiting_approval: ['running', 'failed', 'cancelled'],
-  completed: [], // Terminal
-  failed: [], // Terminal
+  // Terminal for single-run instances; Phase 4.4B: the WorkflowScheduler may
+  // REOPEN a completed instance when a recurring schedule advances to its next
+  // occurrence (mirrors the step-level completed→ready reopen below).
+  completed: ['running'],
+  // Terminal unless the WorkflowScheduler schedules a retry for a scheduled
+  // occurrence (Phase 4.4B retry recovery): the instance is reopened so the
+  // retry wake is not cancelled by the parent-terminal check.
+  failed: ['running'],
   cancelled: [], // Terminal
 };
 

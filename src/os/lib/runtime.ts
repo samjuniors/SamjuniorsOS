@@ -247,6 +247,94 @@ export async function fetchSchedulerStatus(): Promise<SchedulerStatusFetch> {
   }
 }
 
+/* ------------------------------------------------------------------ automation schedule lifecycle (Phase 4.4B) */
+
+export interface ScheduleListItem {
+  id: string;
+  workflowInstanceId: string;
+  stepId: string;
+  scheduleType: string;
+  executeAt: string;
+  status: "scheduled" | "paused" | "triggered" | "completed" | "failed" | "cancelled";
+  recurrence?: {
+    intervalUnit?: string;
+    intervalValue?: number;
+    currentOccurrence?: number;
+    maxOccurrences?: number;
+  };
+  pausedState?: { pausedAt: string; pausedBy: string; reason?: string };
+  cancellationState?: { cancelledAt: string; cancelledBy: string; reason?: string };
+  executionHistory?: Array<{ occurrenceId: string; status: string; triggeredAt: string; error?: string }>;
+  provenance?: { createdByRole?: string; stepName?: string; workflowId?: string };
+  // Enrichment from the server (GET list + actions route)
+  workflowObjective?: string;
+  workflowStatus?: string;
+  stepStatus?: string;
+  stepApprovalState?: string;
+}
+
+export interface CreateScheduleInput {
+  directive: string;
+  scheduleType: "recurring" | "one_time";
+  executeAt?: string;
+  intervalUnit?: "minutes" | "hours" | "days" | "weeks";
+  intervalValue?: number;
+  maxOccurrences?: number;
+  requiresApproval?: boolean;
+}
+
+/** Creates a scheduled directive through the EXISTING founder directive path
+ *  (POST /api/orchestrate with a schedule payload). Server-side validation is
+ *  authoritative; invalid recurrence surfaces as an honest thrown error. */
+export async function createScheduledDirective(input: CreateScheduleInput): Promise<ScheduleListItem> {
+  const data = await jsonFetch<{ success: boolean; scheduled: boolean; data: { schedule: ScheduleListItem } }>(
+    "/api/orchestrate",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        directive: input.directive.trim(),
+        schedule: {
+          scheduleType: input.scheduleType,
+          executeAt: input.executeAt,
+          intervalUnit: input.intervalUnit,
+          intervalValue: input.intervalValue,
+          maxOccurrences: input.maxOccurrences,
+          requiresApproval: input.requiresApproval,
+        },
+      }),
+    }
+  );
+  return data.data.schedule;
+}
+
+/** Lists the founder's automation schedules (authoritative enrichment incl. objective). */
+export async function fetchSchedules(): Promise<ScheduleListItem[]> {
+  const data = await jsonFetch<{ totalCount: number; schedules: ScheduleListItem[] }>(
+    "/api/workflow/scheduling"
+  );
+  return data.schedules ?? [];
+}
+
+export type ScheduleLifecycleAction = "pause" | "resume" | "cancel";
+
+/** Applies a lifecycle action. Failures throw honestly (never fake success). */
+export async function applyScheduleAction(
+  scheduleId: string,
+  action: ScheduleLifecycleAction,
+  reason?: string
+): Promise<ScheduleListItem> {
+  const data = await jsonFetch<{ success: boolean; schedule: ScheduleListItem }>(
+    "/api/workflow/scheduling/actions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scheduleId, action, reason }),
+    }
+  );
+  return data.schedule;
+}
+
 /* ------------------------------------------------------------------ chat */
 
 export interface ChatReply {

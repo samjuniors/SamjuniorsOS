@@ -253,7 +253,16 @@ export class WorkflowRuntime {
             instanceChanged = true;
           }
         } else if (decision.effect === 'allowed') {
-          if (stepDef.requiresApproval && stepState.approvalState !== 'approved') {
+          // Phase 4.4B fix: a gate decision that is allowed BY AN APPROVED
+          // FOUNDER APPROVAL RECORD (reasonCode APPROVED_BY_FOUNDER) counts as
+          // the Founder's authorization for requiresApproval steps. Before
+          // this, step.approvalState could only be flipped by approveStep()
+          // which had no callers — a founder approving through
+          // /api/workflow/approvals never unblocked the step. The gate remains
+          // the sole authority here; its approved record is simply consumed.
+          const allowedByFounderApproval =
+            !!decision.approvalId && decision.approvalStatus === 'approved';
+          if (stepDef.requiresApproval && stepState.approvalState !== 'approved' && !allowedByFounderApproval) {
             stepState.status = 'awaiting_approval';
             instanceChanged = true;
           } else {

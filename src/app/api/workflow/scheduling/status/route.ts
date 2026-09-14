@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     ]);
 
     const scheduled = all.filter((i) => i.status === 'scheduled');
+    const paused = all.filter((i) => i.status === 'paused');
     const cancelled = all.filter((i) => i.status === 'cancelled');
     const completed = all.filter((i) => i.status === 'completed');
     const failed = all.filter((i) => i.status === 'failed');
@@ -85,6 +86,7 @@ export async function GET(req: NextRequest) {
         : null,
       counts: {
         scheduled: scheduled.length,
+        paused: paused.length,
         cancelled: cancelled.length,
         completed: completed.length,
         failed: failed.length,

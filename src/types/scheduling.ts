@@ -2,7 +2,13 @@ import { AgentRole, AgentWorkProtocolStep } from './os';
 
 export type ScheduleType = 'one_time_delay' | 'exact_timestamp' | 'recurring';
 
-export type ScheduledWorkStatus = 'scheduled' | 'triggered' | 'completed' | 'failed' | 'cancelled';
+export type ScheduledWorkStatus =
+  | 'scheduled'
+  | 'paused'
+  | 'triggered'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export type RecurrenceIntervalUnit = 'minutes' | 'hours' | 'days' | 'weeks';
 
@@ -32,6 +38,15 @@ export interface CancellationState {
   reason?: string;
 }
 
+/** Phase 4.4B — pause provenance for a founder-paused schedule. Paused items
+ *  are excluded from due-work evaluation (listDue only returns 'scheduled')
+ *  but remain resumable; unlike cancellation this is NOT terminal. */
+export interface PausedState {
+  pausedAt: string; // ISO 8601 UTC
+  pausedBy: string;
+  reason?: string;
+}
+
 export interface ScheduledWorkItem {
   id: string;
   workflowInstanceId: string;
@@ -40,6 +55,7 @@ export interface ScheduledWorkItem {
   executeAt: string; // Canonical ISO 8601 UTC string
   recurrence?: RecurrenceRule;
   status: ScheduledWorkStatus;
+  pausedState?: PausedState;
   cancellationState?: CancellationState;
   createdAt: string; // ISO 8601 UTC
   updatedAt: string; // ISO 8601 UTC
@@ -114,6 +130,7 @@ export interface SchedulerStatusProjection {
   } | null;
   counts: {
     scheduled: number;
+    paused: number;
     cancelled: number;
     completed: number;
     failed: number;
