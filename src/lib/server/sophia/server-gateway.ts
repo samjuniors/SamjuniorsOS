@@ -60,6 +60,11 @@ export class SophiaServerGateway {
     delete sanitizedProposal.approvalAuthority;
     delete sanitizedProposal.authorizationGrant;
     delete sanitizedProposal.credentials;
+    delete sanitizedProposal.verifiedFounderId;
+    delete sanitizedProposal.bypassGates;
+    delete sanitizedProposal.role;
+    delete sanitizedProposal.token;
+    delete sanitizedProposal.apiKey;
 
     // Bind authenticated founder principal from trusted server session ONLY
     const verifiedFounderId = session.founderId || session.userId || 'founder-primary';
@@ -214,7 +219,15 @@ export class SophiaServerGateway {
         const fin = CompanyContextProvider.getMergedContext().financialModel;
         provenances.push('CompanyContextProvider / FinancialModel');
         authoritativeData = fin;
-        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry:\n- Monthly Recurring Revenue (MRR): $${fin.mrr?.toLocaleString() ?? '38,400'}\n- Annual Run Rate (ARR): $${fin.arr?.toLocaleString() ?? '460,800'}\n- Monthly Burn Rate: $${fin.burnRate?.toLocaleString() ?? '14,200'}\n- Gross Margin Floor: ${fin.grossMargin ?? 82}%\n- Cash Reserve Runway: ${fin.runwayMonths ?? 13.0} months.`;
+
+        const mrrText = typeof fin?.mrr === 'number' ? `$${fin.mrr.toLocaleString()}` : 'Unavailable (Live ledger sync required)';
+        const arrText = typeof fin?.arr === 'number' ? `$${fin.arr.toLocaleString()}` : 'Unavailable';
+        const burnText = typeof fin?.burnRate === 'number' ? `$${fin.burnRate.toLocaleString()}` : 'Unavailable';
+        const marginText = typeof fin?.grossMargin === 'number' ? `${fin.grossMargin}%` : 'Unavailable';
+        const runwayText = typeof fin?.runwayMonths === 'number' ? `${fin.runwayMonths} months` : 'Unavailable';
+        const note = fin?.isSimulatedModel ? ' [SANDBOX SIMULATION MODEL — Live ledger integration pending]' : '';
+
+        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry${note}:\n- Monthly Recurring Revenue (MRR): ${mrrText}\n- Annual Run Rate (ARR): ${arrText}\n- Monthly Burn Rate: ${burnText}\n- Gross Margin Floor: ${marginText}\n- Cash Reserve Runway: ${runwayText}`;
       } else if (sanitizedProposal.domain === 'epistemic_fact') {
         provenances.push('EpistemicClaimStore');
         const claims = await EpistemicClaimStore.getInstance().listClaims();

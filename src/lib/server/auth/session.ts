@@ -58,35 +58,38 @@ export function resolveUserRole(
  * Never trusts client-supplied identity parameters in HTTP bodies.
  */
 export async function getAuthenticatedFounder(req?: NextRequest): Promise<AuthenticatedFounder | null> {
-  // Prohibit dev headers unconditionally in production
+  // Prohibit dev headers and test role overrides unconditionally in production
   if (process.env.NODE_ENV === 'production' && req) {
-    if (req.headers.has('x-samjuniors-dev-as') || req.cookies.has('samjuniors-dev-as')) {
-      console.error('[SessionAuth] Fatal: Dev bypass headers/cookies are strictly prohibited in production.');
+    if (
+      req.headers.has('x-samjuniors-dev-as') ||
+      req.cookies.has('samjuniors-dev-as') ||
+      req.headers.has('x-samjuniors-role') ||
+      req.cookies.has('samjuniors-role')
+    ) {
+      console.error('[SessionAuth] Fatal: Dev bypass/role headers are strictly prohibited in production.');
       return null;
     }
   }
 
-  const requestedRole = (req?.headers.get('x-samjuniors-role') || req?.cookies.get('samjuniors-role')?.value) as
-    | 'FOUNDER'
-    | 'EXECUTIVE'
-    | 'AUDITOR'
-    | null;
-
-  const effectiveRole = requestedRole && ['FOUNDER', 'EXECUTIVE', 'AUDITOR'].includes(requestedRole)
-    ? requestedRole
-    : 'FOUNDER';
-
-  const localFounderSession: AuthenticatedFounder = {
-    userId: effectiveRole === 'FOUNDER' ? 'founder-local-session' : 'member-local-session',
-    email: effectiveRole === 'FOUNDER' ? 'founder@samjuniors.com' : 'member@samjuniors.com',
-    name: effectiveRole === 'FOUNDER' ? 'Executive Founder' : 'Member Auditor',
-    role: effectiveRole,
-    isVerified: effectiveRole === 'FOUNDER',
-  };
-
-  // Sandbox / development mode (this environment): local session per effective role.
+  // Sandbox / development / test mode: local session with optional test role inspection.
   if (process.env.NODE_ENV !== 'production') {
-    return localFounderSession;
+    const requestedRole = (req?.headers.get('x-samjuniors-role') || req?.cookies.get('samjuniors-role')?.value) as
+      | 'FOUNDER'
+      | 'EXECUTIVE'
+      | 'AUDITOR'
+      | null;
+
+    const effectiveRole = requestedRole && ['FOUNDER', 'EXECUTIVE', 'AUDITOR'].includes(requestedRole)
+      ? requestedRole
+      : 'FOUNDER';
+
+    return {
+      userId: effectiveRole === 'FOUNDER' ? 'founder-local-session' : 'member-local-session',
+      email: effectiveRole === 'FOUNDER' ? 'founder@samjuniors.com' : 'member@samjuniors.com',
+      name: effectiveRole === 'FOUNDER' ? 'Executive Founder' : 'Member Auditor',
+      role: effectiveRole,
+      isVerified: effectiveRole === 'FOUNDER',
+    };
   }
 
   // Production: verify the configured dev secret if provided.
@@ -98,7 +101,13 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
     const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
 
     if (devAs === 'founder' && requiredSecret && devSecret === requiredSecret) {
-      return localFounderSession;
+      return {
+        userId: 'founder-production-session',
+        email: 'founder@samjuniors.com',
+        name: 'Executive Founder',
+        role: 'FOUNDER',
+        isVerified: true,
+      };
     }
     return null;
   }

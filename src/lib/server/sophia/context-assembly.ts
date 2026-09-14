@@ -35,12 +35,27 @@ export class SophiaContextAssembler {
       const fin = companyCtx.financialModel;
       const initiatives = (companyCtx.initiatives || []).filter(i => i.status === 'in_progress' || i.status === 'active');
 
+      const mrrText = typeof fin?.mrr === 'number' ? `$${fin.mrr.toLocaleString()}` : 'Unavailable (unconnected)';
+      const arrText = typeof fin?.arr === 'number' ? `$${fin.arr.toLocaleString()}` : 'Unavailable (unconnected)';
+      const marginText = typeof fin?.grossMargin === 'number' ? `${fin.grossMargin}%` : 'Unavailable';
+      const burnText = typeof fin?.burnRate === 'number' ? `$${fin.burnRate.toLocaleString()}` : 'Unavailable (unconnected)';
+      const runwayText = typeof fin?.runwayMonths === 'number' ? `${fin.runwayMonths} months` : 'Unavailable';
+      const modelStatus = fin?.isSimulatedModel ? ' [SANDBOX SIMULATION MODEL — Live ledger integration pending]' : '';
+
       const operationalLines = [
-        `MRR: $${fin.mrr?.toLocaleString() ?? '38,400'} | ARR: $${fin.arr?.toLocaleString() ?? '460,800'}`,
-        `Gross Margin: ${fin.grossMargin ?? 82}% | Monthly Burn: $${fin.burnRate?.toLocaleString() ?? '14,200'} | Runway: ${fin.runwayMonths ?? 13.0} months`,
-        `Active Strategic Initiatives:`,
-        ...initiatives.slice(0, 3).map(i => `  - [${i.id}] "${i.title}" (Objective: ${i.currentObjective})`),
+        `Operational Financial Standing${modelStatus}:`,
+        `  - MRR: ${mrrText} | ARR: ${arrText}`,
+        `  - Gross Margin Floor: ${marginText} | Monthly Burn: ${burnText} | Cash Runway: ${runwayText}`,
       ];
+
+      if (initiatives.length > 0) {
+        operationalLines.push('Active Strategic Initiatives:');
+        initiatives.slice(0, 3).forEach(i => {
+          operationalLines.push(`  - [${i.id}] "${i.title}" (Objective: ${i.currentObjective})`);
+        });
+      } else {
+        operationalLines.push('Active Strategic Initiatives: None currently registered in Company HQ.');
+      }
 
       slices.push({
         label: 'Company Operational State',
