@@ -1,5 +1,3 @@
-import ZAI from 'z-ai-web-dev-sdk';
-
 /**
  * Shared z-ai-web-dev-sdk client (server-side only).
  *
@@ -10,14 +8,24 @@ import ZAI from 'z-ai-web-dev-sdk';
  * through this module.
  */
 
-export type ZAIInstance = Awaited<ReturnType<typeof ZAI.create>>;
+export type ZAIInstance = any;
 
 let instancePromise: Promise<ZAIInstance> | null = null;
 
 /** Lazily-created singleton ZAI client. Retried if initial creation fails. */
 export async function getAIClient(): Promise<ZAIInstance> {
   if (!instancePromise) {
-    instancePromise = ZAI.create();
+    instancePromise = (async () => {
+      try {
+        // Dynamically import to allow clean fallback if package is not provisioned in local environment
+        // @ts-ignore
+        const mod = await import('z-ai-web-dev-sdk');
+        const ZAI = mod.default || mod;
+        return await ZAI.create();
+      } catch (err: any) {
+        throw new Error(`z-ai backend unavailable: ${err?.message || err}`);
+      }
+    })();
     // Reset on failure so the next request can retry initialization.
     instancePromise.catch(() => {
       instancePromise = null;

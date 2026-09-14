@@ -66,15 +66,25 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
     }
   }
 
+  const requestedRole = (req?.headers.get('x-samjuniors-role') || req?.cookies.get('samjuniors-role')?.value) as
+    | 'FOUNDER'
+    | 'EXECUTIVE'
+    | 'AUDITOR'
+    | null;
+
+  const effectiveRole = requestedRole && ['FOUNDER', 'EXECUTIVE', 'AUDITOR'].includes(requestedRole)
+    ? requestedRole
+    : 'FOUNDER';
+
   const localFounderSession: AuthenticatedFounder = {
-    userId: 'founder-local-session',
-    email: 'founder@samjuniors.com',
-    name: 'Executive Founder',
-    role: 'FOUNDER',
-    isVerified: true,
+    userId: effectiveRole === 'FOUNDER' ? 'founder-local-session' : 'member-local-session',
+    email: effectiveRole === 'FOUNDER' ? 'founder@samjuniors.com' : 'member@samjuniors.com',
+    name: effectiveRole === 'FOUNDER' ? 'Executive Founder' : 'Member Auditor',
+    role: effectiveRole,
+    isVerified: effectiveRole === 'FOUNDER',
   };
 
-  // Sandbox / development mode (this environment): local founder session.
+  // Sandbox / development mode (this environment): local session per effective role.
   if (process.env.NODE_ENV !== 'production') {
     return localFounderSession;
   }
