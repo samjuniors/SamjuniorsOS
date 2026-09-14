@@ -27,6 +27,8 @@ export interface NodeProps {
   indicator?: NodeIndicator;
   /** Phase 4.3E — progressive execution perimeter on this node's own shape. */
   perimeter?: ExecutionPerimeterSpec;
+  /** Force reduced-motion rendering of the perimeter (specimen demonstrations). */
+  forceReducedMotion?: boolean;
   ports?: NodePortProps[];
   hasInputPort?: boolean;
   hasOutputPort?: boolean;
@@ -50,6 +52,7 @@ export const Node: React.FC<NodeProps> = ({
   customHeight,
   indicator,
   perimeter,
+  forceReducedMotion,
   ports,
   hasInputPort = false,
   hasOutputPort = false,
@@ -108,6 +111,7 @@ export const Node: React.FC<NodeProps> = ({
         customWidth={customWidth}
         customHeight={customHeight}
         perimeter={perimeter}
+        forceReducedMotion={forceReducedMotion}
         style={style}
         onClick={onClick}
         onDoubleClick={onDoubleClick}

@@ -417,11 +417,22 @@ Supports 3 explicit performance tiers (`full`, `balanced`, `minimal`) plus autom
 - `balanced`: Reduced 6px backdrop-filter blur, halved particle counts, streamlined SVG animations.
 - `minimal`: Disables heavy GPU filters (`backdropFilter: 'none'`), disables floating particles, retains lightweight CSS opacity/color transitions.
 
-### Specimen Sheet
+### Specimen Sheet — Canonical Visual Language Laboratory (Design System UI phase)
 - Certified at `/design-system/workflow` (`src/app/design-system/workflow/page.tsx`).
-- Features 14 comprehensive sections: Canvas & Background, Node Geometries, Node Anatomy, Content Styles (incl. Brand Service), Icon Containers (incl. the `brand` disc), Brand Identity (official service marks per the founder-approved reference), Node States, Connection Ports, Connectors & Flows, Effects Library, Color Tokens, Typography, Real Compositions (real brand marks — Telegram, Google Gemini), and Responsive Sizes.
-- Includes a live interactive Effects Budget switch (`full` / `balanced` / `minimal`) and state inspection triggers.
+- Organized as the canonical specimen laboratory (sections A–I), demonstrating the OS visual grammar `ENTITY → STATE → RELATIONSHIP → WORK → RESULT → ATTENTION/DECISION` under the doctrine `Calm → Notice → Understand → Act → Inspect`:
+  - **A · Foundations** — backgrounds/void, obsidian glass surfaces + specular hairlines, typography scale, spacing rhythm, the seven frozen `EXECUTION_LANGUAGE` semantic chips, icon treatment (glass/filled/brand), focus & selection.
+  - **B · Core Entities** — company entity, agent capability, work object, research object, result/artifact, decision point, blocked, verifier — with owner-metadata chips (agents are owners, never pipeline nodes).
+  - **C · Execution Language** — the 4.3E perimeter as the SINGLE progress language: measured fill (circle + work object), six canonical states, measured vs unmeasured vs forced reduced-motion, verifier lifecycle, frozen behavioral contract.
+  - **D · Relationships** — the six `CONDUIT_LANGUAGE` states rendered from token values (idle/running/externalAction/blocked/completed/governance) + edge-signal + perimeter sequence.
+  - **E · Workflow** — the compact execution sequence Work → Research → Compare → Analyze → Verify → Result with owner labels; no baton-passing visual model.
+  - **F · Canvas** — spatial company context (regions, nodes, relationships, selected node, focus lens revealing the execution trail, zoom/pan chrome). A spatial map, NOT a drag-and-drop builder.
+  - **G · Contextual Surfaces** — SideCard pattern, Company Activity (real `ActivitySurface`), Epistemic Board (same family: stage chips, lifecycle strip, honest lineage labels), Inspector (4 orthogonal domains + approval boundary).
+  - **H · Founder Actions** — primary/secondary, approve/reject pair, inspect/pause/resume, blocked-state action, confirmation pattern. Authority through restraint.
+  - **I · Empty / Honest States** — production strings for every quiet state ("All quiet · Nothing needs you", "No pending claims", "no evidence source (AI takeaway)", …). Never fake telemetry.
+- Includes the live Effects Budget switch (`full` / `balanced` / `minimal`), a Reduced-motion toggle (demonstrates static final states with no orbit/transitions), a Focus-lens toggle, and a persistent specimen-fixtures honesty banner (everything on the page is controlled specimen data — never production state).
+- Specimens consume the REAL primitives and token sources (`Node`, `IconContainer`, `Connector`, `ExecutionPerimeter`, `WORKFLOW_COLORS`, `EXECUTION_LANGUAGE`, `CONDUIT_LANGUAGE`, `PERIMETER_LANGUAGE`, `ENTITY_IDENTITY`, `ActivitySurface`, `EmptyState`) — no parallel design system.
 - Container provides dedicated viewport scrolling (`fixed inset-0 overflow-y-auto select-text`), decoupled from the root OS desktop shell.
+- Supersedes the Phase 4.1 fourteen-section layout (geometry/anatomy/compositions taxonomy); the underlying primitives and frozen languages are unchanged — only the laboratory organization and the demonstrated product model (company work with owner metadata, not service-to-service automation chains).
 
 ## 15. Canonical Execution Language (Phase 4.3C — FROZEN)
 

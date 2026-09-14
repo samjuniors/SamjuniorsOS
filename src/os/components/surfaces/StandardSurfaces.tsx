@@ -18,8 +18,8 @@ const statusColor: Record<SurfaceStatus, { dot: string; text: string; bg: string
   active: { dot: "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]", text: "text-cyan-300", bg: "bg-cyan-500/10 border-cyan-500/30" },
   waiting: { dot: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]", text: "text-amber-300", bg: "bg-amber-500/10 border-amber-500/30" },
   blocked: { dot: "bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)]", text: "text-rose-300", bg: "bg-rose-500/10 border-rose-500/30" },
-  offline: { dot: "bg-slate-500", text: "text-slate-400", bg: "bg-slate-800/40 border-slate-700/40" },
-  neutral: { dot: "bg-slate-400", text: "text-slate-300", bg: "bg-slate-800/40 border-slate-700/40" },
+  offline: { dot: "bg-slate-500", text: "text-slate-400", bg: "bg-white/[0.04] border-white/10" },
+  neutral: { dot: "bg-slate-400", text: "text-slate-300", bg: "bg-white/[0.04] border-white/10" },
 };
 
 export function StatusPill({ status, label }: { status: SurfaceStatus; label?: string }) {
@@ -36,7 +36,7 @@ export function StatusPill({ status, label }: { status: SurfaceStatus; label?: s
 
 export function LoadingState({ message = "Synchronizing neural telemetry..." }: { message?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center p-8 rounded-xl border border-cyan-500/20 bg-slate-950/40 backdrop-blur-sm text-center">
+    <div className="flex flex-col items-center justify-center p-8 rounded-xl border border-cyan-500/20 bg-black/40 backdrop-blur-sm text-center">
       <div className="relative w-8 h-8 mb-3">
         <div className="absolute inset-0 rounded-full border border-cyan-500/30 animate-ping" />
         <div className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
@@ -60,7 +60,7 @@ export function EmptyState({
   onAction?: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center p-6 text-center rounded-xl border border-slate-800/80 bg-slate-950/30 backdrop-blur-sm">
+    <div className="flex flex-col items-center justify-center p-6 text-center rounded-xl border border-white/[0.06] bg-black/30 backdrop-blur-sm">
       <span className="text-2xl text-cyan-400/50 mb-2 font-mono">{icon}</span>
       <h4 className="text-xs font-semibold text-slate-200 uppercase tracking-wider mb-1">{title}</h4>
       <p className="text-[11px] text-slate-400 max-w-xs mb-3">{description}</p>
@@ -86,7 +86,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-950/20 backdrop-blur-sm text-left">
+    <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-500/[0.07] backdrop-blur-sm text-left">
       <div className="flex items-start gap-2.5">
         <span className="text-rose-400 text-sm mt-0.5">⚠️</span>
         <div className="flex-1 min-w-0">
@@ -126,8 +126,8 @@ export function EntitySurface({
       onClick={onSelect ?? entity.onClick}
       className={`group relative rounded-xl border transition-all cursor-pointer ${
         selected
-          ? "border-cyan-400/80 bg-cyan-950/30 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-          : "border-slate-800/80 hover:border-cyan-500/40 bg-slate-900/50 hover:bg-slate-900/80"
+          ? "border-cyan-300/60 bg-cyan-400/10 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
+          : "border-white/[0.06] hover:border-cyan-400/40 bg-white/[0.02] hover:bg-white/[0.04]"
       } ${compact ? "p-2.5" : "p-3.5"} backdrop-blur-md`}
     >
       <div className="flex items-start justify-between gap-2.5">
@@ -165,7 +165,7 @@ export function EntitySurface({
                   ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
                   : b.tone === "rose"
                   ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
-                  : "bg-slate-800/60 border-slate-700/60 text-slate-300"
+                  : "bg-white/[0.05] border-white/10 text-slate-300"
               }`}
             >
               {b.label}
@@ -176,7 +176,7 @@ export function EntitySurface({
 
       {/* Progressive disclosure toggle if meta exists */}
       {!compact && entity.meta && Object.keys(entity.meta).length > 0 && (
-        <div className="mt-2.5 pt-2 border-t border-slate-800/60">
+        <div className="mt-2.5 pt-2 border-t border-white/[0.06]">
           <button
             type="button"
             onClick={(e) => {
@@ -188,7 +188,7 @@ export function EntitySurface({
             <span>{expanded ? "▾ Hide Remit & Scope" : "▸ Inspect Remit & Scope"}</span>
           </button>
           {expanded && (
-            <dl className="mt-2 space-y-1 text-[10px] font-mono bg-slate-950/50 p-2 rounded border border-slate-800/80">
+            <dl className="mt-2 space-y-1 text-[10px] font-mono bg-black/40 p-2 rounded border border-white/[0.06]">
               {Object.entries(entity.meta).map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-2">
                   <dt className="text-slate-400 uppercase">{k}:</dt>
@@ -213,18 +213,18 @@ export function AttentionSurface({
   onResolve?: () => void;
 }) {
   const toneMap: Record<AttentionData["kind"], { border: string; text: string; bg: string; icon: string }> = {
-    blocked: { border: "border-l-rose-500 border-slate-800/80", text: "text-rose-300", bg: "bg-rose-950/20", icon: "⛔" },
-    decision: { border: "border-l-amber-500 border-slate-800/80", text: "text-amber-300", bg: "bg-amber-950/20", icon: "⚖️" },
-    review: { border: "border-l-cyan-500 border-slate-800/80", text: "text-cyan-300", bg: "bg-cyan-950/20", icon: "🔍" },
-    message: { border: "border-l-sky-500 border-slate-800/80", text: "text-sky-300", bg: "bg-sky-950/20", icon: "💬" },
-    note: { border: "border-l-slate-500 border-slate-800/80", text: "text-slate-300", bg: "bg-slate-900/40", icon: "📌" },
+    blocked: { border: "border-l-rose-500 border-white/[0.08]", text: "text-rose-300", bg: "bg-rose-500/[0.06]", icon: "⛔" },
+    decision: { border: "border-l-amber-500 border-white/[0.08]", text: "text-amber-300", bg: "bg-amber-400/[0.06]", icon: "⚖️" },
+    review: { border: "border-l-cyan-500 border-white/[0.08]", text: "text-cyan-300", bg: "bg-cyan-400/[0.06]", icon: "🔍" },
+    message: { border: "border-l-sky-500 border-white/[0.08]", text: "text-sky-300", bg: "bg-sky-400/[0.06]", icon: "💬" },
+    note: { border: "border-l-slate-500 border-white/[0.08]", text: "text-slate-300", bg: "bg-white/[0.02]", icon: "📌" },
   };
 
   const tone = toneMap[attention.kind] ?? toneMap.note;
 
   return (
     <div
-      className={`rounded-lg border-l-4 border p-3 ${tone.border} ${tone.bg} backdrop-blur-sm transition-all hover:bg-slate-900/60`}
+      className={`rounded-lg border-l-4 border p-3 ${tone.border} ${tone.bg} backdrop-blur-sm transition-all hover:bg-white/[0.04]`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5">
@@ -245,7 +245,7 @@ export function AttentionSurface({
         {onResolve && (
           <button
             onClick={onResolve}
-            className="px-2.5 py-1 text-[10px] font-mono tracking-wider uppercase rounded bg-slate-800/80 hover:bg-slate-700/80 text-slate-200 border border-slate-700 transition-colors"
+            className="px-2.5 py-1 text-[10px] font-mono tracking-wider uppercase rounded bg-white/[0.05] hover:bg-white/10 text-slate-200 border border-white/10 transition-colors"
           >
             {attention.handled ? "Archived" : "Mark Handled"}
           </button>
@@ -271,7 +271,7 @@ export function WorkSurface({
   const currentStageIndex = stages.indexOf(work.stage);
 
   return (
-    <div className="rounded-xl border border-slate-800/80 bg-slate-900/40 hover:bg-slate-900/70 p-3.5 backdrop-blur-md transition-all">
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] p-3.5 backdrop-blur-md transition-all">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -316,13 +316,13 @@ export function WorkSurface({
               </span>
             ))}
           </div>
-          <div className="grid grid-cols-5 gap-1 h-1.5 rounded-full bg-slate-800/80 overflow-hidden">
+          <div className="grid grid-cols-5 gap-1 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
             {stages.map((_, idx) => (
               <div
                 key={idx}
                 className={`h-full transition-all ${
                   idx < currentStageIndex
-                    ? "bg-cyan-600/70"
+                    ? "bg-cyan-400/40"
                     : idx === currentStageIndex
                     ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]"
                     : "bg-transparent"
@@ -334,7 +334,7 @@ export function WorkSurface({
       )}
 
       {/* Action triggers */}
-      <div className="mt-3 pt-2.5 border-t border-slate-800/60 flex items-center justify-between">
+      <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between">
         <span className="text-[10px] font-mono text-slate-500">
           Updated {new Date(work.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
@@ -346,7 +346,7 @@ export function WorkSurface({
                   work.state === "active" ? "paused" : work.state === "paused" ? "active" : "active"
                 )
               }
-              className="px-2 py-0.5 text-[10px] font-mono rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+              className="px-2 py-0.5 text-[10px] font-mono rounded bg-white/[0.05] hover:bg-white/10 text-slate-300 border border-white/10 transition-colors"
             >
               {work.state === "active" ? "Pause" : "Resume"}
             </button>
@@ -375,7 +375,7 @@ export function DecisionSurface({
   onDecide?: (option: string) => void;
 }) {
   return (
-    <div className="rounded-xl border border-amber-500/30 bg-amber-950/15 hover:bg-amber-950/25 p-3.5 backdrop-blur-md transition-all">
+    <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.06] hover:bg-amber-400/10 p-3.5 backdrop-blur-md transition-all">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-amber-400 text-xs">⚖️</span>
@@ -387,7 +387,7 @@ export function DecisionSurface({
       </div>
 
       <h4 className="text-xs font-semibold text-slate-100 mt-1.5">{decision.title}</h4>
-      <p className="text-[11px] text-slate-300 mt-1 leading-relaxed bg-slate-950/40 p-2 rounded border border-slate-800/80">
+      <p className="text-[11px] text-slate-300 mt-1 leading-relaxed bg-black/40 p-2 rounded border border-white/[0.06]">
         {decision.context}
       </p>
 
@@ -448,12 +448,12 @@ export function ActivitySurface({ event }: { event: ActivityEvent }) {
     if (p.workflowInstanceId) provenanceBits.push(`wf ${p.workflowInstanceId.slice(0, 14)}`);
   }
   return (
-    <div className="flex items-start gap-2.5 py-2 px-1 border-b border-slate-800/40 text-xs group">
+    <div className="flex items-start gap-2.5 py-2 px-1 border-b border-white/[0.06] text-xs group">
       <span className="text-[10px] font-mono text-slate-500 shrink-0 mt-0.5 tabular-nums">
         {new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
       </span>
       {event.actor && (
-        <span className="text-[10px] font-mono uppercase tracking-wider px-1 rounded bg-slate-800 border border-slate-700/60 text-cyan-300 shrink-0 max-w-[110px] truncate" title={event.actor}>
+        <span className="text-[10px] font-mono uppercase tracking-wider px-1 rounded bg-white/[0.06] border border-white/10 text-cyan-300 shrink-0 max-w-[110px] truncate" title={event.actor}>
           {event.actor}
         </span>
       )}
@@ -478,7 +478,7 @@ export function ActivitySurface({ event }: { event: ActivityEvent }) {
 
 export function MetricSurface({ metric }: { metric: MetricItem }) {
   return (
-    <div className="p-3.5 rounded-xl border border-slate-800/80 bg-slate-900/40 hover:bg-slate-900/60 backdrop-blur-md transition-all">
+    <div className="p-3.5 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04] backdrop-blur-md transition-all">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-medium text-slate-400 truncate">{metric.label}</span>
         {metric.status && <StatusPill status={metric.status} />}
@@ -490,7 +490,7 @@ export function MetricSurface({ metric }: { metric: MetricItem }) {
         {metric.unit && <span className="text-xs font-mono text-slate-400">{metric.unit}</span>}
       </div>
       {(metric.confidence || metric.source) && (
-        <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-slate-500 pt-1.5 border-t border-slate-800/50">
+        <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-slate-500 pt-1.5 border-t border-white/[0.06]">
           {metric.confidence && (
             <span
               className={`uppercase tracking-wider ${
@@ -511,7 +511,7 @@ export function MetricSurface({ metric }: { metric: MetricItem }) {
 
 export function TimelineSurface({ milestones }: { milestones: TimelineMilestone[] }) {
   return (
-    <div className="relative pl-5 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
+    <div className="relative pl-5 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-white/10">
       {milestones.map((m) => {
         const isComplete = m.status === "complete";
         const isCurrent = m.status === "current";
@@ -527,7 +527,7 @@ export function TimelineSurface({ milestones }: { milestones: TimelineMilestone[
                   ? "bg-amber-400 border-amber-300 animate-pulse"
                   : isBlocked
                   ? "bg-rose-500 border-rose-400"
-                  : "bg-slate-900 border-slate-700"
+                  : "bg-black/40 border-white/20"
               }`}
             />
             <div className="min-w-0">
@@ -562,10 +562,10 @@ export function RelationshipSurface({ links }: { links: RelationshipLink[] }) {
       {links.map((link) => (
         <div
           key={link.id}
-          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-900/40 border border-slate-800/80 text-xs font-mono"
+          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/[0.02] border border-white/[0.06] text-xs font-mono"
         >
           <span className="text-slate-300 truncate max-w-[100px]">{link.fromName}</span>
-          <span className="text-[10px] text-cyan-400/80 uppercase px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40">
+          <span className="text-[10px] text-cyan-400/80 uppercase px-1.5 py-0.5 rounded bg-cyan-400/10 border border-cyan-300/30">
             → {link.type} →
           </span>
           <span className="text-slate-300 truncate max-w-[100px] text-right">{link.toName}</span>
@@ -622,7 +622,7 @@ export function ListSurface<T>({
             {title && (
               <div className="flex items-center gap-2">
                 <h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-300">{title}</h3>
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-800 text-cyan-400 border border-slate-700">
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-white/[0.06] text-cyan-400 border border-white/10">
                   {items.length}
                 </span>
               </div>
@@ -637,7 +637,7 @@ export function ListSurface<T>({
                 value={searchQuery ?? ""}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full px-2.5 py-1.5 rounded-lg text-xs bg-slate-900/60 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                className="w-full px-2.5 py-1.5 rounded-lg text-xs bg-black/40 border border-white/10 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-300/50"
               />
               {searchQuery && (
                 <button
@@ -659,7 +659,7 @@ export function ListSurface<T>({
                   className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-wider transition-all whitespace-nowrap ${
                     activeFilter === pill.id
                       ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold"
-                      : "bg-slate-900/40 hover:bg-slate-800/60 text-slate-400 border border-slate-800"
+                      : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-400 border border-white/10"
                   }`}
                 >
                   {pill.label} {pill.count !== undefined ? `(${pill.count})` : ""}
@@ -713,8 +713,8 @@ export function InspectorSurface({
   onTabChange?: (tabId: string) => void;
 }) {
   return (
-    <div className="h-full flex flex-col rounded-2xl border border-cyan-500/30 bg-slate-950/90 backdrop-blur-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-      <div className="p-4 border-b border-slate-800/80 flex items-start justify-between bg-slate-900/40">
+    <div className="h-full flex flex-col rounded-2xl border border-cyan-500/30 bg-[#081120]/95 backdrop-blur-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="p-4 border-b border-white/[0.08] flex items-start justify-between bg-white/[0.03]">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold text-slate-100">{title}</h3>
@@ -724,14 +724,14 @@ export function InspectorSurface({
         </div>
         <button
           onClick={onClose}
-          className="w-7 h-7 rounded-lg border border-slate-700/60 bg-slate-800/50 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+          className="w-7 h-7 rounded-lg border border-white/10 bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
         >
           ✕
         </button>
       </div>
 
       {tabs && tabs.length > 0 && (
-        <div className="flex border-b border-slate-800 px-4 gap-4 bg-slate-950/60 text-xs font-mono">
+        <div className="flex border-b border-white/[0.08] px-4 gap-4 bg-black/30 text-xs font-mono">
           {tabs.map((tab) => (
             <button
               key={tab.id}

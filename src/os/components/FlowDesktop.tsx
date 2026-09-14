@@ -476,11 +476,8 @@ function WorkCard({
                 {owner.label}
               </span>
             )}
-            {isWaiting && (
-              <span className={`flex items-center gap-1 rounded border px-1.5 py-px font-mono text-[8.5px] font-semibold tracking-[0.1em] ${EXECUTION_LANGUAGE.approval.chip}`}>
-                <Clock size={9} /> DECISION POINT
-              </span>
-            )}
+            {/* Single approval signal: the WAITING state chip above carries the
+                frozen approval semantic — never a duplicated second chip. */}
           </div>
         </div>
       </div>

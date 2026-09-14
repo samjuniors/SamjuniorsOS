@@ -20,6 +20,8 @@ export interface NodeGeometryProps {
   customHeight?: number;
   /** Phase 4.3E — progressive execution perimeter on THIS shape. */
   perimeter?: ExecutionPerimeterSpec;
+  /** Force reduced-motion rendering of the perimeter (specimen demonstrations). */
+  forceReducedMotion?: boolean;
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
@@ -37,6 +39,7 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
   customWidth,
   customHeight,
   perimeter,
+  forceReducedMotion,
   children,
   className = '',
   style: customStyle,
@@ -171,6 +174,7 @@ export const NodeGeometry: React.FC<NodeGeometryProps> = ({
           semantic={perimeter.semantic}
           progress={perimeter.progress}
           strokeWidth={PERIMETER_LANGUAGE.strokeWidth}
+          forceReducedMotion={forceReducedMotion}
         />
       )}
 
