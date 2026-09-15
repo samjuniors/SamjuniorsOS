@@ -63,3 +63,4 @@ db/*.db
 .zscripts/dev.pid
 tool-results/
 qa-shots/
+upload/
