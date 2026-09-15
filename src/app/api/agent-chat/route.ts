@@ -255,7 +255,9 @@ export async function POST(req: NextRequest) {
         }
       };
 
-      const resolvedIntent = mapKindToIntent(executionResult.proposal.kind);
+      const resolvedIntent = executionResult.validatedCommand.type === 'PRESENT_CLARIFICATION'
+        ? 'ambiguous'
+        : mapKindToIntent(executionResult.proposal.kind);
 
       return NextResponse.json({
         success: executionResult.success,
@@ -266,10 +268,13 @@ export async function POST(req: NextRequest) {
         classification: {
           intent: resolvedIntent,
           confidence: executionResult.proposal.confidence,
-          reason: (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
+          reason: (executionResult.validatedCommand as any).ambiguityReason || (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
           directiveTitle: (executionResult.proposal as any).title,
-          suggestedScope: (executionResult.proposal as any).suggestedScope,
-          approvalAction: (executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined,
+          suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
+          structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
+          approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
+            ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined)
+            : undefined,
           approvalNote: (executionResult.proposal as any).note,
         },
         reply: executionResult.reply,

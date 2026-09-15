@@ -12,10 +12,14 @@ import { SideEffectClassification } from '@/types/authorization';
 export type SophiaAuthorityClass =
   | 'CONVERSATIONAL_RECORD'          // Conversational memory, not factual authority
   | 'AUTHORITATIVE_OPERATIONAL_STATE'// Live verified company metrics & database state
-  | 'EPISTEMIC_FACT'                 // Verified claims, authoritative only per verification status
+  | 'EPISTEMIC_FACT'                 // Verified claims, authoritative only per verification status (Phase 1 compat)
+  | 'CANONICAL_FACT'                 // Verified, active canonical facts (Phase 2)
+  | 'UNVERIFIED_CLAIM'               // Pending/under-review claims; strictly unverified hypotheses (Phase 2)
   | 'ACTIVE_WORKFLOW_STATE'          // Authoritative in-flight workflows & agent runs
   | 'PENDING_GOVERNANCE_STATE'       // Authoritative pending founder approval gates
-  | 'HISTORICAL_PRECEDENT';          // Past run summaries & decision outcomes, not new empirical data
+  | 'COMPANY_KNOWLEDGE'              // Durable reference SOPs, PRDs, and architecture documents (Phase 2)
+  | 'HISTORICAL_PRECEDENT'           // Past run summaries & decision outcomes, not current empirical data
+  | 'RECENT_ACTIVITY';               // Authoritative projected recent company actions (Phase 2)
 
 export interface SophiaContextSlice {
   label: string;
@@ -29,7 +33,33 @@ export interface SophiaAssembledContext {
   slices: SophiaContextSlice[];
   formattedContext: string;
   estimatedTokens: number;
+  dynamicPayloadTokens?: number;
+  retrievalHit?: boolean;
+  degradedStores?: string[];
+  tokenBreakdown?: {
+    operationalState?: number;
+    activeWorkflows?: number;
+    pendingGovernance?: number;
+    canonicalFacts?: number;
+    unverifiedClaims?: number;
+    companyKnowledge?: number;
+    historicalPrecedent?: number;
+    recentActivity?: number;
+    dialogueHistory?: number;
+  };
 }
+
+/**
+ * CONSERVATIVE ENTITY RESOLUTION RESULT
+ * Tri-state deterministic candidate matching:
+ * - resolved: exactly 1 high-confidence match
+ * - unresolved: 0 matches (honest reporting; zero guessing)
+ * - ambiguous: multiple candidates (triggers clarification)
+ */
+export type EntityResolutionResult<T> =
+  | { status: 'resolved'; candidate: T; matchReason: string }
+  | { status: 'unresolved'; reason: string }
+  | { status: 'ambiguous'; candidates: T[]; reason: string };
 
 /**
  * UNTRUSTED CANDIDATE INTENT PROPOSAL
@@ -153,18 +183,31 @@ export type ValidatedSophiaCommand =
       verifiedFounderId: string;
     };
 
-/**
- * Performance & Turn Latency Instrumentation
- */
 export interface TurnMetrics {
   contextAssemblyMs: number;
+  retrievalMs?: number;
   modelMs: number;
   gatewayValidationMs: number;
   totalTurnMs: number;
   estimatedTokens: {
     input: number;
     output: number;
+    dynamicPayload?: number;
+    systemPrompt?: number;
+    breakdown?: {
+      operationalState?: number;
+      activeWorkflows?: number;
+      pendingGovernance?: number;
+      canonicalFacts?: number;
+      unverifiedClaims?: number;
+      companyKnowledge?: number;
+      historicalPrecedent?: number;
+      recentActivity?: number;
+      dialogueHistory?: number;
+    };
   };
+  retrievalHit?: boolean;
+  degradedStores?: string[];
 }
 
 export interface SophiaExecutionResult {

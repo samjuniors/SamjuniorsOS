@@ -4,6 +4,7 @@ import { CompanyContextProvider } from '../context/company-context';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { AgentRunStore } from '../agents/run-store';
 import { SERVER_AGENTS } from '../agents/definitions';
+import { SophiaEntityResolver } from './entity-resolver';
 import { CandidateIntentProposal, SophiaAssembledContext, ValidatedSophiaCommand, TurnMetrics } from './types';
 import { OrchestrationRun } from '@/types/os';
 
@@ -146,11 +147,39 @@ export class SophiaServerGateway {
       const approvalStore = InMemoryApprovalStore.getInstance();
       const pendingApprovals = await approvalStore.list({ decision: 'pending' });
 
-      let targetApproval = sanitizedProposal.approvalId 
-        ? pendingApprovals.find(a => a.id === sanitizedProposal.approvalId)
-        : pendingApprovals[0]; // Most recent pending approval if not explicitly referenced
+      // Conservative candidate matching (zero guessing, no silent pendingApprovals[0] default)
+      const resolution = SophiaEntityResolver.resolveApprovalCandidate({
+        message,
+        explicitId: sanitizedProposal.approvalId,
+        pendingApprovals,
+      });
 
-      if (targetApproval) {
+      if (resolution.status === 'ambiguous') {
+        const options = resolution.candidates.map(
+          (a) => `Approve "${a.actionName}" by ${a.employeeRole} (${a.id})`
+        );
+        const ambiguityReason = `Multiple pending approvals are currently active in the governance gate (${resolution.candidates.length}). Unambiguous specification is required.`;
+        const reply = `[${persona.name} • ${persona.role}]\nI noted your governance intent to ${sanitizedProposal.decision}, but multiple pending items are active:\n${options.map((opt, i) => `  (${i + 1}) ${opt}`).join('\n')}\n\nPlease specify which approval you want to ratify.`;
+
+        return {
+          success: true,
+          validatedCommand: {
+            type: 'PRESENT_CLARIFICATION',
+            ambiguityReason,
+            structuredOptions: options,
+            suggestedScope: 'Founder Governance Decision Gate',
+          },
+          proposal: sanitizedProposal,
+          reply,
+          directiveExecuted: false,
+          liveAi: false,
+          metrics,
+        };
+      }
+
+      if (resolution.status === 'resolved') {
+        const targetApproval = resolution.candidate;
+
         // Ratify decision through authoritative approval store
         if (sanitizedProposal.decision === 'approved') {
           await approvalStore.decide(targetApproval.id, 'approved', verifiedFounderId, sanitizedProposal.note);
@@ -191,7 +220,7 @@ export class SophiaServerGateway {
         }
       }
 
-      // Honest reporting when no pending approval matches
+      // resolution.status === 'unresolved'
       const reply = `[${persona.name} • ${persona.role}]\nI noted your governance intent to ${sanitizedProposal.decision}, but there are currently no matching pending approval records in the governance gate. All active systems remain secure.`;
       return {
         success: true,
@@ -254,7 +283,25 @@ export class SophiaServerGateway {
           factualReply = `[${persona.name} • ${persona.role}]\nNo multi-agent council directives are currently in flight. All specialist agents are ready.`;
         }
       } else {
-        factualReply = sanitizedProposal.reason || `[${persona.name} • ${persona.role}]\nRegarding "${message}": Systems report nominal operations across all departments.`;
+        const knowledgeSlice = opts.context.slices.find((s) => s.authority === 'COMPANY_KNOWLEDGE');
+        const memorySlice = opts.context.slices.find((s) => s.authority === 'HISTORICAL_PRECEDENT');
+        const activitySlice = opts.context.slices.find((s) => s.authority === 'RECENT_ACTIVITY');
+
+        if (knowledgeSlice) {
+          provenances.push(knowledgeSlice.provenance);
+          factualReply = `[${persona.name} • ${persona.role}]\nCompany Knowledge & Standard Operating Procedures:\n${knowledgeSlice.content}`;
+          authoritativeData = { knowledge: knowledgeSlice.content };
+        } else if (memorySlice) {
+          provenances.push(memorySlice.provenance);
+          factualReply = `[${persona.name} • ${persona.role}]\nHistorical Company Precedent:\n${memorySlice.content}`;
+          authoritativeData = { precedent: memorySlice.content };
+        } else if (activitySlice) {
+          provenances.push(activitySlice.provenance);
+          factualReply = `[${persona.name} • ${persona.role}]\nRecent Company Activity History:\n${activitySlice.content}`;
+          authoritativeData = { activity: activitySlice.content };
+        } else {
+          factualReply = sanitizedProposal.reason || `[${persona.name} • ${persona.role}]\nRegarding "${message}": Systems report nominal operations across all departments.`;
+        }
       }
 
       return {
@@ -299,13 +346,46 @@ export class SophiaServerGateway {
 
     // 5. OPERATIONAL STEERING PROPOSAL (TARGET CAPABILITY)
     if (sanitizedProposal.kind === 'steering_proposal') {
-      const reply = `[${persona.name} • ${persona.role}]\nSteering command acknowledged: [${sanitizedProposal.action.toUpperCase()}]. In-flight run reference marked. (Note: Operational steering hooks are staged for Phase 3 control plane integration; active tasks remain safe).`;
+      const activeRuns = (await AgentRunStore.getInstance().listRuns()).filter(
+        (r) => r.status === 'running'
+      );
+      const resolution = SophiaEntityResolver.resolveRunCandidate({
+        message,
+        explicitRunId: sanitizedProposal.targetRunId,
+        activeRuns,
+      });
+
+      if (resolution.status === 'ambiguous') {
+        const options = resolution.candidates.map(
+          (r) => `Steer run [${r.runId}] "${r.taskTitle}" (${r.agentId})`
+        );
+        const ambiguityReason = `Multiple active runs are currently in flight (${resolution.candidates.length}). Unambiguous specification is required.`;
+        const reply = `[${persona.name} • ${persona.role}]\nRegarding your steering command: multiple active runs are in flight:\n${options.map((opt, i) => `  (${i + 1}) ${opt}`).join('\n')}\n\nPlease specify which run to steer.`;
+
+        return {
+          success: true,
+          validatedCommand: {
+            type: 'PRESENT_CLARIFICATION',
+            ambiguityReason,
+            structuredOptions: options,
+            suggestedScope: 'Active Workflow Steering',
+          },
+          proposal: sanitizedProposal,
+          reply,
+          directiveExecuted: false,
+          liveAi: false,
+          metrics,
+        };
+      }
+
+      const targetRunId = resolution.status === 'resolved' ? resolution.candidate.runId : sanitizedProposal.targetRunId;
+      const reply = `[${persona.name} • ${persona.role}]\nSteering command acknowledged: [${sanitizedProposal.action.toUpperCase()}]. In-flight run reference marked${targetRunId ? ` (${targetRunId})` : ''}. (Note: Operational steering hooks are staged for Phase 3 control plane integration; active tasks remain safe).`;
       return {
         success: true,
         validatedCommand: {
           type: 'REGISTER_STEERING',
           action: sanitizedProposal.action,
-          targetRunId: sanitizedProposal.targetRunId,
+          targetRunId,
           modification: sanitizedProposal.modification,
           verifiedFounderId,
         },
