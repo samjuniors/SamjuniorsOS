@@ -40,7 +40,8 @@ export default function AgentQuickDock({ onSelectAgent }: { onSelectAgent: (id: 
               key={a.id}
               onClick={() => { osSound.open(); onSelectAgent(a.id); }}
               title={`${a.name} — ${a.role} · ${a.current ?? STATE_LABEL[a.state]}`}
-              className={`group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200 hover:bg-white/10 active:scale-90 sm:h-11 sm:w-11 ${a.state === "offline" ? "opacity-50" : ""}`}
+              aria-label={`Open ${a.name}, ${STATE_LABEL[a.state]}`}
+              className={`os-dock-btn group relative flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 sm:h-11 sm:w-11 ${a.state === "offline" ? "opacity-50" : ""}`}
             >
               {/* Clean flat identity avatar — dark disc, thin border, flat tint icon */}
               <span

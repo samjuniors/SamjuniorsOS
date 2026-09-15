@@ -1,30 +1,31 @@
-@import "tailwindcss";
+@import "../app/globals.css";
 
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
-  background: #01040a;
+  background: var(--cvl-void);
   overscroll-behavior: none;
 }
 
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
-  color: #dbeafe;
+  color: var(--cvl-text);
 }
 
 :root {
-  --os-bg: #030711;
-  --os-surface: rgba(7, 14, 28, 0.88);
-  --os-surface-raised: rgba(13, 24, 43, 0.94);
-  --os-line: rgba(148, 163, 184, 0.16);
-  --os-line-strong: rgba(103, 232, 249, 0.34);
-  --os-ink: #f8fafc;
-  --os-muted: #94a3b8;
-  --os-cyan: #67e8f9;
-  --os-amber: #fcd34d;
+  /* Canonical CVL Token Aliases for OS Shell Surface Compatibility */
+  --os-bg: var(--cvl-void);
+  --os-surface: var(--cvl-panel);
+  --os-surface-raised: var(--cvl-panel-2);
+  --os-line: var(--cvl-line);
+  --os-line-strong: var(--cvl-running);
+  --os-ink: var(--cvl-text);
+  --os-muted: var(--cvl-muted);
+  --os-cyan: var(--cvl-running);
+  --os-amber: var(--cvl-signal);
 }
 
 button,
@@ -52,6 +53,34 @@ input:focus-visible,
   border-color: var(--os-line);
   box-shadow: 0 8px 30px rgba(0,0,0,0.38), inset 0 -1px 0 rgba(255,255,255,0.06);
 }
+
+/* ── P0 polish: window breathing, focus dim, dock, toasts ─────────── */
+.os-window-max {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 32px 80px rgba(0,0,0,0.6);
+  overflow: hidden;
+}
+.os-focus-dim {
+  background: rgba(1, 4, 10, 0.6);
+  backdrop-filter: blur(2px);
+  transition: opacity 400ms ease;
+}
+.os-toast {
+  border-left: 2px solid rgba(252, 211, 77, 0.6);
+}
+.os-dock-btn {
+  transition: transform 200ms cubic-bezier(0.16,1,0.3,1), background 200ms ease;
+}
+.os-dock-btn:hover {
+  transform: translateY(-3px) scale(1.12);
+}
+.os-dock-btn:active { transform: scale(0.94); }
+.os-desktop-icon {
+  transition: background 200ms ease, transform 200ms cubic-bezier(0.16,1,0.3,1);
+}
+.os-desktop-icon:hover { background: rgba(255,255,255,0.09); }
+.os-desktop-icon:active { transform: scale(0.94); }
 
 .os-mode-switcher {
   border: 1px solid rgba(103, 232, 249, 0.2);
@@ -172,53 +201,18 @@ input:focus-visible,
   50% { transform: translateY(-16px); }
 }
 
-/* ── Phase 4.3E — Execution Perimeter ────────────────────── */
-/* Unmeasured ACTIVE nodes: slow deterministic clockwise orbit of the
-   quarter arc (spinner semantics). Measured progress NEVER orbits — it is
-   a fixed arc at the authoritative value. Blocked/approval never animate. */
-@keyframes wf-perimeter-orbit {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Phase 4.5 — restrained head-dot opacity breathing while EXECUTING only
-   (the fill front is alive while real execution advances). Measured and
-   settled states stay static; reduced motion renders it solid. */
-@keyframes wf-head-breathe {
-  0%, 100% { opacity: 0.72; }
-  50% { opacity: 1; }
-}
-.wf-head-breathe {
-  animation: wf-head-breathe 1800ms ease-in-out infinite;
-}
-
-/* Reduced motion: the correct final/static progress state renders with no
-   continuous animation (explicit guard — the global kill switch below also
-   covers this, but the perimeter primitive stays self-documenting and
-   portable outside this stylesheet). */
-@media (prefers-reduced-motion: reduce) {
-  .execution-perimeter path,
-  .execution-perimeter circle {
-    transition: none !important;
-    animation: none !important;
-  }
-  .execution-perimeter g {
-    animation: none !important;
-  }
-}
-
-/* ── Shared SamJuniorsOS surface language ───────────────── */
+/* ── Shared SamJuniorsOS surface language (Aliased to Canonical CVL) ───────────────── */
 :root {
-  --sj-bg: #030711;
-  --sj-surface: rgba(8, 17, 32, 0.82);
-  --sj-surface-strong: rgba(10, 21, 39, 0.94);
+  --sj-bg: var(--cvl-void);
+  --sj-surface: var(--cvl-panel);
+  --sj-surface-strong: var(--cvl-panel-2);
   --sj-surface-soft: rgba(255, 255, 255, 0.035);
-  --sj-line: rgba(148, 163, 184, 0.16);
-  --sj-line-bright: rgba(103, 232, 249, 0.36);
-  --sj-text: #f8fafc;
-  --sj-muted: #94a3b8;
-  --sj-accent: #67e8f9;
-  --sj-radius: 18px;
+  --sj-line: var(--cvl-line);
+  --sj-line-bright: var(--cvl-running);
+  --sj-text: var(--cvl-text);
+  --sj-muted: var(--cvl-muted);
+  --sj-accent: var(--cvl-running);
+  --sj-radius: 14px;
 }
 
 .sj-surface {

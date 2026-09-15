@@ -43,8 +43,8 @@ import {
   MOTION_TOKENS,
   tokenRgbParts,
   type ConduitKey,
-} from "@/components/workflow/execution-language";
-import type { ExecutionPerimeterSpec } from "@/components/workflow/ExecutionPerimeter";
+  type ExecutionPerimeterSpec,
+} from "@/lib/tokens";
 
 const RUNNING = EXECUTION_LANGUAGE.running;
 const EXTERNAL = EXECUTION_LANGUAGE.externalAction;

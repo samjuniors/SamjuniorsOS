@@ -48,7 +48,7 @@ function useDevice() {
     nav.getBattery?.().then((b) => {
       const upd = () => setBattery({ level: b.level, charging: b.charging });
       upd(); b.addEventListener("levelchange", upd); b.addEventListener("chargingchange", upd);
-    }).catch(() => {});
+    }).catch(() => { });
     const c = nav.connection;
     if (c) { const upd = () => setConn(c.effectiveType ?? null); upd(); c.addEventListener?.("change", upd); }
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
@@ -59,9 +59,9 @@ function useDevice() {
 /* ------------------------------------------------------------------ chrome */
 
 function Traffic({ onClose, onMin, onMax }: { onClose: () => void; onMin: () => void; onMax: () => void }) {
-  const btn = "h-[12px] w-[12px] rounded-full transition active:scale-90 hover:brightness-110 shadow-sm";
+  const btn = "h-[12px] w-[12px] rounded-full transition active:scale-90 hover:brightness-125 shadow-sm";
   return (
-    <div className="flex items-center gap-2 pl-1">
+    <div className="flex items-center gap-2 pl-1" role="group" aria-label="Window controls">
       <button className={`${btn} border border-[#e0443e] bg-[#ff5f57]`} onClick={onClose} title="Close" />
       <button className={`${btn} border border-[#d89e24] bg-[#febc2e]`} onClick={onMin} title="Minimize" />
       <button className={`${btn} border border-[#1fa030] bg-[#28c840]`} onClick={onMax} title="Restore" />
@@ -227,7 +227,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
     { id: "company", group: "Workspace", label: "Company context", hint: company.focus ? `Focus: ${company.focus}` : "Focus not set", icon: <Building2 size={15} />, run: () => { const v = window.prompt("This week's focus — one sentence:", company.focus); if (v !== null) os.setCompany({ focus: v.trim() }); } },
     ...agents.map((a) => ({ id: `agent-${a.id}`, group: "Workforce", label: `${a.name} · ${a.role}`, hint: a.current ?? a.state, icon: <Bot size={15} />, run: () => setAgentId(a.id) })),
     { id: "decide", group: "Actions", label: "Raise a decision", hint: `${decisions.length} open`, icon: <Scale size={15} />, run: () => { const t = window.prompt("What needs deciding?"); if (t && t.trim()) os.addDecision(t.trim()); } },
-{ id: "newwork", group: "Actions", label: "Start a workstream", icon: <Activity size={15} />, run: () => { const t = window.prompt("New directive for the executive council:"); if (t && t.trim()) void dispatchDirective(t.trim()).catch((err: unknown) => { os.log(`Directive failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`); }); } },
+    { id: "newwork", group: "Actions", label: "Start a workstream", icon: <Activity size={15} />, run: () => { const t = window.prompt("New directive for the executive council:"); if (t && t.trim()) void dispatchDirective(t.trim()).catch((err: unknown) => { os.log(`Directive failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`); }); } },
     { id: "focus", group: "Actions", label: focus ? "Exit focus mode" : "Focus mode", hint: "Hide panels · F", icon: <PanelRightClose size={15} />, run: () => setFocus((v) => !v) },
     { id: "min", group: "Actions", label: "Minimize window", icon: <Minus size={15} />, run: minWin },
     { id: "max", group: "Actions", label: win === "max" ? "Restore window" : "Maximize window", icon: <Maximize2 size={15} />, run: maxWin },
@@ -293,20 +293,25 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
             <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400 to-sky-500 font-bold text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.5)] transition-transform duration-300 group-hover:scale-105"><LayoutGrid size={12} /></span>
             <span className="text-[11.5px] font-bold tracking-wider text-white">SamJuniorsOS</span>
           </button>
-          <button onClick={() => { osSound.open(); setSpotlight(true); }} className="group hidden h-7.5 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 text-[11px] text-slate-400 transition-all duration-200 hover:border-cyan-300/40 hover:bg-white/[0.08] hover:text-slate-100 active:scale-95 sm:flex" title="Search (⌘K)">
-            <Search size={12} className="text-cyan-300 transition-transform group-hover:scale-110" /><span className="hidden md:inline">Search</span>
-            <span className="flex items-center gap-0.5 rounded border border-white/15 bg-white/5 px-1 py-0.2 font-mono text-[9px] text-slate-400"><CommandIcon size={8} />K</span>
-          </button>
-          <div className="hidden items-center gap-1.5 rounded-lg border border-white/5 bg-white/[0.02] px-2 py-0.5 text-[10.5px] text-slate-400 lg:flex">
-            {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.8)]" /><span className="font-mono text-[10px] tracking-wider text-amber-100">{attention.length} NEED YOU</span></> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" /><span className="font-mono text-[10px] tracking-wider">ALL QUIET</span></>}
+          <div className="hidden items-center gap-1.5 rounded-full border border-white/5 bg-white/[0.02] px-2.5 py-1 text-[10.5px] text-slate-400 lg:flex" title={attention.length ? `${attention.length} items need you` : "Nothing needs you"}>
+            {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.8)]" /><span className="font-mono text-[10px] tracking-[0.14em] text-amber-100">{attention.length} NEED YOU</span></> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" /><span className="font-mono text-[10px] tracking-[0.14em]">ALL QUIET</span></>}
           </div>
           <button onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`hidden h-7.5 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition active:scale-95 md:flex ${focus ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-white"}`} title="Focus mode (F)">
             <PanelRightClose size={13} className={focus ? "text-cyan-300" : ""} /><span className="hidden xl:inline">Focus</span>
           </button>
         </div>
 
-        {/* Center spacer reserving exact footprint for global persistent mode toggle [Sophia | SamJuniorsOS] */}
-        <div className="hidden w-[220px] shrink-0 sm:block" />
+        {/* Center — Spotlight entry (primary command entry) */}
+        <button
+          onClick={() => { osSound.open(); setSpotlight(true); }}
+          className="group hidden min-w-0 flex-1 max-w-[420px] items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[12px] text-slate-400 transition-all duration-200 hover:border-cyan-300/40 hover:bg-white/[0.07] hover:text-slate-200 active:scale-[0.99] sm:flex"
+          title="Search / Ask Sophia (⌘K)"
+        >
+          <Search size={13} className="shrink-0 text-cyan-300 transition-transform group-hover:scale-110" />
+          <span className="flex-1 truncate text-left">Search, command, or ask Sophia…</span>
+          <span className="flex shrink-0 items-center gap-0.5 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-[9px] text-slate-400"><CommandIcon size={8} />K</span>
+        </button>
+        <div className="w-[220px] shrink-0 sm:hidden" />
 
         <div className="flex items-center gap-1">
           <TrayBtn active={pop === "net"} onClick={() => toggle("net")} title="Network">{device.online ? <Wifi size={14} /> : <WifiOff size={14} className="text-rose-300" />}</TrayBtn>
@@ -315,8 +320,13 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
             <span className="relative"><Bell size={14} />{attention.length > 0 && <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.9)]" />}</span>
           </TrayBtn>
           <TrayBtn active={pop === "settings"} onClick={() => toggle("settings")} title="Settings"><Gear size={14} /></TrayBtn>
+          <div className={`tnum hidden items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[9.5px] tracking-[0.14em] xl:flex ${device.online ? "border-emerald-300/15 bg-emerald-400/[0.06] text-emerald-200/90" : "border-rose-300/20 bg-rose-400/[0.06] text-rose-200/90"}`} title={device.online ? "Online — execution state is server-authoritative (GET /api/agents/runs + /api/workflow/approvals)" : "Offline — showing last synced state, changes will retry on reconnect"}>
+            <span className={`h-1.5 w-1.5 rounded-full ${device.online ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]"}`} />
+            {device.online ? "SYNCED" : "OFFLINE"}
+          </div>
           <button title="Calendar" onClick={() => { osSound.click(); toggle("cal"); }} className={`ml-1 flex h-7.5 items-center gap-1.5 rounded-lg px-2 transition-all duration-200 hover:bg-white/10 active:scale-95 ${pop === "cal" ? "bg-white/15 text-white" : ""}`}>
             <span className="tnum text-[12px] font-bold tracking-tight text-white">{fmtTime(now, h12)}</span>
+            <span className="tnum hidden text-[10px] text-slate-500 md:inline">{now.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
           </button>
           {batteryPct !== null && (
             <div className="hidden items-center gap-1 pl-1 text-slate-400 sm:flex" title={device.battery?.charging ? "Charging" : "On battery"}>
@@ -407,20 +417,20 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
               {attention.map((a) => {
                 const agent = agents.find((ag) => ag.id === a.from);
                 return (
-                <div key={a.id} className="group flex items-start gap-2 border-b border-white/5 px-3.5 py-2.5 transition hover:bg-white/[0.02]">
-                  <span className={`mt-0.5 shrink-0 ${a.kind === "blocked" ? "text-rose-300" : a.kind === "decision" ? "text-cyan-200" : "text-slate-400"}`}>{a.kind === "blocked" ? <AlertTriangle size={13} /> : a.kind === "decision" ? <Scale size={13} /> : <Bell size={13} />}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[12.5px] font-semibold text-white">{a.title}</div>
-                    {a.detail && <div className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{a.detail}</div>}
-                    {/* V2: Agent attending context */}
-                    <div className="mt-1 flex items-center gap-2 font-mono text-[9.5px] uppercase text-slate-500">
-                      <span>{agentName(a.from)} · {a.kind}</span>
-                      {agent?.current && <span className="normal-case text-slate-500/80">· {agent.current}</span>}
-                      <span className="text-slate-600">{new Date(a.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  <div key={a.id} className="group flex items-start gap-2 border-b border-white/5 px-3.5 py-2.5 transition hover:bg-white/[0.02]">
+                    <span className={`mt-0.5 shrink-0 ${a.kind === "blocked" ? "text-rose-300" : a.kind === "decision" ? "text-cyan-200" : "text-slate-400"}`}>{a.kind === "blocked" ? <AlertTriangle size={13} /> : a.kind === "decision" ? <Scale size={13} /> : <Bell size={13} />}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[12.5px] font-semibold text-white">{a.title}</div>
+                      {a.detail && <div className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{a.detail}</div>}
+                      {/* V2: Agent attending context */}
+                      <div className="mt-1 flex items-center gap-2 font-mono text-[9.5px] uppercase text-slate-500">
+                        <span>{agentName(a.from)} · {a.kind}</span>
+                        {agent?.current && <span className="normal-case text-slate-500/80">· {agent.current}</span>}
+                        <span className="text-slate-600">{new Date(a.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
                     </div>
+                    <button onClick={() => os.handleAttention(a.id)} className="rounded-md p-1 text-slate-500 opacity-0 transition hover:text-cyan-200 group-hover:opacity-100" title="Handled"><CheckCircle2 size={13} /></button>
                   </div>
-                  <button onClick={() => os.handleAttention(a.id)} className="rounded-md p-1 text-slate-500 opacity-0 transition hover:text-cyan-200 group-hover:opacity-100" title="Handled"><CheckCircle2 size={13} /></button>
-                </div>
                 );
               })}
             </div>
@@ -481,17 +491,22 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
           { icon: <Scale size={21} />, label: "Decisions", run: () => { osSound.click(); setFocus(false); openWin(); } },
           { icon: <Gear size={21} />, label: "Settings", run: () => { osSound.click(); setPop("settings"); } },
         ].map((ic) => (
-          <button key={ic.label} onDoubleClick={ic.run} onClick={() => { if (window.innerWidth < 768) ic.run(); else osSound.hover(); }} className="group flex w-[64px] flex-col items-center gap-1 rounded-xl p-1.5 text-center transition-all duration-200 hover:bg-white/10 active:scale-95 sm:w-[72px]">
+          <button key={ic.label} onDoubleClick={ic.run} onClick={() => { if (window.innerWidth < 768) ic.run(); else osSound.hover(); }} className="group os-desktop-icon flex w-[64px] flex-col items-center gap-1 rounded-xl p-1.5 text-center sm:w-[72px]">
             <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/15 bg-[#091222]/85 text-cyan-100 shadow-[0_8px_24px_rgba(0,0,0,0.5)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-cyan-300/40 group-hover:bg-[#0d1a30] group-hover:shadow-[0_12px_32px_rgba(56,189,248,0.3)] sm:h-11 sm:w-11">{ic.icon}</span>
             <span className="text-[10px] font-medium leading-tight tracking-[0.01em] text-slate-200 drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] sm:text-[10.5px]">{ic.label}</span>
           </button>
         ))}
       </div>
 
-      {/* window */}
+      {/* focus dim — calm baseline: wallpaper dims when focus mode is on */}
+      {focus && win !== "min" && (
+        <div className="os-focus-dim pointer-events-none absolute inset-0 z-[15]" aria-hidden="true" />
+      )}
+
+      {/* window — max breathes with 12px wallpaper margin + 18px radius */}
       {win !== "min" && (
         <div
-          className={`absolute z-20 flex flex-col overflow-hidden bg-[#050a14] ${anim ? "os-win-in" : ""} ${win === "max" ? "bottom-0 left-0 right-0 top-11" : "rounded-2xl border border-white/15 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)]"} sj-surface`}
+          className={`absolute z-20 flex flex-col overflow-hidden bg-[#050a14] ${anim ? "os-win-in" : ""} ${win === "max" ? "os-window-max bottom-2 left-2 right-2 top-[52px]" : "rounded-2xl border border-white/15 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.85)]"} sj-surface`}
           style={win === "max" ? undefined : { left: pos.x, top: pos.y, width: "min(1340px, calc(100vw - 32px))", height: "min(820px, calc(100vh - 72px))" }}
           onPointerDown={(e) => e.stopPropagation()}
         >
@@ -524,20 +539,36 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
         </div>
       )}
 
+      {win === "min" && (
+        <button
+          onClick={openWin}
+          title="Restore Workspace"
+          className="absolute left-1/2 top-[52px] z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/12 bg-[#0a1220]/95 px-4 py-2 text-[11px] font-semibold tracking-[0.18em] text-slate-300 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-xl transition hover:border-cyan-300/40 hover:text-white active:scale-95"
+          style={{ animation: "mac-zoom-in 280ms cubic-bezier(.16,1,.3,1)" }}
+        >
+          <span className={`h-2 w-2 rounded-full ${attention.length ? "animate-pulse bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.8)]" : "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"}`} />
+          {company.name.toUpperCase()} · WORKSPACE
+        </button>
+      )}
+
       <AgentQuickDock onSelectAgent={(id) => setAgentId(id)} />
       <PersonaModal agentId={agentId} onClose={() => setAgentId(null)} />
       <TodoDrawer open={workOpen} onToggle={setWorkOpen} />
 
-      {/* toasts — real events only */}
-      <div className="pointer-events-none absolute right-4 top-14 z-[60] flex w-[300px] max-w-[calc(100vw-32px)] flex-col gap-2.5">
-        {toasts.map((t) => (
-          <div key={t.id} className="pointer-events-auto rounded-2xl border border-white/15 bg-[#08111e]/95 p-3.5 shadow-[0_24px_60px_-10px_rgba(0,0,0,0.85)] backdrop-blur-2xl" style={{ animation: "toast-in 320ms cubic-bezier(.16,1,.3,1)" }}>
+      {/* toasts — real events only, capped at 3, warm amber signal */}
+      <div className="pointer-events-none absolute right-4 top-14 z-[60] flex w-[320px] max-w-[calc(100vw-32px)] flex-col gap-2.5" role="status" aria-live="polite">
+        {toasts.slice(0, 3).map((t) => (
+          <div key={t.id} className="os-toast pointer-events-auto rounded-2xl border border-white/15 bg-[#08111e]/95 p-3.5 shadow-[0_24px_60px_-10px_rgba(0,0,0,0.85)] backdrop-blur-2xl" style={{ animation: "toast-in 320ms cubic-bezier(.16,1,.3,1)" }}>
             <div className="mb-1 flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-cyan-300"><Bell size={11} /> Needs you</span>
+              <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300"><Bell size={11} /> Needs you</span>
               <span className="font-mono text-[10px] text-slate-500">now</span>
             </div>
             <div className="text-[12.5px] font-semibold leading-tight text-white">{t.t}</div>
             <div className="mt-0.5 text-[11.5px] leading-snug text-slate-400">{t.d}</div>
+            <div className="mt-2 flex gap-2">
+              <button onClick={() => { osSound.click(); setFocus(false); openWin(); setToasts((ts) => ts.filter((x) => x.id !== t.id)); }} className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[11px] font-semibold text-amber-200 transition hover:bg-amber-300/20 active:scale-95">Review</button>
+              <button onClick={() => setToasts((ts) => ts.filter((x) => x.id !== t.id))} className="rounded-lg px-2.5 py-1 text-[11px] text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-95">Dismiss</button>
+            </div>
           </div>
         ))}
       </div>

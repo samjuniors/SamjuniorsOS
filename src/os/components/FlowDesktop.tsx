@@ -15,26 +15,28 @@ import {
 import { MetricSurface, TimelineSurface, ActivitySurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 import {
-  Node as Phase4Node,
+  Phase4Node,
   IconContainer,
   IconOnlyContent,
-  IconTitleContent,
-  IconMetaContent,
-  Connector as Phase4Connector,
+  useGrainTileUrl,
+} from "@/components/canonical-node";
+import { Connector as Phase4Connector } from "@/components/connector";
+import {
   WORKFLOW_COLORS,
   EXECUTION_LANGUAGE,
   ENTITY_IDENTITY,
-  SERVICE_BRANDS,
   SPATIAL_TOKENS,
   EFFECTS_BUDGET_CONFIGS,
-  useGrainTileUrl,
-  type ServiceBrandKey,
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
   type ExecutionPerimeterSpec,
   type EffectsBudget,
-} from "@/components/workflow";
+} from "@/lib/tokens";
+import {
+  SERVICE_BRANDS,
+  type ServiceBrandKey,
+} from "@/components/glyphs";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
 import { fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, epistemicAction, refreshEpistemicBoard, type ScheduleListItem } from "../lib/runtime";
