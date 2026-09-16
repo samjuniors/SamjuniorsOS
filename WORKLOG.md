@@ -1,5 +1,58 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 4A — Sophia Live Session & Companion Gateway Foundation (2026-09-16)
+
+**Status:** COMPLETE & SEALED. Built and verified the authenticated companion WebSocket/live-session foundation for Sophia Live Interaction. Zero audio/STT/TTS/VAD/mic/UI code added. Implemented companion server architecture, ephemeral ticket authentication (`/api/auth/ws-ticket`), single-tenant connection locking (close code `4409`), PTT state transitions, barge-in `INTERRUPT` framing, and 60-second reconnection resumption. Verified with 27/27 automated assertions passing across 10 test scenarios.
+
+### What Changed
+
+- **`src/lib/server/live/types.ts`**:
+  - Defined canonical modality states (`IDLE`, `LISTENING`, `TRANSCRIBING`, `THINKING`, `SPEAKING`, `INTERRUPTED`, `RECONNECTING`, `ERROR`).
+  - Defined client message protocol (`INIT_SESSION`, `RESUME_SESSION`, `PING`, `START_PTT`, `STOP_PTT`, `SET_STATE`, `INTERRUPT`, `CLOSE_SESSION`).
+  - Defined server message protocol (`SESSION_READY`, `SESSION_RESUMED`, `PONG`, `STATE_CHANGE`, `PTT_ACK`, `INTERRUPTED_ACK`, `ERROR`).
+  - Defined canonical close codes (`LIVE_CLOSE_CODES`: 4401 unauthorized, 4409 session superseded).
+- **`src/lib/server/live/ticket-store.ts`**:
+  - Ephemeral single-use ticket generator (`issueTicket`) and validator (`consumeTicket`) with 60-second TTL and automatic cleanup.
+- **`src/lib/server/live/auth.ts`**:
+  - HTTP upgrade authenticator checking query tickets (`?ticket=...`), headers (`x-samjuniors-user-id`, `x-samjuniors-role`), or cookies (`samjuniors-dev-secret` in production). Fails closed (returns null) for non-founder roles.
+- **`src/lib/server/live/session-manager.ts`**:
+  - `LiveSessionManager` singleton tracking active connections and sessions.
+  - Enforces single-connection-per-founder rule: opening a second socket for the same founder terminates the older socket with close code `4409` (`SESSION_SUPERSEDED`).
+  - Implements 60-second session resume window: reconnecting with `RESUME_SESSION` restores previous session state with `resumed: true`.
+- **`src/lib/server/live/server.ts`**:
+  - `LiveInteractionServer` managing Node HTTP and `ws.WebSocketServer` on port 3001 (or `LIVE_WS_PORT`).
+  - Implements `/health` endpoint returning server status and active client count.
+  - Implements upgrade authentication, message dispatching, 30s ping-pong heartbeats, and graceful shutdown.
+- **`src/lib/server/live/index.ts`**:
+  - Canonical barrel export for live interaction subsystem.
+- **`src/app/api/auth/ws-ticket/route.ts`**:
+  - Authenticated Next.js route (`POST /api/auth/ws-ticket`) issuing ephemeral single-use tickets for verified Founder sessions.
+- **`scripts/live-gateway.ts`**:
+  - Standalone companion runner script with graceful SIGINT/SIGTERM handling.
+- **`package.json`**:
+  - Added `"dev:ws": "tsx scripts/live-gateway.ts"`.
+  - Added `ws` and `@types/ws`.
+- **`tests/sophia/phase4a_live_session_foundation.test.ts`**:
+  - Automated test suite with 10 scenarios and 27 assertions: health check, 401 unauthenticated rejection, ticket generation & single-use consumption, header auth, PTT state transitions (`START_PTT` -> `LISTENING`, `STOP_PTT` -> `THINKING`), barge-in `INTERRUPT`, single-tenant supersession (`4409`), 60s reconnection resumption (`resumed: true`), expired fallback (`resumed: false`), and PING/PONG heartbeats.
+- **`doc/adr/0003-sophia-live-interaction-architecture.md`**:
+  - Updated status to ACCEPTED with Phase 4A implementation details.
+- **`doc/ROADMAP.md`**:
+  - Marked Phase 4A as complete & verified; set next phase to Phase 4B (Client Silero VAD & Ingress); activated STOP condition.
+
+### Verification Run & Results
+
+- `npx tsx tests/sophia/phase4a_live_session_foundation.test.ts`: **27/27 PASSED** (100%).
+- `npx tsx tests/sophia/phase3_conversation_persistence.test.ts`: **15/15 PASSED** (100%).
+- `npx tsx tests/sophia/phase1_conversational_executive.test.ts`: **12/12 PASSED** (100%).
+- `npx tsx tests/sophia/phase2_grounding_context.test.ts`: **12/12 PASSED** (100%).
+- `npx eslint`: **0 errors**.
+
+### Next Recommended Action
+
+- STOP condition reached: Do NOT implement Phase 4B (VAD, STT, or microphone capture) until Founder explicitly directs commencement.
+
+---
+
 ## Phase 4 — Sophia Live Interaction (Architecture Reconciled & Approved with Corrections) (2026-09-16)
 
 **Status:** ARCHITECTURE APPROVED WITH CORRECTIONS (ADR 0003). Phase 4A coding: NOT YET. GitHub HEAD and Phase 3.1 verified on remote `main` (`git push origin main` completed). Zero production code modified, zero packages installed. Implementation remains gated until Founder commands start of Phase 4A.

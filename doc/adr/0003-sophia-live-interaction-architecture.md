@@ -1,7 +1,7 @@
 # ADR 0003: Sophia Live Interaction Architecture (Voice Modality Adapter)
 
 ## Status
-APPROVED WITH CORRECTIONS — 2026-09-16 (Architecture Approved; Implementation Gated)
+ACCEPTED (Phase 4A Implemented & Verified; Phase 4B Gated) — 2026-09-16
 
 ## Context & Problem
 Following the completion and sealing of **Phase 3: Sophia Durable Conversation Persistence** (ADR 0002), Sophia possesses server-authoritative dialogue history, turn-level idempotency, and strict session isolation.
@@ -158,3 +158,18 @@ Before writing code, the transport layer is fully specified:
    - *Rejected:* Aura-2 lacks native conversational state and cannot provide native `SpeechInterrupted` character offset tracking.
 3. **Continuous Ambient Listening for v1:**
    - *Rejected:* Creates false positives, acoustic echo loops, privacy concerns, and unnecessary streaming costs. PTT-only is strictly enforced for Phase 4.
+
+---
+
+## Phase 4A Implementation Status (Verified: 2026-09-16)
+
+The foundational session and transport layer (Phase 4A) has been implemented and verified with zero audio/VAD/STT/TTS code:
+- **`src/lib/server/live/types.ts`**: Canonical modality states (`IDLE`, `LISTENING`, `THINKING`, `SPEAKING`, `INTERRUPTED`, `RECONNECTING`, `ERROR`), session records, and WebSocket framing protocol.
+- **`src/lib/server/live/ticket-store.ts`**: Single-use 60-second ephemeral ticket generation and verification.
+- **`src/lib/server/live/auth.ts`**: HTTP upgrade authentication validating cookies, dev credentials, or ephemeral tickets.
+- **`src/lib/server/live/session-manager.ts`**: In-memory session registry enforcing single active connection per founder (close code `4409`), 60s resume window, and state transitions.
+- **`src/lib/server/live/server.ts`**: Companion HTTP/WebSocket server handling upgrades, heartbeats, and control framing.
+- **`src/app/api/auth/ws-ticket/route.ts`**: Authenticated Next.js route for issuing WebSocket tickets.
+- **`scripts/live-gateway.ts`**: Standalone runner script (`npm run dev:ws`) for companion server execution on port 3001.
+- **`tests/sophia/phase4a_live_session_foundation.test.ts`**: 10 automated test scenarios (27/27 assertions passing) covering health checks, 401 unauthenticated fail-closed, ticket consumption, PTT state transitions, barge-in `INTERRUPT`, single-tenant supersession (`4409`), session resumption within 60s, and ping/pong heartbeats.
+
