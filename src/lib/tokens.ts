@@ -347,7 +347,6 @@ export interface PerformanceBudgetConfig {
   enableComplexGlowFilters: boolean;
   enableShockwaves: boolean;
   pulseDurationMultiplier: number;
-  enableDepthOfField: boolean;
 }
 
 export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConfig> = {
@@ -357,7 +356,6 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: true,
     enableShockwaves: true,
     pulseDurationMultiplier: 1.0,
-    enableDepthOfField: true,
   },
   balanced: {
     maxParticlesPerConduit: 3,
@@ -365,7 +363,6 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: false,
     enableShockwaves: true,
     pulseDurationMultiplier: 1.2,
-    enableDepthOfField: true,
   },
   minimal: {
     maxParticlesPerConduit: 1,
@@ -373,27 +370,16 @@ export const EFFECTS_BUDGET_CONFIGS: Record<EffectsBudget, PerformanceBudgetConf
     enableComplexGlowFilters: false,
     enableShockwaves: false,
     pulseDurationMultiplier: 1.5,
-    enableDepthOfField: false,
   },
 };
 
 /* ------------------------------------------------------ Spatial Depth */
 
 export const SPATIAL_TOKENS = {
-  depthOfField: {
-    nearBand: 0.62,
-    midBand: 0.98,
-    blurPx: [0, 1, 2] as const,
-  },
   springCamera: {
     omega: 15,
     dampingRatio: 1,
     settleEpsilon: 0.05,
-  },
-  grain: {
-    tileSize: 128,
-    seed: 20260914,
-    strength: 0.038,
   },
 } as const;
 
@@ -441,34 +427,3 @@ export const GEOMETRY_SIZES: Record<NodeGeometryType, Record<NodeSize, { width: 
     lg: { width: 150, height: 52, radius: "9999px" },
   },
 };
-
-/* -------------------------------------------------- Micro-Grain Utility */
-
-let grainTileCache: string | null = null;
-
-export function grainTileUrl(): string {
-  if (typeof document === "undefined") return "";
-  if (grainTileCache) return grainTileCache;
-  const { tileSize, seed } = SPATIAL_TOKENS.grain;
-  const c = document.createElement("canvas");
-  c.width = c.height = tileSize;
-  const x = c.getContext("2d")!;
-  const img = x.createImageData(tileSize, tileSize);
-  let s = seed >>> 0;
-  const rnd = () => {
-    s |= 0;
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = Math.floor(rnd() * 256);
-    img.data[i] = v;
-    img.data[i + 1] = v;
-    img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  x.putImageData(img, 0, 0);
-  grainTileCache = c.toDataURL();
-}

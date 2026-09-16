@@ -1,12 +1,21 @@
-const { chromium } = require('@playwright/test');
+const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const URL = process.env.PREVIEW_URL || 'http://127.0.0.1:3000';
+const URL = process.env.PREVIEW_URL || 'http://127.0.0.1:3000/design-system/workflow';
 
 (async () => {
-  fs.mkdirSync(path.join(process.cwd(), 'artifacts'), { recursive: true });
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  let browser;
+  const launchOptions = { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'] };
+  try {
+    browser = await chromium.launch({ channel: 'chrome', ...launchOptions });
+  } catch {
+    try {
+      browser = await chromium.launch({ channel: 'msedge', ...launchOptions });
+    } catch {
+      browser = await chromium.launch(launchOptions);
+    }
+  }
   const errors = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
   page.on('pageerror', error => errors.push(error.message));

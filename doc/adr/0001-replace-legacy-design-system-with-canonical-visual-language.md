@@ -35,17 +35,20 @@ We replace the old design system with the new Canonical Visual Language as the s
   - `canonical-node.tsx` (Canonical presentation node, perimeter, and icon containers)
   - `connector.tsx` (Canonical SVG connector with progressive flow)
 
-### 2. Strict Architectural Boundaries (What is Intentionally NOT Migrated)
+### 2. Strict Architectural Boundaries & Production Adapter Strategy
 - **Prisma remains the sole authoritative ORM**: Standalone Drizzle ORM files (`drizzle.config.json`, `src/db/index.ts`, `src/db/schema.ts`) and standalone Postgres dependencies (`pg`) from `upload/new design-system` were strictly rejected.
 - **Backend & Control Plane Untouched**: Authoritative workflow definitions, step state machines, founder authorization gates, audit trails, and Sophia Phase 2 grounding intelligence remain completely unchanged.
-- **Specimen vs. Production Data Isolation**:
-  - The design-system laboratory routes (`/design-system`, `/design-system/workflow`) use `fallbackTokens` and controlled specimen fixtures.
-  - Production OS routes (`/`, desktop flow) consume real, authoritative `GraphDTO` and runtime state. No demo data is permitted in production code paths.
+- **Specimen vs. Production Data & Component Isolation**:
+  - **Specimen Laboratory** (`/design-system`, `/design-system/workflow`): Consumes `fallbackTokens`, static fixtures, `NodeCard` ([src/components/node-card.tsx](file:///e:/Projects/SamjuniorsProducts/SamjuniorsOS/src/components/node-card.tsx)), `NodeOrb` ([src/components/node-orb.tsx](file:///e:/Projects/SamjuniorsProducts/SamjuniorsOS/src/components/node-orb.tsx)), `FlowCanvas` ([src/components/flow-canvas.tsx](file:///e:/Projects/SamjuniorsProducts/SamjuniorsOS/src/components/flow-canvas.tsx)), and `FxEngine` / `workflow-runner.ts` for fluid canvas simulations.
+  - **Production Desktop** (`/`, `FlowDesktop.tsx`): Consumes real, authoritative `GraphDTO` from `/api/graph`. To preserve working windowing, coordinate systems, node inspection, and interaction contracts without an invasive rewrite, production consumes the compatibility adapters `CanonicalNode` / `Phase4Node` ([src/components/canonical-node.tsx](file:///e:/Projects/SamjuniorsProducts/SamjuniorsOS/src/components/canonical-node.tsx)) and `Connector` / `Phase4Connector` ([src/components/connector.tsx](file:///e:/Projects/SamjuniorsProducts/SamjuniorsOS/src/components/connector.tsx)), fully styled with CVL tokens and colors. Direct migration of `FlowDesktop.tsx` to `NodeCard` is tracked as future technical debt.
+- **Clean Flat Canvas (Grain & DOF Removal)**:
+  - Removed Phase 4.5 micro-grain texture (`SPATIAL_TOKENS.grain`, `grainTileUrl`, `useGrainTileUrl`) from the workflow canvas to ensure a clean, crisp, flat surface.
+  - Removed peripheral depth-of-field blur (`SPATIAL_TOKENS.depthOfField`, `enableDepthOfField`, `dofBlurFor`, CSS filter blur) so all workflow nodes remain visually sharp regardless of viewport distance.
 
 ### 3. Migration & Deletion Results
 1. Migrated global CSS (`src/app/globals.css`, `src/os/index.css`) and layout.
 2. Installed canonical libraries in `src/lib/` and canonical components in `src/components/`.
-3. Updated production consumers (`src/os/lib/flow.ts`, `src/os/components/FlowDesktop.tsx`) to consume canonical tokens and components.
+3. Updated production consumers (`src/os/lib/flow.ts`, `src/os/components/FlowDesktop.tsx`) to consume canonical tokens and compatibility components (`Phase4Node`, `Phase4Connector`).
 4. Replaced the old specimen (`src/app/design-system/workflow/page.tsx`) and added `/design-system` with the new 12-section laboratory.
 5. Added read-only design token inspection API route (`src/app/api/tokens/route.ts`).
 6. Verified zero remaining imports of `components/workflow` across the entire codebase.
@@ -53,9 +56,9 @@ We replace the old design system with the new Canonical Visual Language as the s
 
 ## Risks & Mitigations
 - **Risk**: Visual or layout regressions in the production desktop canvas (`FlowDesktop.tsx`).
-  - **Mitigation**: Adapt `Phase4NodeCard` and `Phase4Connector` at the presentation boundary to map `FlowNode` and `FlowEdge` models directly to the new `NodeCard`, `NodeOrb`, and SVG geometry without mutating underlying data contracts.
+  - **Mitigation**: Implemented `canonical-node.tsx` and `connector.tsx` at the presentation boundary to map `FlowNode` and `FlowEdge` models directly to CVL styling without mutating underlying data contracts or breaking existing interactions. Direct unification into `NodeCard` is deferred to avoid destabilizing production windowing.
 - **Risk**: Animation performance or CPU overhead.
-  - **Mitigation**: The `FxEngine` includes visibility culling (IntersectionObserver), document visibility detection, frame clock delta clamping, and automatic animation disabling under `prefers-reduced-motion: reduce`.
+  - **Mitigation**: The `FxEngine` includes visibility culling (IntersectionObserver), document visibility detection, frame clock delta clamping, and automatic animation disabling under `prefers-reduced-motion: reduce`. Peripheral filter blur and grain generation have been eliminated.
 
 ## Verification Evidence
 1. **Design System Execution Suite**:
@@ -68,10 +71,5 @@ We replace the old design system with the new Canonical Visual Language as the s
    Command: `npx next build --webpack`
    Result: **Clean exit code 0**; all 30 routes (including `/`, `/api/tokens`, `/design-system`, `/design-system/workflow`) generated and optimized successfully.
 4. **Browser Verification**:
-   Executed automated browser walkthrough inspecting `/design-system`, `/design-system/workflow`, and `/`.
-   Results:
-   - Zero console errors or hydration mismatches.
-   - Sophia interactive 3D orb and prompt bar rendered crisply.
-   - Spatial canvas nodes, connectors, and perimeters render accurately with live state.
-   - Node Inspector displays authoritative stages (1/9 stages complete) and topology.
-   - Attention, Decisions, and Agent Chat panels operate smoothly.
+   - **Automated Specimen Suite**: `node tests/design-system/browser.cjs` (defaults to `http://127.0.0.1:3000/design-system/workflow`, supports `PREVIEW_URL` override). Verifies canvas ignition, pause clock, port alignment, and mobile/reduced-motion conformance.
+   - **DesktopOS Inspection**: Walkthrough inspecting `/` verified zero console errors, Sophia interactive 3D orb, calm baseline, and live stages in the Node Inspector.

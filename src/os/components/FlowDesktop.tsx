@@ -18,7 +18,6 @@ import {
   Phase4Node,
   IconContainer,
   IconOnlyContent,
-  useGrainTileUrl,
 } from "@/components/canonical-node";
 import { Connector as Phase4Connector } from "@/components/connector";
 import {
@@ -26,12 +25,10 @@ import {
   EXECUTION_LANGUAGE,
   ENTITY_IDENTITY,
   SPATIAL_TOKENS,
-  EFFECTS_BUDGET_CONFIGS,
   type NodeGeometryType,
   type NodeStateType,
   type NodeIndicator,
   type ExecutionPerimeterSpec,
-  type EffectsBudget,
 } from "@/lib/tokens";
 import {
   SERVICE_BRANDS,
@@ -399,7 +396,6 @@ function WorkCard({
   hasSelection,
   badge,
   perimeter,
-  depthBlur = 0,
   onClick,
   onDoubleClick,
 }: {
@@ -408,8 +404,6 @@ function WorkCard({
   hasSelection?: boolean;
   badge?: ReactNode;
   perimeter?: ExecutionPerimeterSpec | null;
-  /** Phase 4.5 — peripheral depth-of-field defocus (px; 0 = crisp). */
-  depthBlur?: number;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -523,9 +517,6 @@ function WorkCard({
         top: n.y - n.h / 2,
         width: n.w,
         height: n.h,
-        // Phase 4.5 — spatial depth-of-field (peripheral defocus bands).
-        // Filter blur never affects hit testing or interaction geometry.
-        ...(depthBlur > 0 ? { filter: `blur(${depthBlur}px)` } : null),
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -656,7 +647,6 @@ function Phase4NodeCard({
   hasSelection,
   badge,
   perimeter,
-  depthBlur = 0,
   onClick,
   onDoubleClick,
 }: {
@@ -665,8 +655,6 @@ function Phase4NodeCard({
   hasSelection?: boolean;
   badge?: ReactNode;
   perimeter?: ExecutionPerimeterSpec | null;
-  /** Phase 4.5 — peripheral depth-of-field defocus (px; 0 = crisp). */
-  depthBlur?: number;
   onClick?: (n: FlowNode) => void;
   onDoubleClick?: (n: FlowNode) => void;
 }) {
@@ -776,9 +764,6 @@ function Phase4NodeCard({
         top: n.y - n.h / 2,
         width: n.w,
         height: n.h,
-        // Phase 4.5 — spatial depth-of-field (peripheral defocus bands).
-        // Filter blur never affects hit testing or interaction geometry.
-        ...(depthBlur > 0 ? { filter: `blur(${depthBlur}px)` } : null),
       }}
       onClick={(e) => {
         e.stopPropagation();
@@ -1709,34 +1694,6 @@ export default function FlowDesktop({
   const tx = vw / 2 + cam.x - WORLD.CX * cam.k;
   const ty = vh / 2 + cam.y - WORLD.CY * cam.k;
 
-  /* Phase 4.5 — spatial depth-of-field. Presentation-only: quantized
-     focus bands around the viewport focus (center) so near content stays
-     crisp while peripheral work receives ~1px / ~2px defocus. Bands are
-     quantized so blur only changes at a boundary crossing (never animated
-     continuously), and CSS filter blur does not affect hit testing. The
-     SELECTED node is always crisp — attention overrides depth. Degrades
-     gracefully: small viewports derive the minimal effects budget, which
-     disables depth-of-field entirely (flat crisp schematic). */
-  const effectsBudget: EffectsBudget = vw < 700 ? "minimal" : "full";
-  const dofEnabled = EFFECTS_BUDGET_CONFIGS[effectsBudget].enableDepthOfField;
-  const dofBlurFor = useCallback(
-    (n: FlowNode): number => {
-      if (!dofEnabled || selected?.id === n.id) return 0;
-      const sx = n.x * cam.k + tx;
-      const sy = n.y * cam.k + ty;
-      const nd = Math.hypot(sx - vw / 2, sy - vh / 2) / (Math.min(vw, vh) / 2);
-      const { nearBand, midBand, blurPx } = SPATIAL_TOKENS.depthOfField;
-      if (nd < nearBand) return blurPx[0];
-      if (nd < midBand) return blurPx[1];
-      return blurPx[2];
-    },
-    [dofEnabled, selected, cam.k, tx, ty, vw, vh]
-  );
-
-  // Phase 4.5 — micro-grain backdrop: rendered once to an offscreen tile
-  // (hydration-safe shared hook), composited beneath the world layer.
-  const grainUrl = useGrainTileUrl();
-
   useEffect(() => {
     const engine = new FlowEngine(canvasRef.current!);
     engineRef.current = engine;
@@ -2150,17 +2107,6 @@ export default function FlowDesktop({
             )}
             <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 30%, rgba(30,60,120,0.25), transparent 62%), radial-gradient(ellipse at 50% 115%, rgba(40,90,180,0.22), transparent 55%)" }} />
 
-            {/* Phase 4.5 — micro-grain backdrop: static seeded noise tile at
-                ≤4% strength, beneath the world layer (never on semantic
-                surfaces or text); a static texture implies no motion and is
-                safe under reduced motion. */}
-            {grainUrl && (
-              <div
-                className="pointer-events-none absolute inset-0"
-                style={{ backgroundImage: `url(${grainUrl})`, backgroundRepeat: "repeat", opacity: SPATIAL_TOKENS.grain.strength }}
-              />
-            )}
-
             {/* world layer */}
             <div
               className="absolute left-0 top-0 h-0 w-0"
@@ -2237,7 +2183,6 @@ export default function FlowDesktop({
                   perimeter (progressive fill on its own shape; null = idle). */}
               {graph.nodes.map((n) => {
                 const perimeter = perimeterForNode(n, visibleEdges);
-                const depthBlur = dofBlurFor(n);
                 return n.type === "workflow" ? (
                   <WorkCard
                     key={n.id}
@@ -2246,7 +2191,6 @@ export default function FlowDesktop({
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
                     perimeter={perimeter}
-                    depthBlur={depthBlur}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}
@@ -2260,7 +2204,6 @@ export default function FlowDesktop({
                     hasSelection={!!selected}
                     badge={badgeFor(n)}
                     perimeter={perimeter}
-                    depthBlur={depthBlur}
                     onClick={(node: FlowNode) => {
                       if (!panStart.current?.moved) handleNodeClick(node);
                     }}

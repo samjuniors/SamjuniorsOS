@@ -170,6 +170,23 @@ Browser → <voice-widget> custom element
 ### Summary:
 The Jarvis prototypes establish the correct **interaction semantics** (intent → work → decision → outcome) and **visual language** (animated orb, state colors, dialogue-first). Voice should extend this, not replace it. The prototypes are client-side simulations with no voice infrastructure — everything below the UX metaphor is greenfield.
 
+### 5.2 External Reference: OpenJarvis System Analysis
+
+**[EXTERNAL REFERENCE SYSTEM]** OpenJarvis was analyzed as an external reference system for desktop-native, local-first personal AI operations:
+
+- **Local-first AI architecture**: Operating device-side with local models, reducing dependency on external cloud services for private operations.
+- **Tauri desktop application pattern**: Rust-backed webview container separating the OS shell and local system access from presentation.
+- **Surface structure**: Module partitioning covering Chat, Dashboard, Settings, Agents, Data Sources, and Execution Logs.
+- **Command Palette**: Global keyboard-first modal for navigation and immediate command triggering.
+- **Device-oriented operation**: Managing local system actions and device context directly.
+
+**Architectural Assessment for SamJuniorsOS:**
+- **What to Adapt (Architectural Pattern)**: Global command palette navigation affordances and data source/agent inspection surface patterns.
+- **What to Reject (Boundary Guard)**:
+  - DO NOT copy OpenJarvis UI.
+  - DO NOT turn OpenJarvis into a SamJuniors product specification.
+  - SamJuniorsOS is an autonomous executive operating system on PostgreSQL/Prisma with cryptographic founder authorization gates, whereas OpenJarvis is a single-user local-device assistant.
+
 ---
 
 ## 6. HERMES / EXISTING AGENT ANALYSIS
@@ -223,6 +240,24 @@ The voice layer adds **only**:
 4. Voice-specific UI state (listening, thinking, speaking)
 
 Everything else flows through the existing Sophia stack unchanged.
+
+### 6.2 External Reference: Hermes Agent Architecture Analysis
+
+**[EXTERNAL REFERENCE SYSTEM]** Hermes Agent was evaluated as an external reference architecture for multi-channel, execution-heavy autonomous agents:
+
+- **Real terminal / tool output execution**: Streaming actual process/tool stdout and stderr back to the reasoning context with deterministic exit codes.
+- **Persistent memory and continuous learning**: Storing run artifacts, failure patterns, and operational knowledge across agent invocations.
+- **Scheduled automation**: Time-based and trigger-based scheduled tasks executing without active human presence.
+- **Subagents & parallel work distribution**: Delegating specialized sub-tasks to bounded subagent instances with isolated context windows.
+- **Multiple execution backends**: Decoupling LLM reasoning from tool execution environments (sandboxed containers, local shells, cloud runners).
+- **Multi-channel interaction**: Interfacing natively across messaging channels (Telegram, Slack, Discord, CLI, web).
+
+**Architectural Assessment for SamJuniorsOS:**
+- **What to Adapt (Architectural Pattern)**: The subagent delegation pattern and multi-channel ingress align directly with Sophia's cognitive ingress and MultiAgentOrchestrator delegation.
+- **What to Reject (Boundary Guard)**:
+  - DO NOT copy Hermes UI or CLI workflows.
+  - DO NOT turn Hermes into a SamJuniors product specification.
+  - In Hermes, agents often execute arbitrary shell commands directly; in SamJuniorsOS, all external side-effects and financial/communication mutations MUST pass through the `SideEffectAuthorizationGate` and `ConstitutionalVerifier` with cryptographic payload binding.
 
 ---
 

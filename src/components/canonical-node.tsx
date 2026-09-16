@@ -6,7 +6,6 @@ import {
   EXECUTION_LANGUAGE,
   PERIMETER_LANGUAGE,
   GEOMETRY_SIZES,
-  grainTileUrl,
   type ExecutionSemantic,
   type ExecutionPerimeterSpec,
   type NodeGeometryType,
@@ -443,13 +442,3 @@ export const CanonicalNode: React.FC<CanonicalNodeProps> = ({
 
 export { CanonicalNode as Phase4Node };
 export { CanonicalNode as Node };
-
-const grainSubscribe = (): (() => void) => () => {};
-
-export function useGrainTileUrl(): string {
-  return useSyncExternalStore(
-    grainSubscribe,
-    () => grainTileUrl(),
-    () => ""
-  );
-}

@@ -64,3 +64,4 @@ db/*.db
 tool-results/
 qa-shots/
 upload/
+artifacts/
