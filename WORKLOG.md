@@ -1,5 +1,47 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 4 — Sophia Live Interaction (Architecture & Research Report) (2026-09-16)
+
+**Status:** ARCHITECTURE & RESEARCH COMPLETED (ADR 0003 PROPOSED). Completed exhaustive repository capability audit, technical research (VAD, STT, TTS, WebSockets, S2S Realtime models), deterministic barge-in/interruption design, security governance analysis, latency and cost modeling, and phased implementation breakdown. Verified that voice remains strictly an input/output modality without bypassing `SophiaServerGateway` or `SideEffectAuthorizationGate`. ZERO production code modified, ZERO dependencies installed. Awaiting Founder review and sign-off.
+
+### Architectural Invariants & Key Findings
+
+1. **Modality Invariant**:
+   - `VOICE IS A MODALITY. SOPHIA IS THE COGNITIVE/EXECUTIVE LAYER. THE EXISTING CONTROL PLANE REMAINS THE AUTHORITY.`
+   - No second Sophia, no voice memory store, no direct audio-to-tool bypass.
+2. **Cascaded Architecture Selected (ADR 0003)**:
+   - Client Silero VAD v5 (ONNX/WASM Web Worker) filters silence locally and enables instantaneous client-side mute.
+   - Node.js authenticated WebSocket (`/api/live-interaction`) transports PCM frames during speech.
+   - Deepgram Flux / Nova-3 handles streaming STT with conversational turn-taking.
+   - Canonical textual turn flows into `SophiaContextAssembler` → `SophiaIntentClassifier` → `SophiaServerGateway`.
+   - Streaming TTS (Deepgram Flux/Aura-2 or local Kokoro 82M) synthesizes response chunks back to client.
+3. **Barge-in / Interruption Model**:
+   - Client VAD mutes audio instantly (<50ms) upon user speech detection.
+   - WebSocket emits `INTERRUPT` frame to server; server cancels active TTS stream.
+   - `ConversationStore` tracks `text_spoken` vs `text_remaining`; interrupted turn context is preserved to prevent cognitive hallucination.
+   - Consequential executions (directives/side-effects) are NOT aborted by audio barge-in unless an explicit verbal steering command is received and validated.
+4. **Security & Session Governance**:
+   - WebSocket handshake bound strictly to authenticated Founder session.
+   - Spoken approvals ("I approve this") are parsed as `approval_proposal` candidates requiring gateway verification; voice alone cannot execute high-risk mutations.
+5. **Decoupled State Machine**:
+   - Modality states (`IDLE`, `LISTENING`, `TRANSCRIBING`, `THINKING`, `SPEAKING`, `INTERRUPTED`, `RECONNECTING`, `ERROR`) kept strictly distinct from cognitive states (`READY`, `UNDERSTANDING`, `WORKING`, `WAITING_FOR_FOUNDER`, `EXECUTING`, `COMPLETED`, `BLOCKED`).
+
+### Implementation Boundary Defined
+
+- **Phase 4A**: Authenticated WebSocket Session Gateway & Client State Machine.
+- **Phase 4B**: Client Silero VAD & Audio Streaming Ingress (PCM AudioWorklet).
+- **Phase 4C**: Streaming STT Integration & Final Transcript Dispatch to Sophia Gateway.
+- **Phase 4D**: Streaming TTS Egress & Real-Time Audio Playback.
+- **Phase 4E**: Deterministic Barge-in & Interruption Context Reconciliation.
+- **Phase 4F**: UI Integration (Executive Voice Surface / Orb / Waveform).
+- **Phase 4G**: Hardening, Network Reconnection & End-to-End Latency Verification.
+
+### Next Action
+
+- STOP condition reached. Await Founder review and approval of Phase 4 Architecture & Research Report before writing code.
+
+---
+
 ## Phase 3.1 — Conversation Persistence Closure + Architecture Reconciliation (2026-09-16)
 
 **Status:** SEALED. Completed rigorous Phase 3 closure audit and architectural reconciliation. Verified authoritative persistence mechanism, fixed idempotency caching defects and in-flight concurrency race condition, enforced server-authoritative history boundaries, resolved React Compiler linter errors in `ChatPanel`, reconciled ADR 0002 and `doc/ROADMAP.md` with real runtime facts, and verified 100% test pass rate across Phase 1, 2, and 3 test suites.
