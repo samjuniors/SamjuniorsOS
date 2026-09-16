@@ -3,14 +3,14 @@
 
 **CURRENT STATUS:**
 - Canonical design system migration completed and verified (ADR 0001).
-- Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
-- Phase 4: Sophia Live Interaction Research & Architecture COMPLETED (ADR 0003). Cascaded streaming pipeline (Client Silero VAD → WebSocket → Deepgram Flux STT → Sophia Server Gateway → Deepgram Flux/Aura TTS → Audio Buffer) designed with deterministic barge-in, strict session security, and ConversationStore integration.
+- Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
+- Phase 4: Sophia Live Interaction Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline (Client Silero VAD → Companion Node WebSocket on port 3001 → Deepgram Flux STT → Sophia Server Gateway → Deepgram Flux TTS `/v2/speak` → Audio Buffer) with native Flux interruption reconciliation, PTT-only initial scope, fully specified authentication/reconnect/idempotency, and ConversationStore integration.
 
 **NEXT PHASE:**
-Phase 4: Sophia Live Interaction Implementation (Phase 4A: Authenticated WebSocket Session Gateway).
+Phase 4: Sophia Live Interaction Implementation (Phase 4A: Authenticated Companion WebSocket Session Gateway).
 
 **NEXT ACTION:**
-STOP condition active. Await Founder review and approval of Phase 4 Architecture Report and ADR 0003 before commencing implementation. (DO NOT implement Voice, VAD, STT, or TTS until approved).
+Phase 4A coding: NOT YET. STOP condition active. Architecture approved with corrections; await Founder's explicit go-ahead before creating files or installing packages.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

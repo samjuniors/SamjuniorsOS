@@ -1,30 +1,28 @@
 # WORKLOG.md - Canonical Operational History
 
-## Phase 4 — Sophia Live Interaction (Architecture & Research Report) (2026-09-16)
+## Phase 4 — Sophia Live Interaction (Architecture Reconciled & Approved with Corrections) (2026-09-16)
 
-**Status:** ARCHITECTURE & RESEARCH COMPLETED (ADR 0003 PROPOSED). Completed exhaustive repository capability audit, technical research (VAD, STT, TTS, WebSockets, S2S Realtime models), deterministic barge-in/interruption design, security governance analysis, latency and cost modeling, and phased implementation breakdown. Verified that voice remains strictly an input/output modality without bypassing `SophiaServerGateway` or `SideEffectAuthorizationGate`. ZERO production code modified, ZERO dependencies installed. Awaiting Founder review and sign-off.
+**Status:** ARCHITECTURE APPROVED WITH CORRECTIONS (ADR 0003). Phase 4A coding: NOT YET. GitHub HEAD and Phase 3.1 verified on remote `main` (`git push origin main` completed). Zero production code modified, zero packages installed. Implementation remains gated until Founder commands start of Phase 4A.
 
-### Architectural Invariants & Key Findings
+### Key Corrections & Architectural Decisions (ADR 0003)
 
-1. **Modality Invariant**:
-   - `VOICE IS A MODALITY. SOPHIA IS THE COGNITIVE/EXECUTIVE LAYER. THE EXISTING CONTROL PLANE REMAINS THE AUTHORITY.`
-   - No second Sophia, no voice memory store, no direct audio-to-tool bypass.
-2. **Cascaded Architecture Selected (ADR 0003)**:
-   - Client Silero VAD v5 (ONNX/WASM Web Worker) filters silence locally and enables instantaneous client-side mute.
-   - Node.js authenticated WebSocket (`/api/live-interaction`) transports PCM frames during speech.
-   - Deepgram Flux / Nova-3 handles streaming STT with conversational turn-taking.
-   - Canonical textual turn flows into `SophiaContextAssembler` → `SophiaIntentClassifier` → `SophiaServerGateway`.
-   - Streaming TTS (Deepgram Flux/Aura-2 or local Kokoro 82M) synthesizes response chunks back to client.
-3. **Barge-in / Interruption Model**:
-   - Client VAD mutes audio instantly (<50ms) upon user speech detection.
-   - WebSocket emits `INTERRUPT` frame to server; server cancels active TTS stream.
-   - `ConversationStore` tracks `text_spoken` vs `text_remaining`; interrupted turn context is preserved to prevent cognitive hallucination.
-   - Consequential executions (directives/side-effects) are NOT aborted by audio barge-in unless an explicit verbal steering command is received and validated.
-4. **Security & Session Governance**:
-   - WebSocket handshake bound strictly to authenticated Founder session.
-   - Spoken approvals ("I approve this") are parsed as `approval_proposal` candidates requiring gateway verification; voice alone cannot execute high-risk mutations.
-5. **Decoupled State Machine**:
-   - Modality states (`IDLE`, `LISTENING`, `TRANSCRIBING`, `THINKING`, `SPEAKING`, `INTERRUPTED`, `RECONNECTING`, `ERROR`) kept strictly distinct from cognitive states (`READY`, `UNDERSTANDING`, `WORKING`, `WAITING_FOR_FOUNDER`, `EXECUTING`, `COMPLETED`, `BLOCKED`).
+1. **GitHub Reconciliation**:
+   - Reconciled local `main` with GitHub remote: `origin/main` was at `052d54c`, while local `main` had `2732f2c` (Phase 3.1) and `af03df9` (Phase 4 docs). Executed `git push origin main`. Both local and remote are now synchronized at `af03df9`.
+   - **Phase 3.1 verified on main**: Commit `2732f2c` ("feat(conversation): complete Phase 3.1 persistence closure and reconciliation") is fully merged and active on GitHub `main`.
+2. **Deepgram Flux TTS vs. Aura-2 Separation**:
+   - Explicitly separated models: Deepgram Aura-2 ($0.030/1k chars) is traditional stateless text-to-speech. Deepgram Flux TTS (`/v2/speak`, ~$0.045/1k chars) is a stateful conversational streaming engine with native event progress tracking (`SpeechStarted`, `SpeechMetadata`, `SpeechInterrupted`, `Flushed`).
+3. **Native Flux Interruption Reconciliation**:
+   - Replaced server-side character timing estimation with Deepgram Flux's native `SpeechInterrupted` event protocol. When client detects speech, it immediately mutes output and emits an `Interrupt` frame; Flux TTS halts audio generation and authoritatively returns `text_spoken` and `text_remaining` offsets to synchronize `ConversationStore`.
+4. **Latency Budget Clarification**:
+   - 780ms is reclassified as a **theoretical design target**, NOT an expected result. Realistic conversational latency is budgeted at **800ms – 1,250ms** accounting for real-world network jitter, audio buffer sizes, and variable LLM first-token generation. Status: **NOT VERIFIED** until Phase 4 benchmark suites run.
+5. **PTT-Only Initial Scope**:
+   - Continuous listening and wake-words are excluded from Phase 4. Initial release is strictly **Push-to-Talk (PTT)** (holding `Spacebar` or mic button) to eliminate room acoustic leakage, false triggers, and acoustic echo loops.
+6. **Next.js WebSocket Hosting Reality**:
+   - Next.js App Router route handlers (`route.ts`) cannot host raw WebSockets due to lack of Node HTTP `upgrade` hooks. The WebSocket gateway is architected as a dedicated TypeScript companion process (listening on companion port 3001, e.g. `npm run dev:ws`) sharing the same codebase, auth helpers, and stores.
+7. **Full Transport Specification**:
+   - Auth: Session cookie validation or signed tickets (`/api/auth/ws-ticket`), close code `4401` on failure, single-connection-per-founder enforcement.
+   - Reconnect: Exponential backoff (1s, 2s, 4s), 60-second in-memory session resume window with `sessionId`.
+   - Idempotency: Client-generated `turnId` with `inFlightTurns` concurrency locking and `${turnId}:assistant` response caching.
 
 ### Implementation Boundary Defined
 

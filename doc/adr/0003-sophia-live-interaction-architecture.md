@@ -1,7 +1,7 @@
 # ADR 0003: Sophia Live Interaction Architecture (Voice Modality Adapter)
 
 ## Status
-PROPOSED — 2026-09-16 (Pending Founder Review & Decision Gate)
+APPROVED WITH CORRECTIONS — 2026-09-16 (Architecture Approved; Implementation Gated)
 
 ## Context & Problem
 Following the completion and sealing of **Phase 3: Sophia Durable Conversation Persistence** (ADR 0002), Sophia possesses server-authoritative dialogue history, turn-level idempotency, and strict session isolation.
@@ -27,24 +27,24 @@ Voice must NOT become an autonomous second intelligence, a parallel conversation
 
 ## Architectural Decision
 
-We adopt a **Cascaded Streaming Pipeline (Browser VAD → Server WebSocket Gateway → Streaming STT → Sophia Server Gateway → Streaming TTS → Browser Playback)** as the official architecture for Sophia Live Interaction.
+We adopt a **Cascaded Streaming Pipeline over a Companion WebSocket Process** as the official architecture for Sophia Live Interaction.
 
 ### 1. The Cascaded Ingress/Egress Pipeline
 
 ```
-[ Founder Microphone ]
+[ Founder Microphone (PTT: Spacebar Hold / Button) ]
         │
         ▼ (Raw PCM / 16kHz AudioWorklet)
-[ Client Silero VAD (ONNX/WASM Worker) ] ──(Speech Start/Stop Signals)──┐
-        │                                                               │
-        ▼ (Audio Frames only during active speech)                      │
-[ Authenticated WebSocket (/api/live-interaction) ]                     │
-        │                                                               │
-        ▼                                                               │
-[ Server Live Session Manager ] ◄───────────────────────────────────────┘
+[ Client Silero VAD (ONNX/WASM Worker) ] ──(Local Mute on Speech Start)──┐
+        │                                                                │
+        ▼ (Audio Frames only during active speech)                       │
+[ Authenticated Companion WebSocket (Port 3001) ]                        │
+        │                                                                │
+        ▼                                                                │
+[ Server Live Session Manager ] ◄────────────────────────────────────────┘
         │
         ▼ (Streaming Audio)
-[ Streaming STT Provider (Deepgram Flux / Nova-3) ]
+[ Deepgram Flux STT ] (Conversational Turn-Taking & Semantic Endpointing)
         │
         ├──► (Interim Transcripts ──► Streaming to UI preview)
         │
@@ -66,80 +66,95 @@ We adopt a **Cascaded Streaming Pipeline (Browser VAD → Server WebSocket Gatew
 [ ConversationStore.saveMessage('assistant', reply) ]
         │
         ▼ (Text Streaming Chunks)
-[ Streaming TTS Provider (Deepgram Flux/Aura-2 or Kokoro TTS) ]
+[ Deepgram Flux TTS ] (Stateful Conversational Speech API: /v2/speak)
         │
         ▼ (Streaming Audio Chunks / Opus)
 [ Client Audio Playback Buffer ] ──► [ Speaker / Headphones ]
 ```
 
-### 2. Component Technology Selection
+### 2. Component Technology Selection & Separation
 
-| Component | Selected Technology | Role & Justification |
-| :--- | :--- | :--- |
-| **Client VAD** | **Silero VAD v5 (ONNX/WASM in Web Worker)** | Sub-1ms inference latency per 30ms frame. Runs locally in the browser; filters background noise and avoids streaming silence over the network. Provides immediate local mute of assistant audio upon user speech detection. |
-| **Transport** | **Node.js / Next.js WebSocket (`ws` / server-mediated)** | Low-overhead bidirectional binary/text transport. Avoids WebRTC SFU infrastructure complexity (Pipecat/LiveKit) which is excessive for a single-tenant desktop OS. Bound strictly to the founder's authenticated session cookie. |
-| **Streaming STT** | **Deepgram Flux STT / Nova-3** | Sub-300ms time-to-partial-transcript. Flux provides conversational turn-taking and semantic endpointing, preventing premature turn cuts during mid-sentence thinking pauses. |
-| **Cognitive Core** | **Existing Sophia Subsystems** | `SophiaContextAssembler`, `SophiaIntentClassifier`, and `SophiaServerGateway`. Zero duplication of intelligence or context budgeting. |
-| **Streaming TTS** | **Deepgram Flux / Aura-2 TTS** *(Primary Cloud)*<br>**Kokoro-82M TTS** *(Self-Hosted Fallback)* | Deepgram Flux/Aura-2 offers ~150–250ms time-to-first-audio (TTFA) with character-based pricing ($0.030/1k chars) and stateful stream flushing. Kokoro provides an open-source (Apache 2.0) 82M-parameter lightweight fallback for offline or zero-cloud-cost operation. |
+| Component | Selected Technology | Pricing / Licensing | Role & Distinctions |
+| :--- | :--- | :--- | :--- |
+| **Activation Mode** | **Push-to-Talk (PTT) ONLY** | N/A | **Initial Scope Constraint:** Phase 4 initial implementation is strictly Push-to-Talk (holding `Spacebar` or mic button). Continuous listening and wake-words are excluded to eliminate acoustic feedback, room noise leakage, and echo cancellation overhead. |
+| **Client VAD** | **Silero VAD v5 (ONNX/WASM in Web Worker)** | Open-Source (MIT) | Sub-1ms inference latency per 30ms frame. Runs locally in the browser; filters background noise and provides instantaneous local mute of assistant audio upon user speech detection. |
+| **Host Transport** | **Companion Node.js WebSocket Process (Port 3001)** | In-house Node process | **Deployment Reality:** Standard Next.js App Router route handlers (`route.ts`) cannot host WebSockets directly. The WebSocket gateway runs as a dedicated TypeScript companion process (`npm run dev:ws` / standalone worker) sharing the same code, auth, and store modules. |
+| **Streaming STT** | **Deepgram Flux STT** | $0.39 / hour | Conversational speech recognition with native semantic turn-taking, preventing premature cutoffs during mid-thought pauses. |
+| **Streaming TTS** | **Deepgram Flux TTS (`/v2/speak`)** | ~$0.045 / 1k characters | **Explicitly separated from Aura-2.** Aura-2 ($0.030/1k chars) is stateless text-to-speech. Flux TTS is a stateful conversational streaming engine with native progress tracking and interruption reconciliation. |
+| **Self-Hosted Fallback** | **Kokoro-82M TTS** | Open-Source (Apache 2.0) | 82M parameter lightweight fallback for offline or zero-cloud-cost operation. |
 
-### 3. Interruption & Barge-In Architecture
+### 3. Native Flux Interruption Reconciliation (Barge-In)
 
-Interruption must be deterministic and contextually aware:
-1. **Immediate Acoustic Mute (<50ms):** When the founder begins speaking while Sophia is talking, client-side Silero VAD triggers `SPEECH_START`. The browser immediately mutes audio output and flushes the local WebAudio playback queue.
-2. **Server Stream Cancellation (<100ms):** Client sends an `INTERRUPT` frame over the WebSocket with `{ lastAudioSequencePlayed, clientTimestamp }`.
-3. **TTS Pipeline Flush:** The server terminates active TTS streaming from the provider, stopping unnecessary audio generation and API billing.
-4. **Context Reconciliation:**
-   - The server calculates `text_spoken` (what reached the founder's ears before interruption) versus `text_remaining`.
-   - The assistant record in `ConversationStore` is updated with metadata: `{ interrupted: true, textSpoken: "...", textRemaining: "..." }`.
-   - When the founder's new utterance arrives, context assembly includes the note: `[Sophia was interrupted after saying: "..."]`. This prevents Sophia from being confused by references to sentences she never finished uttering.
-5. **Consequential Action Protection:** If Sophia was in the middle of executing a multi-agent directive or awaiting a high-risk governance gate, interruption CANNOT cancel or mutate the underlying execution unless the new utterance is an explicit steering command (`"Sophia, halt the current run"`). Interruption mutes the voice modality; it does NOT corrupt the control plane.
+Rather than building complex, error-prone server-side character timing estimation, the architecture leverages **Deepgram Flux TTS's native event protocol**:
+1. **Immediate Acoustic Mute (<50ms):** When the founder speaks during Sophia's reply, client-side Silero VAD triggers `SPEECH_START`. The browser immediately mutes audio output and flushes the local WebAudio playback queue.
+2. **Forwarding Native Interrupt:** Client sends `{ type: "INTERRUPT" }` over the WebSocket. The server immediately forwards the `Interrupt` control frame to the active Deepgram Flux TTS WebSocket.
+3. **Flux Native Reconciliation:** Deepgram Flux TTS immediately halts audio generation and emits its native `SpeechInterrupted` event, returning the authoritative `text_spoken` and `text_remaining` character split.
+4. **Conversation State Synchronization:** The server updates the assistant record in `ConversationStore`:
+   ```json
+   {
+     "metadata": {
+       "interrupted": true,
+       "textSpoken": "We have three active workstreams...",
+       "textRemaining": "and Julian's audit is complete.",
+       "fluxInterruptionEvent": true
+     }
+   }
+   ```
+5. **Contextual Continuity:** The next founder turn is assembled with the injected contextual marker:  
+   `[Sophia was interrupted after uttering: "We have three active workstreams..."]`.
+6. **Consequential Action Boundary:** Audio interruption mutes speech; it **does NOT abort or mutate in-flight orchestrations or database operations** unless the new spoken turn is an explicit steering command (`"Sophia, halt Julian's task"`).
 
-### 4. Security & Authorization Boundary
+### 4. WebSocket Security, Reconnect & Idempotency Specifications
 
-- **No Voice Bypass:** Voice is strictly an input modality for text generation.
-- **Session Handshake:** The WebSocket endpoint `/api/live-interaction` requires a valid authenticated Founder session (Clerk JWT / server session cookie). Unauthenticated connections fail-close with HTTP 401 / WebSocket close code 4401.
-- **Single-Tenant Concurrency Lock:** A founder may have only one active live voice stream at any time. A second connection from a new tab terminates or supersedes the previous connection.
-- **Approval Gate Invariant:** Spoken phrases such as *"I approve this"* or *"Execute the plan"* are classified as `approval_proposal` or `directive_proposal`. They MUST pass through `SophiaServerGateway` and `SideEffectAuthorizationGate`. Consequential mutations still require verified founder identity and payload cryptographic binding.
+Before writing code, the transport layer is fully specified:
 
-### 5. Conversation Persistence Integration
+#### A. Authentication
+- **Handshake Protocol:** The client connects to `ws://localhost:3001/live` (or reverse-proxied via Caddy).
+- **Session Proof:** The client forwards the session cookie (Clerk JWT / dev session cookie) during the HTTP upgrade request, OR provides an ephemeral single-use ticket acquired via an authenticated POST to `/api/auth/ws-ticket`.
+- **Validation:** The server validates the principal via `getAuthenticatedFounder(req)`. Unauthenticated connections are rejected with HTTP 401 / WebSocket close code `4401` (`Unauthorized`).
+- **Single Connection Guarantee:** Only one active live voice stream is permitted per founder session. A secondary connection closes the older socket with close code `4409` (`Session Superseded`).
 
-- Voice does NOT maintain an independent database or audio file repository.
-- Finalized user utterances and assistant text responses are stored in `ConversationStore` as standard `ChatMessage` records.
-- Raw audio buffers are discarded after playback and transcription; only canonical text, token metrics, and modality metadata (`modality: "voice"`) are retained.
+#### B. Reconnect Architecture
+- **State Preservation:** The client maintains a stable `sessionId` and `activeConversationId`.
+- **Backoff Strategy:** On network drop, client enters `RECONNECTING` state with exponential backoff (1s, 2s, 4s; max 3 retries) before dropping to text fallback.
+- **Session Resumption:** On reconnect, client sends:
+  ```json
+  { "type": "RESUME_SESSION", "sessionId": "...", "conversationId": "...", "lastAckTurnId": "..." }
+  ```
+  The server keeps session state alive in memory for 60 seconds. If resumed within the window, the audio stream continues seamlessly; if expired, the server provisions a fresh session bound to the authoritative `ConversationStore`.
 
-### 6. Dual-Layer State Machine
+#### C. Turn-Level Idempotency & Concurrency
+- **Client Turn Key:** Every spoken PTT utterance receives a client-generated `turnId` (`idempotencyKey`) generated at speech start.
+- **In-Flight Turn Locking:** If an identical `turnId` is received during transmission retries, the server's `inFlightTurns` lock prevents duplicate LLM ingress.
+- **Persistence Idempotency:** Assistant responses are cached in `ConversationStore` under `${turnId}:assistant`, ensuring duplicate requests receive cached replies with zero re-execution.
 
-Modality state must remain strictly decoupled from cognitive state:
-- **Modality State (`LiveInteractionState`):**
-  `IDLE` ──► `LISTENING` ──► `TRANSCRIBING` ──► `THINKING` ──► `SPEAKING` ──► `INTERRUPTED` ──► `RECONNECTING` ──► `ERROR`
-- **Cognitive State (`SophiaState`):**
-  `READY` ──► `UNDERSTANDING` ──► `WORKING` ──► `WAITING_FOR_FOUNDER` ──► `EXECUTING` ──► `COMPLETED` ──► `BLOCKED`
+### 5. Latency Budget vs Target
 
-*Invariant:* The UI status dot or orb must clearly reflect both dimensions without confounding them. `SPEAKING` does NOT imply `EXECUTING`; `LISTENING` does NOT imply `THINKING`.
+- **Design Target Budget:** ~780ms under ideal networking and sub-100ms LLM first-token generation.
+- **Realistic Conversational Budget:** **800ms – 1,250ms** accounting for real-world broadband jitter, client AudioWorklet buffering, and variable model inference time.
+- **Verification Status:** **NOT VERIFIED.** Real-world latency must be measured during Phase 4 integration benchmarks.
 
 ---
 
 ## Consequences
 
 ### Positive
-- **Zero Cognitive Duplication:** Preserves 100% of Sophia's existing trust boundaries, constitutional verifications, and multi-agent orchestrator logic.
-- **Full Auditability:** Every exchange passes through the textual audit trail, `ConversationStore`, and `AgentRunStore`.
-- **Sub-800ms Latency:** Streaming STT and TTS combined with local VAD achieve natural conversational rhythm.
-- **Deterministic Barge-In:** Founder can speak over Sophia at any time without audio echo or context desynchronization.
-- **Vendor Independence:** STT and TTS providers can be swapped or hosted locally without rewriting the application or cognitive layer.
+- **Rock-Solid Control Plane:** Retains 100% of existing authorization, constitutional verification, and multi-agent coordination.
+- **Zero Timing Guesswork:** Leverages Deepgram Flux's native conversational turn-taking and `SpeechInterrupted` event protocol.
+- **Safe Next.js Architecture:** Isolates streaming WebSockets into a companion process, preserving Next.js standalone builds and developer HMR stability.
+- **Safe Initial Scope:** Push-to-Talk eliminates audio feedback loops and room acoustic leakage.
 
 ### Negative / Trade-offs
-- **Additional Operational Surface:** Requires a long-running WebSocket server process alongside Next.js HTTP routes.
-- **Cloud API Costs:** Streaming STT (~$0.39/hr) and TTS ($0.030/1k chars) incur operational expenses during voice sessions (estimated $5–$25/month for typical founder usage).
-- **Network Sensitivity:** Audio streaming requires reliable local network connectivity; degraded connections must degrade gracefully to text mode.
+- **Process Supervision:** Requires running a companion Node/TypeScript WebSocket process alongside Next.js (`npm run dev:ws` in dev; managed process or container companion in production).
+- **Vendor Cost:** Deepgram Flux STT ($0.39/hr) and Flux TTS (~$0.045/1k chars) incur usage fees (~$5–$25/month for normal founder usage).
 
 ---
 
 ## Alternatives Considered & Rejected
 
-1. **Multimodal Speech-to-Speech (S2S) Realtime API (e.g. OpenAI Realtime / Gemini Live):**
-   - *Rejected:* S2S models map direct audio-to-audio. While latency is very low (~300–500ms), they process reasoning and tool execution inside a closed black-box model. Bypasses `SophiaContextAssembler`, `SophiaIntentClassifier`, and `SophiaServerGateway`, making deterministic governance and cryptographic payload verification impossible without a second round-trip.
-2. **Heavy WebRTC SFU Frameworks (Pipecat / LiveKit):**
-   - *Rejected for v1:* WebRTC SFUs are designed for multi-participant video/audio conferencing. Introducing a media server daemon (SFU) adds substantial deployment and container orchestration overhead for a single-founder desktop application.
-3. **Browser Native `SpeechRecognition` and `SpeechSynthesis`:**
-   - *Rejected:* Extremely poor cross-platform consistency, lacks streaming partial transcripts on desktop, provides zero server-side auditability, and voice naturalness is unacceptable for an executive AI operating system.
+1. **Embedding WebSockets in Next.js Route Handlers (`src/app/api/live/route.ts`):**
+   - *Rejected:* Technically unsupported by Next.js App Router. Route handlers lack raw Node HTTP upgrade hooks.
+2. **Treating Aura-2 and Flux TTS Interchangeably:**
+   - *Rejected:* Aura-2 lacks native conversational state and cannot provide native `SpeechInterrupted` character offset tracking.
+3. **Continuous Ambient Listening for v1:**
+   - *Rejected:* Creates false positives, acoustic echo loops, privacy concerns, and unnecessary streaming costs. PTT-only is strictly enforced for Phase 4.
