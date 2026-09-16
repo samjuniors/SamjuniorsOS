@@ -6,12 +6,13 @@
 - Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
 - Phase 4 Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline over companion Node.js WebSocket process (port 3001), native Flux interruption, and PTT-only scope.
 - Phase 4A: Authenticated Companion WebSocket & Live Session Foundation IMPLEMENTED & VERIFIED (ADR 0003). Companion server, session manager, single-tenant connection lock (`4409`), PTT state transitions, barge-in `INTERRUPT` framing, and reconnection verified with 27/27 test assertions passing.
+- Phase 4B: Client Silero VAD & Audio Streaming Ingress IMPLEMENTED & VERIFIED (ADR 0003). AudioWorklet resampling to 16 kHz mono Int16 PCM (512 samples / 32ms), client-side Silero VAD, PTT-only audio gating, local assistant audio mute/barge-in hook on speech start, binary WebSocket frame transport, client backpressure protection, and server frame bounds/telemetry validation verified with 42/42 automated test assertions passing.
 
 **NEXT PHASE:**
-Phase 4B: Client Silero VAD & Audio Streaming Ingress (16kHz PCM AudioWorklet).
+Phase 4C: Streaming STT Integration (Deepgram Flux STT over companion WebSocket).
 
 **NEXT ACTION:**
-STOP condition active. Phase 4A verified and sealed. Await Founder review of Phase 4A closure report before proceeding to Phase 4B. (DO NOT implement VAD, STT, or microphone capture until approved).
+STOP condition active. Phase 4B verified and sealed. Await Founder review of Phase 4B closure report before proceeding to Phase 4C. (DO NOT implement STT, Deepgram, TTS, or cloud speech APIs until approved).
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

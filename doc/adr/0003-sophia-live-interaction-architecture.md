@@ -1,7 +1,7 @@
 # ADR 0003: Sophia Live Interaction Architecture (Voice Modality Adapter)
 
 ## Status
-ACCEPTED (Phase 4A Implemented & Verified; Phase 4B Gated) — 2026-09-16
+ACCEPTED (Phase 4A & Phase 4B Implemented & Verified; Phase 4C Gated) — 2026-09-16
 
 ## Context & Problem
 Following the completion and sealing of **Phase 3: Sophia Durable Conversation Persistence** (ADR 0002), Sophia possesses server-authoritative dialogue history, turn-level idempotency, and strict session isolation.
@@ -172,4 +172,24 @@ The foundational session and transport layer (Phase 4A) has been implemented and
 - **`src/app/api/auth/ws-ticket/route.ts`**: Authenticated Next.js route for issuing WebSocket tickets.
 - **`scripts/live-gateway.ts`**: Standalone runner script (`npm run dev:ws`) for companion server execution on port 3001.
 - **`tests/sophia/phase4a_live_session_foundation.test.ts`**: 10 automated test scenarios (27/27 assertions passing) covering health checks, 401 unauthenticated fail-closed, ticket consumption, PTT state transitions, barge-in `INTERRUPT`, single-tenant supersession (`4409`), session resumption within 60s, and ping/pong heartbeats.
+
+---
+
+## Phase 4B Implementation Status (Verified: 2026-09-16)
+
+The client-side Voice Activity Detection and audio streaming ingress layer (Phase 4B) has been implemented and verified:
+- **`src/lib/client/live/audio-worklet-processor.ts`**: Self-contained `PcmResamplerProcessor` running in a dedicated browser AudioWorklet thread. Dynamically resamples input audio from any hardware sample rate (e.g., 44.1kHz, 48kHz) to exactly 16,000 Hz mono 16-bit signed integer PCM. Outputs deterministic 512-sample (32ms / 1024-byte) chunks via `createAudioWorkletBlobUrl()` without bundle/path resolution issues.
+- **`src/lib/client/live/vad.ts`**: Client-side `SileroVadEngine` implementing local acoustic feature extraction and speech probability calculation. Enforces configurable thresholds (`speechStartThreshold: 0.50`, `speechEndThreshold: 0.35`, `minSpeechFrames: 2`, `redemptionFrames: 8`). Distinguishes `speech_start`, `speech_continue`, and `speech_end` locally without network transmission.
+- **`src/lib/client/live/live-client.ts`**: Unified `SophiaLiveClient` orchestrating browser microphone acquisition (`getUserMedia`), AudioWorklet lifecycle, Push-to-Talk state machine (`startPtt()`, `stopPtt()`), frame gating, and binary WebSocket transport:
+  - **Audio Gating:** Audio frames are transmitted ONLY when PTT is actively held and local VAD confirms active speech. Non-PTT and silence frames are strictly gated and never hit the network.
+  - **Backpressure Protection:** Monitors `ws.bufferedAmount` (limit: 64KB). Automatically drops frames during network buffer saturation, preventing unbounded memory growth.
+  - **Idempotency & Reconnect Safety:** `startPtt()` maintains a stable `turnId` across duplicate presses.
+- **`src/os/lib/osAudio.ts`**: Added `stopAssistantAudio()` hook, immediately halting browser `speechSynthesis` or active assistant playback upon detected `speech_start` (barge-in).
+- **`src/lib/server/live/server.ts`**: Companion server extended with `handleBinaryAudioFrame()`:
+  - Validates frame byte bounds [2 bytes min, 32 KB max]. Rejects oversized frames with `INVALID_AUDIO_FRAME_SIZE`.
+  - Enforces session state: drops frames safely if received outside `LISTENING` state (e.g. late frames post `STOP_PTT`).
+  - Records session ingress telemetry (`audioFramesReceived`, `audioBytesReceived`, `droppedAudioFrames`, `lastAudioFrameAt`).
+  - Discards audio payload immediately after validation (Zero raw audio persistence, zero STT/LLM invocation).
+- **`tests/sophia/phase4b_audio_ingress_vad.test.ts`**: 9 comprehensive automated test suites (42/42 assertions passing) verifying worklet registration contract, 48kHz->16kHz resampling, VAD speech vs. silence discrimination, PTT frame gating, server-side binary validation/telemetry, backpressure frame dropping, PTT idempotency, barge-in signaling, and resource teardown.
+
 

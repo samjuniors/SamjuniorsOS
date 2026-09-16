@@ -93,6 +93,13 @@ export class LiveSessionManager {
   }
 
   /**
+   * Retrieves an active or retained session record by session ID.
+   */
+  public getSession(sessionId: string): LiveSessionRecord | undefined {
+    return this.sessionRecords.get(sessionId);
+  }
+
+  /**
    * Reattaches an existing session if within the 60-second resume window.
    */
   public resumeSession(

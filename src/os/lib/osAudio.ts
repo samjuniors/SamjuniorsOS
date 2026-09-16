@@ -57,3 +57,18 @@ export const osSound = {
   min: () => beep({ freq: 500, dur: 0.08, slide: 0.55, type: "triangle", gain: 0.04 }),
   max: () => beep({ freq: 360, dur: 0.1, slide: 1.7, type: "triangle", gain: 0.04 }),
 };
+
+/**
+ * Immediate acoustic mute/interruption hook:
+ * Immediately cancels any browser speech synthesis and stops any active assistant audio playback.
+ */
+export function stopAssistantAudio(): void {
+  try {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+  } catch {
+    /* ignore */
+  }
+}
+

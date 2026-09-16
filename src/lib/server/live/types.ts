@@ -26,6 +26,11 @@ export interface LiveSessionRecord {
   connectedAt: number;
   isAlive: boolean;
   activeTurnId?: string;
+  // Phase 4B Ingress Telemetry
+  audioFramesReceived?: number;
+  audioBytesReceived?: number;
+  droppedAudioFrames?: number;
+  lastAudioFrameAt?: number;
 }
 
 export type ClientLiveMessage =

@@ -92,9 +92,8 @@ export class LiveInteractionServer {
           });
         }
       } else {
-        // Binary frames (reserved for audio in Phase 4B)
-        // Acknowledge receipt without processing speech in Phase 4A foundation
-        client.session.lastActiveAt = Date.now();
+        // Binary frames (Phase 4B audio frame transport)
+        this.handleBinaryAudioFrame(ws, data);
       }
     });
 
@@ -205,6 +204,46 @@ export class LiveInteractionServer {
         break;
       }
     }
+  }
+
+  /**
+   * Phase 4B: Validates incoming binary PCM audio frames.
+   * Enforces frame size boundaries, active PTT (LISTENING) state, and telemetry.
+   * Discards audio payload safely without persistence, LLM, or STT invocation.
+   */
+  private handleBinaryAudioFrame(ws: WebSocket, data: any): void {
+    const client = this.sessionManager.getClient(ws);
+    if (!client) return;
+
+    client.session.lastActiveAt = Date.now();
+
+    const byteLength = data instanceof Buffer ? data.length : (data.byteLength || 0);
+
+    // 1. Frame size bounds validation: minimum 2 bytes (one 16-bit sample), maximum 32 KB
+    const MAX_AUDIO_FRAME_BYTES = 32_768;
+    const MIN_AUDIO_FRAME_BYTES = 2;
+
+    if (byteLength < MIN_AUDIO_FRAME_BYTES || byteLength > MAX_AUDIO_FRAME_BYTES) {
+      client.session.droppedAudioFrames = (client.session.droppedAudioFrames || 0) + 1;
+      this.sessionManager.send(ws, {
+        type: 'ERROR',
+        code: 'INVALID_AUDIO_FRAME_SIZE',
+        message: `Audio frame of size ${byteLength} bytes is outside allowed bounds [2, ${MAX_AUDIO_FRAME_BYTES}]`,
+      });
+      return;
+    }
+
+    // 2. State validation: only accept audio frames when in LISTENING (active PTT) state
+    if (client.session.state !== 'LISTENING') {
+      // Safely drop audio frames received when not in LISTENING state (e.g. late frames after STOP_PTT or during IDLE)
+      client.session.droppedAudioFrames = (client.session.droppedAudioFrames || 0) + 1;
+      return;
+    }
+
+    // 3. Telemetry tracking (audio is safely discarded after validation in Phase 4B)
+    client.session.audioFramesReceived = (client.session.audioFramesReceived || 0) + 1;
+    client.session.audioBytesReceived = (client.session.audioBytesReceived || 0) + byteLength;
+    client.session.lastAudioFrameAt = Date.now();
   }
 
   private setupHeartbeat(): void {
