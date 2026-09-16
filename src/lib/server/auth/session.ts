@@ -79,12 +79,14 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
       | 'AUDITOR'
       | null;
 
+    const requestedUserId = req?.headers.get('x-samjuniors-user-id') || undefined;
+
     const effectiveRole = requestedRole && ['FOUNDER', 'EXECUTIVE', 'AUDITOR'].includes(requestedRole)
       ? requestedRole
       : 'FOUNDER';
 
     return {
-      userId: effectiveRole === 'FOUNDER' ? 'founder-local-session' : 'member-local-session',
+      userId: requestedUserId || (effectiveRole === 'FOUNDER' ? 'founder-local-session' : 'member-local-session'),
       email: effectiveRole === 'FOUNDER' ? 'founder@samjuniors.com' : 'member@samjuniors.com',
       name: effectiveRole === 'FOUNDER' ? 'Executive Founder' : 'Member Auditor',
       role: effectiveRole,

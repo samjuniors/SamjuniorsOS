@@ -2,10 +2,15 @@
 **Status:** Reconciled against repository `32a6f38` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
 
 **CURRENT STATUS:**
-Canonical design system migration completed and verified (ADR 0001)
+- Canonical design system migration completed and verified (ADR 0001).
+- Phase 3: Sophia Durable Conversation Persistence SEALED (ADR 0002). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, and turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
+- Relational schema exists in `prisma/schema.prisma` and dual-writes opportunistically; full relational primary authority will transition when multi-instance PostgreSQL deployment is provisioned.
+
+**NEXT PHASE:**
+Phase 4: Live Interaction (Voice & Real-Time Modality Architecture).
 
 **NEXT ACTION:**
-Phase 5 autonomous workflow orchestration and multi-agent governance hardening
+STOP condition active. Await Founder review and explicit approval of Phase 3.1 closure before commencing Phase 4. (DO NOT implement Voice, VAD, STT, or TTS until approved).
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

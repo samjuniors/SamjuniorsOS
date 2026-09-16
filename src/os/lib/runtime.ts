@@ -405,19 +405,65 @@ export interface ChatReply {
   liveAi: boolean;
   intent: string;
   name: string;
+  conversationId?: string;
+  messageId?: string;
 }
 
-export async function agentChat(opts: { agentId: string; message: string; history?: Array<{ sender: "user" | "agent"; text: string }> }): Promise<ChatReply> {
-  const data = await jsonFetch<ChatReply & { success: boolean }>("/api/agent-chat", {
+export async function agentChat(opts: {
+  agentId: string;
+  message: string;
+  conversationId?: string;
+  idempotencyKey?: string;
+  history?: Array<{ sender: "user" | "agent"; text: string }>;
+}): Promise<ChatReply> {
+  const data = await jsonFetch<ChatReply & { success: boolean; conversationId?: string; messageId?: string }>("/api/agent-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       agentId: opts.agentId,
       message: opts.message,
+      conversationId: opts.conversationId,
+      idempotencyKey: opts.idempotencyKey,
       history: (opts.history ?? []).slice(-10),
     }),
   });
-  return { reply: data.reply, liveAi: !!data.liveAi, intent: data.intent, name: data.name };
+  return {
+    reply: data.reply,
+    liveAi: !!data.liveAi,
+    intent: data.intent,
+    name: data.name,
+    conversationId: data.conversationId,
+    messageId: data.messageId,
+  };
+}
+
+export async function fetchConversation(conversationId: string): Promise<{
+  success: boolean;
+  conversation: any;
+  messages: Array<{
+    id: string;
+    conversationId: string;
+    sender: 'founder' | 'assistant' | 'system';
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    createdAt: string;
+  }>;
+}> {
+  return jsonFetch(`/api/agent-chat?conversationId=${encodeURIComponent(conversationId)}`);
+}
+
+export async function listConversations(): Promise<{
+  success: boolean;
+  conversations: Array<{
+    id: string;
+    title: string;
+    agentId: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}> {
+  return jsonFetch('/api/agent-chat');
 }
 
 /* ------------------------------------------------------------------ directive dispatch */

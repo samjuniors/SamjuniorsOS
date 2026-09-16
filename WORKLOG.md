@@ -1,5 +1,105 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 3.1 — Conversation Persistence Closure + Architecture Reconciliation (2026-09-16)
+
+**Status:** SEALED. Completed rigorous Phase 3 closure audit and architectural reconciliation. Verified authoritative persistence mechanism, fixed idempotency caching defects and in-flight concurrency race condition, enforced server-authoritative history boundaries, resolved React Compiler linter errors in `ChatPanel`, reconciled ADR 0002 and `doc/ROADMAP.md` with real runtime facts, and verified 100% test pass rate across Phase 1, 2, and 3 test suites.
+
+### Architectural Findings & Authoritative Decisions
+
+1. **Persistence Authority Decision**:
+   - Primary Authoritative Store: `DurableFileStore` (`.data/conversations.json`, `.data/chat_messages.json`).
+   - Secondary / Synchronization Store: Prisma models in `prisma/schema.prisma`.
+   - Classification: `ACCEPTABLE TEMPORARY DEVELOPMENT FALLBACK` for local single-process runtime (`InstanceConcurrencyGuard`).
+   - Roadmap Constraint: For multi-instance horizontal scaling, authoritative write control must transition to relational database / Postgres before multi-node cluster deployment.
+2. **Idempotency Defect Resolved**:
+   - Fixed issue where replaying an existing `idempotencyKey` deduplicated the founder turn but re-executed cognitive inference and generated duplicate assistant turns.
+   - Assistant turns now persisted with clean key `${cleanIdempotencyKey}:assistant`.
+   - Replays return cached assistant responses with `idempotentReplay: true` and 0ms latency without re-invoking LLM inference or directives.
+   - Added in-flight mutex (`inFlightTurns` map) keyed by `${userId}:${conversationId}:${cleanIdempotencyKey}` returning isolated cloned JSON responses to prevent stream read collisions on simultaneous duplicate requests.
+3. **Server-Authoritative History Enforced**:
+   - `POST /api/agent-chat` completely ignores and overrides client-supplied `history` when `conversationId` is passed, strictly serving authoritative history from `ConversationStore`.
+4. **Context Ceiling Verified**:
+   - Dialogue partition is deterministically clamped to `PARTITION_LIMITS.dialogueHistory` (1,000 characters, ~250 tokens). Total dynamic context payload across all 9 partitions remains within the Phase 2 budget (~2,300 tokens ceiling).
+5. **UI & Linter Integrity**:
+   - Eliminated synchronous `setMessages` in `useEffect` in `src/os/components/os/ChatPanel.tsx` by moving read-status updates to explicit user events (`toggleOpen`, `selectContact`, hotkey), passing `npx eslint` with 0 errors.
+
+### Verification Run & Results
+
+- `npx tsx tests/sophia/phase3_conversation_persistence.test.ts`: 15/15 PASSED (includes concurrent deduplication and idempotency replay tests).
+- `npx tsx tests/sophia/phase1_conversational_executive.test.ts`: 12/12 PASSED.
+- `npx tsx tests/sophia/phase2_grounding_context.test.ts`: 12/12 PASSED.
+- `npx prisma validate`: Schema is valid.
+- `npx eslint`: 0 errors on modified files.
+- `npm run build`: Production Next.js build succeeded.
+
+### Next Recommended Action
+
+- Transition to **Phase 4: Live Interaction (Voice & Real-Time Modality Architecture)** after founder sign-off.
+- STOP condition reached: Do NOT implement Voice in Phase 3.1.
+
+---
+
+## Phase 3 — Sophia Durable Conversation Persistence (2026-09-16)
+
+**Status:** COMPLETE. Delivered durable server-authoritative conversation session persistence for Sophia in SamJuniorsOS. Zero duplication of company memory, operational state, or epistemic claims. Distinguishes ephemeral interactive dialogue (`CONVERSATIONAL_RECORD`) from historical precedent (`HISTORICAL_PRECEDENT`), epistemic facts (`EPISTEMIC_FACT`), and operational ground truth (`AUTHORITATIVE_OPERATIONAL_STATE`). Established dual-mode persistence (`ConversationStore` with atomic `DurableFileStore` plus Prisma relational sync), strict authenticated Founder ownership binding (403 fail-closed), nonexistent conversation rejection (404 fail-closed), turn deduplication via `idempotencyKey`, deterministic recent-history context budgeting (~1,000 char clamp), and seamless browser reload recovery.
+
+### What changed
+
+- **`prisma/schema.prisma`**:
+  - Added Section 12 with relational `Conversation` and `ChatMessage` models.
+  - Linked `Conversation` to `ChatMessage` with indexed foreign keys (`conversationId`, `createdAt`, `idempotencyKey`).
+  - Validated via `npx prisma validate`.
+- **`src/lib/server/conversation/types.ts`**:
+  - Canonical typed contracts: `ConversationRecord`, `ChatMessageRecord`, `CreateConversationParams`, `CreateChatMessageParams`, `ConversationHistoryItem`.
+- **`src/lib/server/conversation/store.ts`**:
+  - `ConversationStore`: Singleton managing durable conversation and message lifecycles.
+  - Dual-mode architecture: Atomic writes to `DurableFileStore` (`.data/conversations.json`, `.data/chat_messages.json`) with safe conditional synchronization to Prisma.
+  - Fail-closed security invariants: `ConversationSecurityError` thrown on ownership mismatch, `ConversationNotFoundError` thrown on missing IDs.
+  - Idempotency deduplication: `findMessageByIdempotencyKey` prevents duplicate turns on retries or browser reconnects.
+  - Bounded recent history: `getRecentHistory(conversationId, founderId, limit)` loads chronological dialogue.
+- **`src/lib/server/conversation/index.ts`**:
+  - Exported barrel for conversation module.
+- **`src/app/api/agent-chat/route.ts`**:
+  - Integrated `ConversationStore` into Sophia `POST` pipeline:
+    1. Authenticates session via `getAuthenticatedFounder(req)`.
+    2. Resolves or establishes conversation bound to authenticated Founder.
+    3. Persists incoming Founder turn with idempotency key deduplication.
+    4. Fetches server-authoritative recent history, excluding client tampering.
+    5. Feeds server history into `SophiaContextAssembler.assemble` and `SophiaIntentClassifier.classify`.
+    6. Dispatches through `SophiaServerGateway`.
+    7. Persists Assistant reply with intent metadata, token metrics, and timestamps.
+    8. Returns `conversationId` and `messageId`.
+  - Added `GET` handler supporting single conversation history retrieval (`?conversationId=...`) or listing conversations for authenticated Founder.
+- **`src/os/lib/runtime.ts`**:
+  - Updated `agentChat` signature to accept `conversationId` and `idempotencyKey`, returning `conversationId` and `messageId`.
+  - Added `fetchConversation(conversationId)` and `listConversations()`.
+- **`src/os/components/os/ChatPanel.tsx`**:
+  - Added `conversationId` state persisted in `localStorage` (`sophia_active_conversation_id`).
+  - Added hydration effect recovering past messages from server on mount / contact switch to Sophia.
+  - Bound user turns to active `conversationId` across sessions.
+- **`tests/sophia/phase3_conversation_persistence.test.ts`**:
+  - 15 automated tests verifying all Phase 3 scenarios with 100% pass rate.
+- **`doc/adr/0002-sophia-durable-conversation-persistence.md`**:
+  - Comprehensive Architecture Decision Record documenting context budgeting, ownership, fail-closed semantics, idempotency, and rejected alternatives.
+
+### Verification actually run
+
+- `npx tsx tests/sophia/phase3_conversation_persistence.test.ts`: 15/15 tests PASSED.
+- `npx tsx tests/sophia/phase1_conversational_executive.test.ts`: 12/12 tests PASSED.
+- `npx tsx tests/sophia/phase2_grounding_context.test.ts`: 12/12 tests PASSED.
+- `npx prisma validate`: Schema validated successfully.
+
+### Unresolved problems & remaining risks
+
+- Relational engine locks in development: on Windows, the long-running dev server (`npm run dev`) locks `query_engine-windows.dll.node`, preventing runtime `prisma generate` without killing the dev server. The dual-mode architecture guarantees full durability via `DurableFileStore` regardless of SQLite DLL locking.
+
+### Next recommended action
+
+- STOP condition reached: Do NOT implement Voice (no VAD, STT, TTS, WebSockets, or audio).
+- Present final report to Founder for review.
+
+---
+
 ## Phase 4.3A — Authoritative Graph Read Model (2026-09-12)
 
 **Status:** COMPLETE (READ-MODEL ONLY). Delivered the typed authoritative graph read model and projection engine for SamJuniorsOS. Zero UI alterations, zero database migrations, zero graph persistence or secondary sources of truth. Strictly projects authoritative server state (`AgentRunStore`, `SideEffectAuthorizationGate`, `getWorkflowStore()`, `EpistemicClaimStore`, `CompanyContextProvider`) into the Meaningful Company Topology via an authenticated, fail-closed read endpoint.

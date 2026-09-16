@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
 import { useOS } from "../../lib/osStore";
 import { osSound } from "../../lib/osAudio";
-import { agentChat, toServerAgentId } from "../../lib/runtime";
+import { agentChat, fetchConversation, toServerAgentId } from "../../lib/runtime";
 
 type Message = {
   id: string;
@@ -31,6 +31,12 @@ export default function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sophia_active_conversation_id");
+    }
+    return null;
+  });
 
   const agents = useOS((s) => s.agents);
 
@@ -40,13 +46,33 @@ export default function ChatPanel() {
   const activeAgent = agents.find((a) => a.id === activeContactId) ?? agents[0];
   const unreadCount = messages.filter((m) => !m.read && m.sender === "agent").length;
 
-  // Mark messages from active contact as read when open
+  // Hydrate conversation history on mount or contact switch for Sophia
   useEffect(() => {
-    if (!open) return;
-    setMessages((prev) =>
-      prev.map((m) => (m.agentId === activeContactId && !m.read ? { ...m, read: true } : m))
-    );
-  }, [open, activeContactId]);
+    if (activeContactId !== "sophia") return;
+    const stored = typeof window !== "undefined" ? localStorage.getItem("sophia_active_conversation_id") : null;
+    if (!stored) return;
+
+    fetchConversation(stored)
+      .then((res) => {
+        if (res.success && Array.isArray(res.messages) && res.messages.length > 0) {
+          const restoredMessages: Message[] = res.messages.map((m) => ({
+            id: m.id,
+            sender: m.sender === "founder" || m.role === "user" ? ("user" as const) : ("agent" as const),
+            agentId: "sophia",
+            text: m.content,
+            at: new Date(m.createdAt).getTime(),
+            read: true,
+          }));
+          setMessages((prev) => {
+            const nonSophia = prev.filter((m) => m.agentId !== "sophia");
+            return [...nonSophia, ...restoredMessages];
+          });
+        }
+      })
+      .catch(() => {
+        // Fail-soft on history hydration; existing UI state intact
+      });
+  }, [activeContactId]);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -64,8 +90,14 @@ export default function ChatPanel() {
       if (e.key === "c" || e.key === "C") {
         e.preventDefault();
         setOpen((v) => {
-          if (!v) osSound.open();
-          else osSound.close();
+          if (!v) {
+            osSound.open();
+            setMessages((prev) =>
+              prev.map((m) => (m.agentId === activeContactId && !m.read ? { ...m, read: true } : m))
+            );
+          } else {
+            osSound.close();
+          }
           return !v;
         });
       }
@@ -76,11 +108,17 @@ export default function ChatPanel() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, activeContactId]);
 
   const toggleOpen = () => {
-    if (!open) osSound.open();
-    else osSound.close();
+    if (!open) {
+      osSound.open();
+      setMessages((prev) =>
+        prev.map((m) => (m.agentId === activeContactId && !m.read ? { ...m, read: true } : m))
+      );
+    } else {
+      osSound.close();
+    }
     setOpen((v) => !v);
   };
 
@@ -123,14 +161,25 @@ export default function ChatPanel() {
       text: m.text,
     }));
 
-    void agentChat({ agentId: toServerAgentId(activeContactId), message: txt, history })
+    void agentChat({
+      agentId: toServerAgentId(activeContactId),
+      message: txt,
+      conversationId: activeContactId === "sophia" ? (conversationId || undefined) : undefined,
+      history,
+    })
       .then((res) => {
         setIsTyping(false);
         osSound.notify();
+        if (res.conversationId && activeContactId === "sophia") {
+          setConversationId(res.conversationId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("sophia_active_conversation_id", res.conversationId);
+          }
+        }
         setMessages((prev) => [
           ...prev,
           {
-            id: `m-agent-${Date.now()}`,
+            id: res.messageId || `m-agent-${Date.now()}`,
             sender: "agent",
             agentId: activeContactId,
             text: res.reply,

@@ -10,6 +10,14 @@ import {
   SophiaIntentClassifier,
   SophiaServerGateway,
 } from "@/lib/server/sophia";
+import {
+  ConversationStore,
+  ConversationSecurityError,
+  ConversationNotFoundError,
+} from "@/lib/server/conversation";
+
+// Module-level in-flight turns map to serialize concurrent duplicate turns
+const inFlightTurns = new Map<string, Promise<any>>();
 
 type MessageIntent = "conversation" | "information_request" | "directive" | "ambiguous" | "approval_action";
 
@@ -185,7 +193,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { agentId, message, history, contextSnapshot, executeDirective, personaConfig } = await req.json();
+    const {
+      agentId,
+      message,
+      history,
+      contextSnapshot,
+      executeDirective,
+      personaConfig,
+      conversationId,
+      idempotencyKey,
+    } = await req.json();
 
     if (!agentId || !message) {
       return NextResponse.json({ error: "Agent ID and message are required" }, { status: 400 });
@@ -201,95 +218,245 @@ export async function POST(req: NextRequest) {
     const tone = (personaConfig?.tone || 'professional') as 'professional' | 'casual' | 'flirty';
 
     // =========================================================================
-    // SOPHIA CONVERSATIONAL EXECUTIVE PIPELINE (PHASE 1)
+    // SOPHIA CONVERSATIONAL EXECUTIVE PIPELINE (PHASE 1 + PHASE 3 PERSISTENCE)
     // =========================================================================
     const isSophia = agentId === "coo" || agentId === "sophia";
     if (isSophia) {
-      const historyItems = Array.isArray(history)
-        ? history
-            .filter((h: any) => h && (typeof h.text === "string" || typeof h.content === "string"))
-            .map((h: any) => ({
-              sender: h.sender === "founder" || h.role === "user" ? "founder" : "assistant",
-              text: (h.text || h.content || "") as string,
-            }))
-        : [];
+      const convStore = ConversationStore.getInstance();
 
-      // 1. Context Assembly: deterministic, multi-source, authority-classified
-      const assembledContext = await SophiaContextAssembler.assemble({
-        message,
-        history: historyItems,
-      });
-
-      // 2. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary
-      const classificationResult = await SophiaIntentClassifier.classify({
-        message,
-        context: assembledContext,
-        history: historyItems,
-        tone,
-        customPrompt: personaConfig?.customPrompt,
-      });
-
-      // 3. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
-      const executionResult = await SophiaServerGateway.process({
-        proposal: classificationResult.proposal,
-        session,
-        message,
-        context: assembledContext,
-        executeDirective: !!executeDirective,
-      });
-
-      if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
-        return NextResponse.json({ error: executionResult.error }, { status: 403 });
+      // 1. Resolve or establish durable conversation identity bound to authenticated Founder
+      let conversation;
+      try {
+        conversation = await convStore.getOrCreateConversation({
+          founderId: session.userId,
+          conversationId: typeof conversationId === 'string' && conversationId.trim() ? conversationId.trim() : undefined,
+          agentId: 'sophia',
+        });
+      } catch (err: any) {
+        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
+        }
+        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
+          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
+        }
+        return NextResponse.json({ error: err.message || 'Conversation resolution failed' }, { status: 500 });
       }
 
-      const mapKindToIntent = (kind: string): MessageIntent => {
-        switch (kind) {
-          case 'conversation': return 'conversation';
-          case 'informational_query': return 'information_request';
-          case 'directive_proposal':
-          case 'steering_proposal':
-          case 'operational_inspection': return 'directive';
-          case 'approval_proposal': return 'approval_action';
-          case 'clarification_prompt': return 'ambiguous';
-          default: return 'conversation';
+      // Check if this turn was already completed (idempotent replay)
+      const cleanIdempotencyKey = typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0
+        ? idempotencyKey.trim()
+        : undefined;
+
+      if (cleanIdempotencyKey) {
+        const existingAssistantMessage = await convStore.findMessageByIdempotencyKey(
+          conversation.id,
+          `${cleanIdempotencyKey}:assistant`
+        );
+        if (existingAssistantMessage) {
+          return NextResponse.json({
+            success: true,
+            agentId: SERVER_AGENTS.coo.id,
+            name: SERVER_AGENTS.coo.name,
+            role: SERVER_AGENTS.coo.role,
+            conversationId: conversation.id,
+            messageId: existingAssistantMessage.id,
+            intent: existingAssistantMessage.intent || 'conversation',
+            classification: {
+              intent: existingAssistantMessage.intent || 'conversation',
+              confidence: existingAssistantMessage.confidence ?? 1.0,
+              reason: 'Idempotent turn replay',
+            },
+            reply: existingAssistantMessage.content,
+            liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
+            metrics: {
+              contextAssemblyMs: 0,
+              modelMs: 0,
+              gatewayValidationMs: 0,
+              totalTurnMs: 0,
+              estimatedTokens: existingAssistantMessage.metadata?.tokens || { input: 0, output: 0 },
+            },
+            directiveExecuted: existingAssistantMessage.metadata?.directiveExecuted ?? false,
+            idempotentReplay: true,
+          });
         }
+      }
+
+      // Concurrency lock for duplicate in-flight turns
+      const turnKey = cleanIdempotencyKey ? `${session.userId}:${conversation.id}:${cleanIdempotencyKey}` : null;
+      if (turnKey && inFlightTurns.has(turnKey)) {
+        const cached = await inFlightTurns.get(turnKey)!;
+        return NextResponse.json(cached.data, { status: cached.status || 200 });
+      }
+
+      const executeTurn = async (): Promise<{ status?: number; data: any }> => {
+        // 2. Persist incoming Founder turn (with deduplication / idempotencyKey)
+        let founderMessageRecord;
+        try {
+          founderMessageRecord = await convStore.saveMessage(
+            {
+              conversationId: conversation.id,
+              sender: 'founder',
+              role: 'user',
+              content: message,
+              idempotencyKey: cleanIdempotencyKey,
+            },
+            session.userId
+          );
+        } catch (err: any) {
+          if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+            return { status: 403, data: { error: `Forbidden: ${err.message}` } };
+          }
+          return { status: 500, data: { error: err.message || 'Failed to persist turn' } };
+        }
+
+        // 3. Server-authoritative history retrieval: fetch recent bounded dialogue history
+        const serverHistory = await convStore.getRecentHistory(conversation.id, session.userId, 10);
+        const priorHistory = serverHistory.filter((h) => h.id !== founderMessageRecord.id);
+
+        const hasExplicitConversation = typeof conversationId === 'string' && conversationId.trim().length > 0;
+
+        const historyItems = priorHistory.length > 0
+          ? priorHistory.map((h) => ({
+              sender: h.sender,
+              text: h.text,
+            }))
+          : !hasExplicitConversation && Array.isArray(history)
+            ? history
+                .filter((h: any) => h && (typeof h.text === "string" || typeof h.content === "string"))
+                .map((h: any) => ({
+                  sender: h.sender === "founder" || h.role === "user" ? ("founder" as const) : ("assistant" as const),
+                  text: (h.text || h.content || "") as string,
+                }))
+            : [];
+
+        // 4. Context Assembly: deterministic, multi-source, authority-classified
+        const assembledContext = await SophiaContextAssembler.assemble({
+          message,
+          history: historyItems,
+        });
+
+        // 5. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary
+        const classificationResult = await SophiaIntentClassifier.classify({
+          message,
+          context: assembledContext,
+          history: historyItems,
+          tone,
+          customPrompt: personaConfig?.customPrompt,
+        });
+
+        // 6. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
+        const executionResult = await SophiaServerGateway.process({
+          proposal: classificationResult.proposal,
+          session,
+          message,
+          context: assembledContext,
+          executeDirective: !!executeDirective,
+        });
+
+        if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
+          return { status: 403, data: { error: executionResult.error } };
+        }
+
+        const mapKindToIntent = (kind: string): MessageIntent => {
+          switch (kind) {
+            case 'conversation': return 'conversation';
+            case 'informational_query': return 'information_request';
+            case 'directive_proposal':
+            case 'steering_proposal':
+            case 'operational_inspection': return 'directive';
+            case 'approval_proposal': return 'approval_action';
+            case 'clarification_prompt': return 'ambiguous';
+            default: return 'conversation';
+          }
+        };
+
+        const resolvedIntent = executionResult.validatedCommand.type === 'PRESENT_CLARIFICATION'
+          ? 'ambiguous'
+          : mapKindToIntent(executionResult.proposal.kind);
+
+        // 7. Persist assistant turn to durable storage with assistantIdempotencyKey
+        let assistantMessageRecord = null;
+        if (executionResult.reply) {
+          try {
+            const assistantIdempotencyKey = cleanIdempotencyKey
+              ? `${cleanIdempotencyKey}:assistant`
+              : undefined;
+
+            assistantMessageRecord = await convStore.saveMessage(
+              {
+                conversationId: conversation.id,
+                sender: 'assistant',
+                role: 'assistant',
+                content: executionResult.reply,
+                intent: resolvedIntent,
+                confidence: executionResult.proposal.confidence,
+                commandType: executionResult.validatedCommand.type,
+                idempotencyKey: assistantIdempotencyKey,
+                metadata: {
+                  directiveExecuted: executionResult.directiveExecuted,
+                  liveAi: executionResult.liveAi,
+                  tokens: executionResult.metrics?.estimatedTokens,
+                  replyToIdempotencyKey: cleanIdempotencyKey,
+                },
+              },
+              session.userId
+            );
+          } catch (err) {
+            console.error('[agent-chat] Failed to persist assistant turn:', err);
+          }
+        }
+
+        return {
+          status: 200,
+          data: {
+            success: executionResult.success,
+            agentId: SERVER_AGENTS.coo.id,
+            name: SERVER_AGENTS.coo.name,
+            role: SERVER_AGENTS.coo.role,
+            conversationId: conversation.id,
+            messageId: assistantMessageRecord?.id || founderMessageRecord.id,
+            intent: resolvedIntent,
+            classification: {
+              intent: resolvedIntent,
+              confidence: executionResult.proposal.confidence,
+              reason: (executionResult.validatedCommand as any).ambiguityReason || (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
+              directiveTitle: (executionResult.proposal as any).title,
+              suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
+              structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
+              approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
+                ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined)
+                : undefined,
+              approvalNote: (executionResult.proposal as any).note,
+            },
+            reply: executionResult.reply,
+            liveAi: executionResult.liveAi,
+            metrics: executionResult.metrics || {
+              contextAssemblyMs: 5,
+              modelMs: 20,
+              gatewayValidationMs: 2,
+              totalTurnMs: 27,
+              estimatedTokens: { input: assembledContext.estimatedTokens, output: 80 },
+            },
+            directiveExecuted: executionResult.directiveExecuted,
+            orchestrationRun: executionResult.orchestrationRun,
+            authoritativeData: executionResult.authoritativeData,
+          },
+        };
       };
 
-      const resolvedIntent = executionResult.validatedCommand.type === 'PRESENT_CLARIFICATION'
-        ? 'ambiguous'
-        : mapKindToIntent(executionResult.proposal.kind);
+      if (turnKey) {
+        const turnPromise = executeTurn();
+        inFlightTurns.set(turnKey, turnPromise);
+        try {
+          const res = await turnPromise;
+          return NextResponse.json(res.data, { status: res.status || 200 });
+        } finally {
+          inFlightTurns.delete(turnKey);
+        }
+      }
 
-      return NextResponse.json({
-        success: executionResult.success,
-        agentId: SERVER_AGENTS.coo.id,
-        name: SERVER_AGENTS.coo.name,
-        role: SERVER_AGENTS.coo.role,
-        intent: resolvedIntent,
-        classification: {
-          intent: resolvedIntent,
-          confidence: executionResult.proposal.confidence,
-          reason: (executionResult.validatedCommand as any).ambiguityReason || (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
-          directiveTitle: (executionResult.proposal as any).title,
-          suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
-          structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
-          approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
-            ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined)
-            : undefined,
-          approvalNote: (executionResult.proposal as any).note,
-        },
-        reply: executionResult.reply,
-        liveAi: executionResult.liveAi,
-        metrics: executionResult.metrics || {
-          contextAssemblyMs: 5,
-          modelMs: 20,
-          gatewayValidationMs: 2,
-          totalTurnMs: 27,
-          estimatedTokens: { input: assembledContext.estimatedTokens, output: 80 },
-        },
-        directiveExecuted: executionResult.directiveExecuted,
-        orchestrationRun: executionResult.orchestrationRun,
-        authoritativeData: executionResult.authoritativeData,
-      });
+      const res = await executeTurn();
+      return NextResponse.json(res.data, { status: res.status || 200 });
     }
 
     const classification = classifyMessageIntent(message);
@@ -502,6 +669,57 @@ ${roleScopedContext}
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to chat with agent" }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Session required to retrieve conversations' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(req.url);
+    const conversationId = searchParams.get('conversationId');
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
+
+    const convStore = ConversationStore.getInstance();
+
+    if (conversationId && conversationId.trim().length > 0) {
+      try {
+        const conversation = await convStore.getConversation(session.userId, conversationId.trim());
+        if (!conversation) {
+          return NextResponse.json({ error: `Not Found: Conversation "${conversationId}" not found` }, { status: 404 });
+        }
+        const messages = await convStore.getMessages(conversation.id, session.userId, limit);
+        return NextResponse.json({
+          success: true,
+          conversation,
+          messages,
+        });
+      } catch (err: any) {
+        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
+        }
+        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
+          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
+        }
+        return NextResponse.json({ error: err.message || 'Failed to retrieve conversation' }, { status: 500 });
+      }
+    }
+
+    // List recent conversations for the authenticated Founder
+    const conversations = await convStore.listConversations(session.userId, limit);
+    return NextResponse.json({
+      success: true,
+      conversations,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Failed to list conversations' }, { status: 500 });
   }
 }
 
