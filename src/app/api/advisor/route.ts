@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FounderAdvisorService } from '@/lib/server/advisor/advisor-service';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
