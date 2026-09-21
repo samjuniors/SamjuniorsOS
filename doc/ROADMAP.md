@@ -7,12 +7,14 @@
 - Phase 4 Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline over companion Node.js WebSocket process (port 3001), native Flux interruption, and PTT-only scope.
 - Phase 4A: Authenticated Companion WebSocket & Live Session Foundation IMPLEMENTED & VERIFIED (ADR 0003). Companion server, session manager, single-tenant connection lock (`4409`), PTT state transitions, barge-in `INTERRUPT` framing, and reconnection verified with 27/27 test assertions passing.
 - Phase 4B: Client Silero VAD & Audio Streaming Ingress IMPLEMENTED & VERIFIED (ADR 0003). AudioWorklet resampling to 16 kHz mono Int16 PCM (512 samples / 32ms), client-side Silero VAD, PTT-only audio gating, local assistant audio mute/barge-in hook on speech start, binary WebSocket frame transport, client backpressure protection, and server frame bounds/telemetry validation verified with 42/42 automated test assertions passing.
+- Phase 4C-A: STT Provider Benchmark & Architecture Decision COMPLETE (ADR 0004, `doc/research/phase4c_stt_benchmark_and_architecture.md`). Evaluated Deepgram Flux, Qwen3-ASR (0.6B/1.7B), Faster-Whisper, Pipecat, and LiveKit Agents. Adopted provider-agnostic `STTProvider` adapter interface, selected Deepgram Flux STT as initial cloud provider ($0.39/hr, ~$6–$15/mo), designated Qwen3-ASR 0.6B as self-hosted target, resolved turn-taking via hybrid 128ms pre-roll ring buffer + dual endpointing, and deferred/rejected Pipecat and LiveKit. Zero runtime STT code added.
+- Phase 4C-B: Streaming STT Adapter Implementation IMPLEMENTED & VERIFIED (ADR 0004). Implemented provider-neutral `STTProvider` contract (`src/lib/server/live/stt/types.ts`), `DeepgramFluxProvider` streaming adapter with bounded 80ms chunk aggregation (`src/lib/server/live/stt/deepgram-flux.ts`), 128ms pre-roll ring buffer in `SophiaLiveClient`, canonical turn execution pipeline with `ConversationStore` persistence and `SophiaServerGateway` security boundary (`src/lib/server/sophia/turn-executor.ts`), and turn idempotency locks in `LiveInteractionServer`. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`.
 
 **NEXT PHASE:**
-Phase 4C: Streaming STT Integration (Deepgram Flux STT over companion WebSocket).
+Phase 4C-C: Self-Hosted STT Adapter Exploration (Qwen3-ASR) / Voice Response Playback Architecture (TTS).
 
 **NEXT ACTION:**
-STOP condition active. Phase 4B verified and sealed. Await Founder review of Phase 4B closure report before proceeding to Phase 4C. (DO NOT implement STT, Deepgram, TTS, or cloud speech APIs until approved).
+STOP condition active. Phase 4C-B streaming STT adapter implementation completed and sealed. Await Founder review of Phase 4C-B report before proceeding to Phase 4C-C / 4D planning or execution. (DO NOT implement TTS, audio response playback, or Qwen runtime until approved).
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

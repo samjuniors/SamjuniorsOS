@@ -1,5 +1,96 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 4C-B — Streaming STT Adapter Implementation (2026-09-17)
+
+**Status:** COMPLETE & SEALED. Implemented the provider-neutral streaming Speech-to-Text (STT) architecture and the first production adapter for Deepgram Flux STT behind the existing Phase 4 companion WebSocket server (`port 3001`). Integrated client-side 128ms pre-roll ring buffering to prevent first-phoneme clipping, server-side frame aggregation to 80ms chunks (2560 bytes), turn finalization semantics via `ForceEndTurn`, transcript broadcast to client (`TRANSCRIPT_INTERIM` and `TRANSCRIPT_FINAL`), and canonical cognitive ingress through `ConversationStore`, `SophiaIntentClassifier`, and `SophiaServerGateway`. Enforced strict security: STT transcripts are untrusted founder messages, credentials never leak to client code, and prompt injections cannot bypass authorization gates. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`, with zero regressions across Phase 4A, Phase 4B, Phase 3, Phase 2, and Phase 1 test suites.
+
+### What Changed
+
+- **`src/lib/server/live/stt/types.ts`**:
+  - Defined provider-neutral STT contract: `STTProvider`, `STTProviderFactory`, `STTProviderSessionOptions`, `CanonicalSTTEvent`, `CanonicalTranscriptWord`, and canonical event taxonomy (`speech_started`, `interim_transcript`, `final_transcript`, `turn_completed`, `error`).
+- **`src/lib/server/live/stt/deepgram-flux.ts`**:
+  - Implemented `DeepgramFluxProvider` with native Deepgram Flux streaming WebSocket integration (`wss://api.deepgram.com/v2/listen`).
+  - Normalizes `StartOfTurn`, `Update`, `EndOfTurn`, and `Error` provider events into canonical STT events.
+  - Implemented bounded server-side frame aggregation buffering 32ms frames up to 80ms (2560 bytes) before network transmission, reducing WebSocket overhead while preserving low latency.
+  - Flushes leftover residual audio and sends `{ type: 'ForceEndTurn' }` upon turn finalization (`endTurn()`).
+  - Implemented safe error handling and malformed event protection; fails closed when `DEEPGRAM_API_KEY` is not configured.
+- **`src/lib/server/live/stt/index.ts`**:
+  - Public export barrel for provider types and Deepgram Flux implementation.
+- **`src/lib/client/live/live-client.ts` & `src/lib/client/live/types.ts`**:
+  - Implemented bounded 128ms pre-roll ring buffer (4 frames) continuously retaining recent PCM audio.
+  - On `speech_start`, immediately flushes pre-roll burst over WebSocket before streaming real-time speech frames, reducing onset clipping.
+  - Extended client message handler with `onTranscriptInterim` and `onTranscriptFinal` event hooks.
+- **`src/lib/client/live/vad.ts`**:
+  - Corrected documentation to truthfully identify the active engine as a high-speed deterministic acoustic heuristic (RMS energy + Zero-Crossing Rate with sigmoid calibration) with an optional ONNX hook, preventing false claims of native Silero inference.
+- **`src/lib/server/live/server.ts` & `src/lib/server/live/types.ts`**:
+  - Wired `STTProvider` lifecycle into `LiveInteractionServer`: instantiated per active voice turn on `START_PTT`, fed with validated binary audio frames, and concluded on `STOP_PTT`.
+  - Added server-side double-finalization idempotency protection (`finalizedTurns` set) ensuring that duplicate provider `EndOfTurn` events cannot persist duplicate messages or trigger duplicate cognitive executions.
+  - Cleanly closes/disarms in-flight STT streams upon session reconnect or socket teardown.
+- **`src/lib/server/sophia/turn-executor.ts` & `src/lib/server/sophia/index.ts`**:
+  - Implemented unified, reusable `executeSophiaTurn()` canonical cognitive ingress function.
+  - Enforces single-source-of-truth conversation resolution, idempotency checking, durable persistence in `ConversationStore`, context assembly via `SophiaContextAssembler`, intent classification via `SophiaIntentClassifier`, and execution through `SophiaServerGateway`.
+- **`tests/sophia/phase4c_streaming_stt_adapter.test.ts`**:
+  - 4 comprehensive test suites with 58 assertions covering provider normalization, 80ms aggregation, pre-roll ring buffering, live server integration, turn idempotency, cognitive ingress, and security bounds.
+- **`doc/adr/0004-provider-agnostic-streaming-stt-architecture.md`**:
+  - Updated status to ACCEPTED & IMPLEMENTED and recorded Phase 4C-B verification record.
+- **`doc/ROADMAP.md`**:
+  - Reconciled CURRENT STATUS with Phase 4C-B; gated Phase 4C-C; enforced STOP condition.
+
+### Decisions Made
+
+1. **Provider-Agnostic Interface (`STTProvider`):** Abstracted STT lifecycle into `startStream`, `sendAudio`, `endTurn`, `interrupt`, and `close`. Zero provider-specific event types leaked to server or client.
+2. **Server-Side Audio Aggregation:** Client retains its clean 32ms (1024-byte) frame structure; server aggregates to 80ms (2560 bytes) before streaming to Deepgram, matching Deepgram Flux's optimal packet size while flushing pending audio on turn completion.
+3. **128ms Client Pre-Roll Ring Buffer:** Bounded to 4 frames (128ms); flushes on speech start to avoid first-phoneme clipping; resets cleanly at turn boundaries with zero unbounded memory growth.
+4. **Turn Idempotency Locking:** Companion server maintains a turn finalization guard preventing duplicate `EndOfTurn` provider messages from causing double persistence or duplicate LLM invocations.
+5. **Untrusted Cognitive Ingress:** Final voice transcripts are treated strictly as untrusted user data routed through `ConversationStore` and `SophiaServerGateway`. Injected prompts and fake administrative directives cannot bypass security gates.
+
+### Verification Results
+
+- `tests/sophia/phase4c_streaming_stt_adapter.test.ts`: **58/58 PASSED**
+- `tests/sophia/phase4b_audio_ingress_vad.test.ts`: **42/42 PASSED**
+- `tests/sophia/phase4a_live_session_foundation.test.ts`: **27/27 PASSED**
+- `tests/sophia/phase3_conversation_persistence.test.ts`: **15/15 PASSED**
+- `tests/sophia/phase2_grounding_context.test.ts`: **12/12 PASSED**
+- `tests/sophia/phase1_conversational_executive.test.ts`: **12/12 PASSED**
+- Total passing assertions across Sophia live & cognitive suites: **166/166 PASSED**
+
+### Next Recommended Action
+
+- STOP condition active. Phase 4C-B sealed. Await Founder review of Phase 4C-B implementation report before proceeding to Phase 4C-C (Self-Hosted STT / Qwen3-ASR) or Phase 4D (TTS / Voice Response Playback).
+
+---
+
+**Status:** COMPLETE & SEALED (Research & Architecture Decision). Determined the architectural approach for streaming Speech-to-Text (STT) for Sophia Live Interaction. Established a provider-agnostic architecture (`STTProvider`) to prevent vendor lock-in while maintaining a viable self-hosted path. Selected Deepgram Flux STT (`flux-general-en`/`multi` via `wss://api.deepgram.com/v2/listen`) as the initial production cloud provider ($0.39/hr, ~$6–$15/mo for founder usage) and designated Qwen3-ASR (0.6B) as the open-weight self-hosted target (~2 GB VRAM, Apache 2.0). Resolved the turn-taking/endpointing open question by adopting a hybrid 128ms pre-roll ring buffer (preventing first-phoneme clipping) + dual endpointing (PTT `ForceEndTurn` / provider `EndOfTurn`). Formally deferred/rejected Pipecat and LiveKit Agents to avoid competing orchestrator and WebRTC overhead. Preserved fail-closed security: audio never invokes tools directly, transcript is untrusted data, and all mutations pass through `SophiaServerGateway` and `SideEffectAuthorizationGate`. Strict boundary enforced: ZERO runtime STT code added.
+
+### What Changed
+
+- **`doc/research/phase4c_stt_benchmark_and_architecture.md`**:
+  - Comprehensive research and benchmark report evaluating Deepgram Flux STT, Qwen3-ASR (0.6B/1.7B), Faster-Whisper, Pipecat, and LiveKit Agents across category, license, streaming design, turn-taking, compute/hosting costs, and operational complexity.
+  - Detailed latency budget from microphone to Sophia cognitive ingress (350–550ms design target).
+  - Economic analysis demonstrating Deepgram Flux usage cost (~$6–$15/mo) is drastically cheaper than 24/7 cloud GPU hosting ($216–$350/mo) for a solo founder.
+  - Security analysis detailing credential confinement, session binding, and untrusted transcript handling.
+  - SamJuniors-specific test dataset design and evaluation metrics (WER, EER, command accuracy, latency).
+- **`doc/adr/0004-provider-agnostic-streaming-stt-architecture.md`**:
+  - Formalized ADR 0004 adopting the provider-agnostic STT adapter architecture, canonical transcript event contract (`CanonicalTranscriptEvent`), hybrid 128ms pre-roll ring buffer, and cloud/self-hosted provider roadmap.
+- **`doc/adr/0003-sophia-live-interaction-architecture.md`**:
+  - Updated status to include Phase 4C-A completion; added cross-reference to ADR 0004 and the Phase 4C-A research report.
+- **`doc/ROADMAP.md`**:
+  - Reconciled CURRENT STATUS with Phase 4C-A; defined Phase 4C-B implementation boundary; enforced STOP condition.
+
+### Decisions Made
+
+1. **Provider-Agnostic Interface (`STTProvider`):** All speech engines must implement an internal TypeScript interface emitting canonical transcript events. Zero vendor-specific types in Sophia.
+2. **Initial Production Provider (Deepgram Flux STT):** Selected for conversational turn-taking, sub-200ms latency, and low operational cost without dedicated GPU infrastructure.
+3. **Designated Self-Hosted Target (Qwen3-ASR 0.6B):** Selected for Apache 2.0 license, modern causal streaming, and lightweight ~2 GB VRAM footprint for future private/local deployment.
+4. **Hybrid Pre-Roll Ring Buffer (128ms) + Dual Endpointing:** Client ring buffer flushes upon `speech_start`, preventing first-phoneme loss; PTT release triggers immediate `ForceEndTurn`.
+5. **Rejection of Voice Frameworks (Pipecat & LiveKit):** Rejected as runtime dependencies because they compete with Sophia's control plane and introduce redundant session management or heavy WebRTC SFU infrastructure.
+
+### Next Recommended Action
+
+- STOP condition active. Phase 4C-A sealed. Do NOT proceed to Phase 4C-B (STT implementation) until Founder review and approval of Phase 4C-A architecture decision.
+
+---
+
 ## Phase 4B — Client Silero VAD & Audio Streaming Ingress (2026-09-16)
 
 **Status:** COMPLETE & SEALED. Implemented and verified the client-side Voice Activity Detection (VAD) and audio streaming ingress pipeline for Sophia Live Interaction. Integrated browser AudioWorklet resampling (to 16 kHz mono 16-bit signed integer PCM), client-side Silero VAD, Push-to-Talk (PTT) audio gating, immediate assistant-audio mute/flush hook on speech start, binary WebSocket frame ingress on companion server, backpressure protection against buffer saturation, and server frame validation/telemetry. Preserved fail-closed security: zero raw audio persistence, zero STT/TTS/Deepgram code added, zero tool execution from audio. Verified with 42/42 automated assertions passing across 9 test suites.

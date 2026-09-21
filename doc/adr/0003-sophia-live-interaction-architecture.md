@@ -1,7 +1,7 @@
 # ADR 0003: Sophia Live Interaction Architecture (Voice Modality Adapter)
 
 ## Status
-ACCEPTED (Phase 4A & Phase 4B Implemented & Verified; Phase 4C Gated) — 2026-09-16
+ACCEPTED (Phase 4A & Phase 4B Implemented & Verified; Phase 4C-A Research & Architecture Decision Completed; Phase 4C-B Implementation Gated) — 2026-09-17
 
 ## Context & Problem
 Following the completion and sealing of **Phase 3: Sophia Durable Conversation Persistence** (ADR 0002), Sophia possesses server-authoritative dialogue history, turn-level idempotency, and strict session isolation.
@@ -191,5 +191,20 @@ The client-side Voice Activity Detection and audio streaming ingress layer (Phas
   - Records session ingress telemetry (`audioFramesReceived`, `audioBytesReceived`, `droppedAudioFrames`, `lastAudioFrameAt`).
   - Discards audio payload immediately after validation (Zero raw audio persistence, zero STT/LLM invocation).
 - **`tests/sophia/phase4b_audio_ingress_vad.test.ts`**: 9 comprehensive automated test suites (42/42 assertions passing) verifying worklet registration contract, 48kHz->16kHz resampling, VAD speech vs. silence discrimination, PTT frame gating, server-side binary validation/telemetry, backpressure frame dropping, PTT idempotency, barge-in signaling, and resource teardown.
+ 
+---
+
+## Phase 4C-A Status: STT Benchmark & Provider-Agnostic Decision (Completed: 2026-09-17)
+
+The STT provider benchmark, latency budget, security modeling, and provider-agnostic interface design have been completed (RESEARCH ONLY — zero runtime code added):
+- Formalized in **ADR 0004** (`doc/adr/0004-provider-agnostic-streaming-stt-architecture.md`).
+- Exhaustive research report in **`doc/research/phase4c_stt_benchmark_and_architecture.md`**.
+- Adopted provider-agnostic `STTProvider` adapter interface with canonical transcript events (`CanonicalTranscriptEvent`).
+- Selected **Deepgram Flux STT** (`model=flux-general-en`/`multi` via `wss://api.deepgram.com/v2/listen`) as the initial production cloud provider (~$6–$15/mo, native conversational turn-taking).
+- Selected **Qwen3-ASR (0.6B)** as the designated open-weight self-hosted target (~2 GB VRAM FP16, Apache 2.0).
+- Resolved the turn-taking open question via a **Hybrid Pre-Roll Ring Buffer (128ms) + Dual Endpointing Strategy** (client burst + PTT `ForceEndTurn` / provider `EndOfTurn`).
+- Confirmed rejection/deferral of Pipecat and LiveKit Agents to avoid competing orchestrator and WebRTC overhead.
+- Phase 4C-B implementation gated pending Founder review.
+
 
 
