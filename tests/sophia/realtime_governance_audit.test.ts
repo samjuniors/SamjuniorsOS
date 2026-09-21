@@ -223,7 +223,7 @@ async function runAdversarialAuditTests() {
   {
     console.log('\n[Test 10] Idempotency & Duplicate Request Safeguard');
     const store = new InMemoryIdempotencyStore();
-    const actionKey = 'turn-idempotency-key-001';
+    const actionKey = `turn-idempotency-key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const payloadHash = computeApprovalPayloadHash('turn_exec', undefined, { turn: 1 });
 
     // Acquire first claim

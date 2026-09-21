@@ -3,6 +3,8 @@ import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 import { buildActivityProjection } from '@/lib/server/activity/projection';
 import type { ActivityResponseDTO } from '@/types/activity';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PHASE 4.4C — AUTHORITATIVE ACTIVITY READ API.
  *

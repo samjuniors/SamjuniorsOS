@@ -81,8 +81,9 @@ export async function getComposioClientAsync(): Promise<Composio | null> {
   const cleanedKey = cleanComposioApiKey(process.env.COMPOSIO_API_KEY)!;
   if (!cachedComposioClient || cachedApiKey !== cleanedKey) {
     try {
-      // Dynamic import: fails closed when the optional package is not installed.
-      const mod: any = await import('@composio/core' as string).catch(() => null);
+      // Dynamic import: safely load optional package without triggering bundler resolution errors
+      const dynamicImport = new Function('pkg', 'return import(pkg)');
+      const mod: any = await dynamicImport('@composio/core').catch(() => null);
       if (!mod || typeof mod.Composio !== 'function') {
         console.error('[ComposioProvider] @composio/core is not installed in this deployment. External tool execution stays disabled.');
         return null;

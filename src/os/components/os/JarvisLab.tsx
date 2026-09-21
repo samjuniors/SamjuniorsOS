@@ -167,11 +167,13 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
         void handleTurnSubmit({ messageText: final });
       },
       onError: (err) => {
-        // Fallback to Direct Audio Mode if Web Speech throws an error
-        addEvent('error', `Web Speech: ${err.message}. Auto-switching to Direct Audio Capture mode.`);
+        isMicActiveRef.current = false;
+        setIsMicActive(false);
+        setModality('idle');
+        addEvent('error', `Web Speech: ${err.message}. Switching to Direct Audio Capture mode.`);
         setSpeechAlert({
-          message: 'Switched to Direct Audio Mode',
-          hint: 'Your browser microphone is active and recording directly without relying on Google cloud speech servers.',
+          message: err.code === 'not-allowed' ? 'Microphone Permission Denied' : 'Web Speech Unavailable',
+          hint: err.hint,
         });
         setMicMode('direct');
       },
@@ -187,6 +189,32 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
         }
       },
     });
+
+    // Proactively check browser microphone permission status
+    if (typeof navigator !== 'undefined' && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: 'microphone' as PermissionName })
+        .then((status) => {
+          if (status.state === 'denied') {
+            setSpeechAlert({
+              message: 'Microphone Permission Blocked in Chrome',
+              hint: 'Chrome or Windows has blocked microphone access for localhost:3000. Chrome will not prompt again until you manually unblock it: Click the lock/sliders icon in the address bar -> Microphone -> set to "Allow".',
+            });
+          }
+          status.onchange = () => {
+            if (status.state === 'granted') {
+              setSpeechAlert(null);
+              addEvent('stt', 'Microphone permission granted by user');
+            } else if (status.state === 'denied') {
+              setSpeechAlert({
+                message: 'Microphone Permission Blocked in Chrome',
+                hint: 'Microphone access is set to Denied. In Chrome address bar, click the sliders/lock icon next to localhost:3000 and select "Allow".',
+              });
+            }
+          };
+        })
+        .catch(() => {});
+    }
 
     // Check providers from server
     fetch('/api/realtime/turn')
@@ -317,10 +345,29 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
       } catch (err: any) {
         releaseAudioHardware();
         setModality('idle');
-        setSpeechAlert({
-          message: 'Microphone access failed',
-          hint: err?.message || 'Check if another application has an exclusive lock on your microphone.',
-        });
+
+        const isDenied =
+          err?.name === 'NotAllowedError' ||
+          err?.name === 'PermissionDeniedError' ||
+          err?.message?.toLowerCase().includes('denied') ||
+          err?.message?.toLowerCase().includes('permission');
+
+        if (isDenied) {
+          setSpeechAlert({
+            message: 'Microphone Permission Blocked in Chrome',
+            hint: 'Chrome or Windows is blocking microphone access. Click the Tune/Lock icon directly to the left of http://localhost:3000 in your address bar -> set Microphone to "Allow". Also verify Windows Settings -> Privacy & Security -> Microphone -> "Let desktop apps access your microphone" is turned ON.',
+          });
+        } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+          setSpeechAlert({
+            message: 'No Microphone Detected',
+            hint: 'No microphone input hardware was detected by Chrome. Plug in a microphone or headset and retry.',
+          });
+        } else {
+          setSpeechAlert({
+            message: 'Microphone Access Failed',
+            hint: err?.message || 'Check if another application has an exclusive lock on your microphone.',
+          });
+        }
         addEvent('error', `Microphone error: ${err?.message || err}`);
       }
     }
