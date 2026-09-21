@@ -21,9 +21,13 @@ export interface SophiaLiveClientOptions {
     speechEndThreshold?: number;   // default 0.35
     redemptionFrames?: number;     // default 8 frames (~250ms)
   };
+  preRollFrames?: number;          // Rolling buffer frame count (default: 4 = 128ms). 0 disables.
   onStateChange?: (state: LiveModalityState, prevState: LiveModalityState) => void;
   onSpeechStart?: () => void;
   onSpeechEnd?: () => void;
+  onTranscriptInterim?: (turnId: string, text: string) => void;
+  onTranscriptFinal?: (turnId: string, text: string) => void;
+  onSophiaResponse?: (response: any) => void;
   onError?: (error: LiveClientError) => void;
 }
 

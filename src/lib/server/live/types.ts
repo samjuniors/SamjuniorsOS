@@ -50,6 +50,18 @@ export type ServerLiveMessage =
   | { type: 'STATE_CHANGE'; state: LiveModalityState; previousState: LiveModalityState; reason?: string }
   | { type: 'PTT_ACK'; turnId: string; state: 'STARTED' | 'STOPPED'; timestamp: number }
   | { type: 'INTERRUPTED_ACK'; turnId?: string; timestamp: number }
+  | { type: 'TRANSCRIPT_INTERIM'; turnId: string; text: string; isFinal: false; timestamp: number }
+  | { type: 'TRANSCRIPT_FINAL'; turnId: string; text: string; isFinal: true; conversationId?: string; timestamp: number }
+  | {
+      type: 'SOPHIA_RESPONSE';
+      turnId: string;
+      reply: string;
+      conversationId?: string;
+      messageId?: string;
+      liveAi?: boolean;
+      directiveExecuted?: boolean;
+      metrics?: any;
+    }
   | { type: 'ERROR'; code: string; message: string; fatal?: boolean };
 
 export const LIVE_CLOSE_CODES = {

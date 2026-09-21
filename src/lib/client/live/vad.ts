@@ -11,6 +11,10 @@ export interface SileroVadConfig {
 /**
  * Client-Side Voice Activity Detector.
  * Provides high-speed, local speech/silence detection for 16kHz mono 16-bit PCM frames.
+ * NOTE (Phase 4B/4C-B Architecture Clarification):
+ * By default, this engine executes a fast, deterministic acoustic heuristic (RMS energy + Zero-Crossing Rate
+ * with sigmoid calibration) avoiding heavy ONNX/WASM dependencies in the browser worklet thread.
+ * An optional ONNX session hook is provided for future Silero v5 inference models.
  * Evaluates speech probability and drives speech_start / speech_continue / speech_end states.
  */
 export class SileroVadEngine {

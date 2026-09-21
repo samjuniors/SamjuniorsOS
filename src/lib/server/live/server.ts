@@ -3,10 +3,14 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { authenticateUpgrade } from './auth';
 import { LiveSessionManager } from './session-manager';
 import { ClientLiveMessage, LIVE_CLOSE_CODES } from './types';
+import { STTProvider, CanonicalTranscriptEvent } from './stt/types';
+import { DeepgramFluxProvider } from './stt/deepgram-flux-provider';
+import { executeSophiaTurn } from '../sophia/turn-executor';
 
 export interface LiveServerOptions {
   port?: number;
   sessionManager?: LiveSessionManager;
+  sttProviderFactory?: () => STTProvider;
 }
 
 export class LiveInteractionServer {
@@ -17,9 +21,15 @@ export class LiveInteractionServer {
   private heartbeatInterval?: NodeJS.Timeout;
   private isClosing = false;
 
+  // Phase 4C-B STT streaming session management
+  private sttProviderFactory: () => STTProvider;
+  private activeSttSessions: Map<WebSocket, { provider: STTProvider; turnId: string }> = new Map();
+  private processedTurnIds: Map<string, number> = new Map();
+
   constructor(options: LiveServerOptions = {}) {
     this.port = options.port || parseInt(process.env.LIVE_WS_PORT || '3001', 10);
     this.sessionManager = options.sessionManager || LiveSessionManager.getInstance();
+    this.sttProviderFactory = options.sttProviderFactory || (() => new DeepgramFluxProvider());
 
     this.httpServer = http.createServer((req, res) => {
       // Basic HTTP health check endpoint on companion server
@@ -98,11 +108,13 @@ export class LiveInteractionServer {
     });
 
     ws.on('close', (code, reason) => {
+      this.closeSttSession(ws);
       this.sessionManager.unregisterConnection(ws);
     });
 
     ws.on('error', (err) => {
       console.error('[LiveServer] Socket error:', err);
+      this.closeSttSession(ws);
       this.sessionManager.unregisterConnection(ws);
     });
   }
@@ -128,6 +140,9 @@ export class LiveInteractionServer {
       }
 
       case 'RESUME_SESSION': {
+        // Disarm any stale in-flight STT session from previous drop
+        this.closeSttSession(ws);
+
         const { session, resumed } = this.sessionManager.resumeSession(
           ws,
           msg.sessionId,
@@ -161,6 +176,9 @@ export class LiveInteractionServer {
           state: 'STARTED',
           timestamp: Date.now(),
         });
+
+        // Initialize streaming STT session for this turn
+        void this.startSttSession(ws, client, msg.turnId);
         break;
       }
 
@@ -172,6 +190,11 @@ export class LiveInteractionServer {
           state: 'STOPPED',
           timestamp: Date.now(),
         });
+
+        const activeStt = this.activeSttSessions.get(ws);
+        if (activeStt && activeStt.turnId === msg.turnId) {
+          void activeStt.provider.endTurn();
+        }
         break;
       }
 
@@ -187,10 +210,17 @@ export class LiveInteractionServer {
           turnId: msg.turnId,
           timestamp: Date.now(),
         });
+
+        const activeStt = this.activeSttSessions.get(ws);
+        if (activeStt) {
+          activeStt.provider.interrupt();
+          this.closeSttSession(ws);
+        }
         break;
       }
 
       case 'CLOSE_SESSION': {
+        this.closeSttSession(ws);
         ws.close(LIVE_CLOSE_CODES.NORMAL_CLOSURE, 'Client initiated session close');
         break;
       }
@@ -207,9 +237,9 @@ export class LiveInteractionServer {
   }
 
   /**
-   * Phase 4B: Validates incoming binary PCM audio frames.
-   * Enforces frame size boundaries, active PTT (LISTENING) state, and telemetry.
-   * Discards audio payload safely without persistence, LLM, or STT invocation.
+   * Validates incoming binary PCM audio frames.
+   * Enforces frame size boundaries, active PTT (LISTENING) state, telemetry,
+   * and forwards audio payload to active streaming STT provider.
    */
   private handleBinaryAudioFrame(ws: WebSocket, data: any): void {
     const client = this.sessionManager.getClient(ws);
@@ -240,10 +270,151 @@ export class LiveInteractionServer {
       return;
     }
 
-    // 3. Telemetry tracking (audio is safely discarded after validation in Phase 4B)
+    // 3. Telemetry tracking
     client.session.audioFramesReceived = (client.session.audioFramesReceived || 0) + 1;
     client.session.audioBytesReceived = (client.session.audioBytesReceived || 0) + byteLength;
     client.session.lastAudioFrameAt = Date.now();
+
+    // 4. Phase 4C-B: Forward PCM audio to active STT provider session
+    const activeStt = this.activeSttSessions.get(ws);
+    if (activeStt) {
+      const buffer = data instanceof Buffer ? data : Buffer.from(data);
+      activeStt.provider.sendAudio(buffer);
+    }
+  }
+
+  private async startSttSession(ws: WebSocket, client: any, turnId: string): Promise<void> {
+    this.closeSttSession(ws);
+
+    try {
+      const provider = this.sttProviderFactory();
+      this.activeSttSessions.set(ws, { provider, turnId });
+
+      provider.onEvent(async (event) => {
+        if (event.kind === 'interim_transcript') {
+          this.sessionManager.send(ws, {
+            type: 'TRANSCRIPT_INTERIM',
+            turnId: event.turnId,
+            text: event.text,
+            isFinal: false,
+            timestamp: event.timestamp,
+          });
+        } else if (event.kind === 'final_transcript') {
+          await this.handleFinalTranscript(ws, client, event);
+        } else if (event.kind === 'error') {
+          this.sessionManager.send(ws, {
+            type: 'ERROR',
+            code: event.error?.code || 'STT_ERROR',
+            message: event.error?.message || 'STT recognition error',
+            fatal: event.error?.fatal,
+          });
+        }
+      });
+
+      await provider.startStream({
+        sessionId: client.session.id,
+        founderId: client.session.founderId,
+        conversationId: client.session.conversationId,
+        turnId,
+        sampleRate: 16000,
+      });
+    } catch (err: any) {
+      console.error('[LiveInteractionServer] Failed to start STT stream:', err.message);
+      this.sessionManager.send(ws, {
+        type: 'ERROR',
+        code: 'STT_INIT_FAILED',
+        message: err.message || 'Failed to initialize speech recognition stream',
+        fatal: false,
+      });
+    }
+  }
+
+  private async handleFinalTranscript(
+    ws: WebSocket,
+    client: any,
+    event: CanonicalTranscriptEvent
+  ): Promise<void> {
+    const { turnId, text } = event;
+
+    // Idempotency: Prevent duplicate final processing for the same turn
+    if (this.processedTurnIds.has(turnId)) {
+      return;
+    }
+    this.processedTurnIds.set(turnId, Date.now());
+    this.cleanupOldTurnIds();
+
+    // 1. Send final transcript event to client
+    this.sessionManager.send(ws, {
+      type: 'TRANSCRIPT_FINAL',
+      turnId,
+      text,
+      isFinal: true,
+      conversationId: client.session.conversationId,
+      timestamp: event.timestamp,
+    });
+
+    // 2. If transcript text is empty, reset state to IDLE and finish turn
+    if (!text || !text.trim()) {
+      this.sessionManager.setSessionState(ws, 'IDLE', 'Empty transcript received');
+      this.closeSttSession(ws);
+      return;
+    }
+
+    // 3. Hand off to Sophia Cognitive Ingress
+    this.sessionManager.setSessionState(ws, 'THINKING', 'Final transcript sent to Sophia cognitive ingress');
+
+    try {
+      const sophiaResult = await executeSophiaTurn({
+        message: text,
+        founderId: client.session.founderId,
+        conversationId: client.session.conversationId,
+        turnId,
+      });
+
+      if (sophiaResult.conversationId) {
+        client.session.conversationId = sophiaResult.conversationId;
+      }
+
+      this.sessionManager.send(ws, {
+        type: 'SOPHIA_RESPONSE',
+        turnId,
+        reply: sophiaResult.reply,
+        conversationId: sophiaResult.conversationId,
+        messageId: sophiaResult.assistantMessageId,
+        liveAi: sophiaResult.liveAi,
+        directiveExecuted: sophiaResult.directiveExecuted,
+        metrics: sophiaResult.metrics,
+      });
+    } catch (err: any) {
+      console.error('[LiveInteractionServer] Error in Sophia turn execution:', err);
+      this.sessionManager.send(ws, {
+        type: 'ERROR',
+        code: 'SOPHIA_EXECUTION_ERROR',
+        message: err.message || 'Sophia cognitive turn execution failed',
+      });
+    } finally {
+      this.sessionManager.setSessionState(ws, 'IDLE', 'Cognitive turn completed');
+      this.closeSttSession(ws);
+    }
+  }
+
+  private closeSttSession(ws: WebSocket): void {
+    const activeStt = this.activeSttSessions.get(ws);
+    if (activeStt) {
+      void activeStt.provider.close();
+      this.activeSttSessions.delete(ws);
+    }
+  }
+
+  private cleanupOldTurnIds(): void {
+    if (this.processedTurnIds.size > 500) {
+      const cutoff = Date.now() - 300_000; // 5 minutes
+      for (const [id, time] of this.processedTurnIds.entries()) {
+        if (time < cutoff) {
+          this.processedTurnIds.delete(id);
+        }
+      }
+    }
   }
 
   private setupHeartbeat(): void {
@@ -305,6 +476,11 @@ export class LiveInteractionServer {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
     }
+
+    for (const [ws, activeStt] of this.activeSttSessions.entries()) {
+      void activeStt.provider.close();
+    }
+    this.activeSttSessions.clear();
 
     return new Promise((resolve) => {
       for (const client of this.wss.clients) {
