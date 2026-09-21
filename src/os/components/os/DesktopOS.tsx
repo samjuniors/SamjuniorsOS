@@ -12,10 +12,12 @@ import ContextMenu, { type MenuItem } from "./ContextMenu";
 import TodoDrawer from "./TodoDrawer";
 import AgentQuickDock from "./AgentQuickDock";
 import PersonaModal from "./PersonaModal";
+import LiveTranscriptRibbon from "./LiveTranscriptRibbon";
 import { osSound, setOsMuted, setOsVolume } from "../../lib/osAudio";
 import { type FlowNode } from "../../lib/flow";
-import { os, useOS, openAttention, openDecisions, activeWork, agentName } from "../../lib/osStore";
+import { os, useOS, openAttention, openDecisions, activeWork, agentName, liveVoiceState } from "../../lib/osStore";
 import { dispatchDirective } from "../../lib/runtime";
+import { liveBridge } from "../../lib/liveCompanionBridge";
 
 type Win = "max" | "win" | "min";
 type Pop = null | "start" | "cal" | "vol" | "net" | "bell" | "settings";
@@ -155,6 +157,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
   const log = useOS((s) => s.log);
+  const liveVoice = useOS(liveVoiceState);
 
   useEffect(() => { setOsVolume(uiSounds ? volume : 0); setOsMuted(muted || !uiSounds); }, [volume, muted, uiSounds]);
 
@@ -314,6 +317,17 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
         <div className="w-[220px] shrink-0 sm:hidden" />
 
         <div className="flex items-center gap-1">
+          <TrayBtn
+            active={liveVoice.enabled}
+            onClick={() => {
+              const next = !liveVoice.enabled;
+              setVoice(next);
+              void liveBridge.toggleVoice(next);
+            }}
+            title={liveVoice.enabled ? "Sophia Live Voice: Active (Hold Space/Mic)" : "Sophia Live Voice: Off (Click to Enable)"}
+          >
+            <Mic2 size={14} className={liveVoice.enabled ? "text-cyan-300 animate-pulse" : "text-slate-400"} />
+          </TrayBtn>
           <TrayBtn active={pop === "net"} onClick={() => toggle("net")} title="Network">{device.online ? <Wifi size={14} /> : <WifiOff size={14} className="text-rose-300" />}</TrayBtn>
           <TrayBtn active={pop === "vol"} onClick={() => toggle("vol")} title="Sound">{muted || volume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}</TrayBtn>
           <TrayBtn active={pop === "bell"} onClick={() => toggle("bell")} title="Needs you">
@@ -454,7 +468,16 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
               {/* V2: Grouped sections with borders */}
               <div className="mb-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">
                 <div className="mb-1.5 text-[9.5px] font-bold uppercase tracking-[0.2em] text-cyan-200/60">Sophia</div>
-                <Toggle on={voice} onClick={() => setVoice((v) => !v)} label="Voice" hint="Speaks only when something needs you" />
+                <Toggle
+                  on={liveVoice.enabled}
+                  onClick={() => {
+                    const next = !liveVoice.enabled;
+                    setVoice(next);
+                    void liveBridge.toggleVoice(next);
+                  }}
+                  label="Live Voice & STT"
+                  hint="Streaming speech recognition with Push-to-Talk"
+                />
                 <Toggle on={notifsOn} onClick={() => setNotifsOn((v) => !v)} label="Notifications" hint="When the workforce raises something" />
               </div>
               <div className="mb-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">

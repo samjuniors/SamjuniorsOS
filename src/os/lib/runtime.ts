@@ -466,6 +466,19 @@ export async function listConversations(): Promise<{
   return jsonFetch('/api/agent-chat');
 }
 
+export async function fetchWsTicket(conversationId?: string): Promise<{
+  success: boolean;
+  ticket: string;
+  expiresInSeconds: number;
+  wsPort: number;
+}> {
+  return jsonFetch('/api/auth/ws-ticket', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId }),
+  });
+}
+
 /* ------------------------------------------------------------------ directive dispatch */
 
 /** Mirrors the backend's explicit-directive heuristics (agent-chat route) closely

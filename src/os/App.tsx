@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUp, Mic, MicOff, Sparkles, LayoutGrid, Palette } from "lucide-react";
+import { ArrowUp, Mic, MicOff, Sparkles, LayoutGrid, Palette, Radio } from "lucide-react";
 import NeuralCanvas from "./components/NeuralCanvas";
 import SophiaPanel from "./components/SophiaPanel";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
+import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
+import JarvisLab from "./components/os/JarvisLab";
 import { defaultSettings, type NeuralField, type Settings } from "./lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork } from "./lib/osStore";
 import { agentChat, dispatchDirective, looksLikeDirective, summarizeRun, syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
 
-type Tab = "sophia" | "os";
+type Tab = "sophia" | "os" | "jarvis";
 
 /* ------------------------------------------------------------------ Sophia */
 
@@ -214,6 +216,17 @@ export default function App() {
             <LayoutGrid size={12} className={tab === "os" ? "text-cyan-300" : "text-slate-400"} />
             <span>SamJuniorsOS</span>
           </button>
+          <button
+            onClick={() => { osSound.click(); setTab("jarvis"); }}
+            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
+              tab === "jarvis"
+                ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Radio size={12} className={tab === "jarvis" ? "text-cyan-300" : "text-slate-400"} />
+            <span>Jarvis Lab</span>
+          </button>
 
           {/* Route toggle: main canvas ⇄ design-system specimen (navigation, not a mode) */}
           <span aria-hidden="true" className="mx-0.5 h-3 w-px bg-white/10" />
@@ -231,12 +244,17 @@ export default function App() {
 
       {tab === "sophia" ? (
         <SophiaScene onOpenOS={() => setTab("os")} />
+      ) : tab === "jarvis" ? (
+        <JarvisLab onBackToOs={() => setTab("os")} />
       ) : (
         <DesktopOS onOpenNeural={() => setTab("sophia")} />
       )}
 
       {/* Floating Agent Chat Launcher & Small Handy Chat Panel */}
       <ChatPanel />
+
+      {/* Contextual Live Voice & STT Transcript Ribbon */}
+      <LiveTranscriptRibbon />
     </div>
   );
 }

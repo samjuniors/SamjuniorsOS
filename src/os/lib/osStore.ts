@@ -76,6 +76,18 @@ export type Company = {
 
 export type SophiaMode = "idle" | "attentive" | "thinking" | "speaking";
 
+export type LiveVoiceStatus = 'disconnected' | 'connecting' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'speaking' | 'interrupted' | 'error';
+
+export type LiveVoiceState = {
+  enabled: boolean;
+  status: LiveVoiceStatus;
+  activeTurnId: string | null;
+  interimText: string;
+  finalText: string;
+  lastReply: string;
+  error: string | null;
+};
+
 export type OSState = {
   attention: AttentionItem[];
   decisions: Decision[];
@@ -100,6 +112,8 @@ export type OSState = {
   /** Server-derived workstream ids the founder dismissed from view
    *  (the server records themselves are never deleted). */
   dismissed: string[];
+  /** Phase 4C-C — live interaction voice state (ephemeral, not persisted). */
+  liveVoice: LiveVoiceState;
 };
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
@@ -174,6 +188,15 @@ const SEED: OSState = {
   activity: [],
   epistemic: null,
   dismissed: [],
+  liveVoice: {
+    enabled: false,
+    status: 'disconnected',
+    activeTurnId: null,
+    interimText: '',
+    finalText: '',
+    lastReply: '',
+    error: null,
+  },
 };
 
 /** Presentation-layer constants for the authoritative roster. Existence and
@@ -272,8 +295,9 @@ function persist() {
     // reload/restart BECAUSE the server records are the source, not the UI).
     // Phase 4.4E: same rule for the epistemic board projection — governed
     // epistemic state (claims/facts/memories) is server-authoritative only.
-    const { sophia: _s, sessionStart: _t, activity: _a, epistemic: _e, ...rest } = state;
-    void _s; void _t; void _a; void _e;
+    // Phase 4C-C: liveVoice state is completely ephemeral.
+    const { sophia: _s, sessionStart: _t, activity: _a, epistemic: _e, liveVoice: _lv, ...rest } = state;
+    void _s; void _t; void _a; void _e; void _lv;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch { /* storage unavailable */ }
 }
@@ -403,6 +427,61 @@ export const os = {
 
   setSophia(mode: SophiaMode) { if (state.sophia !== mode) set({ sophia: mode }); },
   setLastSaid(text: string) { set({ lastSaid: text }); },
+
+  setLiveVoice(patch: Partial<LiveVoiceState>) {
+    set((s) => ({ liveVoice: { ...s.liveVoice, ...patch } }));
+  },
+  setLiveVoiceInterim(turnId: string, text: string) {
+    set((s) => {
+      // Guard against stray interim events for older or mismatched turns
+      if (s.liveVoice.activeTurnId && s.liveVoice.activeTurnId !== turnId) {
+        return {};
+      }
+      return {
+        liveVoice: {
+          ...s.liveVoice,
+          activeTurnId: turnId,
+          interimText: text,
+          error: null,
+        },
+      };
+    });
+  },
+  setLiveVoiceFinal(turnId: string, text: string) {
+    set((s) => ({
+      liveVoice: {
+        ...s.liveVoice,
+        activeTurnId: turnId,
+        interimText: '', // clear interim when final arrives
+        finalText: text,
+        error: null,
+      },
+    }));
+  },
+  setLiveVoiceReply(turnId: string, reply: string) {
+    set((s) => ({
+      lastSaid: reply,
+      liveVoice: {
+        ...s.liveVoice,
+        activeTurnId: turnId,
+        lastReply: reply,
+        status: 'speaking',
+      },
+    }));
+  },
+  resetLiveVoice() {
+    set((s) => ({
+      liveVoice: {
+        enabled: false,
+        activeTurnId: null,
+        interimText: '',
+        finalText: '',
+        lastReply: '',
+        status: 'disconnected',
+        error: null,
+      },
+    }));
+  },
 
   addAttention(item: Omit<AttentionItem, "id" | "at">) {
     const a: AttentionItem = { ...item, id: uid(), at: Date.now() };
@@ -612,3 +691,4 @@ export function agentName(id: string) {
 export function openAttention(_s: OSState) { return cachedAttention; }
 export function openDecisions(_s: OSState) { return cachedDecisions; }
 export function activeWork(_s: OSState) { return cachedWork; }
+export function liveVoiceState(s: OSState) { return s.liveVoice; }
