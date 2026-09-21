@@ -1,31 +1,13 @@
-'use client'
+'use client';
 
-export default function Home() {
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      gap: '2rem',
-      padding: '1rem'
-    }}>
-      <div style={{
-        position: 'relative',
-        width: '6rem',
-        height: '6rem'
-      }}>
-        <img
-          src="/logo.svg"
-          alt="Z.ai Logo"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }}
-        />
-      </div>
-    </div>
-  )
+import SamjuniorsOS from '../os/App';
+
+/**
+ * The root route serves the ONE canonical SamjuniorsOS application
+ * (relocated from Uploaded/Design1/src to src/os in Phase 4.3C-B.3).
+ * Historical UI generations live in /old as inert reference material and
+ * are never imported from an active route.
+ */
+export default function SamJuniorsOSPage() {
+  return <SamjuniorsOS />;
 }
