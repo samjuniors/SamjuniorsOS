@@ -19,3 +19,29 @@ Stage Summary:
 - JARVIS runs at the preview URL: gateway :81 -> Vite :3000 (the face) -> bridge :8787 (the brain, z-ai-web-dev-sdk).
 - The clone is fully functional without any Claude Code login: web search, page reading, image search, image generation, display/blade surfaces, and interface control all work; voice uses the browser's own speech in a real Chrome window, and the command box works everywhere (including the embedded preview).
 - Artifacts: /home/z/jarvis (repo), bridge/brain.mjs (new brain), src/ui/CommandLine.tsx (new), .env.local, vite.config.ts/index.html/src/config.ts (patches). Logs: /tmp/jarvis-bridge.log, /tmp/jarvis-vite.log.
+
+---
+Task ID: 13
+Agent: main (Z.ai Code)
+Task: Merge sofia-next into SamjuniorsOS (user request: replace the Jarvis tab with SOFIA, make both apps one compatible app, push in new branches, keep .env.example; "do not change anything in sofia-next — can upgrade but not remove")
+
+Work Log:
+- Sandbox had been RESET since last turn (/home/z/jarvis and the old my-project sofia tree gone); everything was safe on GitHub. Cloned SamjuniorsOS + samjuniors/sofia-next into /home/z/merge-work/.
+- Mapped both apps: OS shell = src/os/App.tsx tabs (sophia | os | jarvis, default jarvis); sofia-next = self-contained src/sofia + 5 server modules (providers/voices/brain/net/page) + /api/sofia/* routes. No file or CSS-variable collisions (OS uses --os-*/--cvl-*, sofia --accent/--bg/--interface; keyframe names disjoint).
+- Copied the whole sofia tree + api routes + public assets + docs/sofia into a new branch feat/sofia-merge (also created archive/pre-sofia-merge at main).
+- Replaced the jarvis tab: Tab type "sophia"|"os"|"sofia", default sofia; SofiaSurface = dynamic(ssr:false) mounted PERSISTENTLY (hidden, not unmounted, behind other surfaces so her mic/voice stay live); ChatPanel + LiveTranscriptRibbon stand down on her surface; deleted JarvisLab.tsx + HudPanelCard.tsx + InOsBrowserModal.tsx (closed import set, preserved in history + archive branch).
+- OS-control wiring: new `ui_os` tool in brain.ts (surfaces sofia|sophia|os) → emits ui frame op 'os' → sofia App dispatches CustomEvent 'sofia:os' → shell listens and setTab. "When she speaks she takes the interface": shell subscribes to sofia store — phase → 'speaking' flips the visible surface to hers.
+- Coexistence upgrades (additive only): .sofia-scope css scope (scanlines/vignette moved off body::after; font + bg re-asserted inside the scope), store.ts __jarvis handle guarded on window (SSR import via the shell), store gained visible/setVisible, Scene Canvas frameloop parks ('never') when not on screen, level pump idles when hidden.
+- The frameloop parking was NOT cosmetic: reproduced a hard page hang (main thread dead at T+30-60s) whenever an OS surface ran with sofia's hidden WebGL loop behind it (desktop, workspace, sophia canvas all fatal; sofia alone fine; 'thinking' fine, 'speaking' fatal only because it coincided with the switch). After parking: every surface minutes-stable at 0.04-0.1s eval latency, speaking takeover works, zero page errors.
+- .env.example: union of OS keys (DATABASE_URL, COMPOSIO, RESEND, SAMJUNIORS_DEV_SECRET, LIVE_WS_PORT, ...) + sofia chains/pins; !.env.example negation in .gitignore. package.json: + three/@react-three/fiber/postprocessing, dompurify, @mediapipe/tasks-vision, zustand, framer-motion, ws, @types/*. eslint: sofia override (react-hooks refs/immutability/set-state-in-effect), tests/** ignored, connector.tsx set-state-in-effect relaxed (pre-existing on main; lint now clean vs failing on main).
+- tsc: 0 new type errors (162 pre-existing on main, unchanged; build has ignoreBuildErrors).
+- E2E on :3100 (merged repo) AND :3000 (mirrored into my-project preview): boot → SOFIA ignition default → HUD → typed ask (honest chain-failure report through the live z-ai quota window — BRAIN · Z-AI rail, transcript, phase cycle) → ui_os event surface switches → desktop lock + workspace + sophia canvas each minutes-stable → setPhase('speaking') takeover back to sofia, responsive → mobile 390px no overflow → 0 page errors.
+- Pushed: feat/sofia-merge + archive/pre-sofia-merge to samjuniors/SamjuniorsOS (token from the user, verified samjuniors). API-verified: branches 200, README/.env.example/docs/sofia/SETUP/src files 200, JarvisLab.tsx 404 on the branch.
+- Mirrored the merged app into /home/z/my-project (rsync src/ + public assets + prisma schema + configs; bun add missing deps; db:push SQLite; dev server auto-restarted) so the preview panel IS the merged app; committed locally.
+
+Stage Summary:
+- ONE app: SamJuniorsOS with SOFIA as a first surface (jarvis tab replaced). Default surface = SOFIA ignition. She stays mounted behind every surface — mic + voice live, WebGL parked when hidden (the fix that made the merge actually usable).
+- She controls the complete interface: speaks → takes the visible surface; ui_os tool → switches surfaces in plain words.
+- sofia-next was upgraded only (ui_os tool, os event dispatch, visible flag, css scope, window guard) — nothing removed; standalone sofia-next repo untouched on GitHub.
+- Deliverables on GitHub: samjuniors/SamjuniorsOS branch feat/sofia-merge (the merge) + archive/pre-sofia-merge (pre-merge snapshot); README, .env.example, docs/sofia/{SETUP,MERGE_PROMPT}.md all present.
+- z-ai quota window was 429 during verification — every path tested honestly in that state; self-heals when the window closes.
