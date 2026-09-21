@@ -158,7 +158,14 @@ export class GeminiRealtimeProvider implements RealtimeModelProvider {
     } catch (fallbackErr) {
       // Deterministic emergency fallback
       const durationMs = Date.now() - start;
-      const fallbackText = `Acknowledged. Directing executive council on: "${input.founderMessage}".`;
+      const isAction =
+        input.founderMessage &&
+        /^(please\s+)?(research|plan|audit|review|analyze|calculate|build|execute|model|orchestrate|run|start|transfer|delete|drop|send|deploy|publish|create|remove|pay|hire|fire)\b/i.test(
+          input.founderMessage
+        );
+      const fallbackText = isAction
+        ? `Acknowledged. Directing executive council on: "${input.founderMessage}".`
+        : `Acknowledged. Sophia core is standing by for company operations.`;
       if (onDelta) onDelta(fallbackText);
       return {
         turnId: input.turnId,
@@ -166,7 +173,7 @@ export class GeminiRealtimeProvider implements RealtimeModelProvider {
         modelUsed: 'deterministic-offline-fallback',
         fullText: fallbackText,
         durationMs,
-        detectedIntent: 'directive',
+        detectedIntent: isAction ? 'directive' : 'conversation',
       };
     }
   }

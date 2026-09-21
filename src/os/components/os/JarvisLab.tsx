@@ -46,7 +46,7 @@ interface DiagnosticEvent {
 export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
   // Session & Connection
   const [sessionId] = useState(() => `sess-${Math.random().toString(36).slice(2, 9)}`);
-  const [isConnected, setIsConnected] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
   const [activeProvider, setActiveProvider] = useState('gemini');
   const [availableProviders, setAvailableProviders] = useState<Array<{ id: string; name: string; model: string }>>([
     { id: 'gemini', name: 'Google Gemini Pro', model: 'gemini-1.5-pro' },
@@ -194,10 +194,15 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
       .then((data) => {
         if (data.success && Array.isArray(data.providers)) {
           setAvailableProviders(data.providers);
+          setIsConnected(true);
           addEvent('provider', `Loaded ${data.providers.length} registered realtime provider(s)`);
+        } else {
+          setIsConnected(false);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setIsConnected(false);
+      });
 
     return () => {
       releaseAudioHardware();
@@ -871,7 +876,7 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
                   Telemetry & Ingress
                 </h3>
               </div>
-              <span className="font-mono text-[10px] text-slate-500">PORT 3001</span>
+              <span className="font-mono text-[10px] text-slate-500">/api/realtime/turn</span>
             </div>
 
             <div className="space-y-2.5 text-xs font-mono">
@@ -881,19 +886,21 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">TRANSPORT</span>
-                <span className="text-emerald-400">WebSocket / HTTP Bridge</span>
+                <span className="text-emerald-400">Next.js HTTP/REST Ingress</span>
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1.5">
                 <span className="text-slate-400">VAD ENGINE</span>
-                <span className="text-cyan-300">Acoustic Energy Heuristic</span>
+                <span className="text-cyan-300">WebAudio RMS AnalyserNode</span>
               </div>
               <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-400">STT ADAPTER</span>
-                <span className="text-slate-200">Browser Speech API / Deepgram</span>
+                <span className="text-slate-400">ACTIVE STT</span>
+                <span className="text-slate-200">
+                  {micMode === 'direct' ? 'WebRTC MediaRecorder (Direct)' : 'Browser SpeechRecognition'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">SECURITY GATE</span>
-                <span className="text-amber-300">SideEffectAuthorizationGate</span>
+                <span className="text-amber-300">SideEffectAuthorizationGate (Server)</span>
               </div>
             </div>
           </div>

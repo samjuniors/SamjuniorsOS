@@ -35,11 +35,91 @@ export async function POST(req: NextRequest) {
       conversationHistory = [],
     } = body;
 
+    // Validate Message
     const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+    if (trimmedMessage.length > 10000) {
+      return NextResponse.json(
+        { error: 'Message exceeds maximum allowed length of 10,000 characters', success: false },
+        { status: 400 }
+      );
+    }
 
     if (!trimmedMessage && !audioRecording?.base64Data) {
       return NextResponse.json(
         { error: 'Either message or audio recording is required', success: false },
+        { status: 400 }
+      );
+    }
+
+    // Validate Provider Selection (Prevent Provider Spoofing)
+    const validProviders = listRealtimeProviders();
+    const isRegistered = validProviders.some((p) => p.id === providerId);
+    if (!isRegistered) {
+      return NextResponse.json(
+        {
+          error: `Realtime provider '${providerId}' is not registered. Available: ${validProviders.map((p) => p.id).join(', ')}`,
+          success: false,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate Camera Snapshot Payload & Size Bounds (Max 5MB)
+    if (cameraSnapshot) {
+      if (typeof cameraSnapshot.base64Data !== 'string') {
+        return NextResponse.json(
+          { error: 'cameraSnapshot.base64Data must be a valid base64 string', success: false },
+          { status: 400 }
+        );
+      }
+      if (cameraSnapshot.base64Data.length > 7000000) {
+        return NextResponse.json(
+          { error: 'cameraSnapshot payload exceeds maximum size limit (5MB)', success: false },
+          { status: 413 }
+        );
+      }
+      const allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (cameraSnapshot.mimeType && !allowedImageTypes.includes(cameraSnapshot.mimeType)) {
+        return NextResponse.json(
+          { error: `Invalid cameraSnapshot mimeType '${cameraSnapshot.mimeType}'. Allowed: ${allowedImageTypes.join(', ')}`, success: false },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate Audio Recording Payload & Size Bounds (Max 10MB)
+    if (audioRecording) {
+      if (typeof audioRecording.base64Data !== 'string') {
+        return NextResponse.json(
+          { error: 'audioRecording.base64Data must be a valid base64 string', success: false },
+          { status: 400 }
+        );
+      }
+      if (audioRecording.base64Data.length > 14000000) {
+        return NextResponse.json(
+          { error: 'audioRecording payload exceeds maximum size limit (10MB)', success: false },
+          { status: 413 }
+        );
+      }
+      const allowedAudioTypes = ['audio/webm', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/wav', 'audio/ogg', 'audio/mpeg'];
+      if (audioRecording.mimeType && !allowedAudioTypes.includes(audioRecording.mimeType)) {
+        return NextResponse.json(
+          { error: `Invalid audioRecording mimeType '${audioRecording.mimeType}'. Allowed: ${allowedAudioTypes.join(', ')}`, success: false },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate Conversation History Bounds
+    if (conversationHistory && !Array.isArray(conversationHistory)) {
+      return NextResponse.json(
+        { error: 'conversationHistory must be an array', success: false },
+        { status: 400 }
+      );
+    }
+    if (Array.isArray(conversationHistory) && conversationHistory.length > 50) {
+      return NextResponse.json(
+        { error: 'conversationHistory exceeds maximum allowed limit of 50 items', success: false },
         { status: 400 }
       );
     }
@@ -49,20 +129,23 @@ export async function POST(req: NextRequest) {
     // Determine if utterance is a company directive requiring Council orchestration
     const isDirective =
       trimmedMessage.length > 0 &&
-      (/^(please\s+)?(research|plan|audit|review|analyze|calculate|build|execute|model|orchestrate|run|start)\b/i.test(
+      (/^(please\s+)?(research|plan|audit|review|analyze|calculate|build|execute|model|orchestrate|run|start|transfer|delete|drop|send|deploy|publish|create|remove|pay|hire|fire)\b/i.test(
         trimmedMessage
       ) || trimmedMessage.length > 80);
 
     if (isDirective) {
+      const startTime = Date.now();
       // Execute through authoritative MultiAgentOrchestrator council
       const orchestrator = new MultiAgentOrchestrator();
-      const run = await orchestrator.orchestrate(trimmedMessage, {
+      const run = await orchestrator.orchestrateDirective({
+        directive: trimmedMessage,
         autonomyLevel: 'autonomous',
         agents: ['coo', 'researcher', 'pm', 'finance'],
       });
+      const elapsed = Date.now() - startTime;
 
       const recommendation = run.executiveResult?.recommendation || 'Directive executed by executive council.';
-      const approvalsCount = run.plan.filter((p) => p.status === 'awaiting_approval').length;
+      const approvalsCount = run.plan.filter((p) => p.status === 'requires_approval').length;
 
       return NextResponse.json({
         success: true,
@@ -74,7 +157,7 @@ export async function POST(req: NextRequest) {
         reply: `[Executive Council] ${run.title}: ${recommendation}`,
         orchestrationRunId: run.id,
         approvalsPending: approvalsCount,
-        durationMs: run.durationMs,
+        durationMs: elapsed,
         detectedIntent: 'directive',
       });
     }
