@@ -742,6 +742,11 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
         protocolStep: w.latestRun.protocolStep,
         durationMs: w.latestRun.durationMs,
         error: w.latestRun.error ?? undefined,
+        directive: w.directive,
+        summary: w.latestRun.outputContent || undefined,
+        recoveryGuidance: w.runtimeState === 'failed'
+          ? (w.latestRun.error ? `Failure detected: ${w.latestRun.error}. Sophia requires founder review or re-dispatch with adjusted parameters.` : 'Execution halted due to safety or invariant checks. Review Activity logs or re-dispatch.')
+          : undefined,
         executionSteps: w.executionSteps,
       },
     };
@@ -790,6 +795,8 @@ export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDT
         runId: w.latestRun.runId || (w.latestRun as any).id,
         protocolStep: w.latestRun.protocolStep,
         durationMs: w.latestRun.durationMs,
+        directive: w.directive,
+        summary: w.latestRun.outputContent || 'Work completed and verified by Sophia.',
         executionSteps: w.executionSteps,
       },
     };

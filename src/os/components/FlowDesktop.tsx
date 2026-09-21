@@ -425,9 +425,9 @@ function WorkCard({
   if (selected) {
     nodeState = "selected";
   } else if (dto?.presentationState) {
-    nodeState = dto.presentationState === "waiting" ? "processing" : (dto.presentationState as NodeStateType);
+    nodeState = dto.presentationState === "waiting" ? "default" : (dto.presentationState as NodeStateType);
   } else {
-    if (n.state === "waiting") nodeState = "processing";
+    if (n.state === "waiting") nodeState = "default";
     else if (n.state === "blocked") nodeState = "error";
     else if (n.state === "active") nodeState = "active";
     else if (n.state === "complete") nodeState = "success";
@@ -666,9 +666,9 @@ function Phase4NodeCard({
   if (selected) {
     nodeState = "selected";
   } else if (dto?.presentationState) {
-    nodeState = dto.presentationState === "waiting" ? "processing" : (dto.presentationState as NodeStateType);
+    nodeState = dto.presentationState === "waiting" ? "default" : (dto.presentationState as NodeStateType);
   } else {
-    if (n.state === "waiting") nodeState = "processing";
+    if (n.state === "waiting") nodeState = "default";
     else if (n.state === "blocked") nodeState = "error";
     else if (n.state === "active") nodeState = "active";
     else if (n.state === "processing") nodeState = "processing";
@@ -1448,7 +1448,7 @@ export default function FlowDesktop({
     }
   }, []);
 
-  // Initial load and conservative refresh (polling every 8 seconds, paused when tab is backgrounded)
+  // Initial load, conservative polling, and instantaneous event-driven refresh
   useEffect(() => {
     loadGraph();
     const interval = setInterval(() => {
@@ -1456,7 +1456,16 @@ export default function FlowDesktop({
         loadGraph();
       }
     }, 8000);
-    return () => clearInterval(interval);
+
+    const onGraphRefresh = () => {
+      loadGraph(true);
+    };
+    window.addEventListener("samjuniors:graph-refresh", onGraphRefresh);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("samjuniors:graph-refresh", onGraphRefresh);
+    };
   }, [loadGraph]);
 
   // Phase 4.4A — honest automation heartbeat status (authoritative projection;
@@ -1850,6 +1859,26 @@ export default function FlowDesktop({
       recenter();
     }
   }, [graph.nodes, focusNode, recenter]);
+
+  // External selection dispatch (e.g. clicking a workstream in TodoDrawer or Cockpit)
+  useEffect(() => {
+    const handleFocusNode = (e: Event) => {
+      const custom = e as CustomEvent<{ id?: string; directive?: string }>;
+      if (!custom.detail) return;
+      const { id, directive } = custom.detail;
+      const target = graph.nodes.find(
+        (n) =>
+          (id && (n.id === id || n.id === `step-${id}` || n.dtoNode?.id === id)) ||
+          (directive && (n.dtoNode?.metadata?.directive === directive || n.title === directive))
+      );
+      if (target) {
+        focusNode(target);
+        setSelected(target);
+      }
+    };
+    window.addEventListener("samjuniors:focus-node", handleFocusNode);
+    return () => window.removeEventListener("samjuniors:focus-node", handleFocusNode);
+  }, [graph.nodes, focusNode]);
 
   useEffect(() => {
     const el = viewportRef.current!;
@@ -2612,6 +2641,19 @@ export default function FlowDesktop({
                   </div>
                 </div>
 
+                {/* Strategic Context / Founder Directive */}
+                {selected.type === "workflow" && selected.dtoNode?.metadata?.directive && (
+                  <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.04] p-2.5">
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+                      <Target size={11} />
+                      Founder Directive
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-200">
+                      {selected.dtoNode.metadata.directive}
+                    </p>
+                  </div>
+                )}
+
                 {/* Phase 4.3B.1 — Authoritative Execution Trail (work objects) */}
                 {selected.type === "workflow" && selected.dtoNode?.metadata?.executionSteps && selected.dtoNode.metadata.executionSteps.length > 0 && (
                   <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
@@ -2664,6 +2706,42 @@ export default function FlowDesktop({
                         <Bot size={10} className="text-slate-500" />
                         Owner metadata · <span className="font-mono text-slate-400">{selected.dtoNode.owner}</span>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Authoritative Deliverable / Output Summary */}
+                {selected.type === "workflow" && selected.dtoNode?.metadata?.summary && (
+                  <div className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-400/[0.05] p-2.5">
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles size={11} />
+                        {selected.dtoNode.runtimeState === "completed" ? "Verified Deliverable" : "Milestone Deliverable Progress"}
+                      </span>
+                      <span className="font-mono text-[8.5px] rounded bg-emerald-400/20 px-1 py-0.5 text-emerald-200">AUTHORITATIVE</span>
+                    </div>
+                    <div className="mt-1.5 max-h-36 overflow-y-auto text-[11px] leading-relaxed text-slate-200 whitespace-pre-wrap os-scroll [scrollbar-width:thin]">
+                      {selected.dtoNode.metadata.summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Halt & Recovery Guidance */}
+                {selected.type === "workflow" && (selected.dtoNode?.metadata?.error || selected.dtoNode?.metadata?.recoveryGuidance) && (
+                  <div className="mt-3 rounded-xl border border-rose-400/30 bg-rose-500/[0.07] p-2.5 text-[11px]">
+                    <div className="flex items-center gap-1.5 font-semibold uppercase tracking-wider text-rose-300 text-[10px]">
+                      <ShieldAlert size={12} />
+                      Execution Halt & Recovery Guidance
+                    </div>
+                    {selected.dtoNode.metadata.error && (
+                      <div className="mt-1.5 rounded border border-rose-400/20 bg-rose-500/10 p-2 font-mono text-[10px] text-rose-200">
+                        {selected.dtoNode.metadata.error}
+                      </div>
+                    )}
+                    {selected.dtoNode.metadata.recoveryGuidance && (
+                      <p className="mt-1.5 leading-relaxed text-slate-300">
+                        {selected.dtoNode.metadata.recoveryGuidance}
+                      </p>
                     )}
                   </div>
                 )}

@@ -144,6 +144,12 @@ export interface GraphNodeMetadata {
   evidenceCount?: number;
   /** Phase 4.3B.1: local workflow of a work object, revealed on focus (never global) */
   executionSteps?: GraphExecutionStepDTO[];
+  /** Founder Operating Pass: directive text or intent */
+  directive?: string;
+  /** Founder Operating Pass: authoritative deliverable summary or result */
+  summary?: string;
+  /** Founder Operating Pass: recovery guidance if work is failed or blocked */
+  recoveryGuidance?: string;
 }
 
 export interface GraphNodeDTO {

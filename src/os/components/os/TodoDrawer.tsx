@@ -14,7 +14,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
   const work = useOS((s) => s.work);
   const agents = useOS((s) => s.agents);
   const [draft, setDraft] = useState("");
-  const [owner, setOwner] = useState("ops");
+  const [owner, setOwner] = useState("sophia");
   const [filter, setFilter] = useState<Filter>("open");
   const [search, setSearch] = useState("");
 
@@ -127,7 +127,19 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
             emptyTitle={filter === "blocked" ? "Nothing is blocked" : filter === "done" ? "Nothing shipped yet" : "No open workstreams"}
             emptyDescription={filter === "blocked" ? "All current tasks are executing cleanly." : filter === "done" ? "Shipped milestones will appear here." : "Deploy a new workstream using the creator below."}
             renderItem={(w) => (
-              <div key={w.id} className="relative group">
+              <div
+                key={w.id}
+                className="relative group cursor-pointer transition hover:scale-[1.01]"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(
+                      new CustomEvent("samjuniors:focus-node", {
+                        detail: { id: w.id, directive: w.directive || w.title },
+                      })
+                    );
+                  }
+                }}
+              >
                 <WorkSurface
                   work={workstreamToWork(
                     w,
@@ -140,7 +152,11 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
                   )}
                 />
                 <button
-                  onClick={() => { osSound.close(); os.removeWork(w.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    osSound.close();
+                    os.removeWork(w.id);
+                  }}
                   title="Remove workstream"
                   className="absolute top-2 right-2 p-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity"
                 >
@@ -160,9 +176,33 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
           <div className="mt-1.5 flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-slate-500">Owner</span>
             <div className="flex items-center gap-1">
-              {agents.filter((a) => a.id !== "sophia").map((a) => (
-                <button key={a.id} type="button" onClick={() => setOwner(a.id)} className={`rounded px-1.5 py-0.5 text-[8.5px] font-medium uppercase transition ${owner === a.id ? "border border-cyan-300/40 bg-cyan-300/20 text-cyan-200" : "text-slate-500 hover:text-slate-300"}`}>{a.name}</button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setOwner("sophia")}
+                className={`rounded px-1.5 py-0.5 text-[8.5px] font-medium uppercase transition ${
+                  owner === "sophia"
+                    ? "border border-cyan-300/40 bg-cyan-300/20 text-cyan-200"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                Council
+              </button>
+              {agents
+                .filter((a) => a.id !== "sophia")
+                .map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setOwner(a.id)}
+                    className={`rounded px-1.5 py-0.5 text-[8.5px] font-medium uppercase transition ${
+                      owner === a.id
+                        ? "border border-cyan-300/40 bg-cyan-300/20 text-cyan-200"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    {a.name.split(" ")[0]}
+                  </button>
+                ))}
             </div>
           </div>
         </form>

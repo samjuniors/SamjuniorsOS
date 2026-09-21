@@ -19,6 +19,7 @@ export interface RealtimeProviderTurnInput {
     role: 'user' | 'assistant' | 'system';
     content: string;
   }>;
+  personaId?: 'friendly' | 'professional' | 'creative' | 'technical';
   systemInstruction?: string;
   /** Optional sample-gated camera or screen still frame */
   cameraSnapshot?: {

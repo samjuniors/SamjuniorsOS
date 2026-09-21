@@ -182,6 +182,9 @@ export async function decideApproval(approvalId: string, action: "approve" | "re
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, approvalId, reason: reason || `Founder decision via SamJuniorsOS (${action})` }),
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+  }
 }
 
 /* ------------------------------------------------------------------ company activity (Phase 4.4C) */
@@ -517,12 +520,18 @@ export async function dispatchDirective(directive: string, opts?: { agents?: str
     clearInterval(poll);
     applyOrchestrationRun(run);
     await syncFromServer();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+    }
     return run;
   } catch (err) {
     clearInterval(poll);
     // Sync whatever steps actually persisted server-side before the failure,
     // then surface the honest error — no fake local success.
     await syncFromServer().catch(() => undefined);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+    }
     throw err instanceof Error ? err : new Error(String(err));
   }
 }

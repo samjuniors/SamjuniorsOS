@@ -7,6 +7,7 @@ import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
 import JarvisLab from "./components/os/JarvisLab";
+import { BootScreen } from "./components/os/BootScreen";
 import { defaultSettings, type NeuralField, type Settings } from "./lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork } from "./lib/osStore";
 import { agentChat, dispatchDirective, looksLikeDirective, summarizeRun, syncFromServer } from "./lib/runtime";
@@ -69,6 +70,8 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
       //    (POST /api/orchestrate → MultiAgentOrchestrator 9-step council).
       //    Live progress surfaces from durable agent-run records while it runs.
       if (looksLikeDirective(text)) {
+        say(`Understood. Decomposing "${text.length > 50 ? `${text.slice(0, 48)}…` : text}" across the specialist council...`);
+        os.setSophia("thinking");
         const run = await dispatchDirective(text);
         os.setSophia("idle");
         say(summarizeRun(run));
@@ -177,7 +180,8 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 /* --------------------------------------------------------------------- App */
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("sophia");
+  const [tab, setTab] = useState<Tab>("jarvis");
+  const [isBooting, setIsBooting] = useState(true);
   const router = useRouter();
 
   // Apply persisted OS state after mount (hydration-safe: SSR and the first
@@ -188,6 +192,10 @@ export default function App() {
     os.rehydrate();
     syncFromServer().catch(() => { /* runtime logs the honest failure */ });
   }, []);
+
+  if (isBooting) {
+    return <BootScreen onComplete={() => setIsBooting(false)} />;
+  }
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">

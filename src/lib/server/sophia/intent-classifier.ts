@@ -119,8 +119,8 @@ Output a JSON code block with your proposal:
         const sanitized = this.sanitizeProposal(parsed, opts.message);
         return { proposal: sanitized, liveAi: true, rawOutput };
       }
-    } catch (err) {
-      console.warn('[SophiaIntentClassifier] Live AI generation failed, falling back to deterministic analyzer:', err);
+    } catch (err: any) {
+      console.warn(`[SophiaIntentClassifier] Live AI generation failed, falling back to deterministic analyzer: ${err?.message || err}`);
     }
 
     // Deterministic fallback analyzer

@@ -184,6 +184,7 @@ Never fabricate imaginary financial metrics or unverified operational claims. Ad
 };
 
 export async function POST(req: NextRequest) {
+  console.log('[AGENT-CHAT ENTER]');
   try {
     const session = await getAuthenticatedFounder(req);
     if (!session) {
@@ -668,6 +669,7 @@ ${roleScopedContext}
       liveAi: false,
     });
   } catch (error: any) {
+    console.error('[AGENT-CHAT CRITICAL ERROR]:', error?.message || error);
     return NextResponse.json({ error: error.message || "Failed to chat with agent" }, { status: 500 });
   }
 }
