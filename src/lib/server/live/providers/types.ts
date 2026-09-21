@@ -26,6 +26,11 @@ export interface RealtimeProviderTurnInput {
     /** Base64-encoded image data */
     base64Data: string;
   };
+  /** Optional audio recording from browser (e.g. audio/webm base64) */
+  audioRecording?: {
+    mimeType: string;
+    base64Data: string;
+  };
 }
 
 export interface RealtimeProviderTurnOutput {

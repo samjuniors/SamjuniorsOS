@@ -87,6 +87,12 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // Mic Mode: 'direct' (WebRTC MediaRecorder - resilient) vs 'webspeech' (Web Speech API)
+  const [micMode, setMicMode] = useState<'direct' | 'webspeech'>('direct');
 
   const addEvent = useCallback((type: DiagnosticEvent['type'], detail: string, durationMs?: number) => {
     const time = new Date().toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -94,6 +100,40 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
       { id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`, timestamp: time, type, detail, durationMs },
       ...prev.slice(0, 49),
     ]);
+  }, []);
+
+  // Cleanup all audio resources and release microphone hardware
+  const releaseAudioHardware = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    setMicLevel(0);
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // Safe ignore
+      }
+      mediaRecorderRef.current = null;
+    }
+
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
+      mediaStreamRef.current = null;
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
+    sttClientRef.current?.stop();
+    isMicActiveRef.current = false;
+    setIsMicActive(false);
   }, []);
 
   // Initialize Speech Services
@@ -124,17 +164,19 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
         setTranscriptFinal(final);
         setTranscriptInterim('');
         addEvent('stt', `Transcribed utterance: "${final}"`);
-        void handleTurnSubmit(final);
+        void handleTurnSubmit({ messageText: final });
       },
       onError: (err) => {
-        setSpeechAlert({ message: err.message, hint: err.hint });
-        addEvent('error', `STT Error: ${err.message} (${err.hint})`);
-        setIsMicActive(false);
-        isMicActiveRef.current = false;
-        setModality('idle');
+        // Fallback to Direct Audio Mode if Web Speech throws an error
+        addEvent('error', `Web Speech: ${err.message}. Auto-switching to Direct Audio Capture mode.`);
+        setSpeechAlert({
+          message: 'Switched to Direct Audio Mode',
+          hint: 'Your browser microphone is active and recording directly without relying on Google cloud speech servers.',
+        });
+        setMicMode('direct');
       },
       onEnd: () => {
-        if (isMicActiveRef.current) {
+        if (isMicActiveRef.current && micMode === 'webspeech') {
           try {
             sttClientRef.current?.start();
           } catch {
@@ -158,91 +200,123 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
       .catch(() => {});
 
     return () => {
-      sttClientRef.current?.stop();
+      releaseAudioHardware();
       ttsSpeakerRef.current?.cancel();
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-      }
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
       releaseCamera();
     };
-  }, [addEvent]);
+  }, [addEvent, micMode, releaseAudioHardware]);
 
-  // Audio Level Metering
-  const startMetering = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      const ctx = new AudioCtx();
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
+  // Start Direct Audio Recording & RMS Metering
+  const startDirectAudio = async () => {
+    releaseAudioHardware();
 
-      audioContextRef.current = ctx;
-      analyserRef.current = analyser;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    mediaStreamRef.current = stream;
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const updateMeter = () => {
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+    // Audio Context for energy metering
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    audioContextRef.current = ctx;
+    analyserRef.current = analyser;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const updateMeter = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length;
+      setMicLevel(Math.min(100, Math.round((avg / 128) * 100)));
+      animFrameRef.current = requestAnimationFrame(updateMeter);
+    };
+    updateMeter();
+
+    // MediaRecorder for capturing voice
+    audioChunksRef.current = [];
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+      ? 'audio/webm'
+      : 'audio/mp4';
+
+    const recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) {
+        audioChunksRef.current.push(e.data);
+      }
+    };
+
+    recorder.onstop = () => {
+      const chunks = audioChunksRef.current;
+      if (chunks.length === 0) return;
+      const audioBlob = new Blob(chunks, { type: mimeType });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result as string)?.split(',')[1];
+        if (base64) {
+          addEvent('stt', `Captured voice recording (${Math.round(audioBlob.size / 1024)}KB ${mimeType}). Dispatching to Sophia...`);
+          void handleTurnSubmit({ audioBase64: base64, audioMimeType: mimeType });
         }
-        const avg = sum / dataArray.length;
-        setMicLevel(Math.min(100, Math.round((avg / 128) * 100)));
-        animFrameRef.current = requestAnimationFrame(updateMeter);
       };
-      updateMeter();
-    } catch (err: any) {
-      console.warn('Audio metering unavailable:', err);
-    }
+      reader.readAsDataURL(audioBlob);
+    };
+
+    recorder.start(250);
+    mediaRecorderRef.current = recorder;
+
+    isMicActiveRef.current = true;
+    setIsMicActive(true);
+    setModality('listening');
+    addEvent('stt', 'Microphone armed in Direct Audio Mode (hardware active)');
   };
 
-  // Mic Toggle with sequential hardware validation
+  // Mic Toggle
   const toggleMic = async () => {
     osSound.click();
     setSpeechAlert(null);
 
     if (isMicActive) {
-      isMicActiveRef.current = false;
-      setIsMicActive(false);
-      sttClientRef.current?.stop();
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-        audioContextRef.current = null;
+      // Disarm & process recorded turn
+      addEvent('stt', 'Microphone stopped. Processing captured speech...');
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
-      setModality('idle');
-      setMicLevel(0);
-      addEvent('stt', 'Microphone disarmed');
+      releaseAudioHardware();
+      setModality('thinking');
     } else {
       try {
-        addEvent('stt', 'Requesting microphone hardware authorization...');
-        await startMetering();
-
-        isMicActiveRef.current = true;
-        setIsMicActive(true);
-        setModality('listening');
-
-        const ok = sttClientRef.current?.start();
-        if (ok) {
-          addEvent('stt', 'Microphone armed and listening for speech');
+        if (micMode === 'direct') {
+          await startDirectAudio();
         } else {
-          isMicActiveRef.current = false;
-          setIsMicActive(false);
-          setModality('idle');
+          // Web Speech API Mode without competing stream
+          releaseAudioHardware();
+          isMicActiveRef.current = true;
+          setIsMicActive(true);
+          setModality('listening');
+          const ok = sttClientRef.current?.start();
+          if (ok) {
+            addEvent('stt', 'Microphone armed in Web Speech mode');
+          } else {
+            // Fallback immediately to direct audio mode
+            setMicMode('direct');
+            await startDirectAudio();
+          }
         }
       } catch (err: any) {
-        isMicActiveRef.current = false;
-        setIsMicActive(false);
+        releaseAudioHardware();
         setModality('idle');
         setSpeechAlert({
-          message: 'Microphone hardware access was denied or failed to initialize.',
-          hint: 'Allow microphone access in your browser URL bar for http://localhost:3000.',
+          message: 'Microphone access failed',
+          hint: err?.message || 'Check if another application has an exclusive lock on your microphone.',
         });
-        addEvent('error', `Microphone hardware error: ${err?.message || err}`);
+        addEvent('error', `Microphone error: ${err?.message || err}`);
       }
     }
   };
@@ -295,21 +369,32 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
     }
   };
 
-  // Turn Submission
-  const handleTurnSubmit = async (messageText: string) => {
-    const text = messageText.trim();
-    if (!text) return;
+  // Turn Submission (accepts text, audio recording, or camera frame)
+  const handleTurnSubmit = async (params: {
+    messageText?: string;
+    audioBase64?: string;
+    audioMimeType?: string;
+  }) => {
+    const text = params.messageText?.trim() || '';
+    if (!text && !params.audioBase64) return;
 
     setModality('thinking');
     const startTime = Date.now();
-    addEvent('provider', `Dispatching turn to '${activeProvider}': "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`);
+    if (text) {
+      addEvent('provider', `Dispatching turn to '${activeProvider}': "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`);
+    } else {
+      addEvent('provider', `Dispatching raw voice recording to '${activeProvider}'`);
+    }
 
     try {
       const res = await fetch('/api/realtime/turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
+          message: text || undefined,
+          audioRecording: params.audioBase64
+            ? { base64Data: params.audioBase64, mimeType: params.audioMimeType || 'audio/webm' }
+            : undefined,
           sessionId,
           providerId: activeProvider,
           cameraSnapshot: snapshot ? { mimeType: snapshot.mimeType, base64Data: snapshot.base64Data } : undefined,
@@ -399,7 +484,43 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
                   Audio & Voice Channel
                 </h3>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
+                {/* Audio Mode Switcher */}
+                <div className="flex items-center rounded-lg border border-white/10 bg-white/[0.02] p-0.5 text-[10px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isMicActive) releaseAudioHardware();
+                      setMicMode('direct');
+                      addEvent('stt', 'Switched to Direct Audio Mode (WebRTC hardware recording)');
+                    }}
+                    className={`rounded px-2 py-0.5 transition ${
+                      micMode === 'direct'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Direct hardware microphone recording (Resilient, 100% reliable)"
+                  >
+                    Direct Audio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isMicActive) releaseAudioHardware();
+                      setMicMode('webspeech');
+                      addEvent('stt', 'Switched to Web Speech API mode (interim transcripts)');
+                    }}
+                    className={`rounded px-2 py-0.5 transition ${
+                      micMode === 'webspeech'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/30'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Browser Web Speech API (Google cloud speech recognition)"
+                  >
+                    Web Speech
+                  </button>
+                </div>
+
                 <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono tracking-wider uppercase border ${
                   modality === 'speaking'
                     ? 'border-violet-400/40 bg-violet-400/10 text-violet-300'
@@ -519,7 +640,7 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (textInput.trim()) {
-                    void handleTurnSubmit(textInput);
+                    void handleTurnSubmit({ messageText: textInput });
                     setTextInput('');
                   }
                 }}
@@ -547,21 +668,21 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
                 <span className="text-slate-500">Quick Test:</span>
                 <button
                   type="button"
-                  onClick={() => void handleTurnSubmit('Sophia, give me an operational pulse on company workflows')}
+                  onClick={() => void handleTurnSubmit({ messageText: 'Sophia, give me an operational pulse on company workflows' })}
                   className="rounded-lg border border-white/5 bg-white/[0.02] px-2 py-0.5 text-slate-300 transition hover:border-cyan-400/30 hover:bg-cyan-950/30 hover:text-cyan-200"
                 >
                   💬 Operational Pulse
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleTurnSubmit('Research our competitors and summarize market risks')}
+                  onClick={() => void handleTurnSubmit({ messageText: 'Research our competitors and summarize market risks' })}
                   className="rounded-lg border border-white/5 bg-white/[0.02] px-2 py-0.5 text-slate-300 transition hover:border-amber-400/30 hover:bg-amber-950/30 hover:text-amber-200"
                 >
                   🛡️ Competitor Research (Council)
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleTurnSubmit('What is our current financial runway and burn rate?')}
+                  onClick={() => void handleTurnSubmit({ messageText: 'What is our current financial runway and burn rate?' })}
                   className="rounded-lg border border-white/5 bg-white/[0.02] px-2 py-0.5 text-slate-300 transition hover:border-cyan-400/30 hover:bg-cyan-950/30 hover:text-cyan-200"
                 >
                   📊 Financial Runway

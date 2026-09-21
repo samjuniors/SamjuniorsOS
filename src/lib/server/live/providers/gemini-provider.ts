@@ -55,7 +55,7 @@ export class GeminiRealtimeProvider implements RealtimeModelProvider {
           }
         }
 
-        // Current turn parts (including vision snapshot if provided)
+        // Current turn parts (including vision snapshot and audio recording if provided)
         const currentParts: Array<Record<string, any>> = [];
         if (input.cameraSnapshot?.base64Data) {
           currentParts.push({
@@ -65,7 +65,19 @@ export class GeminiRealtimeProvider implements RealtimeModelProvider {
             },
           });
         }
-        currentParts.push({ text: input.founderMessage });
+        if (input.audioRecording?.base64Data) {
+          currentParts.push({
+            inline_data: {
+              mime_type: input.audioRecording.mimeType || 'audio/webm',
+              data: input.audioRecording.base64Data,
+            },
+          });
+        }
+        if (input.founderMessage) {
+          currentParts.push({ text: input.founderMessage });
+        } else if (!input.cameraSnapshot && !input.audioRecording) {
+          currentParts.push({ text: 'Hello' });
+        }
 
         contents.push({
           role: 'user',

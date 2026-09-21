@@ -31,24 +31,27 @@ export async function POST(req: NextRequest) {
       sessionId = `sess-${Date.now()}`,
       providerId = 'gemini',
       cameraSnapshot,
+      audioRecording,
       conversationHistory = [],
     } = body;
 
-    if (!message || typeof message !== 'string' || !message.trim()) {
+    const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+
+    if (!trimmedMessage && !audioRecording?.base64Data) {
       return NextResponse.json(
-        { error: 'Message is required and must be non-empty', success: false },
+        { error: 'Either message or audio recording is required', success: false },
         { status: 400 }
       );
     }
 
     const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const trimmedMessage = message.trim();
 
     // Determine if utterance is a company directive requiring Council orchestration
     const isDirective =
-      /^(please\s+)?(research|plan|audit|review|analyze|calculate|build|execute|model|orchestrate|run|start)\b/i.test(
+      trimmedMessage.length > 0 &&
+      (/^(please\s+)?(research|plan|audit|review|analyze|calculate|build|execute|model|orchestrate|run|start)\b/i.test(
         trimmedMessage
-      ) || trimmedMessage.length > 80;
+      ) || trimmedMessage.length > 80);
 
     if (isDirective) {
       // Execute through authoritative MultiAgentOrchestrator council
@@ -84,6 +87,7 @@ export async function POST(req: NextRequest) {
       founderMessage: trimmedMessage,
       conversationHistory,
       cameraSnapshot,
+      audioRecording,
     });
 
     return NextResponse.json({
