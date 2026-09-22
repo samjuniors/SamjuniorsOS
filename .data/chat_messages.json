@@ -74,5 +74,31 @@
       "ingress": "sofia_ask"
     },
     "createdAt": "2026-09-22T08:25:43.184Z"
+  },
+  "msg-477b7c8d-a524-45b1-8722-2114cac21383": {
+    "id": "msg-477b7c8d-a524-45b1-8722-2114cac21383",
+    "conversationId": "conv-d0fd0ee0-ec63-4203-8141-559f52c3c393",
+    "sender": "founder",
+    "role": "user",
+    "content": "What is our current monthly recurring revenue?",
+    "idempotencyKey": "sofia-e30bce49-9876-43fa-8dc8-deea60a69336",
+    "metadata": {},
+    "createdAt": "2026-09-22T10:02:01.421Z"
+  },
+  "msg-79a92067-fb2b-44af-8bd0-623babe1bf0a": {
+    "id": "msg-79a92067-fb2b-44af-8bd0-623babe1bf0a",
+    "conversationId": "conv-d0fd0ee0-ec63-4203-8141-559f52c3c393",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • Chief Operating Officer & Master Orchestrator]\nAuthoritative Company Telemetry [SANDBOX SIMULATION MODEL — Live ledger integration pending]:\n- Monthly Recurring Revenue (MRR): $148,500\n- Annual Run Rate (ARR): $1,782,000\n- Monthly Burn Rate: $24,500\n- Gross Margin Floor: 86.4%\n- Cash Reserve Runway: 42 months",
+    "intent": "informational_query",
+    "idempotencyKey": "sofia-e30bce49-9876-43fa-8dc8-deea60a69336:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-22T10:02:01.805Z"
   }
 }
