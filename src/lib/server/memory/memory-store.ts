@@ -65,7 +65,8 @@ export const INITIAL_COMPANY_MEMORIES: CompanyMemory[] = [
 /**
  * Server-Side Single Source of Truth for COMPANY MEMORY (Historical Precedent)
  * 
- * Implements ICompanyMemoryStore with PostgreSQL / Prisma persistence and in-memory caching.
+ * Implements ICompanyMemoryStore with dual-mode Prisma persistence (target: PostgreSQL;
+ * currently the SQLite sandbox port per the M0 naming note) and in-memory caching.
  */
 export class CompanyMemoryStore implements ICompanyMemoryStore {
   private static instance: CompanyMemoryStore | null = null;

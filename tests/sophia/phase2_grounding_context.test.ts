@@ -11,9 +11,8 @@ import {
 import { AgentRunStore } from '../../src/lib/server/agents/run-store';
 import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approval-store';
 import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store';
-import { CompanyKnowledgeStore } from '../../src/lib/server/knowledge/knowledge-store';
-import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
-import { CompanyContextProvider } from '../../src/lib/server/context/company-context';
+import { CompanyKnowledgeStore, CANONICAL_COMPANY_KNOWLEDGE } from '../../src/lib/server/knowledge/knowledge-store';
+import { CompanyMemoryStore, INITIAL_COMPANY_MEMORIES } from '../../src/lib/server/memory/memory-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 
 /**
@@ -78,6 +77,13 @@ function resetStores(): void {
     claimStore.signals.clear();
     claimStore.sources.clear();
     DurableFileStore.getInstance().clearCollection('epistemic_claims');
+    // M0 test-isolation fix: reset the knowledge + memory singletons as well.
+    // Previously these were NOT reset, so the poisoned knowledge item added by
+    // test 10 persisted process-wide and contaminated every later test.
+    CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
+    CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
+    DurableFileStore.getInstance().clearCollection('company_memories');
+    DurableFileStore.getInstance().clearCollection('company_knowledge');
   } catch (e) {
     // Ignore store reset errors in test setup
   }

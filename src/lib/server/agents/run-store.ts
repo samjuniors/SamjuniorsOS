@@ -32,8 +32,11 @@ export interface IAgentRunStore {
 }
 
 /**
- * Authoritative PostgreSQL Agent Run Store.
- * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+ * Authoritative Agent Run Store (target: PostgreSQL — see M0 naming note).
+ * DATABASE REALITY: in this sandbox branch the Prisma schema is the SQLite port,
+ * so "Postgres*" classes currently run against SQLite via Prisma. The class
+ * names refer to the target architecture (M6 migration milestone).
+ * Direct persistence via Prisma. Fail-closed on database failure.
  */
 export class PostgresAgentRunStore implements IAgentRunStore {
   private static instance: PostgresAgentRunStore;

@@ -1,9 +1,13 @@
+import { createHash } from 'crypto';
 import {
   CompanyKnowledgeItem,
   ICompanyKnowledgeStore,
   KnowledgeQueryParams,
   RetrievedKnowledgeItem,
 } from '@/types/context';
+import { prisma } from '@/lib/server/db/prisma';
+import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
+import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are',
@@ -196,16 +200,51 @@ export const CANONICAL_COMPANY_KNOWLEDGE: CompanyKnowledgeItem[] = [
 ];
 
 /**
- * Server-Side Single Source of Truth for COMPANY KNOWLEDGE (Durable Reference Information)
- * 
- * Implements ICompanyKnowledgeStore.
- * Designed so that PostgreSQL / Supabase can replace this implementation directly
- * without altering retrieval or business logic.
+ * Computes the SHA-256 content hash used by the `CompanyKnowledge.hash`
+ * column for change detection (M2: the ingestion path respects this column).
+ */
+export function computeKnowledgeContentHash(content: string): string {
+  return createHash('sha256').update(content || '', 'utf-8').digest('hex');
+}
+
+/**
+ * ============================================================================
+ * COMPANY KNOWLEDGE STORE — M2: CANONICAL PERSISTENCE ACTIVATED
+ * ============================================================================
+ *
+ * Implements ICompanyKnowledgeStore with the SAME dual-mode persistence
+ * pattern as its sibling stores (memory-store, conversation store, etc.):
+ *
+ *  - LOCAL MODE: in-memory cache (constructor-hydrated from DurableFileStore)
+ *    + .data/company_knowledge.json durability + best-effort Prisma dual-write.
+ *  - AUTHORITATIVE MODE: Prisma fail-closed (requireAuthoritativeDatabase);
+ *    reads and writes go to the CompanyKnowledge table (target: PostgreSQL;
+ *    currently the SQLite sandbox port — see the M0 naming note).
+ *
+ * Seed migration (one-time, idempotent): the 8 canonical documents that
+ * previously existed ONLY as code constants are persisted to DurableFileStore
+ * on first boot (empty durable collection), and mirrored into the Prisma
+ * table lazily on first store usage (upsert keyed by item id, hash-respecting).
+ * The `hash` column (SHA-256 of content) provides change detection: an
+ * addKnowledge with the same id but different content updates the row under a
+ * new hash; a different id with byte-identical content collides on the unique
+ * hash index and is reported as a duplicate in authoritative mode (silently
+ * skipped in best-effort local dual-writes).
+ *
+ * Designed so the target PostgreSQL / Supabase deployment can replace the
+ * persistence internals without altering retrieval or business logic.
  */
 export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
   private static instance: CompanyKnowledgeStore | null = null;
 
   private knowledgeItems: CompanyKnowledgeItem[] = [...CANONICAL_COMPANY_KNOWLEDGE];
+
+  /** One-shot guard for the lazy Prisma seed mirror (M2 seed migration). */
+  private static prismaSeedPromise: Promise<void> | null = null;
+
+  private constructor() {
+    this.loadFromDurableStorage();
+  }
 
   public static getInstance(): CompanyKnowledgeStore {
     if (!CompanyKnowledgeStore.instance) {
@@ -214,21 +253,236 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
     return CompanyKnowledgeStore.instance;
   }
 
+  /**
+   * Hydrates the in-memory cache from DurableFileStore, merging over the
+   * canonical seed documents. On first boot (no durable collection), the
+   * canonical seeds are themselves persisted — the M2 one-time seed
+   * migration of the 8 canonical documents.
+   */
+  private loadFromDurableStorage(): void {
+    try {
+      const persisted = DurableFileStore.getInstance().readCollection<CompanyKnowledgeItem>('company_knowledge');
+      const persistedItems = Object.values(persisted);
+      if (persistedItems.length === 0) {
+        // First boot: persist the canonical seed set (one-time migration).
+        const seedRecord: Record<string, CompanyKnowledgeItem> = {};
+        for (const item of CANONICAL_COMPANY_KNOWLEDGE) {
+          seedRecord[item.id] = item;
+        }
+        DurableFileStore.getInstance().writeCollection('company_knowledge', seedRecord);
+        this.knowledgeItems = [...CANONICAL_COMPANY_KNOWLEDGE];
+        return;
+      }
+      // Merge: canonical seeds first (stable order), persisted items overlay
+      // by id (edits win), extras appended.
+      const byId = new Map<string, CompanyKnowledgeItem>();
+      for (const item of CANONICAL_COMPANY_KNOWLEDGE) byId.set(item.id, item);
+      for (const item of persistedItems) byId.set(item.id, item);
+      this.knowledgeItems = [...byId.values()];
+    } catch {
+      // fallback to canonical seeds
+    }
+  }
+
+  /**
+   * Lazily mirrors the canonical seed documents into the Prisma table once
+   * per process (idempotent upserts keyed by item id). Local mode:
+   * best-effort. Authoritative mode: fail-closed via the DB authority.
+   */
+  private ensurePrismaSeeded(): Promise<void> {
+    if (!CompanyKnowledgeStore.prismaSeedPromise) {
+      CompanyKnowledgeStore.prismaSeedPromise = (async () => {
+        try {
+          const db = isAuthoritativeMode()
+            ? await requireAuthoritativeDatabase()
+            : prisma;
+          for (const item of CANONICAL_COMPANY_KNOWLEDGE) {
+            await db.companyKnowledge.upsert({
+              where: { id: item.id },
+              create: {
+                id: item.id,
+                category: item.category,
+                title: item.title,
+                content: item.content,
+                hash: computeKnowledgeContentHash(item.content),
+                metadata: {
+                  documentId: item.documentId,
+                  version: item.version,
+                  summary: item.summary,
+                  tags: item.tags,
+                  applicableDepartments: item.applicableDepartments,
+                  authorAuthority: item.authorAuthority,
+                  lastVerifiedDate: item.lastVerifiedDate,
+                  isDurableReference: item.isDurableReference,
+                },
+              },
+              update: {
+                category: item.category,
+                title: item.title,
+                content: item.content,
+                hash: computeKnowledgeContentHash(item.content),
+                metadata: {
+                  documentId: item.documentId,
+                  version: item.version,
+                  summary: item.summary,
+                  tags: item.tags,
+                  applicableDepartments: item.applicableDepartments,
+                  authorAuthority: item.authorAuthority,
+                  lastVerifiedDate: item.lastVerifiedDate,
+                  isDurableReference: item.isDurableReference,
+                },
+              },
+            });
+          }
+        } catch (err: any) {
+          if (isAuthoritativeMode()) throw err;
+          // Local mode: best-effort only — the durable file store remains the
+          // local-mode primary per ADR 0002.
+        }
+      })().catch(() => {
+        // Do not cache a failed best-effort seed; retry on next usage.
+        CompanyKnowledgeStore.prismaSeedPromise = null;
+      });
+    }
+    return CompanyKnowledgeStore.prismaSeedPromise;
+  }
+
   public async getAllKnowledge(): Promise<CompanyKnowledgeItem[]> {
+    if (isAuthoritativeMode()) {
+      await this.ensurePrismaSeeded();
+      const db = await requireAuthoritativeDatabase();
+      const rows = await db.companyKnowledge.findMany({ orderBy: { updatedAt: 'desc' } });
+      return rows.map((r: any) => this.mapRowToItem(r));
+    }
     return [...this.knowledgeItems];
   }
 
   public async getKnowledgeById(id: string): Promise<CompanyKnowledgeItem | null> {
+    if (isAuthoritativeMode()) {
+      await this.ensurePrismaSeeded();
+      const db = await requireAuthoritativeDatabase();
+      const row = await db.companyKnowledge.findFirst({
+        where: { OR: [{ id }, { title: { contains: id } }] },
+      });
+      if (row) return this.mapRowToItem(row);
+      return null;
+    }
+
     const item = this.knowledgeItems.find((k) => k.id === id || k.documentId === id);
     return item ? { ...item } : null;
   }
 
   public async addKnowledge(item: CompanyKnowledgeItem): Promise<void> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyKnowledge.upsert({
+        where: { id: item.id },
+        create: {
+          id: item.id,
+          category: item.category,
+          title: item.title,
+          content: item.content,
+          hash: computeKnowledgeContentHash(item.content),
+          metadata: this.buildRowMetadata(item),
+        },
+        update: {
+          category: item.category,
+          title: item.title,
+          content: item.content,
+          hash: computeKnowledgeContentHash(item.content),
+          metadata: this.buildRowMetadata(item),
+        },
+      });
+      // Keep the in-process cache coherent for queryKnowledge.
+      this.knowledgeItems = [
+        item,
+        ...this.knowledgeItems.filter((k) => k.id !== item.id),
+      ];
+      return;
+    }
+
     this.knowledgeItems.unshift(item);
+    try {
+      DurableFileStore.getInstance().saveItem('company_knowledge', item.id, item);
+    } catch {}
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyKnowledge.upsert({
+          where: { id: item.id },
+          create: {
+            id: item.id,
+            category: item.category,
+            title: item.title,
+            content: item.content,
+            hash: computeKnowledgeContentHash(item.content),
+            metadata: this.buildRowMetadata(item),
+          },
+          update: {
+            category: item.category,
+            title: item.title,
+            content: item.content,
+            hash: computeKnowledgeContentHash(item.content),
+            metadata: this.buildRowMetadata(item),
+          },
+        });
+      } catch {
+        // Best-effort dual-write (e.g. unique-hash duplicate collision or
+        // offline DB): the durable file store remains the local-mode primary.
+      }
+    }
   }
 
   public async setKnowledge(items: CompanyKnowledgeItem[]): Promise<void> {
     this.knowledgeItems = [...items];
+
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.$transaction(async (tx: any) => {
+        await tx.companyKnowledge.deleteMany({});
+        if (items.length > 0) {
+          await tx.companyKnowledge.createMany({
+            data: items.map((item) => ({
+              id: item.id,
+              category: item.category,
+              title: item.title,
+              content: item.content,
+              hash: computeKnowledgeContentHash(item.content),
+              metadata: this.buildRowMetadata(item),
+            })) as any,
+          });
+        }
+      });
+      return;
+    }
+
+    try {
+      const record: Record<string, CompanyKnowledgeItem> = {};
+      for (const item of items) record[item.id] = item;
+      DurableFileStore.getInstance().writeCollection('company_knowledge', record);
+    } catch {}
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.$transaction([
+          prisma.companyKnowledge.deleteMany({}),
+          ...(items.length > 0
+            ? [prisma.companyKnowledge.createMany({
+                data: items.map((item) => ({
+                  id: item.id,
+                  category: item.category,
+                  title: item.title,
+                  content: item.content,
+                  hash: computeKnowledgeContentHash(item.content),
+                  metadata: this.buildRowMetadata(item),
+                })) as any,
+              })]
+            : []),
+        ]);
+      } catch {
+        // Best-effort dual-write; durable file remains local-mode primary.
+      }
+    }
   }
 
   /**
@@ -304,5 +558,36 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
     results.sort((a, b) => b.relevanceScore - a.relevanceScore);
     const limit = params.limit || 5;
     return results.slice(0, limit);
+  }
+
+  private buildRowMetadata(item: CompanyKnowledgeItem): any {
+    return {
+      documentId: item.documentId,
+      version: item.version,
+      summary: item.summary,
+      tags: item.tags,
+      applicableDepartments: item.applicableDepartments,
+      authorAuthority: item.authorAuthority,
+      lastVerifiedDate: item.lastVerifiedDate,
+      isDurableReference: item.isDurableReference,
+    } as any;
+  }
+
+  private mapRowToItem(r: any): CompanyKnowledgeItem {
+    const meta = (r.metadata && typeof r.metadata === 'object') ? r.metadata : {};
+    return {
+      id: r.id,
+      documentId: (meta.documentId as string) || r.id,
+      title: r.title,
+      category: r.category,
+      version: (meta.version as string) || '1.0.0',
+      summary: (meta.summary as string) || r.content?.slice(0, 240) || '',
+      content: r.content,
+      tags: (meta.tags as string[]) || [],
+      applicableDepartments: ((meta.applicableDepartments as CompanyKnowledgeItem['applicableDepartments']) || ['council']) as any,
+      authorAuthority: (meta.authorAuthority as string) || 'Unknown authority',
+      lastVerifiedDate: (meta.lastVerifiedDate as string) || r.updatedAt?.toISOString?.() || new Date().toISOString(),
+      isDurableReference: true as const,
+    };
   }
 }

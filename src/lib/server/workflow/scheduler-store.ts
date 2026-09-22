@@ -65,8 +65,14 @@ export interface ScheduledWorkStore {
 }
 
 /**
- * Authoritative PostgreSQL ScheduledWorkStore.
- * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+ * DATABASE REALITY (M0 naming note): "Postgres*" classes are named for the
+ * TARGET architecture (PostgreSQL at the M6 milestone). In this sandbox
+ * branch the Prisma schema is the SQLite port, so this class currently runs
+ * against SQLite via Prisma (`DATABASE_URL=file:...`).
+ */
+/**
+ * Authoritative ScheduledWorkStore (target: PostgreSQL — see naming note above).
+ * Direct persistence via Prisma. Fail-closed on database failure.
  */
 export class PostgresScheduledWorkStore implements ScheduledWorkStore {
   private static instance: PostgresScheduledWorkStore;

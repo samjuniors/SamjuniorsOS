@@ -1,6 +1,6 @@
 import { MultiAgentOrchestrator } from '../orchestration/orchestrator';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
-import { CompanyContextProvider } from '../context/company-context';
+import { CompanyStateStore } from '../state/state-store';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { AgentRunStore } from '../agents/run-store';
 import { SERVER_AGENTS } from '../agents/definitions';
@@ -245,8 +245,10 @@ export class SophiaServerGateway {
       let authoritativeData: any = null;
 
       if (sanitizedProposal.domain === 'company_metrics') {
-        const fin = CompanyContextProvider.getMergedContext().financialModel;
-        provenances.push('CompanyContextProvider / FinancialModel');
+        // M1: read the canonical CompanyStateStore — previously this read the
+        // hardcoded os-data financial constant through CompanyContextProvider.
+        const fin = await CompanyStateStore.getInstance().getFinancialMetrics();
+        provenances.push('CompanyStateStore / FinancialModel');
         authoritativeData = fin;
 
         const mrrText = typeof fin?.mrr === 'number' ? `$${fin.mrr.toLocaleString()}` : 'Unavailable (Live ledger sync required)';
