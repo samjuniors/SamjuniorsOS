@@ -99,7 +99,7 @@ export default function JarvisLab({ onBackToOs }: { onBackToOs?: () => void }) {
   // Voice & TTS Engine Settings
   const [ttsEngine, setTtsEngine] = useState<'system' | 'elevenlabs'>('elevenlabs');
   const [selectedVoiceId, setSelectedVoiceId] = useState('bMxLr8fP6hzNRRi9nJxU');
-  const [selectedVoiceName, setSelectedVoiceName] = useState('George (Jarvis / British)');
+  const [selectedVoiceName, setSelectedVoiceName] = useState('Ivanna - Candid, Peppy and Genuine');
   const [availableVoices, setAvailableVoices] = useState<Array<{ voice_id: string; name: string; category?: string }>>([]);
   const [customVoiceId, setCustomVoiceId] = useState('');
   const [nativeVoices, setNativeVoices] = useState<SpeechSynthesisVoice[]>([]);

@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server';
 
 /** Popular high-quality ElevenLabs presets */
 const PRESET_VOICES = [
-  { voice_id: 'bMxLr8fP6hzNRRi9nJxU', name: 'George (Jarvis / Sophisticated British)', category: 'premade' },
+  { voice_id: 'bMxLr8fP6hzNRRi9nJxU', name: 'Ivanna - Candid, Peppy and Genuine', category: 'premade' },
   { voice_id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Deep & Confident Male)', category: 'premade' },
   { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (Calm & Professional Female)', category: 'premade' },
   { voice_id: 'piTKgcLEGmPE4e6mEKli', name: 'Nicole (Whisper & Warm Female)', category: 'premade' },
-  { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George V1 (Warm British Storyteller)', category: 'premade' },
+  { voice_id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George (Warm British Storyteller)', category: 'premade' },
   { voice_id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi (Empathetic & Strong Female)', category: 'premade' },
   { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella (Expressive & Friendly Female)', category: 'premade' },
   { voice_id: 'ErXwobaYiN019PkySvjV', name: 'Antoni (Well-rounded & Crisp Male)', category: 'premade' },

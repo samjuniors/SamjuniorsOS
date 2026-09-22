@@ -134,33 +134,44 @@ export async function POST(req: NextRequest) {
     // If direct audio recording was sent and message text is empty, transcribe audio first
     if (!userSpokenText && audioRecording?.base64Data) {
       try {
-        const { GoogleGenAI } = await import('@google/genai');
         const apiKey = process.env.GEMINI_API_KEY || '';
-        if (apiKey) {
-          const ai = new GoogleGenAI({ apiKey });
+        if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
           const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-          const transcriptRes = await ai.models.generateContent({
-            model,
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    inlineData: {
-                      data: audioRecording.base64Data,
-                      mimeType: audioRecording.mimeType || 'audio/webm',
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const transRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      inline_data: {
+                        mime_type: audioRecording.mimeType || 'audio/webm',
+                        data: audioRecording.base64Data,
+                      },
                     },
-                  },
-                  {
-                    text: 'Transcribe the user speech verbatim. Return ONLY the transcribed text, nothing else. If silent or unintelligible, return empty string.',
-                  },
-                ],
+                    {
+                      text: 'Transcribe the user speech verbatim. Return ONLY the transcribed text, nothing else. If silent or unintelligible, return empty string.',
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 256,
               },
-            ],
+            }),
           });
-          const transcribed = transcriptRes.text?.trim() || '';
-          if (transcribed) {
-            userSpokenText = transcribed;
+
+          if (transRes.ok) {
+            const transData = await transRes.json();
+            const cand = transData.candidates?.[0];
+            const transcribed = cand?.content?.parts?.map((p: any) => p.text || '').join('').trim() || '';
+            if (transcribed) {
+              userSpokenText = transcribed;
+            }
           }
         }
       } catch (err) {
@@ -270,7 +281,10 @@ export async function POST(req: NextRequest) {
       let voiceId = 'bMxLr8fP6hzNRRi9nJxU'; // Default George
       let voiceName = targetVoice;
 
-      if (/rachel/i.test(targetVoice)) {
+      if (/ivanna/i.test(targetVoice)) {
+        voiceId = 'bMxLr8fP6hzNRRi9nJxU';
+        voiceName = 'Ivanna - Candid, Peppy and Genuine';
+      } else if (/rachel/i.test(targetVoice)) {
         voiceId = '21m00Tcm4TlvDq8ikWAM';
         voiceName = 'Rachel';
       } else if (/adam/i.test(targetVoice)) {
