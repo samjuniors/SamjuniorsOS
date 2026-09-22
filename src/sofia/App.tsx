@@ -205,8 +205,10 @@ export default function App() {
 
       if (stale()) return
 
-      // The bridge keeps conversation state in its own session, so history is
-      // only threaded through on the direct path.
+      // Local transcript bookkeeping — rendering/session convenience ONLY
+      // (M3 K-1: the canonical conversation history lives in the server's
+      // ConversationStore; this ref never leaves the browser and is never
+      // treated as the source of truth).
       if (!usingBridge) {
         history.current.push({ role: 'user', content: said })
         history.current.push({ role: 'assistant', content: text || '…' })

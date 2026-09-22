@@ -7,11 +7,13 @@
  * stream carrying the same frames the socket used to — text deltas, tool
  * badges, panels, blades, ui ops, provider switches, done, error.
  *
- * The conversation state moved with the session. The bridge held one brain
- * per socket and the whole history lived inside it; an HTTP request is
- * stateless, so the history rides up with every ask (App.tsx already keeps
- * it for the direct path — usingBridge is false here for exactly that
- * reason) and the server rebuilds its message list per request.
+ * M3 (K-1) CONVERSATION AUTHORITY CONVERGENCE:
+ * The browser no longer sends its local transcript to the server — the
+ * ConversationStore on the server is the canonical conversation authority.
+ * The client threads only the server-issued conversationId (captured from
+ * the done frame, returned on the next ask) and a per-turn idempotency id.
+ * The local history App.tsx keeps is rendering/session convenience only;
+ * it is never authoritative and never leaves the browser.
  */
 
 import type { Blade, Panel } from '../store'
@@ -34,6 +36,8 @@ type Frame = {
   name?: string
   text?: string
   message?: string
+  conversationId?: string
+  idempotentReplay?: boolean
   panel?: Panel
   blade?: Blade
   op?: string
@@ -139,6 +143,29 @@ export async function warmServer(): Promise<void> {
 // Turns
 // ---------------------------------------------------------------------------
 
+/** The canonical conversation id — issued by the server's ConversationStore
+ * (captured from the done frame) and threaded on every subsequent ask. The
+ * browser never invents one; a reload simply starts a fresh canonical
+ * conversation while the old one remains durable server-side. */
+let conversationId: string | null = null
+
+/** The canonical conversation this surface is currently speaking into (null
+ * until the first turn resolves). Rendering/session convenience only. */
+export function currentConversationId(): string | null {
+  return conversationId
+}
+
+function adoptConversationId(raw: unknown): void {
+  if (typeof raw === 'string' && raw.trim()) conversationId = raw
+}
+
+function freshTurnId(): string {
+  const rand =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `sofia-${rand}`
+}
 /**
  * No frame of any kind for two minutes means the turn is never coming back.
  * Generous on purpose: a long tool run can sit silent, and cutting a real
@@ -156,9 +183,16 @@ let pendingAbort: AbortController | null = null
  * Ask the server a question and stream the answer.
  *
  * A new question supersedes the one in flight — same rule the socket had:
- * cancelling aborts the fetch (which stops the server's work the moment the
+ * cancelling aborts the fetch (which stops the server's stream the moment the
  * framework notices the disconnect) and settles the old promise with the
- * words said so far.
+ * words said so far. The canonical turn still completes and persists
+ * server-side.
+ *
+ * The `history` parameter is local rendering/session state ONLY — it is not
+ * sent to the server (canonical history lives in the server's
+ * ConversationStore). It stays in the signature so App.tsx is unchanged.
+ * `persona` likewise: the canonical path owns Sophia's persona; the local
+ * character selection remains a presentation preference of this surface.
  */
 export async function ask(
   prompt: string,
@@ -166,6 +200,8 @@ export async function ask(
   handlers: AskHandlers,
   persona?: string,
 ): Promise<{ text: string; tools: string[] }> {
+  void history
+  void persona
   if (pending) cancel()
   const controller = new AbortController()
   pendingAbort = controller
@@ -187,8 +223,8 @@ export async function ask(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         text: prompt,
-        history: history.slice(-40),
-        persona: persona ?? null,
+        conversationId: conversationId ?? undefined,
+        turnId: freshTurnId(),
       }),
       signal: controller.signal,
     })
@@ -222,6 +258,11 @@ export async function ask(
         }
         try {
           switch (msg.type) {
+            case 'ready':
+              // The server may already know which canonical conversation this
+              // turn belongs to (replayed / resumed turn).
+              adoptConversationId(msg.conversationId)
+              break
             case 'text':
               text += msg.delta ?? ''
               handlers.onText(msg.delta ?? '')
@@ -246,8 +287,10 @@ export async function ask(
               if (msg.op) onUi?.(msg.op, (msg.args ?? {}) as Record<string, unknown>)
               break
             case 'done':
+              adoptConversationId(msg.conversationId)
               return { text: (text || (msg.text ?? '')).trim(), tools }
             case 'error':
+              adoptConversationId(msg.conversationId)
               throw new Error(msg.message ?? 'The server reported an error.')
           }
         } catch (err) {
@@ -293,5 +336,6 @@ export function connectedLabels(): string[] {
   return servers
 }
 
-/** The direct path is gone; history is always threaded through the API. */
+/** Always false — each ask is its own request against the canonical
+ * server-side conversation (the browser transcript never rides up). */
 export const usingBridge = false

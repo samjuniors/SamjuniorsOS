@@ -10,6 +10,12 @@ export interface ExecuteSophiaTurnOptions {
   conversationId?: string;
   turnId?: string;
   executeDirective?: boolean;
+  /**
+   * Ingress channel label recorded on the persisted assistant message
+   * (observability only — never an authority signal). Defaults to
+   * 'live_voice'; the SOFIA ask surface passes 'sofia_ask'.
+   */
+  ingress?: string;
 }
 
 export interface SophiaTurnResult {
@@ -224,7 +230,8 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               liveAi: executionResult.liveAi,
               directiveExecuted: executionResult.directiveExecuted,
               metrics: executionResult.metrics,
-              voiceIngress: true,
+              voiceIngress: (opts.ingress ?? 'live_voice') !== 'sofia_ask',
+              ingress: opts.ingress ?? 'live_voice',
             },
           },
           founderId
