@@ -517,7 +517,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Retrieve and isolate role-specific company context from authoritative server state
-    const fullContext = CompanyContextProvider.getMergedContext();
+    // (M1: the provider now assembles the context from the canonical
+    //  CompanyStateStore / CompanyMemoryStore / AgentRunStore.)
+    const fullContext = await CompanyContextProvider.getMergedContext();
     const roleScopedContext = CompanyContextProvider.formatForEmployeeRoleContext(
       agentId as AgentRole | 'advisor',
       fullContext

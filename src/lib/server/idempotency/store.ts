@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
 import { isAuthoritativeMode, requireAuthoritativeDatabase } from '../db/authority';
 import { DurableFileStore } from '../persistence/durable-file-store';
@@ -40,6 +41,18 @@ export type IdempotencyClaimResult =
   | { state: 'failed'; record: IdempotencyRecordData };
 
 export interface IdempotencyStore {
+  /**
+   * Claims an idempotency key for execution.
+   *
+   * TTL / expiresAt semantics (enforced since M0):
+   * - A record whose `expiresAt` has elapsed is treated as ABSENT: a fresh
+   *   claim overwrites it, and `get()` no longer returns it. This bounds the
+   *   crash-recovery window for `in_progress` claims and the response-cache
+   *   validity window for `completed` records.
+   * - Records without an `expiresAt` (no `ttlMs` provided) never expire,
+   *   preserving the historical replay contract.
+   * - Payload-hash binding applies only to live (non-expired) records.
+   */
   claim(params: IdempotencyClaimParams): Promise<IdempotencyClaimResult>;
   complete(key: string, response: any, executionRef?: string): Promise<IdempotencyRecordData>;
   fail(key: string, error: string, executionRef?: string): Promise<IdempotencyRecordData>;
@@ -49,8 +62,31 @@ export interface IdempotencyStore {
 }
 
 /**
- * Authoritative PostgreSQL Idempotency Store.
- * Uses PostgreSQL row locking and unique constraints for atomic concurrency safety.
+ * Returns true when a record's expiresAt has elapsed.
+ * Records without expiresAt never expire.
+ */
+function isRecordExpired(
+  record: Pick<IdempotencyRecordData, 'expiresAt'>,
+  nowMs: number = Date.now()
+): boolean {
+  if (!record.expiresAt) return false;
+  const expiryMs = Date.parse(record.expiresAt);
+  return Number.isFinite(expiryMs) && expiryMs <= nowMs;
+}
+
+/**
+ * DATABASE REALITY (per docs/architecture/MEMORY_RECONCILIATION_REPORT.md §0 and
+ * SOPHIA_MEMORY_ARCHITECTURE.md §8 — naming honesty):
+ * The "Postgres*" store classes are named for the TARGET architecture
+ * (PostgreSQL at the M6 milestone). In THIS sandbox branch the Prisma schema
+ * is an explicit SQLite port (`provider = "sqlite"`) and these classes run
+ * against SQLite via Prisma with `DATABASE_URL=file:...`. The dual-mode
+ * behavior (authoritative = fail-closed Prisma, local = .data JSON +
+ * best-effort Prisma) is unchanged by this.
+ */
+/**
+ * Authoritative Idempotency Store (target: PostgreSQL; see database-reality note above).
+ * Uses row transactions and unique constraints for atomic concurrency safety.
  * Fail-closed if database is unavailable in authoritative mode.
  */
 export class PostgresIdempotencyStore implements IdempotencyStore {
@@ -72,6 +108,24 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
       });
 
       if (existing) {
+        // TTL enforcement (M0): an expired record no longer governs —
+        // re-claim by overwriting the stale row with a fresh in_progress claim.
+        if (isRecordExpired(this.mapPrismaToRecord(existing))) {
+          const reClaimed = await tx.idempotencyRecord.update({
+            where: { key: params.key },
+            data: {
+              actionName: params.actionName,
+              payloadHash: params.payloadHash || null,
+              status: 'in_progress',
+              executionRef: params.executionRef || null,
+              response: Prisma.DbNull,
+              error: null,
+              expiresAt: params.ttlMs ? new Date(Date.now() + params.ttlMs) : null,
+            },
+          });
+          return { state: 'claimed', record: this.mapPrismaToRecord(reClaimed) };
+        }
+
         // Enforce cryptographic payload binding:
         // The same key cannot be reused with an altered payload
         if (params.payloadHash && existing.payloadHash && existing.payloadHash !== params.payloadHash) {
@@ -120,6 +174,22 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
             where: { key: params.key },
           });
           if (winner) {
+            // TTL enforcement (M0): expired race-winner no longer governs.
+            if (isRecordExpired(this.mapPrismaToRecord(winner))) {
+              const reClaimed = await tx.idempotencyRecord.update({
+                where: { key: params.key },
+                data: {
+                  actionName: params.actionName,
+                  payloadHash: params.payloadHash || null,
+                  status: 'in_progress',
+                  executionRef: params.executionRef || null,
+                  response: Prisma.DbNull,
+                  error: null,
+                  expiresAt: params.ttlMs ? new Date(Date.now() + params.ttlMs) : null,
+                },
+              });
+              return { state: 'claimed', record: this.mapPrismaToRecord(reClaimed) };
+            }
             if (params.payloadHash && winner.payloadHash && winner.payloadHash !== params.payloadHash) {
               throw new IdempotencyPayloadMismatchError(
                 params.key,
@@ -191,7 +261,10 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
       where: { key },
     });
     if (!found) return null;
-    return this.mapPrismaToRecord(found);
+    const mapped = this.mapPrismaToRecord(found);
+    // TTL enforcement (M0): expired records are not visible to readers —
+    // the pre-execution replay path must not serve stale cached responses.
+    return isRecordExpired(mapped) ? null : mapped;
   }
 
   clear(): void {
@@ -253,7 +326,10 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     }
 
     const existing = this.records.get(params.key);
-    if (existing) {
+    if (existing && isRecordExpired(existing)) {
+      // TTL enforcement (M0): an expired record no longer governs —
+      // fall through and overwrite it with a fresh claim below.
+    } else if (existing) {
       if (params.payloadHash && existing.payloadHash && existing.payloadHash !== params.payloadHash) {
         throw new IdempotencyPayloadMismatchError(
           params.key,
@@ -373,6 +449,9 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
 
     const existing = this.records.get(key);
     if (!existing) return null;
+    // TTL enforcement (M0): expired records are not visible to readers —
+    // the pre-execution replay path must not serve stale cached responses.
+    if (isRecordExpired(existing)) return null;
     return JSON.parse(JSON.stringify(existing));
   }
 

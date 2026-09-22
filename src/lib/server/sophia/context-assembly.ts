@@ -1,4 +1,4 @@
-import { CompanyContextProvider } from '../context/company-context';
+import { CompanyStateStore } from '../state/state-store';
 import { AgentRunStore } from '../agents/run-store';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
@@ -73,12 +73,19 @@ export class SophiaContextAssembler {
 
     // =========================================================================
     // 1. Authoritative Operational Telemetry
+    //    (M1: reads the CANONICAL CompanyStateStore — previously this read
+    //     hardcoded os-data constants through CompanyContextProvider, so
+    //     state-store updates never reached Sophia's context.)
     // =========================================================================
     try {
-      const companyCtx = CompanyContextProvider.getMergedContext();
-      const fin = companyCtx.financialModel;
-      const initiatives = (companyCtx.initiatives || []).filter(
-        (i) => i.status === 'in_progress' || i.status === 'active'
+      const stateStore = CompanyStateStore.getInstance();
+      const fin = await stateStore.getFinancialMetrics();
+      const allInitiatives = await stateStore.getInitiatives();
+      // 'Active' / 'In Progress' are the real CompanyInitiative status values
+      // (the former 'in_progress'/'active' comparison could never match and
+      // silently dropped every active initiative from slice 1).
+      const initiatives = (allInitiatives || []).filter(
+        (i) => ['Active', 'In Progress', 'active', 'in_progress'].includes(i.status)
       );
 
       const mrrText = typeof fin?.mrr === 'number' ? `$${fin.mrr.toLocaleString()}` : 'Unavailable (Live ledger sync required)';
@@ -109,15 +116,15 @@ export class SophiaContextAssembler {
       slices.push({
         label: 'Company Operational State',
         authority: 'AUTHORITATIVE_OPERATIONAL_STATE',
-        provenance: 'CompanyContextProvider / Database Financial Model',
+        provenance: 'CompanyStateStore (canonical operational state)',
         content,
       });
     } catch (err) {
-      degradedStores.push('CompanyContextProvider');
+      degradedStores.push('CompanyStateStore');
       slices.push({
         label: 'Company Operational State',
         authority: 'AUTHORITATIVE_OPERATIONAL_STATE',
-        provenance: 'CompanyContextProvider (Offline)',
+        provenance: 'CompanyStateStore (Offline)',
         content: 'Authoritative operational telemetry is currently unavailable.',
         isStale: true,
       });
