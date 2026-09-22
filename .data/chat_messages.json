@@ -1,0 +1,26 @@
+{
+  "msg-cee936f6-ee4a-454d-81d3-01de09ac4ef8": {
+    "id": "msg-cee936f6-ee4a-454d-81d3-01de09ac4ef8",
+    "conversationId": "conv-29a25f62-2e7c-4237-a761-c9d1c8c9f89a",
+    "sender": "founder",
+    "role": "user",
+    "content": "What is our current MRR and monthly burn rate?",
+    "metadata": {},
+    "createdAt": "2026-09-22T05:49:12.720Z"
+  },
+  "msg-df260b73-9b60-4446-8efa-0d2f27bfdd15": {
+    "id": "msg-df260b73-9b60-4446-8efa-0d2f27bfdd15",
+    "conversationId": "conv-29a25f62-2e7c-4237-a761-c9d1c8c9f89a",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • Chief Operating Officer & Master Orchestrator]\nAuthoritative Company Telemetry [SANDBOX SIMULATION MODEL — Live ledger integration pending]:\n- Monthly Recurring Revenue (MRR): $148,500\n- Annual Run Rate (ARR): $1,782,000\n- Monthly Burn Rate: $24,500\n- Gross Margin Floor: 86.4%\n- Cash Reserve Runway: 42 months",
+    "intent": "information_request",
+    "confidence": 0.9,
+    "commandType": "RESOLVED_INFORMATION",
+    "metadata": {
+      "directiveExecuted": false,
+      "liveAi": false
+    },
+    "createdAt": "2026-09-22T05:49:13.170Z"
+  }
+}

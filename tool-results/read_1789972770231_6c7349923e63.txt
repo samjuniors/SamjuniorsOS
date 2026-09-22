@@ -1,0 +1,817 @@
+     1→import {
+     2→  env,
+     3→  USE_ELEVENLABS,
+     4→  BACKEND,
+     5→  TTS_ENGINE,
+     6→  KOKORO_VOICE,
+     7→  BRIDGE_HTTP_URL,
+     8→} from '../config'
+     9→import * as kokoro from './kokoro'
+    10→import { caps } from './capabilities'
+    11→
+    12→/**
+    13→ * Speech output.
+    14→ *
+    15→ * The browser's own speechSynthesis is the default because it is by far the
+    16→ * fastest thing available: it runs on-device, so there is no request, no
+    17→ * generation wait and no download — speech starts on the next frame. A cloud
+    18→ * voice sounds better but costs a few hundred milliseconds per sentence, and in
+    19→ * conversation that gap is much more noticeable than the timbre.
+    20→ *
+    21→ * Either way, text is cut at sentence boundaries as it streams in and spoken a
+    22→ * sentence at a time, so JARVIS starts talking while Claude is still writing.
+    23→ *
+    24→ * The queue is an explicit array with a single pump rather than a promise
+    25→ * chain. A chain cannot be cut: cancelling mid-sentence left the chain's tail
+    26→ * unresolved forever, which wedged the whole assistant. An array can simply be
+    27→ * emptied.
+    28→ */
+    29→
+    30→type Speaker = {
+    31→  /** Feed streamed text in. Complete sentences are spoken as they appear. */
+    32→  push: (delta: string) => void
+    33→  /** Speak a phrase ahead of anything still queued. Used for filler like
+    34→   *  "Working on it, sir" while a tool runs. */
+    35→  say: (text: string) => void
+    36→  /** No more text coming — flush the remainder and resolve when audio ends. */
+    37→  end: () => Promise<void>
+    38→  /** Cut it off mid-sentence (barge-in). Always settles `end()`. */
+    39→  cancel: () => void
+    40→  /** 0..1 output loudness for the visualiser. */
+    41→  level: () => number
+    42→}
+    43→
+    44→// ---------------------------------------------------------------------------
+    45→// What he is saying right now
+    46→// ---------------------------------------------------------------------------
+    47→
+    48→let speaking = ''
+    49→let recent = ''
+    50→let recentUntil = 0
+    51→
+    52→/** Recognition lags the speakers by a few hundred milliseconds, so a sentence
+    53→ *  keeps arriving at the microphone well after it has finished playing. */
+    54→const ECHO_TAIL_MS = 1800
+    55→
+    56→/**
+    57→ * Why you cannot hear him.
+    58→ *
+    59→ * Published on `window.__tts`. Speech has exactly four ways to fail silently —
+    60→ * the engine never started, the OS voice errored, every line was cancelled by
+    61→ * a barge-in, or nothing was ever queued — and from outside the page they are
+    62→ * indistinguishable. This tells them apart at a glance.
+    63→ */
+    64→export const diag = {
+    65→  engine: 'system' as 'system' | 'kokoro' | 'elevenlabs',
+    66→  /** Utterances handed to an engine — the OS voice or an audio element. */
+    67→  spoken: 0,
+    68→  /**
+    69→   * Of those, how many actually began producing sound.
+    70→   *
+    71→   * Counted for EVERY engine, which it did not used to be: this was incremented
+    72→   * only in speakNative's onstart, so on the ElevenLabs path — the good path,
+    73→   * the one a configured machine actually uses — it stayed at zero forever.
+    74→   * The diagnostics panel reads this to decide whether he is audible at all, so
+    75→   * a working cloud voice reported "no sound produced", and the T self-test
+    76→   * raised that as an error on screen. The verdict has to be about sound, not
+    77→   * about which code path produced it.
+    78→   */
+    79→  started: 0,
+    80→  /** Genuine engine failures, excluding deliberate cancels. */
+    81→  failures: 0,
+    82→  /** Last SpeechSynthesis error code, e.g. 'synthesis-failed'. */
+    83→  lastError: '',
+    84→  /** Set once the OS voice has proved unusable; the cloud voice takes over. */
+    85→  nativeBroken: false,
+    86→  /** Sentences rescued by the bridge's ElevenLabs proxy. */
+    87→  rescued: 0,
+    88→  voice: '',
+    89→  lastText: '',
+    90→}
+    91→
+    92→if (typeof window !== 'undefined') {
+    93→  ;(window as unknown as Record<string, unknown>).__tts = diag
+    94→}
+    95→
+    96→/**
+    97→ * Once the OS voice has failed, stop asking it.
+    98→ *
+    99→ * A broken system voice is not a transient condition — it fails identically on
+   100→ * every sentence — so retrying it per line would make the whole answer stutter
+   101→ * through the same dead path. After the first real failure everything routes to
+   102→ * the bridge's speech proxy instead, which holds an ElevenLabs key already.
+   103→ */
+   104→let nativeBroken = false
+   105→
+   106→let speakingAt = 0
+   107→
+   108→/** When the current sentence started, or 0 if nothing is being spoken. The
+   109→ *  voice loop uses this to refuse to interrupt him in his own first syllable. */
+   110→export function speakingSince(): number {
+   111→  return speaking ? speakingAt : 0
+   112→}
+   113→
+   114→function setSpeaking(text: string) {
+   115→  if (text) {
+   116→    speaking = text
+   117→    speakingAt = Date.now()
+   118→    return
+   119→  }
+   120→  if (speaking) {
+   121→    recent = speaking
+   122→    recentUntil = Date.now() + ECHO_TAIL_MS
+   123→  }
+   124→  speaking = ''
+   125→}
+   126→
+   127→/**
+   128→ * What the microphone is likely to be hearing from the speakers right now.
+   129→ *
+   130→ * The voice loop reads this to recognise itself: the mic stays open while he
+   131→ * talks, so it hears every word he says and would otherwise treat his own
+   132→ * answer as a barge-in. Includes a short tail of the previous sentence,
+   133→ * because the gap between two sentences is exactly when the echo of the first
+   134→ * one lands. See `isEcho` in voice.ts.
+   135→ */
+   136→export function speakingNow(): string {
+   137→  const tail = Date.now() < recentUntil ? recent : ''
+   138→  return `${speaking} ${tail}`.trim()
+   139→}
+   140→
+   141→// ---------------------------------------------------------------------------
+   142→// Sentence boundaries
+   143→// ---------------------------------------------------------------------------
+   144→
+   145→/** Sentence end, allowing a closing quote or bracket — curly ones included,
+   146→ *  since models emit typographic punctuation far more often than ASCII. */
+   147→const SENTENCE_END = /([.!?]["'')\]”’]?\s)|(\n\n)/
+   148→
+   149→/** Full stops that are not sentence ends. Cutting on these puts an audible
+   150→ *  gap inside "Mr. Stark" and reads as a stutter. */
+   151→const ABBREVIATION =
+   152→  /(?:^|\s)(mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|e\.g|i\.e|approx|inc|ltd|co|no|vol|fig|dept|est|min|max|hr|hrs|a\.m|p\.m|u\.s|u\.k|no)\.$/i
+   153→
+   154→/**
+   155→ * Nobody punctuates forever, but a model occasionally writes a long clause
+   156→ * with no terminator at all — and while it does, nothing is spoken. Past this
+   157→ * many characters, cut at the last word boundary and start talking.
+   158→ */
+   159→const MAX_UNSPOKEN = 220
+   160→
+   161→// ---------------------------------------------------------------------------
+   162→// Voice selection
+   163→// ---------------------------------------------------------------------------
+   164→
+   165→const VOICE_PREF_KEY = 'jarvis.voice'
+   166→
+   167→/**
+   168→ * Rank installed voices by how close they are to the character: a British
+   169→ * male, low and level, not a novelty voice.
+   170→ *
+   171→ * The big win on macOS is the Enhanced/Premium variant of Daniel. The stock
+   172→ * "Daniel" is a compact voice from a decade ago and sounds it; the Enhanced
+   173→ * download is free (System Settings → Accessibility → Spoken Content → System
+   174→ * Voice → Manage Voices) and once installed it appears here automatically.
+   175→ */
+   176→function score(v: SpeechSynthesisVoice): number {
+   177→  const n = v.name.toLowerCase()
+   178→  let s = 0
+   179→
+   180→  // The macOS British male, and the closest thing to the character available
+   181→  // without leaving the machine.
+   182→  if (n.startsWith('daniel')) s += 100
+   183→  else if (n.includes('google uk english male')) s += 85
+   184→  else if (/\b(oliver|arthur|jamie|malcolm)\b/.test(n)) s += 80
+   185→  // Newer macOS en-GB male voices — casual, but serviceable.
+   186→  else if (/\b(reed|rocko|eddy)\b/.test(n)) s += 40
+   187→
+   188→  // Higher-quality variants of whatever matched above.
+   189→  if (n.includes('premium')) s += 30
+   190→  else if (n.includes('enhanced')) s += 20
+   191→
+   192→  if (/en[-_]gb/i.test(v.lang)) s += 25
+   193→  else if (/^en/i.test(v.lang)) s += 5
+   194→
+   195→  // Voices that clearly aren't a butler.
+   196→  if (/grandma|grandpa|bubbles|jester|bells|boing|whisper|zarvox|superstar|trinoids|wobble|bahh|organ|cellos|bad news|good news/.test(n)) {
+   197→    s -= 200
+   198→  }
+   199→  // Female-presenting names across the English sets.
+   200→  if (/\b(flo|sandy|shelley|kate|serena|fiona|moira|karen|tessa|samantha|zoe|allison|ava|susan)\b/.test(n)) {
+   201→    s -= 60
+   202→  }
+   203→
+   204→  return s
+   205→}
+   206→
+   207→/** Only voices that scored on a name match, not merely on being English —
+   208→ *  otherwise the picker cycles through a dozen US novelty voices. */
+   209→const USABLE = 40
+   210→
+   211→/** Best-first list of usable voices — also what the voice picker cycles. */
+   212→export function candidateVoices(): SpeechSynthesisVoice[] {
+   213→  return speechSynthesis
+   214→    .getVoices()
+   215→    .filter((v) => /^en/i.test(v.lang))
+   216→    .map((v) => ({ v, s: score(v) }))
+   217→    .filter((x) => x.s >= USABLE)
+   218→    .sort((a, b) => b.s - a.s)
+   219→    .map((x) => x.v)
+   220→}
+   221→
+   222→let cachedVoice: SpeechSynthesisVoice | null | undefined
+   223→
+   224→function pickVoice(): SpeechSynthesisVoice | null {
+   225→  if (cachedVoice !== undefined) return cachedVoice
+   226→  const all = speechSynthesis.getVoices()
+   227→  if (!all.length) return null // not loaded yet — try again next utterance
+   228→
+   229→  // Honour an explicit choice made with the voice picker. A saved name that no
+   230→  // longer resolves is dropped rather than left to resurrect itself silently
+   231→  // if that voice is ever reinstalled.
+   232→  const saved = localStorage.getItem(VOICE_PREF_KEY)
+   233→  if (saved) {
+   234→    const hit = all.find((v) => v.name === saved)
+   235→    if (hit) return (cachedVoice = hit)
+   236→    localStorage.removeItem(VOICE_PREF_KEY)
+   237→  }
+   238→
+   239→  cachedVoice = candidateVoices()[0] ?? all.find((v) => /^en/i.test(v.lang)) ?? null
+   240→  return cachedVoice
+   241→}
+   242→
+   243→/** What the HUD should show. Reports the engine actually in use rather than
+   244→ *  always naming a speechSynthesis voice that a cloud or neural engine has
+   245→ *  quietly replaced. */
+   246→export function currentVoiceName(): string {
+   247→  if (USE_ELEVENLABS || caps().tts) return 'ElevenLabs'
+   248→  if (TTS_ENGINE === 'kokoro' && !kokoro.isUnavailable()) {
+   249→    return KOKORO_VOICE.replace(/^bm_/, '')
+   250→  }
+   251→  return pickVoice()?.name ?? 'default'
+   252→}
+   253→
+   254→/** Step to the next candidate — lets you audition voices on your own machine
+   255→ *  rather than trusting a ranking to be right about how they sound. */
+   256→export function cycleVoice(): string {
+   257→  const list = candidateVoices()
+   258→  if (!list.length) return 'default'
+   259→  const now = pickVoice()
+   260→  const i = list.findIndex((v) => v.name === now?.name)
+   261→  const next = list[(i + 1) % list.length]
+   262→  localStorage.setItem(VOICE_PREF_KEY, next.name)
+   263→  cachedVoice = next
+   264→  return next.name
+   265→}
+   266→
+   267→/**
+   268→ * Every English voice on the machine, best-first — the settings picker's list.
+   269→ *
+   270→ * Broader than candidateVoices() on purpose: the candidates are ranked for
+   271→ * one character, but the picker is where a person browses everything their
+   272→ * machine has and chooses for themselves. English first because the fillers
+   273→ * and personas are English.
+   274→ */
+   275→export function englishVoices(): SpeechSynthesisVoice[] {
+   276→  if (typeof speechSynthesis === 'undefined') return []
+   277→  return speechSynthesis
+   278→    .getVoices()
+   279→    .filter((v) => /^en/i.test(v.lang))
+   280→    .sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))
+   281→}
+   282→
+   283→/**
+   284→ * Set the voice by exact name — the settings picker's write path.
+   285→ *
+   286→ * Returns false when the name matches nothing installed (the list can change
+   287→ * under the panel's feet as the browser loads remote voices), so the caller
+   288→ * can say so rather than silently keeping the old voice.
+   289→ */
+   290→export function setVoiceByName(name: string): boolean {
+   291→  if (typeof speechSynthesis === 'undefined') return false
+   292→  const hit = speechSynthesis.getVoices().find((v) => v.name === name)
+   293→  if (!hit) return false
+   294→  localStorage.setItem(VOICE_PREF_KEY, name)
+   295→  cachedVoice = hit
+   296→  return true
+   297→}
+   298→
+   299→// Voices load asynchronously in Chrome; the first call usually returns nothing.
+   300→if (typeof speechSynthesis !== 'undefined') {
+   301→  speechSynthesis.addEventListener('voiceschanged', () => {
+   302→    cachedVoice = undefined
+   303→    pickVoice()
+   304→  })
+   305→  pickVoice()
+   306→}
+   307→
+   308→// ---------------------------------------------------------------------------
+   309→// Shared output analyser
+   310→// ---------------------------------------------------------------------------
+   311→
+   312→/**
+   313→ * One AudioContext for every sentence ever spoken.
+   314→ *
+   315→ * Blink caps a document at roughly six concurrent hardware contexts. Building
+   316→ * one per sentence and never closing it meant the visualiser died partway
+   317→ * through the first long answer, silently, because the constructor throw was
+   318→ * caught and ignored.
+   319→ */
+   320→let outCtx: AudioContext | null = null
+   321→
+   322→function outputContext(): AudioContext | null {
+   323→  try {
+   324→    if (!outCtx) outCtx = new AudioContext()
+   325→    if (outCtx.state === 'suspended') void outCtx.resume()
+   326→    return outCtx
+   327→  } catch {
+   328→    return null
+   329→  }
+   330→}
+   331→
+   332→// ---------------------------------------------------------------------------
+   333→
+   334→/**
+   335→ * Nudge the delivery toward JARVIS's cadence.
+   336→ *
+   337→ * speechSynthesis ignores SSML, so punctuation is the only prosody control
+   338→ * available — the engine pauses on commas and full stops. Making sure the
+   339→ * vocative "sir" is always set off by a comma buys the small beat before it
+   340→ * that does most of the characterisation.
+   341→ */
+   342→function shape(text: string): string {
+   343→  return (
+   344→    text
+   345→      // Models leak markdown even when told not to, and a synthesiser will
+   346→      // happily read "https colon slash slash" out loud. Strip the syntax and
+   347→      // keep the words.
+   348→      .replace(/^\s*Sources?:.*$/gim, '')
+   349→      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // [label](url) -> label
+   350→      // Stop before trailing punctuation, so "See https://x.com." keeps the
+   351→      // full stop that ends the sentence rather than having it eaten.
+   352→      .replace(/https?:\/\/[^\s]*[^\s.,;:!?)\]]/g, '')
+   353→      .replace(/[*_`#>]+/g, '')
+   354→      .replace(/^\s*[-•]\s+/gm, '')
+   355→      // The vocative wants its comma — that small beat before "sir" does most
+   356→      // of the characterisation. Anchored to a following pause or end of line
+   357→      // so the honorific is left alone: "Sir Isaac Newton" is not a vocative.
+   358→      .replace(/([^,\s])\s+(sir)(\s*[.,!?;:]|\s*$)/gi, '$1, $2$3')
+   359→      .replace(/\s+/g, ' ')
+   360→      .trim()
+   361→  )
+   362→}
+   363→
+   364→type Item = {
+   365→  text: string
+   366→  /** Generation starts one sentence ahead, not all at once. */
+   367→  audio?: Promise<string | null> | null
+   368→}
+   369→
+   370→export function createSpeaker(): Speaker {
+   371→  const queue: Item[] = []
+   372→  let buffer = ''
+   373→  let cancelled = false
+   374→  let outLevel = 0
+   375→  let pumping = false
+   376→
+   377→  let currentAudio: HTMLAudioElement | null = null
+   378→  let nativeInFlight = false
+   379→  let drained: Array<() => void> = []
+   380→
+   381→  const settleDrained = () => {
+   382→    const waiting = drained
+   383→    drained = []
+   384→    for (const r of waiting) r()
+   385→  }
+   386→
+   387→  const enqueue = (sentence: string, priority = false) => {
+   388→    if (cancelled) return
+   389→    // Shape once here so both engines get the same text — stripped markdown,
+   390→    // and the comma before "sir" that buys the beat.
+   391→    const text = shape(sentence)
+   392→    if (!text) return
+   393→
+   394→    const item: Item = { text }
+   395→    if (priority) {
+   396→      // Genuinely ahead of the queue this time. The old `say()` appended to the
+   397→      // same chain and only appeared to preempt because it was called when the
+   398→      // queue happened to be empty.
+   399→      queue.unshift(item)
+   400→    } else {
+   401→      queue.push(item)
+   402→    }
+   403→    void pump()
+   404→  }
+   405→
+   406→  /** null means "no audio pipeline, use the system voice directly". */
+   407→  function synthesise(text: string): Promise<string | null> | null {
+   408→    // Prefer the ElevenLabs voice whenever the bridge reports it is available —
+   409→    // for a demo the timbre is worth the round trip, and this is what makes the
+   410→    // premium path automatic with no flag to set. It falls back to the browser
+   411→    // voice on any failure, so a student without a key still hears him speak.
+   412→    // `nativeBroken` latches on once the system voice has proved unusable.
+   413→    if (USE_ELEVENLABS || caps().tts || nativeBroken) {
+   414→      // Recorded at the moment the tier is chosen rather than only when the
+   415→      // native voice latches over. Without this the panel reported 'system'
+   416→      // for a session that had spoken every one of its sentences through
+   417→      // ElevenLabs, which makes the one field naming the engine useless
+   418→      // exactly when you are trying to work out which engine is at fault.
+   419→      diag.engine = 'elevenlabs'
+   420→      return fetchCloudAudio(text).catch(() => null)
+   421→    }
+   422→    if (TTS_ENGINE === 'kokoro' && !kokoro.isUnavailable()) {
+   423→      diag.engine = 'kokoro'
+   424→      return kokoro.speak(text).catch(() => null)
+   425→    }
+   426→    diag.engine = 'system'
+   427→    return null
+   428→  }
+   429→
+   430→  /** Start generating an item's audio if it hasn't begun. */
+   431→  const prime = (item: Item | undefined) => {
+   432→    if (item && item.audio === undefined) item.audio = synthesise(item.text)
+   433→  }
+   434→
+   435→  async function pump(): Promise<void> {
+   436→    if (pumping) return
+   437→    pumping = true
+   438→    try {
+   439→      for (;;) {
+   440→        if (cancelled) break
+   441→        const item = queue.shift()
+   442→        if (!item) break
+   443→
+   444→        prime(item)
+   445→        // Exactly one sentence ahead. Priming the whole queue fires every
+   446→        // request at once — four parallel cloud POSTs, or four concurrent
+   447→        // generations against a single ONNX session.
+   448→        prime(queue[0])
+   449→
+   450→        await speakOne(item)
+   451→      }
+   452→    } finally {
+   453→      pumping = false
+   454→      if (cancelled || !queue.length) settleDrained()
+   455→    }
+   456→  }
+   457→
+   458→  async function speakOne(item: Item): Promise<void> {
+   459→    if (cancelled) return
+   460→    setSpeaking(item.text)
+   461→    try {
+   462→      const url = item.audio ? await item.audio : null
+   463→      if (cancelled) return
+   464→      // A failed generation is not a failed turn — drop to the system voice.
+   465→      if (url) {
+   466→        await playUrl(url, item.text)
+   467→        return
+   468→      }
+   469→
+   470→      const spoke = await speakNative(item.text)
+   471→      if (spoke || cancelled) return
+   472→
+   473→      // The OS voice produced no sound. That is not recoverable by retrying it,
+   474→      // so latch it off and rescue this sentence through the bridge's speech
+   475→      // proxy — which already holds an ElevenLabs key borrowed from the MCP
+   476→      // config. Losing the better timbre is a far smaller failure than a
+   477→      // assistant that answers in silence.
+   478→      if (!nativeBroken) {
+   479→        nativeBroken = true
+   480→        diag.nativeBroken = true
+   481→        diag.engine = 'elevenlabs'
+   482→        console.warn('[jarvis] system voice is not producing sound — using the bridge speech proxy from here on')
+   483→      }
+   484→      const rescue = await fetchCloudAudio(item.text).catch(() => null)
+   485→      if (rescue && !cancelled) {
+   486→        diag.rescued++
+   487→        await playUrl(rescue, item.text)
+   488→      }
+   489→    } finally {
+   490→      if (speaking === item.text) setSpeaking('')
+   491→    }
+   492→  }
+   493→
+   494→  const speakNative = (text: string) =>
+   495→    new Promise<boolean>((resolve) => {
+   496→      // Chrome's speechSynthesis wedges after cancel().
+   497→      //
+   498→      // This is the single most likely reason a whole session goes silent. The
+   499→      // engine is a global singleton, `cancel()` can leave its queue in a state
+   500→      // where every subsequent speak() is accepted and then never spoken — no
+   501→      // error, no events, just silence for the rest of the page's life. Barge-in
+   502→      // calls cancel() constantly now that the microphone stays open, so what
+   503→      // used to be a rare quirk became the common case.
+   504→      //
+   505→      // resume() is the documented un-wedge. It is a no-op when nothing is
+   506→      // paused, so it is safe to fire before every utterance.
+   507→      speechSynthesis.resume()
+   508→
+   509→      const u = new SpeechSynthesisUtterance(text)
+   510→      const voice = pickVoice()
+   511→      if (voice) u.voice = voice
+   512→      u.lang = voice?.lang ?? 'en-GB'
+   513→      // Deliberate, and deliberately invariant — the character's pace does not
+   514→      // change with stakes, and that steadiness is most of the effect. This
+   515→      // lands around 130 wpm, below the median for film dialogue.
+   516→      u.rate = 0.92
+   517→      // Mid-baritone, and *not* pushed lower for gravitas. The voice is
+   518→      // clarity-weighted rather than chest-weighted; dropping it further reads
+   519→      // as a film-trailer voiceover, which is the wrong character entirely.
+   520→      u.pitch = 0.95
+   521→
+   522→      // speechSynthesis exposes no amplitude, so drive the reactor from a
+   523→      // synthetic envelope. It only has to look like speech, not match it.
+   524→      let raf = 0
+   525→      let t = 0
+   526→      const tick = () => {
+   527→        t += 0.08
+   528→        outLevel =
+   529→          0.35 +
+   530→          Math.abs(Math.sin(t * 2.1)) * 0.3 +
+   531→          Math.abs(Math.sin(t * 5.7)) * 0.2
+   532→        raf = requestAnimationFrame(tick)
+   533→      }
+   534→      tick()
+   535→
+   536→      let done = false
+   537→      let started = false
+   538→      let watchdog: ReturnType<typeof setTimeout> | null = null
+   539→      let keepalive: ReturnType<typeof setInterval> | null = null
+   540→
+   541→      const finish = () => {
+   542→        if (done) return
+   543→        done = true
+   544→        nativeInFlight = false
+   545→        if (watchdog) clearTimeout(watchdog)
+   546→        if (keepalive) clearInterval(keepalive)
+   547→        cancelAnimationFrame(raf)
+   548→        // Held rather than zeroed, so the orb doesn't collapse in the gap
+   549→        // between two sentences of the same answer.
+   550→        outLevel = 0.12
+   551→        // The whole point of the boolean: `true` only if sound actually began.
+   552→        resolve(started)
+   553→      }
+   554→
+   555→      u.onstart = () => {
+   556→        started = true
+   557→        diag.started++
+   558→        diag.lastError = ''
+   559→        if (watchdog) clearTimeout(watchdog)
+   560→        // Chrome stops speaking after roughly fifteen seconds unless the engine
+   561→        // is nudged. A pause/resume pair is the standard keepalive and is
+   562→        // inaudible; without it long answers cut off mid-sentence.
+   563→        keepalive = setInterval(() => {
+   564→          if (done) return
+   565→          speechSynthesis.pause()
+   566→          speechSynthesis.resume()
+   567→        }, 5000)
+   568→      }
+   569→      u.onend = finish
+   570→      // Swallowing this was a mistake. When the OS voice fails there is no
+   571→      // other signal at all — no exception, no silence you can detect from
+   572→      // code — so an unlogged onerror turns a broken voice into an unexplained
+   573→      // quiet app, which is exactly the bug that took three attempts to find.
+   574→      u.onerror = (e) => {
+   575→        const code = String((e as SpeechSynthesisErrorEvent).error ?? 'unknown')
+   576→        diag.lastError = code
+   577→        // 'interrupted' and 'canceled' are us, cancelling deliberately on a
+   578→        // barge-in. Everything else means the engine could not speak.
+   579→        if (code !== 'interrupted' && code !== 'canceled') {
+   580→          diag.failures++
+   581→          console.error(`[jarvis] speech failed (${code}) on voice "${u.voice?.name ?? 'default'}"`)
+   582→        }
+   583→        finish()
+   584→      }
+   585→
+   586→      // If `start` never arrives the engine has swallowed the utterance, and
+   587→      // nothing else will ever tell us — no error fires. Un-wedge and try once
+   588→      // more; if that also goes nowhere, resolve rather than hang, because a
+   589→      // silent sentence is recoverable and a stuck queue is not.
+   590→      watchdog = setTimeout(() => {
+   591→        if (done || started) return
+   592→        console.warn('[jarvis] speech did not start — un-wedging the engine')
+   593→        speechSynthesis.cancel()
+   594→        speechSynthesis.resume()
+   595→        try {
+   596→          speechSynthesis.speak(u)
+   597→        } catch {
+   598→          finish()
+   599→          return
+   600→        }
+   601→        watchdog = setTimeout(() => {
+   602→          if (done || started) return
+   603→          console.error('[jarvis] speech engine is not responding — switching to the cloud voice')
+   604→          diag.failures++
+   605→          diag.lastError = diag.lastError || 'no-start'
+   606→          finish()
+   607→        }, 1500)
+   608→      }, 700)
+   609→      diag.spoken++
+   610→      diag.lastText = text.slice(0, 60)
+   611→      diag.voice = u.voice?.name ?? 'default'
+   612→      nativeInFlight = true
+   613→      speechSynthesis.speak(u)
+   614→    })
+   615→
+   616→  const playUrl = (url: string, text: string) =>
+   617→    new Promise<void>((resolve) => {
+   618→      const audio = new Audio(url)
+   619→      currentAudio = audio
+   620→      // The generated path is an engine speaking just as much as the OS voice
+   621→      // is, so it keeps the same books. `spoken` counts the hand-off, `started`
+   622→      // is only incremented once the element reports it is actually playing —
+   623→      // see the onplaying handler below.
+   624→      diag.spoken++
+   625→      diag.lastText = text.slice(0, 60)
+   626→      diag.voice = diag.engine === 'kokoro' ? KOKORO_VOICE : 'ElevenLabs'
+   627→
+   628→      let read: (() => number) | null = null
+   629→      const ctx = outputContext()
+   630→      if (ctx) {
+   631→        try {
+   632→          const analyser = ctx.createAnalyser()
+   633→          analyser.fftSize = 256
+   634→          ctx.createMediaElementSource(audio).connect(analyser)
+   635→          analyser.connect(ctx.destination)
+   636→          const bins = new Uint8Array(analyser.frequencyBinCount)
+   637→          read = () => {
+   638→            analyser.getByteFrequencyData(bins as Uint8Array<ArrayBuffer>)
+   639→            let sum = 0
+   640→            for (let i = 2; i < bins.length; i++) sum += bins[i]
+   641→            return Math.min(1, (sum / (bins.length - 2) / 255) * 3.5)
+   642→          }
+   643→        } catch {
+   644→          /* the analyser is a nice-to-have */
+   645→        }
+   646→      }
+   647→
+   648→      let raf = 0
+   649→      const tick = () => {
+   650→        outLevel = read ? read() : 0.4
+   651→        raf = requestAnimationFrame(tick)
+   652→      }
+   653→      tick()
+   654→
+   655→      let done = false
+   656→      const finish = () => {
+   657→        if (done) return
+   658→        done = true
+   659→        cancelAnimationFrame(raf)
+   660→        outLevel = 0.12
+   661→        URL.revokeObjectURL(url)
+   662→        if (currentAudio === audio) currentAudio = null
+   663→        resolve()
+   664→      }
+   665→      // Sound is genuinely coming out. This is the cloud/neural counterpart of
+   666→      // SpeechSynthesisUtterance.onstart, and it is what makes the diagnostics
+   667→      // verdict — and the T self-test — tell the truth on the premium path.
+   668→      audio.onplaying = () => {
+   669→        diag.started++
+   670→        diag.lastError = ''
+   671→      }
+   672→      audio.onended = finish
+   673→      audio.onerror = () => {
+   674→        // A decode or network failure on a blob we already hold is rare, but
+   675→        // silent when it happens: the sentence simply never plays and the queue
+   676→        // moves on. Count it rather than letting it look like nothing was said.
+   677→        diag.failures++
+   678→        diag.lastError = 'audio-element'
+   679→        finish()
+   680→      }
+   681→      // The one that matters for barge-in: cancel() pauses the element, and a
+   682→      // paused element never fires `ended`. Without this the promise never
+   683→      // settles and every await behind it hangs for the life of the page.
+   684→      audio.onpause = finish
+   685→      void audio.play().catch((err) => {
+   686→        diag.failures++
+   687→        diag.lastError = String((err as Error)?.name ?? 'play-rejected')
+   688→        finish()
+   689→      })
+   690→    })
+   691→
+   692→  return {
+   693→    say(text) {
+   694→      enqueue(text, true)
+   695→    },
+   696→    push(delta) {
+   697→      if (cancelled) return
+   698→      buffer += delta
+   699→
+   700→      // Drain every complete sentence sitting in the buffer.
+   701→      for (;;) {
+   702→        const m = SENTENCE_END.exec(buffer)
+   703→        if (!m) break
+   704→        const cut = m.index + m[0].length
+   705→        const candidate = buffer.slice(0, cut)
+   706→        // "Mr. Stark" is not two sentences. Leave the text in the buffer and
+   707→        // wait for a boundary that actually ends something.
+   708→        if (ABBREVIATION.test(candidate.trimEnd())) {
+   709→          const rest = buffer.slice(cut)
+   710→          if (!SENTENCE_END.test(rest)) break
+   711→          // Re-scan from after this false boundary by folding it forward.
+   712→          const next = SENTENCE_END.exec(rest)!
+   713→          const wider = cut + next.index + next[0].length
+   714→          enqueue(buffer.slice(0, wider))
+   715→          buffer = buffer.slice(wider)
+   716→          continue
+   717→        }
+   718→        enqueue(candidate)
+   719→        buffer = buffer.slice(cut)
+   720→      }
+   721→
+   722→      // Unpunctuated prose would otherwise sit here silently until the answer
+   723→      // ended, defeating the whole point of streaming.
+   724→      if (buffer.length > MAX_UNSPOKEN) {
+   725→        const cut = buffer.lastIndexOf(' ', MAX_UNSPOKEN)
+   726→        if (cut > 40) {
+   727→          enqueue(buffer.slice(0, cut))
+   728→          buffer = buffer.slice(cut)
+   729→        }
+   730→      }
+   731→    },
+   732→    async end() {
+   733→      if (buffer.trim()) {
+   734→        enqueue(buffer)
+   735→        buffer = ''
+   736→      }
+   737→      if (cancelled) return
+   738→      if (!pumping && !queue.length) return
+   739→      await new Promise<void>((resolve) => drained.push(resolve))
+   740→    },
+   741→    cancel() {
+   742→      if (cancelled) return
+   743→      cancelled = true
+   744→      buffer = ''
+   745→      queue.length = 0
+   746→      // Keep the echo tail: the words already in the air still have to be
+   747→      // recognised and discarded, even though he has stopped adding to them.
+   748→      setSpeaking('')
+   749→
+   750→      // Only reach for the global cancel if this speaker actually has a native
+   751→      // utterance out — speechSynthesis.cancel() is document-wide and would
+   752→      // otherwise silence an unrelated speaker mid-word.
+   753→      if (nativeInFlight) {
+   754→        nativeInFlight = false
+   755→        speechSynthesis.cancel()
+   756→        // Always pair the cancel with a resume — see the note in speakNative.
+   757→        // Leaving the engine cancelled is what silences every later sentence.
+   758→        speechSynthesis.resume()
+   759→      }
+   760→      if (currentAudio) {
+   761→        currentAudio.pause()
+   762→        currentAudio = null
+   763→      }
+   764→      outLevel = 0
+   765→      settleDrained()
+   766→    },
+   767→    level: () => outLevel,
+   768→  }
+   769→}
+   770→
+   771→/** Only used when USE_ELEVENLABS is on. Bridge proxy first (it already holds
+   772→ *  the key), then a direct key, then null to fall back to the native voice. */
+   773→async function fetchCloudAudio(text: string): Promise<string | null> {
+   774→  if (BACKEND === 'bridge') {
+   775→    try {
+   776→      const res = await fetch(`${BRIDGE_HTTP_URL}/tts`, {
+   777→        method: 'POST',
+   778→        headers: { 'content-type': 'application/json' },
+   779→        body: JSON.stringify({ text }),
+   780→      })
+   781→      if (res.ok) return URL.createObjectURL(await res.blob())
+   782→    } catch {
+   783→      /* fall through */
+   784→    }
+   785→  }
+   786→
+   787→  if (env.elevenKey) {
+   788→    try {
+   789→      const res = await fetch(
+   790→        `https://api.elevenlabs.io/v1/text-to-speech/${env.elevenVoiceId}/stream` +
+   791→          `?output_format=mp3_22050_32&optimize_streaming_latency=3`,
+   792→        {
+   793→          method: 'POST',
+   794→          headers: {
+   795→            'xi-api-key': env.elevenKey,
+   796→            'content-type': 'application/json',
+   797→          },
+   798→          body: JSON.stringify({
+   799→            text,
+   800→            model_id: 'eleven_flash_v2_5',
+   801→            voice_settings: {
+   802→              stability: 0.4,
+   803→              similarity_boost: 0.75,
+   804→              speed: 1.05,
+   805→            },
+   806→          }),
+   807→        },
+   808→      )
+   809→      if (res.ok) return URL.createObjectURL(await res.blob())
+   810→    } catch {
+   811→      /* fall through */
+   812→    }
+   813→  }
+   814→
+   815→  return null
+   816→}
+   817→
