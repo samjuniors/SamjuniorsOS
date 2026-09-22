@@ -200,11 +200,33 @@ export const CANONICAL_COMPANY_KNOWLEDGE: CompanyKnowledgeItem[] = [
 ];
 
 /**
- * Computes the SHA-256 content hash used by the `CompanyKnowledge.hash`
- * column for change detection (M2: the ingestion path respects this column).
+ * Computes the SHA-256 content hash stored in the `CompanyKnowledge.hash`
+ * column (M2: the ingestion path records it on every explicit write).
+ *
+ * Exact guarantee: it fingerprints ONLY the `content` field.
+ *  - Identical content ⇒ identical hash (deterministic, byte-for-byte).
+ *  - Changed content ⇒ different hash (SHA-256 collision resistance).
+ *  - Title/category/version/metadata changes alone do NOT change the hash.
+ *
+ * See isKnowledgeContentUnchanged() for the comparison contract.
  */
 export function computeKnowledgeContentHash(content: string): string {
   return createHash('sha256').update(content || '', 'utf-8').digest('hex');
+}
+
+/**
+ * Minimal change-detection contract (no vectors/embeddings/FTS): compares a
+ * persisted hash against the hash of candidate content.
+ *  - equal  ⇒ content unchanged since the hash was recorded
+ *  - different ⇒ content changed
+ * A missing/blank stored hash never claims "unchanged".
+ */
+export function isKnowledgeContentUnchanged(
+  storedHash: string | null | undefined,
+  content: string
+): boolean {
+  if (!storedHash) return false;
+  return storedHash === computeKnowledgeContentHash(content);
 }
 
 /**
@@ -221,15 +243,23 @@ export function computeKnowledgeContentHash(content: string): string {
  *    reads and writes go to the CompanyKnowledge table (target: PostgreSQL;
  *    currently the SQLite sandbox port — see the M0 naming note).
  *
- * Seed migration (one-time, idempotent): the 8 canonical documents that
+ * Seed migration (one-time, bootstrap-only): the 8 canonical documents that
  * previously existed ONLY as code constants are persisted to DurableFileStore
- * on first boot (empty durable collection), and mirrored into the Prisma
- * table lazily on first store usage (upsert keyed by item id, hash-respecting).
- * The `hash` column (SHA-256 of content) provides change detection: an
- * addKnowledge with the same id but different content updates the row under a
- * new hash; a different id with byte-identical content collides on the unique
- * hash index and is reported as a duplicate in authoritative mode (silently
- * skipped in best-effort local dual-writes).
+ * on first boot (empty durable collection), and bootstrapped into the Prisma
+ * table lazily on first store usage — CREATE-ONLY: a canonical document is
+ * seeded only when no row exists for its id; an existing persisted row is
+ * NEVER overwritten by the code constants on restart (Founder directive,
+ * pre-M3 correction pass). Explicit writes (addKnowledge / setKnowledge)
+ * remain the only mutation paths after boot.
+ *
+ * The `hash` column (SHA-256 of the `content` field ONLY) provides change
+ * detection: comparing a stored hash against
+ * computeKnowledgeContentHash(candidateContent) distinguishes unchanged
+ * content (equal) from changed content (different) — see
+ * isKnowledgeContentUnchanged(). It does NOT fingerprint title/category/
+ * metadata. A different id with byte-identical content collides on the
+ * unique hash index and is treated as a duplicate (seed skipped; explicit
+ * writes still dual-write best-effort in local mode).
  *
  * Designed so the target PostgreSQL / Supabase deployment can replace the
  * persistence internals without altering retrieval or business logic.
@@ -285,9 +315,16 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
   }
 
   /**
-   * Lazily mirrors the canonical seed documents into the Prisma table once
-   * per process (idempotent upserts keyed by item id). Local mode:
-   * best-effort. Authoritative mode: fail-closed via the DB authority.
+   * Lazily bootstraps the canonical seed documents into the Prisma table
+   * once per process. BOOTSTRAP-ONLY (Founder directive, pre-M3 correction):
+   * a canonical document is created ONLY when no row exists for its id — an
+   * existing persisted row is preserved as-is, so a restart can never
+   * overwrite authoritative persisted knowledge with the code constants.
+   * Explicit writes (addKnowledge / setKnowledge) remain the only mutation
+   * paths after boot. A unique-hash collision on create means byte-identical
+   * content is already persisted under another id — the seed is skipped (the
+   * hash column is the duplicate-content guard); any other error propagates
+   * (fail-closed in authoritative mode). Local mode: best-effort.
    */
   private ensurePrismaSeeded(): Promise<void> {
     if (!CompanyKnowledgeStore.prismaSeedPromise) {
@@ -297,42 +334,39 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
             ? await requireAuthoritativeDatabase()
             : prisma;
           for (const item of CANONICAL_COMPANY_KNOWLEDGE) {
-            await db.companyKnowledge.upsert({
+            const existing = await db.companyKnowledge.findUnique({
               where: { id: item.id },
-              create: {
-                id: item.id,
-                category: item.category,
-                title: item.title,
-                content: item.content,
-                hash: computeKnowledgeContentHash(item.content),
-                metadata: {
-                  documentId: item.documentId,
-                  version: item.version,
-                  summary: item.summary,
-                  tags: item.tags,
-                  applicableDepartments: item.applicableDepartments,
-                  authorAuthority: item.authorAuthority,
-                  lastVerifiedDate: item.lastVerifiedDate,
-                  isDurableReference: item.isDurableReference,
-                },
-              },
-              update: {
-                category: item.category,
-                title: item.title,
-                content: item.content,
-                hash: computeKnowledgeContentHash(item.content),
-                metadata: {
-                  documentId: item.documentId,
-                  version: item.version,
-                  summary: item.summary,
-                  tags: item.tags,
-                  applicableDepartments: item.applicableDepartments,
-                  authorAuthority: item.authorAuthority,
-                  lastVerifiedDate: item.lastVerifiedDate,
-                  isDurableReference: item.isDurableReference,
-                },
-              },
             });
+            // Persisted document wins over the code constant — never overwrite.
+            if (existing) continue;
+            try {
+              await db.companyKnowledge.create({
+                data: {
+                  id: item.id,
+                  category: item.category,
+                  title: item.title,
+                  content: item.content,
+                  hash: computeKnowledgeContentHash(item.content),
+                  metadata: {
+                    documentId: item.documentId,
+                    version: item.version,
+                    summary: item.summary,
+                    tags: item.tags,
+                    applicableDepartments: item.applicableDepartments,
+                    authorAuthority: item.authorAuthority,
+                    lastVerifiedDate: item.lastVerifiedDate,
+                    isDurableReference: item.isDurableReference,
+                  },
+                },
+              });
+            } catch (createErr: any) {
+              const msg = String(createErr?.message || createErr);
+              const isUniqueCollision =
+                createErr?.code === 'P2002' || /unique constraint/i.test(msg);
+              if (!isUniqueCollision) throw createErr;
+              // Byte-identical content already persisted under another id:
+              // skip seeding a duplicate (unique hash = duplicate guard).
+            }
           }
         } catch (err: any) {
           if (isAuthoritativeMode()) throw err;
@@ -401,7 +435,13 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
       return;
     }
 
-    this.knowledgeItems.unshift(item);
+    // Local mode: explicit write — REPLACES any existing item with the same
+    // id (no duplicate-id entries in the in-process cache, mirroring the
+    // authoritative branch's replace-by-id semantics).
+    this.knowledgeItems = [
+      item,
+      ...this.knowledgeItems.filter((k) => k.id !== item.id),
+    ];
     try {
       DurableFileStore.getInstance().saveItem('company_knowledge', item.id, item);
     } catch {}

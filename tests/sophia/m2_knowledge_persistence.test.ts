@@ -1,10 +1,12 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import {
   CompanyKnowledgeStore,
   CANONICAL_COMPANY_KNOWLEDGE,
   computeKnowledgeContentHash,
+  isKnowledgeContentUnchanged,
 } from '../../src/lib/server/knowledge/knowledge-store';
 import { SophiaContextAssembler } from '../../src/lib/server/sophia';
 
@@ -27,11 +29,22 @@ import { SophiaContextAssembler } from '../../src/lib/server/sophia';
  * process-restart durability (fresh bun child processes, per the
  * restart-child pattern established by the Phase 4.4B scheduler suite).
  *
- * All tests run in local mode (DurableFileStore primary per ADR 0002).
+ * Pre-M3 correction pass (Founder directive) adds:
+ *   6. restart does NOT overwrite an edited canonical document (local mode)
+ *   7. hash comparison distinguishes unchanged from changed content
+ *   8. authoritative Prisma mode: fresh db seeds are created (A) and an
+ *      edited canonical document survives a restart (B) — bootstrap-only
+ *      seeding, code constants never overwrite persisted rows.
+ *
+ * All other tests run in local mode (DurableFileStore primary per ADR 0002);
+ * test 8 exercises authoritative mode against a throwaway SQLite database.
  */
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'company_knowledge.json');
+// Throwaway database for the authoritative-mode test (absolute path — Prisma
+// resolves relative SQLite paths against prisma/).
+const AUTHORITY_DB = `/tmp/m2-knowledge-authority-${process.pid}.db`;
 
 let passed = 0;
 let failed = 0;
@@ -50,7 +63,7 @@ async function test(name: string, fn: () => Promise<void>) {
   }
 }
 
-function runChild(mode: string): Promise<{ restartMarker?: boolean; poisonMarker?: boolean; total: number; canonicalSeedCount?: number }> {
+function runChild(mode: string): Promise<{ restartMarker?: boolean; poisonMarker?: boolean; total: number; canonicalSeedCount?: number; editedContentSurvived?: boolean; editedVersionSurvived?: boolean; contentPreview?: string | null }> {
   return new Promise((resolve, reject) => {
     // @ts-ignore — Bun global exists when the suite runs under `bun`
     const proc = Bun.spawn(['bun', 'tests/sophia/m2-knowledge-child.ts', mode], {
@@ -61,6 +74,41 @@ function runChild(mode: string): Promise<{ restartMarker?: boolean; poisonMarker
     new Response(proc.stdout)
       .text()
       .then((out) => proc.exited.then(() => resolve(JSON.parse(out.trim()))))
+      .catch(reject);
+  });
+}
+
+function runAuthorityChild(mode: string): Promise<{
+  total?: number;
+  canonicalSeedCount?: number;
+  servedContentHasEdit?: boolean;
+  servedVersion?: string | null;
+  rowHash?: string | null;
+  rowHashMatchesEditedContent?: boolean | null;
+  rowHashDiffersFromSeedConstant?: boolean;
+}> {
+  return new Promise((resolve, reject) => {
+    // @ts-ignore — Bun global exists when the suite runs under `bun`
+    const proc = Bun.spawn(['bun', 'tests/sophia/m2-knowledge-authority-child.ts', mode], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      env: {
+        ...process.env,
+        DATABASE_MODE: 'authoritative',
+        DATABASE_URL: `file:${AUTHORITY_DB}`,
+      },
+    });
+    new Response(proc.stdout)
+      .text()
+      .then((out) =>
+        proc.exited.then(() => {
+          try {
+            resolve(JSON.parse(out.trim()));
+          } catch (e: any) {
+            reject(new Error(`authority child (${mode}) emitted non-JSON output: ${out.trim().slice(0, 300)}`));
+          }
+        })
+      )
       .catch(reject);
   });
 }
@@ -210,6 +258,128 @@ async function runTests() {
         CANONICAL_COMPANY_KNOWLEDGE.length,
         'A fresh process after reset must see exactly the canonical seeds'
       );
+    });
+
+    // ------------------------------------------------------------------
+    // 6. PRE-M3 CORRECTION (Issue 1, local mode): restart does NOT overwrite
+    //    an edited canonical document — the persisted edit wins over the
+    //    code constant (bootstrap-only seeds, durable overlay authority).
+    // ------------------------------------------------------------------
+    await test('6. Restart does NOT overwrite an edited canonical document (local durable overlay)', async () => {
+      // Edit know-sop-001 (same id, changed content) in a child process.
+      await runChild('edit-canonical');
+
+      // GENUINE restart: a fresh process re-hydrates from the durable file;
+      // the persisted edit must overlay the canonical seed constant.
+      const afterRestart = await runChild('verify-edit');
+      assert.strictEqual(
+        afterRestart.editedContentSurvived,
+        true,
+        `The edited canonical document must survive a restart; got: ${afterRestart.contentPreview}`
+      );
+      assert.strictEqual(
+        afterRestart.editedVersionSurvived,
+        true,
+        'The edited version (9.9.9) must survive the restart, not the seed constant version'
+      );
+
+      // The durable file itself holds the edit (saveItem replaces by id — no
+      // duplicate-id entries).
+      const persisted = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf-8'));
+      assert.ok(
+        persisted['know-sop-001']?.content?.includes('M2-EDIT-PROBE'),
+        'The durable file must hold the edited document'
+      );
+      assert.strictEqual(
+        Object.values(persisted).filter((k: any) => k.id === 'know-sop-001').length,
+        1,
+        'Exactly one know-sop-001 entry may exist (replace-by-id, no duplicates)'
+      );
+
+      // Restore the canonical seed set for subsequent tests.
+      await runChild('cleanup');
+    });
+
+    // ------------------------------------------------------------------
+    // 7. PRE-M3 CORRECTION (Issue 2): hash comparison distinguishes
+    //    unchanged content from changed content (minimal contract).
+    // ------------------------------------------------------------------
+    await test('7. isKnowledgeContentUnchanged distinguishes unchanged from changed content', async () => {
+      const content = 'SOP-001 body text for the change-detection contract probe.';
+      const recorded = computeKnowledgeContentHash(content);
+      assert.strictEqual(
+        isKnowledgeContentUnchanged(recorded, content),
+        true,
+        'Identical content must compare as unchanged'
+      );
+      assert.strictEqual(
+        isKnowledgeContentUnchanged(recorded, content + ' (edited)'),
+        false,
+        'Changed content must compare as changed'
+      );
+      assert.strictEqual(
+        isKnowledgeContentUnchanged(undefined, content),
+        false,
+        'A missing/blank stored hash must never claim unchanged'
+      );
+    });
+
+    // ------------------------------------------------------------------
+    // 8. PRE-M3 CORRECTION (Issue 1, authoritative Prisma mode): fresh
+    //    database → canonical seeds created (A); restart after an edit →
+    //    the edited row is preserved, never overwritten by the constants (B).
+    //    Runs against a throwaway SQLite database in authoritative mode.
+    // ------------------------------------------------------------------
+    await test('8. Authoritative mode: seeds bootstrap a fresh db; a restart never overwrites an edited document', async () => {
+      // Fresh throwaway database (remove any stale file from an earlier run).
+      fs.rmSync(AUTHORITY_DB, { force: true });
+      execFileSync(
+        'bunx',
+        ['prisma', 'db', 'push', '--schema', 'prisma/schema.prisma', '--accept-data-loss', '--skip-generate'],
+        {
+          env: { ...process.env, DATABASE_URL: `file:${AUTHORITY_DB}` },
+          stdio: 'pipe',
+          timeout: 120_000,
+        }
+      );
+      try {
+        // A. Fresh database: the first store usage bootstraps the 8 seeds.
+        const seeded = await runAuthorityChild('seed-count');
+        assert.strictEqual(
+          seeded.canonicalSeedCount,
+          CANONICAL_COMPANY_KNOWLEDGE.length,
+          `A fresh authoritative db must be bootstrapped with all ${CANONICAL_COMPANY_KNOWLEDGE.length} canonical seeds, got ${seeded.canonicalSeedCount}`
+        );
+
+        // Edit know-sop-001 through the explicit write path.
+        await runAuthorityChild('edit-canonical');
+
+        // B. GENUINE restart: a fresh process re-runs ensurePrismaSeeded —
+        // the edited row must be preserved, not overwritten.
+        const afterRestart = await runAuthorityChild('read-canonical');
+        assert.strictEqual(
+          afterRestart.servedContentHasEdit,
+          true,
+          'The edited canonical document must survive an authoritative-mode restart'
+        );
+        assert.strictEqual(
+          afterRestart.servedVersion,
+          '9.9.9',
+          'The served document must be the edited version, not the seed constant'
+        );
+        assert.strictEqual(
+          afterRestart.rowHashDiffersFromSeedConstant,
+          true,
+          'The persisted row hash must reflect the EDITED content (not the code constant)'
+        );
+        assert.strictEqual(
+          afterRestart.rowHashMatchesEditedContent,
+          true,
+          'The persisted row hash must equal SHA-256 of its own content'
+        );
+      } finally {
+        fs.rmSync(AUTHORITY_DB, { force: true });
+      }
     });
 
   } finally {
