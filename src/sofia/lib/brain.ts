@@ -13,9 +13,9 @@ import type { Blade, Panel } from '../store'
 export type { AskHandlers, Msg } from './api'
 export type { ConnectionState } from './api'
 
-/** The conversation lives in App.tsx's history now — the server is stateless
- *  per request — so this is false and the history threading branch in App
- *  runs on every turn. */
+/** History threading is local-rendering only now — the server-side
+ * ConversationStore owns the canonical conversation, so this stays false
+ * and App.tsx keeps its transcript purely for the HUD. */
 export const usingBridge = api.usingBridge
 
 /** Ask the brain. The persona rides every ask so the server swaps its system
