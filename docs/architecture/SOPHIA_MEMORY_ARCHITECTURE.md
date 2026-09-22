@@ -131,6 +131,15 @@ Do not create parallel memory, knowledge, fact or epistemic systems when an exis
 
 Current feat/sofia-merge schema uses SQLite as a sandbox port. Do not silently claim PostgreSQL is currently implemented; separate current implementation from target architecture.
 
+### Conversation authority — four layers, precisely (M3 K-1 hardening, 2026-09-22)
+
+For the conversation system specifically, keep these four layers distinct in any claim:
+
+1. **Canonical abstraction (current):** `ConversationStore` is the single canonical conversation authority; since M3 K-1 (3da24b4) every ingress (OS chat, SOFIA typed surface, live voice) delegates to `executeSophiaTurn` over it. Browser history is untrusted and never authoritative.
+2. **Local DurableFileStore persistence (current, authoritative today):** `.data/conversations.json` + `.data/chat_messages.json` are the primary write target and the authoritative read source — including message reads, conversation listing, and the turn-idempotency gate.
+3. **Prisma dual-write (current, opportunistic mirror only):** best-effort upserts after the file write, errors swallowed; the only Prisma read is `getConversation()`'s single-record fallback with cache-back. Prisma conversation/message rows must not be called authoritative.
+4. **Authoritative PostgreSQL (target, not current):** the M6/multi-instance milestone. `ConversationStore` has no authoritative-mode branch today (unlike `CompanyKnowledgeStore`), so even production runs local-style semantics. See ADR 0002's implementation-precision addendum for the full per-method matrix and the documented divergence between the store's 404 contract and the turn executor's fresh-conversation provisioning for unknown ids.
+
 ## 9. Non-negotiable invariants
 
 1. Personal Mind != Company Brain.

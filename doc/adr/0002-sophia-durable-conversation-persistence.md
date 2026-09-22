@@ -125,3 +125,19 @@ To prevent token bloat and context poisoning:
 - Multi-turn context is strictly server-authoritative and bound to the authenticated Founder.
 - The chat UI can reload and inspect past conversations without losing context.
 - Provides the essential state foundation required for the upcoming Live Interaction / Voice phase.
+
+---
+
+## Addendum — Implementation Precision (M3 K-1 hardening review, 2026-09-22)
+
+*This addendum separates what §7's decision text means for each layer today. It amends nothing; it makes the current implementation boundary explicit so no reader mistakes the Prisma mirror for an authoritative store.*
+
+**Layer 1 — canonical abstraction (unchanged):** `ConversationStore` (src/lib/server/conversation/store.ts) is the single canonical conversation authority for every ingress (OS chat `/api/agent-chat`, SOFIA typed surface `/api/sofia/ask`, live voice). Since M3 K-1 (commit 3da24b4) all three delegate to `executeSophiaTurn`; browser-held history is untrusted, never authoritative.
+
+**Layer 2 — current local persistence (authoritative today):** the DurableFileStore collections (`.data/conversations.json`, `.data/chat_messages.json`) are the primary write target and the authoritative read source, including the turn-idempotency lookups (`findMessageByIdempotencyKey`) and all message reads (`getMessages`, `getRecentHistory`, `listConversations`).
+
+**Layer 3 — current Prisma dual-write (opportunistic mirror, NOT authoritative):** `createConversation()`/`saveMessage()` upsert to the Prisma `Conversation`/`ChatMessage` tables best-effort after the durable file write, with errors swallowed. The ONLY Prisma read path is `getConversation()`'s single-record fallback on a file miss (with cache-back to the file store). Prisma message rows are otherwise write-only shadows.
+
+**Layer 4 — target authoritative architecture (NOT current):** full relational authority (PostgreSQL at the multi-instance milestone, migration M6) with fail-closed semantics and query-shaped reads. Note that `ConversationStore` — unlike `CompanyKnowledgeStore` — has no authoritative-mode branch today: the same local-style semantics apply in every `DATABASE_MODE`, including production. PostgreSQL must not be claimed as authoritative for conversations until that migration lands.
+
+**Known divergence from §7 (recorded, pinned, requires Founder decision to change):** §7 states nonexistent conversation ids "immediately throw ConversationNotFoundError and return 404 Not Found." That holds for the store and for `/api/agent-chat`. The unified turn executor (`executeSophiaTurn`, used by the SOFIA typed surface and live voice) instead provisions a fresh founder-bound conversation when a supplied conversationId does not exist — a deliberate availability choice for voice UX. Security ordering is unaffected: an ownership mismatch still fails closed (403) before the provisioning fallback can run, and the provisioned fork is always bound to the authenticated founder. Consequences: silent continuity loss on a stale id, cross-surface inconsistency (agent-chat 404s where the executor forks), and re-execution when a caller retries with the same bogus id + turnId (the fork precedes the conversation-scoped idempotency lookup). Pinned by `tests/sophia/m3_authority_hardening.test.ts`; changing it is a broader behavioral decision (ADR amendment + voice UX + surface contracts).

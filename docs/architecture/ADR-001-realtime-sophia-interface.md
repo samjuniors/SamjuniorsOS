@@ -54,6 +54,7 @@ Furthermore, deciding whether realtime media should run entirely in the cloud or
 | **Push-to-Talk (PTT)** | IMPLEMENTED & VERIFIED (`live-client.ts`, PTT state machine) | Baseline Audio Control |
 | **Streaming STT Adapter** | IMPLEMENTED (Phase 4C-B working tree: `DeepgramFluxProvider`) | Active Working Implementation |
 | **Unified Cognitive Ingress**| IMPLEMENTED (Phase 4C-B working tree: `executeSophiaTurn`) | Active Working Implementation |
+| **Typed-Surface Ingress Convergence** | IMPLEMENTED (M3 K-1, commit 3da24b4: `/api/sofia/ask` is a thin governed delegate to `executeSophiaTurn`; browser history untrusted/non-authoritative) | Active Working Implementation |
 | **Live Transcript UI** | IMPLEMENTED (Phase 4C-B working tree: `LiveTranscriptRibbon.tsx`) | Active Working Implementation |
 | **WebRTC / LiveKit Gateway** | **TARGET / NOT IMPLEMENTED** (No WebRTC or LiveKit code exists) | Design Target |
 | **Gemini Live Provider** | **TARGET / NOT IMPLEMENTED** (No Gemini Live streaming adapter) | Design Target |

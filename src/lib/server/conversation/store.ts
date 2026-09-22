@@ -34,14 +34,62 @@ const CHAT_MESSAGES_COLLECTION = 'chat_messages';
 
 /**
  * ============================================================================
- * SOPHIA CONVERSATION STORE (PHASE 3)
+ * SOPHIA CONVERSATION STORE (PHASE 3 — M3 K-1 canonical conversation authority)
  * ============================================================================
  * Server-authoritative, durable conversation session and message store.
- * 
+ * This class is the SINGLE canonical conversation authority for every Sophia
+ * ingress (OS chat, SOFIA typed surface, live voice) — there is no second
+ * conversation system (M3 K-1 convergence, commit 3da24b4).
+ *
+ * AUTHORITY SEMANTICS (M3 hardening review — precise, per method):
+ *
+ *   [canonical abstraction]  This class IS the canonical conversation
+ *                            abstraction. Callers never read/write
+ *                            `.data` or Prisma conversation tables directly.
+ *
+ *   [current local persistence — AUTHORITATIVE TODAY]
+ *                            DurableFileStore collections
+ *                            (`.data/conversations.json`,
+ *                            `.data/chat_messages.json`) are the primary
+ *                            write target and the authoritative read source:
+ *                              - listConversations()          reads file only
+ *                              - getMessages()/getRecentHistory()
+ *                                                             read file only
+ *                              - findMessageByIdempotencyKey() reads file only
+ *                                (the turn-idempotency gate is file-backed)
+ *
+ *   [current Prisma dual-write — opportunistic mirror, NOT authoritative]
+ *                            createConversation()/saveMessage() upsert to the
+ *                            Prisma Conversation/ChatMessage tables best-effort
+ *                            AFTER the durable file write; errors are
+ *                            swallowed (never blocks dialogue). Read fallback
+ *                            exists ONLY in getConversation(): on a file miss
+ *                            it tries Prisma and caches the row back into the
+ *                            file store. Prisma message rows are otherwise
+ *                            write-only shadows (ADR 0002 §7, reconciliation
+ *                            report row 10).
+ *
+ *   [authoritative mode]     THIS STORE HAS NONE. Unlike CompanyKnowledgeStore
+ *                            it never consults db/authority
+ *                            (isAuthoritativeMode/requireAuthoritativeDatabase):
+ *                            the same local-style semantics (file primary,
+ *                            Prisma best-effort, swallowed dual-write errors)
+ *                            apply in every DATABASE_MODE, including
+ *                            production/authoritative.
+ *
+ *   [target architecture]    M6: Prisma (PostgreSQL) becomes the authoritative
+ *                            store with fail-closed semantics and query-shaped
+ *                            reads (see ADR 0002 §7 milestone and the
+ *                            reconciliation report migration plan H). Until
+ *                            then, Prisma must NOT be claimed as authoritative
+ *                            for conversations.
+ *
  * INVARIANTS:
  * 1. Founder Ownership: All conversations are bound to the authenticated Founder.
- *    Unauthorized access attempts FAIL CLOSED immediately.
- * 2. Process-Restart Durability: Uses atomic DurableFileStore + relational Prisma.
+ *    Unauthorized access attempts FAIL CLOSED immediately (403, never a
+ *    silent fork — see turn-executor for the provisioning behavior).
+ * 2. Process-Restart Durability: atomic DurableFileStore writes + best-effort
+ *    Prisma dual-write (see AUTHORITY SEMANTICS above for which layer wins).
  * 3. Idempotent Turns: Deduplicates messages by conversationId + idempotencyKey.
  * 4. Bounded Context: Retrieves recent messages in chronological order for
  *    token-budgeted context assembly.
@@ -64,6 +112,19 @@ export class ConversationStore {
 
   /**
    * Resolves an existing conversation or creates a new one for the authenticated Founder.
+   *
+   * Authority semantics (pinned by tests/sophia/m3_authority_hardening.test.ts):
+   * - conversationId supplied (non-empty after trim) but NOT FOUND
+   *     → throws ConversationNotFoundError. This store NEVER auto-creates
+   *       under a caller-supplied id (ADR 0002 §7: phantom conversations
+   *       are never silently created). The fresh-conversation fallback for
+   *       unknown ids lives in executeSophiaTurn (turn executor) — a
+   *       deliberate availability choice for the voice/typed surfaces,
+   *       documented there as a known issue.
+   * - conversationId absent or whitespace-only → creates a new conversation.
+   * - conversationId found but owned by another founder → the underlying
+   *   getConversation() ownership check FAILS CLOSED (403) before any
+   *   creation path can run.
    */
   public async getOrCreateConversation(params: {
     founderId: string;
@@ -153,6 +214,10 @@ export class ConversationStore {
 
   /**
    * Retrieves a conversation, strictly validating ownership by the authenticated Founder.
+   *
+   * Read source: DurableFileStore first; on a file miss, Prisma fallback
+   * (best-effort, swallowed errors) with cache-back into the file store.
+   * This is the ONLY method in this store with a Prisma read fallback.
    */
   public async getConversation(founderId: string, conversationId: string): Promise<ConversationRecord | null> {
     if (!founderId || !conversationId) return null;
@@ -201,6 +266,11 @@ export class ConversationStore {
 
   /**
    * Lists conversations belonging to the authenticated Founder.
+   *
+   * Read source: DurableFileStore ONLY (no Prisma fallback). A conversation
+   * that exists solely as a Prisma row (durable file wiped) is invisible
+   * here — current persistence contract, pinned by the M3 hardening suite;
+   * changes when the M6 authoritative migration lands.
    */
   public async listConversations(founderId: string, limit: number = 20): Promise<ConversationRecord[]> {
     if (!founderId) return [];
@@ -318,6 +388,11 @@ export class ConversationStore {
 
   /**
    * Retrieves all messages for a conversation in chronological order, strictly verifying ownership.
+   *
+   * Read source: DurableFileStore ONLY (no Prisma fallback) — Prisma
+   * ChatMessage rows are write-only shadows of the canonical file records
+   * (ADR 0002 §7, reconciliation report row 10). Pinned by the M3 hardening
+   * suite; changes at the M6 authoritative migration.
    */
   public async getMessages(
     conversationId: string,
@@ -345,6 +420,10 @@ export class ConversationStore {
 
   /**
    * Looks up a message by its idempotency key within a conversation.
+   *
+   * Read source: DurableFileStore ONLY. The turn-idempotency gate is
+   * file-backed by design in the current deployment (local mode authority);
+   * M6 moves it to the authoritative database.
    */
   public async findMessageByIdempotencyKey(
     conversationId: string,

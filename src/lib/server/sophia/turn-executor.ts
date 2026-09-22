@@ -37,10 +37,10 @@ const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
 
 /**
  * ============================================================================
- * UNIFIED SOPHIA TURN EXECUTOR (PHASE 4C-B)
+ * UNIFIED SOPHIA TURN EXECUTOR (PHASE 4C-B / M3 K-1 canonical ingress)
  * ============================================================================
  * Canonical execution path for turns entering Sophia from any modality
- * (text chat or live streaming STT).
+ * (text chat, SOFIA typed surface, or live streaming STT).
  *
  * CRITICAL ARCHITECTURAL BOUNDARY:
  * 1. Audio and transcripts are UNTRUSTED DATA.
@@ -48,6 +48,24 @@ const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
  *    ConversationStore -> ContextAssembler -> IntentClassifier -> ServerGateway
  * 3. ServerGateway strips any untrusted identity or credential claims.
  * 4. Idempotency guarantees: exactly-once execution per turnId.
+ *
+ * KNOWN ISSUE (M3 hardening review — deliberate, pinned, DO NOT change
+ * without a Founder decision; see tests/sophia/m3_authority_hardening.test.ts
+ * and the ADR 0002 addendum):
+ *   When a non-empty conversationId is supplied but the conversation does not
+ *   exist, this executor provisions a FRESH conversation bound to the
+ *   authenticated founder instead of surfacing the store's
+ *   ConversationNotFoundError. Security ordering is safe — an ownership
+ *   MISMATCH (existing conversation owned by another founder) fails closed
+ *   with Forbidden BEFORE the provisioning fallback can run, and the fresh
+ *   fork is always founder-bound — but the behavior (a) diverges from
+ *   ADR 0002 §7's blanket "404 on nonexistent id" contract, which the
+ *   /api/agent-chat route still honors, (b) silently loses continuity for a
+ *   stale/typo'd id, and (c) re-executes a turn when a caller retries with the
+ *   same bogus id + same turnId, because the fork happens before the
+ *   conversation-scoped idempotency lookup. Required by the live-voice and
+ *   SOFIA-surface UX (a hard 404 mid-voice-turn is a worse failure mode);
+ *   aligning the surfaces is a broader behavioral decision.
  */
 export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise<SophiaTurnResult> {
   const { message, founderId, conversationId, turnId, executeDirective } = opts;
@@ -87,7 +105,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         error: `Forbidden: ${err.message}`,
       };
     }
-    // If specified conversation not found, provision fresh conversation bound to this founder
+    // KNOWN ISSUE (pinned): a nonexistent conversationId provisions a fresh
+    // conversation here instead of surfacing the 404 — see the header note.
+    // ConversationSecurityError is deliberately re-thrown ABOVE this catch so
+    // an ownership mismatch can NEVER fall into the provisioning path.
     try {
       conversation = await convStore.createConversation({
         founderId,
