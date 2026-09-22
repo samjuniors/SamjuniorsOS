@@ -66,7 +66,7 @@ function createAuthenticatedRequest(body: Record<string, any>, role: 'FOUNDER' |
   });
 }
 
-function resetStores(): void {
+async function resetStores(): Promise<void> {
   try {
     InMemoryApprovalStore.getInstance().clear();
     const runStore = AgentRunStore.getInstance();
@@ -82,10 +82,15 @@ function resetStores(): void {
     // M0 test-isolation fix: reset the knowledge + memory singletons as well.
     // Previously these were NOT reset, so items added by one test (e.g. a
     // poisoned knowledge entry) leaked into every later test in the process.
-    CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
-    CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
+    // Pre-M3 correction: durable collections are cleared BEFORE the seed sets
+    // (the old order wrote seeds then wiped the file — leaving memory holding
+    // seeds while the durable file was empty), and the async store resets are
+    // AWAITED so the durable writes (and best-effort prisma mirrors) complete
+    // before the test body runs — no background write races across tests.
     DurableFileStore.getInstance().clearCollection('company_memories');
     DurableFileStore.getInstance().clearCollection('company_knowledge');
+    await CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
+    await CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
   } catch (e) {
     // Ignore store reset errors in test setup
   }
@@ -101,7 +106,7 @@ async function runTests() {
 
   async function test(name: string, fn: () => Promise<void>) {
     try {
-      resetStores();
+      await resetStores();
       await fn();
       console.log(`  [PASS] ${name}`);
       passed++;

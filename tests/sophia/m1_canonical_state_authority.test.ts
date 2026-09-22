@@ -55,7 +55,7 @@ async function test(name: string, fn: () => Promise<void>) {
   }
 }
 
-function resetStores(): void {
+async function resetStores(): Promise<void> {
   try {
     InMemoryApprovalStore.getInstance().clear();
     const runStore = AgentRunStore.getInstance();
@@ -68,10 +68,14 @@ function resetStores(): void {
     claimStore.signals.clear();
     claimStore.sources.clear();
     DurableFileStore.getInstance().clearCollection('epistemic_claims');
-    CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
-    CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
+    // Pre-M3 correction: durable collections are cleared BEFORE the seed
+    // sets (the old order wrote seeds then wiped the file), and the async
+    // store resets are AWAITED so durable writes complete before the next
+    // test body runs — no background write races across tests.
     DurableFileStore.getInstance().clearCollection('company_memories');
     DurableFileStore.getInstance().clearCollection('company_knowledge');
+    await CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
+    await CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
   } catch {
     // Ignore store reset errors in test setup
   }
@@ -316,7 +320,7 @@ async function runTests() {
       try {
         DurableFileStore.getInstance().deleteItem('company_memories', 'mem-m1-provider-check');
       } catch {}
-      resetStores();
+      await resetStores();
     } catch {}
   }
 
