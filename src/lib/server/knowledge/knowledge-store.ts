@@ -528,6 +528,23 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
   /**
    * Deterministically queries durable reference information.
    * Attaches epistemic label: 'durable_reference' and provenance metadata.
+   *
+   * KNOWN AUTHORITY GAP (M3 hardening review — recorded as the NEXT
+   * authority-audit item; deliberately NOT fixed in this pass):
+   *   This method always scores the in-process `knowledgeItems` cache
+   *   (hydrated from DurableFileStore + code seeds at construction, coherent
+   *   only for writes made within THIS process). Unlike getAllKnowledge() /
+   *   getKnowledgeById(), it does NOT read the fail-closed authoritative
+   *   Prisma table in authoritative mode — so knowledge edited or added in
+   *   another process (or before a restart) is invisible to RETRIEVAL while
+   *   being visible to getAllKnowledge(). Callers are context-assembly hot
+   *   paths (SophiaContextAssembler, context-retrieval, context-assembly),
+   *   so the smallest safe correction (routing authoritative mode through
+   *   getAllKnowledge()) is NOT fully isolated: it adds a per-call DB
+   *   dependency and fail-closed 503 propagation to every Sophia turn and
+   *   needs its own authoritative-mode verification matrix. Fix requires a
+   *   dedicated pass with Founder approval. In the current deployment
+   *   (DATABASE_MODE=local) the gap is latent, not active.
    */
   public async queryKnowledge(params: KnowledgeQueryParams): Promise<RetrievedKnowledgeItem[]> {
     const queryText = (params.queryText || '').toLowerCase();
