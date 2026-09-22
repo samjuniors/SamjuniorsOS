@@ -8,5 +8,15 @@
     "metadata": {},
     "createdAt": "2026-09-22T05:49:12.712Z",
     "updatedAt": "2026-09-22T05:49:13.170Z"
+  },
+  "conv-8a283119-bada-4640-9367-bab1aff67994": {
+    "id": "conv-8a283119-bada-4640-9367-bab1aff67994",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-22T08:24:58.729Z",
+    "updatedAt": "2026-09-22T08:25:43.184Z"
   }
 }
