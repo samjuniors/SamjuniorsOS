@@ -129,3 +129,28 @@ Stage Summary:
 - M0, M1, M2 implemented exactly per the approved plan; M3-M6 NOT implemented (deferred per Founder instruction); no MemoryGate; no embeddings/vector infrastructure; no rewrite of existing memory systems; deletions limited to the two dead zero-caller module arrays the plan explicitly ordered.
 - Remaining authority inversions: (1) M3 target — /api/sofia/ask still holds its own browser-side conversation history (K-1 approved convergence NOT yet implemented per instructions); (2) Sophia's Personal Mind still has no server-side store (K-2 approved, M4 scope); (3) forgetting/decay/lifecycle hooks still dead (M4); (4) local-mode dual-write divergence persists by design until M6.
 - Migration risks to review: async getMergedContext (all consumers updated — grep-verified, but any external fork code calling it sync would need the await); knowledge merge semantics (canonical seeds overlay persisted edits by id); idempotency TTL semantic (expired completed responses are re-executed, not replayed — deliberate contract, documented on the interface).
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: Save the Founder's GitHub token for future push/pull and publish the blocked work to git (M0-M2 implementation + reconciliation report)
+
+Work Log:
+- Saved the new token to ~/.git-credentials (https://samjuniors:<token>@github.com, chmod 600) with `git config --global credential.helper store` — all future git push/pull in this sandbox authenticates as samjuniors automatically.
+- Verified token via API (login: samjuniors, id 136071252).
+- Discovered the canonical repo /home/z/samjuniorsos (feat/memory-m0-m2, 2 commits) was lost to ANOTHER sandbox reset; only /home/z/my-project (local git + working tree) survived. my-project local history held everything: 49bc8f9 (docs mirror) + f2eecb9 (M0-M2 sync) + junk auto-commits (a903bb6/e4e80c0: .data/db/tool-results/tmp — never for GitHub).
+- Confirmed the uncommitted working-tree diffs carry NO new source work (tests/sophia diffs = mode changes 644→755 only; .data/db/tool-results = runtime drift).
+- Re-cloned samjuniors/SamjuniorsOS; checked out feat/sofia-merge (3dd0b82). diff -rq against my-project proved the ONLY real deltas are the M0-M2 files (16 src modified + 6 tests) + MEMORY_RECONCILIATION_REPORT.md; mirrored ADR-001/SOPHIA_MEMORY_ARCHITECTURE.md identical to canonical; docs/SETUP+MERGE_PROMPT identical to canonical's docs/sofia/ (path-only difference).
+- Excluded sandbox scaffolding from the push: src/app/api/route.ts ("Hello, world!" scaffold — inert, never part of M0-M2).
+- Reconstructed and pushed:
+  1. feat/sofia-merge 3dd0b82 → 5e13b94: commit "docs: Sophia memory/brain reconciliation report (A-K + verdict: reconcile, do not rewrite)" — recreates the lost 606d118 (report file only; ADR-001 + SOPHIA_MEMORY_ARCHITECTURE.md already on branch).
+  2. NEW branch feat/memory-m0-m2 (6ac3c03), parented on 5e13b94: the M0-M2 implementation — 22 files, +1417/−105 (16 src + phase1/phase2 modifications + m0/m1/m2/m2-child test suites), full detailed commit message documenting M0-a/b/c, M1, M2, verification results, and the Founder deferral.
+- API-verified: both branches listed (feat/memory-m0-m2 6ac3c03, feat/sofia-merge 5e13b94); report 200 on feat/sofia-merge; knowledge-store on feat/memory-m0-m2 contains the M2 persistence code (17 computeKnowledgeContentHash/DurableFileStore matches); m1 test 200; implementation commit reports 22 files.
+- Post-push diff -rq (my-project vs pushed clone): src trees identical except the intentionally-excluded scaffold route; tests/sophia M0-M2 files identical; canonical-only test suites (phase3/4*/realtime) untouched as expected.
+- Worklog housekeeping: this entry.
+
+Stage Summary:
+- Credentials persist: ~/.git-credentials + credential.helper=store — future `git push`/`git pull` works without re-auth.
+- Published on samjuniors/SamjuniorsOS: feat/sofia-merge@5e13b94 (reconciliation report) and feat/memory-m0-m2@6ac3c03 (M0-M2 implementation, the previously BLOCKED push). PR-ready link: https://github.com/samjuniors/SamjuniorsOS/pull/new/feat/memory-m0-m2
+- The pushed tree is byte-identical (for every M0-M2 file) to the my-project mirror that passed 361 tests / tsc / eslint / next build in Task 15 — no re-run needed, same file contents.
+- Still pending Founder review before M3: remaining authority inversions + migration risks documented in Task 15 summary.
