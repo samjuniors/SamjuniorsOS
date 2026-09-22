@@ -331,9 +331,13 @@ export async function POST(req: NextRequest) {
             : [];
 
         // 4. Context Assembly: deterministic, multi-source, authority-classified
+        //    (M3 K-2: threads the authenticated session principal so the
+        //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS
+        //    founder only — personal context, never company authority.)
         const assembledContext = await SophiaContextAssembler.assemble({
           message,
           history: historyItems,
+          founderId: session.userId,
         });
 
         // 5. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary

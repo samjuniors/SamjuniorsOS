@@ -229,3 +229,27 @@ Known future bottlenecks to watch, not to fix now: DurableFileStore whole-file r
 2. **queryKnowledge authoritative-mode gap (next authority-audit item):** in authoritative mode, `getAllKnowledge()`/`getKnowledgeById()` read the fail-closed Prisma table, but `queryKnowledge()` still scores the in-process cache hydrated from DurableFileStore/code seeds — knowledge edited in another process is invisible to retrieval while visible to list/get. Callers are context-assembly hot paths (every Sophia turn), so the smallest safe correction is not fully isolated; fixing it needs a dedicated pass with its own authoritative-mode verification matrix. Latent in the current local-mode deployment.
 
 **Where the precise layering is documented:** ADR 0002 implementation-precision addendum (four-layer distinction + the §7 divergence), `SOPHIA_MEMORY_ARCHITECTURE.md` §8 conversation-authority subsection, and per-method doc comments in `src/lib/server/conversation/store.ts`.
+
+
+---
+
+## K-2 Addendum (2026-09-23): Sophia Personal Mind memory — implemented
+
+Milestone M3 K-2 (branch feat/sophia-personal-memory) implemented the first
+Personal Mind memory boundary per the approved two-brains architecture:
+
+- New canonical abstraction: `SophiaMemoryStore` + `SophiaMemory` Prisma
+  model + DurableFileStore collection `sophia_memories` (ConversationStore
+  storage pattern: file authoritative today, Prisma opportunistic dual-write,
+  no authoritative-mode branch until M6).
+- Founder-scoped fail-closed ownership on every operation; deterministic
+  bounded retrieval; ChatMessage-convention idempotencyKey dedupe.
+- `PERSONAL_MIND_MEMORY` context slice in SophiaContextAssembler, threaded
+  from executeSophiaTurn and /api/agent-chat via the authenticated principal.
+- Governed ingress /api/sofia/memory (session-bound only; body founderId
+  ignored; 401 in production).
+- No promotion path to CompanyMemory / CompanyKnowledge / CanonicalFact; no
+  authorization capability; no MemoryGate / consolidation / forgetting /
+  embeddings / vector search / PostgreSQL migration (all remain out of scope).
+- Pinned by tests/sophia/k2_personal_memory.test.ts (20 tests incl. genuine
+  restart-durability children and production 401 probes).
