@@ -168,3 +168,52 @@ Produce:
 - tests required
 
 Do not implement a large rewrite until reconciliation is complete.
+
+## 11. K-2 Personal Mind implementation status (2026-09-23 addendum)
+
+K-2 delivered the first server-side Personal Mind memory boundary. Keep the
+following claims precise:
+
+CURRENT (implemented on feat/sophia-personal-memory):
+- `SophiaMemoryStore` (src/lib/server/sophia/personal-memory-store.ts) is the
+  canonical Personal Mind abstraction: founder-scoped create / get / list /
+  update / delete with fail-closed ownership (403 on cross-founder access of
+  an existing record), deterministic bounded retrieval (updatedAt DESC, id ASC
+  tie-break, hard cap 50), an allow-listed memory-type set, and optional
+  founder-scoped idempotencyKey write dedupe (the ChatMessage convention).
+- Persistence authority TODAY mirrors ConversationStore exactly: the
+  DurableFileStore collection `.data/sophia_memories.json` is the primary
+  write target and the ONLY read source; Prisma `SophiaMemory` rows are an
+  opportunistic best-effort dual-write mirror (errors swallowed, no read
+  fallback, no authoritative-mode branch). The M6 authoritative-PostgreSQL
+  migration moves conversations and personal memories together — until then
+  Prisma must NOT be called authoritative for personal memory.
+- Context integration: `SophiaContextAssembler.assemble({ message, history,
+  founderId })` renders the founder's active personal memories as an
+  explicitly labeled `PERSONAL_MIND_MEMORY` slice (600-char budget), strictly
+  separated from every Company Brain slice. `executeSophiaTurn` and
+  /api/agent-chat thread the authenticated session principal into assembly;
+  callers without a founderId get no slice (backward compatible).
+- Governed ingress: `/api/sofia/memory` (GET/POST/PATCH/DELETE) binds every
+  operation to the authenticated founder session (401 in production without
+  credentials; founderId in bodies/query is untrusted and ignored).
+- Boundary is test-pinned (tests/sophia/k2_personal_memory.test.ts, 20 pins):
+  no cross-founder read/modify/delete, restart durability via genuine child
+  processes, no leak into another founder's context, no auto-promotion to
+  CompanyMemory / CanonicalFact / claims, no authorization capability (the
+  gateway ignores personal-memory authority claims; the store imports no
+  authorization/epistemic/company-brain module), idempotent writes, empty
+  state stays empty.
+
+NOT IMPLEMENTED (deliberately out of scope for K-2):
+- MemoryGate, selective retention, consolidation/compression, forgetting /
+  decay lifecycle, embeddings / vector search / pgvector / Qdrant, FTS
+  migration, PostgreSQL migration, autonomous memory promotion, autonomous
+  memory CAPTURE from conversations (a future governed learning loop — today
+  memories enter only through the authenticated founder route or explicit
+  server-side calls), and any personal-memory influence on approvals,
+  governance, or company state.
+
+Invariant kept: Personal Mind provides context; it can never grant authority.
+The Company Brain (CompanyState / CompanyKnowledge / CompanyMemory /
+epistemic pipeline) remains the only source of company truth.

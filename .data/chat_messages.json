@@ -100,5 +100,83 @@
       "ingress": "sofia_ask"
     },
     "createdAt": "2026-09-22T10:02:01.805Z"
+  },
+  "msg-0a280ce8-3ba1-41ad-aebc-329e8e8e3038": {
+    "id": "msg-0a280ce8-3ba1-41ad-aebc-329e8e8e3038",
+    "conversationId": "conv-6259cc13-1a29-4c8d-83cf-ce7b3fc40700",
+    "sender": "founder",
+    "role": "user",
+    "content": "Briefly confirm you have noted my communication preferences, then tell me our current monthly recurring revenue.",
+    "idempotencyKey": "k2-e2e-turn-1790079651927",
+    "metadata": {},
+    "createdAt": "2026-09-22T12:20:52.221Z"
+  },
+  "msg-ce2162dd-231f-44ae-b50c-2df430cfa99a": {
+    "id": "msg-ce2162dd-231f-44ae-b50c-2df430cfa99a",
+    "conversationId": "conv-6259cc13-1a29-4c8d-83cf-ce7b3fc40700",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • Chief Operating Officer & Master Orchestrator]\nAuthoritative Company Telemetry [SANDBOX SIMULATION MODEL — Live ledger integration pending]:\n- Monthly Recurring Revenue (MRR): $148,500\n- Annual Run Rate (ARR): $1,782,000\n- Monthly Burn Rate: $24,500\n- Gross Margin Floor: 86.4%\n- Cash Reserve Runway: 42 months",
+    "intent": "informational_query",
+    "idempotencyKey": "k2-e2e-turn-1790079651927:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-22T12:20:52.656Z"
+  },
+  "msg-9f30d422-346c-4b36-93dd-540b58572e5d": {
+    "id": "msg-9f30d422-346c-4b36-93dd-540b58572e5d",
+    "conversationId": "conv-3c36c8e5-9038-4840-a861-20aadb06c246",
+    "sender": "founder",
+    "role": "user",
+    "content": "What are my communication preferences for your replies? Quote them.",
+    "idempotencyKey": "k2-e2e-turn2-1790079672359",
+    "metadata": {},
+    "createdAt": "2026-09-22T12:21:12.416Z"
+  },
+  "msg-9c2fbc47-b41d-4eff-bace-940eec322e57": {
+    "id": "msg-9c2fbc47-b41d-4eff-bace-940eec322e57",
+    "conversationId": "conv-3c36c8e5-9038-4840-a861-20aadb06c246",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Contextual inquiry resolving references from conversation history.",
+    "intent": "informational_query",
+    "idempotencyKey": "k2-e2e-turn2-1790079672359:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-22T12:21:12.508Z"
+  },
+  "msg-b4421995-3b4e-4fd1-8a47-b62bc1b49ccb": {
+    "id": "msg-b4421995-3b4e-4fd1-8a47-b62bc1b49ccb",
+    "conversationId": "conv-79097d03-d414-4a87-9f6c-063cbba3197b",
+    "sender": "founder",
+    "role": "user",
+    "content": "Summarize my communication preferences in one sentence.",
+    "idempotencyKey": "k2-e2e-turn3-1790079742407",
+    "metadata": {},
+    "createdAt": "2026-09-22T12:22:22.434Z"
+  },
+  "msg-33ba5417-00f2-4a9a-9e64-bb4eec54c6e8": {
+    "id": "msg-33ba5417-00f2-4a9a-9e64-bb4eec54c6e8",
+    "conversationId": "conv-79097d03-d414-4a87-9f6c-063cbba3197b",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • COO & Master Orchestrator]\nGood to connect, Founder. All systems, sandboxes, and verified telemetry remain intact.",
+    "intent": "conversation",
+    "idempotencyKey": "k2-e2e-turn3-1790079742407:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-22T12:22:22.506Z"
   }
 }

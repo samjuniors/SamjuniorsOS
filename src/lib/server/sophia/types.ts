@@ -19,7 +19,8 @@ export type SophiaAuthorityClass =
   | 'PENDING_GOVERNANCE_STATE'       // Authoritative pending founder approval gates
   | 'COMPANY_KNOWLEDGE'              // Durable reference SOPs, PRDs, and architecture documents (Phase 2)
   | 'HISTORICAL_PRECEDENT'           // Past run summaries & decision outcomes, not current empirical data
-  | 'RECENT_ACTIVITY';               // Authoritative projected recent company actions (Phase 2)
+  | 'RECENT_ACTIVITY'                 // Authoritative projected recent company actions (Phase 2)
+  | 'PERSONAL_MIND_MEMORY';           // Founder-scoped personal/interaction context (M3 K-2) — contextual ONLY, never company authority, never an authorization source
 
 export interface SophiaContextSlice {
   label: string;
@@ -46,6 +47,7 @@ export interface SophiaAssembledContext {
     historicalPrecedent?: number;
     recentActivity?: number;
     dialogueHistory?: number;
+    personalMind?: number;
   };
 }
 
@@ -204,6 +206,7 @@ export interface TurnMetrics {
       historicalPrecedent?: number;
       recentActivity?: number;
       dialogueHistory?: number;
+      personalMind?: number;
     };
   };
   retrievalHit?: boolean;

@@ -1,0 +1,15 @@
+{
+  "smem-f73aa616-2239-42fc-ba8f-7e04768f5228": {
+    "id": "smem-f73aa616-2239-42fc-ba8f-7e04768f5228",
+    "founderId": "founder-local-session",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "The founder prefers that every SOFIA reply ends with the exact confirmation line: [Personal Mind acknowledged]. K2-E2E-ex3s8y2k",
+    "provenance": "founder_direct",
+    "confidence": 0.9,
+    "active": true,
+    "idempotencyKey": "e2e-K2-E2E-ex3s8y2k",
+    "createdAt": "2026-09-22T12:20:38.637Z",
+    "updatedAt": "2026-09-22T12:20:38.637Z",
+    "metadata": {}
+  }
+}

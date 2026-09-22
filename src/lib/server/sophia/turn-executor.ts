@@ -193,9 +193,13 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }));
 
     // 6. Context Assembly: deterministic, multi-source, authority-classified
+    //    (M3 K-2: the authenticated founder principal threads through so the
+    //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS founder
+    //    only — personal context, never company authority.)
     const assembledContext = await SophiaContextAssembler.assemble({
       message: cleanMessage,
       history: historyItems,
+      founderId,
     });
 
     // 7. Intent Classification with structural trust boundary
