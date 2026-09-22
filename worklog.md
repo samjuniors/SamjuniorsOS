@@ -220,3 +220,20 @@ Stage Summary:
 - Canonical: feat/memory-m0-m2 HEAD = 55e25df (push blocked — no GitHub token in this sandbox; re-provide to publish). Mirror: my-project 3dac598.
 - Remaining authority issues for the Founder backlog: (1) executor bogus-id provisioning vs ADR 0002 §7 (cross-surface 404/fork inconsistency + fork-before-idempotency re-execution — needs a decision + ADR amendment); (2) queryKnowledge authoritative-mode cache gap (next authority-audit item, hot-path blast radius); (3) ConversationStore has no authoritative-mode branch (by design until M6 — PostgreSQL must never be claimed current); (4) pre-existing realtime test expectations (gemini model) + Vercel npm-lockfile ERESOLVE (Task 17) + brain.ts runAsk dead code (Task 18) — all unrelated to this pass, unchanged.
 - STOPPED per directive — K-2, MemoryGate, forgetting, embeddings/vector, PostgreSQL migration all remain frozen pending Founder approval.
+---
+Task ID: 20
+Agent: main (Z.ai Code)
+Task: Publish M3 K-1 hardening review commit 55e25df (Founder re-provided GitHub token after sandbox-reset loss; Task 19 had completed the review with push blocked)
+
+Work Log:
+- Verified canonical clone /home/z/samjuniorsos state first: clean tree, feat/memory-m0-m2 local HEAD = 55e25df, exactly 1 commit ahead of origin (the hardening commit), no other divergence.
+- Restored credentials the established way: git credential.helper store + ~/.git-credentials (chmod 600) with the Founder-provided PAT (samjuniors@github.com).
+- Pushed: git push origin feat/memory-m0-m2 → 3da24b4..55e25df accepted.
+- API verification (authenticated): branch feat/memory-m0-m2 HEAD on GitHub = 55e25dff2bb2dd0225b0a8e6ee0dd63e7c87162f, commit message matches.
+- Content-level verification: tests/sophia/m3_authority_hardening.test.ts present on GitHub with blob sha c999bc28735a74720177c190f3e3bcc9a0c556bf == local blob sha (byte-identical); src/lib/server/conversation/store.ts (AUTHORITY SEMANTICS matrix, line 44) and src/lib/server/sophia/turn-executor.ts diff-verified byte-identical to local 55e25df via raw.githubusercontent fetch.
+- Commit contents confirmed: 8 files, +538/−7 — ADR 0002 addendum, ADR-001 status row, MEMORY_RECONCILIATION_REPORT dated addendum, SOPHIA_MEMORY_ARCHITECTURE §8 update, conversation/store.ts authority-semantics docstrings, knowledge-store.ts queryKnowledge KNOWN AUTHORITY GAP note, turn-executor.ts KNOWN ISSUE header, new m3_authority_hardening.test.ts (10 pins). ZERO behavior change.
+
+Stage Summary:
+- M3 K-1 hardening review is now fully published: samjuniors/SamjuniorsOS feat/memory-m0-m2 @ 55e25df (verified branch HEAD + file content on GitHub).
+- Founder backlog unchanged: (1) bogus-conversationId executor provisioning vs ADR 0002 §7 (cross-surface 404/fork + fork-before-idempotency) needs decision + ADR amendment; (2) queryKnowledge authoritative-mode cache gap (next authority-audit item); (3) ConversationStore has no authoritative-mode branch until M6; (4) unrelated pre-existing: Vercel npm-lockfile ERESOLVE, realtime gemini test expectations, brain.ts runAsk dead code.
+- STOPPED per standing directive — K-2, MemoryGate, forgetting, embeddings/vector, PostgreSQL migration all remain frozen pending Founder approval.
