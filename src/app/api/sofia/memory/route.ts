@@ -40,6 +40,7 @@ import {
   SOPHIA_MEMORY_LIST_MAX_LIMIT,
   SophiaMemoryType,
 } from '@/lib/server/sophia';
+import { annotateReviewRecords } from '@/lib/server/sophia/memory-review-annotations';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,19 @@ export const dynamic = 'force-dynamic';
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof SophiaMemoryValidationError || (err as Error)?.name === 'SophiaMemoryValidationError') {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
+  }
+  // M4-A HARDENING: founder-direct authoring may not store authorization /
+  // privilege / governance semantics (deterministic authority-content
+  // guard — see authority-content-guard.ts). Refused with an actionable
+  // message; the governed authorization system is the policy surface.
+  if ((err as Error)?.name === 'SophiaMemoryAuthorityError' || (err as any)?.code === 'SOPHIA_MEMORY_AUTHORITY_CONTENT') {
+    return NextResponse.json(
+      {
+        error: (err as Error).message,
+        code: 'SOPHIA_MEMORY_AUTHORITY_CONTENT',
+      },
+      { status: 400 }
+    );
   }
   if (err instanceof SophiaMemorySecurityError || (err as Error)?.name === 'SophiaMemorySecurityError') {
     return NextResponse.json({ error: `Forbidden: ${(err as Error).message}` }, { status: 403 });
@@ -104,7 +118,16 @@ export async function GET(req: NextRequest) {
     }
 
     const memories = await SophiaMemoryStore.getInstance().listMemories(session.userId, opts);
-    return NextResponse.json({ memories, count: memories.length });
+
+    // M4-A HARDENING (reviewability): deterministic duplicate/similarity
+    // hints for the review queue. The comparison pool is the caller's FULL
+    // record set (active + pending, bounded at 50) so a pending candidate
+    // can be flagged against an already-active memory. Purely advisory —
+    // the reviewer decides; nothing is merged or auto-actioned.
+    const pool = await SophiaMemoryStore.getInstance().listMemories(session.userId, { limit: 50 });
+    const annotations = annotateReviewRecords(memories, pool);
+
+    return NextResponse.json({ memories, annotations, count: memories.length });
   } catch (err) {
     return errorResponse(err);
   }

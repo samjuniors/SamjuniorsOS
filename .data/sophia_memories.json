@@ -127,5 +127,34 @@
         "evaluatedAt": "2026-09-23T06:39:08.355Z"
       }
     }
+  },
+  "smem-fc252864-d119-44eb-b621-ae8b2b29cd56": {
+    "id": "smem-fc252864-d119-44eb-b621-ae8b2b29cd56",
+    "founderId": "founder-obs-live",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "The founder prefers answers that include concrete examples from their own systems.",
+    "provenance": "conversation:conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091",
+    "confidence": 0.9,
+    "active": false,
+    "idempotencyKey": "m4cap:conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091:sofia-ask-aa42ab08-1193-4583-9a46-28c4de2910b5:0",
+    "createdAt": "2026-09-23T07:10:35.201Z",
+    "updatedAt": "2026-09-23T07:10:35.201Z",
+    "metadata": {
+      "captureStatus": "pending",
+      "captureSource": "m4a_turn_capture",
+      "conversationId": "conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091",
+      "founderMessageId": "msg-abcb6285-3470-451f-b79f-1ccc3ec31632",
+      "assistantMessageId": "msg-12045d78-624b-4352-a876-567d8bd88261",
+      "turnId": "sofia-ask-aa42ab08-1193-4583-9a46-28c4de2910b5",
+      "ingress": "sofia_ask",
+      "capturedAt": "2026-09-23T07:10:35.201Z",
+      "gate": {
+        "decision": "NEEDS_REVIEW",
+        "reasons": [
+          "PASSED_DETERMINISTIC_CHECKS"
+        ],
+        "evaluatedAt": "2026-09-23T07:10:35.201Z"
+      }
+    }
   }
 }
