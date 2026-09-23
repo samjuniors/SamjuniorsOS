@@ -118,6 +118,16 @@ export interface CreateSophiaMemoryParams {
   confidence?: number;
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Lifecycle state at creation. Defaults to true (the founder-direct
+   * contract of the governed /api/sofia/memory route, unchanged). The M4-A
+   * capture stage is the ONLY caller that passes false — captured
+   * candidates persist INACTIVE and require an explicit Founder
+   * confirmation (governed PATCH active:true) before they ever render in
+   * context. This is a store-internal parameter: the governed route never
+   * forwards a client-supplied active flag.
+   */
+  active?: boolean;
 }
 
 export interface UpdateSophiaMemoryParams {
@@ -261,6 +271,10 @@ export class SophiaMemoryStore {
    * founder, the existing record is returned and nothing is written. Without
    * a key there is NO dedupe. The key is founder-scoped — Founder B may use
    * Founder A's key without collision.
+   *
+   * Lifecycle: created records are ACTIVE by default (founder-direct). The
+   * M4-A capture path creates INACTIVE candidates (active: false) that stay
+   * out of every context render until a Founder explicitly activates them.
    */
   public async createMemory(params: CreateSophiaMemoryParams): Promise<SophiaMemoryRecord> {
     const founderId = this.requireFounderId(params.founderId);
@@ -289,7 +303,7 @@ export class SophiaMemoryStore {
       content,
       provenance,
       confidence,
-      active: true,
+      active: params.active ?? true,
       idempotencyKey: cleanKey,
       createdAt: now,
       updatedAt: now,
@@ -361,6 +375,18 @@ export class SophiaMemoryStore {
         throw new SophiaMemoryValidationError('active must be a boolean.');
       }
       next.active = patch.active;
+      // M4-A founder-review confirmation stamp: activating a pending
+      // captured candidate records WHEN the Founder confirmed it. This is
+      // deterministic lifecycle metadata (server-side), not new authority —
+      // the record only becomes visible in context because active is now
+      // true, exactly like any founder-direct memory.
+      if (patch.active === true && next.metadata?.captureStatus === 'pending') {
+        next.metadata = {
+          ...next.metadata,
+          captureStatus: 'confirmed',
+          confirmedAt: new Date().toISOString(),
+        };
+      }
     }
     next.updatedAt = new Date().toISOString();
 
@@ -509,6 +535,31 @@ export class SophiaMemoryStore {
       }
     }
     return null;
+  }
+
+  /**
+   * M4-A capture-replay guard: reports whether this founder already has any
+   * memory whose idempotencyKey starts with the given prefix. The capture
+   * stage derives deterministic keys ("m4cap:<conversationId>:<turnId>:<n>")
+   * from authoritative turn identity; a REPLAYED turn must never capture
+   * again — the prefix check short-circuits the whole capture stage before
+   * any extraction or persistence happens. Unbounded by list limits (reads
+   * the whole founder-scoped collection, which is the same read the store
+   * already performs for dedupe).
+   */
+  public async hasIdempotencyKeyPrefix(founderId: string, prefix: string): Promise<boolean> {
+    const owner = this.requireFounderId(founderId);
+    if (typeof prefix !== 'string' || !prefix.trim()) {
+      return false;
+    }
+    const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
+    return Object.values(all).some(
+      (m) =>
+        m &&
+        m.founderId === owner &&
+        typeof m.idempotencyKey === 'string' &&
+        m.idempotencyKey.startsWith(prefix)
+    );
   }
 
   /**

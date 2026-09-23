@@ -253,3 +253,35 @@ Personal Mind memory boundary per the approved two-brains architecture:
   embeddings / vector search / PostgreSQL migration (all remain out of scope).
 - Pinned by tests/sophia/k2_personal_memory.test.ts (20 tests incl. genuine
   restart-durability children and production 401 probes).
+
+
+---
+
+## M4-A Addendum (2026-09-23): memory capture + deterministic MemoryGate — implemented
+
+Milestone M4-A (branch feat/sophia-memory-capture-m4a) implements the
+Founder-reviewed memory-capture loop on top of the K-2 Personal Mind store:
+
+- LLM extraction (SophiaMemoryExtractor) PROPOSES candidates from a
+  completed, persisted turn — untrusted fixed-shape output only.
+- Deterministic MemoryGate validates structure / type allow-list / bounds /
+  confidence / provenance / secret indicators / instruction-shaped content /
+  company-domain contamination / transience / exact-normalized duplicates.
+- Outcomes: REJECT (nothing persisted) or NEEDS_REVIEW (INACTIVE candidate,
+  captureStatus pending). ACCEPT exists only in the type for future
+  compatibility — M4-A has NO automatic activation and no M4-B.
+- Founder confirmation is the ONLY activation path: the EXISTING governed
+  PATCH /api/sofia/memory { active: true } (stamps captureStatus confirmed
+  + confirmedAt).
+- Capture is asynchronous fire-and-forget at BOTH Sophia execution paths
+  (executeSophiaTurn and the /api/agent-chat inline branch); it can never
+  fail a conversation, and replayed turns never re-capture (deterministic
+  m4cap:<conversationId>:<turnId> keys, checked before extraction).
+- PERSONAL_MIND_MEMORY context rendering is structurally hardened: personal
+  memories render as XML-escaped data inside a bounded
+  <personal_memory_context> container that a memory can never break out of,
+  and the classifier prompt names the container as untrusted data.
+- No schema change (existing active flag + metadata carry candidate
+  lifecycle). No consolidation, forgetting, vectors, PostgreSQL migration,
+  or cross-brain promotion. Pinned by tests/sophia/m4a_memory_capture.test.ts
+  (41 pins).

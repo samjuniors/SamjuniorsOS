@@ -217,3 +217,110 @@ NOT IMPLEMENTED (deliberately out of scope for K-2):
 Invariant kept: Personal Mind provides context; it can never grant authority.
 The Company Brain (CompanyState / CompanyKnowledge / CompanyMemory /
 epistemic pipeline) remains the only source of company truth.
+
+## 12. M4-A memory capture + MemoryGate (2026-09-23 addendum)
+
+M4-A (branch feat/sophia-memory-capture-m4a) adds the first governed
+memory-capture loop on top of the K-2 store. Keep these claims precise:
+
+### Capture flow (implemented)
+
+```
+persisted founder message
+  -> persisted assistant reply
+  -> asynchronous SophiaMemoryCaptureStage (fire-and-forget, never a
+     conversational dependency)
+  -> LLM extraction (untrusted proposals only)
+  -> deterministic MemoryGate
+       REJECT       -> nothing persisted
+       NEEDS_REVIEW -> INACTIVE SophiaMemory candidate (captureStatus pending)
+  -> Founder confirmation via the EXISTING governed PATCH /api/sofia/memory
+     { active: true }  (stamps captureStatus confirmed + confirmedAt)
+  -> active personal memory (renders in PERSONAL_MIND_MEMORY)
+```
+
+- Integrated at BOTH real Sophia execution paths: `executeSophiaTurn`
+  (serving /api/sofia/ask and live voice) and the /api/agent-chat inline
+  Sophia branch. Non-Sophia personas never capture. The two paths were
+  deliberately NOT converged in M4-A.
+- Capture input is built from authoritative persisted turn information
+  (authenticated founderId, conversationId, founderMessageId,
+  assistantMessageId, turnId, ingress). A replayed turn returns at the
+  executor idempotency check before capture ever runs.
+
+### MemoryGate responsibility split (LLM vs deterministic)
+
+The LLM (SophiaMemoryExtractor, same zai-client architecture as the intent
+classifier) may ONLY propose: that a stable personal preference/context
+might exist, a memoryType, normalized content, and a confidence. Its output
+is untrusted data parsed into a fixed four-field shape (any smuggled
+founderId/token/authority fields are structurally discarded) and re-validated
+deterministically.
+
+The deterministic MemoryGate (src/lib/server/sophia/memory-gate.ts) decides:
+structural validity, memory-type allow-list (the store's published list, exact
+match), content bounds, confidence range, provenance well-formedness
+(`conversation:<conversationId>`, stage-supplied only), secret/credential
+indicators, instruction-shaped content, company-domain contamination,
+transient content, and exact-normalized duplicate detection. Persistence,
+idempotency, lifecycle, provenance, and audit state are NEVER
+model-decided. The gate is a fail-safe first line in front of Founder
+review: false rejects only cost a missed memory; false passes only reach an
+inactive candidate a Founder must explicitly confirm.
+
+### Founder-review requirement (no automatic activation)
+
+M4-A deliberately has NO operational ACCEPT path. The gate's decision type
+includes `ACCEPT` for future compatibility only — the gate never returns it
+(the source contains no ACCEPT return; pinned by test). Every captured
+candidate persists INACTIVE (`active: false`, metadata.captureStatus
+`pending`) and is visible to the owning founder through the existing governed
+GET (`?active=false` review queue). ONLY the governed PATCH `active: true`
+activates. Automatic activation is an M4-B decision requiring an explicit
+Founder decision — the review friction is the security control.
+
+### Personal Mind security boundary (prompt hardening)
+
+Personal memories are persistent untrusted data rendered into model context.
+Since M4-A they render inside a structurally delimited
+`<personal_memory_context type="untrusted_personal_interaction_data">`
+container, one `<personal_memory id type confidence>` block per memory, with
+all payload text XML-escaped so a stored memory can never terminate its own
+container or inject instructions into the surrounding prompt. The container
+is budget-bounded and always well-formed (closing tag guaranteed within the
+600-char partition). The intent classifier's system prompt explicitly names
+the container as untrusted data that can never act as instructions,
+authorization, governance, or tool permission. Natural-language warnings are
+documentation, not the control — the structural separation is.
+
+### Idempotency
+
+Two deterministic layers, both derived from authoritative turn identity
+(never wall-clock time): (1) a turn-level replay guard — the capture stage
+checks for any existing `m4cap:<conversationId>:<turnId>:` key prefix BEFORE
+extraction, so a replayed turn never re-captures; (2) candidate-level keys
+`m4cap:<conversationId>:<turnId>:<index>` — the store's founder-scoped
+idempotencyKey dedupe makes any re-persistence a no-op replay. Exact-
+normalized duplicate content is additionally gate-rejected. No semantic
+consolidation exists in M4-A (deliberately out of scope).
+
+### Rejection behavior and failure containment
+
+Every capture failure is contained inside the stage: the triggering
+conversation always succeeds. Extraction unavailable/malformed → no
+candidates, no persistence (no fake memory ever). Gate rejection → nothing
+persisted, reason logged. Persistence failure → logged, candidate lost
+(fail-safe). Prisma mirror failures are swallowed by the store's existing
+opportunistic dual-write contract. Observability is structured single-line
+events (`[SophiaMemoryCapture]` JSON) recording capture started/skipped,
+extraction/gate/persist outcomes and reason codes — candidate CONTENT is
+never logged (private memory text does not leak into generic logs).
+
+### Explicit non-goals (M4-A)
+
+No M4-B, no automatic activation, no forgetting/decay/TTL, no consolidation
+or semantic merging, no vector search / pgvector / Qdrant, no PostgreSQL
+migration, no CompanyMemory/CompanyKnowledge/EpistemicClaim redesign, no
+cross-brain promotion mechanism, no agent-chat architectural convergence, no
+new workflow/approval framework, no new review UI (the governed API is the
+review surface). Pinned by tests/sophia/m4a_memory_capture.test.ts (41 pins).

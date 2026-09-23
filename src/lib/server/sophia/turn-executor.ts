@@ -1,7 +1,8 @@
-import { ConversationStore, ConversationSecurityError, ConversationNotFoundError } from '../conversation';
+import { ConversationStore, ConversationSecurityError, ConversationNotFoundError, ChatMessageRecord } from '../conversation';
 import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
+import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
 import { SERVER_AGENTS } from '../agents/definitions';
 
 export interface ExecuteSophiaTurnOptions {
@@ -238,7 +239,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
 
     // 9. Persist assistant turn to durable storage with assistant idempotency key
-    let assistantMessageRecord = null;
+    //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
+    //    stage below reads assistantMessageRecord?.id, so the historic
+    //    implicit-null narrowing quirk is closed here with a pure annotation.)
+    let assistantMessageRecord: ChatMessageRecord | null = null;
     if (executionResult.reply) {
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
@@ -264,6 +268,27 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       } catch (err) {
         console.error('[SophiaTurnExecutor] Failed to persist assistant reply:', err);
       }
+    }
+
+    // 10. M4-A Personal Mind capture (fire-and-forget — NEVER a conversational
+    //     dependency): after the assistant reply is durably persisted, an
+    //     asynchronous capture stage proposes personal-memory candidates
+    //     through the deterministic MemoryGate. Only NEEDS_REVIEW candidates
+    //     persist, INACTIVE, pending explicit Founder confirmation via the
+    //     governed /api/sofia/memory PATCH. Capture failures are contained
+    //     inside the stage and can never fail this turn; a replayed turn
+    //     returns at the idempotency check above before ever reaching here.
+    if (executionResult.success && executionResult.reply && founderMessageRecord) {
+      scheduleSophiaMemoryCapture({
+        founderId,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        turnId: cleanTurnId,
+        founderMessage: cleanMessage,
+        assistantReply: executionResult.reply,
+        ingress: opts.ingress ?? 'live_voice',
+      });
     }
 
     return {

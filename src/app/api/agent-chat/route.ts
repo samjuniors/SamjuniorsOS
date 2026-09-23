@@ -10,10 +10,12 @@ import {
   SophiaIntentClassifier,
   SophiaServerGateway,
 } from "@/lib/server/sophia";
+import { scheduleSophiaMemoryCapture } from "@/lib/server/sophia/memory-capture-stage";
 import {
   ConversationStore,
   ConversationSecurityError,
   ConversationNotFoundError,
+  ChatMessageRecord,
 } from "@/lib/server/conversation";
 
 // Module-level in-flight turns map to serialize concurrent duplicate turns
@@ -380,7 +382,11 @@ export async function POST(req: NextRequest) {
           : mapKindToIntent(executionResult.proposal.kind);
 
         // 7. Persist assistant turn to durable storage with assistantIdempotencyKey
-        let assistantMessageRecord = null;
+        //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
+        //    stage below reads assistantMessageRecord?.id, so the historic
+        //    implicit-null narrowing quirk is closed here with a pure
+        //    annotation; zero runtime change.)
+        let assistantMessageRecord: ChatMessageRecord | null = null;
         if (executionResult.reply) {
           try {
             const assistantIdempotencyKey = cleanIdempotencyKey
@@ -409,6 +415,30 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error('[agent-chat] Failed to persist assistant turn:', err);
           }
+        }
+
+        // 8. M4-A Personal Mind capture (fire-and-forget — NEVER a
+        //     conversational dependency): after the assistant turn is
+        //     durably persisted, the capture stage proposes personal-memory
+        //     candidates through the deterministic MemoryGate. Only
+        //     NEEDS_REVIEW candidates persist, INACTIVE, pending explicit
+        //     Founder confirmation via the governed /api/sofia/memory PATCH.
+        //     Capture failures are contained inside the stage and can never
+        //     fail this turn; a replayed turn returns at the idempotency
+        //     check above before ever reaching here. (This mirrors the
+        //     executeSophiaTurn integration — the two Sophia paths are
+        //     deliberately NOT converged in M4-A.)
+        if (executionResult.success && executionResult.reply && founderMessageRecord) {
+          scheduleSophiaMemoryCapture({
+            founderId: session.userId,
+            conversationId: conversation.id,
+            founderMessageId: founderMessageRecord.id,
+            assistantMessageId: assistantMessageRecord?.id,
+            turnId: cleanIdempotencyKey,
+            founderMessage: message,
+            assistantReply: executionResult.reply,
+            ingress: 'agent_chat',
+          });
         }
 
         return {

@@ -6,4 +6,7 @@ export * from "./intent-classifier";
 export * from "./server-gateway";
 export * from "./turn-executor";
 export * from "./personal-memory-store";
+export * from "./memory-gate";
+export * from "./memory-extractor";
+export * from "./memory-capture-stage";
 
