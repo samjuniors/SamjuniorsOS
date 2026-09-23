@@ -156,5 +156,59 @@
         "evaluatedAt": "2026-09-23T07:10:35.201Z"
       }
     }
+  },
+  "smem-79df8e67-a507-4447-b736-de1982232581": {
+    "id": "smem-79df8e67-a507-4447-b736-de1982232581",
+    "founderId": "founder-local-session",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "The founder prefers concise, direct answers in plain language.",
+    "provenance": "conversation:conv-b05111c5-be25-4cc9-857a-dc0154a70d27",
+    "confidence": 1,
+    "active": true,
+    "idempotencyKey": "m4cap:conv-b05111c5-be25-4cc9-857a-dc0154a70d27:msg-8870aa27-c72f-491d-8277-9534e96b2093:0",
+    "createdAt": "2026-09-23T17:12:06.407Z",
+    "updatedAt": "2026-09-23T17:14:15.053Z",
+    "metadata": {
+      "captureStatus": "confirmed",
+      "captureSource": "m4a_turn_capture",
+      "conversationId": "conv-b05111c5-be25-4cc9-857a-dc0154a70d27",
+      "founderMessageId": "msg-045f2f59-97ad-47e4-ad8d-c1bad225f9b0",
+      "assistantMessageId": "msg-8870aa27-c72f-491d-8277-9534e96b2093",
+      "turnId": null,
+      "ingress": "agent_chat",
+      "capturedAt": "2026-09-23T17:12:06.391Z",
+      "gate": {
+        "decision": "NEEDS_REVIEW",
+        "reasons": [
+          "PASSED_DETERMINISTIC_CHECKS"
+        ],
+        "evaluatedAt": "2026-09-23T17:12:06.391Z"
+      },
+      "confirmedAt": "2026-09-23T17:14:15.053Z"
+    }
+  },
+  "smem-277ac6d4-c41d-4d6e-91fc-c46a01eb3892": {
+    "id": "smem-277ac6d4-c41d-4d6e-91fc-c46a01eb3892",
+    "founderId": "founder-live-hardening",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "Founder prefers bullet points in summaries.",
+    "provenance": "founder_direct",
+    "confidence": 0.8,
+    "active": true,
+    "createdAt": "2026-09-23T17:14:51.117Z",
+    "updatedAt": "2026-09-23T17:14:51.117Z",
+    "metadata": {}
+  },
+  "smem-f83ab20a-d0d1-4899-8587-cd8d26af935c": {
+    "id": "smem-f83ab20a-d0d1-4899-8587-cd8d26af935c",
+    "founderId": "founder-local-session",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "test",
+    "provenance": "founder_direct",
+    "confidence": 0.8,
+    "active": true,
+    "createdAt": "2026-09-23T17:14:51.166Z",
+    "updatedAt": "2026-09-23T17:14:51.166Z",
+    "metadata": {}
   }
 }

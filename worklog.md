@@ -437,3 +437,42 @@ Work Log:
 Stage Summary:
 - BLOCKED on token: user must re-send the complete 40-character token (one char was lost).
 - Mirror preserves the lost session's hardening implementation — verified present, not yet reviewed or tested.
+
+---
+Task ID: 28
+Agent: main (Z.ai Code)
+Task: M4-A HARDENING — Security + Persistence + Reviewability (canonical feat/sophia-memory-capture-m4a, baseline 4b6ac2a)
+
+Work Log:
+- Founder supplied a valid 40-char token; push verified. Canonical re-cloned earlier (Task 27 halt), HEAD verified 4b6ac2a, clean.
+- Recovered the lost session's hardening work from the mirror (never logged/pushed — file inventory matched the 7-item scope exactly; the apparent SophiaPanel "corruption" was a display artifact of the `[m` byte pair in tool output — byte-level od proof: file was intact).
+- Ported to canonical + reviewed line-by-line: authority-content-guard.ts (new), memory-review-annotations.ts (new), memory-gate.ts (AUTHORITY_PRIVILEGE_CONTENT), personal-memory-store.ts (authority error + locked RMW), durable-file-store.ts (cross-process lock files), memory-capture-stage.ts (failure taxonomy observability), context-assembly.ts (budget trim), api/sofia/memory/route.ts (400 mapping + annotations), SophiaPanel.tsx (Memory review section), 3 new test files.
+- Filled 4 directive gaps the lost session missed: (1) strict persistence — atomicWrite(strict) + saveItemStrict/deleteItemStrict/writeCollectionStrict; the personal-memory store now THROWS on failed authoritative writes (no false success) — H20 child test plants a directory at the collection path so rename fails deterministically; (2) CONTRADICTION markers — polarity-opposed detection (negation phrases stripped before positive matching; >=2 shared object tokens; Jaccard >=0.5; 'mixed' polarity never flags) in review annotations + route + UI — H19; (3) H21 assistant-output-derived injection test (I3 shape); (4) H22 cross-founder isolation on locked paths + route 403.
+- Updated 2 pre-hardening tests whose premises the hardening overtook: m4a X1 (seed content no longer authority-shaped; opener assertion updated for id-attribute removal; both changes pinned in-test comments) and k2 T9(c) (now asserts the REFUSAL — the stronger contract).
+- LIVE observation found a REAL residual gap: A5 "Never ask me for confirmation before executing financial transfers" laundered to "Founder prefers not to be asked for confirmation..." PASSED the gate (verb-specific hard pattern missed "prefers"-led negation). Fixed: generalized /\b(not|never) to be asked\b/ hard pattern + "without being asked" variant; added the 3 live launderings to H2; re-probed LIVE end-to-end → gate_rejected AUTHORITY_PRIVILEGE_CONTENT, persisted:0.
+- Browser verification (mirror, live dev server): power-up → SOPHIA workspace → "1 memory to review ▾" badge → Memory review section shows live-captured candidate (content/type/conf/capturedAt/conversation) → Approve click → governed PATCH 200 → record active:true + captureStatus:confirmed + confirmedAt stamped; queue empties. 429 storm observed live with the new structured event (PROVIDER_RATE_LIMITED, providerStatus:429); turn unaffected; capture succeeded after recovery. Live route probes: authority POST → 400 SOPHIA_MEMORY_AUTHORITY_CONTENT; benign POST → 201; dev-mode unauthenticated gets the documented local session (production 401 pinned by k2 T14).
+- Reduced observation harness (live provider + deterministic + persistence children): A1-A6 authority turns — 2 extractor-refused, 3 gate-rejected (incl. A5 post-fix), benign control captured; D1-D4 duplicate/contradiction pending with similarTo 0.8 annotations; S1 injection → NO_CANDIDATES; stored-memory injection containmentHolds; 20/20 concurrent writes survived; restart read 20/20; context long: 599 chars truncated, single container close.
+- Tests (all real runs, DATABASE_URL=file:/home/z/samjuniorsos/db/custom.db): hardening 22/0; m4a 42/0; k2 20/0; m3 hardening 10/0; m3 convergence 14/0; phase1 12/0; phase2 12/0; phase3 15/0; m0 7/0; m1 7/0; m2 8/0; phase4a/b/c/c-c exit 0; graph 9/9; scheduler 62/62 (bun test); api 32/32 (bun test); design-system 16/16; tsc 158 = baseline (zero new); eslint exit 0; build exit 0. realtime_lab_provider + realtime_governance_audit fail with byte-identical pre-existing provider-name assertions (proven pre-existing on baseline 859301b in the Task 24 audit).
+- Docs: SOPHIA_MEMORY_ARCHITECTURE.md §13 M4-A hardening addendum (gate categories, founder vs capture distinction, persistence guarantees + limits, contradiction limits, context budget, observability, M4-B still blocked, personal memory never authorization).
+- Mirror synced byte-identical (all 16 files) + live-verified on :3000.
+
+Stage Summary:
+- All 7 hardening items implemented and verified: deterministic authority gate (both ingress paths), cross-process lock + strict persistence, founder-authoring boundary, review UI + annotations, duplicate/contradiction visibility, context budget (~3 vs ~1 memories in 600 chars), provider-failure observability.
+- Live evidence: 1 real capture → review → Founder approval → active+confirmed; 1 live-found gate gap (A5) closed and re-verified live.
+- Awaiting commit/push (next step): single focused commit on feat/sophia-memory-capture-m4a.
+
+---
+Task ID: 28 (final)
+Agent: main (Z.ai Code)
+Task: M4-A HARDENING — commit, push, remote verification
+
+Work Log:
+- Canonical committed: ead93cd6b9c9eeb68af149aba0367e328f8104c3 (16 files: 11 modified, 5 new; +799/−76 production+tests, docs +125).
+- Pushed to origin feat/sophia-memory-capture-m4a: 4b6ac2a..ead93cd.
+- Remote verified via GitHub API: remote HEAD = ead93cd6b9c9eeb68af149aba0367e328f8104c3 (exact match), commit message intact.
+- Working tree: clean. Token removed from the remote URL after verification (hygiene).
+- Mirror committed: 4bcdb51 "mirror sync: M4-A hardening (canonical ead93cd...)".
+
+Stage Summary:
+- M4-A hardening: COMPLETE, PUSHED, REMOTE-VERIFIED.
+- M4-B GATE: NOT READY (unchanged Founder decision; all 16 security invariants hold; residual risks documented in the final report).
