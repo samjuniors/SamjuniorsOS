@@ -401,3 +401,23 @@ Stage Summary:
 - YES — the last task is finished: Task 25 (M4-A observation) completed, harness pushed to canonical, mirror synced; verdict recorded (NOT READY for M4-B; fix gate-laundering/duplicate-accumulation/review-tooling gaps first). All prior tasks M0→M4-A + fix + observation are done and pushed.
 - Current live state: app fully operational and browser-verified end-to-end on the mirror; all work committed; no in-flight changes.
 - Open items awaiting Founder decision: M4-B (memory lifecycle/activation UX) and the M4-A hardening list (gate paraphrase-laundering, near-duplicate accumulation, founder-direct ingress gate, 600-char context budget, review queue limits >50, capture observability). Canonical repo would need re-clone from GitHub (feat/sophia-memory-capture-m4a @ 4b6ac2a) if further canonical work is requested; no git push credentials currently available in this sandbox.
+
+---
+Task ID: 27
+Agent: main (Z.ai Code)
+Task: M4-A HARDENING (Security + Persistence + Reviewability) — Task 1: re-clone canonical, verify HEAD, check push credentials
+
+Work Log:
+- Re-cloned canonical from https://github.com/samjuniors/SamjuniorsOS.git to /home/z/samjuniorsos (anonymous HTTPS clone — public read works).
+- Checked out feat/sophia-memory-capture-m4a; branch tracks origin.
+- HEAD verified: 4b6ac2a34ec817deb41302ab5f75d1277643694b — exact match with the latest pushed canonical observation commit (4b6ac2a). Commit chain verified: e490e26 (M4-A) → 4bfd539 (extractor binding fix) → 4b6ac2a (observation harness).
+- Push credential check (exhaustive): NO ~/.git-credentials; NO ~/.ssh keys; NO gh CLI installed; NO GITHUB_TOKEN/GH_TOKEN env vars; .env contains only DATABASE_URL; NO token patterns in shell history, .bashrc, .profile, or project files; NO system git config / credential helper.
+- `git push --dry-run origin feat/sophia-memory-capture-m4a` → "fatal: could not read Username for 'https://github.com': No such device or address" — push is impossible.
+- GitHub API anonymous test: 401 on authenticated endpoints — no ambient credentials.
+- Per Founder directive condition 5 ("If GitHub write credentials are unavailable, STOP before making canonical changes"), HALTED before implementing any of the seven hardening items.
+
+Stage Summary:
+- Canonical re-clone: DONE (verified at 4b6ac2a, clean tree, ready for work).
+- GitHub write credentials: DEFINITIVELY UNAVAILABLE in this sandbox.
+- M4-A hardening implementation: NOT STARTED per the stop condition. No production code touched in canonical or mirror.
+- To proceed: Founder must supply a GitHub Personal Access Token (repo scope, samjuniors/SamjuniorsOS); it can be configured into the remote URL or ~/.git-credentials, after which the full hardening task (7 items + regression + real-use verification) executes against the verified 4b6ac2a baseline.
