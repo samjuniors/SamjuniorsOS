@@ -438,5 +438,31 @@
       "ingress": "sofia_ask"
     },
     "createdAt": "2026-09-23T07:11:45.929Z"
+  },
+  "msg-11939829-54d5-49c2-b454-bda4a11eddd4": {
+    "id": "msg-11939829-54d5-49c2-b454-bda4a11eddd4",
+    "conversationId": "conv-e190cdae-f920-41e9-be24-26a8b858fa66",
+    "sender": "founder",
+    "role": "user",
+    "content": "hello",
+    "idempotencyKey": "sofia-8369907c-09e4-48b6-9721-8fe60c545f70",
+    "metadata": {},
+    "createdAt": "2026-09-23T11:47:40.489Z"
+  },
+  "msg-6b91b924-7042-4a6a-8cfe-64158829abad": {
+    "id": "msg-6b91b924-7042-4a6a-8cfe-64158829abad",
+    "conversationId": "conv-e190cdae-f920-41e9-be24-26a8b858fa66",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • COO & Master Orchestrator]\nGood to connect, Founder. All systems, sandboxes, and verified telemetry remain intact.",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-8369907c-09e4-48b6-9721-8fe60c545f70:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-23T11:47:40.954Z"
   }
 }

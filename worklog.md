@@ -383,3 +383,21 @@ Stage Summary:
 - Evidence collected for the M4-B decision. Key findings: (1) capture precision on benign content is good (0 FNs, correct refusals), (2) paraphrase-laundering defeats the deterministic gate's keyword patterns (I2/I5 reached NEEDS_REVIEW — contained only by Founder review), (3) paraphrase duplicates accumulate (5-record near-dup family from one preference), (4) founder-direct ingress has NO gate (instruction-shaped content accepted active), (5) 600-char context budget renders ~1 memory (newest), (6) cross-process swallowed writes reproduced (2/20 lost), (7) provider 429 storms are recurring but fail-safe.
 - Recommendation recorded: NOT READY — FIX SPECIFIC ISSUES FIRST (gate laundering + duplicate accumulation + review-tooling gaps), then continue observing in real use before any M4-B design.
 - Canonical: samjuniors/SamJuniorsOS feat/sophia-memory-capture-m4a @ 4b6ac2a. STOPPED per directive — observation only; M4-B remains a Founder decision.
+
+---
+Task ID: 26
+Agent: main (Z.ai Code)
+Task: SESSION RESUMPTION — status verification after context reset (user asked "have you finished?")
+
+Work Log:
+- Read worklog: last completed task = Task 25 (M4-A real-use observation), completed/committed/pushed per its stage summary ("STOPPED per directive — observation only; M4-B remains a Founder decision").
+- Sandbox reset detected since last session: canonical /home/z/samjuniorsos directory no longer exists locally (all canonical work was pushed to GitHub before the reset: feat/sophia-memory-capture-m4a @ 4b6ac2a, API-verified per Task 24/25 logs). Mirror /home/z/my-project survives intact with all work committed (git diff shows only file-mode artifacts 0644→0755 from the reset, zero content changes; dev server was auto-restarted by the platform).
+- Dev server verified running: next dev on :3000, GET / 200 repeatedly, no runtime errors in recent dev.log.
+- Browser verification (agent-browser, live): / loads → SOFIA ignition screen → clicked power-up → workspace boots (banner, sidebars, command line, sticky footer with voice-off notice). Golden path exercised: typed "hello" in the command line → POST /api/sofia/ask 200 → SOFIA reply rendered: "[Sophia Vance • COO & Master Orchestrator] Good to connect, Founder. All systems, sandboxes, and verified telemetry remain intact."
+- Workspace APIs all 200 live: /api/agents, /api/agents/runs, /api/workflow/approvals, /api/activity, /api/epistemic, /api/sofia/health.
+- Only console error: TTS speechSynthesis failure ("speech failed (synthesis-failed) on voice default") — environmental (headless sandbox has no audio device); app degrades gracefully to bridge speech proxy + "VOICE OFF IN THIS PANE · TYPE BELOW" notice. Not a code defect. THREE.Clock deprecation warning is pre-existing cosmetic.
+
+Stage Summary:
+- YES — the last task is finished: Task 25 (M4-A observation) completed, harness pushed to canonical, mirror synced; verdict recorded (NOT READY for M4-B; fix gate-laundering/duplicate-accumulation/review-tooling gaps first). All prior tasks M0→M4-A + fix + observation are done and pushed.
+- Current live state: app fully operational and browser-verified end-to-end on the mirror; all work committed; no in-flight changes.
+- Open items awaiting Founder decision: M4-B (memory lifecycle/activation UX) and the M4-A hardening list (gate paraphrase-laundering, near-duplicate accumulation, founder-direct ingress gate, 600-char context budget, review queue limits >50, capture observability). Canonical repo would need re-clone from GitHub (feat/sophia-memory-capture-m4a @ 4b6ac2a) if further canonical work is requested; no git push credentials currently available in this sandbox.
