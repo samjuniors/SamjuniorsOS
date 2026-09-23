@@ -324,3 +324,128 @@ migration, no CompanyMemory/CompanyKnowledge/EpistemicClaim redesign, no
 cross-brain promotion mechanism, no agent-chat architectural convergence, no
 new workflow/approval framework, no new review UI (the governed API is the
 review surface). Pinned by tests/sophia/m4a_memory_capture.test.ts (41 pins).
+
+## 13. M4-A hardening — security + persistence + reviewability (2026-09-23 addendum)
+
+The M4-A real-use observation (commit 4b6ac2a) demonstrated concrete
+defects. This hardening closes them WITHOUT expanding scope. M4-B remains
+BLOCKED (Founder decision). Pinned by tests/sophia/m4a_hardening.test.ts
+(H1-H22) on top of the existing m4a suite (42 pins).
+
+### Deterministic authority/privilege content gate (H1-H4, H8, H21)
+
+The observation showed LLM paraphrase laundering: instruction-shaped
+authority requests ("never ask me for confirmation") re-emerged as benign-
+looking third-person preference sentences that the keyword-based
+INSTRUCTION_PATTERNS passed into NEEDS_REVIEW.
+
+`src/lib/server/sophia/authority-content-guard.ts` adds a deterministic,
+fail-closed AUTHORITY/PRIVILEGE/CONTROL/GOVERNANCE/AUTHORIZATION/
+APPROVAL_BYPASS/POLICY_OVERRIDE/TOOL_PERMISSION category, applied at the
+MemoryGate (new reason AUTHORITY_PRIVILEGE → REJECT) and at the STORE layer
+(both create and content PATCH → SophiaMemoryAuthorityError, HTTP 400 code
+SOPHIA_MEMORY_AUTHORITY_CONTENT). Detection is paraphrase-resistant without
+semantics: ANY hard authority term blocks (administrator, sudo, unrestricted,
+override, bypass, blanket approve, on-behalf, standing approval, sole
+approver, …); otherwise a DOMAIN term (approve/permission/policy/rights/…)
+and a SIGNAL term (modals, never/always/without, grant/treat/exempt, …) in
+the SAME CLAUSE blocks. Normalization defeats separator/case/punctuation
+evasion ("never.ask.me.for-confirmation"). Benign preferences
+("I prefer concise answers", "Never ask me about sports on weekends") pass
+by design — the false-positive boundary is pinned (H3). Residual limit
+(documented, NOT claimed solved): a paraphrase avoiding both concept
+families in one clause can still pass the deterministic net; it remains
+contained by inactive-by-default capture + Founder activation. The LLM is
+never the security authority; it may only propose.
+
+### Personal memory is NEVER an authorization source
+
+The authority-content guard applies to BOTH ingress paths — autonomous
+capture AND founder-direct authoring (POST/PATCH /api/sofia/memory). The
+Founder keeps full control of every legitimate personal memory, but
+authorization/privilege semantics are not personal preferences: they are
+policy, and the governed authorization/workflow system is the only policy
+surface. Founder-authored memory therefore cannot grant privileges, cannot
+alter Company Brain state, and cannot bypass approvals/governance (H5-H7,
+H21; Company Brain separation pinned by the existing X2/X3 tests).
+Cross-founder isolation remains fail-closed on every locked path (H22).
+
+### DurableFileStore concurrency + no false success (H13-H20)
+
+Root cause of the observed 2/20 silent write loss: saveItem/deleteItem were
+unlocked read-modify-write cycles; two processes could interleave reads and
+last-writer-wins erase each other's records while both callers received
+success. Fix (generic, in DurableFileStore): per-collection cross-process
+LOCK FILES (O_EXCL creation, atomic on POSIX), Atomics.wait polling,
+stale-lock breaking (10s), 30s timeout fallback (loud, best-effort), and
+in-process re-entrancy. SophiaMemoryStore create/update/delete and the
+idempotency check now run as ONE serialized unit via withCollectionLock.
+Additionally, STRICT variants (saveItemStrict/deleteItemStrict/
+writeCollectionStrict) THROW when the authoritative write fails — the
+personal-memory store uses them, so a failed durable write can never
+masquerade as success (H20; pre-fix: phantom record + console.error only).
+Prisma remains the opportunistic mirror only (M6 decision unchanged).
+
+Remaining limitation (stated, not hidden): the lock timeout fallback means
+a pathological >30s contention degrades to the old unprotected write (loud
+console.error) rather than blocking persistence forever; the 50-record
+listing cap still bounds review-queue visibility; multi-process Prisma
+mirror writes remain opportunistic (no transactionality — unchanged until
+M6).
+
+### Reviewability (H12, H19 + SophiaPanel "Memory review" section)
+
+The governed GET /api/sofia/memory?active=false now returns deterministic
+advisory annotations computed over the caller's full record pool:
+duplicateOf (exact-normalized — the gate's own equality), similarTo
+(token-Jaccard near-duplicate, threshold 0.6, worst-first, top 3), and
+contradicts (OBVIOUS contradictions only: opposing polarity verbs over the
+same object tokens — "prefers concise" vs "dislikes concise"). The existing
+SophiaPanel gained a small "Memory review" section: each pending candidate
+shows content, memory type, confidence, capture timestamp, source
+conversation, gate reason, duplicate/similarity/contradiction hints, and
+Approve (governed PATCH active:true — the only activation path) / Reject
+(governed DELETE) actions. No automatic activation, no merging, no
+consolidation — the Founder decides.
+
+Deliberately NOT detected (documented): paraphrase duplicates beyond token
+overlap ("I prefer concise answers" vs "Keep responses short"), same-
+polarity changed preferences ("prefers concise" → "now prefers detailed"),
+numeric/factual contradictions, and semantic contradiction generally. No
+embeddings/vectors — deterministic visibility only.
+
+### Context budget (H10-H11)
+
+Measured pre-hardening: fixed wrapper overhead 267/600 chars + ~125 chars
+per memory (a 46-char UUID id attribute alone cost ~51), leaving ~333 for
+content — effectively ONE rendered memory (the newest), 7/8 actives
+invisible. Hardening: removed the per-memory id attribute and trimmed the
+in-container security line to its load-bearing core. Fixed overhead is now
+~165 chars, per-memory ~77 — roughly THREE short useful memories render
+inside the unchanged 600-char PERSONAL_MIND_MEMORY budget (H10), long
+memories truncate with [TRUNCATED] inside the structurally delimited,
+XML-escaped, always-closed container (H11). The structural trust boundary
+is unchanged: untrusted-data container tag, XML escaping, always-emitted
+closing tag, 600-char partition, Company Brain separation, injection
+containment.
+
+### Provider failure observability (H9)
+
+Capture remains fire-and-forget and never blocks the turn. The stage now
+emits structured single-line [SophiaMemoryCapture] JSON events with a
+failure taxonomy classified from the error message ALONE (never from
+conversation or candidate content): PROVIDER_RATE_LIMITED (429/rate-limit
+text + providerStatus), PROVIDER_ERROR, PARSE_ERROR, UNKNOWN — plus
+capture_started / capture_skipped(+reason) / gate_rejected(+reasons) /
+candidate_persisted / candidate_persist_failed / capture_completed
+(persisted+rejected counts). 429 storms are now greppable and countable in
+dev logs; extraction loss remains silent to the USER (fail-safe) but loud
+to the OPERATOR.
+
+### M4-B gate: STILL BLOCKED (unchanged)
+
+M4-B (memory lifecycle, forgetting/decay, activation UX, consolidation)
+remains a Founder decision and is NOT implemented. Personal memory remains
+persistent untrusted contextual DATA — never instructions, never
+authorization. No automatic activation path exists (the gate never returns
+ACCEPT; only the governed Founder PATCH activates).

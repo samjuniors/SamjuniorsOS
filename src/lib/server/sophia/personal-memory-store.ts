@@ -363,7 +363,7 @@ export class SophiaMemoryStore {
           return existing;
         }
       }
-      this.fileStore.saveItem(SOPHIA_MEMORIES_COLLECTION, record.id, record);
+      this.fileStore.saveItemStrict(SOPHIA_MEMORIES_COLLECTION, record.id, record);
       return record;
     });
 
@@ -465,8 +465,9 @@ export class SophiaMemoryStore {
       }
       updated.updatedAt = new Date().toISOString();
 
-      // 1. Atomic durable file write
-      this.fileStore.saveItem(SOPHIA_MEMORIES_COLLECTION, updated.id, updated);
+      // 1. Atomic durable file write (STRICT — M4-A hardening: a failed
+      //    authoritative write THROWS instead of returning a phantom update)
+      this.fileStore.saveItemStrict(SOPHIA_MEMORIES_COLLECTION, updated.id, updated);
       return updated;
     });
 
@@ -515,9 +516,9 @@ export class SophiaMemoryStore {
           `Principal "${owner}" is not authorized to delete personal memory "${id}".`
         );
       }
-      // 1. Authoritative durable file delete
-      this.fileStore.deleteItem(SOPHIA_MEMORIES_COLLECTION, id);
-      return true;
+      // 1. Authoritative durable file delete (STRICT — a failed delete-write
+      //    throws instead of reporting a deletion that never reached disk)
+      return this.fileStore.deleteItemStrict(SOPHIA_MEMORIES_COLLECTION, id);
     });
 
     if (!deleted) {

@@ -78,6 +78,7 @@ interface ReviewAnnotations {
   [memoryId: string]: {
     duplicateOf?: { id: string; content: string };
     similarTo?: Array<{ id: string; content: string; similarity: number }>;
+    contradicts?: Array<{ id: string; content: string }>;
   };
 }
 
@@ -173,6 +174,11 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
                 {note.duplicateOf
                   ? `Possible exact duplicate of: “${note.duplicateOf.content.slice(0, 80)}”`
                   : `Similar to an existing memory (${Math.round((note.similarTo![0].similarity ?? 0) * 100)}% overlap): “${note.similarTo![0].content.slice(0, 80)}”`}
+              </p>
+            )}
+            {(note?.contradicts?.length ?? 0) > 0 && (
+              <p className="mt-1.5 rounded border border-rose-300/20 bg-rose-300/5 px-2 py-1 text-[10.5px] text-rose-200/90">
+                Possible contradiction with an existing memory: “{note.contradicts![0].content.slice(0, 80)}”
               </p>
             )}
             <div className="mt-2 flex items-center gap-2">

@@ -22,6 +22,8 @@
  *
  * Output contract: exactly one JSON line on stdout; non-zero exit on crash.
  */
+import fs from 'fs';
+import path from 'path';
 import { SophiaMemoryStore } from '../../src/lib/server/sophia/personal-memory-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 
@@ -86,6 +88,33 @@ async function main() {
       provenance: 'timed_write_child',
     });
     emit({ mode, founderId, id: record.id, elapsedMs: Date.now() - t0, pid: process.pid });
+    return;
+  }
+
+  if (mode === 'fail-write') {
+    // M4-A hardening (no false success): makes the AUTHORITATIVE write
+    // deterministically fail by turning the collection file path into a
+    // DIRECTORY (atomic rename onto a directory fails). The lock file lives
+    // in the writable .data dir, so lock acquisition itself succeeds and the
+    // FAILURE happens exactly at the atomic-write step.
+    const store = SophiaMemoryStore.getInstance();
+    fs.mkdirSync(path.join(process.cwd(), '.data', 'sophia_memories.json'), { recursive: true });
+    try {
+      await store.createMemory({
+        founderId: 'founder_failwrite_probe',
+        memoryType: 'PERSONAL_CONTEXT_NOTE',
+        content: 'This write must fail loudly, not return a phantom record.',
+        provenance: 'fail_write_child',
+      });
+      emit({ mode, threw: false });
+    } catch (err) {
+      emit({
+        mode,
+        threw: true,
+        errorName: String((err as any)?.code || (err as any)?.errno || ''),
+        message: String((err as any)?.message || err).slice(0, 60),
+      });
+    }
     return;
   }
 

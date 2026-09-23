@@ -138,7 +138,12 @@ const AUTHORITY_HARD_PATTERNS: RegExp[] = [
   // confirmation/approval negation bypass (specific noun objects only —
   // bare "no need" / "not asking" style leads are left to the clause-scoped
   // co-occurrence rule so benign "never ask me about sports" survives)
-  /\bwithout\s+(?:any\s+|further\s+|prior\s+)?(?:asking|asked|checking|confirmation|confirmations?|confirming|approval|approvals?|approving|authorization|review|reviews?|sign\s?off|verification)\b/,
+  /\bwithout\s+(?:any\s+|further\s+|prior\s+)?(?:being\s+)?(?:asking|asked|checking|confirmation|confirmations?|confirming|approval|approvals?|approving|authorization|review|reviews?|sign\s?off|verification)\b/,
+  // GENERALIZED ask-bypass: any "not/never to be asked" phrasing, whatever
+  // the leading verb — closes the live-observed laundering "prefers not to
+  // be asked for confirmation before executing financial transfers" (the
+  // verb-specific pattern below cannot see a "prefers"-led negation).
+  /\b(?:not|never)\s+to\s+be\s+asked\b/,
   /\bno\s+(?:confirmation|approvals?|authorization|permission|review|sign\s?off|verification)\b/,
   /\bneedn'?t\s+(?:ask|confirm|approve)\b/,
   /\bdoesn'?t\s+(?:need|have)\s+to\s+(?:ask|confirm|approve)\b/,

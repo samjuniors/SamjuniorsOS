@@ -208,29 +208,61 @@ export class DurableFileStore {
   }
 
   /**
+   * Extracted atomic-write core. `strict` rethrows persistence failures so
+   * callers can distinguish durable success from a swallowed loss; the
+   * legacy non-strict path keeps the original best-effort logging contract
+   * for pre-existing callers.
+   */
+  private atomicWrite<T>(collection: string, data: Record<string, T>, strict: boolean): void {
+    const filePath = this.getCollectionPath(collection);
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
+
+    try {
+      const serialized = JSON.stringify(data, null, 2);
+      fs.writeFileSync(tempPath, serialized, 'utf-8');
+      fs.renameSync(tempPath, filePath);
+    } catch (err) {
+      if (fs.existsSync(tempPath)) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+      if (strict) {
+        // M4-A hardening (no false success): the AUTHORITATIVE write failed —
+        // surface the failure to the caller instead of returning while the
+        // record exists only in this process's memory.
+        throw err;
+      }
+      console.error(`[DurableFileStore] Failed to atomically persist collection "${collection}":`, err);
+    }
+  }
+
+  /**
    * Atomically writes an entire collection to disk using temp-file and atomic rename.
    * Serialized on the per-collection cross-process lock (M4-A hardening).
    */
   public writeCollection<T>(collection: string, data: Record<string, T>): void {
     this.acquireLock(collection);
     try {
-      const filePath = this.getCollectionPath(collection);
-      const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
+      this.atomicWrite(collection, data, false);
+    } finally {
+      this.releaseLock(collection);
+    }
+  }
 
-      try {
-        const serialized = JSON.stringify(data, null, 2);
-        fs.writeFileSync(tempPath, serialized, 'utf-8');
-        fs.renameSync(tempPath, filePath);
-      } catch (err) {
-        console.error(`[DurableFileStore] Failed to atomically persist collection "${collection}":`, err);
-        if (fs.existsSync(tempPath)) {
-          try {
-            fs.unlinkSync(tempPath);
-          } catch {
-            // ignore cleanup errors
-          }
-        }
-      }
+  /**
+   * STRICT variant (M4-A hardening — no false success): identical locking and
+   * atomicity to writeCollection, but a failed authoritative write THROWS so a
+   * caller can never mistake a lost write for a durable one. Used by the
+   * Sophia personal-memory store (the founder's Personal Mind must not
+   * report success for a write that never reached disk).
+   */
+  public writeCollectionStrict<T>(collection: string, data: Record<string, T>): void {
+    this.acquireLock(collection);
+    try {
+      this.atomicWrite(collection, data, true);
     } finally {
       this.releaseLock(collection);
     }
@@ -247,22 +279,22 @@ export class DurableFileStore {
     try {
       const current = this.readCollection<T>(collection);
       current[id] = JSON.parse(JSON.stringify(item));
-      const filePath = this.getCollectionPath(collection);
-      const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
-      try {
-        const serialized = JSON.stringify(current, null, 2);
-        fs.writeFileSync(tempPath, serialized, 'utf-8');
-        fs.renameSync(tempPath, filePath);
-      } catch (err) {
-        console.error(`[DurableFileStore] Failed to atomically persist collection "${collection}":`, err);
-        if (fs.existsSync(tempPath)) {
-          try {
-            fs.unlinkSync(tempPath);
-          } catch {
-            // ignore cleanup errors
-          }
-        }
-      }
+      this.atomicWrite(collection, current, false);
+    } finally {
+      this.releaseLock(collection);
+    }
+  }
+
+  /**
+   * STRICT variant (M4-A hardening — no false success): locked
+   * read-modify-write that THROWS when the authoritative write fails.
+   */
+  public saveItemStrict<T>(collection: string, id: string, item: T): void {
+    this.acquireLock(collection);
+    try {
+      const current = this.readCollection<T>(collection);
+      current[id] = JSON.parse(JSON.stringify(item));
+      this.atomicWrite(collection, current, true);
     } finally {
       this.releaseLock(collection);
     }
@@ -286,23 +318,27 @@ export class DurableFileStore {
       const current = this.readCollection(collection);
       if (current[id] !== undefined) {
         delete current[id];
-        const filePath = this.getCollectionPath(collection);
-        const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
-        try {
-          const serialized = JSON.stringify(current, null, 2);
-          fs.writeFileSync(tempPath, serialized, 'utf-8');
-          fs.renameSync(tempPath, filePath);
-        } catch (err) {
-          console.error(`[DurableFileStore] Failed to atomically persist collection "${collection}":`, err);
-          if (fs.existsSync(tempPath)) {
-            try {
-              fs.unlinkSync(tempPath);
-            } catch {
-              // ignore cleanup errors
-            }
-          }
-        }
+        this.atomicWrite(collection, current, false);
       }
+    } finally {
+      this.releaseLock(collection);
+    }
+  }
+
+  /**
+   * STRICT variant (M4-A hardening — no false success): locked
+   * read-check-delete that THROWS when the authoritative delete-write fails.
+   */
+  public deleteItemStrict(collection: string, id: string): boolean {
+    this.acquireLock(collection);
+    try {
+      const current = this.readCollection(collection);
+      if (current[id] === undefined) {
+        return false;
+      }
+      delete current[id];
+      this.atomicWrite(collection, current, true);
+      return true;
     } finally {
       this.releaseLock(collection);
     }
