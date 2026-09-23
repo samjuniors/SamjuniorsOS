@@ -58,5 +58,25 @@
     "metadata": {},
     "createdAt": "2026-09-22T12:22:22.428Z",
     "updatedAt": "2026-09-22T12:22:22.506Z"
+  },
+  "conv-09a977ed-7259-49e2-bdb9-55a334c94eaf": {
+    "id": "conv-09a977ed-7259-49e2-bdb9-55a334c94eaf",
+    "founderId": "m4a-smoke-founder",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-23T04:52:41.799Z",
+    "updatedAt": "2026-09-23T04:52:42.075Z"
+  },
+  "conv-326a4ca4-ce4d-41f5-bfc6-dcea5a3c59ac": {
+    "id": "conv-326a4ca4-ce4d-41f5-bfc6-dcea5a3c59ac",
+    "founderId": "m4a-smoke-founder",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-23T04:52:54.783Z",
+    "updatedAt": "2026-09-23T04:52:54.832Z"
   }
 }

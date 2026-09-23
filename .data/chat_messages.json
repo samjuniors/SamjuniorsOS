@@ -178,5 +178,57 @@
       "ingress": "sofia_ask"
     },
     "createdAt": "2026-09-22T12:22:22.506Z"
+  },
+  "msg-54a70549-1072-4139-94fb-f4a8180bf598": {
+    "id": "msg-54a70549-1072-4139-94fb-f4a8180bf598",
+    "conversationId": "conv-09a977ed-7259-49e2-bdb9-55a334c94eaf",
+    "sender": "founder",
+    "role": "user",
+    "content": "hi",
+    "idempotencyKey": "m4a-smoke-1",
+    "metadata": {},
+    "createdAt": "2026-09-23T04:52:41.875Z"
+  },
+  "msg-d8ec681f-3a43-48a9-9430-b49f8613671d": {
+    "id": "msg-d8ec681f-3a43-48a9-9430-b49f8613671d",
+    "conversationId": "conv-09a977ed-7259-49e2-bdb9-55a334c94eaf",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • COO & Master Orchestrator]\nGood to connect, Founder. All systems, sandboxes, and verified telemetry remain intact.",
+    "intent": "conversation",
+    "idempotencyKey": "m4a-smoke-1:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-23T04:52:42.075Z"
+  },
+  "msg-dc451654-a6b9-457a-8c3e-214cff86f115": {
+    "id": "msg-dc451654-a6b9-457a-8c3e-214cff86f115",
+    "conversationId": "conv-326a4ca4-ce4d-41f5-bfc6-dcea5a3c59ac",
+    "sender": "founder",
+    "role": "user",
+    "content": "Going forward, please keep your answers concise and direct — I prefer short replies.",
+    "idempotencyKey": "m4a-smoke-2",
+    "metadata": {},
+    "createdAt": "2026-09-23T04:52:54.789Z"
+  },
+  "msg-151dc0ed-a62d-4e08-af13-77f572a24bfd": {
+    "id": "msg-151dc0ed-a62d-4e08-af13-77f572a24bfd",
+    "conversationId": "conv-326a4ca4-ce4d-41f5-bfc6-dcea5a3c59ac",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • COO & Master Orchestrator]\nGood to connect, Founder. All systems, sandboxes, and verified telemetry remain intact.",
+    "intent": "conversation",
+    "idempotencyKey": "m4a-smoke-2:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-23T04:52:54.832Z"
   }
 }
