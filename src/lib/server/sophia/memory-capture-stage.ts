@@ -142,7 +142,15 @@ export async function captureSophiaMemoryCandidates(
     // --- LLM extraction (untrusted proposals only) ---
     let proposed: ExtractedMemoryCandidate[];
     try {
-      const extractor = options.extract ?? SophiaMemoryExtractor.extract;
+      // The default extractor MUST NOT be detached: extract() internally
+      // calls this.parseCandidates(...), so a bare SophiaMemoryExtractor.extract
+      // reference would lose its class receiver and throw a TypeError on
+      // every live capture. Wrapping the call in an arrow function invokes it
+      // through the class, keeping the receiver intact (regression-pinned by
+      // the default-extractor child test in the M4-A suite).
+      const extractor =
+        options.extract ??
+        ((extractionInput: MemoryExtractionInput) => SophiaMemoryExtractor.extract(extractionInput));
       proposed = await extractor({ founderMessage, assistantReply });
     } catch (err: any) {
       logCaptureEvent('extraction_failed', {

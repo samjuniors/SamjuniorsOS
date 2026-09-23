@@ -43,9 +43,10 @@ import { POST as agentChatPostHandler } from '../../src/app/api/agent-chat/route
  * Coverage map:
  *   G1-G12  MemoryGate (valid/malformed/type/confidence/size/instruction/
  *           secret/company-domain/transient/duplicate/no-ACCEPT)
- *   C1-C6   Capture pipeline (candidate persists inactive; extraction/gate
+ *   C1-C8   Capture pipeline (candidate persists inactive; extraction/gate
  *           failures never fail the conversation; malformed LLM output never
- *           persists; mixed proposals partially persist)
+ *           persists; mixed proposals partially persist; C8 exercises the
+ *           DEFAULT production extractor seam with class context intact)
  *   I1-I4   Idempotency (replayed turn, deterministic keys, store replay,
  *           per-candidate suffixes)
  *   P1      Provenance + capture metadata preserved
@@ -64,7 +65,11 @@ import { POST as agentChatPostHandler } from '../../src/app/api/agent-chat/route
  * route-unauth child, which is re-run as part of the regression stage.
  *
  * Deterministic by construction: every pipeline test injects the extraction
- * step (options.extract) — no live LLM call is required anywhere.
+ * step (options.extract) — no live LLM call is required anywhere. The single
+ * exception is C8, which deliberately runs the DEFAULT extractor path: its
+ * child mocks only the z-ai SDK chat completion (module-level, registered
+ * before any src import), so it stays deterministic while executing the real
+ * static extractor end-to-end.
  */
 
 interface TestResult {
@@ -98,10 +103,14 @@ function readCollectionFile<T>(name: string): Record<string, T> {
   }
 }
 
-function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
+function runChild(
+  args: string[],
+  env: Record<string, string> = {},
+  script = 'tests/sophia/k2-memory-child.ts'
+): Promise<any> {
   return new Promise((resolve, reject) => {
     // @ts-ignore — Bun global exists when the suite runs under bun
-    const proc = Bun.spawn(['bun', 'tests/sophia/k2-memory-child.ts', ...args], {
+    const proc = Bun.spawn(['bun', script, ...args], {
       stdout: 'pipe',
       stderr: 'pipe',
       env: { ...process.env, ...env },
@@ -558,6 +567,43 @@ async function main() {
     await store.updateMemory(founderA, candidate.id, { active: true });
     const rowAfter = await (prisma as any).sophiaMemory.findUnique({ where: { id: candidate.id } });
     assert.strictEqual(rowAfter.active, true, 'mirror reflects the governed activation');
+  });
+
+  await runTest('C8: DEFAULT extractor path (no options.extract) — the real static SophiaMemoryExtractor.extract runs with its class context intact', async () => {
+    // Post-M4-A-audit CRITICAL regression pin. The capture stage's default
+    // seam was originally assigned the static method as a bare, DETACHED
+    // reference (options.extract ?? SophiaMemoryExtractor.extract). extract()
+    // internally calls this.parseCandidates(...); detached, `this` is
+    // undefined and every LIVE capture threw "undefined is not an object
+    // (evaluating 'this.parseCandidates')" AFTER paying the model call.
+    // Every other pipeline test injects options.extract, so only this test
+    // exercises the production default.
+    //
+    // The child (tests/sophia/m4a-default-extractor-child.ts) fakes ONLY the
+    // z-ai SDK chat completion via a module mock registered before any src
+    // import; the REAL receiver-sensitive extractor, REAL zai-client
+    // wrapping, REAL parseCandidates sanitizer, REAL MemoryGate and REAL
+    // store all run. On the detached-method bug the child reports
+    // {"status":"failed","reason":"EXTRACTION_FAILED"} and persists nothing.
+    const founder = `founder_m4a_c8_${randomUUID().slice(0, 8)}`;
+    const report = await runChild([founder], {}, 'tests/sophia/m4a-default-extractor-child.ts');
+
+    assert.strictEqual(report.status, 'captured', 'default extractor path must complete, not throw');
+    assert.strictEqual(report.persisted, 1);
+    assert.strictEqual(report.storeCount, 1, 'exactly one candidate persisted');
+    assert.strictEqual(report.memoryActive, false, 'captured candidate is INACTIVE until Founder confirmation');
+    assert.strictEqual(report.captureStatus, 'pending');
+    assert.strictEqual(report.captureSource, 'm4a_turn_capture');
+    assert.strictEqual(report.memoryType, 'COMMUNICATION_PREFERENCE');
+    assert.strictEqual(
+      report.content,
+      'Founder prefers concise, direct responses in every review.',
+      'content flowed through the REAL parseCandidates fixed-shape sanitizer'
+    );
+    assert.ok(
+      typeof report.idempotencyKey === 'string' && report.idempotencyKey.startsWith('m4cap:'),
+      'deterministic capture key assigned'
+    );
   });
 
   // =========================================================================
