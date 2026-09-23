@@ -94,6 +94,32 @@ function logCaptureEvent(event: string, fields: Record<string, unknown>): void {
 }
 
 /**
+ * M4-A HARDENING (observability): classifies an extraction failure from the
+ * error message ALONE — never from conversation or candidate content.
+ * Provider 429 storms were previously visible only as a raw error string;
+ * the class makes capture loss greppable and countable in dev logs without
+ * any new telemetry infrastructure.
+ */
+function classifyExtractionFailure(err: unknown): {
+  failureClass: 'PROVIDER_RATE_LIMITED' | 'PROVIDER_ERROR' | 'PARSE_ERROR' | 'UNKNOWN';
+  providerStatus: number | null;
+} {
+  const message = String((err as any)?.message || err || '');
+  const statusMatch = message.match(/status\s+(\d{3})/i);
+  const providerStatus = statusMatch ? Number(statusMatch[1]) : null;
+  if (providerStatus === 429 || /rate.?limit|too many requests|429/i.test(message)) {
+    return { failureClass: 'PROVIDER_RATE_LIMITED', providerStatus: providerStatus ?? 429 };
+  }
+  if (/^parse\b|parseCandidates|malformed (json|output)|json/i.test(message) && /parse|malformed/i.test(message)) {
+    return { failureClass: 'PARSE_ERROR', providerStatus };
+  }
+  if (providerStatus !== null || /api request failed|provider|network|fetch|timeout|ECONN/i.test(message)) {
+    return { failureClass: 'PROVIDER_ERROR', providerStatus };
+  }
+  return { failureClass: 'UNKNOWN', providerStatus };
+}
+
+/**
  * Derives the deterministic capture key base from authoritative turn
  * identity. turnId is the primary identity; a turn executed without one
  * falls back to the persisted assistant (or founder) message id — still a
@@ -153,8 +179,12 @@ export async function captureSophiaMemoryCandidates(
         ((extractionInput: MemoryExtractionInput) => SophiaMemoryExtractor.extract(extractionInput));
       proposed = await extractor({ founderMessage, assistantReply });
     } catch (err: any) {
+      const { failureClass, providerStatus } = classifyExtractionFailure(err);
       logCaptureEvent('extraction_failed', {
         conversationId,
+        turnId: input.turnId ?? null,
+        failureClass,
+        providerStatus,
         error: String(err?.message || err).slice(0, 200),
       });
       return { status: 'failed', reason: 'EXTRACTION_FAILED', persisted: 0 };
@@ -186,6 +216,7 @@ export async function captureSophiaMemoryCandidates(
         rejected++;
         logCaptureEvent('gate_rejected', {
           conversationId,
+          turnId: input.turnId ?? null,
           candidateIndex: index,
           reasons: gateResult.reasons,
         });
@@ -229,6 +260,7 @@ export async function captureSophiaMemoryCandidates(
         // the candidate is lost — no fake memory is ever created.
         logCaptureEvent('candidate_persist_failed', {
           conversationId,
+          turnId: input.turnId ?? null,
           candidateIndex: index,
           error: String(err?.message || err).slice(0, 200),
         });

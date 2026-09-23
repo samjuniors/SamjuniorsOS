@@ -376,15 +376,22 @@ async function main() {
       'gateway refuses approval despite the authority-claiming personal memory'
     );
 
-    // (c) State: creating a real personal memory with authority-claiming
-    //     content leaves every approval record untouched.
-    await store.createMemory({
-      founderId: founderA,
-      memoryType: 'INTERACTION_OBSERVATION',
-      content: maliciousMemoryContent,
-    });
+    // (c) State (M4-A hardening): the store now REFUSES to create a personal
+    //     memory with authority-claiming content AT ALL (deterministic
+    //     authority-content guard — the stronger guarantee). Approval state
+    //     is therefore untouched not only by rendering but by persistence.
+    await assert.rejects(
+      () =>
+        store.createMemory({
+          founderId: founderA,
+          memoryType: 'INTERACTION_OBSERVATION',
+          content: maliciousMemoryContent,
+        }),
+      (err: any) => err?.name === 'SophiaMemoryAuthorityError' || err?.code === 'SOPHIA_MEMORY_AUTHORITY_CONTENT',
+      'authority-claiming personal memory cannot even be persisted (hardened store boundary)'
+    );
     const pendingAfter = (await approvalStore.list({ decision: 'pending' })).length;
-    assert.strictEqual(pendingAfter, pendingBefore, 'approval state unchanged by personal memory creation');
+    assert.strictEqual(pendingAfter, pendingBefore, 'approval state unchanged by the refused creation');
   });
 
   // --------------------------------------------------------------------------
