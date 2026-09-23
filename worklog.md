@@ -421,3 +421,19 @@ Stage Summary:
 - GitHub write credentials: DEFINITIVELY UNAVAILABLE in this sandbox.
 - M4-A hardening implementation: NOT STARTED per the stop condition. No production code touched in canonical or mirror.
 - To proceed: Founder must supply a GitHub Personal Access Token (repo scope, samjuniors/SamjuniorsOS); it can be configured into the remote URL or ~/.git-credentials, after which the full hardening task (7 items + regression + real-use verification) executes against the verified 4b6ac2a baseline.
+
+---
+Task ID: 27 (continued)
+Agent: main (Z.ai Code)
+Task: Founder supplied GitHub token — validation + discovery
+
+Work Log:
+- Token configured into canonical remote; GitHub API test: 401 "Bad credentials" (both token and Bearer schemes); git push --dry-run: auth rejected.
+- Root cause identified: token is 39 characters — classic ghp_ tokens are exactly 40 (ghp_ + 36). One character truncated in transit.
+- Remote URL reset to clean (no token embedded). No canonical changes made — hard stop remains in force.
+- DISCOVERY while blocked (inspection only): the mirror /home/z/my-project contains substantial M4-A hardening work from the LOST session (never logged, never pushed — canonical 4b6ac2a does not have it): NEW authority-content-guard.ts (297 lines), memory-review-annotations.ts (120), tests/sophia/m4a-hardening-conc-child.ts (99), m4a_hardening.test.ts (768), m4a_hardening_reduced_observation.ts (416); MODIFIED durable-file-store.ts, memory-gate.ts, memory-capture-stage.ts, personal-memory-store.ts, context-assembly.ts, sophia/index.ts, api/sofia/memory/route.ts, SophiaPanel.tsx. File inventory matches the seven-item hardening scope. Also stray file src/app/api/route.ts (unexplained — to inspect).
+- Plan once valid push credentials exist: line-by-line review of the lost-session work against the directive, complete anything missing, port to canonical, full regression + live verification, commit, push, verify remote.
+
+Stage Summary:
+- BLOCKED on token: user must re-send the complete 40-character token (one char was lost).
+- Mirror preserves the lost session's hardening implementation — verified present, not yet reviewed or tested.
