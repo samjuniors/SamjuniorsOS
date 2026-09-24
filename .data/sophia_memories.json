@@ -210,5 +210,35 @@
     "createdAt": "2026-09-23T17:14:51.166Z",
     "updatedAt": "2026-09-23T17:14:51.166Z",
     "metadata": {}
+  },
+  "smem-1ea9c78b-9ce3-4ebd-a4d4-4330a9db1167": {
+    "id": "smem-1ea9c78b-9ce3-4ebd-a4d4-4330a9db1167",
+    "founderId": "founder-local-session",
+    "memoryType": "INTERACTION_PREFERENCE",
+    "content": "The founder prefers evening briefings over morning ones.",
+    "provenance": "conversation:conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+    "confidence": 1,
+    "active": true,
+    "idempotencyKey": "m4cap:conv-9c4e1001-585c-4405-8c58-c9cbaaca6098:sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee:0",
+    "createdAt": "2026-09-24T04:43:28.926Z",
+    "updatedAt": "2026-09-24T04:47:00.160Z",
+    "metadata": {
+      "captureStatus": "confirmed",
+      "captureSource": "m4a_turn_capture",
+      "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+      "founderMessageId": "msg-3b22b75a-fe62-4c2a-aa7d-488c741e8690",
+      "assistantMessageId": "msg-2e329906-6b2b-4825-847e-45356ffca1a4",
+      "turnId": "sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee",
+      "ingress": "sofia_ask",
+      "capturedAt": "2026-09-24T04:43:28.900Z",
+      "gate": {
+        "decision": "NEEDS_REVIEW",
+        "reasons": [
+          "PASSED_DETERMINISTIC_CHECKS"
+        ],
+        "evaluatedAt": "2026-09-24T04:43:28.900Z"
+      },
+      "confirmedAt": "2026-09-24T04:47:00.160Z"
+    }
   }
 }

@@ -512,5 +512,81 @@
       "liveAi": false
     },
     "createdAt": "2026-09-23T17:12:05.669Z"
+  },
+  "msg-c8ff3905-3ece-434e-b1f6-7c1c0f66ce16": {
+    "id": "msg-c8ff3905-3ece-434e-b1f6-7c1c0f66ce16",
+    "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+    "sender": "founder",
+    "role": "user",
+    "content": "Morning Sophia. Quick check: are all systems operational today?",
+    "idempotencyKey": "sofia-1cee1e9e-1de6-4c3e-9cb1-d7d922d6c0f7",
+    "metadata": {},
+    "createdAt": "2026-09-24T04:42:20.504Z"
+  },
+  "msg-41ed0bf8-45ee-4437-b44e-37169f5abad0": {
+    "id": "msg-41ed0bf8-45ee-4437-b44e-37169f5abad0",
+    "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "[Sophia Vance • Chief Operating Officer & Master Orchestrator]\nNo multi-agent council directives are currently in flight. All specialist agents are ready.",
+    "intent": "informational_query",
+    "idempotencyKey": "sofia-1cee1e9e-1de6-4c3e-9cb1-d7d922d6c0f7:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-24T04:42:22.313Z"
+  },
+  "msg-3b22b75a-fe62-4c2a-aa7d-488c741e8690": {
+    "id": "msg-3b22b75a-fe62-4c2a-aa7d-488c741e8690",
+    "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+    "sender": "founder",
+    "role": "user",
+    "content": "Also, so you know: I prefer evening briefings over morning ones.",
+    "idempotencyKey": "sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee",
+    "metadata": {},
+    "createdAt": "2026-09-24T04:43:26.420Z"
+  },
+  "msg-2e329906-6b2b-4825-847e-45356ffca1a4": {
+    "id": "msg-2e329906-6b2b-4825-847e-45356ffca1a4",
+    "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Noted. I'll adjust briefing schedules to prioritize evening updates going forward.",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-24T04:43:27.913Z"
+  },
+  "msg-4d391f21-35e4-4566-bde9-bfacf9f1681f": {
+    "id": "msg-4d391f21-35e4-4566-bde9-bfacf9f1681f",
+    "conversationId": "conv-2bec9629-0bb7-4550-a387-5a4dfa3d95c0",
+    "sender": "founder",
+    "role": "user",
+    "content": "One more preference: I prefer weekly status digests on Fridays.",
+    "metadata": {},
+    "createdAt": "2026-09-24T04:47:11.828Z"
+  },
+  "msg-c2fbe2e7-5587-495d-97c2-2e55248cda9a": {
+    "id": "msg-c2fbe2e7-5587-495d-97c2-2e55248cda9a",
+    "conversationId": "conv-2bec9629-0bb7-4550-a387-5a4dfa3d95c0",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Understood. Weekly status digests will be delivered to you every Friday moving forward.",
+    "intent": "conversation",
+    "confidence": 1,
+    "commandType": "CONVERSATION_REPLY",
+    "metadata": {
+      "directiveExecuted": false,
+      "liveAi": false
+    },
+    "createdAt": "2026-09-24T04:47:13.536Z"
   }
 }
