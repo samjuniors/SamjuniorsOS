@@ -17,8 +17,10 @@
  *   client data and can never select another founder's memories.
  *
  * Methods (all founder-scoped through SophiaMemoryStore):
- *   GET    ?memoryType=&active=&limit=  — list the CALLER's memories
- *          (deterministic: updatedAt DESC, hard-capped at 50)
+ *   GET    ?memoryType=&active=&limit=&offset= — list the CALLER's memories
+ *          (deterministic: updatedAt DESC; page size hard-capped at 50;
+ *          `offset` pages through the same order so records beyond the
+ *          first page stay reachable; response carries `total` + `hasMore`)
  *   POST   { memoryType, content, provenance?, confidence?, idempotencyKey? }
  *          — create (idempotencyKey dedupes per the ChatMessage convention)
  *   PATCH  { id, content?, confidence?, active? }
@@ -92,8 +94,18 @@ export async function GET(req: NextRequest) {
     const memoryTypeParam = url.searchParams.get('memoryType');
     const activeParam = url.searchParams.get('active');
     const limitParam = url.searchParams.get('limit');
+    // P2 follow-up (queue >50 visibility): offset-based pagination over the
+    // SAME deterministic order — the oldest pending review candidates were
+    // previously invisible to both this API and the UI once the founder's set
+    // exceeded the 50-record page cap.
+    const offsetParam = url.searchParams.get('offset');
 
-    const opts: { memoryType?: SophiaMemoryType; active?: boolean; limit?: number } = {};
+    const opts: {
+      memoryType?: SophiaMemoryType;
+      active?: boolean;
+      limit?: number;
+      offset?: number;
+    } = {};
     if (memoryTypeParam) {
       if (!(SOPHIA_MEMORY_TYPES as readonly string[]).includes(memoryTypeParam)) {
         return NextResponse.json(
@@ -116,18 +128,45 @@ export async function GET(req: NextRequest) {
       }
       opts.limit = Math.min(SOPHIA_MEMORY_LIST_MAX_LIMIT, parsed);
     }
+    if (offsetParam !== null) {
+      const parsed = Number.parseInt(offsetParam, 10);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        return NextResponse.json({ error: 'offset must be a non-negative integer' }, { status: 400 });
+      }
+      opts.offset = Math.min(parsed, 100_000);
+    }
 
-    const memories = await SophiaMemoryStore.getInstance().listMemories(session.userId, opts);
+    const store = SophiaMemoryStore.getInstance();
+    const memories = await store.listMemories(session.userId, opts);
+    // Authoritative totals for pagination (P2 follow-up): the page length
+    // alone cannot distinguish "exactly one page" from "one visible page of
+    // many" — reviewers and badges need the real count.
+    const total = await store.countMemories(session.userId, {
+      memoryType: opts.memoryType,
+      active: opts.active,
+    });
+    const limit = opts.limit ?? 20;
+    const offset = opts.offset ?? 0;
 
-    // M4-A HARDENING (reviewability): deterministic duplicate/similarity
-    // hints for the review queue. The comparison pool is the caller's FULL
-    // record set (active + pending, bounded at 50) so a pending candidate
-    // can be flagged against an already-active memory. Purely advisory —
-    // the reviewer decides; nothing is merged or auto-actioned.
-    const pool = await SophiaMemoryStore.getInstance().listMemories(session.userId, { limit: 50 });
+    // M4-A HARDENING (reviewability) + P2 follow-up: deterministic
+    // duplicate/similarity hints for the review queue. The comparison pool is
+    // the caller's FULL record set (active + pending, the AUTHORITATIVE
+    // collection — NOT the visible page) so a pending candidate can be
+    // flagged against any already-active memory, including records that fall
+    // outside the current page window. Purely advisory — the reviewer decides;
+    // nothing is merged or auto-actioned.
+    const pool = await store.listAllMemories(session.userId);
     const annotations = annotateReviewRecords(memories, pool);
 
-    return NextResponse.json({ memories, annotations, count: memories.length });
+    return NextResponse.json({
+      memories,
+      annotations,
+      count: memories.length,
+      total,
+      offset,
+      limit,
+      hasMore: offset + memories.length < total,
+    });
   } catch (err) {
     return errorResponse(err);
   }

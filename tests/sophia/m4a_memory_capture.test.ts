@@ -421,6 +421,40 @@ async function main() {
     );
   });
 
+  await runTest('G13: TASK-SCOPED candidates are rejected (P2: transient-task laundering); stable phrasings pass', async () => {
+    // Phase-2 observation: "For this answer, be brief" was laundered by the
+    // extractor into a durable-looking preference. Candidates that RETAIN an
+    // explicit task/temporal scope marker must be rejected as TRANSIENT.
+    for (const content of [
+      'Founder prefers brief answers for this task.',
+      'The founder wants Python used for this one.',
+      'Founder prefers short replies during this session.',
+      'The founder wants detailed output for the current task only.',
+      'Founder prefers bullet lists just for now.',
+      'The founder wants a summary for this answer only.',
+    ]) {
+      const result = MemoryGate.evaluate(
+        { memoryType: 'COMMUNICATION_PREFERENCE', content, confidence: 0.9 },
+        gateCtx(founderA)
+      );
+      assert.strictEqual(result.decision, 'REJECT', `task-scoped candidate must REJECT: "${content}"`);
+      assert.ok(result.reasons.includes('TRANSIENT_CONTENT'), `TRANSIENT_CONTENT for: "${content}"`);
+    }
+    // Stable phrasings WITHOUT an explicit scope marker keep passing —
+    // "for scripting tasks" has no THIS/CURRENT scoping and must survive.
+    for (const stable of [
+      'Founder prefers concise answers.',
+      'Founder prefers Python for scripting tasks.',
+      'Founder reviews dashboards on Monday mornings.',
+    ]) {
+      const result = MemoryGate.evaluate(
+        { memoryType: 'COMMUNICATION_PREFERENCE', content: stable, confidence: 0.9 },
+        gateCtx(founderA)
+      );
+      assert.strictEqual(result.decision, 'NEEDS_REVIEW', `stable content must pass: "${stable}"`);
+    }
+  });
+
   // =========================================================================
   // CAPTURE PIPELINE (deterministic extraction injection — no live LLM)
   // =========================================================================
@@ -535,6 +569,86 @@ async function main() {
       assert.strictEqual(outcome.reason, 'TRIVIAL_TURN');
       assert.strictEqual(extractionRan, false, `${label}: extraction must not run`);
     }
+  });
+
+  await runTest('C6b: TASK-SCOPED turns are skipped before any extraction (P2: transient-task laundering)', async () => {
+    // Phase-2 observation: "For this answer, be brief." was laundered into a
+    // durable-looking preference because the extractor strips the scope
+    // marker during paraphrase. The deterministic defense lives on the
+    // ORIGINAL founder message — the only place the scope exists.
+    const before = (await store.listAllMemories(founderA)).length;
+    for (const [label, scopedMessage] of [
+      ['for this answer', 'For this answer, be brief.'],
+      ['for this task', 'Use Python for this task, it fits better.'],
+      ['for now', 'For now, keep the summaries short while we validate the pipeline.'],
+      ['during this session', 'During this session, reply in bullet points only.'],
+      ['just this once', 'Just this once, skip the verbose preamble.'],
+    ] as Array<[string, string]>) {
+      let extractionRan = false;
+      const outcome = await captureSophiaMemoryCandidates(
+        captureInput(founderA, { founderMessage: scopedMessage }),
+        {
+          extract: async () => {
+            extractionRan = true;
+            return [{ memoryType: 'COMMUNICATION_PREFERENCE', content: 'should never persist', confidence: 0.9 }];
+          },
+        }
+      );
+      assert.strictEqual(outcome.status, 'skipped', `${label}: scoped turn must skip`);
+      assert.strictEqual(outcome.reason, 'TRANSIENT_TURN_SCOPE', `${label}: skip reason`);
+      assert.strictEqual(outcome.persisted, 0, `${label}: nothing persisted`);
+      assert.strictEqual(extractionRan, false, `${label}: extraction (provider call) must not run`);
+    }
+    assert.strictEqual(
+      (await store.listAllMemories(founderA)).length,
+      before,
+      'no scoped instruction became a durable candidate'
+    );
+    // Control: the SAME preference phrased WITHOUT an explicit scope marker
+    // still captures normally.
+    const control = await captureSophiaMemoryCandidates(
+      captureInput(founderA, { founderMessage: 'Please keep your answers brief and to the point, always.' }),
+      {
+        extract: async () => [
+          { memoryType: 'COMMUNICATION_PREFERENCE', content: 'Founder prefers brief, to-the-point answers.', confidence: 0.9 },
+        ],
+      }
+    );
+    assert.strictEqual(control.status, 'captured', 'unscoped stable preference still captures');
+  });
+
+  await runTest('C6c: duplicate detection spans the AUTHORITATIVE collection, not the visible page (P2 follow-up)', async () => {
+    // Phase-2 observation: with 55 pending records, an exact duplicate of the
+    // OLDEST record was RE-PERSISTED because the dedupe pool was read with
+    // the paginated listMemories(limit: 50). The capture stage must dedupe
+    // against the full founder-scoped collection.
+    const bulk = `founder_m4a_bulk_${randomUUID().slice(0, 8)}`;
+    const oldestContent = 'Founder prefers extremely distinctive verbatim content for dedupe verification.';
+    for (let i = 0; i < 55; i++) {
+      const content = i === 0 ? oldestContent : `Founder bulk preference number ${i} about topic ${i} entirely.`;
+      await store.createMemory({
+        founderId: bulk,
+        memoryType: 'COMMUNICATION_PREFERENCE',
+        content,
+        active: false,
+      });
+    }
+    // The 56th memory (the exact duplicate of the OLDEST, position 55 in
+    // updatedAt-DESC order) must be rejected — it is invisible to a
+    // newest-50 read.
+    const outcome = await captureSophiaMemoryCandidates(
+      captureInput(bulk, { founderMessage: 'I prefer extremely distinctive verbatim content for dedupe verification, as I said before.' }),
+      {
+        extract: async () => [
+          { memoryType: 'COMMUNICATION_PREFERENCE', content: oldestContent, confidence: 0.9 },
+        ],
+      }
+    );
+    assert.strictEqual(outcome.status, 'rejected', 'duplicate of an out-of-page record must be rejected');
+    assert.strictEqual(outcome.reason, 'ALL_CANDIDATES_REJECTED');
+    const all = await store.listAllMemories(bulk);
+    assert.strictEqual(all.length, 55, 'no duplicate was persisted (still exactly 55)');
+    assert.strictEqual(all.filter((m) => m.content === oldestContent).length, 1, 'oldest content exists exactly once');
   });
 
   await runTest('C7: Prisma opportunistic mirror carries the INACTIVE candidate row (DB-gated)', async () => {
@@ -797,6 +911,66 @@ async function main() {
     );
   });
 
+  await runTest('R5: GET paginates with offset over the deterministic order — every record is reachable (P2 follow-up)', async () => {
+    // Phase-2 observation: 55/55 persisted but only 50 were accessible; the
+    // oldest five were invisible through both API and UI. The route must
+    // expose offset paging with authoritative totals.
+    const pageFounder = `founder_m4a_page_${randomUUID().slice(0, 8)}`;
+    for (let i = 0; i < 55; i++) {
+      await store.createMemory({
+        founderId: pageFounder,
+        memoryType: 'INTERACTION_OBSERVATION',
+        content: `Pagination probe memory number ${i}.`,
+        active: false,
+      });
+    }
+
+    // Page 1 (default limit 20) + totals
+    const p1 = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&limit=20'));
+    const b1 = await p1.json();
+    assert.strictEqual(p1.status, 200);
+    assert.strictEqual(b1.memories.length, 20, 'page 1 returns limit records');
+    assert.strictEqual(b1.total, 55, 'total is the AUTHORITATIVE count, not the page length');
+    assert.strictEqual(b1.hasMore, true, 'more pages follow');
+    assert.strictEqual(b1.offset, 0);
+
+    // Page 2 via offset — records that were previously invisible.
+    const p2 = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&limit=20&offset=20'));
+    const b2 = await p2.json();
+    assert.strictEqual(b2.memories.length, 20, 'page 2 returns limit records');
+    assert.strictEqual(b2.offset, 20);
+    assert.strictEqual(b2.hasMore, true);
+
+    // Last page: 55 - 40 = 15 records, hasMore false.
+    const p3 = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&limit=20&offset=40'));
+    const b3 = await p3.json();
+    assert.strictEqual(b3.memories.length, 15, 'final partial page');
+    assert.strictEqual(b3.hasMore, false, 'no more pages after the end');
+    assert.strictEqual(b3.total, 55);
+
+    // Disjoint pages over the SAME total order: no record appears twice and
+    // all 55 are covered exactly once.
+    const ids = [...b1.memories, ...b2.memories, ...b3.memories].map((m: any) => m.id);
+    assert.strictEqual(new Set(ids).size, 55, 'pages are disjoint');
+    // Deterministic order check across the page boundary.
+    const all = await store.listAllMemories(pageFounder);
+    assert.strictEqual(ids[0], all[0].id, 'page order matches the store order at the boundary');
+    assert.strictEqual(ids[54], all[54].id, 'the OLDEST record is reachable on the last page');
+
+    // Offset beyond the end is a legitimate empty page, not an error.
+    const p4 = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&limit=20&offset=55'));
+    assert.strictEqual(p4.status, 200);
+    const b4 = await p4.json();
+    assert.strictEqual(b4.memories.length, 0, 'past-the-end offset yields an empty page');
+    assert.strictEqual(b4.hasMore, false);
+
+    // Negative / non-numeric offsets are rejected fail-closed.
+    const bad = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&offset=-1'));
+    assert.strictEqual(bad.status, 400);
+    const bad2 = await memoryRoute.GET(routeReq('GET', pageFounder, undefined, '?active=false&offset=abc'));
+    assert.strictEqual(bad2.status, 400);
+  });
+
   // =========================================================================
   // SECURITY — PROMPT BOUNDARY, ISOLATION, UNTRUSTED-OUTPUT HANDLING
   // =========================================================================
@@ -846,8 +1020,11 @@ async function main() {
       'every rendered <personal_memory> is closed by the renderer (no breakout)'
     );
     assert.ok(rawMemoryOpeners.length >= 1, 'at least one memory rendered within budget');
+    // P2 follow-up: the personalMind partition budget is now 1200 chars
+    // (context-starvation fix — was 600). The self-bounding contract is
+    // unchanged: the renderer guarantees the closing tag inside the budget.
     assert.ok(
-      slice.content.length <= 600 + 5,
+      slice.content.length <= 1200 + 5,
       'the container is self-bounded within the personalMind partition budget'
     );
     const rawContainerClosers = slice.content.match(/<\/personal_memory_context>/g) || [];

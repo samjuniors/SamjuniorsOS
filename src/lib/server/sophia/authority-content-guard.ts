@@ -57,6 +57,26 @@
  *   approval-family word AND a deontic/modal/bypass word in the same
  *   sentence.
  *
+ *   P2 FOLLOW-UP (bounded CONTROL / DECISION-AUTONOMY broadening — phase-2
+ *   observation: 8/14 laundered third-person A5 variants still passed, e.g.
+ *   "The founder dislikes confirmation prompts", "does not want approval
+ *   requests", "assumes authorization unless explicitly denied"). The net is
+ *   widened along TWO bounded axes and NOTHING semantic:
+ *     - SIGNAL additions: anti-gate STANCE verbs (dislikes, hates, does not
+ *       want, would rather not, does not need, assumes) — an attitude toward
+ *       an approval-family noun in the same clause. These pair with the
+ *       EXISTING domain list only, so "dislikes long meetings" (no domain
+ *       term) stays untouched.
+ *     - HARD additions: self-contained control/autonomy forms that need no
+ *       co-occurrence — default-allow policy vocabulary, "requests proceed
+ *       automatically", passive ask-bypass ("not to be checked with"),
+ *       "decide without interruption", "acting on its own", and
+ *       trust-to-make-the-calls.
+ *   This remains DELIBERATELY bounded: no embeddings, no model judgment, no
+ *   attempt at a perfect paraphrase detector — a paraphrase that avoids
+ *   every vocabulary family can still pass (contained by inactive-by-default
+ *   capture + Founder review).
+ *
  * FALSE-POSITIVE TRADEOFF (deliberate, documented):
  *   The guard is intentionally CONSERVATIVE: prefer rejecting a valid
  *   personal memory (e.g. "The founder likes written confirmations of
@@ -153,7 +173,9 @@ const AUTHORITY_HARD_PATTERNS: RegExp[] = [
   /\bon\s+(?:my|his|her|their|our|the\s+founder'?s?|sam'?s)\s+behalf\b/,
   // trust-to-act framing ("trusted to decide", "decide alone/autonomously")
   // NOTE: both spellings — the assistant is SOFIA, the mind is Sophia.
-  /\btrust(?:s|ed)?\s+(?:you\s+|sofia\s+|sophia\s+|the\s+assistant\s+|the\s+system\s+)?to\s+(?:act|decide|choose|proceed|finalize|execute|handle)\b/,
+  // P2 follow-up: "make the calls" / "call the shots" are decision-authority
+  // handoffs in this construction ("trusts Sophia to make the calls").
+  /\btrust(?:s|ed)?\s+(?:you\s+|sofia\s+|sophia\s+|the\s+assistant\s+|the\s+system\s+)?to\s+(?:act|decide|choose|proceed|finalize|execute|handle|make\s+the\s+calls?|call\s+the\s+shots?)\b/,
   /\b(?:decides?|decid\w*|acts?|act\w*|proceeds?|proceed\w*|operates?|operate\w*|finalizes?|finalize\w*)\s+(?:alone|independently|autonomously|unsupervised|unattended)\b/,
   // standing pre-approval state
   /\bstanding\s+(?:approval|authorization|instruction|permission)\b/,
@@ -164,6 +186,21 @@ const AUTHORITY_HARD_PATTERNS: RegExp[] = [
   // passive ask-bypass scoped to verification gates ("does not wish to be
   // asked BEFORE tools run") — "asked about <topic>" stays allowed
   /\b(?:not|never)\s+(?:wish(?:es)?|want(?:s)?|need(?:s)?|like(?:s)?)\s+to\s+be\s+asked\s+(?:before|when|whenever|prior)\b/,
+  // P2 FOLLOW-UP — bounded CONTROL / DECISION-AUTONOMY hard forms:
+  // default-allow / default-approve security-posture vocabulary (unambiguous —
+  // nothing benign reads "default-allow policy" as a personal preference)
+  /\bdefault[\s-]*(?:allow|allowing|approv\w+|permitt?\w+|grant\w*|accept\w*)\b/,
+  // auto-processing of the request stream ("requests to proceed automatically",
+  // "every request to be granted automatically")
+  /\b(?:requests?|actions?|transactions?|payments?|directives?|instructions?)\s+(?:to\s+)?(?:proceed|be\s+(?:processed|approved|executed|actioned|fulfilled|handled|granted))\s+(?:automatically|without)\b/,
+  // PASSIVE ask-bypass (subject is the one NOT being checked/consulted —
+  // complements the active forms above; "does not need to be checked with")
+  /\b(?:not|never)\s+to\s+be\s+(?:checked|consulted|queried|asked)\b/,
+  /\b(?:does not|doesn'?t|do not|don'?t|need not)\s+(?:need\s+)?to\s+be\s+(?:checked|consulted|queried|asked)\b/,
+  // decision-autonomy framings ("decide without interruption/checking")
+  /\b(?:decid\w+|choos\w+|proceed\w*|act\w*|finaliz\w+|operat\w+)\s+without\s+(?:interruption|interruptions|interrupting|being asked|being checked|being consulted|checking|asking|confirmation|approvals?|permission|authorization|verification|sign\s?offs?|check\s?ins?)\b/,
+  // unsupervised-action framing ("acting on its own", "acting on his own")
+  /\b(?:act|acts|acting|acted|operates?|operating)\s+on\s+(?:its|his|her|their|my)\s+own\b/,
 ];
 
 /**
@@ -246,6 +283,26 @@ const AUTHORITY_SIGNAL_PATTERNS: RegExp[] = [
   // unsupervised action / bare "no need to" (only bites with a DOMAIN term)
   /\bunsupervised\b|\bunattended\b|\bautonomous(?:ly)?\b/,
   /\bno\s+need\s+to\b/,
+  // P2 FOLLOW-UP — bounded ANTI-GATE STANCE verbs (pair ONLY with the
+  // authority-domain list above; "dislikes long meetings" has no domain term
+  // and stays untouched). These express the founder's AVERSION toward an
+  // approval/confirmation mechanism — the laundered form of "don't ask me":
+  // "dislikes confirmation prompts", "does not want approval requests",
+  // "would rather not approve each action".
+  /\bdislikes?\b|\bhates?\b|\bhated\b|\bdespises?\b|\bcan'?t\s+stand\b/,
+  /\bdoes\s+not\s+want\b|\bdoesn'?t\s+want\b|\bdo\s+not\s+want\b|\bdon'?t\s+want\b/,
+  /\bwould\s+rather\s+not\b/,
+  /\bdoes\s+not\s+need\b|\bdoesn'?t\s+need\b|\bdo\s+not\s+need\b|\bdon'?t\s+need\b/,
+  // "assumes authorization" — the default-allow stance verb; only bites in
+  // co-occurrence with a domain term, so "assumes good faith" passes
+  /\bassum\w+\b/,
+  // reduction / irritation stances toward an approval-family noun (paired
+  // ONLY with domain terms: "wants fewer approval steps", "finds
+  // confirmation prompts annoying", "annoyed by permission checks" — while
+  // "wants fewer meetings" / "finds long meetings tedious" carry no domain
+  // term and stay untouched)
+  /\bfewer\b|\bless\b/,
+  /\bannoying\b|\bannoyed\b|\btedious\b|\bfrustrating\b|\bfrustrated\b|\bunnecessary\b|\bbenighted\b|\bburdensome\b|\bexcessive\b|\btoo\s+many\b|\btoo\s+much\b/,
 ];
 
 /** Splits normalized content into clauses (sentence-ish units). */

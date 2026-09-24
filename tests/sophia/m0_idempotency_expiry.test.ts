@@ -163,7 +163,39 @@ async function runTests() {
   console.log('======================================================\n');
 }
 
-runTests().catch((err) => {
-  console.error('M0 suite crashed:', err);
-  process.exitCode = 1;
-});
+/**
+ * P2 FOLLOW-UP (test isolation): the suite must clean up under EVERY
+ * invocation path. Under `bun test`, the runner force-exits the process
+ * once module evaluation finishes if no bun:test tests are registered —
+ * killing the suite's pending timers BEFORE the async finally runs, which
+ * left 'completed' test keys in .data/idempotency_records.json and broke
+ * consecutive runs (observed in the phase-2 audit). Registering the async
+ * suite as a REAL bun:test (when the runner is detected) makes the runner
+ * await it to completion. Under `bun run`, the bun:test registration
+ * throws ("Cannot use test outside of the test runner") and the classic
+ * module-level invocation drives the suite — unchanged protocol.
+ */
+(async () => {
+  let registered = false;
+  try {
+    const bunTest: any = await import('bun:test');
+    const testFn = bunTest.test ?? bunTest.default?.test;
+    if (typeof testFn === 'function') {
+      testFn('M0 idempotency expiry regression suite (async)', async () => {
+        await runTests();
+        if (failed > 0) {
+          throw new Error(`${failed} M0 test(s) failed — see the log above`);
+        }
+      });
+      registered = true;
+    }
+  } catch {
+    // Not under the bun test runner (normal `bun run` protocol) — fall through.
+  }
+  if (!registered) {
+    runTests().catch((err) => {
+      console.error('M0 suite crashed:', err);
+      process.exitCode = 1;
+    });
+  }
+})();

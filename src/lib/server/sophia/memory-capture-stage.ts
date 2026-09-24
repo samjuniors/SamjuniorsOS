@@ -1,5 +1,5 @@
 import { SophiaMemoryStore } from './personal-memory-store';
-import { MemoryGate } from './memory-gate';
+import { MemoryGate, isTaskScopedInstruction } from './memory-gate';
 import {
   SophiaMemoryExtractor,
   ExtractedMemoryCandidate,
@@ -152,6 +152,20 @@ export async function captureSophiaMemoryCandidates(
       return { status: 'skipped', reason: 'TRIVIAL_TURN', persisted: 0 };
     }
 
+    // --- P2 follow-up: task/temporal-scoped instructions are not preferences ---
+    // Deterministic pre-extraction skip (see TASK_SCOPED_INSTRUCTION_PATTERNS
+    // in memory-gate.ts — shared with the candidate-level gate rule): an
+    // explicitly scoped instruction can never become a durable personal
+    // memory, and skipping here also saves the provider call.
+    if (isTaskScopedInstruction(founderMessage)) {
+      logCaptureEvent('capture_skipped', {
+        conversationId,
+        turnId: input.turnId ?? null,
+        reason: 'TRANSIENT_TURN_SCOPE',
+      });
+      return { status: 'skipped', reason: 'TRANSIENT_TURN_SCOPE', persisted: 0 };
+    }
+
     logCaptureEvent('capture_started', {
       conversationId,
       turnId: input.turnId ?? null,
@@ -197,7 +211,13 @@ export async function captureSophiaMemoryCandidates(
 
     // --- Deterministic gate + inactive persistence ---
     const provenance = `conversation:${conversationId}`;
-    const existing = await store.listMemories(founderId, { limit: 50 });
+    // P2 follow-up (dedupe blindspot): the duplicate comparison pool is the
+    // AUTHORITATIVE founder-scoped collection (listAllMemories), NOT the
+    // paginated newest-50 the API exposes. The phase-2 observation proved an
+    // exact duplicate of the 55-record set's oldest entry was RE-PERSISTED
+    // because it fell outside the visible page — dedupe correctness must never
+    // depend on page visibility.
+    const existing = await store.listAllMemories(founderId);
     const existingContents = existing.map((m) => m.content);
 
     let persisted = 0;
