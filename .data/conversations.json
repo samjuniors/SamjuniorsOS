@@ -208,5 +208,25 @@
     "metadata": {},
     "createdAt": "2026-09-24T04:47:11.811Z",
     "updatedAt": "2026-09-24T04:47:13.536Z"
+  },
+  "conv-044c7c38-1c07-4384-b795-1334d3b2f32c": {
+    "id": "conv-044c7c38-1c07-4384-b795-1334d3b2f32c",
+    "founderId": "founder-local-session",
+    "title": "Voice Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-24T11:55:53.517Z",
+    "updatedAt": "2026-09-24T11:55:53.789Z"
+  },
+  "conv-8749374e-b6ba-493a-879e-1050bb4d88a7": {
+    "id": "conv-8749374e-b6ba-493a-879e-1050bb4d88a7",
+    "founderId": "founder-local-session",
+    "title": "Voice Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-24T11:55:55.913Z",
+    "updatedAt": "2026-09-24T11:55:55.964Z"
   }
 }

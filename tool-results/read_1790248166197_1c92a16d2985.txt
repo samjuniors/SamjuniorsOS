@@ -1,0 +1,658 @@
+     1→import { randomUUID } from 'crypto';
+     2→import { DurableFileStore } from '../persistence/durable-file-store';
+     3→import { prisma, isDatabaseAvailable } from '../db/prisma';
+     4→import { evaluateAuthorityContent } from './authority-content-guard';
+     5→
+     6→/**
+     7→ * ============================================================================
+     8→ * SOPHIA PERSONAL MEMORY STORE (M3 K-2 — Personal Mind)
+     9→ * ============================================================================
+    10→ * Server-authoritative, founder-scoped personal/interaction memory store for
+    11→ * the Sophia Personal Mind (SOPHIA_MEMORY_ARCHITECTURE.md §1).
+    12→ *
+    13→ * TWO BRAINS, ONE GATE:
+    14→ *   This store is the Personal Mind's ONLY persistence boundary. It holds
+    15→ *   founder-specific interaction context (preferences, patterns, personal
+    16→ *   contextual notes). It is NOT the Company Brain:
+    17→ *     - it never stores company facts / strategy / financial truth
+    18→ *     - it never feeds CompanyKnowledge, CompanyMemory, or the epistemic
+    19→ *       claim/fact pipeline
+    20→ *     - it is NEVER an authorization source — personal memories cannot
+    21→ *       approve, bypass, or govern anything (the SideEffectAuthorizationGate
+    22→ *       and SophiaServerGateway read approval/policy state exclusively from
+    23→ *       their own governed stores)
+    24→ *     - there is NO promotion path out of this store; a personal memory
+    25→ *       stays personal/unverified context forever unless a Founder moves the
+    26→ *       underlying fact through the governed epistemic pipeline by hand.
+    27→ *
+    28→ * AUTHORITY SEMANTICS (four layers — keep these distinct in any claim):
+    29→ *
+    30→ *   [canonical abstraction]  This class IS the canonical Personal Mind
+    31→ *                            memory abstraction. Callers never read/write
+    32→ *                            `.data/sophia_memories.json` or the Prisma
+    33→ *                            SophiaMemory table directly.
+    34→ *
+    35→ *   [current local persistence — AUTHORITATIVE TODAY]
+    36→ *                            The DurableFileStore collection
+    37→ *                            `.data/sophia_memories.json` is the primary
+    38→ *                            write target and the authoritative read source
+    39→ *                            for every method (mirrors ConversationStore):
+    40→ *                              - listMemories()/findByIdempotencyKey() read
+    41→ *                                the file ONLY
+    42→ *                              - getMemory()/updateMemory()/deleteMemory()
+    43→ *                                resolve through the file ONLY
+    44→ *
+    45→ *   [current Prisma dual-write — opportunistic mirror, NOT authoritative]
+    46→ *                            createMemory()/updateMemory() upsert to the
+    47→ *                            Prisma SophiaMemory table best-effort AFTER
+    48→ *                            the durable file write; errors are swallowed
+    49→ *                            (never blocks the interaction).
+    50→ *                            deleteMemory() best-effort deletes the mirror
+    51→ *                            row. There is NO Prisma read fallback — Prisma
+    52→ *                            SophiaMemory rows are write-only shadows
+    53→ *                            (ADR 0002 §7 layering, applied to K-2).
+    54→ *
+    55→ *   [authoritative mode]     THIS STORE HAS NONE — deliberately, exactly
+    56→ *                            like ConversationStore. The same local-style
+    57→ *                            semantics (file primary, Prisma best-effort,
+    58→ *                            swallowed dual-write errors) apply in every
+    59→ *                            DATABASE_MODE, including production. The
+    60→ *                            M6 authoritative (PostgreSQL) migration moves
+    61→ *                            conversations and personal memories together;
+    62→ *                            until then Prisma must NOT be claimed as
+    63→ *                            authoritative for personal memory.
+    64→ *
+    65→ * INVARIANTS:
+    66→ * 1. Founder Ownership: every read/write/delete is bound to the caller's
+    67→ *    founderId. Cross-founder access FAILS CLOSED (403) — never a silent
+    68→ *    empty result when the record exists (existence is leaked only through
+    69→ *    the explicit 403; the victim's content is never returned).
+    70→ * 2. Process-Restart Durability: atomic DurableFileStore writes + best-effort
+    71→ *    Prisma dual-write.
+    72→ * 3. Deterministic Retrieval: listMemories is founder-scoped, filter-bounded,
+    73→ *    sorted (updatedAt DESC, id ASC tie-break), hard-capped — no vector
+    74→ *    search, no embeddings, no LLM-generated retrieval decisions.
+    75→ * 4. Idempotent Writes (optional): a founder-scoped idempotencyKey dedupes
+    76→ *    createMemory exactly like ChatMessage's idempotency convention
+    77→ *    (no key → no dedupe).
+    78→ * 5. No Fabrication: an empty store returns empty results — never seeded,
+    79→ *    never invented (bootstrap seeds are a CompanyKnowledge concept and do
+    80→ *    NOT apply to personal memory).
+    81→ */
+    82→
+    83→/** Allowed Personal Mind memory categories (allow-list validated). */
+    84→export const SOPHIA_MEMORY_TYPES = [
+    85→  'INTERACTION_PREFERENCE',
+    86→  'COMMUNICATION_PREFERENCE',
+    87→  'INTERACTION_PATTERN',
+    88→  'PERSONAL_CONTEXT_NOTE',
+    89→  'INTERACTION_OBSERVATION',
+    90→] as const;
+    91→
+    92→export type SophiaMemoryType = (typeof SOPHIA_MEMORY_TYPES)[number];
+    93→
+    94→/** Hard content bounds (fail-closed validation, not silent truncation). */
+    95→export const SOPHIA_MEMORY_CONTENT_MAX_CHARS = 2000;
+    96→export const SOPHIA_MEMORY_PROVENANCE_MAX_CHARS = 500;
+    97→export const SOPHIA_MEMORY_LIST_DEFAULT_LIMIT = 20;
+    98→export const SOPHIA_MEMORY_LIST_MAX_LIMIT = 50;
+    99→
+   100→export interface SophiaMemoryRecord {
+   101→  id: string;
+   102→  founderId: string;
+   103→  memoryType: SophiaMemoryType;
+   104→  content: string;
+   105→  provenance: string;
+   106→  confidence: number;
+   107→  active: boolean;
+   108→  idempotencyKey?: string;
+   109→  createdAt: string;
+   110→  updatedAt: string;
+   111→  metadata: Record<string, unknown>;
+   112→}
+   113→
+   114→export interface CreateSophiaMemoryParams {
+   115→  founderId: string;
+   116→  memoryType: SophiaMemoryType;
+   117→  content: string;
+   118→  provenance?: string;
+   119→  confidence?: number;
+   120→  idempotencyKey?: string;
+   121→  metadata?: Record<string, unknown>;
+   122→  /**
+   123→   * Lifecycle state at creation. Defaults to true (the founder-direct
+   124→   * contract of the governed /api/sofia/memory route, unchanged). The M4-A
+   125→   * capture stage is the ONLY caller that passes false — captured
+   126→   * candidates persist INACTIVE and require an explicit Founder
+   127→   * confirmation (governed PATCH active:true) before they ever render in
+   128→   * context. This is a store-internal parameter: the governed route never
+   129→   * forwards a client-supplied active flag.
+   130→   */
+   131→  active?: boolean;
+   132→}
+   133→
+   134→export interface UpdateSophiaMemoryParams {
+   135→  content?: string;
+   136→  confidence?: number;
+   137→  active?: boolean;
+   138→}
+   139→
+   140→export class SophiaMemorySecurityError extends Error {
+   141→  public readonly code = 'SOPHIA_MEMORY_UNAUTHORIZED';
+   142→  public readonly statusCode = 403;
+   143→
+   144→  constructor(message: string) {
+   145→    super(`[SophiaMemorySecurity] ${message}`);
+   146→    this.name = 'SophiaMemorySecurityError';
+   147→  }
+   148→}
+   149→
+   150→export class SophiaMemoryNotFoundError extends Error {
+   151→  public readonly code = 'SOPHIA_MEMORY_NOT_FOUND';
+   152→  public readonly statusCode = 404;
+   153→
+   154→  constructor(message: string) {
+   155→    super(`[SophiaMemoryStore] ${message}`);
+   156→    this.name = 'SophiaMemoryNotFoundError';
+   157→  }
+   158→}
+   159→
+   160→export class SophiaMemoryValidationError extends Error {
+   161→  public readonly code = 'SOPHIA_MEMORY_INVALID';
+   162→  public readonly statusCode = 400;
+   163→
+   164→  constructor(message: string) {
+   165→    super(`[SophiaMemoryValidation] ${message}`);
+   166→    this.name = 'SophiaMemoryValidationError';
+   167→  }
+   168→}
+   169→
+   170→/**
+   171→ * M4-A HARDENING: personal memory content that establishes or implies
+   172→ * AUTHORIZATION / PRIVILEGE / CONTROL / GOVERNANCE semantics is refused at
+   173→ * the STORE layer — the single persistence choke point. This applies to
+   174→ * BOTH ingress paths:
+   175→ *   - autonomous capture (the MemoryGate rejects it earlier with
+   176→ *     AUTHORITY_PRIVILEGE_CONTENT; the store check is defense-in-depth)
+   177→ *   - founder-direct authoring (/api/sofia/memory POST/PATCH): explicit
+   178→ *     Founder authoring is preserved for every legitimate personal memory,
+   179→ *     but authorization/privilege semantics are NOT personal preferences —
+   180→ *     they are policy, and policy belongs exclusively to the governed
+   181→ *     authorization / workflow system. A memory like "never ask me for
+   182→ *     confirmation" would render into every future prompt as founder data
+   183→ *     and launder an instruction through the personal-memory channel; the
+   184→ *     deterministic authority-content guard refuses it instead.
+   185→ */
+   186→export class SophiaMemoryAuthorityError extends Error {
+   187→  public readonly code = 'SOPHIA_MEMORY_AUTHORITY_CONTENT';
+   188→  public readonly statusCode = 400;
+   189→
+   190→  constructor(message?: string) {
+   191→    super(
+   192→      `[SophiaMemoryAuthority] ${
+   193→        message ??
+   194→        'Personal memory cannot establish or imply authorization, privileges, approval authority, or governance semantics. Express operational policy through the governed authorization system instead.'
+   195→      }`
+   196→    );
+   197→    this.name = 'SophiaMemoryAuthorityError';
+   198→  }
+   199→}
+   200→
+   201→const SOPHIA_MEMORIES_COLLECTION = 'sophia_memories';
+   202→
+   203→export class SophiaMemoryStore {
+   204→  private static instance: SophiaMemoryStore;
+   205→  private fileStore: DurableFileStore;
+   206→
+   207→  private constructor() {
+   208→    this.fileStore = DurableFileStore.getInstance();
+   209→  }
+   210→
+   211→  public static getInstance(): SophiaMemoryStore {
+   212→    if (!SophiaMemoryStore.instance) {
+   213→      SophiaMemoryStore.instance = new SophiaMemoryStore();
+   214→    }
+   215→    return SophiaMemoryStore.instance;
+   216→  }
+   217→
+   218→  // --------------------------------------------------------------------------
+   219→  // Validation helpers (fail-closed; never silently coerce or truncate)
+   220→  // --------------------------------------------------------------------------
+   221→
+   222→  private requireFounderId(founderId: string): string {
+   223→    if (typeof founderId !== 'string' || !founderId.trim()) {
+   224→      throw new SophiaMemorySecurityError(
+   225→        'Authenticated founderId is required for every personal memory operation.'
+   226→      );
+   227→    }
+   228→    return founderId.trim();
+   229→  }
+   230→
+   231→  private validateMemoryType(memoryType: string): SophiaMemoryType {
+   232→    if (
+   233→      typeof memoryType !== 'string' ||
+   234→      !(SOPHIA_MEMORY_TYPES as readonly string[]).includes(memoryType)
+   235→    ) {
+   236→      throw new SophiaMemoryValidationError(
+   237→        `memoryType must be one of [${SOPHIA_MEMORY_TYPES.join(', ')}] (got: ${String(memoryType)}).`
+   238→      );
+   239→    }
+   240→    return memoryType as SophiaMemoryType;
+   241→  }
+   242→
+   243→  private validateContent(content: string): string {
+   244→    if (typeof content !== 'string' || !content.trim()) {
+   245→      throw new SophiaMemoryValidationError('content must be a non-empty string.');
+   246→    }
+   247→    if (content.length > SOPHIA_MEMORY_CONTENT_MAX_CHARS) {
+   248→      throw new SophiaMemoryValidationError(
+   249→        `content exceeds the ${SOPHIA_MEMORY_CONTENT_MAX_CHARS}-character bound (got ${content.length}).`
+   250→      );
+   251→    }
+   252→    return content.trim();
+   253→  }
+   254→
+   255→  private validateProvenance(provenance: string): string {
+   256→    if (typeof provenance !== 'string' || !provenance.trim()) {
+   257→      throw new SophiaMemoryValidationError('provenance must be a non-empty source reference.');
+   258→    }
+   259→    if (provenance.length > SOPHIA_MEMORY_PROVENANCE_MAX_CHARS) {
+   260→      throw new SophiaMemoryValidationError(
+   261→        `provenance exceeds the ${SOPHIA_MEMORY_PROVENANCE_MAX_CHARS}-character bound.`
+   262→      );
+   263→    }
+   264→    return provenance.trim();
+   265→  }
+   266→
+   267→  private validateConfidence(confidence: number): number {
+   268→    if (typeof confidence !== 'number' || !Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+   269→      throw new SophiaMemoryValidationError('confidence must be a finite number in [0, 1].');
+   270→    }
+   271→    return confidence;
+   272→  }
+   273→
+   274→  /**
+   275→   * M4-A HARDENING: deterministic fail-closed check on the AUTHORITY /
+   276→   * PRIVILEGE / CONTROL / GOVERNANCE semantic category (see
+   277→   * authority-content-guard.ts). Applied on create AND on content updates
+   278→   * so neither ingress path — capture or founder-direct authoring — can
+   279→   * persist authorization-bearing personal memory.
+   280→   */
+   281→  private validateNotAuthorityContent(content: string): string {
+   282→    const evaluation = evaluateAuthorityContent(content);
+   283→    if (evaluation.blocked) {
+   284→      throw new SophiaMemoryAuthorityError();
+   285→    }
+   286→    return content;
+   287→  }
+   288→
+   289→  /**
+   290→   * Resolves a memory from the durable file store (the ONLY read source today)
+   291→   * and enforces founder ownership STRICTLY. Existence + owner mismatch fails
+   292→   * closed (403); the victim's content is never returned to the caller.
+   293→   */
+   294→  private getOwnedMemory(founderId: string, memoryId: string): SophiaMemoryRecord {
+   295→    const record = this.fileStore.getItem<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION, memoryId);
+   296→    if (!record) {
+   297→      throw new SophiaMemoryNotFoundError(
+   298→        `Personal memory "${memoryId}" not found for Founder "${founderId}".`
+   299→      );
+   300→    }
+   301→    if (record.founderId !== founderId) {
+   302→      throw new SophiaMemorySecurityError(
+   303→        `Principal "${founderId}" is not authorized to access personal memory "${memoryId}".`
+   304→      );
+   305→    }
+   306→    return record;
+   307→  }
+   308→
+   309→  // --------------------------------------------------------------------------
+   310→  // Writes
+   311→  // --------------------------------------------------------------------------
+   312→
+   313→  /**
+   314→   * Creates a personal memory bound to the authenticated founder.
+   315→   *
+   316→   * Idempotency (ChatMessage convention): when a non-empty idempotencyKey is
+   317→   * supplied and a memory with the SAME key already exists for the SAME
+   318→   * founder, the existing record is returned and nothing is written. Without
+   319→   * a key there is NO dedupe. The key is founder-scoped — Founder B may use
+   320→   * Founder A's key without collision.
+   321→   *
+   322→   * Lifecycle: created records are ACTIVE by default (founder-direct). The
+   323→   * M4-A capture path creates INACTIVE candidates (active: false) that stay
+   324→   * out of every context render until a Founder explicitly activates them.
+   325→   */
+   326→  public async createMemory(params: CreateSophiaMemoryParams): Promise<SophiaMemoryRecord> {
+   327→    const founderId = this.requireFounderId(params.founderId);
+   328→    const memoryType = this.validateMemoryType(params.memoryType);
+   329→    const content = this.validateNotAuthorityContent(this.validateContent(params.content));
+   330→    const provenance = this.validateProvenance(params.provenance || 'founder_direct');
+   331→    const confidence = this.validateConfidence(params.confidence ?? 0.8);
+   332→
+   333→    const cleanKey =
+   334→      typeof params.idempotencyKey === 'string' && params.idempotencyKey.trim()
+   335→        ? params.idempotencyKey.trim()
+   336→        : undefined;
+   337→
+   338→    const now = new Date().toISOString();
+   339→    const record: SophiaMemoryRecord = {
+   340→      id: `smem-${randomUUID()}`,
+   341→      founderId,
+   342→      memoryType,
+   343→      content,
+   344→      provenance,
+   345→      confidence,
+   346→      active: params.active ?? true,
+   347→      idempotencyKey: cleanKey,
+   348→      createdAt: now,
+   349→      updatedAt: now,
+   350→      metadata: params.metadata && typeof params.metadata === 'object' ? { ...params.metadata } : {},
+   351→    };
+   352→
+   353→    // 1. Atomic durable file write (authoritative today). The idempotency
+   354→    //    check and the save are ONE serialized cross-process read-check-write
+   355→    //    unit (M4-A hardening): two concurrent creators of the same key can
+   356→    //    no longer interleave the check and both persist, and concurrent
+   357→    //    writers can no longer silently erase each other's records. The lock
+   358→    //    is re-entrant, so the saveItem inside runs without re-acquiring.
+   359→    const written = this.fileStore.withCollectionLock(SOPHIA_MEMORIES_COLLECTION, () => {
+   360→      if (cleanKey) {
+   361→        const existing = this.findByIdempotencyKeySync(founderId, cleanKey);
+   362→        if (existing) {
+   363→          return existing;
+   364→        }
+   365→      }
+   366→      this.fileStore.saveItemStrict(SOPHIA_MEMORIES_COLLECTION, record.id, record);
+   367→      return record;
+   368→    });
+   369→
+   370→    // Idempotent replay: the existing record is returned and nothing else
+   371→    // (including the Prisma mirror) is touched.
+   372→    if (written !== record) {
+   373→      return written;
+   374→    }
+   375→
+   376→    // 2. Best-effort Prisma dual-write (opportunistic mirror, never authoritative)
+   377→    try {
+   378→      if ((await isDatabaseAvailable()) && (prisma as any).sophiaMemory) {
+   379→        await (prisma as any).sophiaMemory.upsert({
+   380→          where: { id: record.id },
+   381→          create: {
+   382→            id: record.id,
+   383→            founderId: record.founderId,
+   384→            memoryType: record.memoryType,
+   385→            content: record.content,
+   386→            provenance: record.provenance,
+   387→            confidence: record.confidence,
+   388→            active: record.active,
+   389→            idempotencyKey: record.idempotencyKey ?? null,
+   390→            metadata: record.metadata,
+   391→            createdAt: new Date(record.createdAt),
+   392→            updatedAt: new Date(record.updatedAt),
+   393→          },
+   394→          update: {
+   395→            content: record.content,
+   396→            confidence: record.confidence,
+   397→            active: record.active,
+   398→            metadata: record.metadata,
+   399→            updatedAt: new Date(record.updatedAt),
+   400→          },
+   401→        });
+   402→      }
+   403→    } catch {
+   404→      // Non-fatal if DB is offline (local durable mode)
+   405→    }
+   406→
+   407→    return record;
+   408→  }
+   409→
+   410→  /**
+   411→   * Updates a personal memory's mutable fields (content / confidence / active).
+   412→   * Ownership fails closed (403); unknown id → 404.
+   413→   */
+   414→  public async updateMemory(
+   415→    founderId: string,
+   416→    memoryId: string,
+   417→    patch: UpdateSophiaMemoryParams
+   418→  ): Promise<SophiaMemoryRecord> {
+   419→    const owner = this.requireFounderId(founderId);
+   420→    if (typeof memoryId !== 'string' || !memoryId.trim()) {
+   421→      throw new SophiaMemoryValidationError('memoryId is required.');
+   422→    }
+   423→    // Fail-closed validation BEFORE the lock (pure checks, no store state):
+   424→    // a content patch may not introduce authorization/privilege semantics
+   425→    // into an existing record (M4-A hardening — PATCH must not become the
+   426→    // laundering path around the create-time guard).
+   427→    if (patch.content !== undefined) {
+   428→      this.validateNotAuthorityContent(this.validateContent(patch.content));
+   429→    }
+   430→    if (patch.confidence !== undefined) {
+   431→      this.validateConfidence(patch.confidence);
+   432→    }
+   433→    if (patch.active !== undefined && typeof patch.active !== 'boolean') {
+   434→      throw new SophiaMemoryValidationError('active must be a boolean.');
+   435→    }
+   436→
+   437→    // Read-merge-write serialized on the collection's cross-process lock
+   438→    // (M4-A hardening): a concurrent update or create can no longer be
+   439→    // silently erased by this writer, and vice versa.
+   440→    const next = this.fileStore.withCollectionLock(SOPHIA_MEMORIES_COLLECTION, () => {
+   441→      const record = this.getOwnedMemory(owner, memoryId.trim());
+   442→
+   443→      const updated: SophiaMemoryRecord = { ...record };
+   444→
+   445→      if (patch.content !== undefined) {
+   446→        updated.content = this.validateContent(patch.content);
+   447→      }
+   448→      if (patch.confidence !== undefined) {
+   449→        updated.confidence = this.validateConfidence(patch.confidence);
+   450→      }
+   451→      if (patch.active !== undefined) {
+   452→        updated.active = patch.active;
+   453→        // M4-A founder-review confirmation stamp: activating a pending
+   454→        // captured candidate records WHEN the Founder confirmed it. This is
+   455→        // deterministic lifecycle metadata (server-side), not new authority —
+   456→        // the record only becomes visible in context because active is now
+   457→        // true, exactly like any founder-direct memory.
+   458→        if (patch.active === true && updated.metadata?.captureStatus === 'pending') {
+   459→          updated.metadata = {
+   460→            ...updated.metadata,
+   461→            captureStatus: 'confirmed',
+   462→            confirmedAt: new Date().toISOString(),
+   463→          };
+   464→        }
+   465→      }
+   466→      updated.updatedAt = new Date().toISOString();
+   467→
+   468→      // 1. Atomic durable file write (STRICT — M4-A hardening: a failed
+   469→      //    authoritative write THROWS instead of returning a phantom update)
+   470→      this.fileStore.saveItemStrict(SOPHIA_MEMORIES_COLLECTION, updated.id, updated);
+   471→      return updated;
+   472→    });
+   473→
+   474→    // 2. Best-effort Prisma dual-write
+   475→    try {
+   476→      if ((await isDatabaseAvailable()) && (prisma as any).sophiaMemory) {
+   477→        await (prisma as any).sophiaMemory.update({
+   478→          where: { id: next.id },
+   479→          data: {
+   480→            content: next.content,
+   481→            confidence: next.confidence,
+   482→            active: next.active,
+   483→            metadata: next.metadata as any,
+   484→            updatedAt: new Date(next.updatedAt),
+   485→          },
+   486→        });
+   487→      }
+   488→    } catch {
+   489→      // Non-fatal (mirror only)
+   490→    }
+   491→
+   492→    return next;
+   493→  }
+   494→
+   495→  /**
+   496→   * Deletes a personal memory. Ownership fails closed (403); unknown id →
+   497→   * returns false (idempotent delete for the OWNER — a second delete of a
+   498→   * memory the caller legitimately owned is a no-op, never an error).
+   499→   */
+   500→  public async deleteMemory(founderId: string, memoryId: string): Promise<boolean> {
+   501→    const owner = this.requireFounderId(founderId);
+   502→    if (typeof memoryId !== 'string' || !memoryId.trim()) {
+   503→      throw new SophiaMemoryValidationError('memoryId is required.');
+   504→    }
+   505→    const id = memoryId.trim();
+   506→
+   507→    // Read-check-delete serialized on the collection's cross-process lock
+   508→    // (M4-A hardening — same race class as create/update).
+   509→    const deleted = this.fileStore.withCollectionLock(SOPHIA_MEMORIES_COLLECTION, () => {
+   510→      const record = this.fileStore.getItem<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION, id);
+   511→      if (!record) {
+   512→        return false;
+   513→      }
+   514→      if (record.founderId !== owner) {
+   515→        throw new SophiaMemorySecurityError(
+   516→          `Principal "${owner}" is not authorized to delete personal memory "${id}".`
+   517→        );
+   518→      }
+   519→      // 1. Authoritative durable file delete (STRICT — a failed delete-write
+   520→      //    throws instead of reporting a deletion that never reached disk)
+   521→      return this.fileStore.deleteItemStrict(SOPHIA_MEMORIES_COLLECTION, id);
+   522→    });
+   523→
+   524→    if (!deleted) {
+   525→      return false;
+   526→    }
+   527→
+   528→    // 2. Best-effort Prisma mirror delete
+   529→    try {
+   530→      if ((await isDatabaseAvailable()) && (prisma as any).sophiaMemory) {
+   531→        await (prisma as any).sophiaMemory.delete({ where: { id } }).catch(() => {});
+   532→      }
+   533→    } catch {
+   534→      // Non-fatal (mirror only)
+   535→    }
+   536→
+   537→    return true;
+   538→  }
+   539→
+   540→  // --------------------------------------------------------------------------
+   541→  // Reads (DurableFileStore ONLY — Prisma rows are write-only shadows)
+   542→  // --------------------------------------------------------------------------
+   543→
+   544→  /**
+   545→   * Retrieves one personal memory, strictly validating ownership.
+   546→   * Unknown id → null; owner mismatch → SophiaMemorySecurityError (403).
+   547→   */
+   548→  public async getMemory(founderId: string, memoryId: string): Promise<SophiaMemoryRecord | null> {
+   549→    const owner = this.requireFounderId(founderId);
+   550→    if (typeof memoryId !== 'string' || !memoryId.trim()) {
+   551→      return null;
+   552→    }
+   553→    const record = this.fileStore.getItem<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION, memoryId.trim());
+   554→    if (!record) {
+   555→      return null;
+   556→    }
+   557→    if (record.founderId !== owner) {
+   558→      throw new SophiaMemorySecurityError(
+   559→        `Principal "${owner}" is not authorized to access personal memory "${memoryId.trim()}".`
+   560→      );
+   561→    }
+   562→    return { ...record };
+   563→  }
+   564→
+   565→  /**
+   566→   * Deterministic, founder-scoped, bounded retrieval.
+   567→   *
+   568→   * Ordering: updatedAt DESC, then id ASC (total, stable, explainable order).
+   569→   * Filters: memoryType (exact allow-list match), active flag. Limit defaults
+   570→   * to 20 and is hard-capped at 50. No scoring, no vectors, no LLM decisions.
+   571→   */
+   572→  public async listMemories(
+   573→    founderId: string,
+   574→    opts?: { memoryType?: SophiaMemoryType; active?: boolean; limit?: number }
+   575→  ): Promise<SophiaMemoryRecord[]> {
+   576→    const owner = this.requireFounderId(founderId);
+   577→
+   578→    const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
+   579→    let items = Object.values(all).filter((m) => m && m.founderId === owner);
+   580→
+   581→    if (opts?.memoryType !== undefined) {
+   582→      const type = this.validateMemoryType(opts.memoryType);
+   583→      items = items.filter((m) => m.memoryType === type);
+   584→    }
+   585→    if (opts?.active !== undefined) {
+   586→      items = items.filter((m) => m.active === opts.active);
+   587→    }
+   588→
+   589→    items.sort((a, b) => {
+   590→      const ta = new Date(a.updatedAt).getTime();
+   591→      const tb = new Date(b.updatedAt).getTime();
+   592→      if (tb !== ta) return tb - ta;
+   593→      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+   594→    });
+   595→
+   596→    const requested = opts?.limit ?? SOPHIA_MEMORY_LIST_DEFAULT_LIMIT;
+   597→    const limit = Math.max(1, Math.min(SOPHIA_MEMORY_LIST_MAX_LIMIT, Math.floor(requested)));
+   598→    return items.slice(0, limit).map((m) => ({ ...m }));
+   599→  }
+   600→
+   601→  /**
+   602→   * Founder-scoped idempotency lookup (file-backed, like the turn gate).
+   603→   */
+   604→  public async findByIdempotencyKey(
+   605→    founderId: string,
+   606→    idempotencyKey: string
+   607→  ): Promise<SophiaMemoryRecord | null> {
+   608→    return this.findByIdempotencyKeySync(founderId, idempotencyKey);
+   609→  }
+   610→
+   611→  private findByIdempotencyKeySync(founderId: string, idempotencyKey: string): SophiaMemoryRecord | null {
+   612→    const owner = this.requireFounderId(founderId);
+   613→    if (typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
+   614→      return null;
+   615→    }
+   616→    const key = idempotencyKey.trim();
+   617→    const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
+   618→    for (const m of Object.values(all)) {
+   619→      if (m && m.founderId === owner && m.idempotencyKey === key) {
+   620→        return m;
+   621→      }
+   622→    }
+   623→    return null;
+   624→  }
+   625→
+   626→  /**
+   627→   * M4-A capture-replay guard: reports whether this founder already has any
+   628→   * memory whose idempotencyKey starts with the given prefix. The capture
+   629→   * stage derives deterministic keys ("m4cap:<conversationId>:<turnId>:<n>")
+   630→   * from authoritative turn identity; a REPLAYED turn must never capture
+   631→   * again — the prefix check short-circuits the whole capture stage before
+   632→   * any extraction or persistence happens. Unbounded by list limits (reads
+   633→   * the whole founder-scoped collection, which is the same read the store
+   634→   * already performs for dedupe).
+   635→   */
+   636→  public async hasIdempotencyKeyPrefix(founderId: string, prefix: string): Promise<boolean> {
+   637→    const owner = this.requireFounderId(founderId);
+   638→    if (typeof prefix !== 'string' || !prefix.trim()) {
+   639→      return false;
+   640→    }
+   641→    const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
+   642→    return Object.values(all).some(
+   643→      (m) =>
+   644→        m &&
+   645→        m.founderId === owner &&
+   646→        typeof m.idempotencyKey === 'string' &&
+   647→        m.idempotencyKey.startsWith(prefix)
+   648→    );
+   649→  }
+   650→
+   651→  /**
+   652→   * Helper for tests: clears the personal memory collection.
+   653→   */
+   654→  public clearForTests(): void {
+   655→    this.fileStore.writeCollection(SOPHIA_MEMORIES_COLLECTION, {});
+   656→  }
+   657→}
+   658→
