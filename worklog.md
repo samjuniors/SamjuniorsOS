@@ -523,3 +523,23 @@ Stage Summary:
 - All 8 Founder-priority items delivered in order: (1) pagination + authoritative dedupe — every record reachable, oldest-of-55 reviewable and actionable in the live UI; (2) task-scoped instructions deterministically skipped pre-provider at both turn and candidate level; (3) authority net widened bounded — 14/14 laundered blocked, 0 benign FPs; (4) context capacity ~doubled + starvation-free deterministic selection policy; (5) annotation tokenizer + polarity fixes verified on all observed cases; (6) Reject click-point verified unblocked live; (7) 429 characterized with a no-retry recommendation; (8) m0/m1 isolation fixed under both runners.
 - Security invariants unchanged and re-verified: no automatic activation (G12 source pin), inactive-by-default capture, cross-founder isolation, Company Brain isolation, secrets/company/injection containment, structured content-free observability (new TRANSIENT_TURN_SCOPE event).
 - Open: push of feat/m4a-p2-followup (257eb45) awaits a Founder token; retry/backoff decision deferred pending real-traffic 429 data (recommendation documented).
+
+---
+Task ID: 31
+Agent: main (Z.ai Code)
+Task: PUSH feat/m4a-p2-followup — Founder supplied the GitHub token (8-fix follow-up branch)
+
+Work Log:
+- Founder supplied a valid token (ghp_…). Remote state pre-push verified: feat/sophia-memory-capture-m4a @ accd5bc (Task 29 push intact), feat/m4a-p2-followup absent, main @ adf9a08.
+- Sandbox reset had destroyed the canonical clone (/home/z/samjuniorsos gone); original commit 257eb45 lost. Reconstruction: fresh clone from origin → branch feat/m4a-p2-followup from accd5bc → overlay the 14 files extracted from the verified mirror commit a9c994d (git archive → tar).
+- INTEGRITY: git hash-object on all 14 overlaid files == git rev-parse a9c994d:<path> for every file (14/14 blob-identical). Reconstructed tree = accd5bc base + the exact verified blobs = content of lost 257eb45.
+- MODE NORMALIZATION: mirror working-tree exec bits initially leaked 9 spurious 644→755 mode changes into the first commit attempt; corrected to match accd5bc's own modes exactly (10 files 644, 4 files 755 — the latter entered the remote as 755 in the earlier hardening push). Final diff vs accd5bc: 14 files, +776/−113, ZERO mode changes. (The worklog-30 figure +1786/−110 was the mirror-side stat whose base lacked the 1013-line harness file; vs accd5bc the harness is only a 9-line delta.)
+- Canonical committed: 4753480a58d432b7bdc6fd9f700be579b9a9318d on feat/m4a-p2-followup (parent accd5bc; author Sam Juniors <sam@samjuniors.dev>; message documents all 8 fixes + verification + reconstruction note). SHA necessarily differs from lost 257eb45 (committer timestamp), content blob-identical.
+- PUSHED: origin feat/m4a-p2-followup (new branch). Remote verified via GitHub API: branch HEAD sha == 4753480a58d432b7bdc6fd9f700be579b9a9318d (exact match), parent accd5bc, message/author intact. Token-free ls-remote confirms the branch is publicly readable.
+- Token hygiene: token removed from origin remote URL after verification (origin now https://github.com/samjuniors/SamjuniorsOS.git). Canonical working tree: clean.
+- PR-ready: https://github.com/samjuniors/SamjuniorsOS/pull/new/feat/m4a-p2-followup
+
+Stage Summary:
+- feat/m4a-p2-followup PUSHED and remote-verified (4753480) — the 8-item Founder priority fix list is now on the remote, branched cleanly off accd5bc.
+- Canonical clone re-established at /home/z/samjuniorsos (feat/m4a-p2-followup @ 4753480, clean) for future tasks.
+- Open: Founder may open the PR / merge at will; retry/backoff decision still deferred pending real-traffic 429 data (Task 30 recommendation stands); M4-B gate remains NOT READY (unchanged).

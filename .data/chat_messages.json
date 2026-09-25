@@ -640,5 +640,83 @@
       "ingress": "sofia_ask"
     },
     "createdAt": "2026-09-24T11:55:55.964Z"
+  },
+  "msg-7d78af6c-bbba-4538-ae7f-b57cf7882a26": {
+    "id": "msg-7d78af6c-bbba-4538-ae7f-b57cf7882a26",
+    "conversationId": "conv-b5c0fae9-2a09-4264-b27f-5344680c4be2",
+    "sender": "founder",
+    "role": "user",
+    "content": "#",
+    "idempotencyKey": "sofia-f27967ae-6d06-4cda-8281-5e1aa3b421a5",
+    "metadata": {},
+    "createdAt": "2026-09-25T08:14:05.793Z"
+  },
+  "msg-661aaf9e-9ede-4121-be78-4992a647dd2e": {
+    "id": "msg-661aaf9e-9ede-4121-be78-4992a647dd2e",
+    "conversationId": "conv-b5c0fae9-2a09-4264-b27f-5344680c4be2",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Good evening. I'm ready to assist you with any operational queries or directives. What would you like to discuss today?",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-f27967ae-6d06-4cda-8281-5e1aa3b421a5:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-25T08:14:07.139Z"
+  },
+  "msg-5b05058c-cdaa-4af0-ae34-62f25715e886": {
+    "id": "msg-5b05058c-cdaa-4af0-ae34-62f25715e886",
+    "conversationId": "conv-1f9cc0fb-460f-4c67-99ea-111aa2470130",
+    "sender": "founder",
+    "role": "user",
+    "content": "# #",
+    "idempotencyKey": "sofia-579435f3-ba4f-418b-9761-76df5f7fa199",
+    "metadata": {},
+    "createdAt": "2026-09-25T08:14:10.741Z"
+  },
+  "msg-7b8eb2b6-5c2a-48b7-a696-a2b3574537ed": {
+    "id": "msg-7b8eb2b6-5c2a-48b7-a696-a2b3574537ed",
+    "conversationId": "conv-1f9cc0fb-460f-4c67-99ea-111aa2470130",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Good evening. I'm ready for your directive when you are. [Personal Mind acknowledged]. K2-E2E-ex3s8y2k",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-579435f3-ba4f-418b-9761-76df5f7fa199:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-25T08:14:11.947Z"
+  },
+  "msg-4addd8c2-a169-409d-8317-26b160ec0dc7": {
+    "id": "msg-4addd8c2-a169-409d-8317-26b160ec0dc7",
+    "conversationId": "conv-1f9cc0fb-460f-4c67-99ea-111aa2470130",
+    "sender": "founder",
+    "role": "user",
+    "content": "Okay, what you are doing?",
+    "idempotencyKey": "sofia-d7d542c3-0c33-4c04-9882-f4cedef8115f",
+    "metadata": {},
+    "createdAt": "2026-09-25T08:14:30.382Z"
+  },
+  "msg-fcda38e1-39a6-4655-80fb-034764fe87da": {
+    "id": "msg-fcda38e1-39a6-4655-80fb-034764fe87da",
+    "conversationId": "conv-1f9cc0fb-460f-4c67-99ea-111aa2470130",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "As the Chief Operating Officer & Master Orchestrator of SamJuniors OS, I'm here to bridge you with the control plane. I can provide company metrics, manage workflows, propose directives, and execute operational tasks. Currently, the council is idle and available for your directives. What would you like me to focus on?",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-d7d542c3-0c33-4c04-9882-f4cedef8115f:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-25T08:14:31.995Z"
   }
 }
