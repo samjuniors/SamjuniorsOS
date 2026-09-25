@@ -3,13 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { SophiaContextAssembler, SophiaServerGateway, TurnStopwatch } from '../../src/lib/server/sophia';
 import { CompanyStateStore } from '../../src/lib/server/state/state-store';
-import { CompanyMemoryStore, INITIAL_COMPANY_MEMORIES } from '../../src/lib/server/memory/memory-store';
-import { CompanyKnowledgeStore, CANONICAL_COMPANY_KNOWLEDGE } from '../../src/lib/server/knowledge/knowledge-store';
+import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
 import { AgentRunStore } from '../../src/lib/server/agents/run-store';
-import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approval-store';
-import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store';
 import { CompanyContextProvider } from '../../src/lib/server/context/company-context';
-import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 import {
   INITIAL_INITIATIVES,
   SAMPLE_FINANCIAL_MODEL,
@@ -36,11 +32,53 @@ import {
  */
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
-const STATE_FILE = path.join(DATA_DIR, 'company_state.json');
+
+/**
+ * P2 FOLLOW-UP (test isolation): every .data file this suite touches is
+ * snapshotted BEFORE the run and restored AFTER — the previous finally
+ * re-SEEDED company knowledge/memory collections (leaving
+ * company_knowledge.json + instance.lock behind on fresh .data) and only
+ * handled company_state.json explicitly. Snapshot-restore is exact for
+ * both cases: pre-existing files return to their original bytes, files the
+ * suite created are removed. instance.lock is included so a stale lock
+ * with this process's PID never outlives the run.
+ */
+const TOUCHED_DATA_FILES = [
+  'company_state.json',
+  'company_knowledge.json',
+  'company_memories.json',
+  'agent_runs.json',
+  'epistemic_claims.json',
+  'idempotency_records.json',
+  'instance.lock',
+].map((name) => path.join(DATA_DIR, name));
+const TOUCHED_SNAPSHOTS: Array<{ file: string; original: string | null }> = [];
+
+function snapshotTouchedDataFiles(): void {
+  for (const file of TOUCHED_DATA_FILES) {
+    TOUCHED_SNAPSHOTS.push({
+      file,
+      original: fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : null,
+    });
+  }
+}
+
+function restoreTouchedDataFiles(): void {
+  for (const { file, original } of TOUCHED_SNAPSHOTS) {
+    try {
+      if (original !== null) {
+        fs.writeFileSync(file, original, 'utf-8');
+      } else if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+      }
+    } catch {
+      // best-effort restore (same contract as before)
+    }
+  }
+}
 
 let passed = 0;
 let failed = 0;
-let originalStateFile: string | null = null;
 
 async function test(name: string, fn: () => Promise<void>) {
   try {
@@ -52,32 +90,6 @@ async function test(name: string, fn: () => Promise<void>) {
     console.error(`         Error: ${err.message}`);
     failed++;
     process.exitCode = 1;
-  }
-}
-
-async function resetStores(): Promise<void> {
-  try {
-    InMemoryApprovalStore.getInstance().clear();
-    const runStore = AgentRunStore.getInstance();
-    runStore.runs.clear();
-    DurableFileStore.getInstance().clearCollection('agent_runs');
-    const claimStore = EpistemicClaimStore.getInstance();
-    claimStore.claims.clear();
-    claimStore.facts.clear();
-    claimStore.verifications.clear();
-    claimStore.signals.clear();
-    claimStore.sources.clear();
-    DurableFileStore.getInstance().clearCollection('epistemic_claims');
-    // Pre-M3 correction: durable collections are cleared BEFORE the seed
-    // sets (the old order wrote seeds then wiped the file), and the async
-    // store resets are AWAITED so durable writes complete before the next
-    // test body runs — no background write races across tests.
-    DurableFileStore.getInstance().clearCollection('company_memories');
-    DurableFileStore.getInstance().clearCollection('company_knowledge');
-    await CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
-    await CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
-  } catch {
-    // Ignore store reset errors in test setup
   }
 }
 
@@ -97,10 +109,8 @@ async function runTests() {
   console.log('M1 CANONICAL STATE AUTHORITY REGRESSION SUITE');
   console.log('======================================================\n');
 
-  // --- .data isolation: back up any pre-existing durable company_state ---
-  if (fs.existsSync(STATE_FILE)) {
-    originalStateFile = fs.readFileSync(STATE_FILE, 'utf-8');
-  }
+  // --- .data isolation: back up every touched durable file (P2 follow-up) ---
+  snapshotTouchedDataFiles();
 
   let originalMrr: number;
   let originalBurn: number;
@@ -308,19 +318,12 @@ async function runTests() {
     });
 
   } finally {
-    // --- restore environment so the dev app is unaffected ---
+    // --- restore environment so the dev app is unaffected (P2 follow-up:
+    // exact snapshot-restore of every touched .data file — no re-seeded
+    // leftovers on fresh .data, no stale instance.lock with a dead PID) ---
     try {
       restoreCanonicalOperationalState();
-      if (originalStateFile !== null) {
-        fs.writeFileSync(STATE_FILE, originalStateFile, 'utf-8');
-      } else if (fs.existsSync(STATE_FILE)) {
-        fs.unlinkSync(STATE_FILE);
-      }
-      // Remove the marker memory from durable storage (test artifact hygiene).
-      try {
-        DurableFileStore.getInstance().deleteItem('company_memories', 'mem-m1-provider-check');
-      } catch {}
-      await resetStores();
+      restoreTouchedDataFiles();
     } catch {}
   }
 
@@ -329,7 +332,38 @@ async function runTests() {
   console.log('======================================================\n');
 }
 
-runTests().catch((err) => {
-  console.error('M1 suite crashed:', err);
-  process.exitCode = 1;
-});
+/**
+ * P2 FOLLOW-UP (test isolation — same fix as the M0 suite): under `bun test`
+ * the runner force-exits after module evaluation when no bun:test tests
+ * are registered, killing the async suite's pending timers BEFORE the
+ * finally cleanup runs (this is exactly how the M0 leftover state was
+ * produced in the phase-2 audit). Registering the suite as a REAL bun:test
+ * when the runner is detected makes the runner await it to completion;
+ * under `bun run` the registration throws ("Cannot use test outside of the
+ * test runner") and the classic module-level invocation below drives it —
+ * unchanged protocol, single execution under both runners.
+ */
+(async () => {
+  let registered = false;
+  try {
+    const bunTest: any = await import('bun:test');
+    const testFn = bunTest.test ?? bunTest.default?.test;
+    if (typeof testFn === 'function') {
+      testFn('M1 canonical state authority regression suite (async)', async () => {
+        await runTests();
+        if (failed > 0) {
+          throw new Error(`${failed} M1 test(s) failed — see the log above`);
+        }
+      });
+      registered = true;
+    }
+  } catch {
+    // Not under the bun test runner (normal `bun run` protocol) — fall through.
+  }
+  if (!registered) {
+    runTests().catch((err) => {
+      console.error('M1 suite crashed:', err);
+      process.exitCode = 1;
+    });
+  }
+})();

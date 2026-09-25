@@ -687,9 +687,12 @@ async function main() {
     partiallyTruncated: partiallyTruncated,
     starvedOfTwelve: starved.length,
     starvedIndices: starvedIndices,
-    // empirical capacity for ~33-char memories within the 600-char budget
-    effectiveCapacityShortMemories: 1 + Math.floor((600 - sOne.length) / Math.max(1, marginalPerMemory)),
-    retrievedByAssembler: 5, // hard-coded retrieval limit (active, limit: 5)
+    // empirical capacity for ~33-char memories within the partition budget
+    effectiveCapacityShortMemories: 1 + Math.floor((1200 - sOne.length) / Math.max(1, marginalPerMemory)),
+    // P2 follow-up: retrieval is now the deterministic selection policy
+    // (full active set considered, confidence→recency→id rank, type
+    // round-robin, hard-capped at 20) — see context-assembly.ts
+    retrievedByAssembler: 20,
   };
 
   // =========================================================================

@@ -96,6 +96,11 @@ export const SOPHIA_MEMORY_CONTENT_MAX_CHARS = 2000;
 export const SOPHIA_MEMORY_PROVENANCE_MAX_CHARS = 500;
 export const SOPHIA_MEMORY_LIST_DEFAULT_LIMIT = 20;
 export const SOPHIA_MEMORY_LIST_MAX_LIMIT = 50;
+/** Page-offset hard bound (P2 follow-up): paginated reads may advance at most
+ *  this many records into the collection — bounds any single API call while
+ *  making every record reachable (the pre-pagination hard cap hid records
+ *  beyond the first 50 from every reader). */
+export const SOPHIA_MEMORY_LIST_MAX_OFFSET = 10000;
 
 export interface SophiaMemoryRecord {
   id: string;
@@ -568,13 +573,75 @@ export class SophiaMemoryStore {
    * Ordering: updatedAt DESC, then id ASC (total, stable, explainable order).
    * Filters: memoryType (exact allow-list match), active flag. Limit defaults
    * to 20 and is hard-capped at 50. No scoring, no vectors, no LLM decisions.
+   *
+   * PAGINATION (P2 follow-up — queue >50 visibility): `offset` skips the
+   * first N records of the SAME deterministic order (applied after sorting,
+   * before the limit slice), so page k is `listMemories(f, { offset: k*50,
+   * limit: 50 })`. Without it, the hard cap made the oldest pending review
+   * candidates permanently invisible to both the API and the UI once the
+   * founder-scoped set exceeded 50 records. Offset is clamped to
+   * [0, SOPHIA_MEMORY_LIST_MAX_OFFSET] and a too-large offset yields an empty
+   * page (a legitimate "past the end" result, not an error).
    */
   public async listMemories(
     founderId: string,
-    opts?: { memoryType?: SophiaMemoryType; active?: boolean; limit?: number }
+    opts?: { memoryType?: SophiaMemoryType; active?: boolean; limit?: number; offset?: number }
   ): Promise<SophiaMemoryRecord[]> {
     const owner = this.requireFounderId(founderId);
 
+    const items = this.sortedFounderMemories(owner, opts);
+
+    const requested = opts?.limit ?? SOPHIA_MEMORY_LIST_DEFAULT_LIMIT;
+    const limit = Math.max(1, Math.min(SOPHIA_MEMORY_LIST_MAX_LIMIT, Math.floor(requested)));
+    const offset = Math.max(0, Math.min(SOPHIA_MEMORY_LIST_MAX_OFFSET, Math.floor(opts?.offset ?? 0)));
+    return items.slice(offset, offset + limit).map((m) => ({ ...m }));
+  }
+
+  /**
+   * TOTAL record count for the same founder-scoped filter listMemories uses
+   * (P2 follow-up): callers paginating the review queue need the authoritative
+   * total to compute hasMore / badge counts — the page length alone cannot
+   * distinguish "exactly one page" from "one visible page of many".
+   */
+  public async countMemories(
+    founderId: string,
+    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+  ): Promise<number> {
+    const owner = this.requireFounderId(founderId);
+    return this.sortedFounderMemories(owner, opts).length;
+  }
+
+  /**
+   * AUTHORITATIVE COLLECTION READ (P2 follow-up — dedupe must not read the
+   * visible page): UNBOUNDED founder-scoped read used ONLY by internal
+   * deterministic consumers that must compare against the whole collection:
+   *   - the capture stage's duplicate detection (a duplicate of a record
+   *     outside the newest-50 window must still be rejected — the phase-2
+   *     observation proved the paginated read re-persisted such duplicates);
+   *   - the review-queue annotation pool (duplicateOf/similarTo/contradicts
+   *     must consider the founder's full set, active + pending).
+   * This is the SAME full-collection read every store mutation already
+   * performs internally; it is not a new search surface (no filters beyond
+   * founder scope / active / type, same total order, no vectors). Route-level
+   * pagination (limit/offset) governs what a CLIENT sees; dedupe correctness
+   * is a store-internal concern and must never depend on page visibility.
+   */
+  public async listAllMemories(
+    founderId: string,
+    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+  ): Promise<SophiaMemoryRecord[]> {
+    const owner = this.requireFounderId(founderId);
+    return this.sortedFounderMemories(owner, opts).map((m) => ({ ...m }));
+  }
+
+  /**
+   * Shared deterministic read: full founder-scoped collection, optional exact
+   * type/active filters, total order (updatedAt DESC, id ASC).
+   */
+  private sortedFounderMemories(
+    owner: string,
+    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+  ): SophiaMemoryRecord[] {
     const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
     let items = Object.values(all).filter((m) => m && m.founderId === owner);
 
@@ -592,10 +659,7 @@ export class SophiaMemoryStore {
       if (tb !== ta) return tb - ta;
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
-
-    const requested = opts?.limit ?? SOPHIA_MEMORY_LIST_DEFAULT_LIMIT;
-    const limit = Math.max(1, Math.min(SOPHIA_MEMORY_LIST_MAX_LIMIT, Math.floor(requested)));
-    return items.slice(0, limit).map((m) => ({ ...m }));
+    return items;
   }
 
   /**

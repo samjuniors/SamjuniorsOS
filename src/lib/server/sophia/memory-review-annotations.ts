@@ -76,6 +76,16 @@ const NEGATIVE_POLARITY_PATTERNS: RegExp[] = [
   /\bdo not (?:like|want|prefer|enjoy)\b/,
   /\bdon'?t (?:like|want|prefer|enjoy)\b/,
   /\bnever (?:wants?|likes?|prefers?|uses?|wears?|reads?)\b/,
+  // P2 follow-up (missed live contradictions): realistic phrasings that
+  // escaped the original list — "prefers not to", "no longer likes",
+  // "is not a fan of", "doesn't care for". All are OBVIOUS negated-polarity
+  // forms (bounded additions; no semantics, no antonymy).
+  /\b(?:prefer|prefers|preferred) not to\b/,
+  /\bno longer (?:likes?|loves?|prefers?|wants?|uses?|wears?|reads?|enjoys?)\b/,
+  /\b(?:is|are|am) not a fan of\b/,
+  /\b(?:is|are|am)n'?t a fan of\b/,
+  /\bdoesn'?t care for\b/,
+  /\bstopped (?:liking|using|wearing|reading|preferring)\b/,
 ];
 
 /** Positive-polarity verb forms. */
@@ -133,7 +143,15 @@ const CONTRADICTION_MIN_SHARED_OBJECTS = 2;
 const CONTRADICTION_OBJECT_JACCARD = 0.5;
 
 function tokenize(normalized: string): Set<string> {
-  const raw = normalized.split(' ').filter((t) => t.length > 1);
+  // P2 follow-up (punctuation-variant similarity miss): internal punctuation
+  // used to survive INSIDE tokens ("tea," ≠ "tea"), so comma/variant pairs
+  // scored ~0.43 Jaccard and evaded the similarTo hint. Tokens are now
+  // reduced to their alphanumeric core, matching the authority guard's
+  // normalization philosophy: punctuation cannot split a keyword.
+  const raw = normalized
+    .split(' ')
+    .map((t) => t.replace(/[^a-z0-9]/g, ''))
+    .filter((t) => t.length > 1);
   // Drop the most common English function words so similarity reflects
   // content words, not shared grammar.
   const stop = new Set([

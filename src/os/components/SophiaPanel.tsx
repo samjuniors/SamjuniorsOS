@@ -95,24 +95,36 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
   const [annotations, setAnnotations] = useState<ReviewAnnotations>({});
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [busyId, setBusyId] = useState<string>("");
+  // P2 follow-up (queue >50 visibility): the queue pages through the
+  // founder's full pending set (50 per page, deterministic order) instead of
+  // silently hiding the oldest candidates. `total` is the authoritative
+  // count for the badge; "Show more" advances the offset.
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
 
-  const load = async () => {
+  const PAGE_SIZE = 50;
+
+  const load = async (offsetArg = 0, append = false) => {
     setStatus("loading");
     try {
-      const res = await fetch("/api/sofia/memory?active=false&limit=50");
+      const res = await fetch(`/api/sofia/memory?active=false&limit=${PAGE_SIZE}&offset=${offsetArg}`);
       if (!res.ok) throw new Error(`queue fetch failed (${res.status})`);
       const body = await res.json();
       const list = Array.isArray(body.memories) ? body.memories : [];
-      setPending(list);
-      setAnnotations(body.annotations ?? {});
+      setPending((prev) => (append ? [...prev, ...list] : list));
+      setAnnotations((prev) => ({ ...prev, ...(body.annotations ?? {}) }));
+      setOffset(offsetArg);
+      setTotal(typeof body.total === "number" ? body.total : list.length);
+      setHasMore(body.hasMore === true);
       setStatus("ready");
-      onCount?.(list.length);
+      onCount?.(typeof body.total === "number" ? body.total : list.length);
     } catch {
       setStatus("error");
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(0, false); }, []);
 
   const approve = async (id: string) => {
     setBusyId(id);
@@ -123,7 +135,7 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
         body: JSON.stringify({ id, active: true }),
       });
     } catch { /* review action is best-effort UI; server state is authoritative */ }
-    await load();
+    await load(0, false);
     setBusyId("");
   };
 
@@ -132,7 +144,7 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
     try {
       await fetch(`/api/sofia/memory?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     } catch { /* same */ }
-    await load();
+    await load(0, false);
     setBusyId("");
   };
 
@@ -143,7 +155,7 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
     return (
       <div className="space-y-1.5">
         <p className="text-[11.5px] text-rose-300/90">Couldn't load the memory review queue.</p>
-        <button onClick={load} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white">
+        <button onClick={() => load(0, false)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white">
           <RefreshCw size={11} /> Retry
         </button>
       </div>
@@ -154,8 +166,9 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
   }
 
   return (
-    <div className="space-y-2 max-h-72 overflow-y-auto [scrollbar-width:thin] pr-0.5">
-      {pending.map((m) => {
+    <div className="space-y-2">
+      <div className="max-h-72 space-y-2 overflow-y-auto [scrollbar-width:thin] pr-0.5 pb-4">
+        {pending.map((m) => {
         const note = annotations[m.id];
         const gateReasons = m.metadata?.gate?.reasons?.filter((r) => r !== "PASSED_DETERMINISTIC_CHECKS") ?? [];
         return (
@@ -199,8 +212,24 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
               {gateReasons.length > 0 && <span className="ml-auto font-mono text-[9.5px] text-slate-600" title={`Gate: ${gateReasons.join(", ")}`}>gate: {gateReasons[0]}</span>}
             </div>
           </div>
-        );
-      })}
+        )})}
+      </div>
+      {/* P2 follow-up: page controls — the badge total is the authoritative
+          count; "Show more" pages the queue so the OLDEST pending candidates
+          are reviewable, not just the newest 50. */}
+      {(hasMore || offset > 0) && (
+        <p className="text-[10.5px] text-slate-500">
+          Showing {pending.length} of {total} pending
+          {hasMore && (
+            <button
+              onClick={() => load(offset + PAGE_SIZE, true)}
+              className="ml-2 rounded-md border border-white/10 px-2 py-0.5 text-[10.5px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
+            >
+              Show more
+            </button>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -215,13 +244,14 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
 
   // Discoverability: the collapsed pill needs the pending-capture count even
   // before the panel is opened once — a one-shot governed GET on mount (the
-  // open panel's MemoryReview keeps the live count afterwards).
+  // open panel's MemoryReview keeps the live count afterwards). Uses the
+  // authoritative `total` (P2 follow-up) so a >50 queue reports its real size.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/sofia/memory?active=false&limit=50")
+    fetch("/api/sofia/memory?active=false&limit=1")
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
-        if (!cancelled && Array.isArray(body?.memories)) setPendingMemoryCount(body.memories.length);
+        if (!cancelled && typeof body?.total === "number") setPendingMemoryCount(body.total);
       })
       .catch(() => {});
     return () => { cancelled = true; };

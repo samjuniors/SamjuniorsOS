@@ -4,7 +4,7 @@ import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
 import { CompanyKnowledgeStore } from '../knowledge/knowledge-store';
 import { CompanyMemoryStore } from '../memory/memory-store';
-import { SophiaMemoryStore } from './personal-memory-store';
+import { SophiaMemoryStore, SOPHIA_MEMORY_TYPES } from './personal-memory-store';
 import { buildActivityProjection } from '../activity/projection';
 import { SophiaAssembledContext, SophiaContextSlice } from './types';
 
@@ -48,8 +48,72 @@ const PARTITION_LIMITS = {
   historicalPrecedent: 800,  // ~200 tokens
   recentActivity: 800,       // ~200 tokens
   dialogueHistory: 1000,     // ~250 tokens
-  personalMind: 600,         // ~150 tokens (M3 K-2 founder personal context)
+  // P2 follow-up (context starvation): 600 chars admitted only ~3 short
+  // memories after wrapper overhead — the deterministic retrieval policy
+  // (below) is useless if the render budget starves whatever it selects.
+  // 1200 chars (~300 tokens) is in line with the other partitions
+  // (800–1400) and roughly doubles effective capacity for short memories.
+  personalMind: 1200,         // ~300 tokens (M3 K-2 founder personal context)
 };
+
+/**
+ * P2 FOLLOW-UP (context starvation — deterministic retrieval policy):
+ * The old read was `listMemories(active, limit 5)` — newest-first. With a
+ * founder holding more than a handful of active memories, (a) only the 5
+ * newest were even retrieved and (b) the 600-char budget rendered only
+ * ~3, so 10 of 12 observed memories were permanently starved. This remains
+ * DETERMINISTIC — no vectors, no embeddings, no model judgment:
+ *
+ *   1. CONSIDER the full active set (the store's authoritative founder-scoped
+ *      read — the same collection every mutation already reads), not a page.
+ *   2. RANK within each memory type: confidence DESC, then updatedAt DESC,
+ *      then id ASC (total, stable, explainable order — strongest-evidence
+ *      first, recency only as a tiebreak, so an old high-confidence memory
+ *      is no longer starved by a burst of newer low-confidence ones).
+ *   3. INTERLEAVE by memory type (round-robin over SOPHIA_MEMORY_TYPES
+ *      order): one memory per type per round — a pile of same-type captures
+ *      cannot crowd every other type out of the render.
+ *   4. CAP the retrieval at PERSONAL_MIND_RETRIEVAL_LIMIT (bounded work per
+ *      turn; the render budget applies the final truncation fail-safe).
+ */
+const PERSONAL_MIND_RETRIEVAL_LIMIT = 20;
+
+/**
+ * Deterministic personal-mind retrieval selection (see policy above).
+ * Pure function; explainable; stable for identical inputs.
+ */
+function selectPersonalMindMemories<T extends { memoryType: string; confidence: number; updatedAt: string; id: string }>(
+  all: T[]
+): T[] {
+  const byType = new Map<string, T[]>();
+  for (const m of all) {
+    const list = byType.get(m.memoryType) ?? [];
+    list.push(m);
+    byType.set(m.memoryType, list);
+  }
+  for (const list of byType.values()) {
+    list.sort((a, b) => {
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      const ta = new Date(a.updatedAt).getTime();
+      const tb = new Date(b.updatedAt).getTime();
+      if (tb !== ta) return tb - ta;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+  }
+  // Round-robin across types in the store's published allow-list order
+  // (deterministic; types not present are skipped).
+  const types = SOPHIA_MEMORY_TYPES.filter((t) => byType.has(t));
+  const queues = types.map((t) => byType.get(t)!);
+  const selected: T[] = [];
+  while (selected.length < PERSONAL_MIND_RETRIEVAL_LIMIT && queues.some((q) => q.length > 0)) {
+    for (const q of queues) {
+      if (selected.length >= PERSONAL_MIND_RETRIEVAL_LIMIT) break;
+      const next = q.shift();
+      if (next) selected.push(next);
+    }
+  }
+  return selected;
+}
 
 function clamp(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
@@ -444,10 +508,14 @@ export class SophiaContextAssembler {
     if (opts.founderId && opts.founderId.trim()) {
       try {
         const memoryStore = SophiaMemoryStore.getInstance();
-        const personalMemories = await memoryStore.listMemories(opts.founderId.trim(), {
+        // P2 follow-up (context starvation): consider the FULL active set
+        // (authoritative founder-scoped read, not a newest-50 page) and apply
+        // the deterministic selection policy — confidence-ranked, type-
+        // round-robin, capped — instead of a raw newest-first limit-5 read.
+        const activeMemories = await memoryStore.listAllMemories(opts.founderId.trim(), {
           active: true,
-          limit: 5,
         });
+        const personalMemories = selectPersonalMindMemories(activeMemories);
 
         if (personalMemories.length > 0) {
           // Self-bounded, always well-formed container (see helper): the

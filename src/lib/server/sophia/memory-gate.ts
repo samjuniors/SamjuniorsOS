@@ -160,6 +160,45 @@ const TRANSIENT_STATE_PATTERN =
 const TRANSIENT_TIME_SCOPE_PATTERN =
   /\b(?:today|tonight|right\s+now|at\s+the\s+moment|this\s+(?:morning|afternoon|evening|week|month)|temporarily|for\s+now|just\s+for)\b/i;
 
+/**
+ * P2 FOLLOW-UP (transient-task laundering): explicitly task/temporal-scoped
+ * instructions are NOT stable personal preferences — "For this answer, be
+ * brief" became a durable-looking candidate in the phase-2 observation
+ * because the extractor paraphrases the scope marker away ("The founder
+ * prefers brief answers" carries no trace of "this answer"). Deterministic
+ * defense in TWO places, both using THIS pattern set (single source of truth):
+ *
+ *   1. TURN-LEVEL (capture stage, pre-extraction): when the founder's
+ *      ORIGINAL message contains an explicit task/temporal scope marker,
+ *      capture for the whole turn is skipped BEFORE any provider call — the
+ *      founder message is the only place the scope deterministically exists.
+ *   2. CANDIDATE-LEVEL (here, TRANSIENT_CONTENT): proposals that RETAIN a
+ *      scope marker ("prefers brief answers for this task") are rejected.
+ *
+ * DELIBERATE TRADEOFF (fail-safe direction): a stable preference stated in
+ * the SAME turn as a scoped instruction is also skipped — a missed memory
+ * costs nothing (the founder can author it directly through the governed
+ * route), while a laundered task-scoped instruction costs review-queue
+ * pollution and a false durable preference. This is deliberately NOT a
+ * semantic "task detector": it matches only EXPLICIT scope markers, bounded
+ * and auditable.
+ */
+const TASK_SCOPED_INSTRUCTION_PATTERNS: RegExp[] = [
+  /\bfor\s+this\s+(?:answer|reply|response|question|task|request|turn|message|session|conversation|chat|exchange|thread|one|time|instance|launch|migration)\b/i,
+  /\bfor\s+the\s+(?:answer|reply|response|question|task|request|turn|message|session|conversation|chat|moment|time\s+being|current\s+task|current\s+session)\b/i,
+  /\b(?:in|during|for)\s+(?:this|the\s+current|the\s+present)\s+(?:task|session|conversation|chat|exchange|thread|workstream|sprint)\b/i,
+  /\b(?:just|only)\s+(?:this\s+)?(?:once|for\s+now|for\s+today|for\s+tonight)\b/i,
+  /\bthis\s+(?:answer|reply|response|question|task|request|turn|session|conversation)\s+(?:only|just)\b/i,
+  /\bfor\s+now\b/i,
+  /\bfor\s+the\s+sake\s+of\s+(?:this|the)\s+(?:task|answer|response|question)\b/i,
+  /\bjust\s+for\s+(?:now|today|tonight|this\s+time|this\s+one|today\s+only)\b/i,
+];
+
+/** Deterministic task/temporal-scope test (shared by gate + capture stage). */
+export function isTaskScopedInstruction(text: string): boolean {
+  return TASK_SCOPED_INSTRUCTION_PATTERNS.some((p) => p.test(text || ''));
+}
+
 /** Deterministic normalization for exact-duplicate detection. */
 export function normalizeForDuplicateComparison(content: string): string {
   return (content || '')
@@ -257,6 +296,11 @@ export class MemoryGate {
         reasons.push('COMPANY_DOMAIN_CONTENT');
       }
       if (TRANSIENT_STATE_PATTERN.test(content) && TRANSIENT_TIME_SCOPE_PATTERN.test(content)) {
+        reasons.push('TRANSIENT_CONTENT');
+      }
+      // --- P2 follow-up: a candidate that RETAINS an explicit task/temporal
+      // scope marker is a scoped instruction, not a stable preference ---
+      if (isTaskScopedInstruction(content)) {
         reasons.push('TRANSIENT_CONTENT');
       }
       // --- duplicate detection (deterministic, exact-normalized match) ---
