@@ -248,5 +248,25 @@
     "metadata": {},
     "createdAt": "2026-09-25T08:14:10.736Z",
     "updatedAt": "2026-09-25T08:14:31.995Z"
+  },
+  "conv-38a751f4-aaaa-4738-afbe-b0901a0732a4": {
+    "id": "conv-38a751f4-aaaa-4738-afbe-b0901a0732a4",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-25T13:40:57.723Z",
+    "updatedAt": "2026-09-25T13:40:59.019Z"
+  },
+  "conv-c80f419a-e5d2-467b-ac31-04f8f8641e69": {
+    "id": "conv-c80f419a-e5d2-467b-ac31-04f8f8641e69",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-25T13:45:39.120Z",
+    "updatedAt": "2026-09-25T13:45:40.678Z"
   }
 }
