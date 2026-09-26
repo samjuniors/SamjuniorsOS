@@ -251,7 +251,11 @@ export async function captureSophiaMemoryCandidates(
           provenance,
           confidence: gateResult.candidate.confidence,
           idempotencyKey: `${captureBase}:${index}`,
-          active: false, // M4-A: candidates are INACTIVE until Founder confirmation
+          // M4-A/M4-B.1: candidates are born PENDING_REVIEW (inactive) and
+          // reach ACTIVE ONLY through an explicit Founder confirmation via
+          // the governed route. There is no automatic activation — ever.
+          lifecycleState: 'PENDING_REVIEW',
+          active: false, // derived mirror, kept consistent by the store
           metadata: {
             captureStatus: 'pending',
             captureSource: 'm4a_turn_capture',

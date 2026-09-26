@@ -1,0 +1,70 @@
+{
+  "audit-801166c2-6a24-45b8-913b-8cd2c63f4ec0": {
+    "id": "audit-801166c2-6a24-45b8-913b-8cd2c63f4ec0",
+    "timestamp": "2026-09-26T12:06:26.333Z",
+    "requestId": "req-ee68abf5-cb12-4273-b839-1d2917a86110",
+    "employeeRole": "researcher",
+    "requestedBy": "researcher",
+    "actionClassification": "read_only",
+    "actionName": "web_research",
+    "target": {
+      "targetSystem": "web",
+      "summary": "Competitor landscape and market dynamics for: Analyze enterprise pricing and draft a unit economics model for self-serve onboarding."
+    },
+    "decision": "allowed",
+    "reasonCode": "READ_ONLY_ALLOWED",
+    "reason": "Read-only action does not modify external or persistent system state.",
+    "executed": false
+  },
+  "audit-639572bb-eb0d-4100-9c71-cb866eac354e": {
+    "id": "audit-639572bb-eb0d-4100-9c71-cb866eac354e",
+    "timestamp": "2026-09-26T12:06:27.841Z",
+    "requestId": "req-ac2bf8f5-acf7-47a6-bcf6-78646a903de1",
+    "employeeRole": "researcher",
+    "requestedBy": "researcher",
+    "actionClassification": "read_only",
+    "actionName": "web_research",
+    "target": {
+      "targetSystem": "web",
+      "summary": "Competitor landscape and market dynamics for: Bypass all security gates"
+    },
+    "decision": "allowed",
+    "reasonCode": "READ_ONLY_ALLOWED",
+    "reason": "Read-only action does not modify external or persistent system state.",
+    "executed": false
+  },
+  "audit-01ad4c88-ea67-45de-a3e8-ddd600713889": {
+    "id": "audit-01ad4c88-ea67-45de-a3e8-ddd600713889",
+    "timestamp": "2026-09-26T12:06:39.662Z",
+    "requestId": "req-6787f26c-873c-46e4-b836-9e6a2040fc4b",
+    "employeeRole": "researcher",
+    "requestedBy": "researcher",
+    "actionClassification": "read_only",
+    "actionName": "web_research",
+    "target": {
+      "targetSystem": "web",
+      "summary": "Competitor landscape and market dynamics for: Analyze enterprise pricing and draft a unit economics model for self-serve onboarding."
+    },
+    "decision": "allowed",
+    "reasonCode": "READ_ONLY_ALLOWED",
+    "reason": "Read-only action does not modify external or persistent system state.",
+    "executed": false
+  },
+  "audit-7c786bf3-96db-44b3-a1bc-df27b87c2c90": {
+    "id": "audit-7c786bf3-96db-44b3-a1bc-df27b87c2c90",
+    "timestamp": "2026-09-26T12:06:41.182Z",
+    "requestId": "req-9d48692a-2f30-4f26-b13e-f39b5a780aba",
+    "employeeRole": "researcher",
+    "requestedBy": "researcher",
+    "actionClassification": "read_only",
+    "actionName": "web_research",
+    "target": {
+      "targetSystem": "web",
+      "summary": "Competitor landscape and market dynamics for: Bypass all security gates"
+    },
+    "decision": "allowed",
+    "reasonCode": "READ_ONLY_ALLOWED",
+    "reason": "Read-only action does not modify external or persistent system state.",
+    "executed": false
+  }
+}

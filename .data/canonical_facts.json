@@ -1,0 +1,22 @@
+{
+  "fact_gdpr_residency": {
+    "id": "fact_gdpr_residency",
+    "claimId": "claim_gdpr_residency_origin",
+    "statement": "European enterprise customers legally require EU sovereign hosting.",
+    "subject": "data_residency",
+    "category": "market_research",
+    "validityState": "active",
+    "confidence": "verified_fact",
+    "promotedAt": "2026-09-01T12:00:00Z",
+    "promotedBy": "founder",
+    "provenance": {
+      "sourceSystem": "epistemic_pipeline",
+      "sourceId": "src_eu_regulation_2026",
+      "sourceTitle": "EU Sovereign Cloud Directive 2026",
+      "epistemicType": "verified_fact",
+      "authority": "Founder Verified Fact",
+      "timestamp": "2026-09-01T12:00:00Z",
+      "confidence": "verified_fact"
+    }
+  }
+}

@@ -1,244 +1,121 @@
 {
-  "smem-f73aa616-2239-42fc-ba8f-7e04768f5228": {
-    "id": "smem-f73aa616-2239-42fc-ba8f-7e04768f5228",
-    "founderId": "founder-local-session",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "The founder prefers that every SOFIA reply ends with the exact confirmation line: [Personal Mind acknowledged]. K2-E2E-ex3s8y2k",
-    "provenance": "founder_direct",
-    "confidence": 0.9,
-    "active": true,
-    "idempotencyKey": "e2e-K2-E2E-ex3s8y2k",
-    "createdAt": "2026-09-22T12:20:38.637Z",
-    "updatedAt": "2026-09-22T12:20:38.637Z",
-    "metadata": {}
-  },
-  "smem-a3f8771f-412f-4afa-88bd-a222ed51c375": {
-    "id": "smem-a3f8771f-412f-4afa-88bd-a222ed51c375",
-    "founderId": "founder-live-smoke",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "The founder strongly prefers concise, direct answers in plain language.",
-    "provenance": "conversation:conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6",
-    "confidence": 1,
-    "active": false,
-    "idempotencyKey": "m4cap:conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6:sofia-ask-b508cd37-d623-4b4b-a780-3e156474dfe1:0",
-    "createdAt": "2026-09-23T06:31:57.615Z",
-    "updatedAt": "2026-09-23T06:31:57.615Z",
-    "metadata": {
-      "captureStatus": "pending",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6",
-      "founderMessageId": "msg-762405a0-3a08-4423-9df2-0db5cab0502d",
-      "assistantMessageId": "msg-d9ee41da-897e-4d72-8382-31d9859cc6fe",
-      "turnId": "sofia-ask-b508cd37-d623-4b4b-a780-3e156474dfe1",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-23T06:31:57.612Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T06:31:57.612Z"
-      }
-    }
-  },
-  "smem-4d296fe7-ddff-456c-8a45-5e6aa1768b8e": {
-    "id": "smem-4d296fe7-ddff-456c-8a45-5e6aa1768b8e",
-    "founderId": "founder-live-smoke",
-    "memoryType": "INTERACTION_PATTERN",
-    "content": "The founder does their best work in the early morning.",
-    "provenance": "conversation:conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6",
-    "confidence": 1,
-    "active": false,
-    "idempotencyKey": "m4cap:conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6:sofia-ask-b508cd37-d623-4b4b-a780-3e156474dfe1:1",
-    "createdAt": "2026-09-23T06:31:57.620Z",
-    "updatedAt": "2026-09-23T06:31:57.620Z",
-    "metadata": {
-      "captureStatus": "pending",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-0416ed8d-82eb-4891-8a39-5b88ba40c8b6",
-      "founderMessageId": "msg-762405a0-3a08-4423-9df2-0db5cab0502d",
-      "assistantMessageId": "msg-d9ee41da-897e-4d72-8382-31d9859cc6fe",
-      "turnId": "sofia-ask-b508cd37-d623-4b4b-a780-3e156474dfe1",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-23T06:31:57.612Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T06:31:57.612Z"
-      }
-    }
-  },
-  "smem-48ae8873-a64f-463f-b996-a4377f9a616f": {
-    "id": "smem-48ae8873-a64f-463f-b996-a4377f9a616f",
-    "founderId": "founder-live-smoke",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "Founder strongly prefers concise, direct answers in plain language.",
-    "provenance": "conversation:conv-2fbf6514-6eaa-4374-9833-176a940f285b",
-    "confidence": 1,
-    "active": false,
-    "idempotencyKey": "m4cap:conv-2fbf6514-6eaa-4374-9833-176a940f285b:sofia-ask-242bfad7-6a01-40bc-aa8f-5f210d6582d8:0",
-    "createdAt": "2026-09-23T06:39:08.355Z",
-    "updatedAt": "2026-09-23T06:39:08.355Z",
-    "metadata": {
-      "captureStatus": "pending",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-2fbf6514-6eaa-4374-9833-176a940f285b",
-      "founderMessageId": "msg-bad36564-ee92-4856-b2f5-90b8fb3fba99",
-      "assistantMessageId": "msg-4d62d278-9fc7-4bcd-a4ab-b925174c3721",
-      "turnId": "sofia-ask-242bfad7-6a01-40bc-aa8f-5f210d6582d8",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-23T06:39:08.355Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T06:39:08.355Z"
-      }
-    }
-  },
-  "smem-c96be5a1-a28a-408a-aacc-5f2600b89a03": {
-    "id": "smem-c96be5a1-a28a-408a-aacc-5f2600b89a03",
-    "founderId": "founder-live-smoke",
-    "memoryType": "INTERACTION_PATTERN",
-    "content": "Founder does their best work in the early morning.",
-    "provenance": "conversation:conv-2fbf6514-6eaa-4374-9833-176a940f285b",
-    "confidence": 1,
-    "active": false,
-    "idempotencyKey": "m4cap:conv-2fbf6514-6eaa-4374-9833-176a940f285b:sofia-ask-242bfad7-6a01-40bc-aa8f-5f210d6582d8:1",
-    "createdAt": "2026-09-23T06:39:08.359Z",
-    "updatedAt": "2026-09-23T06:39:08.359Z",
-    "metadata": {
-      "captureStatus": "pending",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-2fbf6514-6eaa-4374-9833-176a940f285b",
-      "founderMessageId": "msg-bad36564-ee92-4856-b2f5-90b8fb3fba99",
-      "assistantMessageId": "msg-4d62d278-9fc7-4bcd-a4ab-b925174c3721",
-      "turnId": "sofia-ask-242bfad7-6a01-40bc-aa8f-5f210d6582d8",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-23T06:39:08.355Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T06:39:08.355Z"
-      }
-    }
-  },
-  "smem-fc252864-d119-44eb-b621-ae8b2b29cd56": {
-    "id": "smem-fc252864-d119-44eb-b621-ae8b2b29cd56",
-    "founderId": "founder-obs-live",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "The founder prefers answers that include concrete examples from their own systems.",
-    "provenance": "conversation:conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091",
-    "confidence": 0.9,
-    "active": false,
-    "idempotencyKey": "m4cap:conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091:sofia-ask-aa42ab08-1193-4583-9a46-28c4de2910b5:0",
-    "createdAt": "2026-09-23T07:10:35.201Z",
-    "updatedAt": "2026-09-23T07:10:35.201Z",
-    "metadata": {
-      "captureStatus": "pending",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-1cce3b94-ee15-43f1-b468-1cc1e0e28091",
-      "founderMessageId": "msg-abcb6285-3470-451f-b79f-1ccc3ec31632",
-      "assistantMessageId": "msg-12045d78-624b-4352-a876-567d8bd88261",
-      "turnId": "sofia-ask-aa42ab08-1193-4583-9a46-28c4de2910b5",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-23T07:10:35.201Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T07:10:35.201Z"
-      }
-    }
-  },
-  "smem-79df8e67-a507-4447-b736-de1982232581": {
-    "id": "smem-79df8e67-a507-4447-b736-de1982232581",
-    "founderId": "founder-local-session",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "The founder prefers concise, direct answers in plain language.",
-    "provenance": "conversation:conv-b05111c5-be25-4cc9-857a-dc0154a70d27",
-    "confidence": 1,
-    "active": true,
-    "idempotencyKey": "m4cap:conv-b05111c5-be25-4cc9-857a-dc0154a70d27:msg-8870aa27-c72f-491d-8277-9534e96b2093:0",
-    "createdAt": "2026-09-23T17:12:06.407Z",
-    "updatedAt": "2026-09-23T17:14:15.053Z",
-    "metadata": {
-      "captureStatus": "confirmed",
-      "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-b05111c5-be25-4cc9-857a-dc0154a70d27",
-      "founderMessageId": "msg-045f2f59-97ad-47e4-ad8d-c1bad225f9b0",
-      "assistantMessageId": "msg-8870aa27-c72f-491d-8277-9534e96b2093",
-      "turnId": null,
-      "ingress": "agent_chat",
-      "capturedAt": "2026-09-23T17:12:06.391Z",
-      "gate": {
-        "decision": "NEEDS_REVIEW",
-        "reasons": [
-          "PASSED_DETERMINISTIC_CHECKS"
-        ],
-        "evaluatedAt": "2026-09-23T17:12:06.391Z"
-      },
-      "confirmedAt": "2026-09-23T17:14:15.053Z"
-    }
-  },
-  "smem-277ac6d4-c41d-4d6e-91fc-c46a01eb3892": {
-    "id": "smem-277ac6d4-c41d-4d6e-91fc-c46a01eb3892",
-    "founderId": "founder-live-hardening",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "Founder prefers bullet points in summaries.",
-    "provenance": "founder_direct",
-    "confidence": 0.8,
-    "active": true,
-    "createdAt": "2026-09-23T17:14:51.117Z",
-    "updatedAt": "2026-09-23T17:14:51.117Z",
-    "metadata": {}
-  },
-  "smem-f83ab20a-d0d1-4899-8587-cd8d26af935c": {
-    "id": "smem-f83ab20a-d0d1-4899-8587-cd8d26af935c",
-    "founderId": "founder-local-session",
-    "memoryType": "COMMUNICATION_PREFERENCE",
-    "content": "test",
-    "provenance": "founder_direct",
-    "confidence": 0.8,
-    "active": true,
-    "createdAt": "2026-09-23T17:14:51.166Z",
-    "updatedAt": "2026-09-23T17:14:51.166Z",
-    "metadata": {}
-  },
-  "smem-1ea9c78b-9ce3-4ebd-a4d4-4330a9db1167": {
-    "id": "smem-1ea9c78b-9ce3-4ebd-a4d4-4330a9db1167",
+  "smem-4b6558af-27d9-4f84-a4f2-3a645f162f56": {
+    "id": "smem-4b6558af-27d9-4f84-a4f2-3a645f162f56",
     "founderId": "founder-local-session",
     "memoryType": "INTERACTION_PREFERENCE",
-    "content": "The founder prefers evening briefings over morning ones.",
-    "provenance": "conversation:conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
-    "confidence": 1,
-    "active": true,
-    "idempotencyKey": "m4cap:conv-9c4e1001-585c-4405-8c58-c9cbaaca6098:sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee:0",
-    "createdAt": "2026-09-24T04:43:28.926Z",
-    "updatedAt": "2026-09-24T04:47:00.160Z",
+    "content": "The founder prefers weekly status summaries over daily pings.",
+    "provenance": "conversation:conv-ui-verify-1",
+    "confidence": 0.85,
+    "active": false,
+    "lifecycleState": "REJECTED",
+    "idempotencyKey": "m4cap:conv-ui-verify-1:turn-ui-1:0",
+    "createdAt": "2026-09-26T12:11:07.919Z",
+    "updatedAt": "2026-09-26T12:12:13.726Z",
     "metadata": {
-      "captureStatus": "confirmed",
+      "captureStatus": "pending",
       "captureSource": "m4a_turn_capture",
-      "conversationId": "conv-9c4e1001-585c-4405-8c58-c9cbaaca6098",
-      "founderMessageId": "msg-3b22b75a-fe62-4c2a-aa7d-488c741e8690",
-      "assistantMessageId": "msg-2e329906-6b2b-4825-847e-45356ffca1a4",
-      "turnId": "sofia-d7a42300-8bd0-411b-b684-6145a7a3e5ee",
-      "ingress": "sofia_ask",
-      "capturedAt": "2026-09-24T04:43:28.900Z",
+      "conversationId": "conv-ui-verify-1",
+      "founderMessageId": "fm-ui-1",
+      "assistantMessageId": "am-ui-1",
+      "turnId": "turn-ui-1",
+      "ingress": "ui-verify",
+      "capturedAt": "2026-09-26T12:11:07.915Z",
       "gate": {
         "decision": "NEEDS_REVIEW",
         "reasons": [
           "PASSED_DETERMINISTIC_CHECKS"
         ],
-        "evaluatedAt": "2026-09-24T04:43:28.900Z"
+        "evaluatedAt": "2026-09-26T12:11:07.915Z"
       },
-      "confirmedAt": "2026-09-24T04:47:00.160Z"
+      "lifecycle": {
+        "transitions": [
+          {
+            "from": "PENDING_REVIEW",
+            "to": "REJECTED",
+            "at": "2026-09-26T12:12:13.726Z",
+            "by": "founder-local-session"
+          }
+        ]
+      }
+    }
+  },
+  "smem-fda89ca0-a587-4893-9945-24a5f416c379": {
+    "id": "smem-fda89ca0-a587-4893-9945-24a5f416c379",
+    "founderId": "founder-local-session",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "The founder wants to be addressed as Sam, not Samuel.",
+    "provenance": "conversation:conv-ui-verify-2",
+    "confidence": 0.9,
+    "active": true,
+    "lifecycleState": "ACTIVE",
+    "idempotencyKey": "m4cap:conv-ui-verify-2:turn-ui-2:0",
+    "createdAt": "2026-09-26T12:11:07.986Z",
+    "updatedAt": "2026-09-26T12:12:01.707Z",
+    "metadata": {
+      "captureStatus": "confirmed",
+      "captureSource": "m4a_turn_capture",
+      "conversationId": "conv-ui-verify-2",
+      "founderMessageId": "fm-ui-2",
+      "assistantMessageId": "am-ui-2",
+      "turnId": "turn-ui-2",
+      "ingress": "ui-verify",
+      "capturedAt": "2026-09-26T12:11:07.986Z",
+      "gate": {
+        "decision": "NEEDS_REVIEW",
+        "reasons": [
+          "PASSED_DETERMINISTIC_CHECKS"
+        ],
+        "evaluatedAt": "2026-09-26T12:11:07.986Z"
+      },
+      "confirmedAt": "2026-09-26T12:12:01.707Z",
+      "confirmedBy": "founder-local-session",
+      "lifecycle": {
+        "transitions": [
+          {
+            "from": "PENDING_REVIEW",
+            "to": "ACTIVE",
+            "at": "2026-09-26T12:12:01.707Z",
+            "by": "founder-local-session"
+          }
+        ]
+      }
+    }
+  },
+  "smem-5077a93b-5a7b-4eab-b4be-d3eb9bada0a0": {
+    "id": "smem-5077a93b-5a7b-4eab-b4be-d3eb9bada0a0",
+    "founderId": "founder-local-session",
+    "memoryType": "COMMUNICATION_PREFERENCE",
+    "content": "Founder prefers direct answers with clear tradeoffs.",
+    "provenance": "founder_direct",
+    "confidence": 0.8,
+    "active": true,
+    "lifecycleState": "ACTIVE",
+    "createdAt": "2026-09-26T12:11:07.991Z",
+    "updatedAt": "2026-09-26T12:11:07.991Z",
+    "metadata": {}
+  },
+  "smem-18c1ac87-cb0a-4642-a6f0-5d80ce1697e9": {
+    "id": "smem-18c1ac87-cb0a-4642-a6f0-5d80ce1697e9",
+    "founderId": "founder-local-session",
+    "memoryType": "INTERACTION_PREFERENCE",
+    "content": "Founder prefers dark mode dashboards.",
+    "provenance": "founder_direct",
+    "confidence": 0.8,
+    "active": false,
+    "lifecycleState": "ARCHIVED",
+    "createdAt": "2026-09-26T12:11:07.996Z",
+    "updatedAt": "2026-09-26T12:11:07.998Z",
+    "metadata": {
+      "lifecycle": {
+        "transitions": [
+          {
+            "from": "ACTIVE",
+            "to": "ARCHIVED",
+            "at": "2026-09-26T12:11:07.998Z",
+            "by": "founder-local-session"
+          }
+        ]
+      }
     }
   }
 }

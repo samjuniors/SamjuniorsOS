@@ -46,14 +46,24 @@ function Toggle({ label, on, onClick, hint }: { label: string; on: boolean; onCl
   );
 }
 
-/* ------------------------------------------------------------------ Memory review (M4-A hardening)
+/* ------------------------------------------------------------------ Memory review (M4-A hardening → M4-B.1 lifecycle)
  *
- * Founder review surface for PENDING Sophia personal-memory capture
+ * Founder review surface for PENDING_REVIEW Sophia personal-memory capture
  * candidates. Reuses the GOVERNED /api/sofia/memory APIs verbatim:
- *   GET    ?active=false  — the review queue (with deterministic
- *                           duplicate/similarity annotations)
+ *   GET    ?lifecycleState=PENDING_REVIEW — the review queue (with
+ *                           deterministic duplicate/similarity annotations).
+ *                           M4-B.1 queue-isolation fix: records the Founder
+ *                           ARCHIVED or REJECTED no longer pollute the
+ *                           pending queue (the old ?active=false filter
+ *                           conflated pending candidates with deactivated
+ *                           memories).
  *   PATCH  { id, active: true } — the ONLY activation path (approve)
- *   DELETE ?id= — reject
+ *   PATCH  { id, lifecycleState: "REJECTED" } — reject as a TOMBSTONE
+ *                           (M4-B.1: preserves the candidate's provenance
+ *                           and keeps it in the capture dedupe pool so a
+ *                           refused candidate cannot silently re-enter the
+ *                           queue as a "new" capture; DELETE remains the
+ *                           physical escape hatch at the API level)
  * Nothing here bypasses the server: this is a thin review UI over the
  * same governed boundary the tests pin.
  */
@@ -65,6 +75,8 @@ interface PendingMemory {
   confidence: number;
   provenance?: string;
   createdAt?: string;
+  active?: boolean;
+  lifecycleState?: string;
   metadata?: {
     captureStatus?: string;
     conversationId?: string;
@@ -108,7 +120,10 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
   const load = async (offsetArg = 0, append = false) => {
     setStatus("loading");
     try {
-      const res = await fetch(`/api/sofia/memory?active=false&limit=${PAGE_SIZE}&offset=${offsetArg}`);
+      // M4-B.1: the queue reads the exact PENDING_REVIEW lifecycle state —
+      // archived and rejected records stay out of the founder's review
+      // queue (the previous ?active=false filter conflated them).
+      const res = await fetch(`/api/sofia/memory?lifecycleState=PENDING_REVIEW&limit=${PAGE_SIZE}&offset=${offsetArg}`);
       if (!res.ok) throw new Error(`queue fetch failed (${res.status})`);
       const body = await res.json();
       const list = Array.isArray(body.memories) ? body.memories : [];
@@ -142,8 +157,17 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
   const reject = async (id: string) => {
     setBusyId(id);
     try {
-      await fetch(`/api/sofia/memory?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    } catch { /* same */ }
+      // M4-B.1: reject is a REJECTED tombstone, not a physical delete — the
+      // candidate's provenance is preserved and it stays in the capture
+      // dedupe pool (a refused candidate must not silently re-enter the
+      // queue as a "new" capture). DELETE remains the hard-delete escape
+      // hatch at the API level.
+      await fetch("/api/sofia/memory", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, lifecycleState: "REJECTED" }),
+      });
+    } catch { /* review action is best-effort UI; server state is authoritative */ }
     await load(0, false);
     setBusyId("");
   };
@@ -248,7 +272,7 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
   // authoritative `total` (P2 follow-up) so a >50 queue reports its real size.
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/sofia/memory?active=false&limit=1")
+    fetch("/api/sofia/memory?lifecycleState=PENDING_REVIEW&limit=1")
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (!cancelled && typeof body?.total === "number") setPendingMemoryCount(body.total);
