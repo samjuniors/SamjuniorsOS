@@ -629,3 +629,23 @@ Stage Summary:
 - Security model unchanged and re-verified: no automatic activation (gate never returns ACCEPT; captured candidates reach ACTIVE only via the governed Founder PATCH), cross-founder fails closed on every lifecycle path, authority-content guard untouched, Company Brain untouched, no vectors/embeddings/consolidation/decay/schedulers.
 - All 11 Sophia test suites green (incl. restored C8 default-extractor child harness); lint clean; browser-verified end-to-end (approve + reject + queue isolation + audit trail).
 - NOT built (deliberately): supersession DECISION logic, contradiction resolution, decay/TTL, consolidation, automatic activation, cross-founder memory, Company Brain changes — these remain behind the M4-B gate per the semantic contract.
+
+---
+Task ID: 36
+Agent: main (Z.ai Code)
+Task: SamjuniorsOS branch reconciliation + safe cleanup (read-only audit; STOP before any destructive action)
+
+Work Log:
+- Inspected local git state: /home/z/my-project on branch main @ 321641f (full: 321641f6cc5b2fab56de56eafcac8cc66eab5bfb), NO remotes originally, single local branch. Working tree dirty ONLY with mode changes (100644→100755) + runtime data (.data/*.json, db/custom.db, tool-results) — zero uncommitted code content (verified via diff --stat).
+- Verified commit 0eb0b3a (full: 0eb0b3aaa95e2daebdd992e719ce26a87c9a072c, 2026-09-26, subject "96becf99-..."): EXISTS LOCALLY as HEAD@{3} (parent of 321641f); its diff contains NO M4-B.1 code (only tool-results/worklog/db/dev.pid). NOT on GitHub (repo history is unrelated to GitHub's).
+- Added read-only remote origin (github.com/samjuniors/SamjuniorsOS) + fetched all branches (fetch touches no local branches/tree). Remote main = adf9a089 (2026-09-22, voice preset) — adf9a089 does not exist locally; local and remote main histories share NO merge-base.
+- Audited all 8 non-main remote branches (counts, merge-bases, unique commits, trees). Memory chain is a STRICT ORPHAN STACK: memory-m0-m2 (2 commits) ⊂ sophia-personal-memory (3) ⊂ sophia-memory-capture-m4a (8) ⊂ m4a-p2-followup (10, tip 4cce4fc). feat/sofia-merge = main~1 (6628807) + 3 commits (7944caa Sofia UI swap 67 files +17.7k lines; 2 docs). archive/pre-sofia-merge = main~1 exactly (0 unique). archive/pre-reconciliation-main = 0 unique (ancestor). archive/local-backup-af1aab4 = 68-commit orphan V1–V3 pre-reconciliation lineage, same SHA as tag legacy/pre-reconciliation.
+- Located M4-B.1: LOCAL COMMIT 321641f ONLY — creates memory-lifecycle.ts (174 lines, 5 states + transition table + legacy derivation), tests/sophia/m4b1_lifecycle.test.ts (861 lines, L1–L14), modifies personal-memory-store.ts (+345: lifecycleState authority, audit trail, confirmedBy, supersession pointer), /api/sofia/memory, SophiaPanel, prisma schema (lifecycleState String? + index). memory-lifecycle.ts exists on NO GitHub branch (verified ls-tree of all remote refs + --all --follow log).
+- Verified M4-B.1 quality live: ran tests/sophia/m4b1_lifecycle.test.ts → 20/20 PASS (runtime .data drift only, no code touched).
+- Verified carry-forward feasibility: every file 321641f touches is byte-identical between its parent 0eb0b3a and remote 4cce4fc EXCEPT tests/sophia/m4a-default-extractor-child.ts (local 108-line Bun.plugin rewrite vs remote canonical 121-line bun:test version — same C8 defect pin, different technique).
+- Detected the "87 behind / N ahead" numbers on memory branches = full main commit count (87) → orphan unrelated histories, NOT normal ahead/behind.
+
+Stage Summary:
+- M4-B.1 exists ONLY in this sandbox (commit 321641f, never pushed, no backup) — highest-risk asset; recommend immediate backup branch push before any cleanup.
+- The prior report was wrong in one decisive way: "main @ 0eb0b3a" describes the sandbox mirror's local main BEFORE the M4-B.1 commit; 0eb0b3a itself contains no M4-B.1 code, and GitHub main (adf9a089) contains none of the memory work (M3 K-1 through M4-A live on orphan branch feat/m4a-p2-followup).
+- Full A–G audit + staged command plan delivered to founder; NO deletion/merge/reset/force-push/cherry-pick executed (Phase 6 STOP honored). Only side effects: origin remote added + fetched in sandbox repo; M4-B.1 test suite run (runtime data only).
