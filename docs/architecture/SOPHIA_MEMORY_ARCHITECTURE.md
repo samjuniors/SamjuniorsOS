@@ -559,3 +559,84 @@ non-ACTIVE states, the no-automatic-activation regression, cross-founder
 governed route end-to-end. All prior suites (K-2, M4-A capture incl. the
 restored default-extractor child, M4-A hardening, M0–M3, phases 1–2)
 re-run green.
+
+## 15. M4-D — Personal Mind retrieval hardening (2026-09-25 addendum)
+
+M4-C made Personal Mind retrieval query-conditioned (two-tier lexical
+matching over the shared deterministic tokenizer). The Task 42 evaluation
+measured two structural weaknesses in the matched tier: (a) the within-tier
+type round-robin let a 1-token match from an earlier allow-list type
+displace a 4-token match (gold ranked 4th behind three 1-token matches on
+Q1; 7th under a generic-token distractor flood on D7), and (b) basic
+morphological variants never matched at all ("preferences" vs "preference",
+"briefing" vs "brief", "running" vs "run"). M4-D fixes exactly these two —
+deterministically, with no new framework (`src/lib/server/sophia/`
+`context-assembly.ts` only).
+
+### Mechanism 1 — Tier-1 score-banded round-robin (relevance-gated diversity)
+
+Matched memories group into equal-score bands. Bands emit strictly
+DESCENDING, and the type round-robin operates WITHIN a band only. A
+lower-score memory can therefore never precede a higher-score one in tier 1,
+while type diversity still prevents same-type starvation among score-equals
+(anti-starvation preserved). Within a band and type, ordering remains the
+existing confidence DESC / updatedAt DESC / id ASC policy. Measured effect
+(Task 42 corpus): Q1 gold rank 4→1, D7 gold rank 7→5 with Recall@5 0→0.5,
+contradictory-pair current rank 2→1, planted-match rank 5→1 at every scale.
+
+### Mechanism 2 — Personal-Mind-scoped light suffix normalization (fold)
+
+After the shared `extractTokens` pipeline — which stays BYTE-IDENTICAL
+because the Company Brain retrieval contract depends on it — both the
+message and the content tokens are folded by a light, guarded suffix
+normalization (`foldPersonalMindToken`): len<=3 unchanged; a
+FOLD_PROTECTED homograph list (news, evening, morning, specs, economics,
+politics, physics) unchanged; "ies"→"y" (summaries→summary);
+ses/xes/zes/ches/shes strip "es" (matches→match); plural "s" strip
+(calls→call, prefers→prefer); "ing"/"ed" strip with doubled-consonant
+repair (running→run, briefing→brief, preferred→prefer). Applied once per
+token, never recursively, on BOTH sides — so matching stays symmetric while
+news/new, evening/even, prefers/preference, updated/update never match.
+Accepted imperfections (measured in the design counterfactual): "updated"
+folds to "updat" (does not match "update"); "meetings"→"meeting" while
+"meeting"→"meet"; a one-stem false-positive surface ("prefers" matches
+"prefer").
+
+### Explicitly unchanged
+
+- **Lifecycle authority**: `lifecycleState` remains the ONLY eligibility
+  authority — only ACTIVE records reach the selection; nothing about M4-D
+  inspects or alters lifecycle.
+- **Fallback**: no usable tokens OR zero folded-token matches → the exact
+  pre-M4-C deterministic policy (byte-equivalent; the memory context is
+  never emptied by a token miss).
+- **Tier-2 fill**: fewer than 20 tier-1 memories → remaining capacity filled
+  by the exact pre-M4-C policy.
+- **Caps and budgets**: the 20-memory retrieval cap and the 1200-character
+  container render budget are untouched.
+- **Two-brain boundary**: the fold lives in the Personal Mind retrieval path
+  only; `extractTokens` and every Company Brain scorer are byte-identical;
+  the scoring model stays set-semantics distinct-token overlap — no IDF,
+  no phrase bonus, no recency/confidence multipliers, no LLM judgment.
+- **Out of scope (still)**: synonym/paraphrase retrieval, staleness
+  detection/decay, semantic/vector retrieval, and graph reasoning remain
+  OUTSIDE M4-D — synonym-only and paraphrase-only memories are still
+  unmatchable by lexical design.
+
+### Test contract
+
+`tests/sophia/m4c_query_conditioned_retrieval.test.ts` pins the M4-D
+contract (H1–H12 appended to the C1–C15 M4-C contract): exact fold
+characterization (positives, protected homographs, negatives, length
+guards, single-pass), fold-driven tier-1 matching in both directions,
+4-token-outranks-all-1-token cross-type, monotone score bands, equal-score
+round-robin, D7-style collision bound (gold ≤ 5), fallback byte-equivalence
+under folding, determinism, the 20-cap over fold-only matches, e2e
+lifecycle + founder isolation + render budget under folding, and the
+Company-Brain-byte-identical tokenizer pin.
+`tests/sophia/m4c_retrieval_evaluation.test.ts` (Task 42 evidence suite,
+re-baselined) confirms the measured outcomes: Q1 rank 1, D7 rank 5 /
+R@5 0.5, Q8 rank 1, D8b adversarial stale pair UNCHANGED (old
+high-overlap still outranks the newer correction — recency never overrides
+overlap), planted rank 1 at all scales, selection ≈25 ms @ 10,000
+memories (limit 250 ms), full path ≈90 ms.

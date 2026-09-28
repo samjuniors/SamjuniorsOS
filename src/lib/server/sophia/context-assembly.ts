@@ -82,9 +82,7 @@ const PARTITION_LIMITS = {
  *      current message yields usable lexical tokens (the SAME deterministic
  *      extractTokens/stop-word pipeline CompanyKnowledgeStore.queryKnowledge
  *      uses — no new retrieval framework, no embeddings, no LLM judgment):
- *        Tier 1 — memories lexically matching the message (per-type order:
- *        distinct token-overlap score DESC, then the existing confidence /
- *        recency / id order) round-robinned across types.
+ *        Tier 1 — memories lexically matching the message.
  *        Tier 2 — remaining capacity filled by the EXACT pre-M4-C policy
  *        (secondary selection: confidence, type round-robin, recency).
  *      FALLBACK — when the message yields NO usable tokens or NO memory
@@ -93,8 +91,126 @@ const PARTITION_LIMITS = {
  *      lifecycleState remains the ONLY eligibility authority (ACTIVE-only
  *      pool, unchanged) and the selection stays entirely inside the Personal
  *      Mind boundary (founder-scoped SophiaMemoryStore records only).
+ *   6. HARDEN the matched tier (M4-D — retrieval hardening): the Task 42
+ *      evaluation measured two structural weaknesses in the M4-C tier-1:
+ *      (a) the within-tier type round-robin let a 1-token match from an
+ *      earlier allow-list type displace a 4-token match (Q1 gold ranked
+ *      4th behind three 1-token matches; D7 gold ranked 7th under a
+ *      generic-token flood), and (b) basic morphological variants never
+ *      matched at all ("preferences" vs "preference", "briefing" vs
+ *      "brief", "running" vs "run"). M4-D fixes exactly these two —
+ *      deterministically, with no new framework:
+ *        (i) TIER-1 SCORE-BANDED ROUND-ROBIN — matched memories group into
+ *            equal-score bands; bands emit strictly DESCENDING; the type
+ *            round-robin operates WITHIN a band only. A lower-score memory
+ *            can never precede a higher-score one in tier 1, while type
+ *            diversity still prevents same-type starvation among
+ *            score-equals.
+ *        (ii) PERSONAL-MIND-SCOPED LIGHT SUFFIX FOLD — after the shared
+ *             extractTokens pipeline (which stays byte-identical for the
+ *             Company Brain), BOTH the message and content tokens are
+ *             folded by a light, guarded suffix normalization (see
+ *             foldPersonalMindToken) so preferences/preference, calls/call,
+ *             briefing/brief and running/run match directly, while
+ *             news/new, evening/even and prefers/preference never do.
+ *      Unchanged by M4-D: the FALLBACK definition (no usable tokens OR no
+ *      folded-token match → the exact pre-M4-C policy), the tier-2 fill,
+ *      the 20-cap, the 1200-char render budget, lifecycle authority,
+ *      founder scoping, and every Company Brain retrieval path.
  */
 const PERSONAL_MIND_RETRIEVAL_LIMIT = 20;
+
+/**
+ * M4-D: Personal-Mind-scoped light suffix normalization (token folding).
+ *
+ * The shared CompanyKnowledgeStore tokenizer (extractTokens) is intentionally
+ * exact-match — no stemming — and stays byte-identical because the Company
+ * Brain retrieval contract depends on it. Personal Mind retrieval, however,
+ * measured (Task 42) that basic morphological variants never match
+ * ("preferences" vs "preference", "calls" vs "call", "briefing" vs
+ * "brief"), losing gold memories that differ from the message only by a
+ * suffix. M4-D therefore folds tokens LOCALLY, in this file only, AFTER the
+ * shared extractTokens pipeline.
+ *
+ * The fold is deliberately light, deterministic, and applied ONCE per token
+ * (never recursively), with length guards and a homograph protection list:
+ *   1. len <= 3                          → unchanged (run, call, tea, ...)
+ *   2. token ∈ FOLD_PROTECTED            → unchanged (news, evening, morning,
+ *                                          specs, economics, politics,
+ *                                          physics — words whose suffix is
+ *                                          load-bearing)
+ *   3. ends "ies", len >= 5               → "ies" becomes "y" (summaries→summary)
+ *   4. ends ses/xes/zes/ches/shes, len>=6 → strip "es" (matches→match)
+ *   5. ends "s" (not "ss"), len >= 4      → strip "s" (calls→call, prefers→prefer)
+ *   6. ends "ing", len >= 6               → strip "ing", repairing the doubled
+ *                                          consonant English inserts
+ *                                          (running→run, briefing→brief)
+ *   7. ends "ed", len >= 5                → strip "ed", repairing the doubled
+ *                                          consonant (preferred→prefer,
+ *                                          updated→updat — no "e" restoration)
+ *
+ * The SAME fold runs on both the message and the content side, so matching
+ * stays symmetric. Accepted imperfections (measured in the M4-D design
+ * counterfactual): "updated" folds to "updat" (does not match "update"),
+ * "meetings"→"meeting" while "meeting"→"meet" (single pass), and a
+ * one-stem false-positive surface ("prefers" matches "prefer"). All are
+ * strictly better than the M4-C state where every such variant missed.
+ */
+const FOLD_PROTECTED = new Set(['news', 'evening', 'morning', 'specs', 'economics', 'politics', 'physics']);
+
+/** Consonant letters (for the doubled-consonant repair below). */
+const CONSONANTS = 'bcdfghjkmnpqrtvwxy';
+
+/**
+ * Repairs the English consonant doubling that -ing/-ed orthography inserts
+ * (running→run, preferred→prefer). Doubled "s"/"l"/"z" endings are left
+ * intact — "process"/"discuss"/"bill" end in a legitimate double.
+ */
+function repairDoubledConsonant(stem: string): string {
+  if (stem.length < 2) return stem;
+  const last = stem[stem.length - 1];
+  if (last === stem[stem.length - 2] && CONSONANTS.includes(last)) {
+    return stem.slice(0, -1);
+  }
+  return stem;
+}
+
+/**
+ * The M4-D Personal-Mind token fold (see the policy above). Pure, total,
+ * deterministic. Applied ONLY inside Personal Mind retrieval — never to the
+ * Company Brain tokenizer or any Company Brain scorer. Exported for direct
+ * deterministic pinning in tests (same convention as
+ * selectPersonalMindMemories).
+ */
+export function foldPersonalMindToken(token: string): string {
+  if (token.length <= 3) return token;
+  if (FOLD_PROTECTED.has(token)) return token;
+  if (token.endsWith('ies') && token.length >= 5) {
+    return `${token.slice(0, -3)}y`;
+  }
+  if (
+    token.length >= 6 &&
+    (token.endsWith('ses') || token.endsWith('xes') || token.endsWith('zes') ||
+      token.endsWith('ches') || token.endsWith('shes'))
+  ) {
+    return token.slice(0, -2);
+  }
+  if (token.endsWith('s') && !token.endsWith('ss') && token.length >= 4) {
+    return token.slice(0, -1);
+  }
+  if (token.endsWith('ing') && token.length >= 6) {
+    return repairDoubledConsonant(token.slice(0, -3));
+  }
+  if (token.endsWith('ed') && token.length >= 5) {
+    return repairDoubledConsonant(token.slice(0, -2));
+  }
+  return token;
+}
+
+/** The shared tokenizer plus the Personal-Mind fold, as one folded token set. */
+function foldTokenSet(text?: string | null): Set<string> {
+  return new Set(extractTokens(text).map(foldPersonalMindToken));
+}
 
 /** Records grouped by memoryType, preserving encounter order within a type. */
 function groupMemoriesByType<T extends { memoryType: string }>(all: T[]): Map<string, T[]> {
@@ -159,13 +275,22 @@ function selectPersonalMindMemoriesUnconditioned<T extends { memoryType: string;
  *
  * M4-C QUERY-CONDITIONED RETRIEVAL: `query` is the CURRENT founder message.
  * When it yields lexical tokens (CompanyKnowledgeStore's deterministic
- * extractTokens/stop-word pipeline — shared, not duplicated) and at least one
- * ACTIVE candidate memory matches, selection is two-tier: lexically matching
- * memories first (within-type order: distinct token-overlap score DESC, then
- * the existing confidence/recency/id order; type round-robin preserved), then
- * remaining capacity filled by the exact pre-M4-C policy. When the message
- * yields no usable tokens OR nothing matches, the result is IDENTICAL to the
- * pre-M4-C policy — a token miss never empties the memory context.
+ * extractTokens/stop-word pipeline — shared, not duplicated) and at least
+ * one ACTIVE candidate memory matches, selection is two-tier: lexically
+ * matching memories first, then remaining capacity filled by the exact
+ * pre-M4-C policy. When the message yields no usable tokens OR nothing
+ * matches, the result is IDENTICAL to the pre-M4-C policy — a token miss
+ * never empties the memory context.
+ *
+ * M4-D HARDENING (two mechanisms, everything else preserved):
+ *   (1) SCORING runs on FOLDED token sets (foldPersonalMindToken applied to
+ *       both the message and the content tokens, AFTER the shared tokenizer),
+ *       so basic morphological variants match directly.
+ *   (2) TIER 1 is SCORE-BANDED: matched memories group into equal-score
+ *       bands, bands emit strictly DESC, and the type round-robin operates
+ *       WITHIN a band only — a higher-score memory can never be displaced
+ *       below a lower-score one. Within a band and type, the order is still
+ *       the existing confidence DESC / updatedAt DESC / id ASC policy.
  *
  * Eligibility (lifecycleState === ACTIVE) is decided upstream by the
  * founder-scoped store read; this function only ORDERS the pool it is given.
@@ -175,17 +300,20 @@ function selectPersonalMindMemoriesUnconditioned<T extends { memoryType: string;
 export function selectPersonalMindMemories<
   T extends { memoryType: string; confidence: number; updatedAt: string; id: string; content: string }
 >(all: T[], query?: string): T[] {
-  const queryTokens = new Set(extractTokens(query));
+  // M4-D: fold the message tokens with the Personal-Mind-scoped light
+  // suffix normalization before scoring (the shared extractTokens pipeline
+  // itself stays byte-identical — Company Brain is untouched).
+  const queryTokens = foldTokenSet(query);
   if (queryTokens.size === 0) {
     // No usable tokens (missing/blank/stop-word-only message) — exact fallback.
     return selectPersonalMindMemoriesUnconditioned(all);
   }
 
-  // Deterministic lexical score per memory: the number of DISTINCT message
-  // tokens that also appear in the memory's content tokens.
+  // Deterministic lexical score per memory: the number of DISTINCT folded
+  // message tokens that also appear in the memory's folded content tokens.
   const lexicalScores = new Map<T, number>();
   for (const m of all) {
-    const contentTokens = new Set(extractTokens(m.content));
+    const contentTokens = foldTokenSet(m.content);
     let score = 0;
     for (const token of queryTokens) {
       if (contentTokens.has(token)) score++;
@@ -194,24 +322,39 @@ export function selectPersonalMindMemories<
   }
   const hasLexicalMatch = [...lexicalScores.values()].some((s) => s > 0);
   if (!hasLexicalMatch) {
-    // Token-bearing message but zero matches — exact fallback, never empty.
+    // Token-bearing message but zero folded-token matches — exact fallback,
+    // never empty.
     return selectPersonalMindMemoriesUnconditioned(all);
   }
 
-  // Tier 1 — lexically matching memories: within-type lexical score DESC is
-  // the primary order, then the existing confidence/recency/id order; type
-  // round-robin preserved across the matched tier.
-  const matchedByType = groupMemoriesByType(
-    all.filter((m) => (lexicalScores.get(m) ?? 0) > 0)
-  );
-  for (const list of matchedByType.values()) {
-    list.sort((a, b) => {
-      const scoreDelta = (lexicalScores.get(b) ?? 0) - (lexicalScores.get(a) ?? 0);
-      if (scoreDelta !== 0) return scoreDelta;
-      return compareByConfidenceThenRecency(a, b);
-    });
+  // Tier 1 — M4-D SCORE-BANDED ROUND-ROBIN. Matched memories group into
+  // equal-score bands; bands emit strictly DESCENDING, so a higher-score
+  // memory can NEVER be displaced below a lower-score one by the type
+  // round-robin (the M4-C weakness measured in Task 42: a 4-token match
+  // ranked behind four 1-token matches). Type diversity now operates
+  // WITHIN a band only: each band round-robins across the
+  // SOPHIA_MEMORY_TYPES allow-list order, taking one memory per type per
+  // round (within a type: the existing confidence DESC / updatedAt DESC /
+  // id ASC order). Anti-starvation is preserved among score-equals.
+  const scoreBands = new Map<number, T[]>();
+  for (const m of all) {
+    const score = lexicalScores.get(m) ?? 0;
+    if (score <= 0) continue;
+    const band = scoreBands.get(score) ?? [];
+    band.push(m);
+    scoreBands.set(score, band);
   }
-  const selected = interleaveByTypeRoundRobin(matchedByType, PERSONAL_MIND_RETRIEVAL_LIMIT);
+  const selected: T[] = [];
+  for (const score of [...scoreBands.keys()].sort((a, b) => b - a)) {
+    if (selected.length >= PERSONAL_MIND_RETRIEVAL_LIMIT) break;
+    const byType = groupMemoriesByType(scoreBands.get(score)!);
+    for (const list of byType.values()) {
+      list.sort(compareByConfidenceThenRecency);
+    }
+    selected.push(
+      ...interleaveByTypeRoundRobin(byType, PERSONAL_MIND_RETRIEVAL_LIMIT - selected.length)
+    );
+  }
 
   // Tier 2 — remaining capacity filled by the EXACT pre-M4-C policy over the
   // non-matching memories (secondary selection: confidence, type round-robin,

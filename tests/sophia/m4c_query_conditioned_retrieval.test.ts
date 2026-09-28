@@ -7,7 +7,7 @@ import {
   SOPHIA_MEMORY_TYPES,
 } from '../../src/lib/server/sophia/personal-memory-store';
 import { SophiaContextAssembler } from '../../src/lib/server/sophia';
-import { selectPersonalMindMemories } from '../../src/lib/server/sophia/context-assembly';
+import { selectPersonalMindMemories, foldPersonalMindToken } from '../../src/lib/server/sophia/context-assembly';
 import { extractTokens } from '../../src/lib/server/knowledge/knowledge-store';
 import { CompanyKnowledgeStore } from '../../src/lib/server/knowledge/knowledge-store';
 import { prisma, isDatabaseAvailable } from '../../src/lib/server/db/prisma';
@@ -55,6 +55,34 @@ import { prisma, isDatabaseAvailable } from '../../src/lib/server/db/prisma';
  *       Brain retrieval itself is unchanged.
  *   C15 The assembly call site threads the CURRENT founder message into the
  *       selection path (source-level pin, repository convention).
+ *
+ * M4-D — RETRIEVAL HARDENING (appended section; exactly two mechanisms: the
+ * Personal-Mind-scoped light suffix fold + the score-banded tier-1):
+ *   H1  The fold itself — guarded suffix normalization pinned exactly:
+ *       positive pairs, FOLD_PROTECTED homographs, negative pairs, length
+ *       guards, single-pass semantics.
+ *   H2  Morphological variants match THROUGH the matched tier (both
+ *       directions: variant-in-query/base-in-content and vice versa),
+ *       not via the zero-match fallback.
+ *   H3  A 4-token match outranks EVERY 1-token match across all types (the
+ *       Task-42 Q1 failure shape — previously rank 5, now rank 1).
+ *   H4  Banding invariant: tier-1 scores are monotonically non-increasing —
+ *       a lower-score memory NEVER precedes a higher-score one.
+ *   H5  Equal-score bands keep the type round-robin (anti-starvation among
+ *       score-equals preserved).
+ *   H6  D7-style collision: only same-band higher-confidence ties precede
+ *       the gold (rank ≤ 5); a 1-token distractor never displaces it.
+ *   H7  Fallback byte-equivalence under folding: no usable tokens OR zero
+ *       FOLDED matches → the exact pre-M4-C policy (never empty).
+ *   H8  Determinism: folded, score-banded selection is identical across
+ *       repeated runs.
+ *   H9  The 20-memory cap holds for a pool matching only through the fold.
+ *   H10 e2e: fold-only matches render first; lifecycle authority and
+ *       founder isolation are preserved under folding.
+ *   H11 e2e: the 1200-char render budget is enforced for fold-matched
+ *       memories (truncation + always-closed container).
+ *   H12 The fold is Personal-Mind-scoped: the shared CompanyKnowledgeStore
+ *       tokenizer never folds (Company Brain retrieval byte-identical).
  *
  * NOT UNDER TEST (out of M4-C scope by contract): embeddings/vectors/Redis/
  * Graphiti, LLM-driven retrieval, consolidation, decay/TTL, older-conversation
@@ -622,11 +650,326 @@ async function main() {
   });
 
   // =========================================================================
+  // M4-D — RETRIEVAL HARDENING TESTS (appended; see the header for H1–H12)
+  // =========================================================================
+
+  await runTest('H1: the M4-D fold — guarded suffix normalization pinned exactly', async () => {
+    // Positive pairs (the design's required matches).
+    const positives: Array<[string, string]> = [
+      ['preferences', 'preference'], ['calls', 'call'], ['briefing', 'brief'],
+      ['running', 'run'], ['preferred', 'prefer'], ['summaries', 'summary'],
+      ['updates', 'update'], ['runs', 'run'], ['matches', 'match'],
+    ];
+    for (const [input, expected] of positives) {
+      assert.strictEqual(foldPersonalMindToken(input), expected, `fold(${input}) === ${expected}`);
+    }
+    // Protected homographs — the suffix is load-bearing.
+    for (const t of ['news', 'evening', 'morning', 'specs', 'economics', 'politics', 'physics']) {
+      assert.strictEqual(foldPersonalMindToken(t), t, `protected token "${t}" unchanged`);
+    }
+    // Negative pairs (the design's required NON-matches): variant never folds
+    // onto a DIFFERENT base.
+    const negatives: Array<[string, string]> = [
+      ['prefers', 'preference'], // prefer != preference
+      ['updated', 'update'],     // updat  != update
+      ['news', 'new'],           // protected
+      ['evening', 'even'],       // protected
+    ];
+    for (const [a, b] of negatives) {
+      assert.notStrictEqual(foldPersonalMindToken(a), foldPersonalMindToken(b), `fold(${a}) !== fold(${b})`);
+    }
+    // Length guards: short tokens never fold.
+    for (const t of ['run', 'tea', 'ops', 'its']) {
+      assert.strictEqual(foldPersonalMindToken(t), t, `len<=3 token "${t}" unchanged`);
+    }
+    // Single pass (documented imperfection): meetings→meeting while meeting→meet.
+    assert.strictEqual(foldPersonalMindToken('meetings'), 'meeting');
+    assert.strictEqual(foldPersonalMindToken('meeting'), 'meet');
+  });
+
+  await runTest('H2: morphological variants match through the MATCHED tier (both directions), not the fallback', async () => {
+    // Query carries base forms, content carries variants (and vice versa) —
+    // under M4-C this exact message matched NOTHING (fallback order).
+    const records = [
+      mem('h2-base', 'INTERACTION_PREFERENCE', 0.30, '2026-01-01T00:00:00.000Z', 'Stated a preference for morning calls and a short briefing.'),
+      mem('h2-unrel', 'COMMUNICATION_PREFERENCE', 0.99, '2026-12-01T00:00:00.000Z', 'Prefers sailing on windy days.'),
+    ];
+    const conditioned = ids(selectPersonalMindMemories(records, 'brief preferences'));
+    assert.deepStrictEqual(conditioned, ['h2-base', 'h2-unrel'],
+      'base-form message matches the variant-bearing memory via tier 1 (fold-only: preference, brief)');
+    // The same pool WITHOUT a query keeps the pre-M4-C order: INTERACTION_PREFERENCE
+    // precedes COMMUNICATION_PREFERENCE in the allow-list round-robin (type
+    // first, confidence only within a type).
+    const fallback = ids(selectPersonalMindMemories(records, undefined));
+    assert.deepStrictEqual(fallback, ['h2-base', 'h2-unrel'], 'without a query the pre-M4-C type round-robin order holds');
+    // Inverse direction: variant-bearing message, base-form content.
+    const inverseRecords = [
+      mem('h2-inv', 'PERSONAL_CONTEXT_NOTE', 0.30, '2026-01-01T00:00:00.000Z', 'Keeps running logs of every call.'),
+      mem('h2-inv2', 'PERSONAL_CONTEXT_NOTE', 0.99, '2026-12-01T00:00:00.000Z', 'Collects vintage maps of Lisbon.'),
+    ];
+    const inverse = ids(selectPersonalMindMemories(inverseRecords, 'the runs and calls'));
+    assert.deepStrictEqual(inverse, ['h2-inv', 'h2-inv2'],
+      'variant-bearing message matches base-form content via tier 1 (fold-only: run, call)');
+  });
+
+  await runTest('H3: a 4-token match outranks EVERY 1-token match across all types (score bands)', async () => {
+    // The exact Task-42 Q1 failure shape: the sole 4-token match is OLD + LOW
+    // confidence; four 1-token matches are NEW + HIGH confidence, one per
+    // other allow-list type. M4-C's round-robin placed the 4-token match 5th.
+    const records = [
+      mem('h3-strong', 'PERSONAL_CONTEXT_NOTE', 0.10, '2026-01-01T00:00:00.000Z', 'Runs ten kilometers every morning before opening the laptop.'),
+      mem('h3-ip', 'INTERACTION_PREFERENCE', 0.99, '2026-12-01T00:00:00.000Z', 'Loves morning check-ins.'),
+      mem('h3-cp', 'COMMUNICATION_PREFERENCE', 0.98, '2026-12-02T00:00:00.000Z', 'Wants morning summaries.'),
+      mem('h3-itp', 'INTERACTION_PATTERN', 0.97, '2026-12-03T00:00:00.000Z', 'Asks for morning metrics.'),
+      mem('h3-io', 'INTERACTION_OBSERVATION', 0.96, '2026-12-04T00:00:00.000Z', 'Mentions morning weather.'),
+    ];
+    const query = 'What do I do every morning before opening the laptop?';
+    const selected = ids(selectPersonalMindMemories(records, query));
+    assert.strictEqual(selected[0], 'h3-strong',
+      'the 4-token PERSONAL_CONTEXT_NOTE match ranks FIRST — no 1-token match can precede it');
+    assert.deepStrictEqual(selected.slice(1), ['h3-ip', 'h3-cp', 'h3-itp', 'h3-io'],
+      'the 1-token band round-robins behind the 4-token band (allow-list order)');
+  });
+
+  await runTest('H4: banding invariant — no lower-score memory ever precedes a higher-score one in tier 1', async () => {
+    // Three bands (scores 3/2/1) with the confidence/recency gradients
+    // deliberately fighting the score gradient.
+    const records: SelMem[] = [];
+    const types = SOPHIA_MEMORY_TYPES;
+    records.push(mem('b3-ip', types[0], 0.20, '2026-01-01T00:00:00.000Z', 'Alpha beta gamma unrelated filler words.'));
+    records.push(mem('b3-cp', types[1], 0.21, '2026-01-02T00:00:00.000Z', 'Alpha beta gamma other filler content.'));
+    records.push(mem('b3-itp', types[2], 0.22, '2026-01-03T00:00:00.000Z', 'Alpha beta gamma more filler text.'));
+    records.push(mem('b2-ip', types[0], 0.99, '2026-12-01T00:00:00.000Z', 'Alpha beta filler sentence.'));
+    records.push(mem('b2-pcn', types[3], 0.98, '2026-12-02T00:00:00.000Z', 'Alpha beta other sentence.'));
+    records.push(mem('b1-cp', types[1], 0.50, '2026-06-01T00:00:00.000Z', 'Alpha filler note.'));
+    records.push(mem('b1-io', types[4], 0.51, '2026-06-02T00:00:00.000Z', 'Beta filler note.'));
+    const selected = ids(selectPersonalMindMemories(records, 'alpha beta gamma'));
+    assert.deepStrictEqual(selected,
+      ['b3-ip', 'b3-cp', 'b3-itp', 'b2-ip', 'b2-pcn', 'b1-cp', 'b1-io'],
+      'bands emit strictly DESC; within a band the type round-robin + confidence order holds');
+    // Independent property check: the folded-score sequence of the selection
+    // is monotonically non-increasing (never 0 before a positive score).
+    const folded = (t?: string | null) => new Set(extractTokens(t).map(foldPersonalMindToken));
+    const scoreOf = (m: SelMem) => {
+      const q = folded('alpha beta gamma');
+      const c = folded(m.content);
+      let s = 0;
+      for (const t of q) if (c.has(t)) s++;
+      return s;
+    };
+    const scores = selectPersonalMindMemories(records, 'alpha beta gamma').map(scoreOf);
+    for (let i = 1; i < scores.length; i++) {
+      assert.ok(scores[i] <= scores[i - 1],
+        `no lower-score memory precedes a higher-score one (scores: ${JSON.stringify(scores)})`);
+    }
+  });
+
+  await runTest('H5: equal-score bands keep the type round-robin (anti-starvation among score-equals)', async () => {
+    // Five memories all tie at score 2; COMMUNICATION_PREFERENCE holds three.
+    // Expected: one per type per round in allow-list order, then the CP queue drains.
+    const records = [
+      mem('h5-cp1', 'COMMUNICATION_PREFERENCE', 0.9, '2026-01-04T00:00:00.000Z', 'Matcha brewing notes one.'),
+      mem('h5-cp2', 'COMMUNICATION_PREFERENCE', 0.8, '2026-01-03T00:00:00.000Z', 'Matcha brewing notes two.'),
+      mem('h5-cp3', 'COMMUNICATION_PREFERENCE', 0.7, '2026-01-02T00:00:00.000Z', 'Matcha brewing notes three.'),
+      mem('h5-ip1', 'INTERACTION_PREFERENCE', 0.5, '2026-01-09T00:00:00.000Z', 'Matcha brewing notes four.'),
+      mem('h5-io1', 'INTERACTION_OBSERVATION', 0.5, '2026-01-06T00:00:00.000Z', 'Matcha brewing notes five.'),
+    ];
+    const selected = ids(selectPersonalMindMemories(records, 'matcha brewing'));
+    assert.deepStrictEqual(selected,
+      ['h5-ip1', 'h5-cp1', 'h5-io1', 'h5-cp2', 'h5-cp3'],
+      'within the equal-score band: IP, CP, IO in round 1 (allow-list order), then the CP queue drains');
+  });
+
+  await runTest('H6: D7-style collision — only same-band ties precede the gold; 1-token distractors never displace it', async () => {
+    // Compact reproduction of the Task-42 D7 failure shape: four hard
+    // distractors TIE the gold's score at higher confidence (one per other
+    // type); a 1-token distractor occupies the earliest allow-list slot.
+    const records: SelMem[] = [
+      mem('h6-gold', 'COMMUNICATION_PREFERENCE', 0.70, '2026-03-01T00:00:00.000Z', 'Prefers concise weekly summaries of team progress every Friday.'),
+      mem('h6-h-ip', 'INTERACTION_PREFERENCE', 0.94, '2026-06-28T00:00:00.000Z', 'Tracks the weekly progress of the marathon plan in a journal.'),
+      mem('h6-h-itp', 'INTERACTION_PATTERN', 0.93, '2026-06-29T00:00:00.000Z', 'Gardening weekly progress is photographed every Sunday.'),
+      mem('h6-h-pcn', 'PERSONAL_CONTEXT_NOTE', 0.92, '2026-06-27T00:00:00.000Z', 'Seems energized by weekly progress photos from the crew.'),
+      mem('h6-h-io', 'INTERACTION_OBSERVATION', 0.91, '2026-06-26T00:00:00.000Z', 'Asks about weekly progress of the neighbourhood program.'),
+      mem('h6-d-ip', 'INTERACTION_PREFERENCE', 0.95, '2026-06-30T00:00:00.000Z', 'Prefers weekly planning sessions to daily stand-ups.'),
+    ];
+    const selected = ids(selectPersonalMindMemories(records, 'write up progress for the weekly review'));
+    const goldRank = selected.indexOf('h6-gold') + 1;
+    assert.ok(goldRank >= 1 && goldRank <= 5,
+      `gold stays within the top 5 — only same-band higher-confidence ties precede it (measured rank ${goldRank})`);
+    assert.ok(!selected.slice(0, goldRank - 1).includes('h6-d-ip'),
+      'the 1-token distractor NEVER precedes the 2-token gold (M4-C measured: it did)');
+  });
+
+  await runTest('H7: fallback byte-equivalence under folding — no usable tokens OR zero FOLDED matches → the exact pre-M4-C policy', async () => {
+    const records = [
+      mem('h7-a', 'INTERACTION_PREFERENCE', 0.9, '2026-03-01T00:00:00.000Z', 'Daily news digest and status update reminders.'),
+      mem('h7-b', 'COMMUNICATION_PREFERENCE', 0.85, '2026-02-01T00:00:00.000Z', 'Prefers plain language.'),
+      mem('h7-c', 'PERSONAL_CONTEXT_NOTE', 0.4, '2026-01-01T00:00:00.000Z', 'Keeps a garden on the balcony.'),
+      mem('h7-d', 'INTERACTION_OBSERVATION', 0.6, '2026-04-01T00:00:00.000Z', 'Enjoys whiteboard explanations.'),
+    ];
+    const expected = expectedPreM4cOrder(records);
+    // (a) No usable tokens at all → exact fallback.
+    for (const query of [undefined, '', '   ', 'the and of a is it'] as (string | undefined)[]) {
+      assert.deepStrictEqual(
+        ids(selectPersonalMindMemories(records, query)),
+        expected,
+        `no-usable-token query (${JSON.stringify(query)}) reproduces the pre-M4-C order`
+      );
+    }
+    // (b) Token-bearing message whose FOLDED tokens match nothing: 'updated'
+    // folds to "updat" (never "update") and 'newsletters' to "newsletter"
+    // (never "news") — the fold cannot force a match here.
+    assert.deepStrictEqual(ids(selectPersonalMindMemories(records, 'updated newsletters')), expected,
+      'zero folded-token matches → exact pre-M4-C fallback (never empty)');
+    assert.ok(selectPersonalMindMemories(records, 'updated newsletters').length > 0,
+      'fallback is not an empty context');
+  });
+
+  await runTest('H8: determinism — folded, score-banded selection is identical across repeated runs', async () => {
+    const records: SelMem[] = [];
+    const types = SOPHIA_MEMORY_TYPES;
+    for (let i = 0; i < 12; i++) {
+      records.push(
+        mem(`h8-${i}`, types[i % types.length], 0.3 + (i % 5) * 0.1,
+          new Date(Date.UTC(2026, 0, 1 + i)).toISOString(),
+          `Founder logged running session number ${i} with alpha beta notes.`)
+      );
+    }
+    for (const query of ['alpha beta gamma', 'runs and calls', undefined, 'zzz no match query']) {
+      const first = selectPersonalMindMemories(records, query);
+      const second = selectPersonalMindMemories(records, query);
+      const third = selectPersonalMindMemories(records, query);
+      assert.deepStrictEqual(ids(first), ids(second), `stable across repeated calls (query=${String(query)})`);
+      assert.deepStrictEqual(ids(second), ids(third), `stable across repeated calls (query=${String(query)})`);
+      assert.deepStrictEqual(first, second, 'identical record objects and order');
+    }
+  });
+
+  await runTest('H9: the 20-memory cap holds for a pool matching only through the fold', async () => {
+    const records: SelMem[] = [];
+    const types = SOPHIA_MEMORY_TYPES;
+    for (let i = 0; i < 30; i++) {
+      records.push(
+        mem(
+          `h9-${i}`,
+          types[i % types.length],
+          0.5,
+          new Date(Date.UTC(2026, 0, 1 + i)).toISOString(),
+          `Founder logged running session number ${i}.`
+        )
+      );
+    }
+    // 'runs' → run matches ONLY through the fold (contents carry 'running').
+    const selected = selectPersonalMindMemories(records, 'runs');
+    assert.strictEqual(selected.length, 20, 'exactly PERSONAL_MIND_RETRIEVAL_LIMIT memories are selected');
+    assert.strictEqual(new Set(ids(selected)).size, 20, 'no memory is selected twice');
+    assert.ok(selected.every((m) => m.content.includes('running')),
+      'every selected memory matched only via running→run (the fold)');
+  });
+
+  await runTest('H10: e2e — fold-only matches render first; lifecycle and founder isolation are preserved under folding', async () => {
+    const founderA = `founder_m4d_a_${randomUUID().slice(0, 8)}`;
+    const founderB = `founder_m4d_b_${randomUUID().slice(0, 8)}`;
+    const markA = `M4D-A-${randomUUID().slice(0, 8)}`;
+    const markB = `M4D-B-${randomUUID().slice(0, 8)}`;
+    const markInactive = `M4D-INACTIVE-${randomUUID().slice(0, 8)}`;
+    const markBOnly = `M4D-BONLY-${randomUUID().slice(0, 8)}`;
+
+    // Founder A: ACTIVE fold-only match (OLD + LOW confidence).
+    await store.createMemory({
+      founderId: founderA,
+      memoryType: 'INTERACTION_PREFERENCE',
+      content: `Stated a preference for morning calls. ${markA}`,
+      provenance: 'founder_direct',
+      confidence: 0.3,
+    });
+    // Founder A: newer, higher-confidence, unrelated memory.
+    await store.createMemory({
+      founderId: founderA,
+      memoryType: 'COMMUNICATION_PREFERENCE',
+      content: `Prefers sailing on windy days. ${markB}`,
+      provenance: 'founder_direct',
+      confidence: 0.95,
+    });
+    // Founder A: PENDING_REVIEW fold-matching memory (lifecycle must exclude).
+    await store.createMemory({
+      founderId: founderA,
+      memoryType: 'INTERACTION_OBSERVATION',
+      content: `Watches the call preferences of every visitor closely. ${markInactive}`,
+      provenance: 'founder_direct',
+      lifecycleState: 'PENDING_REVIEW',
+    });
+    // Founder B: fold-matching memory that must NEVER render for founder A.
+    await store.createMemory({
+      founderId: founderB,
+      memoryType: 'PERSONAL_CONTEXT_NOTE',
+      content: `Keeps a call preference journal. ${markBOnly}`,
+      provenance: 'founder_direct',
+      confidence: 0.9,
+    });
+
+    const ctx = await SophiaContextAssembler.assemble({
+      message: 'What are my calling preferences in the morning?',
+      founderId: founderA,
+    });
+    const slice = ctx.slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
+    assert.ok(slice, 'personal-mind slice renders');
+    assert.ok(slice.content.includes(markA), 'the ACTIVE fold-only match renders');
+    assert.ok(slice.content.includes(markB), 'the unrelated memory still renders (tier-2 fill)');
+    assert.ok(
+      slice.content.indexOf(markA) < slice.content.indexOf(markB),
+      'the fold-only match renders BEFORE the higher-confidence unrelated memory'
+    );
+    assert.ok(!ctx.formattedContext.includes(markInactive),
+      'a PENDING_REVIEW fold-matching memory is NEVER retrieved (lifecycle authority preserved under M4-D)');
+    assert.ok(!ctx.formattedContext.includes(markBOnly),
+      "another founder's fold-matching memory NEVER renders (founder isolation preserved)");
+  });
+
+  await runTest('H11: e2e — the 1200-char render budget is enforced for fold-matched memories', async () => {
+    const founder = `founder_m4d_budget_${randomUUID().slice(0, 8)}`;
+    const mark = `M4D-BUDGET-${randomUUID().slice(0, 8)}`;
+    const longContent = `Founder prefers detailed running logs ${mark} ${'with many elaborate annotations about every single morning session '.repeat(25)}`;
+    assert.ok(longContent.length <= 2000, 'test fixture respects the store content bound');
+    await store.createMemory({
+      founderId: founder,
+      memoryType: 'PERSONAL_CONTEXT_NOTE',
+      content: longContent,
+      provenance: 'founder_direct',
+    });
+
+    const ctx = await SophiaContextAssembler.assemble({
+      message: 'Tell me about the runs every morning',
+      founderId: founder,
+    });
+    const slice = ctx.slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
+    assert.ok(slice, 'slice renders for the fold-matched long memory');
+    assert.ok(slice.content.includes('[TRUNCATED]'), 'overflow content is truncated, not silently dropped');
+    assert.ok(slice.content.length <= 1200 + 5, `container stays within the 1200-char personalMind budget (got ${slice.content.length})`);
+    assert.ok(slice.content.trimEnd().endsWith('</personal_memory_context>'), 'closing tag always emitted');
+    const closers = slice.content.match(/<\/personal_memory_context>/g) || [];
+    assert.strictEqual(closers.length, 1, 'exactly one renderer-owned container close');
+  });
+
+  await runTest('H12: the fold stays Personal-Mind-scoped — the shared tokenizer never folds', async () => {
+    // The Company Brain tokenizer is byte-identical: morphological variants
+    // remain DISTINCT raw tokens (the fold lives downstream, in the Personal
+    // Mind retrieval path only).
+    assert.deepStrictEqual(extractTokens('preferences'), ['preferences'], 'no stemming in extractTokens');
+    assert.deepStrictEqual(extractTokens('running'), ['running'], 'no ing-strip in extractTokens');
+    assert.deepStrictEqual(extractTokens('calls'), ['calls'], 'no plural strip in extractTokens');
+    assert.deepStrictEqual(extractTokens('news'), ['news'], 'protected words are a FOLD concept only');
+  });
+
+  // =========================================================================
   // CLEANUP
   // =========================================================================
   if (dbAvailable) {
     await (prisma as any).sophiaMemory.deleteMany({
       where: { founderId: { startsWith: 'founder_m4c_' } },
+    }).catch(() => {});
+    await (prisma as any).sophiaMemory.deleteMany({
+      where: { founderId: { startsWith: 'founder_m4d_' } },
     }).catch(() => {});
   }
   store.clearForTests();
