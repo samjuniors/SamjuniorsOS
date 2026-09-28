@@ -671,3 +671,22 @@ Stage Summary:
 - Carrier feat/m4b1-memory-lifecycle = 237f662 (base 4cce4fc + exactly the 9 M4-B.1 files), ALL 9 memory-chain suites green + lint clean + 0 introduced type errors + browser-verified. Ready to push.
 - CRITICAL BLOCKER: no GitHub credentials in this sandbox — founder must run: git push origin feat/m4b1-memory-lifecycle (from the sandbox via authenticated session, or from the bundles: git clone /home/z/carrier-m4b1.bundle && git push) and git push origin 321641f:refs/heads/archive/m4b1-sandbox-backup.
 - Integration sequence determined: merge sofia-merge → main (zero functional conflicts; JarvisLab delete wins), then merge carrier with --allow-unrelated-histories (conflicts = the 2 TAKE MAIN routes + trivial), or patch-based. ARCHITECTURE.md:19 needs a founder-approved wording fix. Nothing merged — awaiting founder decision.
+
+---
+Task ID: 38
+Agent: main (Z.ai Code)
+Task: SAFE CANONICAL MEMORY INTEGRATION (revised objective: integration/memory-foundation = origin/main + feat/sofia-merge + memory chain @ 4cce4fc + M4-B.1 @ 321641f) — HALTED at STEP 1 safety gate (remote backup push impossible)
+
+Work Log:
+- Read worklog Tasks 1–37 + live state: local sandbox main had moved to 78d183b (Task 37 session's snapshot/worklog commits atop 321641f); carrier feat/m4b1-memory-lifecycle = 237f662 intact (parent 4cce4fc, exactly the 9 M4-B.1 files, +1555/−50); local backup branch archive/m4b1-sandbox-backup and tag archive-m4b1-321641f both = 321641f.
+- STEP 1.1 fetch origin --prune: PASS (refs current; remote unchanged).
+- STEP 1.2 origin/main verification: PASS — adf9a089b2adc654a2929fc54ac24f9e67f71372 (exact, cross-checked rev-parse + ls-remote).
+- STEP 1.3 backup push: FAIL — `GIT_TERMINAL_PROMPT=0 git push origin 321641f:refs/heads/archive/m4b1-sandbox-backup` → exit 128 "could not read Username for 'https://github.com'". Fresh credential audit: no gh CLI, no ~/.ssh, no ~/.git-credentials, no credential helper, no GITHUB_TOKEN/GH_TOKEN env, remote URL clean https (no embedded token).
+- STEP 1.4 remote backup existence: FAIL — ls-remote for the ref returns empty (branch absent on GitHub).
+- STOPPED per contract ("Stop if any verification fails") BEFORE any modification: no integration branch created, no merges, no deletions, no force-push, no reset, no cherry-pick, main untouched; zero code changes (tree drift = runtime data only).
+- M4-B.1 protection status (local-only): commit 321641f intact (cat-file = commit); = local branch archive/m4b1-sandbox-backup (exact); = tag archive-m4b1-321641f^{} (exact); ancestor of local main 78d183b (GC-safe). Carrier 237f662 intact. ⚠ Task 37's two bundle files (/home/z/m4b1-sandbox-backup.bundle, /home/z/carrier-m4b1.bundle) were LOST to the home-dir wipe — in-repo branch/tag are the only surviving local protections; M4-B.1 exists nowhere outside this sandbox.
+
+Stage Summary:
+- STEP 1 score: fetch PASS, origin/main PASS, push FAIL, remote-backup FAIL → task HALTED at the safety gate exactly as instructed. 2/4 pass.
+- UNBLOCK REQUIRED: Founder must supply a GitHub PAT (classic `repo` scope or fine-grained Contents:Read/Write on samjuniors/SamjuniorsOS) in-session; established hygiene applies (token used for the push, remote SHA verified == 321641f6cc5b2fab56de56eafcac8cc66eab5bfb exactly, then token removed).
+- After unblock, full STEPS 2–8 ready to execute: integration/memory-foundation from adf9a089 → merge feat/sofia-merge (Task 37 map: adf9a089↔6628807 delta = 3 files; realtime/turn + tts/voices routes TAKE MAIN; JarvisLab.tsx delete-wins) → tree-integrate memory chain from 4cce4fc excluding runtime data + sandbox harness rewrites (canonical m4a-default-extractor-child.ts preserved) → apply M4-B.1 9-file set from 321641f → manual reconciliation (prisma/schema.prisma = SophiaMemory + lifecycleState only vs main's voice work; conversation/store.ts; authentication; realtime) → db:generate + lint + build + m4b1 20/20 + k2 + m4a + full Sophia suite + invariant checks (two-brain separation, lifecycleState authority, active as derived mirror, no vector/Redis/Graphiti) → A–H report → STOP before any merge into main.
