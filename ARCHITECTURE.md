@@ -16,7 +16,7 @@ It serves a solo founder by turning high-level intent into verified, durable, an
 
 ## 2. Architectural Principles
 
-1. **One Authoritative Company Brain:** SamJuniorsOS has exactly one persistent intelligence layer (Sophia) and one authoritative state store. There are no parallel company brains, no competing state machines, and no disconnected agent silos.
+1. **One Authoritative Company Brain:** SamJuniorsOS intentionally has two distinct brains with a strict authority boundary: the **Sophia Personal Mind** (perception, conversation, personality, sensory context, interaction, and personal memory) and the **SamJuniors Company Brain** (authoritative company state, company knowledge, strategy, workforce, workflows, execution, governance, company memory, and audit) backed by one authoritative state store. The Personal Mind may access and query the Company Brain; it must never become an alternate source of truth for company state. There are no parallel company brains, no competing state machines, and no disconnected agent silos.
 2. **Deterministic Governance:** Consequential state transitions, authorization evaluations, input validations, cryptographic approval bindings, idempotency locks, and audit logging are owned by deterministic code. Probabilistic models never silently decide governance.
 3. **LLMs Within Controlled Boundaries:** Large Language Models are used for drafting, synthesis, research, interpretation, and reasoned proposals. They operate strictly within bounded prompts, typed output schemas, and deterministic verification gates.
 4. **Durable Execution:** Workflows, agent runs, and approval states must survive application crashes, container restarts, and network disconnects without state loss or duplicate side effects.

@@ -11,9 +11,8 @@ import {
 import { AgentRunStore } from '../../src/lib/server/agents/run-store';
 import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approval-store';
 import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store';
-import { CompanyKnowledgeStore } from '../../src/lib/server/knowledge/knowledge-store';
-import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
-import { CompanyContextProvider } from '../../src/lib/server/context/company-context';
+import { CompanyKnowledgeStore, CANONICAL_COMPANY_KNOWLEDGE } from '../../src/lib/server/knowledge/knowledge-store';
+import { CompanyMemoryStore, INITIAL_COMPANY_MEMORIES } from '../../src/lib/server/memory/memory-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 
 /**
@@ -65,7 +64,7 @@ function createAuthenticatedRequest(
   });
 }
 
-function resetStores(): void {
+async function resetStores(): Promise<void> {
   try {
     InMemoryApprovalStore.getInstance().clear();
     const runStore = AgentRunStore.getInstance();
@@ -78,6 +77,18 @@ function resetStores(): void {
     claimStore.signals.clear();
     claimStore.sources.clear();
     DurableFileStore.getInstance().clearCollection('epistemic_claims');
+    // M0 test-isolation fix: reset the knowledge + memory singletons as well.
+    // Previously these were NOT reset, so the poisoned knowledge item added by
+    // test 10 persisted process-wide and contaminated every later test.
+    // Pre-M3 correction: durable collections are cleared BEFORE the seed sets
+    // (the old order wrote seeds then wiped the file — leaving memory holding
+    // seeds while the durable file was empty), and the async store resets are
+    // AWAITED so the durable writes (and best-effort prisma mirrors) complete
+    // before the test body runs — no background write races across tests.
+    DurableFileStore.getInstance().clearCollection('company_memories');
+    DurableFileStore.getInstance().clearCollection('company_knowledge');
+    await CompanyKnowledgeStore.getInstance().setKnowledge([...CANONICAL_COMPANY_KNOWLEDGE]);
+    await CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
   } catch (e) {
     // Ignore store reset errors in test setup
   }
@@ -93,7 +104,7 @@ async function runTests() {
 
   async function test(name: string, fn: () => Promise<void>) {
     try {
-      resetStores();
+      await resetStores();
       await fn();
       console.log(`  [PASS] ${name}`);
       passed++;

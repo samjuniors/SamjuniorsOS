@@ -20,4 +20,14 @@ declare module "bun:test" {
     toBeGreaterThan(expected: number): void;
   }
   export function expect(actual: unknown): ExpectMatchers;
+
+  /**
+   * Module mocking surface (used by the M4-A default-extractor regression
+   * child, which fakes only the z-ai SDK network boundary). `mock.module`
+   * also works in plain `bun <script>` runs, not just under `bun test`.
+   */
+  export interface BunMockModuleApi {
+    module(specifier: string, factory: () => unknown): void;
+  }
+  export const mock: BunMockModuleApi;
 }

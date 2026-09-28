@@ -54,8 +54,14 @@ export interface IAuditStore {
 }
 
 /**
- * Authoritative PostgreSQL Approval Store.
- * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+ * DATABASE REALITY (M0 naming note): "Postgres*" classes are named for the
+ * TARGET architecture (PostgreSQL at the M6 milestone). In this sandbox
+ * branch the Prisma schema is the SQLite port, so this class currently runs
+ * against SQLite via Prisma (`DATABASE_URL=file:...`).
+ */
+/**
+ * Authoritative Approval Store (target: PostgreSQL — see naming note above).
+ * Direct persistence via Prisma. Fail-closed on database failure.
  */
 export class PostgresApprovalStore implements IApprovalStore {
   private static instance: PostgresApprovalStore;
@@ -300,8 +306,14 @@ export class PostgresApprovalStore implements IApprovalStore {
 }
 
 /**
- * Authoritative PostgreSQL Audit Store.
- * Direct persistence to PostgreSQL via Prisma. Fail-closed on database failure.
+ * DATABASE REALITY (M0 naming note): "Postgres*" classes are named for the
+ * TARGET architecture (PostgreSQL at the M6 milestone). In this sandbox
+ * branch the Prisma schema is the SQLite port, so this class currently runs
+ * against SQLite via Prisma (`DATABASE_URL=file:...`).
+ */
+/**
+ * Authoritative Audit Store (target: PostgreSQL — see naming note above).
+ * Direct persistence via Prisma. Fail-closed on database failure.
  */
 export class PostgresAuditStore implements IAuditStore {
   private static instance: PostgresAuditStore;
@@ -491,7 +503,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
           },
         });
       } catch (err) {
-        // Fallback safely in test environments without live PostgreSQL
+        // Fallback safely in test environments without a live database
       }
     }
 

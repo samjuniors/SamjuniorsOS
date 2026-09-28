@@ -1198,9 +1198,11 @@ export async function getGraphOverview(): Promise<GraphDTO> {
     focus: 'AI-Native Operating Environment',
   };
   try {
-    const canonical = CompanyContextProvider.getCanonicalContext();
-    if (canonical?.constitution?.name) {
-      company.name = canonical.constitution.name;
+    // M1: the constitution is a static charter exposed directly by the
+    // provider; operational state no longer routes through this call.
+    const constitution = CompanyContextProvider.getCompanyConstitution();
+    if (constitution?.name) {
+      company.name = constitution.name;
     }
   } catch {
     // Fall back to default organization name if company context is empty

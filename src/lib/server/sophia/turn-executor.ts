@@ -1,7 +1,8 @@
-import { ConversationStore, ConversationSecurityError, ConversationNotFoundError } from '../conversation';
+import { ConversationStore, ConversationSecurityError, ConversationNotFoundError, ChatMessageRecord } from '../conversation';
 import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
+import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
 import { SERVER_AGENTS } from '../agents/definitions';
 
 export interface ExecuteSophiaTurnOptions {
@@ -10,6 +11,12 @@ export interface ExecuteSophiaTurnOptions {
   conversationId?: string;
   turnId?: string;
   executeDirective?: boolean;
+  /**
+   * Ingress channel label recorded on the persisted assistant message
+   * (observability only — never an authority signal). Defaults to
+   * 'live_voice'; the SOFIA ask surface passes 'sofia_ask'.
+   */
+  ingress?: string;
 }
 
 export interface SophiaTurnResult {
@@ -31,10 +38,10 @@ const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
 
 /**
  * ============================================================================
- * UNIFIED SOPHIA TURN EXECUTOR (PHASE 4C-B)
+ * UNIFIED SOPHIA TURN EXECUTOR (PHASE 4C-B / M3 K-1 canonical ingress)
  * ============================================================================
  * Canonical execution path for turns entering Sophia from any modality
- * (text chat or live streaming STT).
+ * (text chat, SOFIA typed surface, or live streaming STT).
  *
  * CRITICAL ARCHITECTURAL BOUNDARY:
  * 1. Audio and transcripts are UNTRUSTED DATA.
@@ -42,6 +49,24 @@ const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
  *    ConversationStore -> ContextAssembler -> IntentClassifier -> ServerGateway
  * 3. ServerGateway strips any untrusted identity or credential claims.
  * 4. Idempotency guarantees: exactly-once execution per turnId.
+ *
+ * KNOWN ISSUE (M3 hardening review — deliberate, pinned, DO NOT change
+ * without a Founder decision; see tests/sophia/m3_authority_hardening.test.ts
+ * and the ADR 0002 addendum):
+ *   When a non-empty conversationId is supplied but the conversation does not
+ *   exist, this executor provisions a FRESH conversation bound to the
+ *   authenticated founder instead of surfacing the store's
+ *   ConversationNotFoundError. Security ordering is safe — an ownership
+ *   MISMATCH (existing conversation owned by another founder) fails closed
+ *   with Forbidden BEFORE the provisioning fallback can run, and the fresh
+ *   fork is always founder-bound — but the behavior (a) diverges from
+ *   ADR 0002 §7's blanket "404 on nonexistent id" contract, which the
+ *   /api/agent-chat route still honors, (b) silently loses continuity for a
+ *   stale/typo'd id, and (c) re-executes a turn when a caller retries with the
+ *   same bogus id + same turnId, because the fork happens before the
+ *   conversation-scoped idempotency lookup. Required by the live-voice and
+ *   SOFIA-surface UX (a hard 404 mid-voice-turn is a worse failure mode);
+ *   aligning the surfaces is a broader behavioral decision.
  */
 export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise<SophiaTurnResult> {
   const { message, founderId, conversationId, turnId, executeDirective } = opts;
@@ -81,7 +106,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         error: `Forbidden: ${err.message}`,
       };
     }
-    // If specified conversation not found, provision fresh conversation bound to this founder
+    // KNOWN ISSUE (pinned): a nonexistent conversationId provisions a fresh
+    // conversation here instead of surfacing the 404 — see the header note.
+    // ConversationSecurityError is deliberately re-thrown ABOVE this catch so
+    // an ownership mismatch can NEVER fall into the provisioning path.
     try {
       conversation = await convStore.createConversation({
         founderId,
@@ -166,9 +194,13 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }));
 
     // 6. Context Assembly: deterministic, multi-source, authority-classified
+    //    (M3 K-2: the authenticated founder principal threads through so the
+    //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS founder
+    //    only — personal context, never company authority.)
     const assembledContext = await SophiaContextAssembler.assemble({
       message: cleanMessage,
       history: historyItems,
+      founderId,
     });
 
     // 7. Intent Classification with structural trust boundary
@@ -207,7 +239,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
 
     // 9. Persist assistant turn to durable storage with assistant idempotency key
-    let assistantMessageRecord = null;
+    //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
+    //    stage below reads assistantMessageRecord?.id, so the historic
+    //    implicit-null narrowing quirk is closed here with a pure annotation.)
+    let assistantMessageRecord: ChatMessageRecord | null = null;
     if (executionResult.reply) {
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
@@ -224,7 +259,8 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               liveAi: executionResult.liveAi,
               directiveExecuted: executionResult.directiveExecuted,
               metrics: executionResult.metrics,
-              voiceIngress: true,
+              voiceIngress: (opts.ingress ?? 'live_voice') !== 'sofia_ask',
+              ingress: opts.ingress ?? 'live_voice',
             },
           },
           founderId
@@ -232,6 +268,27 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       } catch (err) {
         console.error('[SophiaTurnExecutor] Failed to persist assistant reply:', err);
       }
+    }
+
+    // 10. M4-A Personal Mind capture (fire-and-forget — NEVER a conversational
+    //     dependency): after the assistant reply is durably persisted, an
+    //     asynchronous capture stage proposes personal-memory candidates
+    //     through the deterministic MemoryGate. Only NEEDS_REVIEW candidates
+    //     persist, INACTIVE, pending explicit Founder confirmation via the
+    //     governed /api/sofia/memory PATCH. Capture failures are contained
+    //     inside the stage and can never fail this turn; a replayed turn
+    //     returns at the idempotency check above before ever reaching here.
+    if (executionResult.success && executionResult.reply && founderMessageRecord) {
+      scheduleSophiaMemoryCapture({
+        founderId,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        turnId: cleanTurnId,
+        founderMessage: cleanMessage,
+        assistantReply: executionResult.reply,
+        ingress: opts.ingress ?? 'live_voice',
+      });
     }
 
     return {

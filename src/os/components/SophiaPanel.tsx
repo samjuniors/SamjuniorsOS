@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { ChevronDown, AlertTriangle, Scale, X, Sparkles } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, AlertTriangle, Scale, X, Sparkles, BrainCircuit, Check, Trash2, RefreshCw } from "lucide-react";
 import type { Settings } from "../lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork, agentName, STAGES } from "../lib/osStore";
 import { DecisionSurface, AttentionSurface, EmptyState } from "./surfaces/StandardSurfaces";
@@ -46,12 +46,240 @@ function Toggle({ label, on, onClick, hint }: { label: string; on: boolean; onCl
   );
 }
 
+/* ------------------------------------------------------------------ Memory review (M4-A hardening → M4-B.1 lifecycle)
+ *
+ * Founder review surface for PENDING_REVIEW Sophia personal-memory capture
+ * candidates. Reuses the GOVERNED /api/sofia/memory APIs verbatim:
+ *   GET    ?lifecycleState=PENDING_REVIEW — the review queue (with
+ *                           deterministic duplicate/similarity annotations).
+ *                           M4-B.1 queue-isolation fix: records the Founder
+ *                           ARCHIVED or REJECTED no longer pollute the
+ *                           pending queue (the old ?active=false filter
+ *                           conflated pending candidates with deactivated
+ *                           memories).
+ *   PATCH  { id, active: true } — the ONLY activation path (approve)
+ *   PATCH  { id, lifecycleState: "REJECTED" } — reject as a TOMBSTONE
+ *                           (M4-B.1: preserves the candidate's provenance
+ *                           and keeps it in the capture dedupe pool so a
+ *                           refused candidate cannot silently re-enter the
+ *                           queue as a "new" capture; DELETE remains the
+ *                           physical escape hatch at the API level)
+ * Nothing here bypasses the server: this is a thin review UI over the
+ * same governed boundary the tests pin.
+ */
+
+interface PendingMemory {
+  id: string;
+  memoryType: string;
+  content: string;
+  confidence: number;
+  provenance?: string;
+  createdAt?: string;
+  active?: boolean;
+  lifecycleState?: string;
+  metadata?: {
+    captureStatus?: string;
+    conversationId?: string;
+    turnId?: string | null;
+    capturedAt?: string;
+    gate?: { decision?: string; reasons?: string[] };
+  };
+}
+
+interface ReviewAnnotations {
+  [memoryId: string]: {
+    duplicateOf?: { id: string; content: string };
+    similarTo?: Array<{ id: string; content: string; similarity: number }>;
+    contradicts?: Array<{ id: string; content: string }>;
+  };
+}
+
+const MEMORY_TYPE_LABEL: Record<string, string> = {
+  INTERACTION_PREFERENCE: "interaction pref",
+  COMMUNICATION_PREFERENCE: "comms pref",
+  INTERACTION_PATTERN: "pattern",
+  PERSONAL_CONTEXT_NOTE: "context note",
+  INTERACTION_OBSERVATION: "observation",
+};
+
+function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
+  const [pending, setPending] = useState<PendingMemory[]>([]);
+  const [annotations, setAnnotations] = useState<ReviewAnnotations>({});
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [busyId, setBusyId] = useState<string>("");
+  // P2 follow-up (queue >50 visibility): the queue pages through the
+  // founder's full pending set (50 per page, deterministic order) instead of
+  // silently hiding the oldest candidates. `total` is the authoritative
+  // count for the badge; "Show more" advances the offset.
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+
+  const PAGE_SIZE = 50;
+
+  const load = async (offsetArg = 0, append = false) => {
+    setStatus("loading");
+    try {
+      // M4-B.1: the queue reads the exact PENDING_REVIEW lifecycle state —
+      // archived and rejected records stay out of the founder's review
+      // queue (the previous ?active=false filter conflated them).
+      const res = await fetch(`/api/sofia/memory?lifecycleState=PENDING_REVIEW&limit=${PAGE_SIZE}&offset=${offsetArg}`);
+      if (!res.ok) throw new Error(`queue fetch failed (${res.status})`);
+      const body = await res.json();
+      const list = Array.isArray(body.memories) ? body.memories : [];
+      setPending((prev) => (append ? [...prev, ...list] : list));
+      setAnnotations((prev) => ({ ...prev, ...(body.annotations ?? {}) }));
+      setOffset(offsetArg);
+      setTotal(typeof body.total === "number" ? body.total : list.length);
+      setHasMore(body.hasMore === true);
+      setStatus("ready");
+      onCount?.(typeof body.total === "number" ? body.total : list.length);
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  useEffect(() => { load(0, false); }, []);
+
+  const approve = async (id: string) => {
+    setBusyId(id);
+    try {
+      await fetch("/api/sofia/memory", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, active: true }),
+      });
+    } catch { /* review action is best-effort UI; server state is authoritative */ }
+    await load(0, false);
+    setBusyId("");
+  };
+
+  const reject = async (id: string) => {
+    setBusyId(id);
+    try {
+      // M4-B.1: reject is a REJECTED tombstone, not a physical delete — the
+      // candidate's provenance is preserved and it stays in the capture
+      // dedupe pool (a refused candidate must not silently re-enter the
+      // queue as a "new" capture). DELETE remains the hard-delete escape
+      // hatch at the API level.
+      await fetch("/api/sofia/memory", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, lifecycleState: "REJECTED" }),
+      });
+    } catch { /* review action is best-effort UI; server state is authoritative */ }
+    await load(0, false);
+    setBusyId("");
+  };
+
+  if (status === "loading") {
+    return <p className="py-1 text-[11.5px] text-slate-500">Loading captured memory candidates…</p>;
+  }
+  if (status === "error") {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-[11.5px] text-rose-300/90">Couldn't load the memory review queue.</p>
+        <button onClick={() => load(0, false)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white">
+          <RefreshCw size={11} /> Retry
+        </button>
+      </div>
+    );
+  }
+  if (pending.length === 0) {
+    return <p className="py-1 text-[12px] text-slate-500">No pending memories. Captured candidates wait here for your confirmation.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="max-h-72 space-y-2 overflow-y-auto [scrollbar-width:thin] pr-0.5 pb-4">
+        {pending.map((m) => {
+        const note = annotations[m.id];
+        const gateReasons = m.metadata?.gate?.reasons?.filter((r) => r !== "PASSED_DETERMINISTIC_CHECKS") ?? [];
+        return (
+          <div key={m.id} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-2 text-[12px]">
+            <p className="text-slate-100">{m.content}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[9.5px] uppercase tracking-[0.1em] text-slate-500">
+              <span className="rounded bg-white/5 px-1.5 py-px font-mono normal-case tracking-normal">{MEMORY_TYPE_LABEL[m.memoryType] ?? m.memoryType}</span>
+              {typeof m.confidence === "number" && <span className="tnum font-mono normal-case">conf {m.confidence.toFixed(2)}</span>}
+              {m.metadata?.capturedAt && <span className="font-mono normal-case">{new Date(m.metadata.capturedAt).toLocaleString()}</span>}
+              {m.metadata?.conversationId && (
+                <span className="max-w-[120px] truncate font-mono normal-case" title={m.metadata.conversationId}>from {m.metadata.conversationId}</span>
+              )}
+            </div>
+            {(note?.duplicateOf || (note?.similarTo?.length ?? 0) > 0) && (
+              <p className="mt-1.5 rounded border border-amber-300/20 bg-amber-300/5 px-2 py-1 text-[10.5px] text-amber-200/90">
+                {note.duplicateOf
+                  ? `Possible exact duplicate of: “${note.duplicateOf.content.slice(0, 80)}”`
+                  : `Similar to an existing memory (${Math.round((note.similarTo![0].similarity ?? 0) * 100)}% overlap): “${note.similarTo![0].content.slice(0, 80)}”`}
+              </p>
+            )}
+            {(note?.contradicts?.length ?? 0) > 0 && (
+              <p className="mt-1.5 rounded border border-rose-300/20 bg-rose-300/5 px-2 py-1 text-[10.5px] text-rose-200/90">
+                Possible contradiction with an existing memory: “{note.contradicts![0].content.slice(0, 80)}”
+              </p>
+            )}
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={() => approve(m.id)}
+                disabled={busyId === m.id}
+                className="flex items-center gap-1 rounded-md border border-emerald-400/30 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-200 transition hover:bg-emerald-400/20 disabled:opacity-40"
+              >
+                <Check size={11} /> Approve
+              </button>
+              <button
+                onClick={() => reject(m.id)}
+                disabled={busyId === m.id}
+                className="flex items-center gap-1 rounded-md border border-rose-400/25 bg-rose-400/5 px-2 py-1 text-[11px] text-rose-200 transition hover:bg-rose-400/15 disabled:opacity-40"
+              >
+                <Trash2 size={11} /> Reject
+              </button>
+              {gateReasons.length > 0 && <span className="ml-auto font-mono text-[9.5px] text-slate-600" title={`Gate: ${gateReasons.join(", ")}`}>gate: {gateReasons[0]}</span>}
+            </div>
+          </div>
+        )})}
+      </div>
+      {/* P2 follow-up: page controls — the badge total is the authoritative
+          count; "Show more" pages the queue so the OLDEST pending candidates
+          are reviewable, not just the newest 50. */}
+      {(hasMore || offset > 0) && (
+        <p className="text-[10.5px] text-slate-500">
+          Showing {pending.length} of {total} pending
+          {hasMore && (
+            <button
+              onClick={() => load(offset + PAGE_SIZE, true)}
+              className="ml-2 rounded-md border border-white/10 px-2 py-0.5 text-[10.5px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
+            >
+              Show more
+            </button>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
   const [open, setOpen] = useState(false);
+  const [pendingMemoryCount, setPendingMemoryCount] = useState(0);
   const attention = useOS(openAttention);
   const decisions = useOS(openDecisions);
   const work = useOS(activeWork);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => onChange({ ...settings, [k]: v });
+
+  // Discoverability: the collapsed pill needs the pending-capture count even
+  // before the panel is opened once — a one-shot governed GET on mount (the
+  // open panel's MemoryReview keeps the live count afterwards). Uses the
+  // authoritative `total` (P2 follow-up) so a >50 queue reports its real size.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/sofia/memory?lifecycleState=PENDING_REVIEW&limit=1")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!cancelled && typeof body?.total === "number") setPendingMemoryCount(body.total);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const decide = (id: string, opt: string) => {
     const d = decisions.find((x) => x.id === id);
@@ -69,6 +297,7 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
   if (!open) {
     const hasDecisions = decisions.length > 0;
     const hasAttention = attention.length > 0;
+    const hasMemories = pendingMemoryCount > 0;
     return (
       <div className="pointer-events-auto">
         <button
@@ -76,7 +305,7 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
           className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] font-medium tracking-wide backdrop-blur-xl transition-all duration-300 active:scale-95 ${
             hasDecisions
               ? "border-amber-300/40 bg-[#0c1524]/90 text-amber-100 shadow-[0_0_24px_-4px_rgba(251,191,36,0.35)]"
-              : hasAttention
+              : hasAttention || hasMemories
               ? "border-cyan-300/30 bg-[#081220]/90 text-cyan-100 shadow-[0_0_20px_-4px_rgba(56,189,248,0.3)]"
               : "border-white/10 bg-[#040a14]/75 text-slate-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)] hover:border-cyan-300/30 hover:text-white"
           }`}
@@ -85,6 +314,8 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
             <Scale size={13} className="text-amber-300 animate-pulse" />
           ) : hasAttention ? (
             <AlertTriangle size={13} className="text-cyan-300" />
+          ) : hasMemories ? (
+            <BrainCircuit size={13} className="text-cyan-300" />
           ) : (
             <Sparkles size={13} className="text-cyan-300" />
           )}
@@ -93,6 +324,8 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
               ? `${decisions.length} Decision${decisions.length > 1 ? "s" : ""} waiting`
               : hasAttention
               ? `${attention.length} Item${attention.length > 1 ? "s" : ""} need you`
+              : hasMemories
+              ? `${pendingMemoryCount} memor${pendingMemoryCount > 1 ? "ies" : "y"} to review`
               : "Briefing"}
           </span>
           <span className="text-[10px] text-cyan-200/50">▾</span>
@@ -153,6 +386,11 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
                 {attention.length > 6 && <p className="text-[10.5px] text-slate-500 pt-1">+{attention.length - 6} more in SamJuniorsOS</p>}
               </div>
             )}
+          </Section>
+
+          {/* ---- Memory Review (M4-A hardening: pending capture candidates) ---- */}
+          <Section title="Memory review" count={pendingMemoryCount} defaultOpen={false} icon={<BrainCircuit size={11} />}>
+            <MemoryReview onCount={setPendingMemoryCount} />
           </Section>
 
           {/* ---- Active Workstreams ---- */}

@@ -12,14 +12,11 @@ import {
   CompanyMemory,
 } from '@/types/os';
 import {
-  INITIAL_AGENTS,
-  INITIAL_INITIATIVES,
-  INITIAL_COMPANY_DECISIONS,
-  INITIAL_ATTENTION_ITEMS,
   INITIAL_RESEARCH,
-  SAMPLE_FINANCIAL_MODEL,
-  INITIAL_ORCHESTRATION,
 } from '@/lib/os-data';
+import { CompanyStateStore } from '@/lib/server/state/state-store';
+import { CompanyMemoryStore } from '@/lib/server/memory/memory-store';
+import { AgentRunStore, AgentRunRecord } from '@/lib/server/agents/run-store';
 
 export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
   constitution: {
@@ -31,14 +28,59 @@ export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
 }
 
 /**
- * Server-Side Single Source of Truth for Company Context
+ * ============================================================================
+ * COMPANY CONTEXT PROVIDER — M1: PURE AUTHORITY-LABELLED FORMATTER / ASSEMBLER
+ * ============================================================================
+ *
+ * AUTHORITY MODEL (per docs/architecture/MEMORY_RECONCILIATION_REPORT.md, M1):
+ * - OPERATIONAL STATE (initiatives, decisions, attention items, agents,
+ *   financial model) is owned by CompanyStateStore. This provider NO LONGER
+ *   reads operational state from os-data code constants; it assembles it
+ *   from the canonical store (which itself seeds from those constants but
+ *   honors durable storage + authoritative Prisma reads).
+ * - HISTORICAL PRECEDENT (company memory) is owned by CompanyMemoryStore.
+ *   The former parallel module array `serverCompanyMemory` (zero callers)
+ *   has been deleted.
+ * - WORKSTREAM RUNS are owned by AgentRunStore. The former parallel module
+ *   array `serverOrchestrationHistory` (zero callers, seeded with demo data)
+ *   has been deleted; the advisory projection is adapted from real
+ *   AgentRunRecords.
+ * - RESEARCH INTELLIGENCE (research radar + engineering recon) remains in
+ *   this module: it is not operational state, has live recorders (github
+ *   tool provider), and has no other canonical home yet.
+ * - The CONSTITUTION is a static charter, not operational state.
+ *
+ * Consequence: `getCanonicalContext()` / `getMergedContext()` are now
+ * ASYNC and reflect CompanyStateStore / CompanyMemoryStore / AgentRunStore
+ * updates within the same call.
  */
 let serverRecentIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
 let serverEngineeringIntelligence: CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined = undefined;
-let serverOrchestrationHistory: OrchestrationRun[] = [INITIAL_ORCHESTRATION];
-let serverCompanyMemory: CompanyMemory[] = [];
 
 export class CompanyContextProvider {
+  /**
+   * The static company charter. Constants are correct here: a constitution is
+   * not operational state and only changes by explicit founder amendment.
+   */
+  public static getCompanyConstitution(): FullCompanyContext['constitution'] {
+    return {
+      name: 'SamJuniors OS',
+      mission: 'Autonomous, deterministic multi-agent enterprise operating system for agile founders.',
+      operatingPrinciples: [
+        'Autonomous Specialist Collaboration: Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (PM), and Julian Cruz (Finance) execute 9-step protocols.',
+        'Result-First Executive Presentation: Deliver clear recommendations, verifiable artifacts, and explicit next steps before background logs.',
+        'Strict Capital Efficiency: Maintain a minimum 80%+ gross margin floor across all operational compute.',
+        'Zero-Trust Safe Mock Sandboxing: All external capital transfers, live mutations, and unverified credentials remain isolated in safe sandboxes.',
+        'Human-in-the-Loop Governance: High-impact strategic decisions require explicit Founder ratification.',
+      ],
+      safeguards: [
+        'No fabricated metrics or hallucinated revenue accounts.',
+        'Truthful reporting when external API credentials or integrations are unconfigured.',
+        'Verifiable provenance tracking for all specialist findings.',
+      ],
+    };
+  }
+
   /**
    * Records a new research intelligence topic into server state
    */
@@ -66,47 +108,67 @@ export class CompanyContextProvider {
     serverEngineeringIntelligence = undefined;
   }
 
-  public static recordOrchestration(run: OrchestrationRun): void {
-    serverOrchestrationHistory.unshift(run);
-  }
-
-  public static recordCompanyMemory(memory: CompanyMemory): void {
-    serverCompanyMemory.unshift(memory);
-  }
-
-  public static getCompanyMemory(): CompanyMemory[] {
-    return serverCompanyMemory;
+  /**
+   * Adapts a canonical AgentRunRecord into the OrchestrationRun display shape
+   * used by the advisory prompt projection. Only REAL, persisted runs are
+   * shown; the demo-seeded orchestration constant was removed with the dead
+   * serverOrchestrationHistory module array (M1).
+   */
+  private static adaptRunToOrchestrationDisplay(r: AgentRunRecord): OrchestrationRun {
+    return {
+      id: r.runId,
+      directive: r.directive,
+      timestamp: r.timestamp,
+      status: r.status === 'running' ? 'running' : r.status === 'halted' ? 'paused' : r.status === 'failed' ? 'failed' : 'completed',
+      liveAi: true,
+      title: r.taskTitle,
+      summary: (r.outputContent || '').slice(0, 400),
+      plan: [],
+      messages: [],
+      deliverables: [],
+    };
   }
 
   /**
-   * Returns the canonical company context initialized on the server
+   * Returns the canonical company context, assembled from the canonical
+   * owners of each authority domain (M1):
+   *   - operational state   → CompanyStateStore
+   *   - historical memory   → CompanyMemoryStore
+   *   - workstream runs     → AgentRunStore
+   *   - research intel      → this module (recorders above)
+   *   - constitution        → static charter
    */
-  public static getCanonicalContext(): FullCompanyContext {
+  public static async getCanonicalContext(): Promise<FullCompanyContext> {
+    const stateStore = CompanyStateStore.getInstance();
+
+    const [
+      initiatives,
+      decisions,
+      attentionItems,
+      agents,
+      financialModel,
+      companyMemory,
+      recentRuns,
+    ] = await Promise.all([
+      stateStore.getInitiatives(),
+      stateStore.getDecisions(),
+      stateStore.getAttentionItems(),
+      stateStore.getEmployees(),
+      stateStore.getFinancialMetrics(),
+      CompanyMemoryStore.getInstance().getAllMemories(),
+      AgentRunStore.getInstance().listRuns({ limit: 5 }),
+    ]);
+
     return {
-      constitution: {
-        name: 'SamJuniors OS',
-        mission: 'Autonomous, deterministic multi-agent enterprise operating system for agile founders.',
-        operatingPrinciples: [
-          'Autonomous Specialist Collaboration: Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (PM), and Julian Cruz (Finance) execute 9-step protocols.',
-          'Result-First Executive Presentation: Deliver clear recommendations, verifiable artifacts, and explicit next steps before background logs.',
-          'Strict Capital Efficiency: Maintain a minimum 80%+ gross margin floor across all operational compute.',
-          'Zero-Trust Safe Mock Sandboxing: All external capital transfers, live mutations, and unverified credentials remain isolated in safe sandboxes.',
-          'Human-in-the-Loop Governance: High-impact strategic decisions require explicit Founder ratification.',
-        ],
-        safeguards: [
-          'No fabricated metrics or hallucinated revenue accounts.',
-          'Truthful reporting when external API credentials or integrations are unconfigured.',
-          'Verifiable provenance tracking for all specialist findings.',
-        ],
-      },
-      initiatives: INITIAL_INITIATIVES,
-      decisions: INITIAL_COMPANY_DECISIONS,
-      attentionItems: INITIAL_ATTENTION_ITEMS,
-      agents: INITIAL_AGENTS,
+      constitution: this.getCompanyConstitution(),
+      initiatives,
+      decisions,
+      attentionItems,
+      agents,
       recentIntelligence: [...serverRecentIntelligence],
-      financialModel: SAMPLE_FINANCIAL_MODEL,
-      orchestrationHistory: [...serverOrchestrationHistory],
-      companyMemory: [...serverCompanyMemory],
+      financialModel,
+      orchestrationHistory: recentRuns.map((r) => this.adaptRunToOrchestrationDisplay(r)),
+      companyMemory,
       engineeringIntelligence: serverEngineeringIntelligence,
       lastUpdated: new Date().toISOString(),
     };
@@ -117,7 +179,7 @@ export class CompanyContextProvider {
    * SECURITY ENFORCEMENT (Audit 07/11): Client-side snapshot merging is permanently eliminated.
    * The server database is the exclusive authority for company state.
    */
-  public static getMergedContext(_deprecatedClientSnapshot?: Partial<CompanyExecutiveContextSnapshot>): FullCompanyContext {
+  public static async getMergedContext(_deprecatedClientSnapshot?: Partial<CompanyExecutiveContextSnapshot>): Promise<FullCompanyContext> {
     return this.getCanonicalContext();
   }
 
@@ -266,18 +328,22 @@ export class CompanyContextProvider {
     }
 
     lines.push('=== RECENT COUNCIL ORCHESTRATIONS & DELIVERABLES ===');
-    context.orchestrationHistory.forEach((run) => {
-      lines.push(`Run [${run.id}] Directive: "${run.directive}" | Status: ${run.status}`);
-      if (run.summary) {
-        lines.push(`  Council Recommendation: ${run.summary}`);
-      }
-      if (run.executiveResult) {
-        lines.push(`  Key Findings: ${run.executiveResult.keyFindings.join('; ')}`);
-        lines.push(`  Business Implications: ${run.executiveResult.businessImplications.join('; ')}`);
-        lines.push(`  Risks: ${run.executiveResult.risks.join('; ')}`);
-      }
-      lines.push(`  Deliverables Count: ${run.deliverables.length}`);
-    });
+    if (context.orchestrationHistory && context.orchestrationHistory.length > 0) {
+      context.orchestrationHistory.forEach((run) => {
+        lines.push(`Run [${run.id}] Directive: "${run.directive}" | Status: ${run.status}`);
+        if (run.summary) {
+          lines.push(`  Council Recommendation: ${run.summary}`);
+        }
+        if (run.executiveResult) {
+          lines.push(`  Key Findings: ${run.executiveResult.keyFindings.join('; ')}`);
+          lines.push(`  Business Implications: ${run.executiveResult.businessImplications.join('; ')}`);
+          lines.push(`  Risks: ${run.executiveResult.risks.join('; ')}`);
+        }
+        lines.push(`  Deliverables Count: ${run.deliverables.length}`);
+      });
+    } else {
+      lines.push('No council orchestration runs recorded yet.');
+    }
     lines.push('');
 
     lines.push('=== DURABLE ORGANIZATIONAL MEMORY & HISTORICAL CONTEXT ===');

@@ -51,8 +51,11 @@ function mapPrismaLease(record: any): DistributedLeaseData {
 }
 
 /**
- * Authoritative PostgreSQL Lease Manager.
- * Operates directly against PostgreSQL `distributed_leases` table.
+ * Authoritative Lease Manager (target: PostgreSQL — see M0 naming note).
+ * DATABASE REALITY: in this sandbox branch the Prisma schema is the SQLite port,
+ * so "Postgres*" classes currently run against SQLite via Prisma. The class
+ * names refer to the target architecture (M6 migration milestone).
+ * Operates directly against the `distributed_leases` table via Prisma.
  * Uses atomic transactions and conditional queries to guarantee at-most-one active worker ownership.
  */
 export class PostgresLeaseManager implements LeaseManager {
