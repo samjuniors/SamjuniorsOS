@@ -1,19 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { ArrowUp, Mic, MicOff, Sparkles, LayoutGrid, Palette, Radio } from "lucide-react";
 import NeuralCanvas from "./components/NeuralCanvas";
 import SophiaPanel from "./components/SophiaPanel";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
-import JarvisLab from "./components/os/JarvisLab";
 import { BootScreen } from "./components/os/BootScreen";
 import { defaultSettings, type NeuralField, type Settings } from "./lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork } from "./lib/osStore";
 import { agentChat, dispatchDirective, looksLikeDirective, summarizeRun, syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
+import { useStore as useSofiaStore } from "@/sofia/store";
+import "@/sofia/sofia.css";
 
-type Tab = "sophia" | "os" | "jarvis";
+/** The SOFIA display — the assistant that replaced Jarvis Lab. Client-only
+ *  like the whole scene stack it carries (WebGL, WebAudio, speech); inside
+ *  the shell it stays mounted for the session, hidden behind the other
+ *  surfaces, so her microphone and her voice keep running wherever the
+ *  founder is working. */
+const SofiaSurface = dynamic(() => import("@/sofia/App"), {
+  ssr: false,
+  loading: () => <div className="sofia-scope" aria-hidden="true" />,
+});
+
+type Tab = "sophia" | "os" | "sofia";
 
 /* ------------------------------------------------------------------ Sophia */
 
@@ -180,7 +192,7 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 /* --------------------------------------------------------------------- App */
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("jarvis");
+  const [tab, setTab] = useState<Tab>("sofia");
   const [isBooting, setIsBooting] = useState(true);
   const router = useRouter();
 
@@ -192,6 +204,41 @@ export default function App() {
     os.rehydrate();
     syncFromServer().catch(() => { /* runtime logs the honest failure */ });
   }, []);
+
+  // When SOFIA speaks, she takes the interface. She stays mounted behind
+  // every surface, so the moment a reply starts — wake word heard from the
+  // desktop, an answer arriving while the founder is elsewhere — her display
+  // becomes the visible surface again. Not for thinking, not for listening;
+  // only for speaking: the interface belongs to whoever is talking.
+  useEffect(() => {
+    return useSofiaStore.subscribe((state, prev) => {
+      if (state.phase === "speaking" && prev.phase !== "speaking") {
+        setTab((t) => (t === "sofia" ? t : "sofia"));
+      }
+    });
+  }, []);
+
+  // Her ui_os tool arrives as a DOM event — surface changes asked for in
+  // plain words ("show me the desktop", "go to Sophia") land here.
+  useEffect(() => {
+    const onSofiaOs = (e: Event) => {
+      const surface = (e as CustomEvent<{ surface?: string }>).detail?.surface;
+      if (surface === "sofia" || surface === "sophia" || surface === "os") {
+        osSound.click();
+        setTab(surface);
+      }
+    };
+    window.addEventListener("sofia:os", onSofiaOs);
+    return () => window.removeEventListener("sofia:os", onSofiaOs);
+  }, []);
+
+  // Tell her display whether it is on screen: hidden, her WebGL render loop
+  // parks (the microphone and the voice stay live — she can still hear the
+  // wake word and answer from any surface, and take the interface back the
+  // moment she speaks).
+  useEffect(() => {
+    useSofiaStore.getState().setVisible(tab === "sofia");
+  }, [tab]);
 
   if (isBooting) {
     return <BootScreen onComplete={() => setIsBooting(false)} />;
@@ -225,15 +272,15 @@ export default function App() {
             <span>SamJuniorsOS</span>
           </button>
           <button
-            onClick={() => { osSound.click(); setTab("jarvis"); }}
+            onClick={() => { osSound.click(); setTab("sofia"); }}
             className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
-              tab === "jarvis"
+              tab === "sofia"
                 ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
-            <Radio size={12} className={tab === "jarvis" ? "text-cyan-300" : "text-slate-400"} />
-            <span>Jarvis Lab</span>
+            <Radio size={12} className={tab === "sofia" ? "text-cyan-300" : "text-slate-400"} />
+            <span>SOFIA</span>
           </button>
 
           {/* Route toggle: main canvas ⇄ design-system specimen (navigation, not a mode) */}
@@ -250,19 +297,29 @@ export default function App() {
         </div>
       </div>
 
+      {/* SOFIA's display: mounted for the whole session, hidden (not torn
+          down) behind the other surfaces so her ears and her voice survive
+          tab switches — she is the assistant of the OS, not of one pane. */}
+      <div
+        className={`sofia-scope${tab === "sofia" ? "" : " sofia-scope-hidden"}`}
+        aria-hidden={tab !== "sofia"}
+      >
+        <SofiaSurface />
+      </div>
+
       {tab === "sophia" ? (
         <SophiaScene onOpenOS={() => setTab("os")} />
-      ) : tab === "jarvis" ? (
-        <JarvisLab onBackToOs={() => setTab("os")} />
-      ) : (
+      ) : tab === "os" ? (
         <DesktopOS onOpenNeural={() => setTab("sophia")} />
-      )}
+      ) : null}
 
-      {/* Floating Agent Chat Launcher & Small Handy Chat Panel */}
-      <ChatPanel />
+      {/* While SOFIA's display is up, the OS's own conversation chrome
+          stands down — she IS the conversation surface, with her own
+          command line, transcript and voice. */}
+      {tab !== "sofia" && <ChatPanel />}
 
       {/* Contextual Live Voice & STT Transcript Ribbon */}
-      <LiveTranscriptRibbon />
+      {tab !== "sofia" && <LiveTranscriptRibbon />}
     </div>
   );
 }
