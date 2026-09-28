@@ -2,6 +2,16 @@ import { randomUUID } from 'crypto';
 import { DurableFileStore } from '../persistence/durable-file-store';
 import { prisma, isDatabaseAvailable } from '../db/prisma';
 import { evaluateAuthorityContent } from './authority-content-guard';
+import {
+  SOPHIA_MEMORY_LIFECYCLE_STATES,
+  SOPHIA_MEMORY_LIFECYCLE_TRANSITIONS,
+  SOPHIA_MEMORY_LIFECYCLE_BIRTH_STATES,
+  SophiaMemoryLifecycleState,
+  isSophiaMemoryLifecycleState,
+  canTransitionSophiaMemory,
+  isEligibleForPersonalMindContext,
+  withResolvedLifecycle,
+} from './memory-lifecycle';
 
 /**
  * ============================================================================
@@ -96,6 +106,18 @@ export const SOPHIA_MEMORY_CONTENT_MAX_CHARS = 2000;
 export const SOPHIA_MEMORY_PROVENANCE_MAX_CHARS = 500;
 export const SOPHIA_MEMORY_LIST_DEFAULT_LIMIT = 20;
 export const SOPHIA_MEMORY_LIST_MAX_LIMIT = 50;
+
+// Re-exported for callers of the canonical store (single import surface).
+export {
+  SOPHIA_MEMORY_LIFECYCLE_STATES,
+  SOPHIA_MEMORY_LIFECYCLE_TRANSITIONS,
+  SOPHIA_MEMORY_LIFECYCLE_BIRTH_STATES,
+  isSophiaMemoryLifecycleState,
+  canTransitionSophiaMemory,
+  isEligibleForPersonalMindContext,
+  resolveLifecycleState,
+} from './memory-lifecycle';
+export type { SophiaMemoryLifecycleState } from './memory-lifecycle';
 /** Page-offset hard bound (P2 follow-up): paginated reads may advance at most
  *  this many records into the collection — bounds any single API call while
  *  making every record reachable (the pre-pagination hard cap hid records
@@ -109,7 +131,22 @@ export interface SophiaMemoryRecord {
   content: string;
   provenance: string;
   confidence: number;
+  /**
+   * DERIVED mirror (M4-B.1): active === (lifecycleState === 'ACTIVE').
+   * Kept for read-compat with the K-2/M4-A API surface; it is NO LONGER
+   * the lifecycle authority — lifecycleState is. Every store write keeps
+   * the two consistent; every store read resolves lifecycleState for
+   * legacy rows (see memory-lifecycle.ts).
+   */
   active: boolean;
+  /**
+   * Lifecycle authority (M4-B.1). ALWAYS populated on records returned by
+   * this store (post-write stamps or read-time legacy derivation). Rows on
+   * disk written before M4-B.1 may lack it — reads derive them lazily.
+   * ACTIVE means ONLY "eligible for retrieval into Personal Mind context"
+   * (advisory context), never truth/authorization/verification.
+   */
+  lifecycleState: SophiaMemoryLifecycleState;
   idempotencyKey?: string;
   createdAt: string;
   updatedAt: string;
@@ -125,13 +162,24 @@ export interface CreateSophiaMemoryParams {
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
   /**
-   * Lifecycle state at creation. Defaults to true (the founder-direct
+   * Lifecycle state at creation. Defaults to ACTIVE (the founder-direct
    * contract of the governed /api/sofia/memory route, unchanged). The M4-A
-   * capture stage is the ONLY caller that passes false — captured
+   * capture stage is the ONLY caller that passes PENDING_REVIEW — captured
    * candidates persist INACTIVE and require an explicit Founder
-   * confirmation (governed PATCH active:true) before they ever render in
-   * context. This is a store-internal parameter: the governed route never
-   * forwards a client-supplied active flag.
+   * confirmation before they ever render in context. This is a
+   * store-internal parameter: the governed route never forwards a
+   * client-supplied lifecycle or active flag.
+   *
+   * Only birth states are valid here (PENDING_REVIEW | ACTIVE): a record
+   * can never be CREATED as SUPERSEDED/ARCHIVED/REJECTED — those are
+   * outcomes of Founder-executed transitions on an existing record.
+   */
+  lifecycleState?: SophiaMemoryLifecycleState;
+  /**
+   * Legacy creation flag (M4-A capture path). If lifecycleState is omitted:
+   * active:false derives PENDING_REVIEW (capture semantics); active:true
+   * (default) derives ACTIVE (founder-direct semantics). Explicitly passing
+   * BOTH is only valid when consistent (see createMemory validation).
    */
   active?: boolean;
 }
@@ -139,7 +187,24 @@ export interface CreateSophiaMemoryParams {
 export interface UpdateSophiaMemoryParams {
   content?: string;
   confidence?: number;
+  /** Legacy compat flag: true → ensure ACTIVE; false → deactivate (ACTIVE
+   * becomes ARCHIVED; a non-ACTIVE record is an idempotent no-op). */
   active?: boolean;
+  /**
+   * Explicit lifecycle transition target (M4-B.1). Validated against the
+   * transition table in memory-lifecycle.ts — fail-closed (400) on any
+   * illegal transition (e.g. REJECTED → anything, anything → PENDING_REVIEW).
+   * Mutually exclusive with `active` (passing both is a 400 ambiguity).
+   */
+  lifecycleState?: SophiaMemoryLifecycleState;
+  /**
+   * Provenance pointer for SUPERSEDED: the successor memory that replaces
+   * this one (create-B + mark-A pattern). Validated to exist, belong to the
+   * same Founder, and not be the record itself. The successor is NOT
+   * auto-mutated — nothing automatic happens on either side of the link.
+   * Only valid together with lifecycleState: 'SUPERSEDED'.
+   */
+  supersededByMemoryId?: string;
 }
 
 export class SophiaMemorySecurityError extends Error {
@@ -163,12 +228,27 @@ export class SophiaMemoryNotFoundError extends Error {
 }
 
 export class SophiaMemoryValidationError extends Error {
-  public readonly code = 'SOPHIA_MEMORY_INVALID';
+  public readonly code: string = 'SOPHIA_MEMORY_INVALID';
   public readonly statusCode = 400;
 
   constructor(message: string) {
     super(`[SophiaMemoryValidation] ${message}`);
     this.name = 'SophiaMemoryValidationError';
+  }
+}
+
+/**
+ * M4-B.1: an illegal lifecycle transition was requested (e.g. REJECTED →
+ * ACTIVE, or any transition into PENDING_REVIEW). Fail-closed 400 — the
+ * transition table in memory-lifecycle.ts is the single source of truth.
+ */
+export class SophiaMemoryLifecycleError extends SophiaMemoryValidationError {
+  public readonly code = 'SOPHIA_MEMORY_INVALID_TRANSITION';
+  public readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'SophiaMemoryLifecycleError';
   }
 }
 
@@ -324,9 +404,11 @@ export class SophiaMemoryStore {
    * a key there is NO dedupe. The key is founder-scoped — Founder B may use
    * Founder A's key without collision.
    *
-   * Lifecycle: created records are ACTIVE by default (founder-direct). The
-   * M4-A capture path creates INACTIVE candidates (active: false) that stay
-   * out of every context render until a Founder explicitly activates them.
+   * Lifecycle (M4-B.1): lifecycleState is the authority; `active` is the
+   * derived mirror (active === (lifecycleState === 'ACTIVE')). Created records
+   * are ACTIVE by default (founder-direct). The M4-A capture path creates
+   * PENDING_REVIEW candidates that stay out of every context render until a
+   * Founder explicitly activates them. Only birth states are accepted.
    */
   public async createMemory(params: CreateSophiaMemoryParams): Promise<SophiaMemoryRecord> {
     const founderId = this.requireFounderId(params.founderId);
@@ -334,6 +416,32 @@ export class SophiaMemoryStore {
     const content = this.validateNotAuthorityContent(this.validateContent(params.content));
     const provenance = this.validateProvenance(params.provenance || 'founder_direct');
     const confidence = this.validateConfidence(params.confidence ?? 0.8);
+
+    // --- Lifecycle resolution (M4-B.1): explicit birth state wins; the
+    // legacy active flag derives one; both together must be consistent. ---
+    let lifecycleState: SophiaMemoryLifecycleState;
+    if (params.lifecycleState !== undefined) {
+      if (!isSophiaMemoryLifecycleState(params.lifecycleState)) {
+        throw new SophiaMemoryValidationError(
+          `lifecycleState must be one of [${SOPHIA_MEMORY_LIFECYCLE_STATES.join(', ')}].`
+        );
+      }
+      if (!(SOPHIA_MEMORY_LIFECYCLE_BIRTH_STATES as readonly string[]).includes(params.lifecycleState)) {
+        throw new SophiaMemoryLifecycleError(
+          `A new personal memory can only be created as PENDING_REVIEW or ACTIVE (got: ${params.lifecycleState}); ` +
+            `SUPERSEDED/ARCHIVED/REJECTED are outcomes of Founder-executed transitions on an existing record.`
+        );
+      }
+      lifecycleState = params.lifecycleState;
+      if (params.active !== undefined && params.active !== (lifecycleState === 'ACTIVE')) {
+        throw new SophiaMemoryValidationError(
+          'Inconsistent creation parameters: active flag contradicts lifecycleState.'
+        );
+      }
+    } else {
+      lifecycleState = (params.active ?? true) ? 'ACTIVE' : 'PENDING_REVIEW';
+    }
+    const active = lifecycleState === 'ACTIVE';
 
     const cleanKey =
       typeof params.idempotencyKey === 'string' && params.idempotencyKey.trim()
@@ -348,7 +456,8 @@ export class SophiaMemoryStore {
       content,
       provenance,
       confidence,
-      active: params.active ?? true,
+      active,
+      lifecycleState,
       idempotencyKey: cleanKey,
       createdAt: now,
       updatedAt: now,
@@ -391,6 +500,7 @@ export class SophiaMemoryStore {
             provenance: record.provenance,
             confidence: record.confidence,
             active: record.active,
+            lifecycleState: record.lifecycleState,
             idempotencyKey: record.idempotencyKey ?? null,
             metadata: record.metadata,
             createdAt: new Date(record.createdAt),
@@ -400,6 +510,7 @@ export class SophiaMemoryStore {
             content: record.content,
             confidence: record.confidence,
             active: record.active,
+            lifecycleState: record.lifecycleState,
             metadata: record.metadata,
             updatedAt: new Date(record.updatedAt),
           },
@@ -413,8 +524,24 @@ export class SophiaMemoryStore {
   }
 
   /**
-   * Updates a personal memory's mutable fields (content / confidence / active).
-   * Ownership fails closed (403); unknown id → 404.
+   * Updates a personal memory's mutable fields (content / confidence /
+   * lifecycle). Ownership fails closed (403); unknown id → 404.
+   *
+   * LIFECYCLE (M4-B.1): this method is the SINGLE choke point for every
+   * belief-bearing lifecycle transition. The requested target state is
+   * resolved from the patch (explicit lifecycleState, or the legacy active
+   * flag), validated against the deterministic transition table
+   * (memory-lifecycle.ts) — fail-closed (400) on any illegal transition —
+   * and every executed transition is recorded in an append-only audit trail
+   * (metadata.lifecycle.transitions[]: from / to / at / by) with the
+   * authenticated Founder as the actor. `active` stays synchronized as the
+   * derived mirror of the new state.
+   *
+   * Legacy compat mapping (behavior-preserving for every K-2/M4-A pinned
+   * toggle): active:true → ensure ACTIVE (illegal only from REJECTED);
+   * active:false → ACTIVE becomes ARCHIVED, any other state is an
+   * idempotent no-op (a pending candidate stays PENDING_REVIEW, exactly as
+   * before M4-B.1).
    */
   public async updateMemory(
     founderId: string,
@@ -439,11 +566,37 @@ export class SophiaMemoryStore {
       throw new SophiaMemoryValidationError('active must be a boolean.');
     }
 
+    // --- M4-B.1 lifecycle patch validation (pure, pre-lock) ---
+    if (patch.lifecycleState !== undefined) {
+      if (!isSophiaMemoryLifecycleState(patch.lifecycleState)) {
+        throw new SophiaMemoryValidationError(
+          `lifecycleState must be one of [${SOPHIA_MEMORY_LIFECYCLE_STATES.join(', ')}] (got: ${String(patch.lifecycleState)}).`
+        );
+      }
+      if (patch.active !== undefined) {
+        throw new SophiaMemoryValidationError(
+          'Ambiguous lifecycle patch: provide either `active` (legacy) or `lifecycleState`, not both.'
+        );
+      }
+      if (patch.supersededByMemoryId !== undefined && patch.lifecycleState !== 'SUPERSEDED') {
+        throw new SophiaMemoryValidationError(
+          'supersededByMemoryId is only valid together with lifecycleState: "SUPERSEDED".'
+        );
+      }
+    }
+    if (patch.supersededByMemoryId !== undefined) {
+      if (typeof patch.supersededByMemoryId !== 'string' || !patch.supersededByMemoryId.trim()) {
+        throw new SophiaMemoryValidationError('supersededByMemoryId must be a non-empty string.');
+      }
+    }
+
     // Read-merge-write serialized on the collection's cross-process lock
     // (M4-A hardening): a concurrent update or create can no longer be
     // silently erased by this writer, and vice versa.
     const next = this.fileStore.withCollectionLock(SOPHIA_MEMORIES_COLLECTION, () => {
-      const record = this.getOwnedMemory(owner, memoryId.trim());
+      // Resolves the CURRENT state (legacy rows derived) — the record read
+      // here carries the authoritative lifecycleState for this transition.
+      const record = withResolvedLifecycle(this.getOwnedMemory(owner, memoryId.trim()));
 
       const updated: SophiaMemoryRecord = { ...record };
 
@@ -453,25 +606,107 @@ export class SophiaMemoryStore {
       if (patch.confidence !== undefined) {
         updated.confidence = this.validateConfidence(patch.confidence);
       }
-      if (patch.active !== undefined) {
-        updated.active = patch.active;
-        // M4-A founder-review confirmation stamp: activating a pending
-        // captured candidate records WHEN the Founder confirmed it. This is
-        // deterministic lifecycle metadata (server-side), not new authority —
-        // the record only becomes visible in context because active is now
-        // true, exactly like any founder-direct memory.
-        if (patch.active === true && updated.metadata?.captureStatus === 'pending') {
+
+      // --- Lifecycle transition resolution (M4-B.1) ---
+      const currentState = record.lifecycleState;
+      let targetState: SophiaMemoryLifecycleState | undefined;
+
+      if (patch.lifecycleState !== undefined) {
+        targetState = patch.lifecycleState;
+      } else if (patch.active === true) {
+        // Legacy activation: ensure ACTIVE (the ONLY activation path for
+        // captured candidates — M4-A contract unchanged).
+        targetState = 'ACTIVE';
+      } else if (patch.active === false) {
+        // Legacy deactivation: behavior-preserving mapping — ACTIVE becomes
+        // ARCHIVED; a non-ACTIVE record is an idempotent no-op (a pending
+        // candidate stays PENDING_REVIEW, exactly as before M4-B.1).
+        targetState = currentState === 'ACTIVE' ? 'ARCHIVED' : currentState;
+      }
+
+      if (targetState !== undefined && targetState !== currentState) {
+        if (targetState === 'PENDING_REVIEW') {
+          throw new SophiaMemoryLifecycleError(
+            `Illegal lifecycle transition: a memory can never return to PENDING_REVIEW (current: ${currentState}).`
+          );
+        }
+        if (!canTransitionSophiaMemory(currentState, targetState)) {
+          throw new SophiaMemoryLifecycleError(
+            `Illegal lifecycle transition: ${currentState} → ${targetState} is not allowed ` +
+              `(allowed from ${currentState}: [${SOPHIA_MEMORY_LIFECYCLE_TRANSITIONS[currentState].join(', ') || 'none'}]).`
+          );
+        }
+
+        // Supersession provenance pointer (create-B + mark-A pattern): the
+        // successor must exist, belong to the SAME founder, and not be the
+        // record itself. The successor is never auto-mutated.
+        let supersededBy: Record<string, unknown> | undefined;
+        if (targetState === 'SUPERSEDED') {
+          const successorId = patch.supersededByMemoryId?.trim();
+          if (successorId) {
+            if (successorId === record.id) {
+              throw new SophiaMemoryValidationError('A memory cannot supersede itself.');
+            }
+            const successor = withResolvedLifecycle(
+              this.getOwnedMemory(owner, successorId)
+            );
+            supersededBy = {
+              memoryId: successor.id,
+              content: successor.content, // audit snapshot at supersession time
+              at: new Date().toISOString(),
+            };
+          }
+        }
+
+        // M4-A founder-review confirmation stamp (unchanged semantics):
+        // activating a pending captured candidate records WHEN — and now
+        // also BY WHOM (M4-B.1 attribution) — the Founder confirmed it.
+        // Deterministic lifecycle metadata (server-side), not new authority.
+        if (targetState === 'ACTIVE' && updated.metadata?.captureStatus === 'pending') {
           updated.metadata = {
             ...updated.metadata,
             captureStatus: 'confirmed',
             confirmedAt: new Date().toISOString(),
+            confirmedBy: owner,
           };
         }
+        if (targetState === 'SUPERSEDED' && supersededBy) {
+          updated.metadata = { ...updated.metadata, supersededBy };
+        }
+
+        // Append-only audit trail — every executed transition carries the
+        // authenticated Founder as actor (M4-B.1 auditability; provenance is
+        // never silently deleted, only extended).
+        const lifecycleMeta = (updated.metadata?.lifecycle as Record<string, unknown>) ?? {};
+        const transitions = Array.isArray(lifecycleMeta.transitions)
+          ? [...(lifecycleMeta.transitions as unknown[])]
+          : [];
+        transitions.push({
+          from: currentState,
+          to: targetState,
+          at: new Date().toISOString(),
+          by: owner,
+        });
+        updated.metadata = {
+          ...updated.metadata,
+          lifecycle: { ...lifecycleMeta, transitions },
+        };
+
+        // lifecycleState is the authority; the boolean is the derived mirror.
+        updated.lifecycleState = targetState;
+        updated.active = isEligibleForPersonalMindContext(targetState);
+      } else if (targetState !== undefined) {
+        // Idempotent same-state patch: no transition entry, but keep the
+        // derived boolean synchronized (defensive — it is already consistent).
+        updated.active = isEligibleForPersonalMindContext(currentState);
       }
+
       updated.updatedAt = new Date().toISOString();
 
       // 1. Atomic durable file write (STRICT — M4-A hardening: a failed
-      //    authoritative write THROWS instead of returning a phantom update)
+      //    authoritative write THROWS instead of returning a phantom update;
+      //    M4-B.1: the write also persists the resolved lifecycleState, so
+      //    legacy rows are lazily migrated on their first update)
       this.fileStore.saveItemStrict(SOPHIA_MEMORIES_COLLECTION, updated.id, updated);
       return updated;
     });
@@ -485,6 +720,7 @@ export class SophiaMemoryStore {
             content: next.content,
             confidence: next.confidence,
             active: next.active,
+            lifecycleState: next.lifecycleState,
             metadata: next.metadata as any,
             updatedAt: new Date(next.updatedAt),
           },
@@ -549,6 +785,8 @@ export class SophiaMemoryStore {
   /**
    * Retrieves one personal memory, strictly validating ownership.
    * Unknown id → null; owner mismatch → SophiaMemorySecurityError (403).
+   * The returned record always carries a resolved lifecycleState (legacy
+   * rows derived at read time — M4-B.1).
    */
   public async getMemory(founderId: string, memoryId: string): Promise<SophiaMemoryRecord | null> {
     const owner = this.requireFounderId(founderId);
@@ -564,7 +802,7 @@ export class SophiaMemoryStore {
         `Principal "${owner}" is not authorized to access personal memory "${memoryId.trim()}".`
       );
     }
-    return { ...record };
+    return withResolvedLifecycle({ ...record });
   }
 
   /**
@@ -585,7 +823,18 @@ export class SophiaMemoryStore {
    */
   public async listMemories(
     founderId: string,
-    opts?: { memoryType?: SophiaMemoryType; active?: boolean; limit?: number; offset?: number }
+    opts?: {
+      memoryType?: SophiaMemoryType;
+      active?: boolean;
+      /**
+       * Exact lifecycle-state filter (M4-B.1) — the review queue reads
+       * PENDING_REVIEW; context assembly reads eligibility. Mutually
+       * exclusive with `active` (fail-closed: passing both is a 400).
+       */
+      lifecycleState?: SophiaMemoryLifecycleState;
+      limit?: number;
+      offset?: number;
+    }
   ): Promise<SophiaMemoryRecord[]> {
     const owner = this.requireFounderId(founderId);
 
@@ -605,7 +854,11 @@ export class SophiaMemoryStore {
    */
   public async countMemories(
     founderId: string,
-    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+    opts?: {
+      memoryType?: SophiaMemoryType;
+      active?: boolean;
+      lifecycleState?: SophiaMemoryLifecycleState;
+    }
   ): Promise<number> {
     const owner = this.requireFounderId(founderId);
     return this.sortedFounderMemories(owner, opts).length;
@@ -628,7 +881,11 @@ export class SophiaMemoryStore {
    */
   public async listAllMemories(
     founderId: string,
-    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+    opts?: {
+      memoryType?: SophiaMemoryType;
+      active?: boolean;
+      lifecycleState?: SophiaMemoryLifecycleState;
+    }
   ): Promise<SophiaMemoryRecord[]> {
     const owner = this.requireFounderId(founderId);
     return this.sortedFounderMemories(owner, opts).map((m) => ({ ...m }));
@@ -636,21 +893,45 @@ export class SophiaMemoryStore {
 
   /**
    * Shared deterministic read: full founder-scoped collection, optional exact
-   * type/active filters, total order (updatedAt DESC, id ASC).
+   * type/lifecycle filters, total order (updatedAt DESC, id ASC).
+   *
+   * M4-B.1: every record is lifecycle-resolved BEFORE filtering, so (a)
+   * legacy rows behave identically to post-M4-B.1 rows, and (b) the `active`
+   * filter is the DERIVED eligibility filter (active === true ⇔ resolved
+   * lifecycleState === 'ACTIVE'; active === false ⇔ any other state).
    */
   private sortedFounderMemories(
     owner: string,
-    opts?: { memoryType?: SophiaMemoryType; active?: boolean }
+    opts?: {
+      memoryType?: SophiaMemoryType;
+      active?: boolean;
+      lifecycleState?: SophiaMemoryLifecycleState;
+    }
   ): SophiaMemoryRecord[] {
+    if (opts?.active !== undefined && opts?.lifecycleState !== undefined) {
+      throw new SophiaMemoryValidationError(
+        'Ambiguous filter: provide either `active` (derived) or `lifecycleState`, not both.'
+      );
+    }
     const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
-    let items = Object.values(all).filter((m) => m && m.founderId === owner);
+    let items = Object.values(all)
+      .filter((m) => m && m.founderId === owner)
+      .map((m) => withResolvedLifecycle(m));
 
     if (opts?.memoryType !== undefined) {
       const type = this.validateMemoryType(opts.memoryType);
       items = items.filter((m) => m.memoryType === type);
     }
-    if (opts?.active !== undefined) {
-      items = items.filter((m) => m.active === opts.active);
+    if (opts?.lifecycleState !== undefined) {
+      if (!isSophiaMemoryLifecycleState(opts.lifecycleState)) {
+        throw new SophiaMemoryValidationError(
+          `lifecycleState filter must be one of [${SOPHIA_MEMORY_LIFECYCLE_STATES.join(', ')}].`
+        );
+      }
+      items = items.filter((m) => m.lifecycleState === opts.lifecycleState);
+    } else if (opts?.active !== undefined) {
+      // Derived eligibility filter — lifecycleState is the authority.
+      items = items.filter((m) => isEligibleForPersonalMindContext(m.lifecycleState) === opts.active);
     }
 
     items.sort((a, b) => {
@@ -681,7 +962,7 @@ export class SophiaMemoryStore {
     const all = this.fileStore.readCollection<SophiaMemoryRecord>(SOPHIA_MEMORIES_COLLECTION);
     for (const m of Object.values(all)) {
       if (m && m.founderId === owner && m.idempotencyKey === key) {
-        return m;
+        return withResolvedLifecycle(m);
       }
     }
     return null;

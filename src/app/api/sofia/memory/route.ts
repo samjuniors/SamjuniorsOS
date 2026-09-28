@@ -17,14 +17,23 @@
  *   client data and can never select another founder's memories.
  *
  * Methods (all founder-scoped through SophiaMemoryStore):
- *   GET    ?memoryType=&active=&limit=&offset= — list the CALLER's memories
- *          (deterministic: updatedAt DESC; page size hard-capped at 50;
- *          `offset` pages through the same order so records beyond the
- *          first page stay reachable; response carries `total` + `hasMore`)
+ *   GET    ?memoryType=&active=&lifecycleState=&limit=&offset= — list the
+ *          CALLER's memories (deterministic: updatedAt DESC; page size
+ *          hard-capped at 50; `offset` pages through the same order so
+ *          records beyond the first page stay reachable; response carries
+ *          `total` + `hasMore`). `active` is the DERIVED eligibility filter
+ *          (true ⇔ lifecycleState ACTIVE); `lifecycleState` is the exact
+ *          M4-B.1 state filter (the review queue reads PENDING_REVIEW).
+ *          The two filters are mutually exclusive (400 together).
  *   POST   { memoryType, content, provenance?, confidence?, idempotencyKey? }
  *          — create (idempotencyKey dedupes per the ChatMessage convention)
  *   PATCH  { id, content?, confidence?, active? }
- *          — update the CALLER's memory (403 on any other founder's id)
+ *          | { id, lifecycleState, supersededByMemoryId? }
+ *          — update the CALLER's memory (403 on any other founder's id).
+ *          `active` is the legacy compat form (true → ensure ACTIVE; false →
+ *          deactivate); `lifecycleState` is the explicit M4-B.1 transition
+ *          form, validated against the deterministic transition table
+ *          (fail-closed 400 on illegal transitions, e.g. REJECTED → ACTIVE).
  *   DELETE ?id= — delete the CALLER's memory (403 on any other founder's id)
  *
  * Error mapping: 401 unauthenticated · 400 validation · 403 ownership
@@ -40,6 +49,8 @@ import {
   SophiaMemorySecurityError,
   SOPHIA_MEMORY_TYPES,
   SOPHIA_MEMORY_LIST_MAX_LIMIT,
+  SOPHIA_MEMORY_LIFECYCLE_STATES,
+  SophiaMemoryLifecycleState,
   SophiaMemoryType,
 } from '@/lib/server/sophia';
 import { annotateReviewRecords } from '@/lib/server/sophia/memory-review-annotations';
@@ -49,6 +60,14 @@ export const dynamic = 'force-dynamic';
 
 function errorResponse(err: unknown): NextResponse {
   if (err instanceof SophiaMemoryValidationError || (err as Error)?.name === 'SophiaMemoryValidationError') {
+    // M4-B.1: illegal lifecycle transitions carry their machine-readable
+    // code alongside the message (fail-closed 400, same as validation).
+    if ((err as any)?.code === 'SOPHIA_MEMORY_INVALID_TRANSITION') {
+      return NextResponse.json(
+        { error: (err as Error).message, code: 'SOPHIA_MEMORY_INVALID_TRANSITION' },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
   // M4-A HARDENING: founder-direct authoring may not store authorization /
@@ -93,6 +112,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const memoryTypeParam = url.searchParams.get('memoryType');
     const activeParam = url.searchParams.get('active');
+    const lifecycleStateParam = url.searchParams.get('lifecycleState');
     const limitParam = url.searchParams.get('limit');
     // P2 follow-up (queue >50 visibility): offset-based pagination over the
     // SAME deterministic order — the oldest pending review candidates were
@@ -100,9 +120,19 @@ export async function GET(req: NextRequest) {
     // exceeded the 50-record page cap.
     const offsetParam = url.searchParams.get('offset');
 
+    // M4-B.1: `active` (derived eligibility) and `lifecycleState` (exact
+    // state) are alternative filters of the same dimension — 400 together.
+    if (activeParam !== null && lifecycleStateParam !== null) {
+      return NextResponse.json(
+        { error: 'Provide either `active` or `lifecycleState`, not both.' },
+        { status: 400 }
+      );
+    }
+
     const opts: {
       memoryType?: SophiaMemoryType;
       active?: boolean;
+      lifecycleState?: SophiaMemoryLifecycleState;
       limit?: number;
       offset?: number;
     } = {};
@@ -114,6 +144,17 @@ export async function GET(req: NextRequest) {
         );
       }
       opts.memoryType = memoryTypeParam as SophiaMemoryType;
+    }
+    if (lifecycleStateParam !== null) {
+      if (!(SOPHIA_MEMORY_LIFECYCLE_STATES as readonly string[]).includes(lifecycleStateParam)) {
+        return NextResponse.json(
+          {
+            error: `lifecycleState must be one of [${SOPHIA_MEMORY_LIFECYCLE_STATES.join(', ')}]`,
+          },
+          { status: 400 }
+        );
+      }
+      opts.lifecycleState = lifecycleStateParam as SophiaMemoryLifecycleState;
     }
     if (activeParam !== null) {
       if (activeParam !== 'true' && activeParam !== 'false') {
@@ -144,6 +185,7 @@ export async function GET(req: NextRequest) {
     const total = await store.countMemories(session.userId, {
       memoryType: opts.memoryType,
       active: opts.active,
+      lifecycleState: opts.lifecycleState,
     });
     const limit = opts.limit ?? 20;
     const offset = opts.offset ?? 0;
@@ -218,10 +260,16 @@ export async function PATCH(req: NextRequest) {
 
   try {
     // SECURITY: ownership is resolved against the session principal only.
+    // M4-B.1: the caller may use the legacy `active` flag OR the explicit
+    // `lifecycleState` transition form (with optional supersession pointer);
+    // the store validates the transition table fail-closed. Both together is
+    // an ambiguous 400 (mapped by the store's validation error).
     const memory = await SophiaMemoryStore.getInstance().updateMemory(session.userId, id, {
       content: body.content as string | undefined,
       confidence: body.confidence as number | undefined,
       active: body.active as boolean | undefined,
+      lifecycleState: body.lifecycleState as SophiaMemoryLifecycleState | undefined,
+      supersededByMemoryId: body.supersededByMemoryId as string | undefined,
     });
     return NextResponse.json({ memory });
   } catch (err) {

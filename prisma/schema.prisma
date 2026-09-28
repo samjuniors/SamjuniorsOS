@@ -490,13 +490,15 @@ model SophiaMemory {
   content        String
   provenance     String // source reference, e.g. "founder_direct" | "conversation:<convId>"
   confidence     Float    @default(0.8) // personal-context confidence; NEVER an epistemic verification status
-  active         Boolean  @default(true) // lifecycle state sufficient for K-2 (no decay/consolidation machinery)
+  active         Boolean  @default(true) // DERIVED mirror (M4-B.1): active === (lifecycleState === "ACTIVE"). NOT the lifecycle authority.
+  lifecycleState String?  // M4-B.1 lifecycle authority: "PENDING_REVIEW" | "ACTIVE" | "SUPERSEDED" | "ARCHIVED" | "REJECTED". null = pre-M4-B.1 row → derive from active + captureStatus at read time.
   idempotencyKey String? // optional founder-scoped write dedupe (ChatMessage convention)
   metadata       Json     @default(dbgenerated("'{}'"))
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@index([founderId, active, updatedAt])
+  @@index([founderId, lifecycleState, updatedAt])
   @@index([founderId, idempotencyKey])
   @@map("sophia_memories")
 }

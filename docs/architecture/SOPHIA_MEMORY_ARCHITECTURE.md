@@ -442,10 +442,120 @@ candidate_persisted / candidate_persist_failed / capture_completed
 dev logs; extraction loss remains silent to the USER (fail-safe) but loud
 to the OPERATOR.
 
-### M4-B gate: STILL BLOCKED (unchanged)
+### M4-B gate: STILL BLOCKED for the behavioral roadmap (lifecycle foundation EXCEPTED — see §14)
 
 M4-B (memory lifecycle, forgetting/decay, activation UX, consolidation)
-remains a Founder decision and is NOT implemented. Personal memory remains
+remains a Founder decision and is NOT implemented — **except the narrow
+M4-B.1 lifecycle-foundation slice documented in §14** (explicit lifecycle
+states + provenance, no behavioral intelligence). Personal memory remains
 persistent untrusted contextual DATA — never instructions, never
 authorization. No automatic activation path exists (the gate never returns
 ACCEPT; only the governed Founder PATCH activates).
+
+## 14. M4-B.1 — Personal Memory lifecycle foundation (2026-09-24 addendum)
+
+The first narrow slice of M4-B shipped: the overloaded `active` boolean is
+replaced by an explicit, auditable lifecycle model. This is lifecycle
+INFRASTRUCTURE ONLY — no behavioral intelligence, no automatic actions.
+
+### Lifecycle states (`src/lib/server/sophia/memory-lifecycle.ts`)
+
+```
+PENDING_REVIEW   captured candidate awaiting explicit Founder review
+ACTIVE           eligible for retrieval into Personal Mind context
+SUPERSEDED       replaced by a Founder-chosen successor (provenance kept)
+ARCHIVED         removed from context by the Founder ("forget from
+                 cognition, not from record")
+REJECTED         Founder refused a pending candidate — terminal tombstone
+                 (provenance + dedupe-pool presence kept; physical DELETE
+                 remains the explicit escape hatch)
+```
+
+`DELETED` is not a state — it is the physical delete event (unchanged
+DELETE endpoint).
+
+**ACTIVE means ONLY "eligible for retrieval into Personal Mind context."**
+It never means true, Company Brain truth, authorization, permission,
+governance policy, an execution instruction, or a verified epistemic fact.
+Personal memory is advisory context only.
+
+### Authority: `lifecycleState`, not `active`
+
+`lifecycleState` (file record + nullable Prisma column) IS the lifecycle
+authority. The legacy `active` boolean is a DERIVED mirror
+(`active === (lifecycleState === 'ACTIVE')`) kept for K-2/M4-A read-compat:
+`?active=true/false` still filters on derived eligibility; the
+`PERSONAL_MIND_MEMORY` context partition still reads the same eligibility.
+Pre-M4-B.1 rows derive at read time (`active:true → ACTIVE`;
+`active:false + captureStatus pending → PENDING_REVIEW`;
+`active:false otherwise → ARCHIVED`) and are lazily stamped on their first
+update.
+
+### Transition table (Founder-executed only, fail-closed 400)
+
+```
+PENDING_REVIEW → ACTIVE | ARCHIVED | REJECTED
+ACTIVE         → ARCHIVED | SUPERSEDED
+ARCHIVED       → ACTIVE  | SUPERSEDED
+SUPERSEDED     → ACTIVE                     (restore a wrong supersession)
+REJECTED       → (terminal)
+```
+
+Nothing may ever transition INTO `PENDING_REVIEW`. Same-state patches are
+idempotent no-ops. The ONLY system-initiated action in the entire lifecycle
+is CREATE of a PENDING_REVIEW capture candidate — every belief-bearing
+transition is executed by an authenticated Founder.
+
+### Provenance established (for later M4-B slices)
+
+- **Audit trail**: every executed transition appends
+  `metadata.lifecycle.transitions[] = { from, to, at, by: founderId }`
+  (append-only; provenance is never silently deleted).
+- **Attribution**: activation now stamps `confirmedBy` alongside
+  `confirmedAt` (closes the M4-B audit gap).
+- **Supersession pointer**: `PATCH { lifecycleState: "SUPERSEDED",
+  supersededByMemoryId }` records `metadata.supersededBy = { memoryId,
+  content-snapshot, at }`. The successor is never auto-mutated — the
+  create-B + mark-A correction pattern is a Founder composition of two
+  governed calls, mirroring the CanonicalFact supersession precedent.
+- **REJECTED tombstones** stay in the capture dedupe pool: a refused
+  candidate cannot silently re-enter the review queue as a "new" capture
+  (fixes the physical-delete re-capture loop).
+
+### Review-queue semantics fix (the active-boolean conflation)
+
+The review queue (SophiaPanel + badge) now reads
+`GET ?lifecycleState=PENDING_REVIEW` — records the Founder ARCHIVED or
+REJECTED no longer pollute the pending queue. Under the old
+`?active=false` filter, a founder-deactivated memory re-entered the review
+queue (M4-B semantic-contract finding #1). `?active=false` remains
+supported as the derived non-active set (compat); the two filters are
+mutually exclusive (400 together).
+
+### API surface changes (additive only)
+
+- `GET ?lifecycleState=<state>` — exact state filter (new)
+- `PATCH { id, lifecycleState, supersededByMemoryId? }` — explicit
+  transition form (new); `PATCH { id, active }` remains the compat form
+  (true → ensure ACTIVE; false → ACTIVE becomes ARCHIVED, non-ACTIVE is an
+  idempotent no-op — preserving every pinned K-2/M4-A toggle behavior)
+- Illegal transitions return `400 { code: "SOPHIA_MEMORY_INVALID_TRANSITION" }`
+
+### Still NOT implemented (unchanged M4-B gate)
+
+Automatic activation (the gate never returns ACCEPT), vectors/embeddings,
+consolidation, decay/TTL schedulers, semantic contradiction resolution,
+cross-founder memory, Company Brain changes, supersession DECISION logic
+(the Founder chooses; nothing is inferred).
+
+### Test contract
+
+`tests/sophia/m4b1_lifecycle.test.ts` (L1–L14) pins: model integrity,
+creation states, compat activation + stamps + audit trail, explicit
+transitions, the REJECTED tombstone, fail-closed illegal transitions,
+supersession provenance, review-queue isolation, context exclusion of all
+non-ACTIVE states, the no-automatic-activation regression, cross-founder
+403, legacy derivation + lazy migration, the Prisma mirror, and the
+governed route end-to-end. All prior suites (K-2, M4-A capture incl. the
+restored default-extractor child, M4-A hardening, M0–M3, phases 1–2)
+re-run green.
