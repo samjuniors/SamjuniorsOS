@@ -1,0 +1,1220 @@
+     1→import crypto from 'crypto';
+     2→import {
+     3→  GraphDTO,
+     4→  GraphNodeDTO,
+     5→  GraphEdgeDTO,
+     6→  GraphSpatialCardDTO,
+     7→  GraphInspectionContextDTO,
+     8→  GraphRuntimeState,
+     9→  GraphGovernanceState,
+    10→  GraphEpistemicValidity,
+    11→  GraphPresentationState,
+    12→  GraphRelationship,
+    13→  GraphEdgeStyle,
+    14→  GraphExecutionStepDTO,
+    15→} from '@/types/graph';
+    16→import { AgentRunStore, AgentRunRecord } from '@/lib/server/agents/run-store';
+    17→import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
+    18→import { FounderApprovalRecord } from '@/types/authorization';
+    19→import { getWorkflowStore } from '@/lib/server/workflow/store';
+    20→import { EpistemicClaimStore } from '@/lib/server/epistemic/claim-store';
+    21→import { CompanyContextProvider } from '@/lib/server/context/company-context';
+    22→import { WorkflowInstanceState } from '@/types/workflow';
+    23→
+    24→/**
+    25→ * ============================================================================
+    26→ * SAMJUNIORS OS — AUTHORITATIVE GRAPH READ MODEL (PHASE 4.3A)
+    27→ * ============================================================================
+    28→ *
+    29→ * A strictly READ-ONLY projection of authoritative server state into the
+    30→ * Meaningful Company Topology:
+    31→ *
+    32→ *   Founder / Inputs
+    33→ *     └── delegates ──> Sophia (COO & Orchestrator)
+    34→ *                         ├── delegates ──> Active Specialists (Thorne, Cruz, Lin)
+    35→ *                         │                   └── researches/models/authors ──> Active Protocol Steps
+    36→ *                         │                                                       └── checks ──> Verifier
+    37→ *                         │                                                                        └── feeds ──> Governed Vault
+    38→ *                         └── (if consequential) ──> escalates-to ──> Approval Gate ──> Founder
+    39→ *
+    40→ * Invariants:
+    41→ * 1. Read-only: Mutates NO database or runtime state.
+    42→ * 2. Fail-closed: Throws GraphReadError if any authoritative source is unreachable.
+    43→ * 3. Deterministic: deriveGraphProjection(inputs) yields identical topology, IDs,
+    44→ *    coordinates, and SHA-256 hash for identical inputs.
+    45→ * 4. Separate state domains: runtime state, governance state, epistemic validity,
+    46→ *    and UI presentation state are maintained independently.
+    47→ * 5. awaiting_founder_approval maps to UI state 'waiting', NEVER 'processing'.
+    48→ * 6. No synthetic packet decoration or fabricated entities when idle.
+    49→ */
+    50→
+    51→export class GraphReadError extends Error {
+    52→  public constructor(
+    53→    public readonly source: string,
+    54→    public readonly cause?: unknown
+    55→  ) {
+    56→    super(
+    57→      `Authoritative graph read failed for '${source}': ${
+    58→        cause instanceof Error ? cause.message : String(cause)
+    59→      }`
+    60→    );
+    61→    this.name = 'GraphReadError';
+    62→  }
+    63→}
+    64→
+    65→export interface AuthoritativeGraphInputs {
+    66→  agentRuns: AgentRunRecord[];
+    67→  approvals: FounderApprovalRecord[];
+    68→  workflows: WorkflowInstanceState[];
+    69→  claimsPendingCount: number;
+    70→  factsActiveCount: number;
+    71→  company: {
+    72→    name: string;
+    73→    focus: string;
+    74→  };
+    75→  now?: number; // deterministic timestamp injection for tests
+    76→}
+    77→
+    78→// ---------------------------------------------------------------------------
+    79→// Pure State Mapping Functions
+    80→// ---------------------------------------------------------------------------
+    81→
+    82→/**
+    83→ * Deterministically maps orthogonal semantic domains to Phase 4 UI presentation state.
+    84→ * Crucial: awaiting_founder_approval MUST remain distinct from processing.
+    85→ */
+    86→export function mapSemanticToPresentationState(
+    87→  runtime: GraphRuntimeState,
+    88→  governance: GraphGovernanceState,
+    89→  epistemic: GraphEpistemicValidity
+    90→): GraphPresentationState {
+    91→  // 1. Governance halt takes absolute precedence at authority boundary
+    92→  if (governance === 'awaiting_founder_approval') {
+    93→    return 'waiting'; // Amber authorization seal, NEVER processing
+    94→  }
+    95→
+    96→  // 2. Failure / Invariant rejection takes precedence
+    97→  if (runtime === 'failed' || epistemic === 'disputed') {
+    98→    return 'error'; // Alert rose boundary
+    99→  }
+   100→
+   101→  // 3. Actively running
+   102→  if (runtime === 'running') {
+   103→    return 'active'; // Vibrant cyan pulse
+   104→  }
+   105→
+   106→  // 4. Paused or halted (without active approval)
+   107→  if (runtime === 'paused' || runtime === 'halted') {
+   108→    return 'waiting';
+   109→  }
+   110→
+   111→  // 5. Completed & verified
+   112→  if (runtime === 'completed' || epistemic === 'promoted_to_fact') {
+   113→    return 'success'; // Emerald halo
+   114→  }
+   115→
+   116→  // 6. Calm idle baseline
+   117→  return 'default'; // Quiet obsidian glass
+   118→}
+   119→
+   120→// ---------------------------------------------------------------------------
+   121→// Layout Helpers (Deterministic & Collision-Aware)
+   122→// ---------------------------------------------------------------------------
+   123→
+   124→function layoutColumn(
+   125→  nodes: GraphNodeDTO[],
+   126→  centerY: number,
+   127→  gap: number
+   128→): void {
+   129→  if (nodes.length === 0) return;
+   130→  const totalH =
+   131→    nodes.reduce((acc, n) => acc + n.geometry.height, 0) + (nodes.length - 1) * gap;
+   132→  let curY = centerY - totalH / 2;
+   133→
+   134→  for (const n of nodes) {
+   135→    n.geometry.y = Math.round(curY + n.geometry.height / 2);
+   136→    curY += n.geometry.height + gap;
+   137→  }
+   138→}
+   139→
+   140→/**
+   141→ * Deterministic identity hash for derived graph entities (workstreams).
+   142→ * Exported since Phase 4.4C: the authoritative Activity projection reuses the
+   143→ * EXACT same derivation so Activity provenance traces to the same workstream
+   144→ * identities the canvas read-model projects — no parallel identity scheme.
+   145→ */
+   146→export function deterministicIdHash(prefix: string, text: string): string {
+   147→  let h = 5381;
+   148→  for (let i = 0; i < text.length; i++) {
+   149→    h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+   150→  }
+   151→  return `${prefix}-${(h >>> 0).toString(36)}`;
+   152→}
+   153→
+   154→function truncateTitle(text: string, max = 50): string {
+   155→  if (text.length <= max) return text;
+   156→  return `${text.slice(0, max - 1).trimEnd()}…`;
+   157→}
+   158→
+   159→// ---------------------------------------------------------------------------
+   160→// Phase 4.3B.1 — Authoritative Execution Trail Derivation (deterministic)
+   161→// ---------------------------------------------------------------------------
+   162→
+   163→/**
+   164→ * Canonical 9-step agent work protocol (src/types/os.ts AgentWorkProtocolStep),
+   165→ * in protocol order, with display labels. Used to shape the local workflow
+   166→ * revealed when a work object is focused. Steps without runs are honestly
+   167→ * reported as 'pending' — the protocol is company truth, outcomes are not
+   168→ * fabricated.
+   169→ */
+   170→const CANONICAL_PROTOCOL_STEPS: ReadonlyArray<{
+   171→  step: string;
+   172→  label: string;
+   173→}> = [
+   174→  { step: 'understand', label: 'Understand & Scope' },
+   175→  { step: 'research', label: 'Research' },
+   176→  { step: 'analyze', label: 'Analyze' },
+   177→  { step: 'plan', label: 'Plan' },
+   178→  { step: 'build_execute', label: 'Build & Execute' },
+   179→  { step: 'test', label: 'Test' },
+   180→  { step: 'verify', label: 'Verify' },
+   181→  { step: 'review', label: 'Review' },
+   182→  { step: 'report', label: 'Report' },
+   183→];
+   184→
+   185→function protocolStepLabel(step: string): string {
+   186→  const canonical = CANONICAL_PROTOCOL_STEPS.find((c) => c.step === step);
+   187→  if (canonical) return canonical.label;
+   188→  return step.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+   189→}
+   190→
+   191→function runStepStatus(runs: AgentRunRecord[]): GraphExecutionStepDTO['status'] {
+   192→  if (runs.length === 0) return 'pending';
+   193→  if (runs.some((r) => r.status === 'failed' || !!r.error)) return 'failed';
+   194→  if (runs.some((r) => r.status === 'running')) return 'current';
+   195→  if (runs.some((r) => r.status === 'completed')) return 'done';
+   196→  return 'pending';
+   197→}
+   198→
+   199→/**
+   200→ * Derives the deterministic execution trail of a workstream from its
+   201→ * chronological run group. Unknown protocol steps are appended after the
+   202→ * canonical sequence in first-occurrence order (never dropped, never invented).
+   203→ */
+   204→function deriveExecutionStepsFromRuns(sortedRuns: AgentRunRecord[]): GraphExecutionStepDTO[] {
+   205→  const byStep = new Map<string, AgentRunRecord[]>();
+   206→  for (const r of sortedRuns) {
+   207→    const key = r.protocolStep;
+   208→    if (!key) continue;
+   209→    const list = byStep.get(key) ?? [];
+   210→    list.push(r);
+   211→    byStep.set(key, list);
+   212→  }
+   213→
+   214→  const unknownSteps = [...byStep.keys()].filter(
+   215→    (k) => !CANONICAL_PROTOCOL_STEPS.some((c) => c.step === k)
+   216→  );
+   217→
+   218→  const steps: GraphExecutionStepDTO[] = CANONICAL_PROTOCOL_STEPS.map(({ step, label }) => {
+   219→    const runs = byStep.get(step) ?? [];
+   220→    const latest = runs[runs.length - 1];
+   221→    return {
+   222→      step,
+   223→      label,
+   224→      status: runStepStatus(runs),
+   225→      ownerAgentId: latest?.agentId,
+   226→      durationMs: latest?.durationMs,
+   227→    };
+   228→  });
+   229→
+   230→  for (const step of unknownSteps) {
+   231→    const runs = byStep.get(step) ?? [];
+   232→    const latest = runs[runs.length - 1];
+   233→    steps.push({
+   234→      step,
+   235→      label: protocolStepLabel(step),
+   236→      status: runStepStatus(runs),
+   237→      ownerAgentId: latest?.agentId,
+   238→      durationMs: latest?.durationMs,
+   239→    });
+   240→  }
+   241→
+   242→  return steps;
+   243→}
+   244→
+   245→/** Maps durable WorkflowStepState status onto the execution trail status. */
+   246→function workflowStepStatus(status: string): GraphExecutionStepDTO['status'] {
+   247→  switch (status) {
+   248→    case 'running':
+   249→    case 'ready':
+   250→      return 'current';
+   251→    case 'waiting':
+   252→    case 'blocked':
+   253→    case 'awaiting_approval':
+   254→      return 'waiting';
+   255→    case 'completed':
+   256→      return 'done';
+   257→    case 'failed':
+   258→    case 'cancelled':
+   259→      return 'failed';
+   260→    default:
+   261→      return 'pending';
+   262→  }
+   263→}
+   264→
+   265→/**
+   266→ * Derives the execution trail of a workstream backed by a durable
+   267→ * WorkflowInstance from its authoritative stepStates.
+   268→ */
+   269→function deriveExecutionStepsFromInstance(wf: WorkflowInstanceState): GraphExecutionStepDTO[] {
+   270→  const skillOrder = (skill: string) => {
+   271→    const idx = CANONICAL_PROTOCOL_STEPS.findIndex((c) => c.step === skill);
+   272→    return idx === -1 ? CANONICAL_PROTOCOL_STEPS.length : idx;
+   273→  };
+   274→  return Object.values(wf.stepStates ?? {})
+   275→    .sort((a, b) => {
+   276→      const sa = skillOrder(a.skill);
+   277→      const sb = skillOrder(b.skill);
+   278→      if (sa !== sb) return sa - sb;
+   279→      return a.stepId.localeCompare(b.stepId);
+   280→    })
+   281→    .map((s) => ({
+   282→      step: s.stepId,
+   283→      label: protocolStepLabel(s.skill),
+   284→      status: workflowStepStatus(s.status),
+   285→      ownerAgentId: s.assignedRole,
+   286→    }));
+   287→}
+   288→
+   289→// ---------------------------------------------------------------------------
+   290→// Pure Projection Engine (Deterministic)
+   291→// ---------------------------------------------------------------------------
+   292→
+   293→export function deriveGraphProjection(inputs: AuthoritativeGraphInputs): GraphDTO {
+   294→  const {
+   295→    agentRuns,
+   296→    approvals,
+   297→    workflows,
+   298→    claimsPendingCount,
+   299→    factsActiveCount,
+   300→    company,
+   301→  } = inputs;
+   302→
+   303→  const nodes: GraphNodeDTO[] = [];
+   304→  const edges: GraphEdgeDTO[] = [];
+   305→  const spatialCards: GraphSpatialCardDTO[] = [];
+   306→
+   307→  // Filter pending approvals (consequential escalation boundary)
+   308→  const pendingApprovals = approvals.filter((a) => a.decision === 'pending');
+   309→  const hasOpenApprovals = pendingApprovals.length > 0;
+   310→
+   311→  // Group durable agent runs by directive (canonical workstreams)
+   312→  const directiveGroups = new Map<string, AgentRunRecord[]>();
+   313→  for (const r of agentRuns) {
+   314→    const key = r.directive?.trim();
+   315→    if (!key) continue;
+   316→    const list = directiveGroups.get(key) ?? [];
+   317→    list.push(r);
+   318→    directiveGroups.set(key, list);
+   319→  }
+   320→
+   321→  // Derive workstreams from groups
+   322→  interface DerivedWorkstream {
+   323→    id: string;
+   324→    directive: string;
+   325→    title: string;
+   326→    latestRun: AgentRunRecord;
+   327→    owner: string;
+   328→    stepStage: 'discovery' | 'build' | 'review' | 'ship' | 'done';
+   329→    runtimeState: GraphRuntimeState;
+   330→    hasFailed: boolean;
+   331→    hasReport: boolean;
+   332→    latestRunTime: number;
+   333→    executionSteps: GraphExecutionStepDTO[];
+   334→  }
+   335→
+   336→  const workstreams: DerivedWorkstream[] = [];
+   337→  for (const [directive, group] of directiveGroups) {
+   338→    const sorted = [...group].sort((a, b) => {
+   339→      const ta = (a as any).timestamp || (a as any).createdAt ? new Date((a as any).timestamp || (a as any).createdAt).getTime() : 0;
+   340→      const tb = (b as any).timestamp || (b as any).createdAt ? new Date((b as any).timestamp || (b as any).createdAt).getTime() : 0;
+   341→      return ta - tb;
+   342→    });
+   343→    const latest = sorted[sorted.length - 1];
+   344→    const hasReport = sorted.some((r) => r.protocolStep === 'report');
+   345→    const hasFailed = sorted.some((r) => r.status === 'failed' || !!r.error);
+   346→    const hasRunning = sorted.some((r) => r.status === 'running');
+   347→
+   348→    const specialistRuns = sorted.filter((r) => r.agentId !== 'coo');
+   349→    const latestSpecialist = specialistRuns[specialistRuns.length - 1];
+   350→    const owner = latestSpecialist ? latestSpecialist.agentId : 'researcher';
+   351→
+   352→    let stepStage: DerivedWorkstream['stepStage'] = 'discovery';
+   353→    if (hasReport) {
+   354→      stepStage = 'done';
+   355→    } else if (latest.protocolStep === 'review' || latest.protocolStep === 'verify') {
+   356→      stepStage = 'review';
+   357→    } else if (latest.protocolStep === 'plan' || latest.protocolStep === 'build_execute' || latest.protocolStep === 'test') {
+   358→      stepStage = 'build';
+   359→    } else if (latest.protocolStep === 'report') {
+   360→      stepStage = 'ship';
+   361→    }
+   362→
+   363→    const runtimeState: GraphRuntimeState = hasFailed
+   364→      ? 'failed'
+   365→      : hasReport
+   366→      ? 'completed'
+   367→      : hasRunning
+   368→      ? 'running'
+   369→      : 'paused';
+   370→
+   371→    workstreams.push({
+   372→      id: deterministicIdHash('ws', directive),
+   373→      directive,
+   374→      title: truncateTitle(directive),
+   375→      latestRun: latest,
+   376→      owner,
+   377→      stepStage,
+   378→      runtimeState,
+   379→      hasFailed,
+   380→      hasReport,
+   381→      latestRunTime: (() => {
+   382→        const t = (latest as any).timestamp || (latest as any).createdAt;
+   383→        return t ? new Date(t).getTime() : 0;
+   384→      })(),
+   385→      executionSteps: deriveExecutionStepsFromRuns(sorted),
+   386→    });
+   387→  }
+   388→
+   389→  // Cross-reference durable WorkflowInstances
+   390→  for (const wf of workflows) {
+   391→    if (workstreams.some((w) => w.directive === wf.objective)) continue;
+   392→    const isDone = wf.status === 'completed';
+   393→    const isFailed = wf.status === 'failed';
+   394→    const isRunning = wf.status === 'running';
+   395→    workstreams.push({
+   396→      id: deterministicIdHash('wf', wf.instanceId),
+   397→      directive: wf.objective,
+   398→      title: truncateTitle(wf.objective),
+   399→      latestRun: {
+   400→        runId: wf.instanceId,
+   401→        agentId: 'coo',
+   402→        agentName: 'Sophia Vance',
+   403→        protocolStep: 'plan',
+   404→        taskTitle: wf.objective,
+   405→        directive: wf.objective,
+   406→        status: wf.status as any,
+   407→        durationMs: 0,
+   408→        outputContent: '',
+   409→        timestamp: wf.createdAt || new Date().toISOString(),
+   410→        provenance: {
+   411→          agentId: 'coo',
+   412→          agentName: 'Sophia Vance',
+   413→          taskId: wf.instanceId,
+   414→          protocolStep: 'plan',
+   415→          timestamp: wf.createdAt || new Date().toISOString(),
+   416→          isVerified: true,
+   417→          evidenceBasis: 'calculation',
+   418→        },
+   419→      },
+   420→      owner: 'coo',
+   421→      stepStage: isDone ? 'done' : 'build',
+   422→      runtimeState: isFailed ? 'failed' : isDone ? 'completed' : isRunning ? 'running' : 'idle',
+   423→      hasFailed: isFailed,
+   424→      hasReport: isDone,
+   425→      latestRunTime: wf.createdAt ? new Date(wf.createdAt).getTime() : 0,
+   426→      executionSteps: deriveExecutionStepsFromInstance(wf),
+   427→    });
+   428→  }
+   429→
+   430→  const activeWorkstreams = workstreams.filter((w) => w.runtimeState === 'running');
+   431→  const failedWorkstreams = workstreams.filter((w) => w.runtimeState === 'failed');
+   432→  const completedWorkstreams = workstreams.filter((w) => w.runtimeState === 'completed');
+   433→
+   434→  const hasActiveWork = activeWorkstreams.length > 0;
+   435→  const hasFailedWork = failedWorkstreams.length > 0;
+   436→  const hasCompletedWork = completedWorkstreams.length > 0;
+   437→  const hasReviewWork = workstreams.some(
+   438→    (w) => (w.stepStage === 'review' || w.stepStage === 'ship') && w.runtimeState === 'running'
+   439→  );
+   440→
+   441→  // -------------------------------------------------------------------------
+   442→  // Column 0: Founder / Inputs (Human Authority Boundary)
+   443→  // -------------------------------------------------------------------------
+   444→  const founderGovernance: GraphGovernanceState = hasOpenApprovals
+   445→    ? 'awaiting_founder_approval'
+   446→    : 'none';
+   447→  const founderNode: GraphNodeDTO = {
+   448→    id: 'founder',
+   449→    type: 'founder',
+   450→    role: 'founder',
+   451→    title: 'Founder / Inputs',
+   452→    subtitle: company.focus ? `Focus: ${company.focus}` : 'Directives & Authority',
+   453→    activity: hasOpenApprovals
+   454→      ? `${pendingApprovals.length} Approval${pendingApprovals.length > 1 ? 's' : ''} Awaiting Review`
+   455→      : undefined,
+   456→    runtimeState: 'idle',
+   457→    governanceState: founderGovernance,
+   458→    epistemicValidity: 'not_applicable',
+   459→    presentationState: mapSemanticToPresentationState('idle', founderGovernance, 'not_applicable'),
+   460→    geometry: { shape: 'rectangle', width: 124, height: 80, x: 180, y: 440 },
+   461→    relevance: hasOpenApprovals ? 1.0 : 0.6,
+   462→    metadata: { actionCount: pendingApprovals.length },
+   463→  };
+   464→  nodes.push(founderNode);
+   465→
+   466→  // -------------------------------------------------------------------------
+   467→  // Column 1: Sophia Vance (COO & Master Orchestrator)
+   468→  // -------------------------------------------------------------------------
+   469→  const sophiaRuntime: GraphRuntimeState = hasFailedWork
+   470→    ? 'failed'
+   471→    : hasActiveWork
+   472→    ? 'running'
+   473→    : 'idle';
+   474→  const sophiaGovernance: GraphGovernanceState = hasOpenApprovals
+   475→    ? 'awaiting_founder_approval'
+   476→    : 'none';
+   477→
+   478→  const coreNode: GraphNodeDTO = {
+   479→    id: 'coo',
+   480→    type: 'agent',
+   481→    role: 'coo',
+   482→    title: 'Sophia',
+   483→    subtitle: 'COO & Orchestrator',
+   484→    activity: hasActiveWork
+   485→      ? `Orchestrating ${activeWorkstreams.length} workstream${activeWorkstreams.length > 1 ? 's' : ''}`
+   486→      : hasFailedWork
+   487→      ? 'Workstream halted on invariant error'
+   488→      : hasOpenApprovals
+   489→      ? 'Awaiting founder ratification'
+   490→      : undefined,
+   491→    owner: 'coo',
+   492→    runtimeState: sophiaRuntime,
+   493→    governanceState: sophiaGovernance,
+   494→    epistemicValidity: 'not_applicable',
+   495→    presentationState: mapSemanticToPresentationState(sophiaRuntime, sophiaGovernance, 'not_applicable'),
+   496→    geometry: { shape: 'squircle', width: 214, height: 96, x: 430, y: 440 },
+   497→    relevance: 1.0,
+   498→  };
+   499→  nodes.push(coreNode);
+   500→
+   501→  // Conduit: Founder ──> Sophia
+   502→  const founderToCooPresentation = mapSemanticToPresentationState(
+   503→    sophiaRuntime,
+   504→    sophiaGovernance,
+   505→    'not_applicable'
+   506→  );
+   507→  edges.push({
+   508→    id: 'e-founder-coo',
+   509→    source: 'founder',
+   510→    target: 'coo',
+   511→    relationship: 'delegates',
+   512→    runtimeState: sophiaRuntime,
+   513→    presentationState: founderToCooPresentation,
+   514→    style: hasActiveWork ? 'cyan' : hasFailedWork ? 'rose' : hasOpenApprovals ? 'amber' : 'white',
+   515→    activity: hasActiveWork ? 'Dispatching directives' : undefined,
+   516→    points: [
+   517→      [180 + 124 / 2, 440],
+   518→      [430 - 214 / 2, 440],
+   519→    ],
+   520→    arrow: true,
+   521→  });
+   522→
+   523→  // -------------------------------------------------------------------------
+   524→  // Column 2: Specialists Column (Collision-Aware)
+   525→  // -------------------------------------------------------------------------
+   526→  const specialistNodes: GraphNodeDTO[] = [];
+   527→
+   528→  // Dr. Aris Thorne (Research & Intelligence) — permanent workforce member
+   529→  const thorneWork = activeWorkstreams.find(
+   530→    (w) => w.owner === 'researcher' || w.owner === 'ops' || w.owner === 'coo'
+   531→  );
+   532→  const thorneFailed = failedWorkstreams.find(
+   533→    (w) => w.owner === 'researcher' || w.owner === 'ops'
+   534→  );
+   535→  const thorneRuntime: GraphRuntimeState = thorneFailed
+   536→    ? 'failed'
+   537→    : thorneWork
+   538→    ? 'running'
+   539→    : 'idle';
+   540→
+   541→  const thorneNode: GraphNodeDTO = {
+   542→    id: 'researcher',
+   543→    type: 'agent',
+   544→    role: 'researcher',
+   545→    title: 'Dr. Aris Thorne',
+   546→    subtitle: 'Research & Intelligence',
+   547→    activity: thorneWork
+   548→      ? thorneWork.title
+   549→      : thorneFailed
+   550→      ? 'Blocked on research invariant'
+   551→      : undefined,
+   552→    owner: 'researcher',
+   553→    runtimeState: thorneRuntime,
+   554→    governanceState: 'none',
+   555→    epistemicValidity: 'not_applicable',
+   556→    presentationState: mapSemanticToPresentationState(thorneRuntime, 'none', 'not_applicable'),
+   557→    geometry: { shape: 'circle', width: 112, height: 88, x: 710, y: 440 },
+   558→    relevance: thorneWork || thorneFailed ? 1.0 : 0.7,
+   559→  };
+   560→  specialistNodes.push(thorneNode);
+   561→
+   562→  // Julian Cruz (Finance & Unit Economics) — revealed when relevant
+   563→  const financeWork = workstreams.find((w) => w.owner === 'finance');
+   564→  let financeNode: GraphNodeDTO | undefined;
+   565→  if (financeWork) {
+   566→    const finRuntime = financeWork.runtimeState;
+   567→    financeNode = {
+   568→      id: 'finance',
+   569→      type: 'agent',
+   570→      role: 'finance',
+   571→      title: 'Julian Cruz',
+   572→      subtitle: 'Finance & Economics',
+   573→      activity: financeWork.title,
+   574→      owner: 'finance',
+   575→      runtimeState: finRuntime,
+   576→      governanceState: 'none',
+   577→      epistemicValidity: 'not_applicable',
+   578→      presentationState: mapSemanticToPresentationState(finRuntime, 'none', 'not_applicable'),
+   579→      geometry: { shape: 'circle', width: 112, height: 88, x: 710, y: 440 },
+   580→      relevance: 1.0,
+   581→    };
+   582→    specialistNodes.push(financeNode);
+   583→  }
+   584→
+   585→  // Maya Lin (Product Architecture & PRD) — revealed when relevant
+   586→  const pmWork = workstreams.find((w) => w.owner === 'pm');
+   587→  let pmNode: GraphNodeDTO | undefined;
+   588→  if (pmWork) {
+   589→    const pmRuntime = pmWork.runtimeState;
+   590→    pmNode = {
+   591→      id: 'pm',
+   592→      type: 'agent',
+   593→      role: 'pm',
+   594→      title: 'Maya Lin',
+   595→      subtitle: 'Product Architecture',
+   596→      activity: pmWork.title,
+   597→      owner: 'pm',
+   598→      runtimeState: pmRuntime,
+   599→      governanceState: 'none',
+   600→      epistemicValidity: 'not_applicable',
+   601→      presentationState: mapSemanticToPresentationState(pmRuntime, 'none', 'not_applicable'),
+   602→      geometry: { shape: 'circle', width: 112, height: 88, x: 710, y: 440 },
+   603→      relevance: 1.0,
+   604→    };
+   605→    specialistNodes.push(pmNode);
+   606→  }
+   607→
+   608→  // Apply deterministic collision-free layout to specialists
+   609→  layoutColumn(specialistNodes, 440, 24);
+   610→  specialistNodes.forEach((n) => nodes.push(n));
+   611→
+   612→  // Specialist conduits
+   613→  edges.push({
+   614→    id: 'e-coo-researcher',
+   615→    source: 'coo',
+   616→    target: 'researcher',
+   617→    relationship: 'delegates',
+   618→    runtimeState: thorneRuntime,
+   619→    presentationState: mapSemanticToPresentationState(thorneRuntime, 'none', 'not_applicable'),
+   620→    style: thorneRuntime === 'running' ? 'cyan' : thorneRuntime === 'failed' ? 'rose' : 'white',
+   621→    activity: thorneWork ? 'Delegating research' : undefined,
+   622→    points: [
+   623→      [coreNode.geometry.x + coreNode.geometry.width / 2, coreNode.geometry.y],
+   624→      [thorneNode.geometry.x - thorneNode.geometry.width / 2, thorneNode.geometry.y],
+   625→    ],
+   626→    arrow: true,
+   627→  });
+   628→
+   629→  if (financeNode) {
+   630→    edges.push({
+   631→      id: 'e-coo-finance',
+   632→      source: 'coo',
+   633→      target: 'finance',
+   634→      relationship: 'models_finance',
+   635→      runtimeState: financeNode.runtimeState,
+   636→      presentationState: financeNode.presentationState,
+   637→      style: financeNode.runtimeState === 'running' ? 'cyan' : financeNode.runtimeState === 'failed' ? 'rose' : 'white',
+   638→      activity: 'Modeling unit economics',
+   639→      points: [
+   640→        [coreNode.geometry.x + coreNode.geometry.width / 2, coreNode.geometry.y],
+   641→        [financeNode.geometry.x - financeNode.geometry.width / 2, financeNode.geometry.y],
+   642→      ],
+   643→      arrow: true,
+   644→    });
+   645→  }
+   646→
+   647→  if (pmNode) {
+   648→    edges.push({
+   649→      id: 'e-researcher-pm',
+   650→      source: 'researcher',
+   651→      target: 'pm',
+   652→      relationship: 'authors_prd',
+   653→      runtimeState: pmNode.runtimeState,
+   654→      presentationState: pmNode.presentationState,
+   655→      style: pmNode.runtimeState === 'running' ? 'cyan' : pmNode.runtimeState === 'failed' ? 'rose' : 'white',
+   656→      activity: 'Feeding research into PRD',
+   657→      points: [
+   658→        [thorneNode.geometry.x, thorneNode.geometry.y + thorneNode.geometry.height / 2],
+   659→        [pmNode.geometry.x, pmNode.geometry.y - pmNode.geometry.height / 2],
+   660→      ],
+   661→      arrow: true,
+   662→    });
+   663→  }
+   664→
+   665→  // -------------------------------------------------------------------------
+   666→  // Column 3: Work Objects (Phase 4.3B.1 — work is a first-class graph citizen)
+   667→  // Open workstreams (running/paused/failed) are surfaced as actionable work;
+   668→  // completed workstreams are surfaced as governed outcomes. Both derive
+   669→  // strictly from the authoritative run groups — nothing is fabricated.
+   670→  // Placement into ACTIVE / RELATED / OUTCOMES spatial regions is a
+   671→  // deterministic client-side view-model projection (see flow.ts).
+   672→  // -------------------------------------------------------------------------
+   673→  const protocolStepNodes: GraphNodeDTO[] = [];
+   674→
+   675→  // Deterministic recency ordering (latest run timestamp desc, directive asc)
+   676→  // guarantees stable work-node selection and ordering for identical inputs.
+   677→  const byRecency = (a: DerivedWorkstream, b: DerivedWorkstream) => {
+   678→    if (a.latestRunTime !== b.latestRunTime) return b.latestRunTime - a.latestRunTime;
+   679→    return a.directive.localeCompare(b.directive);
+   680→  };
+   681→
+   682→  const openWork = workstreams
+   683→    .filter((w) => w.runtimeState !== 'completed')
+   684→    .sort(byRecency)
+   685→    .slice(0, 9);
+   686→  const completedWork = workstreams
+   687→    .filter((w) => w.runtimeState === 'completed')
+   688→    .sort(byRecency)
+   689→    .slice(0, 3);
+   690→
+   691→  const activeOrRecentWork = openWork;
+   692→
+   693→  activeOrRecentWork.forEach((w) => {
+   694→    let stepLabel = 'Research & Reconnaissance';
+   695→    let assignedSpecialistId = 'researcher';
+   696→    let relationship: GraphRelationship = 'researches';
+   697→
+   698→    if (w.stepStage === 'discovery') {
+   699→      stepLabel = 'Market Reconnaissance';
+   700→      assignedSpecialistId = 'researcher';
+   701→      relationship = 'researches';
+   702→    } else if (w.stepStage === 'build') {
+   703→      if (w.owner === 'finance' && financeNode) {
+   704→        stepLabel = 'Unit Economics Audit';
+   705→        assignedSpecialistId = 'finance';
+   706→        relationship = 'models_finance';
+   707→      } else {
+   708→        stepLabel = 'Product Architecture & PRD';
+   709→        assignedSpecialistId = pmNode ? 'pm' : 'researcher';
+   710→        relationship = 'authors_prd';
+   711→      }
+   712→    } else if (w.stepStage === 'review') {
+   713→      stepLabel = 'Council Peer Review';
+   714→      assignedSpecialistId = 'researcher';
+   715→      relationship = 'checks';
+   716→    } else if (w.stepStage === 'ship') {
+   717→      stepLabel = 'Executive Synthesis';
+   718→      assignedSpecialistId = 'researcher';
+   719→      relationship = 'synthesizes';
+   720→    }
+   721→
+   722→    const stepNode: GraphNodeDTO = {
+   723→      id: `step-${w.id}`,
+   724→      type: 'workflow',
+   725→      role: 'step',
+   726→      title: w.title,
+   727→      subtitle: stepLabel,
+   728→      activity: w.runtimeState === 'running'
+   729→        ? `${stepLabel} in progress`
+   730→        : w.runtimeState === 'failed'
+   731→        ? 'Invariant check failed'
+   732→        : undefined,
+   733→      owner: w.owner,
+   734→      runtimeState: w.runtimeState,
+   735→      governanceState: 'none',
+   736→      epistemicValidity: 'unverified',
+   737→      presentationState: mapSemanticToPresentationState(w.runtimeState, 'none', 'unverified'),
+   738→      geometry: { shape: 'rectangle', width: 160, height: 76, x: 1010, y: 440 },
+   739→      relevance: w.runtimeState === 'running' || w.runtimeState === 'failed' ? 1.0 : 0.5,
+   740→      metadata: {
+   741→        runId: w.latestRun.runId || (w.latestRun as any).id,
+   742→        protocolStep: w.latestRun.protocolStep,
+   743→        durationMs: w.latestRun.durationMs,
+   744→        error: w.latestRun.error ?? undefined,
+   745→        directive: w.directive,
+   746→        summary: w.latestRun.outputContent || undefined,
+   747→        recoveryGuidance: w.runtimeState === 'failed'
+   748→          ? (w.latestRun.error ? `Failure detected: ${w.latestRun.error}. Sophia requires founder review or re-dispatch with adjusted parameters.` : 'Execution halted due to safety or invariant checks. Review Activity logs or re-dispatch.')
+   749→          : undefined,
+   750→        executionSteps: w.executionSteps,
+   751→      },
+   752→    };
+   753→    protocolStepNodes.push(stepNode);
+   754→
+   755→    // Edge from assigned specialist to this protocol step
+   756→    const assignedNode = specialistNodes.find((s) => s.id === assignedSpecialistId) || thorneNode;
+   757→    const edgeStyle: GraphEdgeStyle =
+   758→      w.runtimeState === 'failed' ? 'rose' : w.runtimeState === 'running' ? 'cyan' : 'white';
+   759→
+   760→    edges.push({
+   761→      id: `e-spec-${w.id}`,
+   762→      source: assignedNode.id,
+   763→      target: stepNode.id,
+   764→      relationship,
+   765→      runtimeState: w.runtimeState,
+   766→      presentationState: stepNode.presentationState,
+   767→      style: edgeStyle,
+   768→      activity: w.title,
+   769→      points: [
+   770→        [assignedNode.geometry.x + assignedNode.geometry.width / 2, assignedNode.geometry.y],
+   771→        [stepNode.geometry.x - stepNode.geometry.width / 2, stepNode.geometry.y],
+   772→      ],
+   773→      arrow: true,
+   774→    });
+   775→  });
+   776→
+   777→  // Completed workstreams become governed-outcome work objects (Phase 4.3B.1):
+   778→  // the company's spatial context includes what has been verified & delivered.
+   779→  completedWork.forEach((w) => {
+   780→    const outcomeWorkNode: GraphNodeDTO = {
+   781→      id: `step-${w.id}`,
+   782→      type: 'workflow',
+   783→      role: 'step',
+   784→      title: w.title,
+   785→      subtitle: 'Governed Outcome',
+   786→      activity: w.hasReport ? 'Verified & delivered' : undefined,
+   787→      owner: w.owner,
+   788→      runtimeState: 'completed',
+   789→      governanceState: 'none',
+   790→      epistemicValidity: 'unverified',
+   791→      presentationState: mapSemanticToPresentationState('completed', 'none', 'unverified'),
+   792→      geometry: { shape: 'rectangle', width: 160, height: 76, x: 1010, y: 640 },
+   793→      relevance: 0.5,
+   794→      metadata: {
+   795→        runId: w.latestRun.runId || (w.latestRun as any).id,
+   796→        protocolStep: w.latestRun.protocolStep,
+   797→        durationMs: w.latestRun.durationMs,
+   798→        directive: w.directive,
+   799→        summary: w.latestRun.outputContent || 'Work completed and verified by Sophia.',
+   800→        executionSteps: w.executionSteps,
+   801→      },
+   802→    };
+   803→    protocolStepNodes.push(outcomeWorkNode);
+   804→  });
+   805→
+   806→  // Apply deterministic collision-free layout to protocol steps
+   807→  if (protocolStepNodes.length > 0) {
+   808→    layoutColumn(protocolStepNodes, 440, 22);
+   809→    protocolStepNodes.forEach((n) => nodes.push(n));
+   810→  }
+   811→
+   812→  // -------------------------------------------------------------------------
+   813→  // Column 4: Constitutional Verifier (Governance & Invariant Engine)
+   814→  // -------------------------------------------------------------------------
+   815→  const verifierRuntime: GraphRuntimeState = hasFailedWork
+   816→    ? 'failed'
+   817→    : hasReviewWork
+   818→    ? 'running'
+   819→    : hasCompletedWork
+   820→    ? 'completed'
+   821→    : 'idle';
+   822→
+   823→  const verifierNode: GraphNodeDTO = {
+   824→    id: 'verifier',
+   825→    type: 'verification',
+   826→    role: 'verifier',
+   827→    title: 'Verifier',
+   828→    subtitle: 'Constitutional Safety',
+   829→    activity: hasReviewWork
+   830→      ? 'Auditing gross margin floor ≥ 80.0%'
+   831→      : hasFailedWork
+   832→      ? 'Invariant check failed — execution blocked'
+   833→      : undefined,
+   834→    runtimeState: verifierRuntime,
+   835→    governanceState: 'none',
+   836→    epistemicValidity: 'not_applicable',
+   837→    presentationState: mapSemanticToPresentationState(verifierRuntime, 'none', 'not_applicable'),
+   838→    geometry: { shape: 'circle', width: 120, height: 84, x: 1280, y: 440 },
+   839→    relevance: hasReviewWork || hasFailedWork ? 1.0 : 0.5,
+   840→  };
+   841→  nodes.push(verifierNode);
+   842→
+   843→  // Conduits from protocol steps to Verifier (or calm baseline when idle)
+   844→  if (protocolStepNodes.length === 0) {
+   845→    edges.push({
+   846→      id: 'e-researcher-verifier',
+   847→      source: 'researcher',
+   848→      target: 'verifier',
+   849→      relationship: 'checks',
+   850→      runtimeState: 'idle',
+   851→      presentationState: 'default',
+   852→      style: 'white',
+   853→      points: [
+   854→        [thorneNode.geometry.x + thorneNode.geometry.width / 2, thorneNode.geometry.y],
+   855→        [verifierNode.geometry.x - verifierNode.geometry.width / 2, verifierNode.geometry.y],
+   856→      ],
+   857→      arrow: false,
+   858→    });
+   859→  } else {
+   860→    protocolStepNodes.forEach((stepNode) => {
+   861→      const isReview =
+   862→        stepNode.runtimeState === 'running' &&
+   863→        (stepNode.subtitle?.includes('Review') || stepNode.subtitle?.includes('Synthesis'));
+   864→      const isFailed = stepNode.runtimeState === 'failed';
+   865→      const isComplete = stepNode.runtimeState === 'completed';
+   866→      const edgeStyle: GraphEdgeStyle = isFailed ? 'rose' : isReview ? 'cyan' : isComplete ? 'emerald' : 'white';
+   867→
+   868→      edges.push({
+   869→        id: `e-ver-${stepNode.id}`,
+   870→        source: stepNode.id,
+   871→        target: 'verifier',
+   872→        relationship: 'checks',
+   873→        runtimeState: stepNode.runtimeState,
+   874→        presentationState: stepNode.presentationState,
+   875→        style: edgeStyle,
+   876→        points: [
+   877→          [stepNode.geometry.x + stepNode.geometry.width / 2, stepNode.geometry.y],
+   878→          [verifierNode.geometry.x - verifierNode.geometry.width / 2, verifierNode.geometry.y],
+   879→        ],
+   880→        arrow: true,
+   881→      });
+   882→    });
+   883→  }
+   884→
+   885→  // -------------------------------------------------------------------------
+   886→  // Column 5: Governed Outcome / Immutable Vault
+   887→  // -------------------------------------------------------------------------
+   888→  const vaultRuntime: GraphRuntimeState = hasCompletedWork ? 'completed' : 'idle';
+   889→  const vaultNode: GraphNodeDTO = {
+   890→    id: 'vault',
+   891→    type: 'outcome',
+   892→    role: 'vault',
+   893→    title: 'Governed Vault',
+   894→    subtitle: 'Immutable Memory',
+   895→    activity: hasCompletedWork
+   896→      ? `${completedWorkstreams.length} deliverable${completedWorkstreams.length > 1 ? 's' : ''} verified`
+   897→      : undefined,
+   898→    runtimeState: vaultRuntime,
+   899→    governanceState: 'none',
+   900→    epistemicValidity: 'active',
+   901→    presentationState: mapSemanticToPresentationState(vaultRuntime, 'none', 'active'),
+   902→    geometry: { shape: 'rectangle', width: 130, height: 78, x: 1500, y: 440 },
+   903→    relevance: hasCompletedWork ? 1.0 : 0.35,
+   904→    metadata: {
+   905→      actionCount: completedWorkstreams.length,
+   906→      evidenceCount: factsActiveCount,
+   907→    },
+   908→  };
+   909→  nodes.push(vaultNode);
+   910→
+   911→  // Conduit: Verifier ──> Vault
+   912→  edges.push({
+   913→    id: 'e-verifier-vault',
+   914→    source: 'verifier',
+   915→    target: 'vault',
+   916→    relationship: 'feeds',
+   917→    runtimeState: vaultRuntime,
+   918→    presentationState: mapSemanticToPresentationState(vaultRuntime, 'none', 'active'),
+   919→    style: hasCompletedWork ? 'emerald' : 'white',
+   920→    points: [
+   921→      [verifierNode.geometry.x + verifierNode.geometry.width / 2, verifierNode.geometry.y],
+   922→      [vaultNode.geometry.x - vaultNode.geometry.width / 2, vaultNode.geometry.y],
+   923→    ],
+   924→    arrow: true,
+   925→  });
+   926→
+   927→  // -------------------------------------------------------------------------
+   928→  // Contextual Escalation Gate: Founder Approval Gate (ONLY when pending)
+   929→  // -------------------------------------------------------------------------
+   930→  if (hasOpenApprovals) {
+   931→    const primaryApproval = pendingApprovals[0] as any;
+   932→    const actionLabel = primaryApproval?.actionName || primaryApproval?.actionType || 'Consequential Action Ratification';
+   933→    const approvalNode: GraphNodeDTO = {
+   934→      id: 'approval',
+   935→      type: 'approval',
+   936→      title: 'Founder Approval Gate',
+   937→      subtitle: `${pendingApprovals.length} Approval${pendingApprovals.length > 1 ? 's' : ''} Pending`,
+   938→      activity: actionLabel,
+   939→      owner: primaryApproval?.employeeRole || 'coo',
+   940→      runtimeState: 'halted', // execution halted at authority boundary
+   941→      governanceState: 'awaiting_founder_approval',
+   942→      epistemicValidity: 'not_applicable',
+   943→      presentationState: 'waiting', // Amber authorization seal, NEVER processing
+   944→      geometry: { shape: 'rectangle', width: 180, height: 84, x: 570, y: 680 },
+   945→      relevance: 1.0,
+   946→      metadata: {
+   947→        actionCount: pendingApprovals.length,
+   948→        classification: primaryApproval?.classification,
+   949→      },
+   950→    };
+   951→    nodes.push(approvalNode);
+   952→
+   953→    // Sophia escalates to Approval Gate
+   954→    edges.push({
+   955→      id: 'e-coo-approval',
+   956→      source: 'coo',
+   957→      target: 'approval',
+   958→      relationship: 'escalates-to',
+   959→      runtimeState: 'halted',
+   960→      presentationState: 'waiting',
+   961→      style: 'amber',
+   962→      activity: 'Escalating decision to Founder',
+   963→      points: [
+   964→        [coreNode.geometry.x, coreNode.geometry.y + coreNode.geometry.height / 2],
+   965→        [coreNode.geometry.x, approvalNode.geometry.y],
+   966→        [approvalNode.geometry.x - approvalNode.geometry.width / 2, approvalNode.geometry.y],
+   967→      ],
+   968→      arrow: true,
+   969→    });
+   970→
+   971→    // Approval Gate escalates to Founder
+   972→    edges.push({
+   973→      id: 'e-approval-founder',
+   974→      source: 'approval',
+   975→      target: 'founder',
+   976→      relationship: 'escalates-to',
+   977→      runtimeState: 'halted',
+   978→      presentationState: 'waiting',
+   979→      style: 'amber',
+   980→      activity: 'Requires Founder Ratification',
+   981→      points: [
+   982→        [approvalNode.geometry.x - approvalNode.geometry.width / 2, approvalNode.geometry.y],
+   983→        [founderNode.geometry.x, approvalNode.geometry.y],
+   984→        [founderNode.geometry.x, founderNode.geometry.y + founderNode.geometry.height / 2],
+   985→      ],
+   986→      arrow: true,
+   987→    });
+   988→  }
+   989→
+   990→  // -------------------------------------------------------------------------
+   991→  // Spatial Intent Cards (Real Operational Statements Only)
+   992→  // -------------------------------------------------------------------------
+   993→  if (hasActiveWork) {
+   994→    spatialCards.push({
+   995→      id: 'sp-coo',
+   996→      nodeId: 'coo',
+   997→      x: coreNode.geometry.x,
+   998→      y: coreNode.geometry.y - coreNode.geometry.height / 2 - 24,
+   999→      actor: 'Sophia Vance',
+  1000→      action: 'Delegating research',
+  1001→      target: 'Dr. Aris Thorne',
+  1002→      tone: 'cyan',
+  1003→    });
+  1004→  }
+  1005→  if (thorneWork) {
+  1006→    spatialCards.push({
+  1007→      id: 'sp-researcher',
+  1008→      nodeId: 'researcher',
+  1009→      x: thorneNode.geometry.x,
+  1010→      y: thorneNode.geometry.y - thorneNode.geometry.height / 2 - 24,
+  1011→      actor: 'Dr. Aris Thorne',
+  1012→      action: thorneWork.title,
+  1013→      tone: 'cyan',
+  1014→    });
+  1015→  }
+  1016→  if (financeNode && financeWork && financeWork.runtimeState === 'running') {
+  1017→    spatialCards.push({
+  1018→      id: 'sp-finance',
+  1019→      nodeId: 'finance',
+  1020→      x: financeNode.geometry.x,
+  1021→      y: financeNode.geometry.y - financeNode.geometry.height / 2 - 24,
+  1022→      actor: 'Julian Cruz',
+  1023→      action: 'Stress-testing gross margin floor ≥ 80.0%',
+  1024→      tone: 'cyan',
+  1025→    });
+  1026→  }
+  1027→  if (pmNode && pmWork && pmWork.runtimeState === 'running') {
+  1028→    spatialCards.push({
+  1029→      id: 'sp-pm',
+  1030→      nodeId: 'pm',
+  1031→      x: pmNode.geometry.x,
+  1032→      y: pmNode.geometry.y - pmNode.geometry.height / 2 - 24,
+  1033→      actor: 'Maya Lin',
+  1034→      action: 'Drafting PRD & architecture specs',
+  1035→      tone: 'cyan',
+  1036→    });
+  1037→  }
+  1038→  if (hasReviewWork) {
+  1039→    spatialCards.push({
+  1040→      id: 'sp-verifier',
+  1041→      nodeId: 'verifier',
+  1042→      x: verifierNode.geometry.x,
+  1043→      y: verifierNode.geometry.y - verifierNode.geometry.height / 2 - 24,
+  1044→      actor: 'Constitutional Verifier',
+  1045→      action: 'Auditing gross margin invariant ≥ 80.0%',
+  1046→      tone: 'emerald',
+  1047→    });
+  1048→  } else if (hasFailedWork) {
+  1049→    spatialCards.push({
+  1050→      id: 'sp-verifier-error',
+  1051→      nodeId: 'verifier',
+  1052→      x: verifierNode.geometry.x,
+  1053→      y: verifierNode.geometry.y - verifierNode.geometry.height / 2 - 24,
+  1054→      actor: 'Constitutional Verifier',
+  1055→      action: 'Deterministic check failed — blocked',
+  1056→      tone: 'rose',
+  1057→    });
+  1058→  }
+  1059→  if (hasOpenApprovals) {
+  1060→    spatialCards.push({
+  1061→      id: 'sp-approval',
+  1062→      nodeId: 'approval',
+  1063→      x: 570,
+  1064→      y: 618,
+  1065→      actor: 'Waiting',
+  1066→      action: 'Founder decision required',
+  1067→      target: 'Founder',
+  1068→      tone: 'amber',
+  1069→    });
+  1070→  }
+  1071→
+  1072→  // -------------------------------------------------------------------------
+  1073→  // Contextual Inspection Drawer (Tiers 4 & 5)
+  1074→  // -------------------------------------------------------------------------
+  1075→  const inspectionContext: GraphInspectionContextDTO = {
+  1076→    recentRuns: agentRuns.slice(0, 10).map((r: any) => ({
+  1077→      runId: r.runId || r.id,
+  1078→      agentId: r.agentId,
+  1079→      agentName: r.agentName,
+  1080→      protocolStep: r.protocolStep,
+  1081→      taskTitle: r.taskTitle,
+  1082→      status: r.status,
+  1083→      durationMs: r.durationMs,
+  1084→      timestamp: r.timestamp || (r.createdAt ? new Date(r.createdAt).toISOString() : ''),
+  1085→    })),
+  1086→    pendingApprovals: pendingApprovals.map((a: any) => ({
+  1087→      id: a.id,
+  1088→      classification: a.classification,
+  1089→      actionType: a.actionName || a.actionType || 'Consequential Action',
+  1090→      targetSystem: a.target?.targetSystem || a.targetSystem || '',
+  1091→      payloadHash: a.payloadHash,
+  1092→      requestedAt: a.requestedAt || (a.createdAt ? new Date(a.createdAt).toISOString() : ''),
+  1093→      employeeRole: a.employeeRole,
+  1094→    })),
+  1095→    epistemicSummary: {
+  1096→      claimsPendingVerification: claimsPendingCount,
+  1097→      activeFactsCount: factsActiveCount,
+  1098→    },
+  1099→  };
+  1100→
+  1101→  // Sort nodes and edges deterministically
+  1102→  nodes.sort((a, b) => {
+  1103→    if (a.geometry.x !== b.geometry.x) return a.geometry.x - b.geometry.x;
+  1104→    if (a.geometry.y !== b.geometry.y) return a.geometry.y - b.geometry.y;
+  1105→    return a.id.localeCompare(b.id);
+  1106→  });
+  1107→  edges.sort((a, b) => a.id.localeCompare(b.id));
+  1108→
+  1109→  // Compute deterministic SHA-256 fingerprint over topology
+  1110→  const canonicalData = JSON.stringify({
+  1111→    nodes: nodes.map((n) => ({
+  1112→      id: n.id,
+  1113→      r: n.runtimeState,
+  1114→      g: n.governanceState,
+  1115→      e: n.epistemicValidity,
+  1116→      p: n.presentationState,
+  1117→      x: n.geometry.x,
+  1118→      y: n.geometry.y,
+  1119→    })),
+  1120→    edges: edges.map((e) => ({
+  1121→      id: e.id,
+  1122→      s: e.source,
+  1123→      t: e.target,
+  1124→      r: e.runtimeState,
+  1125→      p: e.presentationState,
+  1126→    })),
+  1127→  });
+  1128→
+  1129→  const deterministicHash = crypto
+  1130→    .createHash('sha256')
+  1131→    .update(canonicalData)
+  1132→    .digest('hex');
+  1133→
+  1134→  return {
+  1135→    asOf: new Date(inputs.now ?? Date.now()).toISOString(),
+  1136→    deterministicHash,
+  1137→    topologyVersion: '1.1.0',
+  1138→    company,
+  1139→    summary: {
+  1140→      totalNodes: nodes.length,
+  1141→      totalEdges: edges.length,
+  1142→      activeWorkstreams: activeWorkstreams.length,
+  1143→      pendingApprovals: pendingApprovals.length,
+  1144→      blockedItems: failedWorkstreams.length,
+  1145→    },
+  1146→    nodes,
+  1147→    edges,
+  1148→    spatialCards,
+  1149→    inspectionContext,
+  1150→  };
+  1151→}
+  1152→
+  1153→// ---------------------------------------------------------------------------
+  1154→// Server-Side Store Readers (Fail-Closed)
+  1155→// ---------------------------------------------------------------------------
+  1156→
+  1157→export async function getGraphOverview(): Promise<GraphDTO> {
+  1158→  // Read authoritative stores fail-closed
+  1159→  let agentRuns: AgentRunRecord[];
+  1160→  try {
+  1161→    agentRuns = await AgentRunStore.getInstance().listRuns({ limit: 50 });
+  1162→  } catch (err) {
+  1163→    throw new GraphReadError('agent-runs', err);
+  1164→  }
+  1165→
+  1166→  let approvals: FounderApprovalRecord[];
+  1167→  try {
+  1168→    approvals = await SideEffectAuthorizationGate.getInstance().listApprovals({
+  1169→      status: 'pending',
+  1170→    });
+  1171→  } catch (err) {
+  1172→    throw new GraphReadError('approvals', err);
+  1173→  }
+  1174→
+  1175→  let workflows: WorkflowInstanceState[];
+  1176→  try {
+  1177→    workflows = await getWorkflowStore().listInstances();
+  1178→  } catch (err) {
+  1179→    throw new GraphReadError('workflow-instances', err);
+  1180→  }
+  1181→
+  1182→  let claimsPendingCount = 0;
+  1183→  let factsActiveCount = 0;
+  1184→  try {
+  1185→    const claims = await EpistemicClaimStore.getInstance().listClaims({
+  1186→      status: 'pending',
+  1187→    });
+  1188→    claimsPendingCount = claims.length;
+  1189→    const facts = await EpistemicClaimStore.getInstance().listActiveFacts();
+  1190→    factsActiveCount = facts.length;
+  1191→  } catch (err) {
+  1192→    // Non-fatal if epistemic claims fail, but fail-closed if in authoritative mode
+  1193→    throw new GraphReadError('epistemic-store', err);
+  1194→  }
+  1195→
+  1196→  let company = {
+  1197→    name: 'SamJuniors Ecosystem',
+  1198→    focus: 'AI-Native Operating Environment',
+  1199→  };
+  1200→  try {
+  1201→    // M1: the constitution is a static charter exposed directly by the
+  1202→    // provider; operational state no longer routes through this call.
+  1203→    const constitution = CompanyContextProvider.getCompanyConstitution();
+  1204→    if (constitution?.name) {
+  1205→      company.name = constitution.name;
+  1206→    }
+  1207→  } catch {
+  1208→    // Fall back to default organization name if company context is empty
+  1209→  }
+  1210→
+  1211→  return deriveGraphProjection({
+  1212→    agentRuns,
+  1213→    approvals,
+  1214→    workflows,
+  1215→    claimsPendingCount,
+  1216→    factsActiveCount,
+  1217→    company,
+  1218→  });
+  1219→}
+  1220→
