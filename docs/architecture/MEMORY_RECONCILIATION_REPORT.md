@@ -210,3 +210,78 @@ Known future bottlenecks to watch, not to fix now: DurableFileStore whole-file r
 **RISKS:** Founder decisions K-1/K-2 gate M3/M4; local-mode dual-write divergence until the Postgres milestone; consolidation compute cost against the budget ceiling; hardcoded conflict rules are demo-specific until externalized; test-isolation defect (phase2) can mask contamination.
 
 **NEXT ACTION:** Founder review of this report, specifically: approve/deny K-1 (SOFIA-surface conversation convergence) and K-2 (personal-memory store shape), and greenlight the M0–M2 sequence (hygiene + state-read unification + knowledge persistence). **Implementation begins only after that approval. No code was changed in this reconciliation.**
+
+---
+
+## Addendum — M3 K-1 hardening review (2026-09-22, post-3da24b4)
+
+*The body of this report is the point-in-time review baseline (branch feat/sofia-merge @ 3dd0b82). This addendum records what changed since and the authority-precision findings of the M3 K-1 hardening pass, so the doc set never conflates current implementation with target architecture.*
+
+**Implemented since the report:** M0–M2 (commit 6ac3c03, correction pass 5067e99) and M3 K-1 (commit 3da24b4) — the SOFIA typed surface (`/api/sofia/ask`) is now a thin governed ingress delegating every turn to `executeSophiaTurn` over `ConversationStore`; browser history is untrusted, never persisted, never used to reconstruct canonical dialogue. Row 23's convergence item is therefore DONE; row 10's "KEEP (canonical conversation authority)" stands.
+
+**ConversationStore authority semantics (verified per method):**
+- Local DurableFileStore (`.data/conversations.json`, `.data/chat_messages.json`) is the primary write target and the authoritative read source today — including `getMessages`, `getRecentHistory`, `listConversations`, and the turn-idempotency gate `findMessageByIdempotencyKey` (all file-only reads).
+- Prisma dual-write is opportunistic only: best-effort upserts after the file write, errors swallowed. The single Prisma read path is `getConversation()`'s fallback on a file miss (with cache-back). Prisma conversation/message rows are write-only shadows — not authoritative.
+- `ConversationStore` has NO authoritative-mode branch (unlike `CompanyKnowledgeStore`): local-style semantics apply in every `DATABASE_MODE`, including production. Authoritative PostgreSQL remains the M6 target; nothing in the current docs may claim it is live for conversations.
+
+**Known issues recorded (deliberately NOT changed this pass):**
+1. **Bogus-conversationId provisioning (executor-level, pinned):** the store correctly throws `ConversationNotFoundError` for unknown ids (no phantom creation — row 10 / ADR 0002 §7 hold at store level), but `executeSophiaTurn` provisions a fresh founder-bound conversation instead of surfacing the 404. Ownership mismatch still fails closed (403) before the fallback can run, so this is not an authorization weakness; it is a semantic divergence from ADR 0002 §7's blanket 404 claim (agent-chat honors it), causes silent continuity loss on stale ids, and re-executes turns when a caller retries with the same bogus id + turnId (fork precedes the conversation-scoped idempotency lookup). Required by live-voice/SOFIA-surface UX; changing it is a broader behavioral decision (ADR amendment + surface contracts). Pinned by `tests/sophia/m3_authority_hardening.test.ts`.
+2. **queryKnowledge authoritative-mode gap (next authority-audit item):** in authoritative mode, `getAllKnowledge()`/`getKnowledgeById()` read the fail-closed Prisma table, but `queryKnowledge()` still scores the in-process cache hydrated from DurableFileStore/code seeds — knowledge edited in another process is invisible to retrieval while visible to list/get. Callers are context-assembly hot paths (every Sophia turn), so the smallest safe correction is not fully isolated; fixing it needs a dedicated pass with its own authoritative-mode verification matrix. Latent in the current local-mode deployment.
+
+**Where the precise layering is documented:** ADR 0002 implementation-precision addendum (four-layer distinction + the §7 divergence), `SOPHIA_MEMORY_ARCHITECTURE.md` §8 conversation-authority subsection, and per-method doc comments in `src/lib/server/conversation/store.ts`.
+
+
+---
+
+## K-2 Addendum (2026-09-23): Sophia Personal Mind memory — implemented
+
+Milestone M3 K-2 (branch feat/sophia-personal-memory) implemented the first
+Personal Mind memory boundary per the approved two-brains architecture:
+
+- New canonical abstraction: `SophiaMemoryStore` + `SophiaMemory` Prisma
+  model + DurableFileStore collection `sophia_memories` (ConversationStore
+  storage pattern: file authoritative today, Prisma opportunistic dual-write,
+  no authoritative-mode branch until M6).
+- Founder-scoped fail-closed ownership on every operation; deterministic
+  bounded retrieval; ChatMessage-convention idempotencyKey dedupe.
+- `PERSONAL_MIND_MEMORY` context slice in SophiaContextAssembler, threaded
+  from executeSophiaTurn and /api/agent-chat via the authenticated principal.
+- Governed ingress /api/sofia/memory (session-bound only; body founderId
+  ignored; 401 in production).
+- No promotion path to CompanyMemory / CompanyKnowledge / CanonicalFact; no
+  authorization capability; no MemoryGate / consolidation / forgetting /
+  embeddings / vector search / PostgreSQL migration (all remain out of scope).
+- Pinned by tests/sophia/k2_personal_memory.test.ts (20 tests incl. genuine
+  restart-durability children and production 401 probes).
+
+
+---
+
+## M4-A Addendum (2026-09-23): memory capture + deterministic MemoryGate — implemented
+
+Milestone M4-A (branch feat/sophia-memory-capture-m4a) implements the
+Founder-reviewed memory-capture loop on top of the K-2 Personal Mind store:
+
+- LLM extraction (SophiaMemoryExtractor) PROPOSES candidates from a
+  completed, persisted turn — untrusted fixed-shape output only.
+- Deterministic MemoryGate validates structure / type allow-list / bounds /
+  confidence / provenance / secret indicators / instruction-shaped content /
+  company-domain contamination / transience / exact-normalized duplicates.
+- Outcomes: REJECT (nothing persisted) or NEEDS_REVIEW (INACTIVE candidate,
+  captureStatus pending). ACCEPT exists only in the type for future
+  compatibility — M4-A has NO automatic activation and no M4-B.
+- Founder confirmation is the ONLY activation path: the EXISTING governed
+  PATCH /api/sofia/memory { active: true } (stamps captureStatus confirmed
+  + confirmedAt).
+- Capture is asynchronous fire-and-forget at BOTH Sophia execution paths
+  (executeSophiaTurn and the /api/agent-chat inline branch); it can never
+  fail a conversation, and replayed turns never re-capture (deterministic
+  m4cap:<conversationId>:<turnId> keys, checked before extraction).
+- PERSONAL_MIND_MEMORY context rendering is structurally hardened: personal
+  memories render as XML-escaped data inside a bounded
+  <personal_memory_context> container that a memory can never break out of,
+  and the classifier prompt names the container as untrusted data.
+- No schema change (existing active flag + metadata carry candidate
+  lifecycle). No consolidation, forgetting, vectors, PostgreSQL migration,
+  or cross-brain promotion. Pinned by tests/sophia/m4a_memory_capture.test.ts
+  (41 pins).

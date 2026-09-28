@@ -471,3 +471,32 @@ model ChatMessage {
   @@index([conversationId, idempotencyKey])
   @@map("chat_messages")
 }
+
+// ---------------------------------------------------------
+// 13. SOPHIA PERSONAL MIND MEMORY (M3 K-2)
+// ---------------------------------------------------------
+// Founder-scoped personal/interaction memory for the Sophia Personal Mind.
+// STRICT AUTHORITY BOUNDARY (SOPHIA_MEMORY_ARCHITECTURE.md §1/§9):
+//  - contextual interaction memory ONLY — never company truth, never an
+//    authorization source, never auto-promoted to CompanyMemory / CompanyKnowledge /
+//    CanonicalFact (promotion runs exclusively through the governed epistemic
+//    pipeline with Founder approval).
+//  - rows are bound to a single founderId; cross-founder access fails closed
+//    at the store level (SophiaMemorySecurityError).
+model SophiaMemory {
+  id             String   @id @default(uuid())
+  founderId      String
+  memoryType     String // "INTERACTION_PREFERENCE" | "COMMUNICATION_PREFERENCE" | "INTERACTION_PATTERN" | "PERSONAL_CONTEXT_NOTE" | "INTERACTION_OBSERVATION"
+  content        String
+  provenance     String // source reference, e.g. "founder_direct" | "conversation:<convId>"
+  confidence     Float    @default(0.8) // personal-context confidence; NEVER an epistemic verification status
+  active         Boolean  @default(true) // lifecycle state sufficient for K-2 (no decay/consolidation machinery)
+  idempotencyKey String? // optional founder-scoped write dedupe (ChatMessage convention)
+  metadata       Json     @default(dbgenerated("'{}'"))
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([founderId, active, updatedAt])
+  @@index([founderId, idempotencyKey])
+  @@map("sophia_memories")
+}

@@ -41,15 +41,16 @@ export function getDatabaseMode(): DatabaseMode {
 
 /**
  * Indicates whether the system is operating under authoritative database rules.
- * In authoritative mode, PostgreSQL is the single source of truth. Silent fallback is prohibited.
+ * In authoritative mode, the Prisma-backed database is the single source of truth
+ * (target: PostgreSQL; sandbox: SQLite port). Silent fallback is prohibited.
  */
 export function isAuthoritativeMode(): boolean {
   return getDatabaseMode() === 'authoritative';
 }
 
 /**
- * Ensures PostgreSQL is reachable when in authoritative mode.
- * Throws DatabaseAuthorityError if PostgreSQL is unavailable in authoritative mode.
+ * Ensures the database is reachable when in authoritative mode.
+ * Throws DatabaseAuthorityError if it is unavailable in authoritative mode.
  * In test or local mode, returns prisma if available, or null if offline.
  */
 export async function requireAuthoritativeDatabase(): Promise<PrismaClient> {
