@@ -2,7 +2,7 @@ import { CompanyStateStore } from '../state/state-store';
 import { AgentRunStore } from '../agents/run-store';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
-import { CompanyKnowledgeStore } from '../knowledge/knowledge-store';
+import { CompanyKnowledgeStore, extractTokens } from '../knowledge/knowledge-store';
 import { CompanyMemoryStore } from '../memory/memory-store';
 import { SophiaMemoryStore, SOPHIA_MEMORY_TYPES } from './personal-memory-store';
 import { buildActivityProjection } from '../activity/projection';
@@ -75,42 +75,156 @@ const PARTITION_LIMITS = {
  *      cannot crowd every other type out of the render.
  *   4. CAP the retrieval at PERSONAL_MIND_RETRIEVAL_LIMIT (bounded work per
  *      turn; the render budget applies the final truncation fail-safe).
+ *   5. CONDITION on the CURRENT founder message (M4-C — query-conditioned
+ *      retrieval): the audit finding was that the policy above is
+ *      QUERY-INDEPENDENT — every turn rendered the same memories regardless
+ *      of what the founder asked. M4-C makes the selection two-tier when the
+ *      current message yields usable lexical tokens (the SAME deterministic
+ *      extractTokens/stop-word pipeline CompanyKnowledgeStore.queryKnowledge
+ *      uses — no new retrieval framework, no embeddings, no LLM judgment):
+ *        Tier 1 — memories lexically matching the message (per-type order:
+ *        distinct token-overlap score DESC, then the existing confidence /
+ *        recency / id order) round-robinned across types.
+ *        Tier 2 — remaining capacity filled by the EXACT pre-M4-C policy
+ *        (secondary selection: confidence, type round-robin, recency).
+ *      FALLBACK — when the message yields NO usable tokens or NO memory
+ *      matches, the selection is IDENTICAL to the pre-M4-C policy (the
+ *      memory context is never emptied by a token miss).
+ *      lifecycleState remains the ONLY eligibility authority (ACTIVE-only
+ *      pool, unchanged) and the selection stays entirely inside the Personal
+ *      Mind boundary (founder-scoped SophiaMemoryStore records only).
  */
 const PERSONAL_MIND_RETRIEVAL_LIMIT = 20;
 
-/**
- * Deterministic personal-mind retrieval selection (see policy above).
- * Pure function; explainable; stable for identical inputs.
- */
-function selectPersonalMindMemories<T extends { memoryType: string; confidence: number; updatedAt: string; id: string }>(
-  all: T[]
-): T[] {
+/** Records grouped by memoryType, preserving encounter order within a type. */
+function groupMemoriesByType<T extends { memoryType: string }>(all: T[]): Map<string, T[]> {
   const byType = new Map<string, T[]>();
   for (const m of all) {
     const list = byType.get(m.memoryType) ?? [];
     list.push(m);
     byType.set(m.memoryType, list);
   }
-  for (const list of byType.values()) {
-    list.sort((a, b) => {
-      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-      const ta = new Date(a.updatedAt).getTime();
-      const tb = new Date(b.updatedAt).getTime();
-      if (tb !== ta) return tb - ta;
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    });
-  }
-  // Round-robin across types in the store's published allow-list order
-  // (deterministic; types not present are skipped).
+  return byType;
+}
+
+/** The pre-M4-C within-type total order: confidence DESC, updatedAt DESC, id ASC. */
+function compareByConfidenceThenRecency<T extends { confidence: number; updatedAt: string; id: string }>(
+  a: T,
+  b: T
+): number {
+  if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+  const ta = new Date(a.updatedAt).getTime();
+  const tb = new Date(b.updatedAt).getTime();
+  if (tb !== ta) return tb - ta;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Round-robin across memory types in the store's published allow-list order
+ * (deterministic; types not present are skipped), taking one memory per type
+ * per round until `cap` is reached or every queue is drained. The per-type
+ * queues are consumed (shifted) — callers pass freshly grouped lists.
+ */
+function interleaveByTypeRoundRobin<T extends { memoryType: string }>(
+  byType: Map<string, T[]>,
+  cap: number
+): T[] {
   const types = SOPHIA_MEMORY_TYPES.filter((t) => byType.has(t));
   const queues = types.map((t) => byType.get(t)!);
   const selected: T[] = [];
-  while (selected.length < PERSONAL_MIND_RETRIEVAL_LIMIT && queues.some((q) => q.length > 0)) {
+  while (selected.length < cap && queues.some((q) => q.length > 0)) {
     for (const q of queues) {
-      if (selected.length >= PERSONAL_MIND_RETRIEVAL_LIMIT) break;
+      if (selected.length >= cap) break;
       const next = q.shift();
       if (next) selected.push(next);
     }
+  }
+  return selected;
+}
+
+/** The pre-M4-C selection policy, exactly (see the numbered policy above). */
+function selectPersonalMindMemoriesUnconditioned<T extends { memoryType: string; confidence: number; updatedAt: string; id: string }>(
+  all: T[]
+): T[] {
+  const byType = groupMemoriesByType(all);
+  for (const list of byType.values()) {
+    list.sort(compareByConfidenceThenRecency);
+  }
+  return interleaveByTypeRoundRobin(byType, PERSONAL_MIND_RETRIEVAL_LIMIT);
+}
+
+/**
+ * Deterministic personal-mind retrieval selection (see policy above).
+ * Pure function; explainable; stable for identical inputs.
+ *
+ * M4-C QUERY-CONDITIONED RETRIEVAL: `query` is the CURRENT founder message.
+ * When it yields lexical tokens (CompanyKnowledgeStore's deterministic
+ * extractTokens/stop-word pipeline — shared, not duplicated) and at least one
+ * ACTIVE candidate memory matches, selection is two-tier: lexically matching
+ * memories first (within-type order: distinct token-overlap score DESC, then
+ * the existing confidence/recency/id order; type round-robin preserved), then
+ * remaining capacity filled by the exact pre-M4-C policy. When the message
+ * yields no usable tokens OR nothing matches, the result is IDENTICAL to the
+ * pre-M4-C policy — a token miss never empties the memory context.
+ *
+ * Eligibility (lifecycleState === ACTIVE) is decided upstream by the
+ * founder-scoped store read; this function only ORDERS the pool it is given.
+ * Exported for direct deterministic-policy verification (tests); no model,
+ * embedding, or vector is ever consulted.
+ */
+export function selectPersonalMindMemories<
+  T extends { memoryType: string; confidence: number; updatedAt: string; id: string; content: string }
+>(all: T[], query?: string): T[] {
+  const queryTokens = new Set(extractTokens(query));
+  if (queryTokens.size === 0) {
+    // No usable tokens (missing/blank/stop-word-only message) — exact fallback.
+    return selectPersonalMindMemoriesUnconditioned(all);
+  }
+
+  // Deterministic lexical score per memory: the number of DISTINCT message
+  // tokens that also appear in the memory's content tokens.
+  const lexicalScores = new Map<T, number>();
+  for (const m of all) {
+    const contentTokens = new Set(extractTokens(m.content));
+    let score = 0;
+    for (const token of queryTokens) {
+      if (contentTokens.has(token)) score++;
+    }
+    lexicalScores.set(m, score);
+  }
+  const hasLexicalMatch = [...lexicalScores.values()].some((s) => s > 0);
+  if (!hasLexicalMatch) {
+    // Token-bearing message but zero matches — exact fallback, never empty.
+    return selectPersonalMindMemoriesUnconditioned(all);
+  }
+
+  // Tier 1 — lexically matching memories: within-type lexical score DESC is
+  // the primary order, then the existing confidence/recency/id order; type
+  // round-robin preserved across the matched tier.
+  const matchedByType = groupMemoriesByType(
+    all.filter((m) => (lexicalScores.get(m) ?? 0) > 0)
+  );
+  for (const list of matchedByType.values()) {
+    list.sort((a, b) => {
+      const scoreDelta = (lexicalScores.get(b) ?? 0) - (lexicalScores.get(a) ?? 0);
+      if (scoreDelta !== 0) return scoreDelta;
+      return compareByConfidenceThenRecency(a, b);
+    });
+  }
+  const selected = interleaveByTypeRoundRobin(matchedByType, PERSONAL_MIND_RETRIEVAL_LIMIT);
+
+  // Tier 2 — remaining capacity filled by the EXACT pre-M4-C policy over the
+  // non-matching memories (secondary selection: confidence, type round-robin,
+  // recency). The combined selection never exceeds the retrieval cap.
+  if (selected.length < PERSONAL_MIND_RETRIEVAL_LIMIT) {
+    const remaining = PERSONAL_MIND_RETRIEVAL_LIMIT - selected.length;
+    const unmatchedByType = groupMemoriesByType(
+      all.filter((m) => (lexicalScores.get(m) ?? 0) === 0)
+    );
+    for (const list of unmatchedByType.values()) {
+      list.sort(compareByConfidenceThenRecency);
+    }
+    selected.push(...interleaveByTypeRoundRobin(unmatchedByType, remaining));
   }
   return selected;
 }
@@ -515,7 +629,11 @@ export class SophiaContextAssembler {
         const activeMemories = await memoryStore.listAllMemories(opts.founderId.trim(), {
           active: true,
         });
-        const personalMemories = selectPersonalMindMemories(activeMemories);
+        // M4-C: condition the selection on the CURRENT founder message —
+        // the same deterministic lexical pipeline the Company Knowledge
+        // slice uses (see selectPersonalMindMemories). No match → the exact
+        // pre-M4-C deterministic selection (never an empty context).
+        const personalMemories = selectPersonalMindMemories(activeMemories, opts.message);
 
         if (personalMemories.length > 0) {
           // Self-bounded, always well-formed container (see helper): the

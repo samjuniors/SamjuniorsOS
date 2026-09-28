@@ -23,7 +23,17 @@ const STOP_WORDS = new Set([
   'why', 'with', 'would', 'you', 'your', 'yours', 'yourself', 'yourselves'
 ]);
 
-function extractTokens(text?: string | null): string[] {
+/**
+ * Deterministic tokenization shared with queryKnowledge (lowercase, strip
+ * non-alphanumeric except _-, drop stop words and <=2-char fragments).
+ *
+ * M4-C: exported so the Sophia Personal Mind's context retrieval reuses the
+ * EXACT same deterministic tokenizer/stop-word pipeline Company Brain
+ * knowledge retrieval uses — one tokenizer, no second retrieval framework,
+ * no drift between the two lexical scorers. Pure function; no behavior change
+ * to queryKnowledge itself.
+ */
+export function extractTokens(text?: string | null): string[] {
   if (!text) return [];
   return text
     .toLowerCase()
