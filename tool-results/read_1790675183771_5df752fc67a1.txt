@@ -1,0 +1,842 @@
+     1→/**
+     2→ * ============================================================================
+     3→ * M5.1 — GOLD-STANDARD SYNTHETIC BENCHMARK FIXTURE
+     4→ * ============================================================================
+     5→ * A SMALL, fully synthetic memory universe for measuring the EXISTING (A0)
+     6→ * M4 retrieval architecture. NOTHING in this file is a production fact: all
+     7→ * entities, numbers, decisions and dates are invented for measurement.
+     8→ *
+     9→ * REQUIREMENTS SATISFIED HERE (task M5.1):
+    10→ *   - multiple entities: Lumora, Aurorium, Nimbus Gateway, Helix Analytics,
+    11→ *     Helix Identity Store, Aurorium Auth Service, SamJuniors (synthetic)
+    12→ *   - multiple timestamps across a frozen timeline (May–Sep 2026)
+    13→ *   - old AND new facts (pricing v1→v2, personal email→dashboard)
+    14→ *   - superseded facts (FACT-OLD-01, PM-05) with successor pointers
+    15→ *   - related projects + decisions (PREC-*, DEC-*)
+    16→ *   - evidence/provenance (EvidenceSources, claim→fact chains, evidence refs)
+    17→ *   - personal memories AND company facts
+    18→ *   - intentionally similar lexical wording (KN-06 support "tiers" vs
+    19→ *     pricing "tiers"; PREC-06 "Lumora discount ... pricing migration")
+    20→ *   - intentionally different wording, same meaning (PM-10 "keeps replies
+    21→ *     tight and terse when tired" vs "how I prefer to work")
+    22→ *   - at least one contradiction ($29 cost-plus vs $49 value-based; email vs
+    23→ *     dashboard strategy updates)
+    24→ *   - at least one multi-hop chain with NO lexical bridge record:
+    25→ *       Nimbus Gateway → depends on → Aurorium Auth Service  (FACT-DEP-01)
+    26→ *       Aurorium Auth Service → depends on → Helix Identity Store (FACT-DEP-02)
+    27→ *     No fixture record contains both "Nimbus Gateway" and
+    28→ *     "Helix Identity Store"; reaching FACT-DEP-01 from a Helix-anchored
+    29→ *     query REQUIRES a traversal operator the current architecture lacks.
+    30→ *   - every gold answer in queries.ts names its authoritative evidence here.
+    31→ *
+    32→ * FROZEN TIMELINE (all ISO-8601 UTC):
+    33→ *   2026-05-12  company seeded (out of every window)
+    34→ *   2026-05-20  DEC-02 office lease renewal (out of window)
+    35→ *   2026-06-01  PREC-05 office monitors (out of window)
+    36→ *   2026-06-15  FACT-OLD-01 promoted ($29 cost-plus)
+    37→ *   2026-06-25  ---- CHANGE WINDOW OPENS (BQ2) ----
+    38→ *   2026-07-01  KN-02 verified (cost-plus era SOP)
+    39→ *   2026-07-02..2026-07-25  personal memories accumulate
+    40→ *   2026-08-05  KN-03 verified
+    41→ *   2026-08-10  KN-05 verified
+    42→ *   2026-08-14  CONV-EP-01 (episodic abandonment rationale)
+    43→ *   2026-08-15  PREC-02 microservices abandonment
+    44→ *   2026-08-20  FACT-DEP-01 promoted; PREC-03
+    45→ *   2026-08-22  FACT-DEP-02 promoted; PREC-04; KN-04 verified
+    46→ *   2026-08-28  PREC-06 discount freeze
+    47→ *   2026-09-02  DEC-01 value-based pricing decision; PREC-01 recorded
+    48→ *   2026-09-05  PM-06 created; PM-05 superseded → PM-06
+    49→ *   2026-09-08  KN-01 verified (v2 pricing policy)
+    50→ *   2026-09-10  FACT-CUR-01 promoted ($49 value-based; supersedes OLD)
+    51→ *   2026-09-12  FACT-FIN-01 promoted (burn/runway)
+    52→ *   2026-09-15  CLAIM-01 proposed (pending, unverified)
+    53→ *   2026-09-18  STATE-FIN-01 financial model (fixture truth)
+    54→ *   2026-09-20  PM-04 captured (PENDING_REVIEW)
+    55→ *   2026-09-25  ---- CHANGE WINDOW CLOSES (BQ2) ----
+    56→ */
+    57→
+    58→import { createHash } from 'crypto';
+    59→import type {
+    60→  CompanyInitiative,
+    61→  CompanyDecision,
+    62→  FinanceMetric,
+    63→} from '../../src/types/os';
+    64→import type { CompanyKnowledgeItem } from '../../src/types/context';
+    65→import type { CompanyMemory } from '../../src/types/os';
+    66→import type {
+    67→  CanonicalFact,
+    68→  EpistemicClaim,
+    69→  EvidenceSource,
+    70→} from '../../src/types/epistemic';
+    71→
+    72→// ---------------------------------------------------------------------------
+    73→// Principals
+    74→// ---------------------------------------------------------------------------
+    75→
+    76→export const FOUNDER_A = 'founder-m51-a';
+    77→export const FOUNDER_B = 'founder-m51-b';
+    78→
+    79→// ---------------------------------------------------------------------------
+    80→// Personal Mind records (fixture spec; seeded through SophiaMemoryStore)
+    81→// ---------------------------------------------------------------------------
+    82→
+    83→export interface PersonalMemorySpec {
+    84→  evidenceKey: string;
+    85→  founderId: string;
+    86→  memoryType:
+    87→    | 'INTERACTION_PREFERENCE'
+    88→    | 'COMMUNICATION_PREFERENCE'
+    89→    | 'INTERACTION_PATTERN'
+    90→    | 'PERSONAL_CONTEXT_NOTE'
+    91→    | 'INTERACTION_OBSERVATION';
+    92→  content: string;
+    93→  provenance: string;
+    94→  confidence: number;
+    95→  /** Birth state; SUPERSEDED/ARCHIVED/REJECTED are reached via transitions. */
+    96→  birthState: 'ACTIVE' | 'PENDING_REVIEW';
+    97→  createdAt: string;
+    98→  updatedAt: string;
+    99→  /** Founder-executed transition applied AFTER creation (lifecycle machinery). */
+   100→  transition?: {
+   101→    to: 'SUPERSEDED' | 'ARCHIVED' | 'REJECTED' | 'ACTIVE';
+   102→    /** evidenceKey of the successor when to === 'SUPERSEDED'. */
+   103→    successorKey?: string;
+   104→    at: string;
+   105→  };
+   106→  /** Semantic note: what this record exists to test. */
+   107→  purpose: string;
+   108→}
+   109→
+   110→export const PERSONAL_MEMORIES: PersonalMemorySpec[] = [
+   111→  {
+   112→    evidenceKey: 'PM-01',
+   113→    founderId: FOUNDER_A,
+   114→    memoryType: 'INTERACTION_PREFERENCE',
+   115→    content: 'Prefers short written briefings over long meetings.',
+   116→    provenance: 'founder_direct',
+   117→    confidence: 0.9,
+   118→    birthState: 'ACTIVE',
+   119→    createdAt: '2026-07-02T09:00:00.000Z',
+   120→    updatedAt: '2026-07-02T09:00:00.000Z',
+   121→    purpose: 'Core work-style gold (lexically reachable via "prefer" fold).',
+   122→  },
+   123→  {
+   124→    evidenceKey: 'PM-02',
+   125→    founderId: FOUNDER_A,
+   126→    memoryType: 'COMMUNICATION_PREFERENCE',
+   127→    content: 'Wants bullet-point summaries in the morning digest.',
+   128→    provenance: 'founder_direct',
+   129→    confidence: 0.85,
+   130→    birthState: 'ACTIVE',
+   131→    createdAt: '2026-07-15T08:30:00.000Z',
+   132→    updatedAt: '2026-07-15T08:30:00.000Z',
+   133→    purpose: 'Communication gold; no lexical anchor for "communication preferences" (type/filter gap).',
+   134→  },
+   135→  {
+   136→    evidenceKey: 'PM-03',
+   137→    founderId: FOUNDER_A,
+   138→    memoryType: 'INTERACTION_PATTERN',
+   139→    content: 'Reviews revenue numbers every Friday afternoon.',
+   140→    provenance: 'founder_direct',
+   141→    confidence: 0.8,
+   142→    birthState: 'ACTIVE',
+   143→    createdAt: '2026-08-01T14:00:00.000Z',
+   144→    updatedAt: '2026-08-01T14:00:00.000Z',
+   145→    purpose: 'Work-rhythm gold; unreachable lexically from work-style queries (paraphrase).',
+   146→  },
+   147→  {
+   148→    evidenceKey: 'PM-04',
+   149→    founderId: FOUNDER_A,
+   150→    memoryType: 'INTERACTION_PREFERENCE',
+   151→    content: 'Prefers phone calls for urgent decisions.',
+   152→    provenance: 'm4cap:conv-m51-episodic:turn-9:0',
+   153→    confidence: 0.5,
+   154→    birthState: 'PENDING_REVIEW',
+   155→    createdAt: '2026-09-20T11:00:00.000Z',
+   156→    updatedAt: '2026-09-20T11:00:00.000Z',
+   157→    purpose: 'Lifecycle authority: captured candidate — must NEVER render anywhere.',
+   158→  },
+   159→  {
+   160→    evidenceKey: 'PM-05',
+   161→    founderId: FOUNDER_A,
+   162→    memoryType: 'COMMUNICATION_PREFERENCE',
+   163→    content: 'Wants weekly strategy updates sent by email.',
+   164→    provenance: 'founder_direct',
+   165→    confidence: 0.7,
+   166→    birthState: 'ACTIVE',
+   167→    createdAt: '2026-07-10T10:00:00.000Z',
+   168→    updatedAt: '2026-09-05T10:00:00.000Z',
+   169→    transition: { to: 'SUPERSEDED', successorKey: 'PM-06', at: '2026-09-05T10:00:00.000Z' },
+   170→    purpose: 'Superseded personal preference (email) — must not render for "now" queries.',
+   171→  },
+   172→  {
+   173→    evidenceKey: 'PM-06',
+   174→    founderId: FOUNDER_A,
+   175→    memoryType: 'COMMUNICATION_PREFERENCE',
+   176→    content: 'Prefers strategy updates in the shared dashboard instead of email.',
+   177→    provenance: 'founder_direct',
+   178→    confidence: 0.88,
+   179→    birthState: 'ACTIVE',
+   180→    createdAt: '2026-09-05T10:00:00.000Z',
+   181→    updatedAt: '2026-09-05T10:00:00.000Z',
+   182→    purpose: 'Successor preference (dashboard) — current-truth gold for supersession checks.',
+   183→  },
+   184→  {
+   185→    evidenceKey: 'PM-07',
+   186→    founderId: FOUNDER_A,
+   187→    memoryType: 'PERSONAL_CONTEXT_NOTE',
+   188→    content: 'Dislikes early-morning meetings before 9am.',
+   189→    provenance: 'founder_direct',
+   190→    confidence: 0.75,
+   191→    birthState: 'ACTIVE',
+   192→    createdAt: '2026-08-20T09:15:00.000Z',
+   193→    updatedAt: '2026-08-20T09:15:00.000Z',
+   194→    purpose: 'Work-style gold; no lexical anchor (paraphrase-only).',
+   195→  },
+   196→  {
+   197→    evidenceKey: 'PM-08',
+   198→    founderId: FOUNDER_A,
+   199→    memoryType: 'INTERACTION_PREFERENCE',
+   200→    content: 'Prefers video calls for deep work sessions.',
+   201→    provenance: 'm4cap:conv-m51-episodic:turn-4:0',
+   202→    confidence: 0.4,
+   203→    birthState: 'PENDING_REVIEW',
+   204→    createdAt: '2026-09-16T16:00:00.000Z',
+   205→    updatedAt: '2026-09-18T16:00:00.000Z',
+   206→    transition: { to: 'REJECTED', at: '2026-09-18T16:00:00.000Z' },
+   207→    purpose: 'REJECTED tombstone — out of context forever, kept for duplicate detection.',
+   208→  },
+   209→  {
+   210→    evidenceKey: 'PM-09',
+   211→    founderId: FOUNDER_A,
+   212→    memoryType: 'PERSONAL_CONTEXT_NOTE',
+   213→    content: 'Keeps personal Lumora pricing scratch notes in a paper journal.',
+   214→    provenance: 'founder_direct',
+   215→    confidence: 0.6,
+   216→    birthState: 'ACTIVE',
+   217→    createdAt: '2026-09-01T12:00:00.000Z',
+   218→    updatedAt: '2026-09-01T12:00:00.000Z',
+   219→    purpose:
+   220→      'BOUNDARY TRAP: personal content that lexically matches company pricing queries. ' +
+   221→      'May render in the PERSONAL_MIND untrusted container; must NEVER surface as company evidence.',
+   222→  },
+   223→  {
+   224→    evidenceKey: 'PM-10',
+   225→    founderId: FOUNDER_A,
+   226→    memoryType: 'INTERACTION_OBSERVATION',
+   227→    content: 'Keeps replies tight and terse when tired in the evening.',
+   228→    provenance: 'founder_direct',
+   229→    confidence: 0.55,
+   230→    birthState: 'ACTIVE',
+   231→    createdAt: '2026-07-25T21:00:00.000Z',
+   232→    updatedAt: '2026-07-25T21:00:00.000Z',
+   233→    purpose:
+   234→      'PARAPHRASE-ONLY GOLD: same meaning as "how I prefer to work", zero folded-token overlap ' +
+   235→      'with every work-style query in the registry (B_semantic measurement).',
+   236→  },
+   237→  {
+   238→    evidenceKey: 'PM-11',
+   239→    founderId: FOUNDER_A,
+   240→    memoryType: 'PERSONAL_CONTEXT_NOTE',
+   241→    content: 'Thinks the company financial state looks healthier than last year.',
+   242→    provenance: 'founder_direct',
+   243→    confidence: 0.65,
+   244→    birthState: 'ACTIVE',
+   245→    createdAt: '2026-09-14T18:00:00.000Z',
+   246→    updatedAt: '2026-09-14T18:00:00.000Z',
+   247→    purpose:
+   248→      'BOUNDARY TRAP: personal opinion about company finances — lexically matches the financial-state ' +
+   249→      'query on the personal surface; must never be an authority source for it.',
+   250→  },
+   251→  {
+   252→    evidenceKey: 'PM-B1',
+   253→    founderId: FOUNDER_B,
+   254→    memoryType: 'COMMUNICATION_PREFERENCE',
+   255→    content: 'Prefers Slack pings over email.',
+   256→    provenance: 'founder_direct',
+   257→    confidence: 0.9,
+   258→    birthState: 'ACTIVE',
+   259→    createdAt: '2026-09-10T09:00:00.000Z',
+   260→    updatedAt: '2026-09-10T09:00:00.000Z',
+   261→    purpose: 'Cross-founder isolation: must never appear in FOUNDER_A retrieval.',
+   262→  },
+   263→  {
+   264→    evidenceKey: 'PM-B2',
+   265→    founderId: FOUNDER_B,
+   266→    memoryType: 'INTERACTION_PATTERN',
+   267→    content: 'Reviews metrics on Monday mornings.',
+   268→    provenance: 'founder_direct',
+   269→    confidence: 0.9,
+   270→    birthState: 'ACTIVE',
+   271→    createdAt: '2026-09-12T09:00:00.000Z',
+   272→    updatedAt: '2026-09-12T09:00:00.000Z',
+   273→    purpose: 'Cross-founder isolation (second record).',
+   274→  },
+   275→  {
+   276→    evidenceKey: 'PM-12',
+   277→    founderId: FOUNDER_A,
+   278→    memoryType: 'PERSONAL_CONTEXT_NOTE',
+   279→    content: 'Takes afternoon walks to reset focus.',
+   280→    provenance: 'founder_direct',
+   281→    confidence: 0.7,
+   282→    birthState: 'ACTIVE',
+   283→    createdAt: '2026-07-05T13:00:00.000Z',
+   284→    updatedAt: '2026-09-03T13:00:00.000Z',
+   285→    transition: { to: 'ARCHIVED', at: '2026-09-03T13:00:00.000Z' },
+   286→    purpose:
+   287→      'ARCHIVED ("forget from cognition, not from record"): out of context, retained and ' +
+   288→      'restorable. Completes all five lifecycle states in the fixture.',
+   289→  },
+   290→];
+   291→
+   292→// ---------------------------------------------------------------------------
+   293→// Company Knowledge (fixture spec; seeded via CompanyKnowledgeStore.setKnowledge)
+   294→// ---------------------------------------------------------------------------
+   295→
+   296→export const COMPANY_KNOWLEDGE: CompanyKnowledgeItem[] = [
+   297→  {
+   298→    id: 'know-m51-pricing-v2',
+   299→    documentId: 'SOP-LUMORA-PRICING-V2',
+   300→    title: 'Lumora Pricing Policy (Value-Based, v2)',
+   301→    category: 'sop',
+   302→    version: '2.1.0',
+   303→    summary:
+   304→      'Current Lumora pricing: value-based tiers Starter $49/month, Growth $199/month, Enterprise custom.',
+   305→    content:
+   306→      'Lumora Pricing Policy v2 (value-based). Tiers: Starter $49 per seat per month; Growth $199 per ' +
+   307→      'seat per month; Enterprise custom contract. Approved 2026-09-02. Supersedes the cost-plus policy ' +
+   308→      'documented in v1. Margin analysis: blended gross margin target 82% holds across tiers.',
+   309→    tags: ['lumora', 'pricing', 'value-based', 'tiers'],
+   310→    applicableDepartments: ['council', 'coo', 'finance'],
+   311→    authorAuthority: 'Founder-ratified SOP',
+   312→    lastVerifiedDate: '2026-09-08',
+   313→    isDurableReference: true,
+   314→  },
+   315→  {
+   316→    id: 'know-m51-pricing-v1',
+   317→    documentId: 'SOP-LUMORA-PRICING-V1',
+   318→    title: 'Lumora Pricing Policy (Cost-Plus, v1)',
+   319→    category: 'sop',
+   320→    version: '1.3.0',
+   321→    summary:
+   322→      'Previous Lumora pricing: cost-plus markup Starter $29/month, Growth $99/month.',
+   323→    content:
+   324→      'Lumora Pricing Policy v1 (cost-plus). Tiers: Starter $29 per seat per month; Growth $99 per seat ' +
+   325→      'per month. Cost-plus markup of 40% over unit delivery cost. Retired 2026-09-02 when the company ' +
+   326→      'moved Lumora pricing to value-based tiers.',
+   327→    tags: ['lumora', 'pricing', 'cost-plus'],
+   328→    applicableDepartments: ['council', 'coo', 'finance'],
+   329→    authorAuthority: 'Founder-ratified SOP',
+   330→    lastVerifiedDate: '2026-07-01',
+   331→    isDurableReference: true,
+   332→  },
+   333→  {
+   334→    id: 'know-m51-nimbus-runbook',
+   335→    documentId: 'RUNBOOK-NIMBUS',
+   336→    title: 'Nimbus Gateway Runbook',
+   337→    category: 'technical_architecture',
+   338→    version: '1.0.0',
+   339→    summary: 'Operational runbook for the Nimbus Gateway API front door.',
+   340→    content:
+   341→      'Nimbus Gateway runbook: restart procedure, horizontal scaling, and alert routing for the gateway ' +
+   342→      'that fronts the Lumora API. Does not cover authentication internals.',
+   343→    tags: ['nimbus', 'gateway', 'runbook'],
+   344→    applicableDepartments: ['council', 'coo'],
+   345→    authorAuthority: 'Engineering runbook',
+   346→    lastVerifiedDate: '2026-08-05',
+   347→    isDurableReference: true,
+   348→  },
+   349→  {
+   350→    id: 'know-m51-helix-contract',
+   351→    documentId: 'SPEC-HELIX-DATA-CONTRACT',
+   352→    title: 'Helix Analytics Data Contract',
+   353→    category: 'product_spec',
+   354→    version: '1.2.0',
+   355→    summary: 'Event schemas, retention and partitioning for the analytics warehouse.',
+   356→    content:
+   357→      'Helix Analytics data contract: event schema registry, 18-month retention, daily partitioning of ' +
+   358→      'the analytics warehouse, and consumer onboarding steps.',
+   359→    tags: ['helix', 'analytics', 'data-contract'],
+   360→    applicableDepartments: ['council', 'coo'],
+   361→    authorAuthority: 'Engineering spec',
+   362→    lastVerifiedDate: '2026-08-22',
+   363→    isDurableReference: true,
+   364→  },
+   365→  {
+   366→    id: 'know-m51-aurorium-checklist',
+   367→    documentId: 'CHECKLIST-AURORIUM',
+   368→    title: 'Aurorium Launch Checklist',
+   369→    category: 'policy',
+   370→    version: '1.0.0',
+   371→    summary: 'Pre-launch checklist for the Aurorium rollout.',
+   372→    content:
+   373→      'Aurorium launch checklist: auth configuration verified, load test green, rollback plan staged, ' +
+   374→      'support rotation staffed.',
+   375→    tags: ['aurorium', 'launch'],
+   376→    applicableDepartments: ['council', 'pm'],
+   377→    authorAuthority: 'Product checklist',
+   378→    lastVerifiedDate: '2026-08-10',
+   379→    isDurableReference: true,
+   380→  },
+   381→  {
+   382→    id: 'know-m51-lumora-support',
+   383→    documentId: 'SOP-LUMORA-SUPPORT',
+   384→    title: 'Lumora Support Escalation Policy',
+   385→    category: 'sop',
+   386→    version: '1.1.0',
+   387→    summary: 'Support response tiers for each Lumora plan.',
+   388→    content:
+   389→      'Lumora support policy: response tiers per plan — Starter 48h, Growth 8h, Enterprise 1h with ' +
+   390→      'dedicated channel. Escalation path defined for billing and outage classes.',
+   391→    tags: ['lumora', 'support', 'tiers'],
+   392→    applicableDepartments: ['council'],
+   393→    authorAuthority: 'Founder-ratified SOP',
+   394→    lastVerifiedDate: '2026-07-20',
+   395→    isDurableReference: true,
+   396→  },
+   397→];
+   398→
+   399→// ---------------------------------------------------------------------------
+   400→// Company Memory — historical precedent (seeded via setMemories)
+   401→// ---------------------------------------------------------------------------
+   402→
+   403→export const COMPANY_MEMORIES: CompanyMemory[] = [
+   404→  {
+   405→    id: 'PREC-01',
+   406→    decisionId: 'dec-lumora-pricing-2026-09',
+   407→    approvedAction: 'Switch Lumora pricing from cost-plus markup to value-based tiers',
+   408→    executionOutcome:
+   409→      'Standard tier revenue per account rose 18% within two billing cycles after the switch',
+   410→    evidenceReferences: ['fin-model-2026-09', 'pricing-experiment-12'],
+   411→    epistemicConfidence: 'high_confidence',
+   412→    timestamp: '2026-09-02T09:00:00.000Z',
+   413→    recordedAt: '2026-09-02T09:00:00.000Z',
+   414→  },
+   415→  {
+   416→    id: 'PREC-02',
+   417→    decisionId: 'dec-aurorium-refactor-abandon',
+   418→    approvedAction: 'Abandon the microservices refactor of Aurorium',
+   419→    executionOutcome:
+   420→      'Team coordination overhead exceeded the latency gains; returned to a modular monolith',
+   421→    evidenceReferences: ['arch-review-2026-08', 'latency-benchmark-aurorium', 'conversation:conv-m51-episodic'],
+   422→    epistemicConfidence: 'high_confidence',
+   423→    timestamp: '2026-08-15T10:00:00.000Z',
+   424→    recordedAt: '2026-08-15T10:00:00.000Z',
+   425→  },
+   426→  {
+   427→    id: 'PREC-03',
+   428→    decisionId: 'dec-nimbus-gateway-launch',
+   429→    approvedAction: 'Approve Nimbus Gateway launch as the front door for the Lumora API',
+   430→    executionOutcome: 'Gateway latency p95 dropped to 120ms under production load',
+   431→    evidenceReferences: ['gateway-load-test'],
+   432→    epistemicConfidence: 'high_confidence',
+   433→    timestamp: '2026-08-20T15:00:00.000Z',
+   434→    recordedAt: '2026-08-20T15:00:00.000Z',
+   435→  },
+   436→  {
+   437→    id: 'PREC-04',
+   438→    decisionId: 'dec-helix-analytics-build',
+   439→    approvedAction: 'Build Helix Analytics on the Helix Identity Store data warehouse',
+   440→    executionOutcome: 'Nightly identity-warehouse pipeline shipped on schedule',
+   441→    evidenceReferences: ['helix-dcr'],
+   442→    epistemicConfidence: 'high_confidence',
+   443→    timestamp: '2026-08-22T11:00:00.000Z',
+   444→    recordedAt: '2026-08-22T11:00:00.000Z',
+   445→  },
+   446→  {
+   447→    id: 'PREC-05',
+   448→    decisionId: 'dec-office-monitors',
+   449→    approvedAction: 'Purchase ergonomic desk monitors for the hardware testing lab',
+   450→    executionOutcome: 'Procured within the approved office budget',
+   451→    evidenceReferences: ['hardware-invoice-489'],
+   452→    epistemicConfidence: 'high_confidence',
+   453→    timestamp: '2026-06-01T10:00:00.000Z',
+   454→    recordedAt: '2026-06-01T10:00:00.000Z',
+   455→  },
+   456→  {
+   457→    id: 'PREC-06',
+   458→    decisionId: 'dec-lumora-discount-freeze',
+   459→    approvedAction: 'Freeze Lumora discount codes during the pricing migration',
+   460→    executionOutcome: 'No discount leakage during the cutover window',
+   461→    evidenceReferences: ['billing-audit-2026-08'],
+   462→    epistemicConfidence: 'high_confidence',
+   463→    timestamp: '2026-08-28T09:00:00.000Z',
+   464→    recordedAt: '2026-08-28T09:00:00.000Z',
+   465→  },
+   466→];
+   467→
+   468→// ---------------------------------------------------------------------------
+   469→// Epistemic chain: sources → claims → facts (seeded via EpistemicClaimStore)
+   470→// ---------------------------------------------------------------------------
+   471→
+   472→export const EPISTEMIC_SOURCES: EvidenceSource[] = [
+   473→  {
+   474→    id: 'SRC-01',
+   475→    sourceSystem: 'stripe',
+   476→    uri: 'stripe://invoices/2026-06',
+   477→    title: 'June 2026 billing export',
+   478→    rawContent: 'Lumora Starter seats billed at $29/month (cost-plus era).',
+   479→    contentHash: 'bench-src-01',
+   480→    capturedAt: '2026-06-14T00:00:00.000Z',
+   481→    capturedBy: 'system',
+   482→    provenanceKind: 'live_operational',
+   483→  },
+   484→  {
+   485→    id: 'SRC-02',
+   486→    sourceSystem: 'stripe',
+   487→    uri: 'stripe://invoices/2026-09',
+   488→    title: 'September 2026 billing export',
+   489→    rawContent: 'Lumora Starter seats billed at $49/month (value-based era).',
+   490→    contentHash: 'bench-src-02',
+   491→    capturedAt: '2026-09-09T00:00:00.000Z',
+   492→    capturedBy: 'system',
+   493→    provenanceKind: 'live_operational',
+   494→  },
+   495→];
+   496→
+   497→export const EPISTEMIC_CLAIMS: EpistemicClaim[] = [
+   498→  {
+   499→    id: 'CLAIM-01',
+   500→    statement: 'Lumora Enterprise tier may reach $1M ARR by Q4',
+   501→    subject: 'lumora_enterprise_arr',
+   502→    category: 'financial',
+   503→    proposedBy: 'advisor',
+   504→    confidence: 'hypothetical',
+   505→    verificationStatus: 'pending',
+   506→    evidenceReferences: ['advisor-forecast-note'],
+   507→    createdAt: '2026-09-15T14:00:00.000Z',
+   508→  },
+   509→  {
+   510→    id: 'CLAIM-02',
+   511→    sourceId: 'SRC-02',
+   512→    statement: 'Lumora Starter tier is priced at $49 per seat per month',
+   513→    subject: 'lumora_pricing',
+   514→    category: 'financial',
+   515→    proposedBy: 'founder',
+   516→    confidence: 'verified_fact',
+   517→    verificationStatus: 'promoted_to_fact',
+   518→    evidenceReferences: ['SRC-02'],
+   519→    verificationNotes: 'Verified against the September billing export.',
+   520→    createdAt: '2026-09-09T09:00:00.000Z',
+   521→    reviewedAt: '2026-09-10T09:00:00.000Z',
+   522→    reviewedBy: 'founder',
+   523→  },
+   524→  {
+   525→    id: 'CLAIM-03',
+   526→    sourceId: 'SRC-01',
+   527→    statement: 'Lumora Starter tier is priced at $29 per seat per month',
+   528→    subject: 'lumora_pricing',
+   529→    category: 'financial',
+   530→    proposedBy: 'founder',
+   531→    confidence: 'verified_fact',
+   532→    verificationStatus: 'promoted_to_fact',
+   533→    evidenceReferences: ['SRC-01'],
+   534→    verificationNotes: 'Verified against the June billing export.',
+   535→    createdAt: '2026-06-14T09:00:00.000Z',
+   536→    reviewedAt: '2026-06-15T09:00:00.000Z',
+   537→    reviewedBy: 'founder',
+   538→  },
+   539→];
+   540→
+   541→/**
+   542→ * Canonical facts. FACT-OLD-01 is seeded ACTIVE and then superseded through
+   543→ * the REAL store machinery (markFactSuperseded) so the chain on disk is
+   544→ * produced by the production code path, not by fixture fiat.
+   545→ */
+   546→export interface CanonicalFactSpec extends CanonicalFact {
+   547→  evidenceKey: string;
+   548→  purpose: string;
+   549→}
+   550→
+   551→export const CANONICAL_FACTS: CanonicalFactSpec[] = [
+   552→  {
+   553→    evidenceKey: 'FACT-OLD-01',
+   554→    id: 'fact-lumora-price-29',
+   555→    claimId: 'CLAIM-03',
+   556→    sourceId: 'SRC-01',
+   557→    statement: 'Lumora Starter tier is priced at $29 per seat per month under cost-plus pricing',
+   558→    subject: 'lumora_pricing',
+   559→    category: 'financial',
+   560→    validityState: 'active', // superseded via store machinery at seed time
+   561→    supersededById: 'fact-lumora-price-49',
+   562→    confidence: 'verified_fact',
+   563→    promotedAt: '2026-06-15T09:00:00.000Z',
+   564→    promotedBy: 'founder',
+   565→    provenance: {
+   566→      sourceSystem: 'epistemic_pipeline',
+   567→      sourceId: 'SRC-01',
+   568→      sourceTitle: 'June 2026 billing export',
+   569→      epistemicType: 'canonical_fact',
+   570→      authority: 'Founder-promoted canonical fact',
+   571→      timestamp: '2026-06-15T09:00:00.000Z',
+   572→      confidence: 'verified_fact',
+   573→    },
+   574→    purpose: 'SUPERSEDED company truth ($29): the "previous" gold for temporal queries.',
+   575→  },
+   576→  {
+   577→    evidenceKey: 'FACT-CUR-01',
+   578→    id: 'fact-lumora-price-49',
+   579→    claimId: 'CLAIM-02',
+   580→    sourceId: 'SRC-02',
+   581→    statement: 'Lumora Starter tier is priced at $49 per seat per month under value-based pricing',
+   582→    subject: 'lumora_pricing',
+   583→    category: 'financial',
+   584→    validityState: 'active',
+   585→    confidence: 'verified_fact',
+   586→    promotedAt: '2026-09-10T09:00:00.000Z',
+   587→    promotedBy: 'founder',
+   588→    provenance: {
+   589→      sourceSystem: 'epistemic_pipeline',
+   590→      sourceId: 'SRC-02',
+   591→      sourceTitle: 'September 2026 billing export',
+   592→      epistemicType: 'canonical_fact',
+   593→      authority: 'Founder-promoted canonical fact',
+   594→      timestamp: '2026-09-10T09:00:00.000Z',
+   595→      confidence: 'verified_fact',
+   596→    },
+   597→    purpose: 'CURRENT company truth ($49): the "now" gold for supersession/contradiction queries.',
+   598→  },
+   599→  {
+   600→    evidenceKey: 'FACT-FIN-01',
+   601→    id: 'fact-burn-runway',
+   602→    claimId: 'claim-burn-runway-2026-09',
+   603→    statement: 'Company monthly burn rate is $34,000 with 14 months of runway',
+   604→    subject: 'financial_state',
+   605→    category: 'financial',
+   606→    validityState: 'active',
+   607→    confidence: 'verified_fact',
+   608→    promotedAt: '2026-09-12T09:00:00.000Z',
+   609→    promotedBy: 'founder',
+   610→    provenance: {
+   611→      sourceSystem: 'epistemic_pipeline',
+   612→      sourceId: 'ledger-2026-09',
+   613→      sourceTitle: 'September ledger reconciliation',
+   614→      epistemicType: 'canonical_fact',
+   615→      authority: 'Founder-promoted canonical fact',
+   616→      timestamp: '2026-09-12T09:00:00.000Z',
+   617→      confidence: 'verified_fact',
+   618→    },
+   619→    purpose: 'Financial-state canonical fact (company authority gold).',
+   620→  },
+   621→  {
+   622→    evidenceKey: 'FACT-DEP-01',
+   623→    id: 'fact-nimbus-auth-dependency',
+   624→    claimId: 'claim-nimbus-auth-dependency',
+   625→    statement: 'Nimbus Gateway depends on the Aurorium Auth Service for token verification',
+   626→    subject: 'service_dependencies',
+   627→    category: 'architectural',
+   628→    validityState: 'active',
+   629→    confidence: 'verified_fact',
+   630→    promotedAt: '2026-08-20T09:00:00.000Z',
+   631→    promotedBy: 'founder',
+   632→    provenance: {
+   633→      sourceSystem: 'epistemic_pipeline',
+   634→      sourceId: 'arch-review-2026-08',
+   635→      sourceTitle: 'Architecture review August 2026',
+   636→      epistemicType: 'canonical_fact',
+   637→      authority: 'Founder-promoted canonical fact',
+   638→      timestamp: '2026-08-20T09:00:00.000Z',
+   639→      confidence: 'verified_fact',
+   640→    },
+   641→    purpose:
+   642→      'MULTI-HOP EDGE (hop 2 from a Helix-anchored query). Deliberately contains NO Helix Identity ' +
+   643→      'Store tokens — unreachable without traversal.',
+   644→  },
+   645→  {
+   646→    evidenceKey: 'FACT-DEP-02',
+   647→    id: 'fact-auth-helix-dependency',
+   648→    claimId: 'claim-auth-helix-dependency',
+   649→    statement: 'Aurorium Auth Service depends on the Helix Identity Store for credential storage',
+   650→    subject: 'service_dependencies',
+   651→    category: 'architectural',
+   652→    validityState: 'active',
+   653→    confidence: 'verified_fact',
+   654→    promotedAt: '2026-08-22T09:00:00.000Z',
+   655→    promotedBy: 'founder',
+   656→    provenance: {
+   657→      sourceSystem: 'epistemic_pipeline',
+   658→      sourceId: 'arch-review-2026-08',
+   659→      sourceTitle: 'Architecture review August 2026',
+   660→      epistemicType: 'canonical_fact',
+   661→      authority: 'Founder-promoted canonical fact',
+   662→      timestamp: '2026-08-22T09:00:00.000Z',
+   663→      confidence: 'verified_fact',
+   664→    },
+   665→    purpose: 'MULTI-HOP EDGE (hop 1 from a Helix-anchored query) — lexically reachable.',
+   666→  },
+   667→];
+   668→
+   669→// ---------------------------------------------------------------------------
+   670→// CompanyState (seeded via durable 'company_state' before store construction)
+   671→// ---------------------------------------------------------------------------
+   672→
+   673→export const STATE_FINANCIAL_MODEL: FinanceMetric = {
+   674→  mrr: 18500,
+   675→  arr: 222000,
+   676→  grossMargin: 82,
+   677→  computeSpend: 4200,
+   678→  runwayMonths: 14,
+   679→  burnRate: 34000,
+   680→  netIncome: -15500,
+   681→  tokenUsageMillions: 8.4,
+   682→};
+   683→
+   684→export const STATE_INITIATIVES: CompanyInitiative[] = [
+   685→  {
+   686→    id: 'init-lumora-scale',
+   687→    title: 'Lumora Scale Program',
+   688→    codeName: 'LUMORA-SCALE',
+   689→    status: 'Active',
+   690→    currentObjective:
+   691→      'Execute the value-based pricing decision dec-pricing-value-based and grow Lumora ARR to $500k',
+   692→    contributors: [],
+   693→    latestResult: 'Pricing cutover completed with zero billing incidents',
+   694→    nextRecommendedAction: 'Expand Growth-tier onboarding capacity',
+   695→    risks: [],
+   696→    updatedAt: '2026-09-18T00:00:00.000Z',
+   697→  },
+   698→  {
+   699→    id: 'init-aurorium-hardening',
+   700→    title: 'Aurorium Hardening Initiative',
+   701→    status: 'Active',
+   702→    currentObjective: 'Harden the Aurorium Auth Service before the enterprise pilot',
+   703→    contributors: [],
+   704→    latestResult: 'Token verification latency down to 40ms p95',
+   705→    nextRecommendedAction: 'Complete the identity-store failover drill',
+   706→    risks: ['Identity store failover not yet rehearsed'],
+   707→    updatedAt: '2026-09-16T00:00:00.000Z',
+   708→  },
+   709→  {
+   710→    id: 'init-brand-refresh',
+   711→    title: 'Brand Refresh 2027',
+   712→    codeName: 'BRAND-27',
+   713→    status: 'Paused',
+   714→    currentObjective: 'Refresh company brand assets for the 2027 cycle',
+   715→    contributors: [],
+   716→    latestResult: 'Paused pending product milestones',
+   717→    nextRecommendedAction: 'Revisit after Lumora Scale Program',
+   718→    risks: [],
+   719→    updatedAt: '2026-08-01T00:00:00.000Z',
+   720→  },
+   721→];
+   722→
+   723→export const STATE_DECISIONS: CompanyDecision[] = [
+   724→  {
+   725→    id: 'dec-pricing-value-based',
+   726→    title: 'Adopt value-based pricing company-wide',
+   727→    status: 'approved',
+   728→    category: 'Strategic',
+   729→    recommendedBy: 'coo',
+   730→    agentId: 'coo',
+   731→    recommendation: 'Move all Lumora tiers to value-based pricing',
+   732→    businessImpact: 'Revenue per account +18% in two billing cycles',
+   733→    evidenceSummary: 'Pricing experiment 12 and the July financial model',
+   734→    date: '2026-09-02T00:00:00.000Z',
+   735→    founderApprovalRequired: true,
+   736→  },
+   737→  {
+   738→    id: 'dec-office-lease',
+   739→    title: 'Renew the office lease for 12 months',
+   740→    status: 'approved',
+   741→    category: 'Product',
+   742→    recommendedBy: 'coo',
+   743→    agentId: 'coo',
+   744→    recommendation: 'Renew the current office lease',
+   745→    businessImpact: 'Facility continuity',
+   746→    evidenceSummary: 'Facilities report',
+   747→    date: '2026-05-20T00:00:00.000Z',
+   748→    founderApprovalRequired: true,
+   749→  },
+   750→];
+   751→
+   752→// ---------------------------------------------------------------------------
+   753→// Episodic record: a PAST conversation holding the abandonment rationale
+   754→// (seeded via ConversationStore with fixed ids/timestamps)
+   755→// ---------------------------------------------------------------------------
+   756→
+   757→export interface EpisodicConversationSpec {
+   758→  conversationId: string;
+   759→  founderId: string;
+   760→  title: string;
+   761→  messages: {
+   762→    id: string;
+   763→    sender: 'founder' | 'assistant';
+   764→    content: string;
+   765→    createdAt: string;
+   766→  }[];
+   767→}
+   768→
+   769→export const EPISODIC_CONVERSATION: EpisodicConversationSpec = {
+   770→  conversationId: 'conv-m51-episodic',
+   771→  founderId: FOUNDER_A,
+   772→  title: 'Aurorium refactor check-in',
+   773→  messages: [
+   774→    {
+   775→      id: 'msg-m51-ep-1',
+   776→      sender: 'founder',
+   777→      content: 'The refactor is dragging. Every release needs three teams to sync.',
+   778→      createdAt: '2026-08-14T10:00:00.000Z',
+   779→    },
+   780→    {
+   781→      id: 'msg-m51-ep-2',
+   782→      sender: 'assistant',
+   783→      content:
+   784→        'Measured: the microservices refactor of Aurorium adds about three hours of coordination ' +
+   785→        'overhead per release while the latency gain is only 40ms.',
+   786→      createdAt: '2026-08-14T10:01:00.000Z',
+   787→    },
+   788→    {
+   789→      id: 'msg-m51-ep-3',
+   790→      sender: 'founder',
+   791→      content: 'Then we are abandoning it. Record why so we remember.',
+   792→      createdAt: '2026-08-14T10:02:00.000Z',
+   793→    },
+   794→    {
+   795→      id: 'msg-m51-ep-4',
+   796→      sender: 'assistant',
+   797→      content:
+   798→        'Recorded: abandoning the microservices refactor of Aurorium because coordination overhead ' +
+   799→        'exceeds the latency gains; returning to a modular monolith.',
+   800→      createdAt: '2026-08-14T10:03:00.000Z',
+   801→    },
+   802→  ],
+   803→};
+   804→
+   805→// ---------------------------------------------------------------------------
+   806→// Registry of every evidence key (fixture integrity checks iterate this).
+   807→// ---------------------------------------------------------------------------
+   808→
+   809→export const ALL_EVIDENCE_KEYS: string[] = [
+   810→  ...PERSONAL_MEMORIES.map((m) => m.evidenceKey),
+   811→  ...COMPANY_KNOWLEDGE.map((k) => k.documentId),
+   812→  ...COMPANY_MEMORIES.map((m) => m.id),
+   813→  ...CANONICAL_FACTS.map((f) => f.evidenceKey),
+   814→  ...EPISTEMIC_CLAIMS.map((c) => c.id),
+   815→  ...EPISTEMIC_SOURCES.map((s) => s.id),
+   816→  'STATE-FIN-01',
+   817→  ...STATE_INITIATIVES.map((i) => `STATE-${i.id}`),
+   818→  ...STATE_DECISIONS.map((d) => `STATE-${d.id}`),
+   819→  'CONV-EP-01',
+   820→];
+   821→
+   822→/**
+   823→ * Deterministic digest of the fixture (SHA-256 over a canonical JSON
+   824→ * serialization). Printed with every run; two runs with the same fixture MUST
+   825→ * produce the same digest.
+   826→ */
+   827→export function computeFixtureDigest(): string {
+   828→  const canonical = JSON.stringify({
+   829→    personal: PERSONAL_MEMORIES,
+   830→    knowledge: COMPANY_KNOWLEDGE,
+   831→    precedents: COMPANY_MEMORIES,
+   832→    facts: CANONICAL_FACTS.map(({ purpose, ...f }) => f),
+   833→    claims: EPISTEMIC_CLAIMS,
+   834→    sources: EPISTEMIC_SOURCES,
+   835→    financial: STATE_FINANCIAL_MODEL,
+   836→    initiatives: STATE_INITIATIVES,
+   837→    decisions: STATE_DECISIONS,
+   838→    episodic: EPISODIC_CONVERSATION,
+   839→  });
+   840→  return createHash('sha256').update(canonical).digest('hex');
+   841→}
+   842→
