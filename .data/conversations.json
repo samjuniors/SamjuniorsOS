@@ -807,5 +807,35 @@
     "metadata": {},
     "createdAt": "2026-09-26T12:08:58.628Z",
     "updatedAt": "2026-09-26T12:08:58.644Z"
+  },
+  "conv-e9738b79-635d-4993-81bc-2d0a933cb1e8": {
+    "id": "conv-e9738b79-635d-4993-81bc-2d0a933cb1e8",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:19.675Z",
+    "updatedAt": "2026-09-29T04:59:21.505Z"
+  },
+  "conv-d67e5ba0-5f11-48d7-a19e-7a3d7a375a1f": {
+    "id": "conv-d67e5ba0-5f11-48d7-a19e-7a3d7a375a1f",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:32.721Z",
+    "updatedAt": "2026-09-29T04:59:33.931Z"
+  },
+  "conv-02f66959-dd55-42f1-b1fa-f454bebcca48": {
+    "id": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "founderId": "founder-local-session",
+    "title": "Executive Dialogue",
+    "agentId": "sophia",
+    "status": "active",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:36.551Z",
+    "updatedAt": "2026-09-29T05:00:08.207Z"
   }
 }

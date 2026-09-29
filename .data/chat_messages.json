@@ -2022,5 +2022,135 @@
       "replyToIdempotencyKey": "m4a-e3-419fd37a"
     },
     "createdAt": "2026-09-26T12:08:58.644Z"
+  },
+  "msg-468640a8-7efc-4e13-9a78-ca78f75a8692": {
+    "id": "msg-468640a8-7efc-4e13-9a78-ca78f75a8692",
+    "conversationId": "conv-e9738b79-635d-4993-81bc-2d0a933cb1e8",
+    "sender": "founder",
+    "role": "user",
+    "content": "#",
+    "idempotencyKey": "sofia-07fcb93f-93a0-491e-9e15-4b1f9f9de9fa",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:19.686Z"
+  },
+  "msg-3ce681a3-c4d3-4fc1-9cf8-9c2ace993316": {
+    "id": "msg-3ce681a3-c4d3-4fc1-9cf8-9c2ace993316",
+    "conversationId": "conv-e9738b79-635d-4993-81bc-2d0a933cb1e8",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Greetings, Founder. I'm Sophia Vance, your COO and orchestrator for SamJuniors OS. The control plane is currently idle and awaiting your directive. How may I assist you today?",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-07fcb93f-93a0-491e-9e15-4b1f9f9de9fa:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-29T04:59:21.505Z"
+  },
+  "msg-72fc27fa-fc6b-4824-8343-3b1aa13826a7": {
+    "id": "msg-72fc27fa-fc6b-4824-8343-3b1aa13826a7",
+    "conversationId": "conv-d67e5ba0-5f11-48d7-a19e-7a3d7a375a1f",
+    "sender": "founder",
+    "role": "user",
+    "content": "# 哈喽",
+    "idempotencyKey": "sofia-7e5f50c5-3109-41cd-ab48-1fba3c9620f6",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:32.727Z"
+  },
+  "msg-627319d2-498c-45d3-b00c-63b0033e0b77": {
+    "id": "msg-627319d2-498c-45d3-b00c-63b0033e0b77",
+    "conversationId": "conv-d67e5ba0-5f11-48d7-a19e-7a3d7a375a1f",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "你好！我是Sophia Vance，SamJuniors OS的首席运营官。很高兴见到你，有什么我能帮助你的吗？",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-7e5f50c5-3109-41cd-ab48-1fba3c9620f6:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-29T04:59:33.931Z"
+  },
+  "msg-4ca095dc-cdd1-4dc1-b676-d4fd62d7ef3c": {
+    "id": "msg-4ca095dc-cdd1-4dc1-b676-d4fd62d7ef3c",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "founder",
+    "role": "user",
+    "content": "Hello",
+    "idempotencyKey": "sofia-3e3ba42d-bc52-44f9-a0ef-9b9c1780e162",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:36.557Z"
+  },
+  "msg-c965213d-8d46-412f-8592-09236ef7ab98": {
+    "id": "msg-c965213d-8d46-412f-8592-09236ef7ab98",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "Hello, Founder. I'm ready to assist with any operational directives or inquiries you may have.",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-3e3ba42d-bc52-44f9-a0ef-9b9c1780e162:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-29T04:59:37.698Z"
+  },
+  "msg-a528624d-5631-4499-90c9-b757c44c567a": {
+    "id": "msg-a528624d-5631-4499-90c9-b757c44c567a",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "founder",
+    "role": "user",
+    "content": "#",
+    "idempotencyKey": "sofia-309477bd-eeaf-466f-9038-7879823b48af",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:39.246Z"
+  },
+  "msg-285667ff-e378-4e88-95d5-92ac14a58491": {
+    "id": "msg-285667ff-e378-4e88-95d5-92ac14a58491",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "I'm standing by for your next directive or inquiry, Founder. Please let me know how I can assist with SamJuniors OS operations.",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-309477bd-eeaf-466f-9038-7879823b48af:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-29T04:59:41.647Z"
+  },
+  "msg-0950893c-0428-4d4e-accd-8defcaa6b7f2": {
+    "id": "msg-0950893c-0428-4d4e-accd-8defcaa6b7f2",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "founder",
+    "role": "user",
+    "content": "#",
+    "idempotencyKey": "sofia-0d0c61ec-077b-48a8-9394-b2e78e370cd0",
+    "metadata": {},
+    "createdAt": "2026-09-29T04:59:55.692Z"
+  },
+  "msg-cc205538-029d-4645-b885-461c7d9ee31d": {
+    "id": "msg-cc205538-029d-4645-b885-461c7d9ee31d",
+    "conversationId": "conv-02f66959-dd55-42f1-b1fa-f454bebcca48",
+    "sender": "assistant",
+    "role": "assistant",
+    "content": "I'm here whenever you're ready to proceed, Founder. Just let me know what you'd like to discuss or direct next.",
+    "intent": "conversation",
+    "idempotencyKey": "sofia-0d0c61ec-077b-48a8-9394-b2e78e370cd0:assistant",
+    "metadata": {
+      "liveAi": false,
+      "directiveExecuted": false,
+      "voiceIngress": false,
+      "ingress": "sofia_ask"
+    },
+    "createdAt": "2026-09-29T05:00:08.207Z"
   }
 }
