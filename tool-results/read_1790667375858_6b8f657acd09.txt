@@ -1,0 +1,661 @@
+     1→import { createHash } from 'crypto';
+     2→import {
+     3→  CompanyKnowledgeItem,
+     4→  ICompanyKnowledgeStore,
+     5→  KnowledgeQueryParams,
+     6→  RetrievedKnowledgeItem,
+     7→} from '@/types/context';
+     8→import { prisma } from '@/lib/server/db/prisma';
+     9→import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
+    10→import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+    11→
+    12→const STOP_WORDS = new Set([
+    13→  'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are',
+    14→  'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but',
+    15→  'by', 'could', 'did', 'do', 'does', 'doing', 'down', 'during', 'each', 'few', 'for', 'from',
+    16→  'further', 'had', 'has', 'have', 'having', 'he', 'her', 'here', 'hers', 'herself', 'him',
+    17→  'himself', 'his', 'how', 'i', 'if', 'in', 'into', 'is', 'it', 'its', 'itself', 'just', 'me',
+    18→  'more', 'most', 'my', 'myself', 'no', 'nor', 'not', 'now', 'of', 'off', 'on', 'once', 'only',
+    19→  'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out', 'over', 'own', 'same', 'she',
+    20→  'should', 'so', 'some', 'such', 'than', 'that', 'the', 'their', 'theirs', 'them', 'themselves',
+    21→  'then', 'there', 'these', 'they', 'this', 'those', 'through', 'to', 'too', 'under', 'until',
+    22→  'up', 'very', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'while', 'who', 'whom',
+    23→  'why', 'with', 'would', 'you', 'your', 'yours', 'yourself', 'yourselves'
+    24→]);
+    25→
+    26→/**
+    27→ * Deterministic tokenization shared with queryKnowledge (lowercase, strip
+    28→ * non-alphanumeric except _-, drop stop words and <=2-char fragments).
+    29→ *
+    30→ * M4-C: exported so the Sophia Personal Mind's context retrieval reuses the
+    31→ * EXACT same deterministic tokenizer/stop-word pipeline Company Brain
+    32→ * knowledge retrieval uses — one tokenizer, no second retrieval framework,
+    33→ * no drift between the two lexical scorers. Pure function; no behavior change
+    34→ * to queryKnowledge itself.
+    35→ */
+    36→export function extractTokens(text?: string | null): string[] {
+    37→  if (!text) return [];
+    38→  return text
+    39→    .toLowerCase()
+    40→    .replace(/[^a-z0-9\s_-]/g, ' ')
+    41→    .split(/\s+/)
+    42→    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+    43→}
+    44→
+    45→/**
+    46→ * Canonical Durable Reference Information for SamJuniors OS
+    47→ * Standard Operating Procedures (SOPs), Technical Architecture Docs, Product Specs, and Governance Policies.
+    48→ */
+    49→export const CANONICAL_COMPANY_KNOWLEDGE: CompanyKnowledgeItem[] = [
+    50→  {
+    51→    id: 'know-sop-001',
+    52→    documentId: 'SOP-001',
+    53→    title: 'SOP-001: Gross Margin Floor & Compute Cost Guardrails',
+    54→    category: 'sop',
+    55→    version: '2.1.0',
+    56→    summary: 'Mandates an absolute 80%+ gross margin floor across all customer tiers, token caching protocols, and compute spend auditing.',
+    57→    content: `### SOP-001: Gross Margin Floor & Compute Cost Guardrails
+    58→1. OBJECTIVE: Preserve financial sustainability by enforcing a strict 80% gross margin floor on all operational workloads.
+    59→2. UNIT ECONOMICS THRESHOLDS:
+    60→   - Base tenant onboarding compute burn must remain ≤ $0.25 per tenant.
+    61→   - LLM generation requests must utilize semantic prompt caching when prompt tokens exceed 1,500 tokens.
+    62→   - Any proposed feature with projected margin < 80% requires Julian Cruz (CFO) review and explicit Founder sign-off.
+    63→3. MONITORING: Real-time telemetry audits compute burn against monthly recurring revenue (MRR) targets.`,
+    64→    tags: ['Finance', 'SOP', 'Gross Margin', 'Compute', 'Pricing', 'Guardrail'],
+    65→    applicableDepartments: ['finance', 'coo', 'council', 'advisor'],
+    66→    authorAuthority: 'Marcus Sterling (CFO) & Executive Council',
+    67→    lastVerifiedDate: '2026-08-20',
+    68→    isDurableReference: true,
+    69→  },
+    70→  {
+    71→    id: 'know-sop-002',
+    72→    documentId: 'SOP-002',
+    73→    title: 'SOP-002: Zero-Trust Safe Mock Sandbox & Tool Verification',
+    74→    category: 'sop',
+    75→    version: '1.4.0',
+    76→    summary: 'Strict security protocol mandating isolated sandboxing for external mutations, live banking endpoints, and unverified credentials.',
+    77→    content: `### SOP-002: Zero-Trust Safe Mock Sandbox Protocol
+    78→1. PRINCIPLE: Autonomous agents operate with read-only observation or isolated safe-mock mutations by default.
+    79→2. PROHIBITED MUTATIONS:
+    80→   - External fund transfers, live Stripe API charges, production GitHub branch deletions, and live customer notification blasts.
+    81→3. SANDBOX AUDIT:
+    82→   - All tool invocations must pass through the Server Tool Selector and verification harness.
+    83→   - Missing credentials must return truthful unconfigured status, never fabricated responses.`,
+    84→    tags: ['Security', 'Sandbox', 'Tools', 'SOP', 'Governance'],
+    85→    applicableDepartments: ['coo', 'researcher', 'council', 'advisor'],
+    86→    authorAuthority: 'Sophia Vance (COO) & Security Council',
+    87→    lastVerifiedDate: '2026-08-15',
+    88→    isDurableReference: true,
+    89→  },
+    90→  {
+    91→    id: 'know-sop-003',
+    92→    documentId: 'SOP-003',
+    93→    title: 'SOP-003: 9-Step Multi-Agent Council Protocol',
+    94→    category: 'sop',
+    95→    version: '3.0.0',
+    96→    summary: 'Prescribes the formal 9-step workflow pipeline: Understand -> Research -> Plan -> Specify -> Model -> Debate -> Verify -> Ratify -> Report.',
+    97→    content: `### SOP-003: 9-Step Multi-Agent Council Execution
+    98→1. Understand: Sophia Vance deconstructs directive and defines boundaries.
+    99→2. Research: Dr. Aris Thorne gathers empirical market and technical evidence.
+   100→3. Plan: Sophia Vance establishes execution plan and task allocations.
+   101→4. Specify: Maya Lin architects user stories, acceptance criteria, and PRD specifications.
+   102→5. Model: Julian Cruz computes unit economics, CAC/LTV, and margin impact.
+   103→6. Debate: Cross-specialist critique challenging assumptions and dependencies.
+   104→7. Verify: Multi-agent verification checking compliance and safety.
+   105→8. Ratify: Founder approval gate for all high-impact actions.
+   106→9. Report: Executive synthesis deliverable with explicit next actions.`,
+   107→    tags: ['Operations', 'Protocol', 'Council', 'SOP', 'Workflow'],
+   108→    applicableDepartments: ['coo', 'pm', 'researcher', 'finance', 'council', 'advisor'],
+   109→    authorAuthority: 'Executive Council Charter',
+   110→    lastVerifiedDate: '2026-08-28',
+   111→    isDurableReference: true,
+   112→  },
+   113→  {
+   114→    id: 'know-tech-001',
+   115→    documentId: 'TECH-001',
+   116→    title: 'TECH-001: SamJuniors OS Microkernel & Next.js App Router Architecture',
+   117→    category: 'technical_architecture',
+   118→    version: '4.2.0',
+   119→    summary: 'Technical specification for the deterministic server microkernel, App Router layout, window manager, and server-side AI execution.',
+   120→    content: `### TECH-001: SamJuniors OS Architecture Specification
+   121→1. FOUNDATION: Next.js 15+ App Router with React 19 Server/Client component boundary.
+   122→2. SERVER-SIDE SECRET ISOLATION:
+   123→   - GEMINI_API_KEY resides strictly on the server and is never prefixed with NEXT_PUBLIC_.
+   124→   - All AI execution runs via Next.js API routes or Server Actions.
+   125→3. REVERSE PROXY & PORT MAPPING: Exclusively bound to external Port 3000 behind container proxy.
+   126→4. WINDOW MANAGER: Desktop UI with multi-window tiling, z-index layering, and OS dock state persistence.`,
+   127→    tags: ['Architecture', 'Technical', 'Next.js', 'React', 'Microkernel', 'Engineering'],
+   128→    applicableDepartments: ['researcher', 'pm', 'coo', 'council', 'advisor'],
+   129→    authorAuthority: 'Dr. Aris Thorne & Lead Architect',
+   130→    lastVerifiedDate: '2026-09-01',
+   131→    isDurableReference: true,
+   132→  },
+   133→  {
+   134→    id: 'know-prd-001',
+   135→    documentId: 'PRD-001',
+   136→    title: 'PRD-001: Autonomous Founder Executive Co-Pilot Specification',
+   137→    category: 'product_spec',
+   138→    version: '2.0.0',
+   139→    summary: 'Product requirements for the Founder Intelligence Advisor, epistemic breakdown (Facts, Inferences, Recommendations, Unknowns), and anti-hallucination standards.',
+   140→    content: `### PRD-001: Founder Executive Co-Pilot Specification
+   141→1. OBJECTIVE: Provide real-time strategic advisory intelligence without displacing the Founder as the sovereign decision-maker.
+   142→2. EPISTEMIC KNOWLEDGE MODEL:
+   143→   - Facts: Grounded directly in company state, documents, and verified evidence.
+   144→   - Inferences: Logical deductions derived from facts.
+   145→   - Recommendations: Strategic advice requiring explicit Founder evaluation.
+   146→   - Unknowns: Transparently acknowledged gaps in available data.
+   147→3. ADVISORY BOUNDARY: The Advisor is purely consultative and cannot execute code, mutate data, or auto-approve decisions.`,
+   148→    tags: ['Product', 'PRD', 'Advisor', 'Epistemic', 'Specification'],
+   149→    applicableDepartments: ['pm', 'coo', 'council', 'advisor'],
+   150→    authorAuthority: 'Maya Lin (Head of Product)',
+   151→    lastVerifiedDate: '2026-08-25',
+   152→    isDurableReference: true,
+   153→  },
+   154→  {
+   155→    id: 'know-pol-001',
+   156→    documentId: 'POL-001',
+   157→    title: 'POL-001: Epistemic Grounding & Anti-Hallucination Policy',
+   158→    category: 'policy',
+   159→    version: '1.2.0',
+   160→    summary: 'Binding governance policy prohibiting fabricated metrics, imaginary customers, simulated credentials, or ungrounded claims.',
+   161→    content: `### POL-001: Epistemic Grounding Policy
+   162→1. ZERO-FABRICATION MANDATE: No AI employee may generate imaginary revenue figures, fictitious customer conversations, or mock compliance certificates.
+   163→2. CONFLICT RESOLUTION RULE:
+   164→   - Current verified empirical evidence takes absolute precedence over historical precedent and durable documentation.
+   165→   - When conflicts occur, the conflict must be surfaced explicitly to the Founder.
+   166→3. TRUTHFUL CREDENTIAL REPORTING: If an API key or integration is unconfigured, the system must report this truthfully.`,
+   167→    tags: ['Policy', 'Governance', 'Truthfulness', 'Anti-Hallucination', 'Ethics'],
+   168→    applicableDepartments: ['coo', 'researcher', 'pm', 'finance', 'council', 'advisor'],
+   169→    authorAuthority: 'Founder Sovereignty Charter',
+   170→    lastVerifiedDate: '2026-08-10',
+   171→    isDurableReference: true,
+   172→  },
+   173→  {
+   174→    id: 'know-pol-002',
+   175→    documentId: 'POL-002',
+   176→    title: 'POL-002: Founder Sovereign Prerogative & Governance Ratification',
+   177→    category: 'policy',
+   178→    version: '1.0.0',
+   179→    summary: 'Mandates that no AI agent, memory precedent, or council decision can become binding company policy without explicit Founder approval.',
+   180→    content: `### POL-002: Founder Sovereign Prerogative
+   181→1. NON-DELEGABLE FOUNDER POWERS:
+   182→   - Ratification of capital investments, pricing tier changes, and strategic partnerships.
+   183→   - Overriding or rejecting any specialist council recommendation.
+   184→2. STATUS CONSTRAINTS: All agent-generated proposals remain in 'pending_approval' status until ratified.`,
+   185→    tags: ['Policy', 'Governance', 'Founder Prerogative', 'Ratification'],
+   186→    applicableDepartments: ['coo', 'council', 'advisor'],
+   187→    authorAuthority: 'Founder Sovereign Mandate',
+   188→    lastVerifiedDate: '2026-08-01',
+   189→    isDurableReference: true,
+   190→  },
+   191→  {
+   192→    id: 'know-res-001',
+   193→    documentId: 'RES-001',
+   194→    title: 'RES-001: Deterministic Multi-Agent Verification Benchmark',
+   195→    category: 'research_reference',
+   196→    version: '1.0.0',
+   197→    summary: 'Research brief verifying that multi-agent adversarial debate reduces ungrounded hallucination from 18% to 1.4% in enterprise workflows.',
+   198→    content: `### RES-001: Multi-Agent Verification Benchmark
+   199→1. METHODOLOGY: Evaluated 250 enterprise directives across single-agent prompt workflows versus structured 4-specialist council debate.
+   200→2. EMPIRICAL FINDINGS:
+   201→   - Hallucination rate dropped from 18.2% to 1.4%.
+   202→   - Assumption detection increased from 34% to 91%.
+   203→   - Token efficiency was preserved via semantic prompt de-duplication.`,
+   204→    tags: ['Research', 'Benchmark', 'Multi-Agent', 'Safety', 'Dr. Thorne'],
+   205→    applicableDepartments: ['researcher', 'council', 'advisor'],
+   206→    authorAuthority: 'Dr. Aris Thorne (Lead Researcher)',
+   207→    lastVerifiedDate: '2026-09-02',
+   208→    isDurableReference: true,
+   209→  },
+   210→];
+   211→
+   212→/**
+   213→ * Computes the SHA-256 content hash stored in the `CompanyKnowledge.hash`
+   214→ * column (M2: the ingestion path records it on every explicit write).
+   215→ *
+   216→ * Exact guarantee: it fingerprints ONLY the `content` field.
+   217→ *  - Identical content ⇒ identical hash (deterministic, byte-for-byte).
+   218→ *  - Changed content ⇒ different hash (SHA-256 collision resistance).
+   219→ *  - Title/category/version/metadata changes alone do NOT change the hash.
+   220→ *
+   221→ * See isKnowledgeContentUnchanged() for the comparison contract.
+   222→ */
+   223→export function computeKnowledgeContentHash(content: string): string {
+   224→  return createHash('sha256').update(content || '', 'utf-8').digest('hex');
+   225→}
+   226→
+   227→/**
+   228→ * Minimal change-detection contract (no vectors/embeddings/FTS): compares a
+   229→ * persisted hash against the hash of candidate content.
+   230→ *  - equal  ⇒ content unchanged since the hash was recorded
+   231→ *  - different ⇒ content changed
+   232→ * A missing/blank stored hash never claims "unchanged".
+   233→ */
+   234→export function isKnowledgeContentUnchanged(
+   235→  storedHash: string | null | undefined,
+   236→  content: string
+   237→): boolean {
+   238→  if (!storedHash) return false;
+   239→  return storedHash === computeKnowledgeContentHash(content);
+   240→}
+   241→
+   242→/**
+   243→ * ============================================================================
+   244→ * COMPANY KNOWLEDGE STORE — M2: CANONICAL PERSISTENCE ACTIVATED
+   245→ * ============================================================================
+   246→ *
+   247→ * Implements ICompanyKnowledgeStore with the SAME dual-mode persistence
+   248→ * pattern as its sibling stores (memory-store, conversation store, etc.):
+   249→ *
+   250→ *  - LOCAL MODE: in-memory cache (constructor-hydrated from DurableFileStore)
+   251→ *    + .data/company_knowledge.json durability + best-effort Prisma dual-write.
+   252→ *  - AUTHORITATIVE MODE: Prisma fail-closed (requireAuthoritativeDatabase);
+   253→ *    reads and writes go to the CompanyKnowledge table (target: PostgreSQL;
+   254→ *    currently the SQLite sandbox port — see the M0 naming note).
+   255→ *
+   256→ * Seed migration (one-time, bootstrap-only): the 8 canonical documents that
+   257→ * previously existed ONLY as code constants are persisted to DurableFileStore
+   258→ * on first boot (empty durable collection), and bootstrapped into the Prisma
+   259→ * table lazily on first store usage — CREATE-ONLY: a canonical document is
+   260→ * seeded only when no row exists for its id; an existing persisted row is
+   261→ * NEVER overwritten by the code constants on restart (Founder directive,
+   262→ * pre-M3 correction pass). Explicit writes (addKnowledge / setKnowledge)
+   263→ * remain the only mutation paths after boot.
+   264→ *
+   265→ * The `hash` column (SHA-256 of the `content` field ONLY) provides change
+   266→ * detection: comparing a stored hash against
+   267→ * computeKnowledgeContentHash(candidateContent) distinguishes unchanged
+   268→ * content (equal) from changed content (different) — see
+   269→ * isKnowledgeContentUnchanged(). It does NOT fingerprint title/category/
+   270→ * metadata. A different id with byte-identical content collides on the
+   271→ * unique hash index and is treated as a duplicate (seed skipped; explicit
+   272→ * writes still dual-write best-effort in local mode).
+   273→ *
+   274→ * Designed so the target PostgreSQL / Supabase deployment can replace the
+   275→ * persistence internals without altering retrieval or business logic.
+   276→ */
+   277→export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
+   278→  private static instance: CompanyKnowledgeStore | null = null;
+   279→
+   280→  private knowledgeItems: CompanyKnowledgeItem[] = [...CANONICAL_COMPANY_KNOWLEDGE];
+   281→
+   282→  /** One-shot guard for the lazy Prisma seed mirror (M2 seed migration). */
+   283→  private static prismaSeedPromise: Promise<void> | null = null;
+   284→
+   285→  private constructor() {
+   286→    this.loadFromDurableStorage();
+   287→  }
+   288→
+   289→  public static getInstance(): CompanyKnowledgeStore {
+   290→    if (!CompanyKnowledgeStore.instance) {
+   291→      CompanyKnowledgeStore.instance = new CompanyKnowledgeStore();
+   292→    }
+   293→    return CompanyKnowledgeStore.instance;
+   294→  }
+   295→
+   296→  /**
+   297→   * Hydrates the in-memory cache from DurableFileStore, merging over the
+   298→   * canonical seed documents. On first boot (no durable collection), the
+   299→   * canonical seeds are themselves persisted — the M2 one-time seed
+   300→   * migration of the 8 canonical documents.
+   301→   */
+   302→  private loadFromDurableStorage(): void {
+   303→    try {
+   304→      const persisted = DurableFileStore.getInstance().readCollection<CompanyKnowledgeItem>('company_knowledge');
+   305→      const persistedItems = Object.values(persisted);
+   306→      if (persistedItems.length === 0) {
+   307→        // First boot: persist the canonical seed set (one-time migration).
+   308→        const seedRecord: Record<string, CompanyKnowledgeItem> = {};
+   309→        for (const item of CANONICAL_COMPANY_KNOWLEDGE) {
+   310→          seedRecord[item.id] = item;
+   311→        }
+   312→        DurableFileStore.getInstance().writeCollection('company_knowledge', seedRecord);
+   313→        this.knowledgeItems = [...CANONICAL_COMPANY_KNOWLEDGE];
+   314→        return;
+   315→      }
+   316→      // Merge: canonical seeds first (stable order), persisted items overlay
+   317→      // by id (edits win), extras appended.
+   318→      const byId = new Map<string, CompanyKnowledgeItem>();
+   319→      for (const item of CANONICAL_COMPANY_KNOWLEDGE) byId.set(item.id, item);
+   320→      for (const item of persistedItems) byId.set(item.id, item);
+   321→      this.knowledgeItems = [...byId.values()];
+   322→    } catch {
+   323→      // fallback to canonical seeds
+   324→    }
+   325→  }
+   326→
+   327→  /**
+   328→   * Lazily bootstraps the canonical seed documents into the Prisma table
+   329→   * once per process. BOOTSTRAP-ONLY (Founder directive, pre-M3 correction):
+   330→   * a canonical document is created ONLY when no row exists for its id — an
+   331→   * existing persisted row is preserved as-is, so a restart can never
+   332→   * overwrite authoritative persisted knowledge with the code constants.
+   333→   * Explicit writes (addKnowledge / setKnowledge) remain the only mutation
+   334→   * paths after boot. A unique-hash collision on create means byte-identical
+   335→   * content is already persisted under another id — the seed is skipped (the
+   336→   * hash column is the duplicate-content guard); any other error propagates
+   337→   * (fail-closed in authoritative mode). Local mode: best-effort.
+   338→   */
+   339→  private ensurePrismaSeeded(): Promise<void> {
+   340→    if (!CompanyKnowledgeStore.prismaSeedPromise) {
+   341→      CompanyKnowledgeStore.prismaSeedPromise = (async () => {
+   342→        try {
+   343→          const db = isAuthoritativeMode()
+   344→            ? await requireAuthoritativeDatabase()
+   345→            : prisma;
+   346→          for (const item of CANONICAL_COMPANY_KNOWLEDGE) {
+   347→            const existing = await db.companyKnowledge.findUnique({
+   348→              where: { id: item.id },
+   349→            });
+   350→            // Persisted document wins over the code constant — never overwrite.
+   351→            if (existing) continue;
+   352→            try {
+   353→              await db.companyKnowledge.create({
+   354→                data: {
+   355→                  id: item.id,
+   356→                  category: item.category,
+   357→                  title: item.title,
+   358→                  content: item.content,
+   359→                  hash: computeKnowledgeContentHash(item.content),
+   360→                  metadata: {
+   361→                    documentId: item.documentId,
+   362→                    version: item.version,
+   363→                    summary: item.summary,
+   364→                    tags: item.tags,
+   365→                    applicableDepartments: item.applicableDepartments,
+   366→                    authorAuthority: item.authorAuthority,
+   367→                    lastVerifiedDate: item.lastVerifiedDate,
+   368→                    isDurableReference: item.isDurableReference,
+   369→                  },
+   370→                },
+   371→              });
+   372→            } catch (createErr: any) {
+   373→              const msg = String(createErr?.message || createErr);
+   374→              const isUniqueCollision =
+   375→                createErr?.code === 'P2002' || /unique constraint/i.test(msg);
+   376→              if (!isUniqueCollision) throw createErr;
+   377→              // Byte-identical content already persisted under another id:
+   378→              // skip seeding a duplicate (unique hash = duplicate guard).
+   379→            }
+   380→          }
+   381→        } catch (err: any) {
+   382→          if (isAuthoritativeMode()) throw err;
+   383→          // Local mode: best-effort only — the durable file store remains the
+   384→          // local-mode primary per ADR 0002.
+   385→        }
+   386→      })().catch(() => {
+   387→        // Do not cache a failed best-effort seed; retry on next usage.
+   388→        CompanyKnowledgeStore.prismaSeedPromise = null;
+   389→      });
+   390→    }
+   391→    return CompanyKnowledgeStore.prismaSeedPromise;
+   392→  }
+   393→
+   394→  public async getAllKnowledge(): Promise<CompanyKnowledgeItem[]> {
+   395→    if (isAuthoritativeMode()) {
+   396→      await this.ensurePrismaSeeded();
+   397→      const db = await requireAuthoritativeDatabase();
+   398→      const rows = await db.companyKnowledge.findMany({ orderBy: { updatedAt: 'desc' } });
+   399→      return rows.map((r: any) => this.mapRowToItem(r));
+   400→    }
+   401→    return [...this.knowledgeItems];
+   402→  }
+   403→
+   404→  public async getKnowledgeById(id: string): Promise<CompanyKnowledgeItem | null> {
+   405→    if (isAuthoritativeMode()) {
+   406→      await this.ensurePrismaSeeded();
+   407→      const db = await requireAuthoritativeDatabase();
+   408→      const row = await db.companyKnowledge.findFirst({
+   409→        where: { OR: [{ id }, { title: { contains: id } }] },
+   410→      });
+   411→      if (row) return this.mapRowToItem(row);
+   412→      return null;
+   413→    }
+   414→
+   415→    const item = this.knowledgeItems.find((k) => k.id === id || k.documentId === id);
+   416→    return item ? { ...item } : null;
+   417→  }
+   418→
+   419→  public async addKnowledge(item: CompanyKnowledgeItem): Promise<void> {
+   420→    if (isAuthoritativeMode()) {
+   421→      const db = await requireAuthoritativeDatabase();
+   422→      await db.companyKnowledge.upsert({
+   423→        where: { id: item.id },
+   424→        create: {
+   425→          id: item.id,
+   426→          category: item.category,
+   427→          title: item.title,
+   428→          content: item.content,
+   429→          hash: computeKnowledgeContentHash(item.content),
+   430→          metadata: this.buildRowMetadata(item),
+   431→        },
+   432→        update: {
+   433→          category: item.category,
+   434→          title: item.title,
+   435→          content: item.content,
+   436→          hash: computeKnowledgeContentHash(item.content),
+   437→          metadata: this.buildRowMetadata(item),
+   438→        },
+   439→      });
+   440→      // Keep the in-process cache coherent for queryKnowledge.
+   441→      this.knowledgeItems = [
+   442→        item,
+   443→        ...this.knowledgeItems.filter((k) => k.id !== item.id),
+   444→      ];
+   445→      return;
+   446→    }
+   447→
+   448→    // Local mode: explicit write — REPLACES any existing item with the same
+   449→    // id (no duplicate-id entries in the in-process cache, mirroring the
+   450→    // authoritative branch's replace-by-id semantics).
+   451→    this.knowledgeItems = [
+   452→      item,
+   453→      ...this.knowledgeItems.filter((k) => k.id !== item.id),
+   454→    ];
+   455→    try {
+   456→      DurableFileStore.getInstance().saveItem('company_knowledge', item.id, item);
+   457→    } catch {}
+   458→
+   459→    if (process.env.DATABASE_URL) {
+   460→      try {
+   461→        await prisma.companyKnowledge.upsert({
+   462→          where: { id: item.id },
+   463→          create: {
+   464→            id: item.id,
+   465→            category: item.category,
+   466→            title: item.title,
+   467→            content: item.content,
+   468→            hash: computeKnowledgeContentHash(item.content),
+   469→            metadata: this.buildRowMetadata(item),
+   470→          },
+   471→          update: {
+   472→            category: item.category,
+   473→            title: item.title,
+   474→            content: item.content,
+   475→            hash: computeKnowledgeContentHash(item.content),
+   476→            metadata: this.buildRowMetadata(item),
+   477→          },
+   478→        });
+   479→      } catch {
+   480→        // Best-effort dual-write (e.g. unique-hash duplicate collision or
+   481→        // offline DB): the durable file store remains the local-mode primary.
+   482→      }
+   483→    }
+   484→  }
+   485→
+   486→  public async setKnowledge(items: CompanyKnowledgeItem[]): Promise<void> {
+   487→    this.knowledgeItems = [...items];
+   488→
+   489→    if (isAuthoritativeMode()) {
+   490→      const db = await requireAuthoritativeDatabase();
+   491→      await db.$transaction(async (tx: any) => {
+   492→        await tx.companyKnowledge.deleteMany({});
+   493→        if (items.length > 0) {
+   494→          await tx.companyKnowledge.createMany({
+   495→            data: items.map((item) => ({
+   496→              id: item.id,
+   497→              category: item.category,
+   498→              title: item.title,
+   499→              content: item.content,
+   500→              hash: computeKnowledgeContentHash(item.content),
+   501→              metadata: this.buildRowMetadata(item),
+   502→            })) as any,
+   503→          });
+   504→        }
+   505→      });
+   506→      return;
+   507→    }
+   508→
+   509→    try {
+   510→      const record: Record<string, CompanyKnowledgeItem> = {};
+   511→      for (const item of items) record[item.id] = item;
+   512→      DurableFileStore.getInstance().writeCollection('company_knowledge', record);
+   513→    } catch {}
+   514→
+   515→    if (process.env.DATABASE_URL) {
+   516→      try {
+   517→        await prisma.$transaction([
+   518→          prisma.companyKnowledge.deleteMany({}),
+   519→          ...(items.length > 0
+   520→            ? [prisma.companyKnowledge.createMany({
+   521→                data: items.map((item) => ({
+   522→                  id: item.id,
+   523→                  category: item.category,
+   524→                  title: item.title,
+   525→                  content: item.content,
+   526→                  hash: computeKnowledgeContentHash(item.content),
+   527→                  metadata: this.buildRowMetadata(item),
+   528→                })) as any,
+   529→              })]
+   530→            : []),
+   531→        ]);
+   532→      } catch {
+   533→        // Best-effort dual-write; durable file remains local-mode primary.
+   534→      }
+   535→    }
+   536→  }
+   537→
+   538→  /**
+   539→   * Deterministically queries durable reference information.
+   540→   * Attaches epistemic label: 'durable_reference' and provenance metadata.
+   541→   *
+   542→   * KNOWN AUTHORITY GAP (M3 hardening review — recorded as the NEXT
+   543→   * authority-audit item; deliberately NOT fixed in this pass):
+   544→   *   This method always scores the in-process `knowledgeItems` cache
+   545→   *   (hydrated from DurableFileStore + code seeds at construction, coherent
+   546→   *   only for writes made within THIS process). Unlike getAllKnowledge() /
+   547→   *   getKnowledgeById(), it does NOT read the fail-closed authoritative
+   548→   *   Prisma table in authoritative mode — so knowledge edited or added in
+   549→   *   another process (or before a restart) is invisible to RETRIEVAL while
+   550→   *   being visible to getAllKnowledge(). Callers are context-assembly hot
+   551→   *   paths (SophiaContextAssembler, context-retrieval, context-assembly),
+   552→   *   so the smallest safe correction (routing authoritative mode through
+   553→   *   getAllKnowledge()) is NOT fully isolated: it adds a per-call DB
+   554→   *   dependency and fail-closed 503 propagation to every Sophia turn and
+   555→   *   needs its own authoritative-mode verification matrix. Fix requires a
+   556→   *   dedicated pass with Founder approval. In the current deployment
+   557→   *   (DATABASE_MODE=local) the gap is latent, not active.
+   558→   */
+   559→  public async queryKnowledge(params: KnowledgeQueryParams): Promise<RetrievedKnowledgeItem[]> {
+   560→    const queryText = (params.queryText || '').toLowerCase();
+   561→    const queryTokens = new Set([
+   562→      ...extractTokens(queryText),
+   563→      ...(params.keywords ? params.keywords.flatMap(extractTokens) : []),
+   564→      ...(params.tags ? params.tags.map((t) => t.toLowerCase()) : []),
+   565→    ]);
+   566→
+   567→    const targetRole = params.role;
+   568→    const nowIso = new Date().toISOString();
+   569→    const results: RetrievedKnowledgeItem[] = [];
+   570→
+   571→    for (const item of this.knowledgeItems) {
+   572→      // Role match check
+   573→      const isRoleApplicable = !targetRole || targetRole === 'orchestrator' || targetRole === 'council' || targetRole === 'advisor'
+   574→        || item.applicableDepartments.includes(targetRole)
+   575→        || item.applicableDepartments.includes('council');
+   576→
+   577→      const itemTokens = [
+   578→        ...extractTokens(item.title),
+   579→        ...extractTokens(item.summary),
+   580→        ...extractTokens(item.content),
+   581→        ...item.tags.flatMap(extractTokens),
+   582→        item.documentId.toLowerCase(),
+   583→      ];
+   584→
+   585→      const matchedTerms = itemTokens.filter((t) => queryTokens.has(t));
+   586→      const hasTermMatch = matchedTerms.length > 0;
+   587→
+   588→      // Check category match if provided
+   589→      const categoryMatch = params.category && item.category.toLowerCase().includes(params.category.toLowerCase());
+   590→
+   591→      if (hasTermMatch || categoryMatch) {
+   592→        const relevanceScore = (hasTermMatch ? matchedTerms.length * 2 : 0)
+   593→          + (categoryMatch ? 3 : 0)
+   594→          + (isRoleApplicable ? 1 : 0);
+   595→
+   596→        results.push({
+   597→          knowledgeId: item.id,
+   598→          documentId: item.documentId,
+   599→          title: item.title,
+   600→          category: item.category,
+   601→          version: item.version,
+   602→          summary: item.summary,
+   603→          contentSnippet: item.summary,
+   604→          fullContent: item.content,
+   605→          applicableDepartments: item.applicableDepartments,
+   606→          relevanceScore,
+   607→          matchReason: matchedTerms.length > 0
+   608→            ? `Matched knowledge terms: ${[...new Set(matchedTerms)].join(', ')}`
+   609→            : `Category match (${item.category})`,
+   610→          provenance: {
+   611→            sourceSystem: 'company_knowledge',
+   612→            sourceId: `knowledge:${item.documentId}`,
+   613→            sourceTitle: item.title,
+   614→            epistemicType: 'durable_reference',
+   615→            authority: item.authorAuthority,
+   616→            timestamp: item.lastVerifiedDate || nowIso,
+   617→            confidence: 'reference_standard',
+   618→            notes: `Durable company reference documentation (v${item.version})`,
+   619→          },
+   620→        });
+   621→      }
+   622→    }
+   623→
+   624→    // Sort by relevance score descending
+   625→    results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+   626→    const limit = params.limit || 5;
+   627→    return results.slice(0, limit);
+   628→  }
+   629→
+   630→  private buildRowMetadata(item: CompanyKnowledgeItem): any {
+   631→    return {
+   632→      documentId: item.documentId,
+   633→      version: item.version,
+   634→      summary: item.summary,
+   635→      tags: item.tags,
+   636→      applicableDepartments: item.applicableDepartments,
+   637→      authorAuthority: item.authorAuthority,
+   638→      lastVerifiedDate: item.lastVerifiedDate,
+   639→      isDurableReference: item.isDurableReference,
+   640→    } as any;
+   641→  }
+   642→
+   643→  private mapRowToItem(r: any): CompanyKnowledgeItem {
+   644→    const meta = (r.metadata && typeof r.metadata === 'object') ? r.metadata : {};
+   645→    return {
+   646→      id: r.id,
+   647→      documentId: (meta.documentId as string) || r.id,
+   648→      title: r.title,
+   649→      category: r.category,
+   650→      version: (meta.version as string) || '1.0.0',
+   651→      summary: (meta.summary as string) || r.content?.slice(0, 240) || '',
+   652→      content: r.content,
+   653→      tags: (meta.tags as string[]) || [],
+   654→      applicableDepartments: ((meta.applicableDepartments as CompanyKnowledgeItem['applicableDepartments']) || ['council']) as any,
+   655→      authorAuthority: (meta.authorAuthority as string) || 'Unknown authority',
+   656→      lastVerifiedDate: (meta.lastVerifiedDate as string) || r.updatedAt?.toISOString?.() || new Date().toISOString(),
+   657→      isDurableReference: true as const,
+   658→    };
+   659→  }
+   660→}
+   661→

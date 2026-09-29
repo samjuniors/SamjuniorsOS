@@ -2,6 +2,6 @@
   "instanceId": "inst-1073-1790657937366",
   "pid": 1073,
   "startedAt": "2026-09-29T04:58:57.366Z",
-  "lastHeartbeat": "2026-09-29T07:24:59.165Z",
+  "lastHeartbeat": "2026-09-29T07:25:04.170Z",
   "deploymentNote": "Single-instance constraint enforced for v1. Pin Cloud Run to max-instances=1."
 }
