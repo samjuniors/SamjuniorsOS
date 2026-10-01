@@ -1,0 +1,699 @@
+     1→     1→// The upstream repository imported `Composio` from '@composio/core'. That
+     2→     2→// package is intentionally not bundled in this deployment; the provider is
+     3→     3→// unconfigured unless COMPOSIO_API_KEY is provisioned, and client creation
+     4→     4→// is attempted through a dynamic import that fails closed if the package is
+     5→     5→// absent. A minimal structural type preserves the typed surface below.
+     6→     6→type Composio = {
+     7→     7→  connectedAccounts: {
+     8→     8→    list: () => Promise<{ items?: any[] }>;
+     9→     9→  };
+    10→    10→  tools: {
+    11→    11→    execute: (action: string, params: Record<string, unknown>) => Promise<any>;
+    12→    12→  };
+    13→    13→  client?: unknown;
+    14→    14→};
+    15→    15→import { 
+    16→    16→  ComposioSessionScope, 
+    17→    17→  ComposioToolMapping, 
+    18→    18→  ExternalExecutionRequest, 
+    19→    19→  ExternalToolProvider, 
+    20→    20→  ProviderConfigStatus, 
+    21→    21→  ToolExecutionEvidence, 
+    22→    22→  ToolId 
+    23→    23→} from '@/types/capabilities';
+    24→    24→
+    25→    25→// ----------------------------------------------------------------------------
+    26→    26→// 1. SERVER-SIDE ONLY ENFORCEMENT & CONFIGURATION STATE
+    27→    27→// ----------------------------------------------------------------------------
+    28→    28→
+    29→    29→if (typeof window !== 'undefined') {
+    30→    30→  throw new Error('ComposioProvider cannot be imported or executed client-side.');
+    31→    31→}
+    32→    32→
+    33→    33→/**
+    34→    34→ * Normalizes and cleans the COMPOSIO_API_KEY.
+    35→    35→ * Handles prefix wrappers, accidental export strings, quotes, and missing leading prefix.
+    36→    36→ * Strictly never logs or leaks the key.
+    37→    37→ */
+    38→    38→export function cleanComposioApiKey(rawKey?: string): string | undefined {
+    39→    39→  if (!rawKey || typeof rawKey !== 'string') return undefined;
+    40→    40→  let cleaned = rawKey.trim();
+    41→    41→  if (cleaned.startsWith('export COMPOSIO_API_KEY=')) {
+    42→    42→    cleaned = cleaned.replace(/^export COMPOSIO_API_KEY=/, '').trim();
+    43→    43→  }
+    44→    44→  if (cleaned.startsWith('COMPOSIO_API_KEY=')) {
+    45→    45→    cleaned = cleaned.replace(/^COMPOSIO_API_KEY=/, '').trim();
+    46→    46→  }
+    47→    47→  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    48→    48→    cleaned = cleaned.slice(1, -1).trim();
+    49→    49→  }
+    50→    50→  if (cleaned.startsWith('k_') && cleaned.length > 15) {
+    51→    51→    cleaned = 'a' + cleaned;
+    52→    52→  }
+    53→    53→  return cleaned.length > 0 ? cleaned : undefined;
+    54→    54→}
+    55→    55→
+    56→    56→/**
+    57→    57→ * Evaluates whether the Composio integration is configured with an API key.
+    58→    58→ * Strictly non-throwing: returns explicit configuration state.
+    59→    59→ */
+    60→    60→export function getComposioConfigStatus(): ProviderConfigStatus {
+    61→    61→  const apiKey = cleanComposioApiKey(process.env.COMPOSIO_API_KEY);
+    62→    62→  if (!apiKey) {
+    63→    63→    return 'unconfigured';
+    64→    64→  }
+    65→    65→  return 'configured';
+    66→    66→}
+    67→    67→
+    68→    68→/**
+    69→    69→ * Lazy client accessor.
+    70→    70→ * Never attempts instantiation if COMPOSIO_API_KEY is missing or empty.
+    71→    71→ */
+    72→    72→let cachedComposioClient: Composio | null = null;
+    73→    73→let cachedApiKey: string | null = null;
+    74→    74→
+    75→    75→export async function getComposioClientAsync(): Promise<Composio | null> {
+    76→    76→  const status = getComposioConfigStatus();
+    77→    77→  if (status !== 'configured') {
+    78→    78→    return null;
+    79→    79→  }
+    80→    80→
+    81→    81→  const cleanedKey = cleanComposioApiKey(process.env.COMPOSIO_API_KEY)!;
+    82→    82→  if (!cachedComposioClient || cachedApiKey !== cleanedKey) {
+    83→    83→    try {
+    84→    84→      // Dynamic import: safely load optional package without triggering bundler resolution errors
+    85→    85→      const dynamicImport = new Function('pkg', 'return import(pkg)');
+    86→    86→      const mod: any = await dynamicImport('@composio/core').catch(() => null);
+    87→    87→      if (!mod || typeof mod.Composio !== 'function') {
+    88→    88→        console.error('[ComposioProvider] @composio/core is not installed in this deployment. External tool execution stays disabled.');
+    89→    89→        return null;
+    90→    90→      }
+    91→    91→      cachedComposioClient = new mod.Composio({
+    92→    92→        apiKey: cleanedKey,
+    93→    93→      }) as Composio;
+    94→    94→      cachedApiKey = cleanedKey;
+    95→    95→    } catch (error) {
+    96→    96→      console.error('[ComposioProvider] Initialization error:', error instanceof Error ? error.message : 'Unknown error');
+    97→    97→      return null;
+    98→    98→    }
+    99→    99→  }
+   100→   100→
+   101→   101→  return cachedComposioClient;
+   102→   102→}
+   103→   103→
+   104→   104→/**
+   105→   105→ * Synchronous probe kept for interface compatibility: a client can only be
+   106→   106→ * returned from cache when one was previously created asynchronously.
+   107→   107→ */
+   108→   108→export function getComposioClient(): Composio | null {
+   109→   109→  const status = getComposioConfigStatus();
+   110→   110→  if (status !== 'configured' || !cachedComposioClient) {
+   111→   111→    return null;
+   112→   112→  }
+   113→   113→  return cachedComposioClient;
+   114→   114→}
+   115→   115→
+   116→   116→// ----------------------------------------------------------------------------
+   117→   117→// 2. TOOL MAPPING & ALLOWLIST ABSTRACTION
+   118→   118→// ----------------------------------------------------------------------------
+   119→   119→
+   120→   120→/**
+   121→   121→ * Internal registry mapping SamJuniors ToolIds to Composio Toolkit/Action.
+   122→   122→ * Architectural mandate: Do NOT expose the entire Composio catalog.
+   123→   123→ * The mapping must be strictly allowlisted.
+   124→   124→ */
+   125→   125→const TOOL_MAPPING_REGISTRY: Map<ToolId, ComposioToolMapping> = new Map();
+   126→   126→
+   127→   127→/**
+   128→   128→ * Strict server-side allowlist for read-only actions.
+   129→   129→ * Only actions in this set may be executed externally.
+   130→   130→ */
+   131→   131→export const ALLOWED_COMPOSIO_READONLY_ACTIONS = new Set<string>([
+   132→   132→  'GITHUB_GET_A_REPOSITORY',
+   133→   133→  'GITHUB_LIST_REPOSITORY_ISSUES',
+   134→   134→]);
+   135→   135→
+   136→   136→/**
+   137→   137→ * Register a controlled mapping between a SamJuniors ToolId and a Composio action.
+   138→   138→ */
+   139→   139→export function registerComposioToolMapping(mapping: ComposioToolMapping): void {
+   140→   140→  TOOL_MAPPING_REGISTRY.set(mapping.toolId, mapping);
+   141→   141→}
+   142→   142→
+   143→   143→/**
+   144→   144→ * Retrieve the Composio action mapping for a given SamJuniors ToolId.
+   145→   145→ */
+   146→   146→export function getComposioToolMapping(toolId: ToolId): ComposioToolMapping | undefined {
+   147→   147→  return TOOL_MAPPING_REGISTRY.get(toolId);
+   148→   148→}
+   149→   149→
+   150→   150→/**
+   151→   151→ * Check if a SamJuniors ToolId has an associated Composio mapping.
+   152→   152→ */
+   153→   153→export function hasComposioToolMapping(toolId: ToolId): boolean {
+   154→   154→  return TOOL_MAPPING_REGISTRY.has(toolId);
+   155→   155→}
+   156→   156→
+   157→   157→// Register default allowlisted read-only GitHub mappings
+   158→   158→registerComposioToolMapping({
+   159→   159→  toolId: 'github_repository_read',
+   160→   160→  toolkit: 'github',
+   161→   161→  action: 'GITHUB_GET_A_REPOSITORY',
+   162→   162→  description: 'Fetch repository metadata and specification from GitHub',
+   163→   163→});
+   164→   164→
+   165→   165→registerComposioToolMapping({
+   166→   166→  toolId: 'github_read',
+   167→   167→  toolkit: 'github',
+   168→   168→  action: 'GITHUB_GET_A_REPOSITORY',
+   169→   169→  description: 'Fetch repository metadata and specification from GitHub (alias)',
+   170→   170→});
+   171→   171→
+   172→   172→registerComposioToolMapping({
+   173→   173→  toolId: 'github_issues_read',
+   174→   174→  toolkit: 'github',
+   175→   175→  action: 'GITHUB_LIST_REPOSITORY_ISSUES',
+   176→   176→  description: 'List repository issues from GitHub',
+   177→   177→});
+   178→   178→
+   179→   179→// ----------------------------------------------------------------------------
+   180→   180→// 3. INPUT VALIDATION & UNTRUSTED DATA SANITIZATION
+   181→   181→// ----------------------------------------------------------------------------
+   182→   182→
+   183→   183→/**
+   184→   184→ * Sanitizes untrusted external text (descriptions, issue bodies, readmes).
+   185→   185→ * Quarantines potential prompt injection instructions.
+   186→   186→ */
+   187→   187→export function sanitizeUntrustedExternalText(text?: string | null): string {
+   188→   188→  if (!text || typeof text !== 'string') return '';
+   189→   189→  return text
+   190→   190→    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+   191→   191→    .replace(
+   192→   192→      /(?:system\s*prompt\s*override|ignore\s*all\s*previous\s*instructions|ignore\s*previous\s*instructions|system\s*prompt|system\s*message|system\s*:|assistant\s*:|instruction\s*:|human\s*:|override\s*permission|grant\s*permission|grant\s*admin|elevate\s*role|approve\s*governance|approve\s*decision|alter\s*policy|bypass\s*sandbox|bypass\s*guardrails)/gi,
+   193→   193→      ' [quarantined external text] '
+   194→   194→    )
+   195→   195→    .trim();
+   196→   196→}
+   197→   197→
+   198→   198→/**
+   199→   199→ * Validates GitHub repository read input.
+   200→   200→ * Prevents arbitrary injection and malformed inputs.
+   201→   201→ */
+   202→   202→export function validateGitHubInput(input: any): { valid: boolean; error?: string; owner?: string; repo?: string } {
+   203→   203→  if (!input || typeof input !== 'object') {
+   204→   204→    return { valid: false, error: 'Input must be an object containing "owner" and "repo".' };
+   205→   205→  }
+   206→   206→  const owner = typeof input.owner === 'string' ? input.owner.trim() : '';
+   207→   207→  const repo = typeof input.repo === 'string' ? input.repo.trim() : '';
+   208→   208→
+   209→   209→  if (!owner || !repo) {
+   210→   210→    return { valid: false, error: 'Both "owner" and "repo" parameters are required.' };
+   211→   211→  }
+   212→   212→
+   213→   213→  // Enforce standard alphanumeric and dash/underscore/dot GitHub identifier format
+   214→   214→  if (!/^[a-zA-Z0-9_.-]+$/.test(owner) || !/^[a-zA-Z0-9_.-]+$/.test(repo)) {
+   215→   215→    return { valid: false, error: 'Invalid characters in repository owner or repository name.' };
+   216→   216→  }
+   217→   217→
+   218→   218→  return { valid: true, owner, repo };
+   219→   219→}
+   220→   220→
+   221→   221→// ----------------------------------------------------------------------------
+   222→   222→// 4. CONNECTED ACCOUNT RESOLUTION
+   223→   223→// ----------------------------------------------------------------------------
+   224→   224→
+   225→   225→export interface ResolvedConnection {
+   226→   226→  connectedAccountId: string;
+   227→   227→  userId: string;
+   228→   228→}
+   229→   229→
+   230→   230→/**
+   231→   231→ * Resolves an active connected account and its corresponding user_id/entity_id in Composio.
+   232→   232→ * Never leaks access tokens or auth secrets.
+   233→   233→ */
+   234→   234→export async function resolveActiveConnectedAccount(
+   235→   235→  client: Composio,
+   236→   236→  toolkit: string,
+   237→   237→  explicitAccountId?: string
+   238→   238→): Promise<{ resolved?: ResolvedConnection; error?: string }> {
+   239→   239→  try {
+   240→   240→    const listRes = await client.connectedAccounts.list();
+   241→   241→    const items = (listRes.items || []) as any[];
+   242→   242→
+   243→   243→    // Match explicit ID if provided, otherwise find first ACTIVE account for toolkit
+   244→   244→    let target = explicitAccountId 
+   245→   245→      ? items.find(acc => acc.id === explicitAccountId)
+   246→   246→      : items.find(acc => acc.toolkit?.slug === toolkit && acc.status === 'ACTIVE');
+   247→   247→
+   248→   248→    if (!target && !explicitAccountId) {
+   249→   249→      // Fallback: check any ACTIVE account
+   250→   250→      target = items.find(acc => acc.status === 'ACTIVE');
+   251→   251→    }
+   252→   252→
+   253→   253→    if (!target) {
+   254→   254→      return { error: `No active connected account found for toolkit "${toolkit}".` };
+   255→   255→    }
+   256→   256→
+   257→   257→    // Retrieve full connected account details to obtain user_id / entity_id
+   258→   258→    const fullAccount = await (client as any).client?.connectedAccounts?.retrieve?.(target.id) as any;
+   259→   259→    const userId = fullAccount?.user_id || target.userId || (target as any).user_id || 'default';
+   260→   260→
+   261→   261→    return {
+   262→   262→      resolved: {
+   263→   263→        connectedAccountId: target.id,
+   264→   264→        userId,
+   265→   265→      },
+   266→   266→    };
+   267→   267→  } catch (err: any) {
+   268→   268→    return { error: `Failed to resolve connected account: ${err.message || 'Unknown connection error'}` };
+   269→   269→  }
+   270→   270→}
+   271→   271→
+   272→   272→// ----------------------------------------------------------------------------
+   273→   273→// 5. SESSION BOUNDARY ABSTRACTION
+   274→   274→// ----------------------------------------------------------------------------
+   275→   275→
+   276→   276→export interface ComposioSession {
+   277→   277→  sessionId: string;
+   278→   278→  scope: ComposioSessionScope;
+   279→   279→  isConfigured: boolean;
+   280→   280→  createdAt: string;
+   281→   281→}
+   282→   282→
+   283→   283→/**
+   284→   284→ * Prepares a server-side Composio session boundary.
+   285→   285→ * Scoped strictly by SamJuniors founder/user identity, employee role, and permitted tools.
+   286→   286→ */
+   287→   287→export async function createComposioSession(scope: ComposioSessionScope): Promise<ComposioSession> {
+   288→   288→  const isConfigured = getComposioConfigStatus() === 'configured';
+   289→   289→  const now = new Date().toISOString();
+   290→   290→
+   291→   291→  const sessionId = `comp-session-${scope.userId}-${scope.employeeRole || 'agent'}-${Date.now()}`;
+   292→   292→
+   293→   293→  return {
+   294→   294→    sessionId,
+   295→   295→    scope,
+   296→   296→    isConfigured,
+   297→   297→    createdAt: now,
+   298→   298→  };
+   299→   299→}
+   300→   300→
+   301→   301→// ----------------------------------------------------------------------------
+   302→   302→// 6. PERMISSION BOUNDARY ENFORCEMENT
+   303→   303→// ----------------------------------------------------------------------------
+   304→   304→
+   305→   305→/**
+   306→   306→ * Validates that the requested tool is explicitly permitted by SamJuniors.
+   307→   307→ * Composio availability NEVER implies SamJuniors authorization.
+   308→   308→ */
+   309→   309→export function validateComposioPermission(
+   310→   310→  toolId: ToolId,
+   311→   311→  sessionScope: ComposioSessionScope
+   312→   312→): { authorized: boolean; reason?: string } {
+   313→   313→  if (!sessionScope.permittedToolIds.includes(toolId)) {
+   314→   314→    return {
+   315→   315→      authorized: false,
+   316→   316→      reason: `Tool "${toolId}" is not in the permitted tools list for this session scope. Composio cannot bypass SamJuniors permissions.`,
+   317→   317→    };
+   318→   318→  }
+   319→   319→
+   320→   320→  // Advisor role cannot execute mutation or non-research external actions
+   321→   321→  if (sessionScope.employeeRole === 'advisor') {
+   322→   322→    return {
+   323→   323→      authorized: false,
+   324→   324→      reason: `Advisor role is strictly advisory and cannot execute external tools.`,
+   325→   325→    };
+   326→   326→  }
+   327→   327→
+   328→   328→  return { authorized: true };
+   329→   329→}
+   330→   330→
+   331→   331→// ----------------------------------------------------------------------------
+   332→   332→// 7. EXTERNAL TOOL PROVIDER IMPLEMENTATION
+   333→   333→// ----------------------------------------------------------------------------
+   334→   334→
+   335→   335→export class ComposioProvider implements ExternalToolProvider {
+   336→   336→  public readonly providerId = 'composio';
+   337→   337→  public readonly name = 'Composio External Tool Infrastructure';
+   338→   338→
+   339→   339→  public getStatus(): ProviderConfigStatus {
+   340→   340→    return getComposioConfigStatus();
+   341→   341→  }
+   342→   342→
+   343→   343→  public isAvailable(): boolean {
+   344→   344→    return this.getStatus() === 'configured';
+   345→   345→  }
+   346→   346→
+   347→   347→  public async createSession(scope: ComposioSessionScope): Promise<ComposioSession> {
+   348→   348→    return createComposioSession(scope);
+   349→   349→  }
+   350→   350→
+   351→   351→  /**
+   352→   352→   * Executes external tool through Composio with strict SamJuniors governance.
+   353→   353→   */
+   354→   354→  public async executeTool(request: ExternalExecutionRequest): Promise<ToolExecutionEvidence> {
+   355→   355→    const timestamp = new Date().toISOString();
+   356→   356→
+   357→   357→    // 1. Enforce SamJuniors Permission Boundary First
+   358→   358→    const authCheck = validateComposioPermission(request.toolId, request.sessionScope);
+   359→   359→    if (!authCheck.authorized) {
+   360→   360→      return {
+   361→   361→        toolId: request.toolId,
+   362→   362→        toolName: `Composio:${request.toolId}`,
+   363→   363→        status: 'denied',
+   364→   364→        timestamp,
+   365→   365→        inputSummary: `Execution attempted for ${request.toolId}`,
+   366→   366→        outputSummary: 'Permission denied: Tool not permitted in current session scope.',
+   367→   367→        provenance: request.provenance,
+   368→   368→        verificationState: 'unverified',
+   369→   369→        executionSafetyState: 'verified_safe',
+   370→   370→        errorMessage: authCheck.reason,
+   371→   371→        limitations: ['Execution blocked by SamJuniors authorization boundary.'],
+   372→   372→      };
+   373→   373→    }
+   374→   374→
+   375→   375→    // 2. Check Configuration Status
+   376→   376→    const status = this.getStatus();
+   377→   377→    if (status !== 'configured') {
+   378→   378→      return {
+   379→   379→        toolId: request.toolId,
+   380→   380→        toolName: `Composio:${request.toolId}`,
+   381→   381→        status: 'not_executed',
+   382→   382→        timestamp,
+   383→   383→        inputSummary: `Execution requested for ${request.toolId}`,
+   384→   384→        outputSummary: 'Composio provider is unconfigured (COMPOSIO_API_KEY is absent). No external request attempted.',
+   385→   385→        provenance: request.provenance,
+   386→   386→        verificationState: 'unverified',
+   387→   387→        executionSafetyState: 'verified_safe',
+   388→   388→        limitations: [
+   389→   389→          'COMPOSIO_API_KEY is not configured in the environment.',
+   390→   390→          'No external network call was made.',
+   391→   391→          'No synthetic execution evidence generated.',
+   392→   392→        ],
+   393→   393→      };
+   394→   394→    }
+   395→   395→
+   396→   396→    // 3. Verify Mapping Exists in Allowlist
+   397→   397→    const mapping = getComposioToolMapping(request.toolId);
+   398→   398→    if (!mapping) {
+   399→   399→      return {
+   400→   400→        toolId: request.toolId,
+   401→   401→        toolName: `Composio:${request.toolId}`,
+   402→   402→        status: 'not_executed',
+   403→   403→        timestamp,
+   404→   404→        inputSummary: `Execution requested for unmapped tool: ${request.toolId}`,
+   405→   405→        outputSummary: 'No Composio action mapping registered for this tool.',
+   406→   406→        provenance: request.provenance,
+   407→   407→        verificationState: 'unverified',
+   408→   408→        executionSafetyState: 'verified_safe',
+   409→   409→        errorMessage: `Unmapped toolId: ${request.toolId}`,
+   410→   410→        limitations: ['Tool has no registered server-side mapping.'],
+   411→   411→      };
+   412→   412→    }
+   413→   413→
+   414→   414→    // Enforce Read-Only Allowlist Guard
+   415→   415→    if (!ALLOWED_COMPOSIO_READONLY_ACTIONS.has(mapping.action)) {
+   416→   416→      return {
+   417→   417→        toolId: request.toolId,
+   418→   418→        toolName: `${mapping.toolkit}:${mapping.action}`,
+   419→   419→        status: 'denied',
+   420→   420→        timestamp,
+   421→   421→        inputSummary: `Action: ${mapping.action}`,
+   422→   422→        outputSummary: 'Execution denied: Action is not in the read-only allowlist.',
+   423→   423→        provenance: request.provenance,
+   424→   424→        verificationState: 'unverified',
+   425→   425→        executionSafetyState: 'verified_safe',
+   426→   426→        errorMessage: `Action ${mapping.action} is forbidden in read-only phase.`,
+   427→   427→        limitations: ['Only allowlisted read-only actions may be executed.'],
+   428→   428→      };
+   429→   429→    }
+   430→   430→
+   431→   431→    // 4. Validate Input
+   432→   432→    if (mapping.toolkit === 'github') {
+   433→   433→      const validation = validateGitHubInput(request.input);
+   434→   434→      if (!validation.valid) {
+   435→   435→        return {
+   436→   436→          toolId: request.toolId,
+   437→   437→          toolName: `${mapping.toolkit}:${mapping.action}`,
+   438→   438→          status: 'failed',
+   439→   439→          timestamp,
+   440→   440→          inputSummary: `Input validation failed for ${request.toolId}`,
+   441→   441→          outputSummary: `Validation error: ${validation.error}`,
+   442→   442→          provenance: request.provenance,
+   443→   443→          verificationState: 'unverified',
+   444→   444→          executionSafetyState: 'verified_safe',
+   445→   445→          errorMessage: validation.error,
+   446→   446→          limitations: ['Input rejected before reaching external provider.'],
+   447→   447→        };
+   448→   448→      }
+   449→   449→    }
+   450→   450→
+   451→   451→    // 5. Retrieve Client
+   452→   452→    const client = await getComposioClientAsync();
+   453→   453→    if (!client) {
+   454→   454→      return {
+   455→   455→        toolId: request.toolId,
+   456→   456→        toolName: `${mapping.toolkit}:${mapping.action}`,
+   457→   457→        status: 'failed',
+   458→   458→        timestamp,
+   459→   459→        inputSummary: `Client retrieval failed for ${mapping.action}`,
+   460→   460→        outputSummary: 'Failed to initialize Composio client.',
+   461→   461→        provenance: request.provenance,
+   462→   462→        verificationState: 'unverified',
+   463→   463→        executionSafetyState: 'verified_safe',
+   464→   464→        errorMessage: 'Composio client initialization failed.',
+   465→   465→      };
+   466→   466→    }
+   467→   467→
+   468→   468→    // 6. Resolve Active Connected Account
+   469→   469→    const connectionResult = await resolveActiveConnectedAccount(
+   470→   470→      client,
+   471→   471→      mapping.toolkit,
+   472→   472→      request.sessionScope.connectedAccountId
+   473→   473→    );
+   474→   474→
+   475→   475→    if (connectionResult.error || !connectionResult.resolved) {
+   476→   476→      return {
+   477→   477→        toolId: request.toolId,
+   478→   478→        toolName: `${mapping.toolkit}:${mapping.action}`,
+   479→   479→        status: 'failed',
+   480→   480→        timestamp,
+   481→   481→        inputSummary: `Connecting to ${mapping.toolkit} for ${mapping.action}`,
+   482→   482→        outputSummary: connectionResult.error || 'No active connection available.',
+   483→   483→        provenance: request.provenance,
+   484→   484→        verificationState: 'unverified',
+   485→   485→        executionSafetyState: 'verified_safe',
+   486→   486→        errorMessage: connectionResult.error || 'Connection unavailable',
+   487→   487→        limitations: [
+   488→   488→          `No active connected account found for ${mapping.toolkit} in Composio.`,
+   489→   489→          'Connect the account in the Composio dashboard to enable live execution.',
+   490→   490→        ],
+   491→   491→      };
+   492→   492→    }
+   493→   493→
+   494→   494→    const { connectedAccountId, userId } = connectionResult.resolved;
+   495→   495→
+   496→   496→    // 7. Perform Real Execution via Composio
+   497→   497→    try {
+   498→   498→      const execResult = await client.tools.execute(mapping.action as any, {
+   499→   499→        userId,
+   500→   500→        connectedAccountId,
+   501→   501→        arguments: request.input,
+   502→   502→        dangerouslySkipVersionCheck: true,
+   503→   503→      });
+   504→   504→
+   505→   505→      if (!execResult.successful) {
+   506→   506→        const rawData = execResult.data as any;
+   507→   507→        const errorText = typeof execResult.error === 'string' ? execResult.error : JSON.stringify(execResult.error || '');
+   508→   508→        const is404 = rawData?.status_code === 404 || 
+   509→   509→                      rawData?.http_error?.includes('404') || 
+   510→   510→                      errorText.includes('Not Found') || 
+   511→   511→                      errorText.includes('404');
+   512→   512→
+   513→   513→        const outputSummary = is404
+   514→   514→          ? `Repository "${request.input?.owner}/${request.input?.repo}" not found on GitHub.`
+   515→   515→          : (execResult.error || 'External action returned unsuccessful result.');
+   516→   516→
+   517→   517→        const errorMessage = is404
+   518→   518→          ? `Repository "${request.input?.owner}/${request.input?.repo}" not found.`
+   519→   519→          : (execResult.error || 'Composio tool execution reported failure.');
+   520→   520→
+   521→   521→        return {
+   522→   522→          toolId: request.toolId,
+   523→   523→          toolName: `${mapping.toolkit}:${mapping.action}`,
+   524→   524→          status: 'failed',
+   525→   525→          timestamp,
+   526→   526→          inputSummary: `Repository: ${request.input?.owner}/${request.input?.repo}`,
+   527→   527→          outputSummary,
+   528→   528→          provenance: request.provenance,
+   529→   529→          verificationState: 'unverified',
+   530→   530→          executionSafetyState: 'verified_safe',
+   531→   531→          errorMessage,
+   532→   532→          limitations: [
+   533→   533→            is404 
+   534→   534→              ? 'Resource does not exist on GitHub or account lacks access.' 
+   535→   535→              : 'External provider reported an error during execution.'
+   536→   536→          ],
+   537→   537→        };
+   538→   538→      }
+   539→   539→
+   540→   540→      // 8. Normalize Result into ToolExecutionEvidence
+   541→   541→      const rawData = execResult.data as any;
+   542→   542→
+   543→   543→      // Handle not-found or API error response payloads returned with 200/success wrapper
+   544→   544→      if (rawData?.message === 'Not Found' || rawData?.response_data?.message === 'Not Found') {
+   545→   545→        return {
+   546→   546→          toolId: request.toolId,
+   547→   547→          toolName: `${mapping.toolkit}:${mapping.action}`,
+   548→   548→          status: 'failed',
+   549→   549→          timestamp,
+   550→   550→          inputSummary: `Repository: ${request.input.owner}/${request.input.repo}`,
+   551→   551→          outputSummary: `Repository "${request.input.owner}/${request.input.repo}" not found on GitHub.`,
+   552→   552→          provenance: request.provenance,
+   553→   553→          verificationState: 'unverified',
+   554→   554→          executionSafetyState: 'verified_safe',
+   555→   555→          errorMessage: 'Repository not found.',
+   556→   556→          limitations: ['Resource does not exist on GitHub or account lacks access.'],
+   557→   557→        };
+   558→   558→      }
+   559→   559→
+   560→   560→      if (mapping.action === 'GITHUB_GET_A_REPOSITORY') {
+   561→   561→        const repoData = rawData?.response_data || rawData;
+   562→   562→        const name = repoData.name || request.input.repo;
+   563→   563→        const fullName = repoData.full_name || `${request.input.owner}/${request.input.repo}`;
+   564→   564→        const description = sanitizeUntrustedExternalText(repoData.description || 'No description provided.');
+   565→   565→        const htmlUrl = repoData.html_url || `https://github.com/${fullName}`;
+   566→   566→        const stars = repoData.stargazers_count ?? 0;
+   567→   567→        const forks = repoData.forks_count ?? 0;
+   568→   568→        const openIssues = repoData.open_issues_count ?? 0;
+   569→   569→        const defaultBranch = repoData.default_branch || 'main';
+   570→   570→        const visibility = repoData.visibility || (repoData.private ? 'private' : 'public');
+   571→   571→
+   572→   572→        const inputSummary = `Repository: ${fullName}`;
+   573→   573→        const outputSummary = `Retrieved GitHub repository "${fullName}": ${description} (Stars: ${stars}, Forks: ${forks}, Open Issues: ${openIssues}, Branch: ${defaultBranch}, Visibility: ${visibility})`;
+   574→   574→
+   575→   575→        return {
+   576→   576→          toolId: request.toolId,
+   577→   577→          toolName: 'GitHub Repository Research',
+   578→   578→          status: 'success',
+   579→   579→          timestamp,
+   580→   580→          inputSummary,
+   581→   581→          outputSummary,
+   582→   582→          sourceReferences: [htmlUrl],
+   583→   583→          sources: [
+   584→   584→            {
+   585→   585→              title: fullName,
+   586→   586→              url: htmlUrl,
+   587→   587→              excerpt: description,
+   588→   588→              retrievalTimestamp: timestamp,
+   589→   589→            },
+   590→   590→          ],
+   591→   591→          provenance: {
+   592→   592→            ...request.provenance,
+   593→   593→            isVerified: false,
+   594→   594→            evidenceBasis: 'external_evidence',
+   595→   595→            modelUsed: 'composio:github',
+   596→   596→          },
+   597→   597→          verificationState: 'source_retrieved',
+   598→   598→          executionSafetyState: 'verified_safe',
+   599→   599→          data: {
+   600→   600→            name,
+   601→   601→            fullName,
+   602→   602→            description,
+   603→   603→            htmlUrl,
+   604→   604→            stars,
+   605→   605→            forks,
+   606→   606→            openIssues,
+   607→   607→            defaultBranch,
+   608→   608→            visibility,
+   609→   609→          },
+   610→   610→          limitations: [
+   611→   611→            'External repository data retrieved from GitHub via Composio.',
+   612→   612→            'Untrusted content quarantined; downstream architectural claims remain subject to verification.',
+   613→   613→          ],
+   614→   614→        };
+   615→   615→      } else if (mapping.action === 'GITHUB_LIST_REPOSITORY_ISSUES') {
+   616→   616→        const rawIssues = rawData?.issues || rawData?.response_data || (Array.isArray(rawData) ? rawData : []);
+   617→   617→        const issues = (Array.isArray(rawIssues) ? rawIssues : []).slice(0, 10).map((issue: any) => ({
+   618→   618→          number: issue.number,
+   619→   619→          title: sanitizeUntrustedExternalText(issue.title),
+   620→   620→          htmlUrl: issue.html_url,
+   621→   621→          state: issue.state,
+   622→   622→        }));
+   623→   623→
+   624→   624→        const htmlUrl = `https://github.com/${request.input.owner}/${request.input.repo}/issues`;
+   625→   625→        const outputSummary = `Retrieved ${issues.length} issue(s) for ${request.input.owner}/${request.input.repo}.`;
+   626→   626→
+   627→   627→        return {
+   628→   628→          toolId: request.toolId,
+   629→   629→          toolName: 'GitHub Issues Read',
+   630→   630→          status: 'success',
+   631→   631→          timestamp,
+   632→   632→          inputSummary: `Issues for ${request.input.owner}/${request.input.repo}`,
+   633→   633→          outputSummary,
+   634→   634→          sourceReferences: [htmlUrl],
+   635→   635→          sources: [
+   636→   636→            {
+   637→   637→              title: `${request.input.owner}/${request.input.repo} Issues`,
+   638→   638→              url: htmlUrl,
+   639→   639→              excerpt: `${issues.length} issues listed`,
+   640→   640→              retrievalTimestamp: timestamp,
+   641→   641→            },
+   642→   642→          ],
+   643→   643→          provenance: {
+   644→   644→            ...request.provenance,
+   645→   645→            isVerified: false,
+   646→   646→            evidenceBasis: 'external_evidence',
+   647→   647→            modelUsed: 'composio:github',
+   648→   648→          },
+   649→   649→          verificationState: 'source_retrieved',
+   650→   650→          executionSafetyState: 'verified_safe',
+   651→   651→          data: { issues },
+   652→   652→          limitations: [
+   653→   653→            'External issue data retrieved from GitHub via Composio.',
+   654→   654→            'Downstream claims remain subject to verification.',
+   655→   655→          ],
+   656→   656→        };
+   657→   657→      }
+   658→   658→
+   659→   659→      // Default fallback for any other allowlisted read action
+   660→   660→      return {
+   661→   661→        toolId: request.toolId,
+   662→   662→        toolName: `${mapping.toolkit}:${mapping.action}`,
+   663→   663→        status: 'success',
+   664→   664→        timestamp,
+   665→   665→        inputSummary: `Executed ${mapping.action}`,
+   666→   666→        outputSummary: 'External read operation completed successfully.',
+   667→   667→        provenance: request.provenance,
+   668→   668→        verificationState: 'source_retrieved',
+   669→   669→        executionSafetyState: 'verified_safe',
+   670→   670→        limitations: ['External read data retrieved; downstream verification required.'],
+   671→   671→      };
+   672→   672→    } catch (error: any) {
+   673→   673→      // Handle known errors (e.g. 404, rate limit, auth) without leaking keys or tokens
+   674→   674→      const msg = error?.message || 'External execution failed';
+   675→   675→      const cleanError = msg.includes('404')
+   676→   676→        ? `Repository ${request.input?.owner}/${request.input?.repo} not found.`
+   677→   677→        : msg.includes('rate limit')
+   678→   678→        ? 'GitHub API rate limit encountered.'
+   679→   679→        : 'GitHub API call failed via Composio.';
+   680→   680→
+   681→   681→      return {
+   682→   682→        toolId: request.toolId,
+   683→   683→        toolName: `${mapping.toolkit}:${mapping.action}`,
+   684→   684→        status: 'failed',
+   685→   685→        timestamp,
+   686→   686→        inputSummary: `Execution attempt: ${mapping.action}`,
+   687→   687→        outputSummary: `Execution error: ${cleanError}`,
+   688→   688→        provenance: request.provenance,
+   689→   689→        verificationState: 'unverified',
+   690→   690→        executionSafetyState: 'verified_safe',
+   691→   691→        errorMessage: cleanError,
+   692→   692→        limitations: ['External provider failed to complete request.'],
+   693→   693→      };
+   694→   694→    }
+   695→   695→  }
+   696→   696→}
+   697→   697→
+   698→   698→export const composioProvider = new ComposioProvider();
+   699→   699→
