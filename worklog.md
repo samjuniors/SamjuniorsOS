@@ -1102,3 +1102,23 @@ Stage Summary:
 - M5.3 conditions: CLOSED (tsc at pristine baseline; Appendix B corrected).
 - M5.4: implemented exactly per design; verdict MEASURED-WITH-FINDINGS — harness/grading/reproducibility criteria (8, 9) MET, zero critical violations, but overall "all scenarios pass 3/3" NOT MET due to the stable S6/S9 transitive-dependency miss (the exact generation-faithfulness risk M5.4 was built to discover).
 - Next action: separate evidence-gated decision on prompt/2 (transitivity instruction) vs documented acceptance of the limitation; no retrieval change indicated (evidence already delivered to context).
+
+---
+Task ID: m54-prompt2-remediation
+Agent: main (Z.ai Code)
+Task: M5.4 remediation experiment — PROMPT/2 transitivity faithfulness (SamJuniorsOS, worktree /home/z/m53-postgres, branch feat/m54-generation-faithfulness)
+
+Work Log:
+- Recreated the pruned worktree /home/z/m53-postgres at 501a55b (M5.4 baseline: 10/12 pass 3/3, S6/S9 GF_SUPPORTED_FACT_MISS 0/3); bun install (545 pkgs).
+- Read the M5.4 design/evidence docs, all harness files, baseline artifacts; confirmed S6/S9 failure mode (direct dependent only + false completeness claim) and byte-identical context digests across g1/g2/g3.
+- Implemented prompt/2 in the existing abstraction (prompts.ts version registry; no parallel system): prompt/1 byte-frozen + one GENERAL clause on transitive relationships/completeness; S9 citation clause renumbered 5→6. Added --prompt flag to run.ts + artifact-overwrite guard; threaded version through harness/runBattery/records.
+- Extended m54_scenario_contracts (CD2 multi-version, new CD3 generality pin: no fixture entities/scenario ids/figures/CoT in the added clause) and m54_regrade (multi-version R2, new R5 prompt-rebuild pin, regex covers run-p2-g*).
+- Probe-gated provider check; ran 3 VALID prompt/2 batteries (p2-g1, p2-g2, p2-g3): 12/12 PASS each, 0 critical, 0 retries. One 429 window invalidated a first p2-g3 attempt — preserved as run-p2-g3-429window-partial.json (9 env-limited, 27 transport errors, exit 2), probe-gated wait ~7 min, re-ran valid. Nothing silently retried into a pass.
+- Comparison: S6 FAIL 3/3 → PASS 3/3; S9 FAIL 3/3 → PASS 3/3; other 10 scenarios unchanged 3/3; contextDigest identical to baseline for all 12 scenarios × 3 batteries; fixture digest frozen; model/params/graders pinned.
+- Full regression: m54 43/0+18/0+50/0; M5.3 18/0,25/0,13/0; m51 30/0; m52 25/0; m0-m4c suites green; phase1-4c_c green (exit 0); scheduler 4e 10/0; realtime_* same 2 documented pre-existing failures; lint 0; tsc 157 = pristine stash-controlled A/B under same node_modules (env drift 160→157 documented), 0 errors in touched files; frozen retrieval benchmark CLI×2 byte-identical to run-a3.json; src/ diff vs 501a55b = 0 bytes.
+- Wrote docs/architecture/M5_4_PROMPT2_REMEDIATION.md (dedicated evidence doc; baseline artifacts/docs untouched). Committed locally as 8d362db. NOT pushed, NOT merged, no PR.
+
+Stage Summary:
+- Hypothesis SUPPORTED: general transitivity/completeness instruction resolved S6/S9 stably (3/3 valid batteries each) with zero critical violations and zero regressions; M5.4 overall gate now 12/12 3/3 under prompt/2.
+- prompt/2 delta is one general clause (CD3-pinned fixture-free); only the prompt version changed between arms.
+- Next: none required by this experiment (stopping boundary honored — no prompt/3); pre-existing realtime_* stale expectations remain the only documented non-green items.
