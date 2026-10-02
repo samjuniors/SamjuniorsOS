@@ -123,7 +123,15 @@ const IN_FLIGHT_WINDOW_MS = 150_000;
 /* ------------------------------------------------------------------ fetch helpers */
 
 function getDevAuthHeaders(): Record<string, string> {
-  const secret = process.env.NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET || "samjuniors_dev_secret_local";
+  // R0 secrets hygiene: NO hardcoded fallback secret. When
+  // NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET is not configured at build time the
+  // client attaches no founder credentials — development mode stays open
+  // by design (single-tenant sandbox), and production fails closed on the
+  // server until an explicit secret is provisioned.
+  const secret = process.env.NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET;
+  if (!secret) {
+    return {};
+  }
   if (typeof window !== "undefined") {
     try {
       document.cookie = `samjuniors-dev-as=founder; path=/; SameSite=Lax`;

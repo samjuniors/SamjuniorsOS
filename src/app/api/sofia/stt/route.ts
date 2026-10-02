@@ -10,12 +10,22 @@
  * client-side, for the day every server link is down.
  */
 
+import { NextRequest } from 'next/server'
 import { transcribeAnywhere, anySttAvailable, sttInfo } from '@/lib/server/providers'
+import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // Fail closed: the transcription chain burns real provider quota
+  // (Deepgram / ElevenLabs keys), so the turn must carry a Founder
+  // session before any audio is read or any provider is dialed.
+  const founder = await getAuthenticatedFounder(req)
+  if (!founder || founder.role !== 'FOUNDER') {
+    return new Response('Founder session required', { status: 401 })
+  }
+
   if (!anySttAvailable()) {
     return new Response('no transcription provider', { status: 503 })
   }

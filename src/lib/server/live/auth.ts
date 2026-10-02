@@ -1,7 +1,21 @@
 import http from 'http';
 import { URL } from 'url';
+import { timingSafeEqual } from 'crypto';
 import { AuthenticatedFounder } from '../auth/session';
 import { LiveTicketStore } from './ticket-store';
+
+/**
+ * Constant-time secret comparison (the repository's established pattern,
+ * see /api/workflow/scheduling). Length mismatch short-circuits — only the
+ * comparison itself is timing-safe.
+ */
+function secretsMatch(presented: string | undefined, expected: string | undefined): boolean {
+  if (!presented || !expected) return false;
+  const a = Buffer.from(presented, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export interface UpgradeAuthResult {
   founder: AuthenticatedFounder;
@@ -51,13 +65,10 @@ export async function authenticateUpgrade(req: http.IncomingMessage): Promise<Up
 
   // 2. Production verification
   if (process.env.NODE_ENV === 'production') {
-    // Prohibit dev headers/cookies
-    if (
-      getHeader('x-samjuniors-dev-as') ||
-      cookies.has('samjuniors-dev-as') ||
-      getHeader('x-samjuniors-role') ||
-      cookies.has('samjuniors-role')
-    ) {
+    // Prohibit the dev-only ROLE override. The dev-as / dev-secret pair is
+    // the documented production credential verified below (the ticket path
+    // above remains the primary production authentication for upgrades).
+    if (getHeader('x-samjuniors-role') || cookies.has('samjuniors-role')) {
       return null;
     }
 
@@ -65,7 +76,7 @@ export async function authenticateUpgrade(req: http.IncomingMessage): Promise<Up
     const devSecret = getHeader('x-samjuniors-dev-secret') || cookies.get('samjuniors-dev-secret');
     const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
 
-    if (devAs === 'founder' && requiredSecret && devSecret === requiredSecret) {
+    if (devAs === 'founder' && requiredSecret && secretsMatch(devSecret, requiredSecret)) {
       return {
         founder: {
           userId: 'founder-production-session',

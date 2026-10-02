@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 import { AuthorizationEvaluationRequest } from '@/types/authorization';
 
 /**
@@ -8,6 +9,16 @@ import { AuthorizationEvaluationRequest } from '@/types/authorization';
  */
 export async function POST(req: NextRequest) {
   try {
+    // Defense-in-depth founder gate on top of the /api/workflow middleware
+    // gate — the company's authorization policy is not public information.
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder || founder.role !== 'FOUNDER') {
+      return NextResponse.json(
+        { error: 'Unauthorized: Valid Founder session required' },
+        { status: 401 }
+      );
+    }
+
     const body: AuthorizationEvaluationRequest = await req.json();
 
     if (!body.employeeRole || !body.classification || !body.actionName) {

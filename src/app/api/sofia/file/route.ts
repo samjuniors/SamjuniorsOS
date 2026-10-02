@@ -12,10 +12,12 @@
  * model — or another page — asks for.
  */
 
+import { NextRequest } from 'next/server'
 import { realpath, stat, readFile } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { isAbsolute, join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
+import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -47,7 +49,15 @@ function realpathSyncSafe(p: string): string {
 const withinRoots = (real: string) =>
   ROOTS.some((root) => real === root || real.startsWith(root + sep))
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  // Fail closed: even image-only, root-contained file reads are a local
+  // filesystem surface — a Founder session is required before any path
+  // is resolved.
+  const founder = await getAuthenticatedFounder(req)
+  if (!founder || founder.role !== 'FOUNDER') {
+    return new Response('Founder session required', { status: 401 })
+  }
+
   const asked = new URL(req.url).searchParams.get('path') ?? ''
   // Resolve symlinks BEFORE judging anything. A name ending in .png can be a
   // link pointing at /etc/hosts, and checking the suffix the caller supplied

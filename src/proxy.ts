@@ -40,6 +40,22 @@ function isExecutiveApiRoute(pathname: string): boolean {
   );
 }
 
+/**
+ * Constant-time string equality for the middleware layer. This file runs
+ * in the Edge runtime, where node:crypto's timingSafeEqual and Buffer are
+ * unavailable — a manual XOR accumulator is runtime-agnostic and leaks only
+ * the (already public) length mismatch, matching the semantics of the
+ * node-side secretsMatch helpers in auth/session.ts and live/auth.ts.
+ */
+function constantTimeEquals(presented: string, expected: string): boolean {
+  if (presented.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < presented.length; i++) {
+    diff |= presented.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 function applySecurityHeaders(req: NextRequest) {
   const requestId =
     req.headers.get(REQUEST_ID_HEADER) || crypto.randomUUID().toString();
@@ -82,7 +98,8 @@ export function proxy(req: NextRequest) {
         req.headers.get("x-samjuniors-dev-secret") ||
         req.cookies.get("samjuniors-dev-secret")?.value;
       const authorized =
-        hasProvider && devToken === "founder" && devSecret === process.env.SAMJUNIORS_DEV_SECRET;
+        hasProvider && devToken === "founder" && !!devSecret && !!process.env.SAMJUNIORS_DEV_SECRET &&
+        constantTimeEquals(devSecret, process.env.SAMJUNIORS_DEV_SECRET);
       if (!authorized) {
         return new NextResponse(
           JSON.stringify({ error: "Unauthorized: Valid Founder session required" }),

@@ -1,4 +1,18 @@
 import { NextRequest } from 'next/server';
+import { timingSafeEqual } from 'crypto';
+
+/**
+ * Constant-time secret comparison (the repository's established pattern,
+ * see /api/workflow/scheduling). Length mismatch short-circuits — only the
+ * comparison itself is timing-safe.
+ */
+function secretsMatch(presented: string | null | undefined, expected: string | undefined): boolean {
+  if (!presented || !expected) return false;
+  const a = Buffer.from(presented, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export interface AuthenticatedFounder {
   userId: string;
@@ -58,15 +72,15 @@ export function resolveUserRole(
  * Never trusts client-supplied identity parameters in HTTP bodies.
  */
 export async function getAuthenticatedFounder(req?: NextRequest): Promise<AuthenticatedFounder | null> {
-  // Prohibit dev headers and test role overrides unconditionally in production
+  // Prohibit test role overrides unconditionally in production. The dev-as /
+  // dev-secret pair is NOT prohibited here — it is the documented production
+  // credential this same function verifies (constant-time) below and the
+  // executive-route middleware (proxy.ts) authorizes on. Only the role
+  // override (which could mint EXECUTIVE/AUDITOR identities or mask the
+  // real session) is a dev-only bypass that must never function in production.
   if (process.env.NODE_ENV === 'production' && req) {
-    if (
-      req.headers.has('x-samjuniors-dev-as') ||
-      req.cookies.has('samjuniors-dev-as') ||
-      req.headers.has('x-samjuniors-role') ||
-      req.cookies.has('samjuniors-role')
-    ) {
-      console.error('[SessionAuth] Fatal: Dev bypass/role headers are strictly prohibited in production.');
+    if (req.headers.has('x-samjuniors-role') || req.cookies.has('samjuniors-role')) {
+      console.error('[SessionAuth] Fatal: Role override headers are strictly prohibited in production.');
       return null;
     }
   }
@@ -102,7 +116,7 @@ export async function getAuthenticatedFounder(req?: NextRequest): Promise<Authen
       req.headers.get('x-samjuniors-dev-secret') || req.cookies.get('samjuniors-dev-secret')?.value;
     const requiredSecret = process.env.SAMJUNIORS_DEV_SECRET;
 
-    if (devAs === 'founder' && requiredSecret && devSecret === requiredSecret) {
+    if (devAs === 'founder' && requiredSecret && secretsMatch(devSecret, requiredSecret)) {
       return {
         userId: 'founder-production-session',
         email: 'founder@samjuniors.com',

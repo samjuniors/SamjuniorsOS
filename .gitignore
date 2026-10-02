@@ -53,3 +53,16 @@ prompt
 server.log
 # Skills directory
 /skills/
+# R0 secrets hygiene: runtime/generated artifacts must never be re-tracked.
+# (.env is already covered by `.env*` above; listed here for clarity.)
+# Local SQLite database (runtime company/conversation data)
+/db/*.db
+/db/*.db-journal
+# Durable runtime stores (conversations, memories, audits, locks)
+/.data/
+# Dev-server process bookkeeping
+/.zscripts/dev.pid
+# Local environment (explicit; see `.env*` above)
+/.env
+/db/*.db-wal
+/db/*.db-shm

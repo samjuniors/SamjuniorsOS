@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateJson } from "@/lib/server/ai/zai-client";
+import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 import { AgentRole, CollaborationDialogue, DelegatedSubTask, OrchestratorMediation } from "@/types/os";
 
 export async function POST(req: NextRequest) {
   try {
+    // Fail closed: this route drives live LLM generation (provider quota)
+    // and renders council collaboration — a Founder session is required.
+    // (Defense-in-depth on top of the executive-route middleware gate.)
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder || founder.role !== 'FOUNDER') {
+      return NextResponse.json(
+        { error: 'Unauthorized: Valid Founder session required', success: false },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { directive, action, currentDialogues, targetAgent } = body;
 
