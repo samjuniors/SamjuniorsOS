@@ -9,6 +9,7 @@ import {
   SophiaContextAssembler,
   SophiaIntentClassifier,
   SophiaServerGateway,
+  TurnStopwatch,
 } from "@/lib/server/sophia";
 import { scheduleSophiaMemoryCapture } from "@/lib/server/sophia/memory-capture-stage";
 import {
@@ -271,6 +272,10 @@ export async function POST(req: NextRequest) {
             },
             reply: existingAssistantMessage.content,
             liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
+            // Replay metrics: all-zero latencies are truthful — a replayed
+            // turn performs no assembly/model/gateway work. estimatedTokens
+            // carries the ORIGINAL turn's persisted estimates (absent only
+            // for messages persisted before the R3 honest-metrics change).
             metrics: {
               contextAssemblyMs: 0,
               modelMs: 0,
@@ -292,6 +297,13 @@ export async function POST(req: NextRequest) {
       }
 
       const executeTurn = async (): Promise<{ status?: number; data: any }> => {
+        // R3 honest metrics: one TurnStopwatch per live turn. Only phases
+        // with a genuine wall-clock measurement at THIS route boundary are
+        // reported; values that cannot be honestly attributed here
+        // (gateway validation — inseparable from directive dispatch inside
+        // SophiaServerGateway.process — and retrieval — which happens
+        // inside context assembly) are omitted, never fabricated.
+        const stopwatch = new TurnStopwatch();
         // 2. Persist incoming Founder turn (with deduplication / idempotencyKey)
         let founderMessageRecord;
         try {
@@ -336,13 +348,19 @@ export async function POST(req: NextRequest) {
         //    (M3 K-2: threads the authenticated session principal so the
         //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS
         //    founder only — personal context, never company authority.)
+        const assemblyStartedAt = Date.now();
         const assembledContext = await SophiaContextAssembler.assemble({
           message,
           history: historyItems,
           founderId: session.userId,
         });
+        stopwatch.recordContextAssembly(
+          Date.now() - assemblyStartedAt,
+          assembledContext.formattedContext.length
+        );
 
         // 5. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary
+        const classificationStartedAt = Date.now();
         const classificationResult = await SophiaIntentClassifier.classify({
           message,
           context: assembledContext,
@@ -350,6 +368,7 @@ export async function POST(req: NextRequest) {
           tone,
           customPrompt: personaConfig?.customPrompt,
         });
+        const classificationMs = Date.now() - classificationStartedAt;
 
         // 6. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
         const executionResult = await SophiaServerGateway.process({
@@ -363,6 +382,35 @@ export async function POST(req: NextRequest) {
         if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
           return { status: 403, data: { error: executionResult.error } };
         }
+
+        // R3 honest metrics — model phase: the intent-classification model
+        // call this route owns (the same call that drafts the conversational
+        // reply). Directive-execution model time inside the gateway is NOT
+        // included — it cannot be separated from validation/dispatch at this
+        // boundary, so it is omitted (undercounted, never fabricated).
+        stopwatch.recordModel(
+          classificationMs,
+          typeof message === 'string' ? message.length : String(message ?? '').length,
+          (executionResult.reply ?? '').length
+        );
+        // Finalized at the reply boundary: totalTurnMs measures the turn's
+        // reasoning pipeline (persistence + assembly + classification +
+        // gateway dispatch), before response persistence bookkeeping.
+        const finalizedMetrics = stopwatch.finalize();
+        // Measured fields only. gatewayValidationMs and retrievalMs are
+        // deliberately ABSENT: not measurable at this boundary without
+        // misattributing gateway dispatch or assembly-internal retrieval.
+        // retrievalHit / degradedStores flow from assembly's own signals.
+        const turnMetrics = {
+          contextAssemblyMs: finalizedMetrics.contextAssemblyMs,
+          modelMs: finalizedMetrics.modelMs,
+          totalTurnMs: finalizedMetrics.totalTurnMs,
+          estimatedTokens: finalizedMetrics.estimatedTokens,
+          retrievalHit: assembledContext.retrievalHit === true,
+          ...(assembledContext.degradedStores
+            ? { degradedStores: assembledContext.degradedStores }
+            : {}),
+        };
 
         const mapKindToIntent = (kind: string): MessageIntent => {
           switch (kind) {
@@ -406,7 +454,7 @@ export async function POST(req: NextRequest) {
                 metadata: {
                   directiveExecuted: executionResult.directiveExecuted,
                   liveAi: executionResult.liveAi,
-                  tokens: executionResult.metrics?.estimatedTokens,
+                  tokens: turnMetrics.estimatedTokens,
                   replyToIdempotencyKey: cleanIdempotencyKey,
                 },
               },
@@ -465,13 +513,7 @@ export async function POST(req: NextRequest) {
             },
             reply: executionResult.reply,
             liveAi: executionResult.liveAi,
-            metrics: executionResult.metrics || {
-              contextAssemblyMs: 5,
-              modelMs: 20,
-              gatewayValidationMs: 2,
-              totalTurnMs: 27,
-              estimatedTokens: { input: assembledContext.estimatedTokens, output: 80 },
-            },
+            metrics: turnMetrics,
             directiveExecuted: executionResult.directiveExecuted,
             orchestrationRun: executionResult.orchestrationRun,
             authoritativeData: executionResult.authoritativeData,
