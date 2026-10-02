@@ -122,39 +122,24 @@ const IN_FLIGHT_WINDOW_MS = 150_000;
 
 /* ------------------------------------------------------------------ fetch helpers */
 
-function getDevAuthHeaders(): Record<string, string> {
-  // R0 secrets hygiene: NO hardcoded fallback secret. When
-  // NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET is not configured at build time the
-  // client attaches no founder credentials — development mode stays open
-  // by design (single-tenant sandbox), and production fails closed on the
-  // server until an explicit secret is provisioned.
-  const secret = process.env.NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET;
-  if (!secret) {
-    return {};
-  }
-  if (typeof window !== "undefined") {
-    try {
-      document.cookie = `samjuniors-dev-as=founder; path=/; SameSite=Lax`;
-      document.cookie = `samjuniors-dev-secret=${secret}; path=/; SameSite=Lax`;
-    } catch {
-      /* ignore */
-    }
-  }
-  return {
-    "x-samjuniors-dev-as": "founder",
-    "x-samjuniors-dev-secret": secret,
-  };
-}
-
+/**
+ * R0.1 trust boundary: this client adapter attaches NO founder credentials.
+ * The founder authentication secret is a server-side value
+ * (SAMJUNIORS_DEV_SECRET) and is never baked into the client bundle — a
+ * browser-visible secret (any NEXT_PUBLIC_ twin) proves nothing, because
+ * every visitor could extract it from the JS bundle and silently gain
+ * founder authority.
+ *
+ * Instead:
+ *  - development: routes are open by design (single-tenant sandbox); no
+ *    credentials are needed or sent.
+ *  - production: the Founder authenticates once via the server-validated
+ *    exchange (POST /api/auth/founder-session with the secret in the body);
+ *    the server responds with HttpOnly cookies the browser then attaches to
+ *    every same-origin request automatically. JavaScript cannot read them.
+ */
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const devHeaders = getDevAuthHeaders();
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...devHeaders,
-      ...init?.headers,
-    },
-  });
+  const res = await fetch(url, init);
   let body: any = null;
   try { body = await res.json(); } catch { /* non-JSON error body */ }
   if (!res.ok) {
@@ -262,8 +247,7 @@ export type GraphFetchResponse =
 
 export async function fetchGraphOverview(): Promise<GraphFetchResponse> {
   try {
-    const devHeaders = getDevAuthHeaders();
-    const res = await fetch("/api/graph", { headers: devHeaders });
+    const res = await fetch("/api/graph");
     let body: any = null;
     try { body = await res.json(); } catch { /* non-json */ }
     if (res.status === 401) {
@@ -304,8 +288,7 @@ export type SchedulerStatusFetch =
  *  than inventing automation state. */
 export async function fetchSchedulerStatus(): Promise<SchedulerStatusFetch> {
   try {
-    const devHeaders = getDevAuthHeaders();
-    const res = await fetch("/api/workflow/scheduling/status", { headers: devHeaders });
+    const res = await fetch("/api/workflow/scheduling/status");
     let body: any = null;
     try { body = await res.json(); } catch { /* non-json */ }
     if (res.status === 401) {

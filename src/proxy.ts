@@ -88,6 +88,15 @@ export function proxy(req: NextRequest) {
   if (isExecutiveApiRoute(req.nextUrl.pathname)) {
     // Production without an identity provider: fail closed.
     if (process.env.NODE_ENV === "production") {
+      // The dev-only ROLE override is prohibited in production — the same
+      // policy auth/session.ts and live/auth.ts already enforce. A forged
+      // role header voids the request instead of upgrading it.
+      if (req.headers.has("x-samjuniors-role") || req.cookies.has("samjuniors-role")) {
+        return new NextResponse(
+          JSON.stringify({ error: "Unauthorized: Role override headers are prohibited in production" }),
+          { status: 401, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const hasProvider =
         !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
         !!process.env.SAMJUNIORS_DEV_SECRET;
