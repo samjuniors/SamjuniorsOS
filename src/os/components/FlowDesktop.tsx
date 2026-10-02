@@ -2556,7 +2556,7 @@ export default function FlowDesktop({
                     )}
 
                     <p className="border-t border-white/8 pt-2 text-[9px] leading-relaxed text-slate-500">
-                      Background machinery: due-work evaluation, leases, idempotency and side-effect authorization all run server-side on each heartbeat. Scheduled directives execute through the same governed workflow runtime as immediate directives. This panel only reports and manages authoritative state.
+                      Background machinery: due-work evaluation, leases, idempotency and side-effect authorization all run server-side on each heartbeat. Scheduled directives run through the workflow runtime; immediate directives run through the multi-agent orchestrator — two engines sharing the same side-effect authorization gate and audit trail. This panel only reports and manages authoritative state.
                     </p>
                   </div>
                 )}

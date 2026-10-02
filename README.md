@@ -23,45 +23,46 @@ bun run dev          # http://localhost:3000 — that's the entire stack
   "sir"), NOVA (precise, near-machine). One click in settings swaps the
   wake word, the wordmark, the filler lines *and the brain's system prompt*
   mid-conversation.
-- **14 tools the model can use** — web search, page reading, image search,
-  image generation, URL probing, plus a whole interface kit (`display`,
-  `blade`, `ui_theme`, `ui_reactor`, `ui_orbit`, `ui_chrome`, `ui_effect`,
-  `ui_screen`, `ui_reset`) with which the assistant dresses its own display
-  while it speaks.
+- **A governed turn path** — every ask runs server-side through the Sophia
+  turn executor: intent classification, the side-effect authorization
+  gate, canonical conversation persistence. Voice/UI commands (panels,
+  browser, persona, theme) are deterministic actuators, labelled as such
+  (`local-jarvis-v1`), never dressed up as model reasoning.
 - **Seven neural voices** (5 female, 2 male) — no key needed; the browser's
   speechSynthesis stays as the instant fallback; ElevenLabs wins
   automatically if you add a key.
-- **Fallback chains everywhere** — see below. Nothing is load-bearing.
+- **Fallback chains for the speech engines** — see below. Nothing in the
+  ear or the voice is load-bearing alone.
 
 ## The fallback chains (the headline feature)
 
-Every external service is one link in an ordered chain, walked automatically
+Every speech service is one link in an ordered chain, walked automatically
 on failure, mid-turn:
 
 | What | Chain (best first) | Enabled by |
 |---|---|---|
-| **LLM** (the brain) | z-ai (built-in, no key) → Google Gemini → any local OpenAI-compatible server (Ollama, LM Studio, vLLM, llama.cpp) | `GEMINI_API_KEY`, `LOCAL_LLM_BASE_URL` |
 | **STT** (the ear) | Deepgram → ElevenLabs Scribe → z-ai ASR (no key) → local transcription server (faster-whisper, LocalAI) | `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, `LOCAL_STT_URL` |
 | **TTS** (the voice) | ElevenLabs → z-ai neural → local speech server (kokoro-fastapi, LocalAI) → the browser's own voice | `ELEVENLABS_API_KEY`, `LOCAL_TTS_URL` |
+
+The **LLM is deliberately not a chain**. R1 (honesty/consolidation) removed
+the z-ai → Gemini → local ladder: it was only ever walked by a dead tool
+loop (`brain.ts`, zero importers), while the real conversation path talks
+to the pre-provisioned z-ai SDK directly. One link, honestly reported —
+`/api/sofia/health` says exactly that.
 
 Rules the chains live by (all implemented in `src/lib/server/providers.ts`):
 
 - **Failover within the same turn** — a provider failure walks to the next
   configured link before the user sees anything but a beat.
-- **Circuit breakers** — a link that fails repeatedly is benched (90s LLM /
-  60s STT) so a dead provider costs one attempt, not one per sentence. Any
-  success heals it.
-- **Stall guard, not timeout** — a slow local model is normal; a stream
-  silent for 90s is dead, and the chain fails over.
-- **Tool-schema latch** — small local models that reject function-calling
-  get one tools-stripped retry, latched per provider.
-- **Pins** — `SOFIA_LLM_PROVIDER` / `SOFIA_STT_PROVIDER` /
-  `SOFIA_TTS_PROVIDER` collapse a chain to one link on purpose.
+- **Circuit breakers** — a link that fails repeatedly is benched (60s STT)
+  so a dead provider costs one attempt, not one per sentence. Any success
+  heals it.
+- **Pins** — `SOFIA_STT_PROVIDER` / `SOFIA_TTS_PROVIDER` collapse a chain
+  to one link on purpose.
 - **Honesty** — `/api/sofia/health` reports every link's state
-  (LIVE/READY/COOLING/ERROR/OFF + the env var that turns it on), the HUD
-  rail names the brain actually answering (with an amber FALLBACK badge
-  when it isn't the primary), and the settings ENGINES fold re-probes on
-  every open.
+  (LIVE/READY/COOLING/ERROR/OFF + the env var that turns it on), the settings
+  ENGINES fold re-probes on every open, and the brain rail names the one
+  link that answers.
 
 ## Architecture (one app, one port)
 
@@ -87,8 +88,10 @@ src/
     ui/                      Hud, Blades, Panels, Settings, Ignition, …
     lib/                     voice loop, VAD, TTS, clap detector, personas…
   lib/server/
-    providers.ts             every fallback chain, the breakers, the pins
-    brain.ts                 the SSE tool loop (personas + 14 tools)
+    providers.ts             the speech fallback chains, breakers, pins
+    sophia/                  the governed turn path: intent classifier,
+                             server gateway, canonical persistence
+    ai/zai-client.ts         the single LLM provider (pre-provisioned SDK)
     voices.ts                the neural voice engine + catalogue
     net.ts                   hardened fetch: SSRF guards, redirect caps…
     page.ts                  reader/live page rendering
@@ -114,9 +117,10 @@ workflow and a troubleshooting table.
 ## Merging SOFIA into another project
 
 See **[docs/MERGE_PROMPT.md](docs/MERGE_PROMPT.md)** — a self-contained
-paste-ready prompt that specifies this whole resilience layer (chains,
-breakers, latch, stall guard, status surface, acceptance tests) for any
-agent working in any stack.
+paste-ready prompt that specifies the speech resilience layer (chains,
+breakers, status surface, acceptance tests) for any agent working in any
+stack. (Its LLM-chain sections predate R1; this repo's brain is a single
+z-ai link — see above.)
 
 ## Differences from the Vite edition (`github.com/samjuniors/sofianew`)
 

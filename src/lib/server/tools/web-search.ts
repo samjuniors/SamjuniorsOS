@@ -125,16 +125,15 @@ export async function searchLiveWeb(query: string, maxResults = 5): Promise<WebS
     console.warn('[WebSearch] Wikipedia fallback error:', err?.message || err);
   }
 
+  // Honest empty result (R1): both search backends failed. The pre-R1
+  // fallback fabricated a "Search Directory" result — a Google search URL
+  // dressed up as a retrieved source — which let downstream consumers
+  // present a non-result as live evidence. Zero results with an explicit
+  // source label is the truthful outcome; callers handle it ("Found 0
+  // relevant sources").
   return {
     query: cleanQuery,
-    results: [
-      {
-        title: `Search Query: "${cleanQuery}"`,
-        snippet: `Web search completed for "${cleanQuery}". No direct web snippets retrieved from search indices.`,
-        url: `https://www.google.com/search?q=${encodeURIComponent(cleanQuery)}`,
-        source: 'Google Search Index',
-      },
-    ],
-    source: 'Search Directory',
+    results: [],
+    source: 'search-unavailable',
   };
 }

@@ -632,64 +632,64 @@ ${roleScopedContext}
       }
     }
 
-    // High-fidelity domain-tailored truthful fallback when live AI is unavailable
-    let fallbackReply = `[${persona.name} • ${persona.role}]\nI have received your message: "${message}". Live model reasoning is temporarily unavailable. All execution invariants and sandbox parameters remain safely preserved.`;
+    // Honest deterministic fallback when live AI is unavailable (R1).
+    // Every branch states that the live model is down and claims NOTHING was
+    // executed, decided, or observed. The pre-R1 fallbacks fabricated domain
+    // specifics ($0.18/tenant, "Project Lumora", market claims, a false
+    // "decision state updated" approval confirmation) — a degraded path must
+    // not invent facts.
+    const degradedNotice = "Live model reasoning is temporarily unavailable — this is a canned offline response.";
+    let fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} I have received your message: "${message}". Nothing was executed and no company state changed; please retry in a moment for a grounded answer.`;
 
     if (classification.intent === "approval_action") {
-      const actionName = classification.approvalAction === 'approve' ? 'Approved & Ratified' : classification.approvalAction === 'reject' ? 'Rejected' : 'Revision Requested';
-      fallbackReply = `[${persona.name} • ${persona.role}]\nFounder Governance Directive registered: [${actionName}]. The decision state has been updated across Company HQ and governance records with full audit trail.`;
+      const actionName = classification.approvalAction === 'approve' ? 'Approve' : classification.approvalAction === 'reject' ? 'Reject' : 'Request Revision';
+      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Your ${actionName} command was NOT executed — no decision state was updated and no governance record was written, because the live model path failed before the command could be processed. Please retry, or use the Approvals panel to act on pending decisions.`;
     } else if (classification.intent === "ambiguous") {
-      fallbackReply = `[${persona.name} • ${persona.role}]\nRegarding "${message}": I want to make sure I focus on the right outcome. Would you like a quick preliminary analysis here, or should we launch a structured multi-agent directive with formal deliverables?`;
+      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Regarding "${message}": I want to make sure I focus on the right outcome. Would you like a quick preliminary analysis here, or should we launch a structured multi-agent directive with formal deliverables?`;
     } else if (classification.intent === "directive") {
-      fallbackReply = `[${persona.name} • ${persona.role}]\nDirective received: "${message}". I can coordinate with the Executive Council (Research, Product, and Finance) to execute our 9-step verification protocol and generate formal deliverable artifacts.`;
+      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Directive received: "${message}". It has NOT been dispatched — the orchestration path requires the live model. When reasoning is available I can coordinate with the Executive Council (Research, Product, and Finance) through the governed verification protocol.`;
     } else if (classification.intent === "information_request") {
-      if (agentId === 'researcher') {
-        fallbackReply = `[Dr. Aris Thorne • Research]\nBased on our research radar: The European market shows strong demand for sovereign, privacy-first agent runtimes with strict GDPR compliance and localized data governance.`;
-      } else if (agentId === 'finance') {
-        fallbackReply = `[Julian Cruz • Finance]\nFinancial Standing: Live accounting integration is pending connection. Under our target baseline model, we maintain an 80%+ gross margin floor and disciplined capital management. Real-time ledger sync is required for audited metrics.`;
-      } else if (agentId === 'pm') {
-        fallbackReply = `[Maya Lin • Product]\nActive roadmap status: Project Lumora (Self-Serve AI Agent Onboarding) is currently in draft roadmap review with target completion pending founder ratification.`;
-      } else if (agentId === 'coo' || isAdvisor) {
-        fallbackReply = `[Sophia Vance • COO]\nOperations overview: Workstream dispatch and approval gates are operational. Live execution telemetry is logged against active workflow runs.`;
-      }
+      // No fabricated domain specifics on a degraded path. Point at the real
+      // surfaces where the founder can read actual data.
+      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} I cannot ground an answer to "${message}" right now, and I will not invent figures. For current data, check the Research Radar (researcher), Product Strategy (pm), or Finance (finance) panels — or ask again once the live model is back.`;
     } else {
-      // General conversation & greetings tailored by active tone
+      // Greetings keep persona flavor but claim no activity or system status.
       if (tone === 'flirty') {
         if (isAdvisor) {
-          fallbackReply = `[Founder Intelligence]\nYou're building an absolute empire here, Founder. Lucky for you, I've got both the strategic vision and the charm to make it happen. What big move are we plotting?`;
+          fallbackReply = `[Founder Intelligence]\n${degradedNotice} You're building an absolute empire here, Founder — what big move are we plotting?`;
         } else if (agentId === 'coo') {
-          fallbackReply = `[Sophia Vance • COO]\nAlways a pleasure to see you, Founder. Executive operations are running flawlessly—almost as flawlessly as that brilliant strategic mind of yours. What's on your agenda today?`;
+          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Always a pleasure to see you, Founder. What's on your agenda today?`;
         } else if (agentId === 'researcher') {
-          fallbackReply = `[Dr. Aris Thorne • Research]\nHello, Founder. I spent all morning analyzing billions of neural parameters, but nothing in this lab is quite as fascinating as your vision. Ready whenever you are.`;
+          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hello, Founder. Ready to dig into whatever you need — once reasoning is back.`;
         } else if (agentId === 'pm') {
-          fallbackReply = `[Maya Lin • Product]\nFounder! Your product roadmap is looking dangerously ambitious today, and I'm completely here for it. Let's make everyone fall in love with what we're building.`;
+          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Founder! Good to see you. What are we building next?`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nWell hello, Founder. Financial governance is looking sharp today. Our 80%+ gross margin invariant stands firm—let's make sure we keep turning heads on the balance sheet.`;
+          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Well hello, Founder. What financial question can I help with?`;
         }
       } else if (tone === 'casual') {
         if (isAdvisor) {
-          fallbackReply = `[Founder Intelligence]\nHey Founder! All systems are green. Main priority right now is shipping fast, keeping burn under control, and crushing our customer growth targets. What's on your mind?`;
+          fallbackReply = `[Founder Intelligence]\n${degradedNotice} Hey Founder! What's on your mind?`;
         } else if (agentId === 'coo') {
-          fallbackReply = `[Sophia Vance • COO]\nHey Founder! Everything on the operations desk is running super smooth today. The team is locked in. What are we tackling next?`;
+          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Hey Founder! What are we tackling next?`;
         } else if (agentId === 'researcher') {
-          fallbackReply = `[Dr. Aris Thorne • Research]\nHey! Just plowed through some wild new papers on vector recall and model latency. Got a minute? You're going to love what we can do with this.`;
+          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hey! What would you like me to look into?`;
         } else if (agentId === 'pm') {
-          fallbackReply = `[Maya Lin • Product]\nHey Founder! Product sprints are moving fast and the designs are feeling great. Want to bounce some quick workflow ideas around?`;
+          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Hey Founder! Want to bounce some workflow ideas around?`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nHey there! Financial discipline is solid: our gross margin floor invariant is holding, burn is disciplined, and the balance sheet is protected.`;
+          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Hey there! What numbers can I help you with?`;
         }
       } else {
         // Professional default
         if (isAdvisor) {
-          fallbackReply = `[Founder Intelligence]\nAll systems are operating nominally. Strategic focus remains centered on product velocity, gross margin preservation (80%+), and disciplined enterprise customer acquisition.`;
+          fallbackReply = `[Founder Intelligence]\n${degradedNotice} How can I help you think through the next strategic move?`;
         } else if (agentId === 'coo') {
-          fallbackReply = `[Sophia Vance • COO]\nGood to connect, Founder. Executive operations and inter-agent coordination are running smoothly across all active workstreams.`;
+          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Good to connect, Founder. What would you like to work on?`;
         } else if (agentId === 'researcher') {
-          fallbackReply = `[Dr. Aris Thorne • Research]\nHello Founder. I'm actively monitoring frontier model releases, latency benchmarks, and competitive architectural shifts.`;
+          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hello Founder. What topic should I research for you?`;
         } else if (agentId === 'pm') {
-          fallbackReply = `[Maya Lin • Product]\nHi Founder. Product engineering sprints are on schedule. Let me know if you need any user flows or PRD specifications reviewed.`;
+          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Hi Founder. Let me know if you need any user flows or PRD specifications reviewed.`;
         } else if (agentId === 'finance') {
-          fallbackReply = `[Julian Cruz • Finance]\nHello Founder. Unit economics remain healthy with compute spend well within our budgeted $0.18 per active tenant ceiling.`;
+          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Hello Founder. What financial analysis can I prepare?`;
         }
       }
     }

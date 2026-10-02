@@ -516,11 +516,21 @@ export function validateSkillImmutability(
 export interface ExecuteSkillOptions {
   availableTools?: import('@/types/capabilities').ToolDefinition[];
   permissions?: import('@/types/capabilities').PermissionPolicy[];
-  executeToolFn?: (toolId: ToolId, input: any) => Promise<any>;
 }
 
 /**
  * Executes a skill through existing permission, approval, evidence, and verification gates.
+ *
+ * R1 HONESTY NOTE — the execution boundary is real, the execution engine is
+ * NOT wired. The validations below (advisor restriction, registry lookup,
+ * role assignment, required inputs, permission policies) are genuine and
+ * enforced. But no skill executor exists: this function cannot run tools,
+ * call models, or produce verified output — and it no longer pretends to.
+ * The governed execution path for actual work is the orchestrator
+ * (MultiAgentOrchestrator + SideEffectAuthorizationGate), which routes tools
+ * directly. Every caller receives an honest `not_executed` outcome with
+ * `verificationPassed: false` — never a fabricated success, never a
+ * template masquerading as real output.
  */
 export async function executeSkill(
   request: SkillExecutionRequest,
@@ -648,22 +658,23 @@ export async function executeSkill(
     }
   }
 
-  // 6. Output synthesis & verification
-  const verificationPassed = true;
-  const verificationNotes = `All ${skill.verificationRequirements.length} verification requirement(s) satisfied. Safe Mock boundary enforced.`;
-
+  // 6. HONEST TERMINAL STATE — no execution engine is wired.
+  // All boundary validations above passed; nothing beyond them was
+  // executed. Returning `not_executed` with unverified evidence basis is
+  // the truthful outcome: fabricating `verificationPassed: true` and a
+  // template `outputContent` here (the pre-R1 behavior) made a data-only
+  // registry look like an executor.
   return {
     skillId: skill.id,
     skillName: skill.name,
     employeeRole: request.employeeRole,
-    status: 'success',
+    status: 'not_executed',
     selectedToolId,
-    evidenceBasis: selectedToolId ? 'external_evidence' : 'model_reasoning',
-    verificationPassed,
-    verificationNotes,
+    evidenceBasis: 'unverified',
+    verificationPassed: false,
+    verificationNotes: `Skill "${skill.name}" passed all registry boundary checks (role assignment, required inputs, permission policy), but no skill execution engine is wired. Nothing was executed and no output was produced. Route actual work through the governed orchestrator path.`,
     escalationRequired: false,
-    outputSummary: `Skill "${skill.name}" executed successfully under ${request.employeeRole} with Safe Mock boundaries verified.`,
-    outputContent: `### ${skill.name} Execution Output\n\n**Purpose**: ${skill.purpose}\n\n**Procedure Steps Completed**:\n${skill.procedure.map((step, i) => `${i + 1}. ${step}`).join('\n')}\n\n**Output Format**: ${skill.outputFormat}`,
+    outputSummary: `Skill "${skill.name}" is registered and validated but NOT executed: no execution engine exists (R1 honesty boundary).`,
     timestamp
   };
 }

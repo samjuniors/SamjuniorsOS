@@ -9,7 +9,7 @@ export const GITHUB_REPOSITORY_READ_TOOL: ToolDefinition = {
   name: 'GitHub Repository Research',
   description: 'Reads repository metadata, specifications, and architecture details from GitHub via Composio.',
   category: 'Engineering',
-  capabilities: ['software_repository_research', 'repository_research', 'requirements_analysis'],
+  capabilities: ['software_repository_research', 'requirements_analysis'],
   inputSchema: {
     type: 'object',
     properties: {
@@ -53,7 +53,7 @@ export const GITHUB_ISSUES_READ_TOOL: ToolDefinition = {
   name: 'GitHub Issues Read',
   description: 'Reads issue tickets and discussions from a GitHub repository via Composio.',
   category: 'Engineering',
-  capabilities: ['software_repository_research', 'repository_research', 'requirements_analysis'],
+  capabilities: ['software_repository_research', 'requirements_analysis'],
   inputSchema: {
     type: 'object',
     properties: {
