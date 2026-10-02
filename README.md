@@ -56,9 +56,12 @@ that link is off, honestly reported in the settings ENGINES fold and
 
 - **One execution authority** — tool calls that change anything run through
   the `SideEffectAuthorizationGate`: default-deny, payload-bound,
-  occurrence-bound approval, canonical idempotency, forced audit. The
-  realtime surface's direct tools (image generation, live web search) go
-  through the same gate (R0).
+  occurrence-bound approval, canonical idempotency, forced audit. The two
+  directive engines — the multi-agent orchestrator (immediate directives)
+  and the workflow runtime (scheduled directives) — share one authority
+  stack: the same agent executor (one server-side provider), the same gate,
+  the same run store and audit trail. The realtime surface's direct tools
+  (image generation, live web search) go through the same gate (R0/R2).
 - **One founder identity** — server-validated sessions
   (`POST /api/auth/founder-session`, HttpOnly cookies; header pairs for API
   clients). Production fails closed when the secret is unset (R0/R0.1).

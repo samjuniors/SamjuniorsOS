@@ -341,9 +341,17 @@ async function runTests() {
       !flow.includes('same governed workflow runtime as immediate directives'),
       'inaccurate engine claim must be gone',
     );
+    // R2 (engine convergence) evolved the honest copy: the two engines are
+    // still named as two engines (immediate orchestrator vs scheduled
+    // workflow runtime) — never merged into one claimed runtime — and now
+    // also name the shared authority stack (agent executor, gate, audit).
     assert.ok(
-      flow.includes('two engines sharing the same side-effect authorization gate'),
-      'honest two-engine copy present',
+      flow.includes('two engines share one authority stack'),
+      'honest two-engine + shared-authority copy present (R2 convergence)',
+    );
+    assert.ok(
+      flow.includes('side-effect authorization gate'),
+      'the shared gate stays named',
     );
   });
 
