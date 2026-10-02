@@ -1402,3 +1402,17 @@ Stage Summary:
 - Out of scope by design (explicitly not done): no per-turn persistent telemetry store, no retrieval-metrics surfacing, no turn-executor/sofia-ask change (its metrics are already honest-absent), no UI change, no push to GitHub, no branch deletion, no history rewrite.
 - Baselines: all suite counts identical to the r3-preflight audit baseline; tsc 159 / lint 0 preserved; no schema or UI deltas.
 - Follow-up candidates (require founder approval, NOT started): remote-sync logistics for the local-only R-series; git-history reconciliation with origin/main; branch cleanup plan (read-only inventory produced separately).
+
+---
+Task ID: r3-honest-metrics (part 2 — read-only branch inventory)
+Agent: Z.ai Code (R3 closure agent, post-implementation inventory)
+Task: Read-only inventory of local and remote branches: unique commits, unmerged changes, deletion candidates. NO deletions performed; cleanup plan returned for founder approval.
+
+Work Log:
+- Enumerated 14 local branches + 14 origin branches + 3 tags + 0 stashes + 1 worktree; computed per-branch upstream, ancestry vs local main and origin/main, and unique-commit counts both directions.
+- Verified chain structure: docs/m5-evaluation (83e00fa) ⊂ feat/m51 ⊂ feat/m52 ⊂ feat/m53 ⊂ feat/m54-generation-faithfulness (8d362db) — one linear chain, 8 commits ahead of origin/main total; feat/m4b1-memory-lifecycle (237f662) is a superset of origin/feat/sophia-personal-memory + origin/feat/m4a-p2-followup chains (11 ahead of origin/main).
+- Confirmed the two histories remain DISJOINT (local root fd5a605 vs origin root 6e3c231; no merge-base): origin/main (b9e63ad) contains none of R0–R3 and none of the M5.1–M5.4 commits (those exist only as local branches + squashed content in local main).
+- Local fully-merged-with-zero-unique pointers identified: feat/m4c, feat/m4d, canonical-main-merge, integration/memory-foundation (tips inside origin/main's own history); r0/r1/r2 branch tips are ancestors of local main; archive/m4b1-sandbox-backup is triple-redundant (local branch + origin copy at same SHA + tag archive-m4b1-321641f).
+
+Stage Summary:
+- Inventory delivered in the R3 closure report with a tiered cleanup plan; NOTHING deleted. Key recommendation: branch cleanup should FOLLOW the remote-sync decision (origin/main lacks all sandbox work); the only zero-risk immediate deletions are the four local pointers into origin/main's own history; the m5x checkpoints are chain-redundant with feat/m54 but are the sole carriers of that history outside the sandbox; archives and R-series pointers are provenance the founder should rule on explicitly.
