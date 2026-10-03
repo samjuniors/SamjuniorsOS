@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto';
 import { DurableFileStore } from '../persistence/durable-file-store';
 import { prisma, isDatabaseAvailable } from '../db/prisma';
+import { extractTokens } from '../knowledge/knowledge-store';
+import { foldPersonalMindToken } from '../sophia/context-assembly';
 import {
   ConversationRecord,
   ChatMessageRecord,
@@ -31,6 +33,17 @@ export class ConversationNotFoundError extends Error {
 
 const CONVERSATIONS_COLLECTION = 'conversations';
 const CHAT_MESSAGES_COLLECTION = 'chat_messages';
+
+/** One scored episodic search hit (M5.2): a past conversation + matched messages. */
+export interface ConversationSearchHit {
+  conversationId: string;
+  title?: string;
+  updatedAt: string;
+  /** Sum of per-message distinct-token scores (deterministic). */
+  score: number;
+  /** Highest-scoring messages, re-sorted chronologically for rendering. */
+  matchedMessages: ChatMessageRecord[];
+}
 
 /**
  * ============================================================================
@@ -436,6 +449,100 @@ export class ConversationStore {
       }
     }
     return null;
+  }
+
+  // ===========================================================================
+  // M5.2 — EPISODIC RETRIEVAL PROJECTION (founder-scoped past-conversation
+  // search over THIS canonical store — no second conversation database)
+  // ===========================================================================
+
+  /**
+   * M5.2 — deterministic, founder-scoped lexical search over PAST
+   * conversations (the episodic retrieval surface M5.1 measured as missing).
+   *
+   * CONTRACT:
+   *  - FOUNDER SCOPING: candidates come from listConversations(founderId) —
+   *    the same founder-owned read every other method uses. Another
+   *    founder's conversations can never enter the result (the ownership
+   *    check this store enforces elsewhere is structural here: the candidate
+   *    set itself is founder-filtered before any scoring).
+   *  - DETERMINISTIC SCORING: the shared extractTokens pipeline plus the
+   *    M4-D light suffix fold applied SYMMETRICALLY to query and message
+   *    tokens (so "abandon" matches "abandoning"), counted as DISTINCT
+   *    folded query tokens present in each message. Conversation score =
+   *    sum of per-message scores; rank: score DESC, updatedAt DESC, id ASC.
+   *  - CONVERSATION BOUNDARIES PRESERVED: results carry the conversation id,
+   *    title, and the matched messages in chronological order — the caller
+   *    renders them as clearly labeled episodic (advisory) context.
+   *  - NEVER COMPANY TRUTH: this store returns interaction records only;
+   *    promoting any part of a conversation into company knowledge remains
+   *    an explicit governed action elsewhere (epistemic pipeline / founder).
+   *
+   * Read source: DurableFileStore ONLY (same authority contract as
+   * listConversations/getMessages).
+   */
+  public async searchConversations(
+    founderId: string,
+    queryText: string,
+    limitConversations: number = 3,
+    maxMatchedMessages: number = 4
+  ): Promise<ConversationSearchHit[]> {
+    if (!founderId) return [];
+
+    const queryTokens = new Set(extractTokens(queryText).map(foldPersonalMindToken));
+    if (queryTokens.size === 0) return [];
+
+    const conversations = await this.listConversations(founderId, 20);
+    const allMessages = Object.values(
+      this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION)
+    );
+
+    const hits: ConversationSearchHit[] = [];
+    for (const conversation of conversations) {
+      const convMessages = allMessages
+        .filter((m) => m && m.conversationId === conversation.id)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      const scored = convMessages.map((m) => {
+        const messageTokens = new Set(extractTokens(m.content).map(foldPersonalMindToken));
+        let score = 0;
+        for (const token of queryTokens) {
+          if (messageTokens.has(token)) score++;
+        }
+        return { message: m, score };
+      });
+
+      const conversationScore = scored.reduce((sum, entry) => sum + entry.score, 0);
+      if (conversationScore <= 0) continue;
+
+      const matched = scored
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return new Date(a.message.createdAt).getTime() - new Date(b.message.createdAt).getTime();
+        })
+        .slice(0, Math.max(1, maxMatchedMessages))
+        .map((entry) => entry.message)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      hits.push({
+        conversationId: conversation.id,
+        title: conversation.title,
+        updatedAt: conversation.updatedAt,
+        score: conversationScore,
+        matchedMessages: matched,
+      });
+    }
+
+    hits.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const ta = new Date(a.updatedAt).getTime();
+      const tb = new Date(b.updatedAt).getTime();
+      if (tb !== ta) return tb - ta;
+      return a.conversationId < b.conversationId ? -1 : 1;
+    });
+
+    return hits.slice(0, Math.max(1, limitConversations));
   }
 
   /**

@@ -32,43 +32,16 @@ Blank or missing = that link is OFF, and `/api/sofia/health` says so, naming
 the exact variable. Restart the dev server after editing — env is read at
 boot (Next prints `Reload env: .env.local` when it notices a change in dev).
 
-## A better brain
+## The brain (single provider, no keys)
 
-### Google Gemini (the one key worth having)
-
-```bash
-GEMINI_API_KEY=...           # from https://aistudio.google.com/apikey
-GEMINI_MODEL=gemini-2.0-flash   # optional; this is the default
-```
-
-The moment z-ai rate-limits or fails, the same turn fails over to Gemini —
-the HUD rail switches to `BRAIN · GEMINI — FALLBACK` live. `GOOGLE_API_KEY`
-is accepted as an alias.
-
-### A local model (nothing leaves the machine)
-
-Any OpenAI-compatible server works. **Ollama:**
-
-```bash
-ollama pull llama3.1        # or qwen2.5, mistral, …
-OLLAMA_BASE_URL=http://localhost:11434    # the /v1 suffix is auto-added
-# or: LOCAL_LLM_BASE_URL=http://localhost:11434
-LOCAL_LLM_MODEL=llama3.1    # optional
-```
-
-**LM Studio** — start the local server (uses :1234 by default):
-
-```bash
-LOCAL_LLM_BASE_URL=http://localhost:1234
-LOCAL_LLM_MODEL=<the model id LM Studio shows>
-```
-
-**vLLM / llama.cpp** — same pattern, point `LOCAL_LLM_BASE_URL` at the
-server's base URL.
-
-Notes: a slow first token is normal (the stall guard waits 90s); small
-models that reject function-calling get one tools-stripped retry
-automatically, latched per provider.
+The LLM is one link: the platform's z-ai SDK, built in and pre-provisioned —
+there is nothing to configure. R1 (honesty/consolidation) removed the old
+z-ai → Gemini → local fallback ladder and the `GEMINI_API_KEY` /
+`LOCAL_LLM_*` variables: the production conversation path never walked that
+chain (every AI surface talks to the SDK directly), so the settings panel
+advertising those links was a fallback you could not actually get. If z-ai
+is rate-limited the honest answer is a beat and a retry — the settings
+ENGINES fold shows the one brain link and its state.
 
 ## A better ear
 
@@ -123,7 +96,6 @@ LOCAL_TTS_VOICE=af_sky
 ## Pins (testing, or preference)
 
 ```bash
-SOFIA_LLM_PROVIDER=gemini   # or zai | local — collapse the LLM chain to one link
 SOFIA_STT_PROVIDER=deepgram # or elevenlabs | zai | local
 SOFIA_TTS_PROVIDER=local    # or elevenlabs | zai
 ```
@@ -141,16 +113,15 @@ Every chain is in there: each link's `configured`, last state
 `active`. In the app: settings gear → ENGINES fold — it re-probes on every
 open and names the env var that turns each OFF link on.
 
-To watch a failover happen: ask something, then kill the primary (stop the
-Ollama server, revoke a quota) and ask again — the same turn answers on the
-next link and the rail goes amber.
+To watch a failover happen: speak a phrase with the primary transcriber
+blocked (no key set, local server stopped) and the STT chain walks to its
+next link. The brain has no chain to fail over — one honest link.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| "every reasoning engine is unreachable" | No LLM link reachable. Check `/api/sofia/health`; if z-ai is 429 it is a quota window — it reopens on its own, or set `GEMINI_API_KEY`. |
-| BRAIN · LOCAL but answers are odd | Small local model. Try a bigger one, or pin the chain back: `SOFIA_LLM_PROVIDER=zai`. |
+| "every reasoning engine is unreachable" | The z-ai backend is rate-limited or unavailable. Check `/api/sofia/health`; a 429 is a quota window — it reopens on its own. |
 | Voice input does nothing in an embedded pane | Browser policy — microphone requires a real tab. Use "Open in New Tab"; the typed command line covers embedded panes. |
 | z-ai ASR shows OFF on a local checkout | z-ai credentials only exist on this platform. Add `DEEPGRAM_API_KEY` or a `LOCAL_STT_URL`. |
 | Images in panels arrive blank | The proxy could not fetch that host. Nothing wrong with your setup — the model will say so. |

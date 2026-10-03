@@ -14,7 +14,7 @@ async function runTests() {
   assert(providers.length >= 1, 'Should have at least 1 provider registered');
   const geminiMeta = providers.find((p) => p.id === 'gemini');
   assert(geminiMeta, 'Gemini provider metadata should be registered');
-  assert.strictEqual(geminiMeta?.name, 'Google Gemini Pro');
+  assert.strictEqual(geminiMeta?.name, 'Google Gemini Flash (Live)');
   console.log('✔ Test 1: listRealtimeProviders passed');
 
   // Test 2: getRealtimeProvider

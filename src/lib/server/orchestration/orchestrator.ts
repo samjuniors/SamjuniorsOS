@@ -21,7 +21,7 @@ import {
   GITHUB_READ_TOOL 
 } from '../tools/definitions/github';
 import { executeGitHubRepositoryRead, executeGitHubIntelligence } from '../tools/providers/github';
-import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence } from '@/types/capabilities';
+import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence, SkillId } from '@/types/capabilities';
 import { determineSkillForTask } from '@/lib/skills/skill-registry';
 import { ConstitutionalVerifier } from './verifier';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
@@ -33,7 +33,9 @@ const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
     name: 'Web Search',
     description: 'Searches the web',
     category: 'Research',
-    capabilities: ['web_research', 'competitor_research'],
+    // R1: capabilities reference only defined skills — this tool fulfills
+    // the researcher role's market_research skill (STRUCTURED_SKILLS).
+    capabilities: ['market_research'],
     inputSchema: {},
     outputSchema: {},
     riskLevel: 'low',
@@ -48,15 +50,18 @@ const ORCHESTRATION_AVAILABLE_TOOLS: ToolDefinition[] = [
   {
     id: 'finance_transfer',
     name: 'Finance Transfer',
-    description: 'Transfers money',
+    // R1 honesty: no finance executor is wired — this entry is a
+    // declaration for a future executor, not a usable tool. The selector
+    // skips 'unconfigured' tools, so it can never be picked.
+    description: 'Transfers money (DECLARED, NOT WIRED: no finance executor exists — this tool cannot execute)',
     category: 'Finance',
-    capabilities: ['execution_monitoring'], 
+    capabilities: ['capital_efficiency_audit'],
     inputSchema: {},
     outputSchema: {},
     riskLevel: 'high',
     requiresApproval: true,
     mutationClass: 'execute',
-    availability: 'available',
+    availability: 'unconfigured',
     provider: 'internal'
   },
   {
@@ -310,9 +315,13 @@ Focus on:
     });
 
     const isGithubDirective = directive.toLowerCase().includes('github') || directive.toLowerCase().includes('repo');
-    const researchSkills = isGithubDirective
-      ? (['software_repository_research', 'requirements_analysis'] as any)
-      : ['web_research', 'competitor_research'];
+    // R1: skill ids reference only defined skills — the researcher role's
+    // assigned set is exactly {market_research, software_repository_research}
+    // in ROLE_SKILL_ASSIGNMENTS, and requirements_analysis is assigned to pm;
+    // the GitHub branch keeps it because the tools declare that capability.
+    const researchSkills: SkillId[] = isGithubDirective
+      ? ['software_repository_research', 'requirements_analysis']
+      : ['market_research'];
 
     const researchContext: ToolSelectionContext = {
       employeeRole: 'researcher',
@@ -929,21 +938,26 @@ Include:
     });
 
     // ==========================================
-    // STAGE 7: EXECUTIVE COUNCIL REVIEW & CONSENSUS (Executive Council)
+    // STAGE 7: EXECUTIVE COUNCIL CONSOLIDATION CHECKPOINT (procedural)
     // ==========================================
+    // R1 honesty: this is NOT an additional model deliberation round. The
+    // specialist outputs above were produced by real per-stage LLM calls;
+    // this checkpoint is the COO's procedural consolidation of them before
+    // the final report synthesis. The copy says so — it never claims a
+    // cross-agent peer review that did not happen.
     planItems.push({
       stage: 8,
-      title: 'Executive Council Review & Consensus',
+      title: 'Executive Council Consolidation Checkpoint',
       agentId: 'coo',
       protocolStep: 'review',
       status: 'done',
-      outputSnippet: 'Cross-functional consensus achieved across Operations, Research, Product, and Finance.',
+      outputSnippet: 'Procedural checkpoint: specialist outputs from Research, Product, and Finance consolidated for final synthesis (no additional council deliberation round is executed).',
       selectedSkill: cooVerifySkill.selectedSkill,
     });
 
     addMessage(
       'coo',
-      `[Executive Council] Cross-agent peer review completed. Specialist alignment achieved across research recommendations, product specifications, and financial guardrails.`,
+      `[Executive Council] Consolidation checkpoint: the specialist deliverables from Dr. Thorne (Research), Maya Lin (Product), and Julian Cruz (Finance) produced in the stages above are consolidated for the final report. This is a procedural checkpoint, not an additional peer-review deliberation round.`,
       'status',
       'review'
     );
@@ -1173,8 +1187,12 @@ Actionable steps in phased order.`
   }
 
   /**
-   * Generates a truthful, unconfigured response when GEMINI_API_KEY is not configured
-   * (Does NOT invent fabricated business metrics, fake competitors, or fake TAM numbers)
+   * Generates a truthful, unconfigured response when the z-ai backend is
+   * unavailable (the executor's isConfigured() reports false). The AI
+   * backend is the pre-provisioned z-ai SDK — no user key exists to add.
+   * (Does NOT invent fabricated business metrics, fake competitors, or fake
+   * TAM numbers. R1: the stale GEMINI_API_KEY instructions — a key that no
+   * longer gates anything — were replaced with the honest condition.)
    */
   private generateUnconfiguredResponse(
     directive: string,
@@ -1184,25 +1202,25 @@ Actionable steps in phased order.`
   ): OrchestrationRun {
     const shortTitle = directive.length > 50 ? directive.slice(0, 48) + '...' : directive;
 
-    const unconfiguredNotice = `### Server AI Execution Status: API Key Unconfigured
+    const unconfiguredNotice = `### Server AI Execution Status: AI Backend Unavailable
 
 **Notice to Founder:**
-The autonomous multi-agent execution pipeline requires a valid \`GEMINI_API_KEY\` environment secret to execute genuine specialist reasoning across Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (Product), and Julian Cruz (Finance).
+The autonomous multi-agent execution pipeline requires the server's pre-provisioned z-ai AI backend to execute genuine specialist reasoning across Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (Product), and Julian Cruz (Finance). The backend reported that it cannot start (missing z-ai credentials on this machine).
 
 In accordance with constitutional truthfulness invariants:
 - **No fabricated metrics** (fake TAM, fake competitor stats, or invented gross margins) have been simulated.
-- **Tasks remain unexecuted** until server credentials are provided in the environment or Settings.
-- You can provide your Gemini API key in the AI Studio environment to enable genuine multi-agent orchestration.`;
+- **Tasks remain unexecuted** until the AI backend is available on the server.
+- No user-supplied API key can enable this: the z-ai SDK is provisioned by the hosting environment, not by .env configuration.`;
 
     const plan: ExecutionPlanItem[] = [
-      { stage: 1, title: 'Directive Ingestion & Scope Boundary', agentId: 'coo', protocolStep: 'understand', status: 'failed', outputSnippet: 'Halted: GEMINI_API_KEY required for live AI orchestration.' },
+      { stage: 1, title: 'Directive Ingestion & Scope Boundary', agentId: 'coo', protocolStep: 'understand', status: 'failed', outputSnippet: 'Halted: the server AI backend is unavailable for live AI orchestration.' },
       { stage: 2, title: 'Market & Technical Reconnaissance', agentId: 'researcher', protocolStep: 'research', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 3, title: 'Technical Feasibility & Risk Modeling', agentId: 'researcher', protocolStep: 'analyze', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 4, title: 'Inter-Agent Delegation Matrix', agentId: 'coo', protocolStep: 'plan', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 5, title: 'Product Architecture & PRD Generation', agentId: 'pm', protocolStep: 'build_execute', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 6, title: 'Unit Economics & Compute Stress-Test', agentId: 'finance', protocolStep: 'test', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 7, title: 'Constitutional Compliance Verification', agentId: 'coo', protocolStep: 'verify', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
-      { stage: 8, title: 'Executive Council Review & Consensus', agentId: 'coo', protocolStep: 'review', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
+      { stage: 8, title: 'Executive Council Consolidation Checkpoint', agentId: 'coo', protocolStep: 'review', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 9, title: 'Final Executive Report Synthesis', agentId: 'coo', protocolStep: 'report', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
     ];
 
@@ -1219,7 +1237,7 @@ In accordance with constitutional truthfulness invariants:
         id: `msg-${Date.now()}-2`,
         sender: 'orchestrator',
         protocolStep: 'understand',
-        text: `[System Orchestrator] Multi-agent execution paused: GEMINI_API_KEY is not configured on the backend. No fake metrics will be generated.`,
+        text: `[System Orchestrator] Multi-agent execution paused: the server's z-ai AI backend is unavailable. No fake metrics will be generated.`,
         timestamp,
         type: 'status',
       },
@@ -1249,28 +1267,28 @@ In accordance with constitutional truthfulness invariants:
       specialistOutputs: {},
       safeMockRequired: true,
     });
-    if (!verificationResultData.checksFailed.includes('API key missing on server runtime')) {
-      verificationResultData.checksFailed.push('API key missing on server runtime');
+    if (!verificationResultData.checksFailed.includes('AI backend unavailable on server runtime')) {
+      verificationResultData.checksFailed.push('AI backend unavailable on server runtime');
     }
     verificationResultData.isCompliant = false;
-    verificationResultData.notes = `Execution halted truthfully due to unconfigured API key. ${verificationResultData.notes}`;
+    verificationResultData.notes = `Execution halted truthfully due to the unavailable AI backend. ${verificationResultData.notes}`;
 
     const executiveResult: FounderExecutiveResult = {
-      recommendation: 'Configure GEMINI_API_KEY to activate genuine multi-agent council reasoning and synthesis.',
+      recommendation: 'Restore the server\'s z-ai AI backend availability to activate genuine multi-agent council reasoning and synthesis.',
       keyFindings: [
-        'Multi-agent orchestration was halted because GEMINI_API_KEY is not configured in the server environment.',
+        'Multi-agent orchestration was halted because the server\'s z-ai AI backend is unavailable.',
         'Zero simulated metrics, fake competitor claims, or fabricated revenue figures were generated.',
       ],
       businessImplications: [
-        'Executive AI workforce is in safe idle state and ready for activation upon key provisioning.',
+        'Executive AI workforce is in safe idle state and ready for activation once the AI backend is available.',
         'No external side-effects or state mutations occurred.',
       ],
       risks: [
         'Autonomous analysis cannot be completed without server AI model access.',
       ],
       recommendedNextActions: [
-        'Add GEMINI_API_KEY in the environment or Settings menu to enable live orchestration.',
-        'Re-dispatch directive once credentials are active.',
+        'Ensure the server environment has its z-ai credentials provisioned (host-side, not a .env key) and re-dispatch.',
+        'Re-dispatch directive once the AI backend is active.',
       ],
       preparedBy: {
         name: 'Sophia Vance',
@@ -1290,10 +1308,10 @@ In accordance with constitutional truthfulness invariants:
         evidenceCount: 0,
         primaryBasis: 'unverified',
       },
-      executionOutcome: verificationResultData.checksFailed.some((c: string) => !c.includes('API key missing'))
+      executionOutcome: verificationResultData.checksFailed.some((c: string) => !c.includes('AI backend unavailable'))
         ? 'verification_rejected'
         : 'unconfigured',
-      failureReason: 'GEMINI_API_KEY environment variable is not configured.',
+      failureReason: 'The server\'s z-ai AI backend is unavailable (SDK could not start).',
     };
 
     return {
@@ -1315,7 +1333,7 @@ In accordance with constitutional truthfulness invariants:
         report: 'pending',
       },
       title: `Directive (Unconfigured): ${shortTitle}`,
-      summary: `Multi-agent orchestration requires GEMINI_API_KEY. Simulated metrics and fake research results are strictly prohibited and were not generated.`,
+      summary: `Multi-agent orchestration requires the server's z-ai AI backend. Simulated metrics and fake research results are strictly prohibited and were not generated.`,
       plan,
       messages,
       deliverables,

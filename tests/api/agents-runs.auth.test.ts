@@ -74,13 +74,12 @@ describe("GET /api/agents/runs — Founder authentication gate (Phase 3.4.1)", (
     expect(String(body.error)).toMatch(/Unauthorized.*Founder/i);
   });
 
-  test("fail-closed: production mode rejects even VALID dev-secret founder headers → 401", async () => {
-    // session.ts prohibits dev bypass headers/cookies unconditionally in
-    // production (defense-in-depth ahead of secret verification), so this
-    // deployment fails closed for every principal in production: there is
-    // no reachable dev-secret founder path when NODE_ENV=production. This
-    // test pins that invariant — production reads require the real
-    // identity provider, never a dev bypass.
+  test("fail-closed matrix (R0.1): production mode — VALID dev-secret founder headers → 200 (the documented production credential); INVALID pair → 401", async () => {
+    // R0.1 reconciliation: the x-samjuniors-dev-as / x-samjuniors-dev-secret
+    // pair is the documented PRODUCTION founder credential this deployment
+    // verifies constant-time (no external identity provider exists). Only the
+    // role-override headers remain prohibited in production (pinned by
+    // r01_auth_design). An invalid or unset secret still fails closed.
     setNodeEnv("production");
     process.env.SAMJUNIORS_DEV_SECRET = "phase-341-real-secret";
     const req = new NextRequest(`${RUNS_URL}?limit=3`, {
@@ -90,10 +89,18 @@ describe("GET /api/agents/runs — Founder authentication gate (Phase 3.4.1)", (
       },
     });
     const res = await GET(req);
-
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(String(body.error)).toMatch(/Unauthorized.*Founder/i);
+    expect(body.success).toBe(true);
+
+    // The fail-closed side of the same matrix: a WRONG secret is rejected.
+    const badReq = new NextRequest(`${RUNS_URL}?limit=3`, {
+      headers: {
+        "x-samjuniors-dev-as": "founder",
+        "x-samjuniors-dev-secret": "phase-341-WRONG-secret",
+      },
+    });
+    const badRes = await GET(badReq);
+    expect(badRes.status).toBe(401);
   });
 });

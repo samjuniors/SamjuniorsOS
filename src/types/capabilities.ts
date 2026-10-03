@@ -3,30 +3,22 @@ import { AgentRole, OutputProvenance } from './os';
 // ----------------------------------------------------------------------------
 // 1. SKILLS (Phase 11.11 Structured Reusable Skill Architecture)
 // ----------------------------------------------------------------------------
+// R1 (honesty/consolidation): the union now declares EXACTLY the skills that
+// exist in the Skill Registry (STRUCTURED_SKILLS). The 13 former members
+// that had no definitions were declarations of capability the OS does not
+// have — the drift this milestone closes. Adding a skill means adding its
+// definition in the same change.
 export type SkillId = 
-  | 'web_research'
-  | 'competitor_research'
-  | 'market_research'
-  | 'software_repository_research'
-  | 'repository_research'
-  | 'source_comparison'
-  | 'evidence_synthesis'
-  | 'prd_creation'
-  | 'requirements_analysis'
-  | 'ux_analysis'
-  | 'roadmap_analysis'
-  | 'financial_modeling'
-  | 'unit_economics'
-  | 'unit_economics_modeling'
-  | 'pricing_tier_simulation'
-  | 'capital_efficiency_audit'
-  | 'scenario_analysis'
-  | 'task_coordination'
-  | 'workflow_planning'
   | 'directive_decomposition'
   | 'compliance_verification'
   | 'executive_synthesis'
-  | 'execution_monitoring';
+  | 'market_research'
+  | 'software_repository_research'
+  | 'prd_creation'
+  | 'requirements_analysis'
+  | 'unit_economics_modeling'
+  | 'pricing_tier_simulation'
+  | 'capital_efficiency_audit';
 
 export interface SkillRequiredInput {
   name: string;
@@ -97,20 +89,19 @@ export interface SkillExecutionResult {
 // ----------------------------------------------------------------------------
 // 2. TOOLS
 // ----------------------------------------------------------------------------
+// R1 (honesty/consolidation): trimmed to the tools that actually exist in
+// the live catalogs — web_research (internal, live) and the GitHub read trio
+// (Composio allowlisted, read-only), plus the two DECLARED-BUT-UNCONFIGURED
+// ids the orchestrator catalog keeps for future executors (github_issue_create,
+// finance_transfer — both honestly reported as 'unconfigured', so the
+// selector never picks them). The former calendar/drive/gmail/browser
+// members had no executors, no registrations and no references.
 export type ToolId = 
   | 'web_research'
-  | 'browser'
-  | 'calendar_read'
-  | 'calendar_create'
-  | 'drive_read'
-  | 'drive_create'
   | 'github_read'
   | 'github_repository_read'
   | 'github_issues_read'
   | 'github_issue_create'
-  | 'gmail_read'
-  | 'gmail_draft'
-  | 'gmail_send'
   | 'finance_transfer';
 
 export type ToolRiskLevel = 'low' | 'medium' | 'high';

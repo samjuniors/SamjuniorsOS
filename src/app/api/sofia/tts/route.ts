@@ -11,15 +11,24 @@
  * voice for that sentence, which is exactly the right failure mode.
  */
 
+import { NextRequest } from 'next/server'
 import { elevenKey, ttsPinId, localTtsAvailable, synthesizeLocalTts } from '@/lib/server/providers'
 import { ZAI_VOICE_IDS, ELEVEN_VOICE_ID, neuralWithCache } from '@/lib/server/voices'
+import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type TtsBody = { text?: string; voice?: string; speed?: number }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // Fail closed: this route streams ElevenLabs (paid key) or z-ai neural
+  // synthesis — a Founder session is required before any provider call.
+  const founder = await getAuthenticatedFounder(req)
+  if (!founder || founder.role !== 'FOUNDER') {
+    return new Response('Founder session required', { status: 401 })
+  }
+
   let body: TtsBody
   try {
     body = (await req.json()) as TtsBody

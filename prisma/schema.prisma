@@ -382,6 +382,13 @@ model CanonicalFact {
   supersededById   String?
   supersededBy     CanonicalFact?  @relation("FactSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
   supersedingFacts CanonicalFact[] @relation("FactSupersession")
+  // M5.3-A — SUPERSESSION EVENT TIME (PostgreSQL target: TIMESTAMPTZ).
+  // The moment this fact stopped being current truth (the successor's
+  // promotion moment by default — see claim-store markFactSuperseded).
+  // Null on an active fact = still current; null on a superseded fact =
+  // legacy pre-M5.3-A row with unknown event time (fail-closed: such a fact
+  // is excluded from AS_OF truth reads but stays available to HISTORICAL).
+  supersededAt     DateTime?
   confidence       String          @default("verified_fact")
   promotedAt       DateTime        @default(now())
   promotedBy       String
@@ -391,7 +398,52 @@ model CanonicalFact {
 
   @@index([validityState, category])
   @@index([subject])
+  @@index([supersededById])
   @@map("canonical_facts")
+}
+
+// ---------------------------------------------------------
+// 9b. M5.3-C — EXPLICIT DEPENDENCY RELATIONS (derived retrieval index)
+// ---------------------------------------------------------
+// Relational representation of the ONE relationship class the benchmark
+// evidence required (BQ3a): "X depends on Y" between named services,
+// extracted DETERMINISTICALLY from canonical fact statements (rule
+// dep-rel/1 — see src/lib/server/retrieval/dependency-relations.ts).
+//
+// THIS IS NOT A GRAPH DATABASE and not a second memory architecture:
+//  - every row is derived from exactly one canonical fact (sourceFactId),
+//    with the statement hash pinned for tamper-evidence;
+//  - rows are a RETRIEVAL INDEX — canonical truth remains in
+//    canonical_facts; dropping this table loses no truth;
+//  - relationType is closed: DEPENDS_ON is the only evidenced type
+//    (AFFECTS / forward "what does X depend on" traversal etc. are
+//    deferred until benchmark evidence requires them);
+//  - status mirrors the source fact's validityState (a relation extracted
+//    from a superseded fact is 'superseded' and excluded from
+//    CURRENT-dependency traversal);
+//  - scope is 'company' (Personal Mind contributes no dependency
+//    relations — the founder/company boundary is preserved by
+//    construction).
+model DependencyRelation {
+  id                  String   @id @default(uuid())
+  sourceEntity        String // normalized key, e.g. "nimbus gateway"
+  sourceEntityDisplay String // display form, e.g. "Nimbus Gateway"
+  targetEntity        String // normalized key, e.g. "aurorium auth service"
+  targetEntityDisplay String
+  relationType        String   @default("DEPENDS_ON")
+  scope               String   @default("company")
+  status              String   @default("active") // mirrors source fact validityState
+  sourceFactId        String // provenance: the canonical fact this edge was extracted from
+  observedAt          DateTime // = source fact promotedAt
+  provenance          Json     @default(dbgenerated("'{}'")) // { statementHash, extractionRule }
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([sourceEntity, targetEntity, relationType, sourceFactId])
+  @@index([targetEntity, relationType, status])
+  @@index([sourceEntity, relationType, status])
+  @@index([sourceFactId])
+  @@map("dependency_relations")
 }
 
 // ---------------------------------------------------------

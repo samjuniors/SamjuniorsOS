@@ -9,7 +9,9 @@
  * img-src closed to https:.
  */
 
+import { NextRequest } from 'next/server'
 import { proxyMedia, isProxyError } from '@/lib/server/net'
+import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -17,7 +19,15 @@ export const dynamic = 'force-dynamic'
 const MAX_IMG_BYTES = 15 * 1024 * 1024
 const IMG_TIMEOUT_MS = 10_000
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  // Fail closed: this is a server-side fetch proxy for arbitrary remote
+  // URLs — without a Founder session it is an open relay for anyone who
+  // can reach the port.
+  const founder = await getAuthenticatedFounder(req)
+  if (!founder || founder.role !== 'FOUNDER') {
+    return new Response('Founder session required', { status: 401 })
+  }
+
   const target = new URL(req.url).searchParams.get('url') ?? ''
   if (!target) return new Response('no url', { status: 400 })
   try {

@@ -1,42 +1,44 @@
 /**
- * The resilience layer — every provider chain in one place.
+ * The resilience layer — the speech chains, in one place.
  *
  * The assistant is a conversation, and a conversation dies the moment one
- * sentence goes unanswered. Every external service it depends on — the model
- * that thinks, the transcriber that hears, the voice that speaks — has a
- * moment where it rate-limits, times out, or simply goes down. So none of
- * them is load-bearing alone: each is one link in a chain, and the chain is
- * walked on failure, automatically, mid-turn.
+ * sentence goes unanswered. Every external service it depends on — the
+ * transcriber that hears, the voice that speaks — has a moment where it
+ * rate-limits, times out, or simply goes down. So none of them is
+ * load-bearing alone: each is one link in a chain, and the chain is walked
+ * on failure, automatically, mid-turn.
  *
- *   LLM   z-ai (built-in, no key) → Gemini → any local OpenAI-compatible
- *         server (Ollama, LM Studio, vLLM, llama.cpp)
  *   STT   Deepgram → ElevenLabs Scribe → z-ai ASR (no key) → a local
  *         OpenAI-compatible transcription server (faster-whisper, LocalAI)
  *   TTS   ElevenLabs → z-ai neural → a local OpenAI-compatible speech server
  *         (kokoro-fastapi, LocalAI, openedai-speech) → the browser's own voice
  *
+ * The LLM is deliberately NOT a chain. R1 (honesty/consolidation) removed the
+ * z-ai → Gemini → local fallback ladder and the SSE tool loop that walked it
+ * (brain.ts) — they had zero importers, while every production AI surface
+ * (the Sophia turn executor, the agent executor, advisor, collaboration)
+ * already talks to the pre-provisioned z-ai SDK directly through
+ * src/lib/server/ai/zai-client.ts. llmInfo() below reports that one link
+ * honestly; a fallback the production path never walks is a fallback you
+ * can't trust.
+ *
  * Three ideas make the chains safe rather than just long:
  *
- *   Circuit breakers. A provider that fails twice in a row (LLM) or three
- *   times (STT) is skipped for a cooldown — 90s / 60s — so a dead provider
- *   costs one failed attempt, not one per sentence. When every link is
- *   cooling the chain is walked anyway, in order: a retry is better than a
- *   shrug. Any success heals the provider immediately.
+ *   Circuit breakers. A provider that fails three times in a row (STT) is
+ *   skipped for a cooldown — 60s — so a dead provider costs one failed
+ *   attempt, not one per sentence. When every link is cooling the chain is
+ *   walked anyway, in order: a retry is better than a shrug. Any success
+ *   heals the provider immediately.
  *
- *   Pins. SOFIA_LLM_PROVIDER / SOFIA_STT_PROVIDER / SOFIA_TTS_PROVIDER
- *   collapse a chain to one link on purpose — for testing, or because a
- *   person has decided they know better than the ladder. (The JARVIS_*
- *   spellings from the bridge era still work as aliases.)
+ *   Pins. SOFIA_STT_PROVIDER / SOFIA_TTS_PROVIDER collapse a chain to one
+ *   link on purpose — for testing, or because a person has decided they know
+ *   better than the ladder. (The JARVIS_* spellings from the bridge era
+ *   still work as aliases.)
  *
  *   Honesty. llmInfo() / sttInfo() are the single source of truth for
  *   /api/sofia/health, which is what the settings panel shows the user:
  *   which links exist, which are configured, which one is answering right
  *   now. A fallback you can't see is a fallback you can't trust.
- *
- * Everything speaks the OpenAI wire format — the request bodies and the
- * SSE event stream — which is why one parser (in brain.ts) serves every
- * link: the z-ai SDK, Gemini's OpenAI-compat endpoint and a local server
- * all say `data: {"choices":[{"delta":{...}}]}`.
  *
  * Ported from bridge/providers.mjs (Vite era) — behaviour identical; the env
  * vars gained SOFIA_* aliases and Next.js loads .env.local itself.
@@ -109,29 +111,10 @@ function makeGuard(threshold: number, cooldownMs: number) {
   }
 }
 
-const LLM_GUARD = makeGuard(2, 90_000)
 const STT_GUARD = makeGuard(3, 60_000)
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const errText = (err: unknown) =>
   String((err as Error | undefined)?.message ?? err).replace(/\s+/g, ' ').slice(0, 180)
-
-/** Errors worth one quick retry before the chain moves on. */
-function isTransient(err: unknown): boolean {
-  return /\b(429|rate|too many|502|503|504|timeout|network|fetch failed|ECONN)\b/i.test(
-    errText(err),
-  )
-}
-
-/** A provider that refused our tool schema (small local models often do)
- *  gets one retry without tools — a plain answer beats a failed turn. A
- *  missing endpoint (404) is NOT a schema refusal, or every typo would
- *  silently strip the tools for good. Latched so the retry is paid once per
- *  provider, not once per turn. */
-function looksLikeToolRejection(err: unknown): boolean {
-  const t = errText(err)
-  return /(\b400\b|\b422\b|unsupported|not support|tool|function)/i.test(t)
-}
 
 // ---------------------------------------------------------------------------
 // Env plumbing — Next.js loads .env.local / .env into process.env itself.
@@ -153,9 +136,6 @@ function normaliseBase(raw: string, { appendV1 = true } = {}): string {
   return base
 }
 
-function llmPinId(): string {
-  return envAlias('SOFIA_LLM_PROVIDER', 'JARVIS_LLM_PROVIDER').toLowerCase()
-}
 function sttPinId(): string {
   return envAlias('SOFIA_STT_PROVIDER', 'JARVIS_STT_PROVIDER').toLowerCase()
 }
@@ -164,147 +144,15 @@ export function ttsPinId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// The LLM chain — z-ai → Gemini → local.
-// ---------------------------------------------------------------------------
-
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-
-function geminiKey(): string {
-  // GEMINI_API_KEY is the one everyone has; GOOGLE_API_KEY is the one Google's
-  // own quickstarts hand out — accept both rather than making a person rename.
-  return env('GEMINI_API_KEY') || env('GOOGLE_API_KEY')
-}
-
-function localLlmBase(): string {
-  const direct = env('LOCAL_LLM_BASE_URL')
-  if (direct) return normaliseBase(direct)
-  // OLLAMA_BASE_URL is set by the tooling around Ollama more often than
-  // anyone types ours — accept it as an alias rather than losing the link.
-  const ollama = env('OLLAMA_BASE_URL')
-  if (ollama) return normaliseBase(ollama)
-  return ''
-}
-
-/** What the whole server sends the model. Kept loose on purpose: tool
- *  definitions and messages come straight from brain.ts's own shapes. */
-export type LlmBody = {
-  messages: Array<Record<string, unknown>>
-  tools?: unknown[]
-  stream?: boolean
-  [key: string]: unknown
-}
-
-/** One SSE reader from any OpenAI-compatible chat endpoint. The shape —
- *  `data: {...}\n\n` lines ending in `data: [DONE]` — is exactly what
- *  brain.ts already parses for the z-ai SDK's streams. */
-async function openAiCompatReader(
-  url: string,
-  key: string,
-  body: LlmBody,
-): Promise<ReadableStreamDefaultReader<Uint8Array>> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(key ? { authorization: `Bearer ${key}` } : {}),
-    },
-    body: JSON.stringify(body),
-    // No abort signal: it would kill the body mid-stream, and local models
-    // legitimately take their time. The brain's own stall guard owns hangs.
-  })
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '')
-    throw new Error(`${res.status} ${res.statusText} ${String(detail).slice(0, 200)}`)
-  }
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error('the provider returned no stream')
-  return reader
-}
-
-type LlmProvider = {
-  id: string
-  label: string
-  note: string
-  available: () => boolean
-  model?: string
-  start: (body: LlmBody) => Promise<ReadableStreamDefaultReader<Uint8Array>>
-}
-
-/** Each link adapts the shared body to its own dialect. */
-function buildLlmBody(p: { id: string; model?: string }, body: LlmBody, withTools: boolean): LlmBody {
-  const tools =
-    withTools && Array.isArray(body.tools) && body.tools.length ? body.tools : undefined
-  if (p.id === 'zai') {
-    // `thinking` is a z-ai extension; harmless nowhere else but not theirs
-    // to carry, so it stays on the one link that reads it.
-    return { ...body, tools, thinking: { type: 'disabled' } }
-  }
-  const out: LlmBody = { ...body, tools, model: p.model }
-  delete out.thinking
-  return out
-}
-
-const LLM_CHAIN: LlmProvider[] = [
-  {
-    id: 'zai',
-    label: 'Z-AI',
-    note: 'built-in, no key',
-    available: () => zaiAvailable(),
-    async start(body) {
-      const api = await zaiClient()
-      const res = await (api.chat.completions.create as (b: unknown) => Promise<Response>)(
-        body,
-      )
-      const reader = (res as unknown as { getReader?: () => ReadableStreamDefaultReader<Uint8Array> })
-        .getReader
-        ? (res as unknown as { getReader: () => ReadableStreamDefaultReader<Uint8Array> }).getReader()
-        : null
-      if (!reader) throw new Error('the model returned no stream')
-      return reader
-    },
-  },
-  {
-    id: 'gemini',
-    label: 'GEMINI',
-    note: 'GEMINI_API_KEY',
-    available: () => Boolean(geminiKey()),
-    get model() {
-      return env('GEMINI_MODEL') || 'gemini-2.0-flash'
-    },
-    async start(body) {
-      return openAiCompatReader(GEMINI_URL, geminiKey(), body)
-    },
-  },
-  {
-    id: 'local',
-    label: 'LOCAL',
-    note: 'LOCAL_LLM_BASE_URL',
-    available: () => Boolean(localLlmBase()),
-    get model() {
-      return env('LOCAL_LLM_MODEL') || env('OLLAMA_MODEL') || 'llama3.1'
-    },
-    async start(body) {
-      return openAiCompatReader(
-        `${localLlmBase()}/chat/completions`,
-        env('LOCAL_LLM_API_KEY'),
-        body,
-      )
-    },
-  },
-]
-
-// Latched per provider once a tool rejection is seen — see looksLikeToolRejection.
-const noTools = new Set<string>()
-
-/** The last outcome per provider, for /health: 'never' | 'ok' | 'err'. */
-const llmHealth = new Map<string, string>([
-  ['zai', 'never'],
-  ['gemini', 'never'],
-  ['local', 'never'],
-])
-const llmErrors = new Map<string, string>()
-
-let activeLlm = 'zai'
+// The brain — one provider, honestly reported.
+//
+// R1 (honesty/consolidation): the z-ai → Gemini → local LLM chain and its
+// SSE tool loop (brain.ts) were removed — they had zero importers. Every
+// production AI surface already routes through zai-client.ts, which talks
+// to the same pre-provisioned SDK this module shares (zaiClient() below
+// still exists for the ASR link). The shape of llmInfo() is unchanged so
+// /api/sofia/health, the ask ready-frame and the settings panel need no
+// client changes — it now reports the one link that actually answers.
 
 export type LlmLinkInfo = {
   id: string
@@ -325,90 +173,31 @@ export type LlmInfo = {
   providers: LlmLinkInfo[]
 }
 
-/**
- * Walk the chain and return the first live SSE reader.
- *
- * `announce(provider)` fires exactly when the active link *changes* — the
- * browser turns that into the BRAIN rail line, so a person can see the
- * moment Gemini takes over. Failures are announced the loud way instead: a
- * warning on the server log naming the link and the error.
- */
-export async function openLlmStream(
-  body: LlmBody,
-  announce?: (p: LlmProvider) => void,
-): Promise<{ reader: ReadableStreamDefaultReader<Uint8Array>; provider: LlmProvider }> {
-  const configured = LLM_CHAIN.filter((p) => p.available())
-  if (!configured.length) throw new Error('no llm provider is configured')
-
-  const pinId = llmPinId()
-  const pin = pinId ? configured.find((p) => p.id === pinId) : null
-  if (pinId && !pin) {
-    console.warn(`[sofia] SOFIA_LLM_PROVIDER="${pinId}" matches nothing — using the chain`)
-  }
-  const ordered = pin ? [pin] : configured
-
-  let awake = ordered.filter((p) => !LLM_GUARD.cooling(p.id))
-  if (!awake.length) {
-    // Every link cooling. Try them in order anyway — a chain that has given
-    // up is worse than one that keeps failing loudly.
-    awake = ordered
-  }
-
-  let lastErr: unknown
-  for (const p of awake) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const withTools = !noTools.has(p.id)
-      try {
-        const reader = await p.start(buildLlmBody(p, body, withTools))
-        if (activeLlm !== p.id) {
-          activeLlm = p.id
-          announce?.(p)
-        }
-        llmHealth.set(p.id, 'ok')
-        llmErrors.delete(p.id)
-        LLM_GUARD.heal(p.id)
-        return { reader, provider: p }
-      } catch (err) {
-        lastErr = err
-        // First failure with tools + a rejection-shaped error + never latched:
-        // retry the same link once with the tools stripped.
-        if (attempt === 0 && withTools && !noTools.has(p.id) && looksLikeToolRejection(err)) {
-          noTools.add(p.id)
-          console.warn(`[sofia] llm "${p.id}" refused the tool schema — continuing without tools`)
-          continue
-        }
-        if (!isTransient(err) || attempt === 1) break
-        await sleep(600)
-      }
-    }
-    LLM_GUARD.trip(p.id)
-    llmHealth.set(p.id, 'err')
-    llmErrors.set(p.id, errText(lastErr))
-    console.warn(`[sofia] llm provider "${p.id}" failed: ${errText(lastErr)}`)
-  }
-  throw lastErr ?? new Error('every llm provider failed')
-}
-
-/** What /api/sofia/health and the settings panel show about the brain. */
+/** What /api/sofia/health and the settings panel show about the brain.
+ * There is no fallback ladder to walk — this is the single live link, and
+ * `configured: false` is the honest "the z-ai SDK cannot start on this
+ * machine" case rather than a claim that a key is missing. */
 export function llmInfo(): LlmInfo {
-  const pin = llmPinId()
-  const active = LLM_CHAIN.find((p) => p.id === activeLlm) ?? LLM_CHAIN[0]
+  const configured = zaiAvailable()
   return {
-    active: activeLlm,
-    label: active.label,
-    pin: pin || null,
-    providers: LLM_CHAIN.map((p) => ({
-      id: p.id,
-      label: p.label,
-      note: p.note,
-      configured: p.available(),
-      // 'never' reads as ready-to-serve, not broken.
-      healthy: llmHealth.get(p.id) !== 'err',
-      state: llmHealth.get(p.id) ?? 'never',
-      cooling: LLM_GUARD.cooling(p.id),
-      tools: !noTools.has(p.id),
-      error: llmErrors.get(p.id) ?? null,
-    })),
+    active: 'zai',
+    label: 'Z-AI',
+    pin: null,
+    providers: [
+      {
+        id: 'zai',
+        label: 'Z-AI',
+        note: 'built-in, no key',
+        configured,
+        // 'never' reads as ready-to-serve, not broken; there is no chain
+        // walk to record outcomes for a link that is the whole chain.
+        healthy: configured,
+        state: configured ? 'never' : 'err',
+        cooling: false,
+        tools: true,
+        error: configured ? null : 'z-ai sdk is not available on this machine',
+      },
+    ],
   }
 }
 

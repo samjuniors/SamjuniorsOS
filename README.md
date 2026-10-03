@@ -33,21 +33,57 @@ bun run dev            # http://localhost:3000
 - While hidden, her WebGL render loop parks (mic and voice stay live), so
   the OS surfaces get the whole machine.
 
-## The engines — chains, not single points
+## The engines — chains where chains are real
 
-Every service SOFIA depends on is a chain walked automatically when a link
-fails, mid-turn for the LLM (z-ai → Gemini → any local OpenAI-compatible
-server), per phrase for STT (Deepgram → ElevenLabs → z-ai → local → the
-browser's own recogniser), per sentence for TTS (ElevenLabs → z-ai neural →
-local → the system voice).
+The speech services are chains walked automatically when a link fails,
+per phrase for STT (Deepgram → ElevenLabs → z-ai → local → the browser's own
+recogniser), per sentence for TTS (ElevenLabs → z-ai neural → local → the
+system voice).
+
+The **LLM is deliberately not a chain**. R1 (honesty/consolidation) removed
+the z-ai → Gemini → local ladder: it was only ever walked by a dead tool
+loop (`src/lib/server/brain.ts`, zero importers — now deleted), while the
+real conversation path talks to the pre-provisioned z-ai SDK directly. One
+link, honestly reported — `/api/sofia/health` says exactly that.
 
 **Zero-key start:** she runs with nothing configured — z-ai brain, z-ai
-neural voices, browser speech recognition. Add keys to move up the chains:
-copy `.env.example` to `.env.local` and fill what you want. Blank = that
-link is off, honestly reported in the settings ENGINES fold and
+neural voices, browser speech recognition. Add keys to move up the speech
+chains: copy `.env.example` to `.env.local` and fill what you want. Blank =
+that link is off, honestly reported in the settings ENGINES fold and
 `/api/sofia/health`.
 
-Full provider setup — Gemini, Ollama / LM Studio / vLLM, Deepgram,
-ElevenLabs, faster-whisper, kokoro — is in [docs/sofia/SETUP.md](docs/sofia/SETUP.md).
-To port the fallback layer into another codebase:
-[docs/sofia/MERGE_PROMPT.md](docs/sofia/MERGE_PROMPT.md).
+## Governance (what every surface shares)
+
+- **One execution authority** — tool calls that change anything run through
+  the `SideEffectAuthorizationGate`: default-deny, payload-bound,
+  occurrence-bound approval, canonical idempotency, forced audit. The two
+  directive engines — the multi-agent orchestrator (immediate directives)
+  and the workflow runtime (scheduled directives) — share one authority
+  stack: the same agent executor (one server-side provider), the same gate,
+  the same run store and audit trail. The realtime surface's direct tools
+  (image generation, live web search) go through the same gate (R0/R2).
+- **One founder identity** — server-validated sessions
+  (`POST /api/auth/founder-session`, HttpOnly cookies; header pairs for API
+  clients). Production fails closed when the secret is unset (R0/R0.1).
+- **Honest degraded paths** — when the model is unavailable, surfaces say
+  so; nothing fabricates figures, approvals, inspections, or search
+  results (R1).
+
+## Setup
+
+See **[docs/SETUP.md](docs/SETUP.md)** — zero-key quick start, speech
+provider keys, verification workflow and a troubleshooting table.
+
+## Merging the speech resilience layer into another project
+
+See **[docs/MERGE_PROMPT.md](docs/MERGE_PROMPT.md)** — a self-contained
+paste-ready prompt that specifies the speech resilience layer (chains,
+breakers, status surface, acceptance tests) for any agent working in any
+stack. (Its LLM-chain sections predate R1; this repo's brain is a single
+z-ai link — see above.)
+
+## Credits
+
+Built on [adewaskar/jarvis](https://github.com/adewaskar/jarvis). Voice
+ genders measured by FFT, not guessed. The plasma orb was retired in favour
+ of the hologram with thanks for its service.

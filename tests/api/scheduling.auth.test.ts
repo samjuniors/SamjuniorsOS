@@ -112,7 +112,7 @@ describe("POST /api/workflow/scheduling — automation heartbeat authentication 
     expect(res.status).toBe(401);
   });
 
-  test("production: valid dev-secret founder headers are still 401 — cron secret is the only production key", async () => {
+  test("production: valid dev-secret founder headers → 200 (R0.1: the header pair is the documented production founder credential; cron secret remains the automation key)", async () => {
     setNodeEnv("production");
     process.env.SAMJUNIORS_DEV_SECRET = "phase-44a-dev-secret";
     delete process.env.CRON_TRIGGER_SECRET;
@@ -125,7 +125,12 @@ describe("POST /api/workflow/scheduling — automation heartbeat authentication 
     });
     const res = await POST(req);
 
-    expect(res.status).toBe(401);
+    // R0.1 reconciliation: getAuthenticatedFounder verifies the dev-as/
+    // dev-secret pair (constant-time) as the production founder credential,
+    // so a VALID pair authenticates here (triggerSource: founder) while an
+    // invalid/unset secret still fails closed (pinned by the sibling tests
+    // and r01_auth_design). The cron secret stays the only AUTOMATION key.
+    expect(res.status).toBe(200);
     delete process.env.SAMJUNIORS_DEV_SECRET;
   });
 

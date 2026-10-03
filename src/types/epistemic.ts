@@ -116,6 +116,15 @@ export interface CanonicalFact {
   category: 'financial' | 'architectural' | 'operational' | 'market_research' | 'governance';
   validityState: FactValidityState;
   supersededById?: string; // If superseded by a newer verified fact
+  /**
+   * M5.3-A — SUPERSESSION EVENT TIME (ISO-8601). The moment this fact
+   * stopped being current truth. Default recorded by markFactSuperseded is
+   * the successor's promotion moment; null on an ACTIVE fact means "still
+   * current"; null on a SUPERSEDED fact means "legacy row, unknown event
+   * time" (fail-closed: excluded from AS_OF truth reads, still listed by
+   * HISTORICAL reads).
+   */
+  supersededAt?: string;
   confidence: 'verified_fact';
   promotedAt: string;
   promotedBy: string;

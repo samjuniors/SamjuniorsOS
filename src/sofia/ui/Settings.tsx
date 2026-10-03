@@ -457,7 +457,7 @@ export function Settings() {
                   the variable that turns its link on. */}
               {llmChain ? (
                 <>
-                  <div className="settings-title">BRAIN · FAILS OVER AUTOMATICALLY</div>
+                  <div className="settings-title">BRAIN · SERVER-SIDE, SINGLE PROVIDER</div>
                   {llmChain.providers.map((p, i) => (
                     <ChainRow
                       key={p.id}

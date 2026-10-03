@@ -8,6 +8,7 @@ import {
 import { prisma } from '@/lib/server/db/prisma';
 import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+import { detectTemporalIntent, isRetiredKnowledgeText } from '@/lib/server/retrieval/temporal-semantics';
 
 const STOP_WORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are',
@@ -539,22 +540,30 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
    * Deterministically queries durable reference information.
    * Attaches epistemic label: 'durable_reference' and provenance metadata.
    *
-   * KNOWN AUTHORITY GAP (M3 hardening review — recorded as the NEXT
-   * authority-audit item; deliberately NOT fixed in this pass):
-   *   This method always scores the in-process `knowledgeItems` cache
-   *   (hydrated from DurableFileStore + code seeds at construction, coherent
-   *   only for writes made within THIS process). Unlike getAllKnowledge() /
-   *   getKnowledgeById(), it does NOT read the fail-closed authoritative
-   *   Prisma table in authoritative mode — so knowledge edited or added in
-   *   another process (or before a restart) is invisible to RETRIEVAL while
-   *   being visible to getAllKnowledge(). Callers are context-assembly hot
-   *   paths (SophiaContextAssembler, context-retrieval, context-assembly),
-   *   so the smallest safe correction (routing authoritative mode through
-   *   getAllKnowledge()) is NOT fully isolated: it adds a per-call DB
-   *   dependency and fail-closed 503 propagation to every Sophia turn and
-   *   needs its own authoritative-mode verification matrix. Fix requires a
-   *   dedicated pass with Founder approval. In the current deployment
-   *   (DATABASE_MODE=local) the gap is latent, not active.
+   * M5.2 FIX CLASS 1 — AUTHORITATIVE READ ROUTING (the former self-documented
+   * authority gap, now closed): the candidate set is ALWAYS
+   * getAllKnowledge() — the same fail-closed authoritative read
+   * getAllKnowledge()/getKnowledgeById() already use (Prisma table in
+   * authoritative mode; the coherent in-process cache in local mode).
+   * Previously this method scored only the in-process `knowledgeItems` cache,
+   * so knowledge written by another process (or before a restart) was
+   * invisible to RETRIEVAL while visible to getAllKnowledge(). Fail-closed
+   * propagation on authoritative-mode database failure is INTENTIONAL
+   * (never serve a possibly-stale cache as authoritative knowledge); callers
+   * apply their own fail-soft slice degradation (SophiaContextAssembler 5A
+   * wraps this call in try/catch and records a degraded store).
+   *
+   * M5.2 FIX CLASS 2 — CURRENTNESS RANKING (deterministic): when the query
+   * text carries a CURRENT temporal intent (see retrieval/
+   * temporal-semantics.detectTemporalIntent — "currently", "right now",
+   * "these days", …), items whose own stored text marks them retired/
+   * superseded (see isRetiredKnowledgeText — passive markers only: "retired",
+   * "superseded", "deprecated", …; the active verb "supersedes" does NOT mark
+   * the successor) are ranked BELOW every non-retired match, regardless of
+   * lexical score. History / window / unspecified intents keep the exact
+   * pre-M5.2 score order (historical documents remain reachable for
+   * historical questions). No document is ever deleted or hidden — retired
+   * documents still retrieve and render, clearly labeled as historical.
    */
   public async queryKnowledge(params: KnowledgeQueryParams): Promise<RetrievedKnowledgeItem[]> {
     const queryText = (params.queryText || '').toLowerCase();
@@ -568,7 +577,10 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
     const nowIso = new Date().toISOString();
     const results: RetrievedKnowledgeItem[] = [];
 
-    for (const item of this.knowledgeItems) {
+    // M5.2: authoritative read path (getAllKnowledge), not the raw cache.
+    const candidateItems = await this.getAllKnowledge();
+
+    for (const item of candidateItems) {
       // Role match check
       const isRoleApplicable = !targetRole || targetRole === 'orchestrator' || targetRole === 'council' || targetRole === 'advisor'
         || item.applicableDepartments.includes(targetRole)
@@ -621,8 +633,24 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
       }
     }
 
-    // Sort by relevance score descending
-    results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    // Sort by relevance score descending (exact pre-M5.2 order — stable sort
+    // preserves candidate order on ties), EXCEPT under a CURRENT temporal
+    // intent where retired/superseded documents are demoted below every
+    // non-retired match (M5.2 Fix Class 2: a retired pricing doc must never
+    // outrank the current one for a "currently true" question, no matter how
+    // strongly a quoted old price lexically matches). Deterministic; no
+    // document is dropped — only ordered.
+    const currentIntent = detectTemporalIntent(params.queryText).intent === 'current';
+    if (currentIntent) {
+      results.sort((a, b) => {
+        const retiredA = isRetiredKnowledgeText(a.title, a.summary, a.fullContent) ? 1 : 0;
+        const retiredB = isRetiredKnowledgeText(b.title, b.summary, b.fullContent) ? 1 : 0;
+        if (retiredA !== retiredB) return retiredA - retiredB; // non-retired first
+        return b.relevanceScore - a.relevanceScore;
+      });
+    } else {
+      results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    }
     const limit = params.limit || 5;
     return results.slice(0, limit);
   }

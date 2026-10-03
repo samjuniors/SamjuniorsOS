@@ -355,7 +355,11 @@ export class EpistemicPipeline {
     // Check if previous facts on this subject must be superseded
     if (verification.conflictingFactIds && verification.conflictingFactIds.length > 0) {
       for (const oldFactId of verification.conflictingFactIds) {
-        await this.claimStore.markFactSuperseded(oldFactId, factId);
+        // M5.3-A — the supersession event time is the successor's promotion
+        // moment (`now` above IS this fact's promotedAt), passed explicitly so
+        // the recorded event time is exact even though the successor row is
+        // not yet persisted when the predecessor is marked.
+        await this.claimStore.markFactSuperseded(oldFactId, factId, { supersededAt: now });
       }
     }
 

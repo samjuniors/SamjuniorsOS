@@ -42,6 +42,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 local-*
+
 .claude
 .z-ai-config
 *.log
@@ -58,11 +59,18 @@ dist/
 # Skills directory
 /skills/
 
-# Runtime artifacts — never track (Phase 3.3 cleanup)
+# Runtime artifacts — never track (Phase 3.3 cleanup; D5 union with R0 hygiene)
 db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
 .data/
 .zscripts/dev.pid
 tool-results/
 qa-shots/
 upload/
 artifacts/
+
+# R0 secrets hygiene (sandbox union, D5): local env explicit entry.
+# (.env is already covered by `.env*` above; listed for clarity.)
+/.env

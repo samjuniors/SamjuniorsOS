@@ -6,7 +6,9 @@
  * responses are passed through and the byte ceiling is far higher.
  */
 
+import { NextRequest } from 'next/server'
 import { proxyMedia, isProxyError } from '@/lib/server/net'
+import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +16,14 @@ export const dynamic = 'force-dynamic'
 const MAX_MEDIA_BYTES = 200 * 1024 * 1024
 const MEDIA_TIMEOUT_MS = 30_000
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  // Fail closed: same open-relay reasoning as /api/sofia/img — a Founder
+  // session is required before the server fetches any remote media.
+  const founder = await getAuthenticatedFounder(req)
+  if (!founder || founder.role !== 'FOUNDER') {
+    return new Response('Founder session required', { status: 401 })
+  }
+
   const target = new URL(req.url).searchParams.get('url') ?? ''
   if (!target) return new Response('no url', { status: 400 })
   try {

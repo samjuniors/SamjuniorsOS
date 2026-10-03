@@ -6,6 +6,24 @@ import { CompanyKnowledgeStore, extractTokens } from '../knowledge/knowledge-sto
 import { CompanyMemoryStore } from '../memory/memory-store';
 import { SophiaMemoryStore, SOPHIA_MEMORY_TYPES } from './personal-memory-store';
 import { buildActivityProjection } from '../activity/projection';
+import { ConversationStore } from '../conversation/store';
+import {
+  computeChangeWindow,
+  DEFAULT_CHANGE_WINDOW_MONTHS,
+  detectTemporalIntent,
+  isInRange,
+  isRetiredKnowledgeText,
+  parseWindowDuration,
+  toEpochMs,
+} from '../retrieval/temporal-semantics';
+import { DependencyRelationStore } from '../retrieval/dependency-relation-store';
+import {
+  collectDependencyFacts,
+  detectDependencyIntent,
+  knownEntityKeys,
+  resolveDependencyAnchors,
+  traverseDependents,
+} from '../retrieval/dependency-relations';
 import { SophiaAssembledContext, SophiaContextSlice } from './types';
 
 /**
@@ -48,6 +66,17 @@ const PARTITION_LIMITS = {
   historicalPrecedent: 800,  // ~200 tokens
   recentActivity: 800,       // ~200 tokens
   dialogueHistory: 1000,     // ~250 tokens
+  // M5.2 additions — small, bounded partitions for the new deterministic
+  // retrieval projections. The dynamic-payload ceiling is preserved by
+  // keeping each new partition in line with the existing 500–1400 range and
+  // by their intent gates (a turn renders at most one of the temporal
+  // projections; the episodic slice is founder-scoped and match-gated).
+  changeRecord: 2100,        // ~525 tokens (windowed change enumeration, WINDOW intent only; bounded at 16 entries)
+  supersededFacts: 500,      // ~125 tokens (historical fact projection, HISTORY intent only)
+  episodicMemory: 600,       // ~150 tokens (founder-scoped past-conversation recall)
+  // M5.3-C — bounded dependency-chain projection (dependency-intent queries
+  // whose anchors resolve; edges cite their source facts; active facts only).
+  dependencyPath: 900,       // ~225 tokens (bounded at 8 edges + 4 facts)
   // P2 follow-up (context starvation): 600 chars admitted only ~3 short
   // memories after wrapper overhead — the deterministic retrieval policy
   // (below) is useless if the render budget starves whatever it selects.
@@ -311,9 +340,23 @@ export function selectPersonalMindMemories<
 
   // Deterministic lexical score per memory: the number of DISTINCT folded
   // message tokens that also appear in the memory's folded content tokens.
+  //
+  // M5.2 TYPE-TOKEN CONDITIONING (Fix Class 4 — deterministic structured-
+  // field matching): the memory's own memoryType (a store-validated member of
+  // the SOPHIA_MEMORY_TYPES allow-list — the Personal Mind's controlled
+  // vocabulary) joins the foldable CONTENT-side token set, with underscores
+  // as spaces ('COMMUNICATION_PREFERENCE' → communication, preference). This
+  // is what lets "what are my communication preferences" tier-1 match the
+  // COMMUNICATION_PREFERENCE memories whose CONTENT carries no such token —
+  // the exact structured-filtering gap M5.1 measured (BQ7b: tier-1 matched
+  // NOTHING and the selection fell to the unconditioned fallback). The
+  // lifecycle/founder/scope eligibility of the pool is decided UPSTREAM and
+  // is untouched: type tokens only ORDER an already-eligible pool.
   const lexicalScores = new Map<T, number>();
   for (const m of all) {
-    const contentTokens = foldTokenSet(m.content);
+    const contentTokens = foldTokenSet(
+      `${(m.memoryType || '').replace(/_/g, ' ')} ${m.content}`
+    );
     let score = 0;
     for (const token of queryTokens) {
       if (contentTokens.has(token)) score++;
@@ -483,6 +526,23 @@ export class SophiaContextAssembler {
     const isCasual = isCasualGreeting(opts.message);
 
     // =========================================================================
+    // M5.2 — DETERMINISTIC TEMPORAL INTENT (Fix Class 2/5)
+    //
+    // The canonical turn's ONLY temporal routing signal, computed once from
+    // the founder message via pure regex cue lists (see retrieval/
+    // temporal-semantics.ts; precedence WINDOW > CURRENT > HISTORY >
+    // UNSPECIFIED — a message quoting both sides of a supersession asks for
+    // the CURRENT answer). Downstream effects, each gated on the intent:
+    //   CURRENT  → knowledge currentness ranking (inside queryKnowledge) and
+    //              the RETIRED render label on slice 5A lines;
+    //   HISTORY  → the SUPERSEDED_FACT historical projection (after 4A);
+    //   WINDOW   → the CHANGE_RECORD windowed enumeration block (after 3);
+    //   UNSPECIFIED → every ranking behaves exactly as it did in A0 (M4-D).
+    // No LLM, no embedding, no wall-clock dependence in the routing itself.
+    // =========================================================================
+    const temporalIntent = detectTemporalIntent(opts.message);
+
+    // =========================================================================
     // 1. Authoritative Operational Telemetry
     //    (M1: reads the CANONICAL CompanyStateStore — previously this read
     //     hardcoded os-data constants through CompanyContextProvider, so
@@ -511,6 +571,67 @@ export class SophiaContextAssembler {
         `  - MRR: ${mrrText} | ARR: ${arrText}`,
         `  - Gross Margin Floor: ${marginText} | Monthly Burn: ${burnText} | Cash Runway: ${runwayText}`,
       ];
+
+      // -------------------------------------------------------------------------
+      // M5.2 FIX CLASS 3 — GOVERNANCE DECISION VISIBILITY (query-conditioned).
+      //
+      // Decisions always existed authoritatively in CompanyStateStore
+      // (getDecisions); the M5.1-measured gap was that NO canonical render
+      // path exposed them. This is the smallest missing projection: the
+      // decisions lexically matching the CURRENT message render (top 2),
+      // under this slice's existing AUTHORITATIVE_OPERATIONAL_STATE
+      // authority. STRICT MATCH-ONLY by design: an unmatched query renders
+      // NO decisions — an unconditional "recent decisions" block would
+      // blanket-render out-of-window decisions (the BQ2 forbidden trap:
+      // an old lease renewal presented as a relevant change).
+      //
+      // WINDOW-INTENT GATE: a "what changed" question renders decisions
+      // ONLY through the date-filtered CHANGE_RECORD block below — lexical
+      // decision matching is switched OFF for window queries, because a
+      // window phrase ("last 3 months") spuriously matches incidental
+      // decision text ("12 months lease") and would admit out-of-window
+      // records as if they were current governance state.
+      // -------------------------------------------------------------------------
+      if (temporalIntent.intent !== 'window') {
+        try {
+          const queryTokens = new Set(extractTokens(opts.message));
+          const matchedDecisions = (await stateStore.getDecisions())
+            .map((dec) => {
+              const decTokens = new Set([
+                ...extractTokens(dec.title),
+                ...extractTokens(dec.recommendation),
+                ...extractTokens(dec.category),
+                ...extractTokens(dec.businessImpact),
+                ...extractTokens(dec.evidenceSummary),
+              ]);
+              let matched = 0;
+              for (const token of queryTokens) {
+                if (decTokens.has(token)) matched++;
+              }
+              return { dec, matched };
+            })
+            .filter((entry) => entry.matched > 0)
+            .sort((a, b) => {
+              if (b.matched !== a.matched) return b.matched - a.matched;
+              const ta = toEpochMs(a.dec.date);
+              const tb = toEpochMs(b.dec.date);
+              if (tb !== ta) return tb - ta;
+              return a.dec.id < b.dec.id ? -1 : 1;
+            })
+            .slice(0, 2);
+
+          if (matchedDecisions.length > 0) {
+            operationalLines.push('Recent Governance Decisions (query-matched):');
+            for (const { dec } of matchedDecisions) {
+              operationalLines.push(
+                `  - Decision [${dec.id}] "${dec.title}" (${dec.status}, ${dec.date}) -> ${dec.recommendation}`
+              );
+            }
+          }
+        } catch (err) {
+          degradedStores.push('CompanyStateStore.decisions');
+        }
+      }
 
       if (initiatives.length > 0) {
         operationalLines.push('Active Strategic Initiatives:');
@@ -612,19 +733,231 @@ export class SophiaContextAssembler {
     }
 
     // =========================================================================
+    // 3B. M5.2 — Recent Company Changes (windowed change enumeration)
+    //
+    // Rendered ONLY when the message carries a deterministic WINDOW intent
+    // ("what changed …", "recent changes", …). This is the change-detection
+    // retrieval surface M5.1 measured as missing: a lexical query cannot
+    // enumerate a change set (the M5.1 B_semantic×5 failures on "What
+    // changed in company strategy…"), but the STORES already record every
+    // event's timestamp — so the enumeration is deterministic:
+    //
+    //   FACTS      promoted in window; and superseded facts whose SUCCESSOR
+    //              was promoted in window (the supersession event itself
+    //              carries no stored timestamp — the successor's promotion
+    //              date is the only deterministic anchor, and it is rendered
+    //              AS such, never invented);
+    //   PRECEDENTS recorded (timestamp) in window;
+    //   KNOWLEDGE  non-retired documents verified (lastVerifiedDate) in
+    //              window, plus RETIRED documents of the same title family
+    //              whose family's current document was verified in window
+    //              (a version transition), rendered as explicit pairs;
+    //   DECISIONS  dated in window.
+    //
+    // The window is DATA-ANCHORED: windowTo = max(wall clock, newest recorded
+    // event) and windowFrom = windowTo − parsed duration ("last N months",
+    // default 3). Production turns therefore enumerate real "last N months"
+    // windows; a dataset whose newest event postdates the system clock
+    // (simulated/frozen corpora, clock skew) anchors to the data instead of
+    // silently enumerating nothing. Every entry cites the authoritative
+    // record id; the SLICE itself is a DERIVED, advisory CHANGE_RECORD (same
+    // epistemic class as RECENT_ACTIVITY) — superseded facts render here
+    // only as labeled history, NEVER as current truth.
+    // =========================================================================
+    if (temporalIntent.intent === 'window') {
+      try {
+        const duration = parseWindowDuration(opts.message);
+        const months = duration?.months ?? DEFAULT_CHANGE_WINDOW_MONTHS;
+
+        const allFacts = await EpistemicClaimStore.getInstance().listAllFacts();
+        const allPrecedents = await CompanyMemoryStore.getInstance().getAllMemories();
+        const allKnowledge = await CompanyKnowledgeStore.getInstance().getAllKnowledge();
+        const allDecisions = await CompanyStateStore.getInstance().getDecisions();
+
+        const latestEventMs = Math.max(
+          0,
+          ...allFacts.map((f) => toEpochMs(f.promotedAt)),
+          ...allPrecedents.map((p) => toEpochMs(p.timestamp || p.recordedAt)),
+          ...allKnowledge.map((k) => toEpochMs(k.lastVerifiedDate)),
+          ...allDecisions.map((d) => toEpochMs(d.date))
+        );
+        const { windowFromMs, windowToMs } = computeChangeWindow(Date.now(), latestEventMs, months);
+
+        interface ChangeLine {
+          sortMs: number;
+          categoryOrder: number;
+          id: string;
+          line: string;
+        }
+        const changes: ChangeLine[] = [];
+
+        for (const fact of allFacts) {
+          if (fact.validityState === 'active' && isInRange(toEpochMs(fact.promotedAt), windowFromMs, windowToMs)) {
+            changes.push({
+              sortMs: toEpochMs(fact.promotedAt),
+              categoryOrder: 0,
+              id: fact.id,
+              line: `  - [FACT-${fact.id}] promoted ${String(fact.promotedAt).slice(0, 10)}: "${fact.statement}"`,
+            });
+          }
+        }
+        for (const fact of allFacts) {
+          if (fact.validityState !== 'superseded' || !fact.supersededById) continue;
+          const successor = allFacts.find((f) => f.id === fact.supersededById);
+          if (!successor) continue;
+          if (isInRange(toEpochMs(successor.promotedAt), windowFromMs, windowToMs)) {
+            changes.push({
+              sortMs: toEpochMs(successor.promotedAt),
+              categoryOrder: 1,
+              id: fact.id,
+              line:
+                `  - [FACT-${fact.id}] SUPERSEDED ${String(successor.promotedAt).slice(0, 10)} (successor promotion date): ` +
+                `"${fact.statement}" -> superseded by [FACT-${successor.id}]`,
+            });
+          }
+        }
+        for (const precedent of allPrecedents) {
+          const at = toEpochMs(precedent.timestamp || precedent.recordedAt);
+          if (isInRange(at, windowFromMs, windowToMs)) {
+            changes.push({
+              sortMs: at,
+              categoryOrder: 2,
+              id: precedent.id,
+              line: `  - Precedent [${precedent.id}]: ${precedent.approvedAction} (${precedent.timestamp || precedent.recordedAt})`,
+            });
+          }
+        }
+        {
+          // Knowledge version families: title with parenthetical/version
+          // suffixes stripped, lowercased, collapsed to a slug. A retired
+          // document pairs with the newest non-retired member of its family
+          // when that member was verified in window (a version transition).
+          const familyKey = (title: string) =>
+            title
+              .replace(/\([^)]*\)/g, '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '');
+          const families = new Map<string, typeof allKnowledge>();
+          for (const item of allKnowledge) {
+            const key = familyKey(item.title || item.documentId);
+            families.set(key, [...(families.get(key) ?? []), item]);
+          }
+          const renderedFamilyPairs = new Set<string>();
+          for (const item of allKnowledge) {
+            const verifiedMs = toEpochMs(item.lastVerifiedDate);
+            const retired = isRetiredKnowledgeText(item.title, item.summary, item.content);
+            if (!retired && isInRange(verifiedMs, windowFromMs, windowToMs)) {
+              changes.push({
+                sortMs: verifiedMs,
+                categoryOrder: 3,
+                id: item.documentId,
+                line: `  - [${item.documentId}] "${item.title}" current (verified ${item.lastVerifiedDate})`,
+              });
+              // Pair retired family members with this current document.
+              const key = familyKey(item.title || item.documentId);
+              for (const sibling of families.get(key) ?? []) {
+                if (sibling.documentId === item.documentId) continue;
+                if (!isRetiredKnowledgeText(sibling.title, sibling.summary, sibling.content)) continue;
+                const pairKey = `${sibling.documentId}->${item.documentId}`;
+                if (renderedFamilyPairs.has(pairKey)) continue;
+                renderedFamilyPairs.add(pairKey);
+                changes.push({
+                  sortMs: verifiedMs,
+                  categoryOrder: 3,
+                  id: sibling.documentId,
+                  line:
+                    `  - [${sibling.documentId}] RETIRED -> superseded by [${item.documentId}] ` +
+                    `(current verified ${item.lastVerifiedDate}): "${sibling.title}"`,
+                });
+              }
+            }
+          }
+        }
+        for (const dec of allDecisions) {
+          const at = toEpochMs(dec.date);
+          if (isInRange(at, windowFromMs, windowToMs)) {
+            changes.push({
+              sortMs: at,
+              categoryOrder: 4,
+              id: dec.id,
+              line: `  - Decision [${dec.id}]: ${dec.title} (${dec.date}, ${dec.status})`,
+            });
+          }
+        }
+
+        if (changes.length > 0) {
+          changes.sort((a, b) => {
+            if (b.sortMs !== a.sortMs) return b.sortMs - a.sortMs;
+            if (a.categoryOrder !== b.categoryOrder) return a.categoryOrder - b.categoryOrder;
+            return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+          });
+
+          const fromIso = new Date(windowFromMs).toISOString().slice(0, 10);
+          const toIso = new Date(windowToMs).toISOString().slice(0, 10);
+          const changeLines = [
+            `Derived enumeration of recorded change events between ${fromIso} and ${toIso} ` +
+              `(window anchored to the newest recorded event; authoritative records above remain the sources of truth):`,
+            ...changes.slice(0, 16).map((c) => c.line),
+          ];
+          const content = clamp(changeLines.join('\n'), PARTITION_LIMITS.changeRecord);
+          tokenBreakdown.changeRecord = estimateTokens(content);
+
+          slices.push({
+            label: 'Recent Company Changes (Change Record)',
+            authority: 'CHANGE_RECORD',
+            provenance: 'Derived windowed enumeration over EpistemicClaimStore/CompanyMemoryStore/CompanyKnowledgeStore/CompanyStateStore',
+            content,
+          });
+        }
+      } catch (err) {
+        degradedStores.push('ChangeEnumeration');
+      }
+    }
+
+    // =========================================================================
     // 4. Epistemic Grounding: Strictly Partitioned Facts vs Unverified Claims
     // =========================================================================
     try {
       const claimStore = EpistemicClaimStore.getInstance();
-      const facts = await claimStore.listActiveFacts();
+
+      // -------------------------------------------------------------------------
+      // 4A. Canonical Facts (Promoted, verified truth) — M5.2 QUERY-CONDITIONED
+      // (two-tier, the M4-C Personal Mind philosophy applied to facts).
+      //
+      // The A0 slice rendered the 3 newest active facts regardless of the
+      // message (the M5.1-measured C_structured_filtering gap: rank-based
+      // gold misses on an unconditioned surface). M5.2 conditions the slice
+      // through EpistemicClaimStore.queryFacts — the SAME deterministic
+      // lexical scoring pipeline (shared extractTokens, score DESC,
+      // promotedAt DESC, id ASC) the knowledge/precedent surfaces use.
+      //
+      // TIER 2 FILL: unmatched capacity fills with the newest active facts
+      // (A0 order). This keeps the slice's breadth under the M5.1-measured
+      // supersession invariant (the successor of any touched supersession
+      // pair stays present in context even when the query only matches the
+      // predecessor's subject domain) and preserves the never-empty A0
+      // behavior when nothing matches at all. Lifecycle authority is
+      // untouched: ONLY active facts can render under CANONICAL_FACT.
+      // -------------------------------------------------------------------------
+      const factMatches = await claimStore.queryFacts({ queryText: opts.message, limit: 3 });
+      const newestActiveFacts = await claimStore.listActiveFacts();
+      const matchIds = new Set(factMatches.map((f) => f.id));
+      const facts = [
+        ...factMatches,
+        ...newestActiveFacts.filter((f) => !matchIds.has(f.id)),
+      ].slice(0, 3);
+      const factsFallback = factMatches.length === 0;
       const allClaims = await claimStore.listClaims();
 
-      // 4A. Canonical Facts (Promoted, verified truth)
       if (facts.length > 0) {
         const factLines = facts.slice(0, 3).map((f) =>
           `  - [FACT-${f.id}] "${f.statement}" (Subject: ${f.subject}, Verified: ${f.promotedAt})`
         );
-        const content = clamp(factLines.join('\n'), PARTITION_LIMITS.canonicalFacts);
+        const header = factsFallback
+          ? 'Canonical Verified Facts (no query match — newest active facts):'
+          : 'Canonical Verified Facts (query-matched):';
+        const content = clamp([header, ...factLines].join('\n'), PARTITION_LIMITS.canonicalFacts);
         tokenBreakdown.canonicalFacts = estimateTokens(content);
 
         slices.push({
@@ -633,6 +966,120 @@ export class SophiaContextAssembler {
           provenance: 'EpistemicClaimStore / CanonicalFact',
           content,
         });
+      }
+
+      // -------------------------------------------------------------------------
+      // 4A2. M5.2 — SUPERSEDED FACT HISTORICAL PROJECTION (HISTORY intent only).
+      //
+      // The M5.1-measured D_temporal gap: listActiveFacts() structurally
+      // excludes superseded facts, so "what was our previous pricing?" had
+      // NO path to the old fact. Historical evidence stays AVAILABLE here —
+      // gated on a deterministic HISTORY intent, lexically matched to the
+      // message, and rendered under the SUPERSEDED_FACT authority (NOT a
+      // truth-bearing position) with the successor pointer rendered
+      // explicitly. Ranking can never silently turn this history into
+      // current truth: the CANONICAL_FACT slice above remains the only
+      // truth-bearing fact surface, and it renders active facts only.
+      // -------------------------------------------------------------------------
+      if (temporalIntent.intent === 'history') {
+        try {
+          const historical = (await claimStore.queryFacts({
+            queryText: opts.message,
+            limit: 3,
+            includeSuperseded: true,
+          })).filter((f) => f.validityState === 'superseded');
+
+          if (historical.length > 0) {
+            const historicalLines = [
+              'HISTORICAL (SUPERSEDED) FACTS — prior company truth for reference only; NOT currently true:',
+              ...historical.map((f) =>
+                `  - [FACT-${f.id}] "${f.statement}" (Superseded by [FACT-${f.supersededById}], promoted ${f.promotedAt})`
+              ),
+            ];
+            const content = clamp(historicalLines.join('\n'), PARTITION_LIMITS.supersededFacts);
+            tokenBreakdown.supersededFacts = estimateTokens(content);
+
+            slices.push({
+              label: 'Historical (Superseded) Canonical Facts',
+              authority: 'SUPERSEDED_FACT',
+              provenance: 'EpistemicClaimStore / CanonicalFact (superseded — historical projection)',
+              content,
+            });
+          }
+        } catch (err) {
+          degradedStores.push('EpistemicClaimStore.historical');
+        }
+      }
+
+      // -------------------------------------------------------------------------
+      // 4A3. M5.3-C — DEPENDENCY PATH PROJECTION (dependency-intent only).
+      //
+      // The M5.1-measured F_graph_traversal gap (the sole failure that
+      // survived M5.2): "Which services depend on X?" could not reach the
+      // transitive dependent (hop 2) because no lexical path connects it to
+      // the query. M5.3-C closes it with EXPLICIT DEPENDS_ON relations —
+      // a derived, rebuildable retrieval index over the canonical facts
+      // (NOT a graph database, NOT a second memory architecture):
+      //   - edges are extracted deterministically from ACTIVE canonical
+      //     fact statements (rule dep-rel/1) and stored relationally
+      //     (DependencyRelationStore, both store modes);
+      //   - traversal is BOUNDED (depth <= 2 — the benchmark's measured
+      //     requirement) and only ever answers "who depends on the anchor";
+      //   - every rendered edge cites its source fact; the truth-bearing
+      //     lines are the ACTIVE canonical facts themselves, rendered under
+      //     the same CANONICAL_FACT authority as slice 4A (superseded
+      //     facts' edges never traverse — their status left the pool);
+      //   - no anchors resolved / no edges / no facts → NOTHING renders
+      //     (fail-safe: unrelated dependency questions are unchanged).
+      // -------------------------------------------------------------------------
+      const dependencyIntent = detectDependencyIntent(opts.message);
+      if (dependencyIntent.intent) {
+        try {
+          const activeRelations = await DependencyRelationStore.getInstance().listActiveRelations();
+          const anchors = resolveDependencyAnchors(
+            opts.message,
+            knownEntityKeys(activeRelations)
+          );
+          if (anchors.length > 0) {
+            const hops = traverseDependents(anchors, activeRelations);
+            if (hops.length > 0) {
+              const depFacts = collectDependencyFacts(hops, anchors, newestActiveFacts);
+              if (depFacts.length > 0) {
+                const relationById = new Map(activeRelations.map((r) => [r.id, r]));
+                const edgeLines = hops.slice(0, 8).map((hop) => {
+                  const rel = relationById.get(hop.viaRelationIds[0]);
+                  const from = rel?.sourceEntityDisplay ?? hop.fromKey;
+                  const to = rel?.targetEntityDisplay ?? hop.toKey;
+                  return `  - ${from} DEPENDS_ON ${to} (from [FACT-${rel?.sourceFactId ?? 'unknown'}])`;
+                });
+                const factLines = depFacts.slice(0, 4).map(
+                  (f) =>
+                    `  - [FACT-${f.id}] "${f.statement}" (Subject: ${f.subject}, Verified: ${f.promotedAt})`
+                );
+                const content = clamp(
+                  [
+                    `DEPENDENCY CHAIN (derived from canonical facts; extraction rule dep-rel/1 — NOT an independent source of truth):`,
+                    ...edgeLines,
+                    `Dependent canonical facts:`,
+                    ...factLines,
+                  ].join('\n'),
+                  PARTITION_LIMITS.dependencyPath
+                );
+                tokenBreakdown.dependencyPath = estimateTokens(content);
+
+                slices.push({
+                  label: 'Service Dependency Chain (Canonical Facts)',
+                  authority: 'CANONICAL_FACT',
+                  provenance: 'DependencyRelationStore / CanonicalFact (derived DEPENDS_ON index)',
+                  content,
+                });
+                retrievalHit = true;
+              }
+            }
+          }
+        } catch (err) {
+          degradedStores.push('DependencyRelationStore');
+        }
       }
 
       // 4B. Unverified / Pending Claims (Strictly hypotheses under review)
@@ -674,9 +1121,20 @@ export class SophiaContextAssembler {
 
         if (knowledgeItems.length > 0) {
           retrievalHit = true;
-          const kLines = knowledgeItems.map((k) =>
-            `[${k.documentId}] "${k.title}" (Category: ${k.category}):\n${k.summary || k.snippet || k.content}`
-          );
+          // M5.2 Fix Class 2: a document whose own stored text marks it
+          // retired/superseded renders with an explicit HISTORICAL label —
+          // the ranking fix (queryKnowledge currentness ordering) keeps the
+          // CURRENT document first for CURRENT-intent questions, and this
+          // label keeps the rendered provenance honest when a retired
+          // document still legitimately retrieves (historical questions,
+          // limit windows).
+          const kLines = knowledgeItems.map((k) => {
+            const retired = isRetiredKnowledgeText(k.title, k.summary || '', k.fullContent || '');
+            const historicalTag = retired
+              ? ' [HISTORICAL — retired/superseded document; verify against current policy]'
+              : '';
+            return `[${k.documentId}] "${k.title}" (Category: ${k.category})${historicalTag}:\n${k.summary || k.snippet || k.content}`;
+          });
           const content = clamp(kLines.join('\n\n'), PARTITION_LIMITS.companyKnowledge);
           tokenBreakdown.companyKnowledge = estimateTokens(content);
 
@@ -795,6 +1253,65 @@ export class SophiaContextAssembler {
         // Personal context is strictly optional — an outage degrades fail-soft
         // (no slice) and must never block the turn.
         degradedStores.push('SophiaMemoryStore');
+      }
+    }
+
+    // =========================================================================
+    // 7A. M5.2 — Episodic Memory (founder-scoped past-conversation recall)
+    //
+    // The M5.1-measured J_other gap: the canonical turn loaded ONLY the
+    // current conversation's client-supplied history, so past-conversation
+    // evidence was structurally unreachable even when it lexically overlapped
+    // the query. This slice is the smallest missing retrieval projection over
+    // the CANONICAL ConversationStore (no second conversation database):
+    // ConversationStore.searchConversations performs the deterministic,
+    // founder-scoped lexical search (with the M4-D light fold applied
+    // symmetrically, so "abandon" matches "abandoning").
+    //
+    // GOVERNANCE: conversations are INTERACTION RECORDS, never company
+    // truth — the slice renders under the advisory EPISODIC_MEMORY authority
+    // (same epistemic class as PERSONAL_MIND_MEMORY / HISTORICAL_PRECEDENT),
+    // with conversation boundaries and timestamps preserved. Promoting any
+    // part of a conversation into company knowledge remains an explicit
+    // governed action elsewhere (epistemic pipeline / founder). Founder
+    // scoping is inherited from the store's founder-owned read; another
+    // founder's conversations can never enter.
+    // =========================================================================
+    if (!isCasual && opts.founderId && opts.founderId.trim()) {
+      try {
+        const episodicHits = await ConversationStore.getInstance().searchConversations(
+          opts.founderId.trim(),
+          opts.message,
+          3
+        );
+
+        if (episodicHits.length > 0) {
+          const eLines = [
+            'RELEVANT PAST CONVERSATIONS (episodic interaction records — context only, not company facts):',
+          ];
+          for (const hit of episodicHits) {
+            eLines.push(
+              `  - Conversation [${hit.conversationId}] "${hit.title || 'Untitled'}" (last active ${String(hit.updatedAt).slice(0, 10)}):`
+            );
+            for (const msg of hit.matchedMessages) {
+              const sender = msg.sender === 'founder' || msg.role === 'user' ? 'Founder' : 'Sophia';
+              const clean = (msg.content || '').replace(/[\r\n]+/g, ' ').slice(0, 240);
+              eLines.push(`      ${sender}: ${clean}`);
+            }
+          }
+          const content = clamp(eLines.join('\n'), PARTITION_LIMITS.episodicMemory);
+          tokenBreakdown.episodicMemory = estimateTokens(content);
+
+          slices.push({
+            label: 'Episodic Memory (Past Conversation Recall)',
+            authority: 'EPISODIC_MEMORY',
+            provenance: 'ConversationStore (founder-scoped interaction records — contextual only, never company authority)',
+            content,
+          });
+        }
+      } catch (err) {
+        // Episodic context is strictly optional — an outage degrades fail-soft.
+        degradedStores.push('ConversationStore.episodic');
       }
     }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 import { getRealtimeProvider, listRealtimeProviders } from '@/lib/server/live/providers';
 import { MultiAgentOrchestrator } from '@/lib/server/orchestration/orchestrator';
+import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { searchLiveWeb } from '@/lib/server/tools/web-search';
 import { generateAiImage } from '@/lib/server/tools/image-generator';
 
@@ -16,6 +17,12 @@ export const dynamic = 'force-dynamic';
  * If the utterance is classified as a directive (e.g. "Research our competitors"),
  * it dispatches into the standard MultiAgentOrchestrator council, honoring all
  * deterministic verifications and SideEffectAuthorizationGate approval locks.
+ *
+ * The direct tool branches (image generation, live web search) run through
+ * the SAME SideEffectAuthorizationGate — every tool action on this surface is
+ * policy-evaluated, payload-bound, and audit-recorded exactly like the
+ * orchestrator's tool calls. A gate denial is reported honestly to the
+ * Founder; it never falls back to ungated execution.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -417,7 +424,48 @@ export async function POST(req: NextRequest) {
       const rawPrompt = imageMatch[1]?.trim() || '';
       const prompt = rawPrompt || 'A futuristic holographic artificial intelligence core glowing in deep neon cyan and violet';
       const startTime = Date.now();
-      const imgRes = await generateAiImage(prompt);
+
+      // Route the generation through the SideEffectAuthorizationGate:
+      // read_only classification (external content generation, no external
+      // state mutation), exact prompt payload-bound, audit always recorded.
+      const authGate = SideEffectAuthorizationGate.getInstance();
+      const authResult = await authGate.executeWithGate({
+        request: {
+          employeeRole: 'system',
+          actionName: 'generate_image',
+          classification: 'read_only',
+          target: {
+            targetSystem: 'pollinations',
+            summary: `Realtime image generation: ${prompt.slice(0, 200)}`,
+          },
+          payload: { prompt },
+          requestedBy: founder.userId,
+        },
+        executionRef: `realtime-turn:${turnId}`,
+        executeFn: async () => {
+          return await generateAiImage(prompt);
+        },
+      });
+
+      if (!authResult.executed || !authResult.result) {
+        // Denied or failed at the gate — report honestly, never fall back
+        // to ungated execution.
+        return NextResponse.json({
+          success: false,
+          turnId,
+          sessionId,
+          providerId: 'flux-vision-generator',
+          isDirective: false,
+          reply: `Image generation was blocked by the authorization gate: ${
+            authResult.error || authResult.decision.reason || 'policy denied'
+          }`,
+          error: authResult.error || authResult.decision.reason,
+          durationMs: Date.now() - startTime,
+          detectedIntent: 'tool_generate_image',
+        });
+      }
+
+      const imgRes = authResult.result;
       const elapsed = Date.now() - startTime;
 
       const reply = `I have generated an image of ${prompt} for you. Rendering in your visual HUD display.`;
@@ -452,7 +500,48 @@ export async function POST(req: NextRequest) {
     if (searchMatch) {
       const query = searchMatch[1].trim();
       const startTime = Date.now();
-      const searchRes = await searchLiveWeb(query);
+
+      // Route the live web search through the SideEffectAuthorizationGate:
+      // read_only classification, exact query payload-bound, audit always
+      // recorded — the same gate path the orchestrator's web_research uses.
+      const authGate = SideEffectAuthorizationGate.getInstance();
+      const authResult = await authGate.executeWithGate({
+        request: {
+          employeeRole: 'system',
+          actionName: 'web_search',
+          classification: 'read_only',
+          target: {
+            targetSystem: 'web',
+            summary: `Realtime live web search: ${query.slice(0, 200)}`,
+          },
+          payload: { query },
+          requestedBy: founder.userId,
+        },
+        executionRef: `realtime-turn:${turnId}`,
+        executeFn: async () => {
+          return await searchLiveWeb(query);
+        },
+      });
+
+      if (!authResult.executed || !authResult.result) {
+        // Denied or failed at the gate — report honestly, never fall back
+        // to ungated execution.
+        return NextResponse.json({
+          success: false,
+          turnId,
+          sessionId,
+          providerId: 'web-search-engine',
+          isDirective: false,
+          reply: `Web search was blocked by the authorization gate: ${
+            authResult.error || authResult.decision.reason || 'policy denied'
+          }`,
+          error: authResult.error || authResult.decision.reason,
+          durationMs: Date.now() - startTime,
+          detectedIntent: 'tool_web_search',
+        });
+      }
+
+      const searchRes = authResult.result;
       const elapsed = Date.now() - startTime;
 
       const topSnippets = searchRes.results.slice(0, 2).map((r) => r.snippet).join(' ');

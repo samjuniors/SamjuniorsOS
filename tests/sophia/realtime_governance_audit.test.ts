@@ -265,7 +265,7 @@ async function runAdversarialAuditTests() {
     assert(Array.isArray(json.providers), 'Must return array of providers');
     const gemini = json.providers.find((p: any) => p.id === 'gemini');
     assert(gemini, 'Gemini must be listed');
-    assert.strictEqual(gemini.model, 'gemini-1.5-pro');
+    assert.strictEqual(gemini.model, process.env.GEMINI_MODEL || 'gemini-flash-latest');
     console.log('✔ Test 11 Passed: Provider discovery returns registered providers without leaking secrets');
   }
 

@@ -400,8 +400,12 @@ export class SophiaServerGateway {
     }
 
     // 6. OPERATIONAL INSPECTION PROPOSAL
+    // R1 honesty: no inspection is executed on this path. The command is
+    // registered (below) for a future inspection dispatcher; claiming
+    // "Inspection completed ... No security policy violations detected"
+    // (the pre-R1 copy) asserted a scan that never ran.
     if (sanitizedProposal.kind === 'operational_inspection') {
-      const reply = `[${persona.name} • ${persona.role}]\nInspection completed for target "${sanitizedProposal.target}" via governed tool [${sanitizedProposal.proposedTool || 'github_read'}]. No security policy violations detected.`;
+      const reply = `[${persona.name} • ${persona.role}]\nInspection request registered for target "${sanitizedProposal.target}" via governed tool [${sanitizedProposal.proposedTool || 'github_read'}]. No inspection has been executed yet — operational inspection dispatch is not wired to the tool path, so no violation findings exist either way.`;
       return {
         success: true,
         validatedCommand: {
@@ -419,14 +423,16 @@ export class SophiaServerGateway {
     }
 
     // 7. DEFAULT CONVERSATIONAL EXCHANGE
+    // R1 honesty: no fabricated operational status on the default reply.
+    const defaultReply = `[${persona.name} • ${persona.role}]\nGood to connect, Founder.`;
     return {
       success: true,
       validatedCommand: {
         type: 'CONVERSATION_REPLY',
-        reply: sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nGood to connect, Founder. All executive workstreams are operating smoothly.`,
+        reply: sanitizedProposal.reply || defaultReply,
       },
       proposal: sanitizedProposal,
-      reply: sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nGood to connect, Founder. All executive workstreams are operating smoothly.`,
+      reply: sanitizedProposal.reply || defaultReply,
       directiveExecuted: false,
       liveAi: false,
       metrics,

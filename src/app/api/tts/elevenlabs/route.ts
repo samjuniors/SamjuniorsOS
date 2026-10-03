@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /**
  * POST /api/tts/elevenlabs
@@ -6,6 +7,16 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(req: NextRequest) {
   try {
+    // Fail closed: this route spends the paid ELEVENLABS_API_KEY — a Founder
+    // session is required before the upstream call is attempted.
+    const founder = await getAuthenticatedFounder(req);
+    if (!founder || founder.role !== 'FOUNDER') {
+      return NextResponse.json(
+        { error: 'Unauthorized: Valid Founder session required', success: false },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const text = typeof body.text === 'string' ? body.text.trim() : '';
 

@@ -14,12 +14,15 @@ export type SophiaAuthorityClass =
   | 'AUTHORITATIVE_OPERATIONAL_STATE'// Live verified company metrics & database state
   | 'EPISTEMIC_FACT'                 // Verified claims, authoritative only per verification status (Phase 1 compat)
   | 'CANONICAL_FACT'                 // Verified, active canonical facts (Phase 2)
+  | 'SUPERSEDED_FACT'                // M5.2 — historical/superseded canonical facts, clearly labeled, NEVER current truth (advisory historical projection)
   | 'UNVERIFIED_CLAIM'               // Pending/under-review claims; strictly unverified hypotheses (Phase 2)
   | 'ACTIVE_WORKFLOW_STATE'          // Authoritative in-flight workflows & agent runs
   | 'PENDING_GOVERNANCE_STATE'       // Authoritative pending founder approval gates
   | 'COMPANY_KNOWLEDGE'              // Durable reference SOPs, PRDs, and architecture documents (Phase 2)
   | 'HISTORICAL_PRECEDENT'           // Past run summaries & decision outcomes, not current empirical data
   | 'RECENT_ACTIVITY'                 // Authoritative projected recent company actions (Phase 2)
+  | 'CHANGE_RECORD'                   // M5.2 — derived windowed change enumeration (pointers to authoritative records; advisory, not a truth position)
+  | 'EPISODIC_MEMORY'                 // M5.2 — founder-scoped past-conversation recall; interaction records only, never company truth
   | 'PERSONAL_MIND_MEMORY';           // Founder-scoped personal/interaction context (M3 K-2) — contextual ONLY, never company authority, never an authorization source
 
 export interface SophiaContextSlice {
@@ -41,11 +44,15 @@ export interface SophiaAssembledContext {
     operationalState?: number;
     activeWorkflows?: number;
     pendingGovernance?: number;
+    changeRecord?: number;
     canonicalFacts?: number;
+    supersededFacts?: number;
     unverifiedClaims?: number;
     companyKnowledge?: number;
     historicalPrecedent?: number;
     recentActivity?: number;
+    episodicMemory?: number;
+    dependencyPath?: number;
     dialogueHistory?: number;
     personalMind?: number;
   };
@@ -200,11 +207,14 @@ export interface TurnMetrics {
       operationalState?: number;
       activeWorkflows?: number;
       pendingGovernance?: number;
+      changeRecord?: number;
       canonicalFacts?: number;
+      supersededFacts?: number;
       unverifiedClaims?: number;
       companyKnowledge?: number;
       historicalPrecedent?: number;
       recentActivity?: number;
+      episodicMemory?: number;
       dialogueHistory?: number;
       personalMind?: number;
     };

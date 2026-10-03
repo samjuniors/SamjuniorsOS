@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 
 /** Popular high-quality ElevenLabs presets */
 const PRESET_VOICES = [
@@ -17,7 +18,18 @@ const PRESET_VOICES = [
  * GET /api/tts/voices
  * Lists available ElevenLabs voices for the current user key, with fallback to curated presets.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Fail closed: the key-configured branch probes the ElevenLabs account
+  // (provider quota) and reveals account capabilities — a Founder session
+  // is required first.
+  const founder = await getAuthenticatedFounder(req);
+  if (!founder || founder.role !== 'FOUNDER') {
+    return NextResponse.json(
+      { error: 'Unauthorized: Valid Founder session required', success: false },
+      { status: 401 }
+    );
+  }
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   const configuredDefault = process.env.JARVIS_VOICE_ID || 'bMxLr8fP6hzNRRi9nJxU';
 
