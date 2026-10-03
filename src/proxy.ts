@@ -90,12 +90,51 @@ export function proxy(req: NextRequest) {
     if (process.env.NODE_ENV === "production") {
       // The dev-only ROLE override is prohibited in production — the same
       // policy auth/session.ts and live/auth.ts already enforce. A forged
-      // role header voids the request instead of upgrading it.
+      // role header voids the request instead of upgrading it. This check
+      // deliberately precedes the machine-credential admission below: a
+      // request presenting role headers is voided even with a valid cron
+      // secret (the heartbeat never sends them).
       if (req.headers.has("x-samjuniors-role") || req.cookies.has("samjuniors-role")) {
         return new NextResponse(
           JSON.stringify({ error: "Unauthorized: Role override headers are prohibited in production" }),
           { status: 401, headers: { "Content-Type": "application/json" } }
         );
+      }
+      // MACHINE AUTHENTICATION — the single non-founder production admission.
+      // The scheduler heartbeat (mini-services/scheduler-heartbeat, or a
+      // platform cron in a deployed environment) wakes due-work evaluation by
+      // POSTing EXACTLY this endpoint with the x-cron-secret machine
+      // credential. The scope is deliberately minimal:
+      //   - exact path only: /api/workflow/scheduling, NOT …/actions,
+      //     …/status or any other executive route (schedule lifecycle stays
+      //     founder-session-only; the machine can evaluate work, never
+      //     approve, pause, resume, cancel or create schedules),
+      //   - POST only (reads of scheduler state stay founder-only),
+      //   - constant-time comparison, fail-closed when CRON_TRIGGER_SECRET
+      //     is unset or the presented header is absent/empty.
+      // This mirrors what the route itself already authorizes
+      // (founder session OR cron secret — see the route's cronSecretMatches):
+      // the gate admits the request; the route STILL re-authenticates it
+      // independently, so this is defense in depth, not a bypass. Machine
+      // auth mints no identity: no session, no cookies, no role — the
+      // cron-secret path can never make a request look founder-authored
+      // (the route reports triggerSource: 'cron' honestly).
+      if (
+        req.nextUrl.pathname === "/api/workflow/scheduling" &&
+        req.method === "POST"
+      ) {
+        const cronSecret = process.env.CRON_TRIGGER_SECRET;
+        const presentedCronSecret = req.headers.get("x-cron-secret");
+        if (
+          cronSecret && presentedCronSecret &&
+          constantTimeEquals(presentedCronSecret, cronSecret)
+        ) {
+          return applySecurityHeaders(req);
+        }
+        // Invalid/absent machine credential: fall through to the founder
+        // check below — a Founder may still POST here manually with founder
+        // credentials (documented route behavior), and any other caller
+        // keeps receiving the same 401 as before this admission existed.
       }
       const hasProvider =
         !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
