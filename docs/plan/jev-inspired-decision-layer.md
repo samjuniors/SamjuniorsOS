@@ -96,9 +96,18 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 - **Decision: do not integrate Honcho now.** Adapt its emphasis on cross-session recall evaluation only if a representative workload reveals meaningful misses. Keep canonical company truth, Personal Mind lifecycle, and governance in existing SamJuniorsOS stores.
 - Identified follow-up risks: file-authoritative local persistence with best-effort Prisma shadows; no unified cross-store deletion/retention contract established; episodic lexical retrieval can miss paraphrase-only queries and searches only the 20 most recently updated conversations. A persistence/deletion audit is needed before production-scale or multi-instance claims.
 - No runtime code, dependencies, schema, provider configuration, or tests changed. Existing benchmark results were inspected, not rerun in this task.
-- The proposed M5.4 prompt-version experiment is already complete in the repository; do not duplicate it. The remaining decision is whether to separately evaluate the actual production persona prompt before considering any prompt promotion. The harness experiment alone does not authorize a production prompt change.
+- The proposed M5.4 prompt-version experiment is already complete in the repository; do not duplicate it. The harness experiment alone does not authorize a production prompt change.
 
 **Acceptance:** Met for the read-only assessment and evidence-based adopt/adapt/ignore recommendation. No Honcho integration or new memory store was approved.
+
+### Production-prompt applicability audit — COMPLETE
+- Audit: `docs/research/production-sophia-prompt-applicability-audit.md`.
+- Traced the real `/api/sofia/ask` path through `executeSophiaTurn`, context assembly, the intent classifier, and the deterministic server gateway.
+- **Decision: do not run a prompt A/B or change the production prompt at this stage.** The production model prompt classifies intent into an untrusted JSON proposal; the gateway reconstructs informational proposals and generates the final factual reply deterministically. The M5.4 harness tests a separate natural-language answer-generation prompt, so transplanting its relationship clause would not directly test/fix the same behavior.
+- Static source inspection indicates the gateway's final informational reply path does not consume the assembled `CANONICAL_FACT` dependency-path slice; the `epistemic_fact` branch summarizes one fact/claim rather than answering the dependency-path question. This is a source-trace finding, not a newly executed runtime test.
+- No runtime code, prompts, dependencies, schemas, or benchmark artifacts changed; no tests or live model calls were run.
+
+**Next single action:** Await Founder direction on a separately scoped production response-path regression for dependency questions (S6/S9) before considering prompt promotion.
 
 ### Task 6 — End-to-end SOFIA voice and desktop capability validation
 - Trace real request lifecycle, interruption/cancellation, authorization, tool feedback, retries, idempotency, duplicates, and recovery.
