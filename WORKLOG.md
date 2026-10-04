@@ -2403,3 +2403,28 @@ NEXT ACTION:
 - Direct coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification loops remains unverified or absent in the inspected suites.
 
 **Next single action:** Run the deterministic suites in the repository environment and record exact results before proposing runtime fixes.
+
+
+## Task 4 — Decision Reliability Baseline Executed (2026-10-04)
+
+**Status:** BASELINE RECORDED — documentation-only update on `feat/decision-layer-architecture-baseline`. Execution details below were supplied in the baseline report and were not independently re-run by this documentation update.
+
+### Environment and results
+- Tested commit: `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`; isolated linked worktree at `/home/z/baseline-wt`; Bun 1.3.14.
+- `bun tests/sophia/phase1_intent_contract.test.ts`: exit 0, **22 passed / 0 failed**.
+- `bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed**. Expected network-down stderr in test 3.4 is part of the honest zero-result fallback test.
+- `bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed**.
+- Reported total: **49 passed / 0 failed / 0 skipped**, all three commands exit 0. The intent suite fakes the provider SDK boundary; this is not a live-provider quality result.
+- Authority S8–S10 were conditional on `DATABASE_URL` and ran because the sandbox exported `DATABASE_URL=file:/home/z/my-project/db/custom.db`. That pointed at the shared development database, not an isolated worktree-local test DB. The report states post-run verification found zero test residue. Isolate this database for future runs.
+
+### Known issues and coverage gaps
+- **S4:** unknown `conversationId` provisions a new conversation, diverging from ADR 0002 §7's blanket 404 expectation.
+- **S6:** the same bogus conversation ID + turn ID can re-fork and re-execute because fork occurs before conversation-scoped idempotency. Highest-priority reliability target identified by this baseline.
+- The single-kind intent contract can represent a compound halt-plus-commission request as `steering_proposal`, dropping the second objective.
+- EVAL-023…026 remain without dedicated deterministic regression coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
+- No new failures were reported. The green S4/S6 assertions pin known limitations; they do not mark those behaviors as acceptable.
+
+### Scope and next action
+- No runtime code, tests, dependencies, environment configuration, merge, or deployment changed.
+- Updated `docs/research/decision-reliability-evaluation-v1.md` and `docs/plan/jev-inspired-decision-layer.md` to record the baseline and qualification.
+- **Next proposed implementation target:** investigate and design a narrowly scoped S6 idempotency fix, with a dedicated isolated test database. Do not change runtime code until the Founder authorizes that implementation task.
