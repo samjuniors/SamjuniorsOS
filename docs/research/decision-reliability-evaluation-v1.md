@@ -65,7 +65,7 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 
 - The existing intent contract suite has 22 named assertions (A1-A5, B1-B6, C1-C5, D, E1, F1-F4) with a provider-mocked child fixture.
 - The fixture child includes valid proposals, malformed kind/decision/confidence, injection, ambiguity, provider-down, echo containment, and approval-resolution scenarios.
-- Related authority hardening tests explicitly pin conversation ownership and duplicate-turn behavior, including known issue S6 where the same bogus conversation ID plus turn ID re-forks/re-executes.
+- At the original baseline commit, the authority hardening suite pinned S6 as a known issue. The post-baseline S6 regression now expects same-ID retry replay; see the post-baseline change section below.
 - The honesty suite checks that unconfigured capabilities do not fabricate successful execution.
 - **No test command was executed during this source-inspection pass.** Current pass counts, failures, timing, and runtime environment remain unknown.
 - Provider timeout/partial-execution, compound-request handling, conflicting-current-vs-historical context, and clarification-loop behavior need direct case-level audit or new tests before they can be considered covered.
@@ -75,7 +75,7 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 1. Passing deterministic fixtures establish only the pinned contract in those paths.
 2. They do not establish live model intent accuracy, calibrated confidence, end-to-end provider availability, or actual external side-effect correctness.
 3. Existing tests with “KNOWN ISSUE” labels remain known issues, not successes.
-4. Do not modify runtime code until the current baseline has been run and failures classified.
+4. The recorded 2026-10-04 execution baseline predates the S6 fix. Re-run the relevant suites after runtime changes; never treat the historical baseline as post-change verification.
 5. If the baseline is blocked by environment/configuration, report that separately; do not treat blocked tests as passes.
 
 ## Baseline results
@@ -92,10 +92,10 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 
 **Reported total:** 49 passed, 0 failed, 0 skipped; all three commands exited 0. The authority suite's S8–S10 database pins used the shared development database, not a worktree-local isolated database. Post-run cleanup verification reportedly found zero test residue. This is a qualification on isolation, not evidence of a test failure.
 
-### Known limitations pinned by green tests
+### Known limitations at the original baseline commit
 
-- **S4:** unknown `conversationId` provisions a fresh conversation, diverging from ADR 0002 §7's blanket 404 expectation.
-- **S6:** retrying with the same bogus `conversationId` and `turnId` re-forks and re-executes because forking precedes conversation-scoped idempotency. Treat this as the highest-priority reliability concern in this baseline.
+- **S4:** unknown `conversationId` provisions a fresh conversation, diverging from ADR 0002 §7's blanket 404 expectation; this policy remains unchanged.
+- **S6 at commit `7024a49`:** retrying with the same bogus `conversationId` and `turnId` re-forked and re-executed because forking preceded conversation-scoped idempotency. A targeted fix and updated regression have since been committed to this feature branch; post-change execution is pending.
 - **Compound requests:** the single-kind intent contract can represent a compound halt-plus-commission request as `steering_proposal`, dropping the second objective.
 - **Not directly covered by dedicated deterministic regression cases:** provider timeout/partial execution, compound-request handling, conflicting current-vs-historical context, and clarification escalation (EVAL-023…026).
 
