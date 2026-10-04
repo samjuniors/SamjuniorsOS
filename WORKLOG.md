@@ -2432,7 +2432,7 @@ NEXT ACTION:
 
 ## Task 4 Follow-up — S6 Stale-Conversation Retry Idempotency (2026-10-04)
 
-**Status:** IMPLEMENTED ON FEATURE BRANCH; LOCAL TEST VERIFICATION PENDING.
+**Status:** IMPLEMENTED AND VERIFIED ON FEATURE BRANCH; deterministic suites green, TypeScript check remains non-green with baseline-equivalent diagnostics.
 
 ### Current-repo changes
 - `src/lib/server/sophia/turn-executor.ts`: for an unknown non-empty supplied conversation ID plus a non-empty turn ID, derive a stable canonical conversation ID from SHA-256 of the JSON tuple `[founderId, suppliedConversationId, turnId]`. Resolve an existing founder-owned conversation at that ID before creating one. This lets sequential retries reach the existing assistant idempotency record without changing the S4 unknown-conversation provisioning policy.
@@ -2445,9 +2445,21 @@ NEXT ACTION:
 - Requests without a turn ID preserve their existing random-fork behavior.
 - S4 remains an explicit policy decision; compound-request loss and EVAL-023…026 coverage gaps remain open.
 
-### Verification status and limitations
-- GitHub source/test edits were committed separately: implementation `6cde78ac6eded638c9d076effce53b480ca99a69`; regression test `2eb9b8ec06d3235ce0ee80e4fbe3010e99e5f943`.
-- The evaluation and plan documents record that post-change tests have not yet run. Do not report the fix as verified until the updated intent, honesty, and authority suites run.
-- Future authority-suite execution must use an isolated test database, not the shared development database. Do not merge or deploy.
+### Verification results
+- Verified branch head: `de1a57985bf0b7ec6566a3064c065ae4be427820`; fresh detached worktree at `/home/z/s6-verify-wt`; Bun 1.3.14; `bun install --frozen-lockfile` exit 0 with 546 packages.
+- Dedicated DB: `/home/z/s6-verify-wt/.data/decision-reliability-test.db`, initialized via `bunx prisma db push --skip-generate` (exit 0). Ambient `DATABASE_URL` was explicitly overridden for every suite command. The reported shared development DB mtime was unchanged; the isolated DB had zero conversations/messages after test cleanup; worktree status was clean.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/phase1_intent_contract.test.ts`: exit 0, **22 passed / 0 failed / 0 skipped**.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed / 0 skipped**. Two expected stderr lines came from the deliberate fetch stub in test 3.4.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed / 0 skipped**. S8–S10 executed against the isolated database.
+- Total: **49 passed / 0 failed / 0 skipped** across the three suites.
+- `bunx tsc --noEmit`: exit 1, **153 diagnostics**. Re-running at original baseline commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90` produced the same 153-error set; only two existing `turn-executor.ts` TS2339 diagnostics shifted line numbers due to the fix. No new TypeScript diagnostics were reported.
+- S6-specific assertions passed: same canonical conversation ID, `idempotentReplay === true`, identical reply, exactly two persisted messages, and founder-isolated canonical conversation/message ownership when another founder reuses the supplied unknown ID and turn ID. No memory-capture event was triggered on the replay.
+- No code, tests, dependencies, environment configuration, commits, pushes, merges, or deployments were performed during verification. The isolated verification worktree and throwaway DB were retained as reported.
 
-**Next single action:** Pull the latest feature branch in an isolated worktree, configure a dedicated worktree-local test database, run the three baseline commands, and report exact results. Stop before any additional runtime changes.
+### Interpretation and limits
+- The stale supplied-conversation-ID duplicate-execution defect is fixed for the covered retry path and pinned by the regression.
+- This verifies the sequential/same-process replay path; it does not prove cross-process atomic exactly-once execution.
+- S4 unknown-conversation provisioning policy remains unchanged; compound-request objective loss remains open; EVAL-023…026 remain without dedicated deterministic regression coverage.
+- Live-provider quality and release readiness are not established. TypeScript remains non-green due to the baseline-equivalent 153 diagnostics.
+
+**Next single action:** Stop here and await Founder direction. No merge, deployment, or additional runtime changes without approval.
