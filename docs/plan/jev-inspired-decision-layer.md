@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 3 complete — canonical identity, memory, decision, and capability contracts documented.  
+**Status:** Task 4 in progress — versioned evaluation set documented; execution baseline pending.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -74,12 +74,13 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 
 **Acceptance:** Met for architecture documentation. Runtime behavior, deletion coverage, and individual failure cases are not newly tested by this documentation task.
 
-### Task 4 — Decision reliability evaluation
-- Build a small, versioned evaluation set from representative requests and adversarial cases.
-- Cover ambiguous and compound requests, conflicting context, prompt injection, malformed outputs, provider outages, timeouts, retries, duplicates, and escalation.
-- Measure current behavior before changing it; fix only demonstrated failures.
+### Task 4 — Decision reliability evaluation — IN PROGRESS
+- Evaluation catalog v1 recorded in `docs/research/decision-reliability-evaluation-v1.md`.
+- Mapped existing deterministic classifier/gateway tests to versioned cases; identified direct-coverage gaps for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification loops.
+- Source inspection confirms an existing deterministic fixture harness and related authority/honesty regression suites, but this pass did not execute them.
+- Next: run the deterministic suites in the repository environment, record exact pass/fail/blocked results, and classify failures before changing runtime behavior.
 
-**Acceptance:** Reproducible tests and a documented baseline/failure analysis. Do not claim quality gains without measured comparisons.
+**Acceptance:** Reproducible test execution and documented baseline/failure analysis. No quality gain claims without measured comparisons.
 
 ### Task 5 — Memory and Honcho assessment
 - Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
