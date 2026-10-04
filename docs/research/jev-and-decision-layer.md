@@ -1,114 +1,79 @@
-# Research: Jev, Hey Jev, and a SamJuniors decision layer
+# Research: SamJuniorsOS Agent Identity, Memory, and Decision Layer
 
-**Status:** Initial research captured — third-party repository audit and implementation feasibility are still pending.  
+**Status:** Architecture baseline recorded; implementation roadmap approved for staged execution.  
 **Last reviewed:** 2026-10-04  
-**Scope:** SamjuniorsOS / Sophia (executive neural canvas) and its relationship to SOFIA (voice assistant). These are distinct surfaces.
+**Scope:** SamJuniorsOS, including Sophia (executive intelligence/canvas) and SOFIA (voice assistant). They are distinct product surfaces over shared server-side capabilities where appropriate.
 
 ## Objective
 
-Study the decision-oriented approach associated with TypeSafe's Jev and the community `hey-jev` repository, then determine whether SamJuniorsOS should reuse, adapt, or independently implement useful ideas for Sophia/SOFIA. Priorities: Windows-first, zero-cost to start, optional provider keys, local operation where feasible, and no duplicate runtime authority.
+Build reliable AI employees and assistant behavior by clearly separating agent identity, founder-specific personal context, company knowledge, episodic recall, decision-making, and executable capabilities. Learn selectively from Jev/Hey Jev and comparable products, but do not clone a competitor or treat it as the product specification.
 
-## Sources and evidence status
+## Decisions agreed
 
-### TypeSafe AI — company positioning
+1. **Agent Identity & Persona** defines who an agent is: stable identity, name, role, personality/communication style, responsibilities, configured behavior, and versioned profile. Agent identity is not the founder's personal memory.
+2. **Tools & Capabilities** define what an agent can actually do: for example, music playback, desktop control, integrations, or machine operations. These are executable tools, not memories. Describing a capability in a persona does not grant permission to use it.
+3. **Personal Mind** stores founder-specific preferences and personal context. It is not company truth, agent identity, an instruction source, or an authorization source.
+4. **Company Brain** stores company facts, strategy, policies, decisions, projects, and operational knowledge with appropriate authority, provenance, verification, and freshness.
+5. **Episodic Memory** supports relevant recall of prior interactions and unresolved topics. Assess Honcho or other options only if they add measurable value; do not create a parallel memory system by default.
+6. **Decision Layer** interprets intent, assembles the right context, recognizes ambiguity, asks clarifying questions, plans, returns typed proposals, and handles uncertainty and failures.
+7. **Governance and execution remain deterministic server responsibilities.** A model-generated decision, confidence score, persona instruction, or memory cannot grant authority, bypass approvals, or independently authorize a side effect.
+8. **One task at a time.** Finish and verify the current roadmap task before starting the next. Keep changes focused, document evidence, and wait for founder direction between tasks.
 
-- Official site: https://typesafe.ai/
-- The site describes TypeSafe as an AI lab focused on making intelligence more accessible and less expensive, and emphasizes intelligence beyond chat.
-- The official public homepage reviewed in this research session does **not** provide enough technical detail to establish the full Jev API contract, current pricing, local-weight availability, or the claimed model training method.
-- Treat the official product documentation and console as the authority for current API access, terms, models, and pricing. Re-check before implementation.
+## Current repository evidence (development baseline, reviewed 2026-10-04)
 
-### Hey Jev repository
+The following files were inspected on the development branch before this documentation update:
 
-- Repository supplied by the founder: https://github.com/henryklunaris/hey-jev
-- The repository is a **reference candidate**, not yet approved production code.
-- The current repository contents, license, dependencies, macOS-specific assumptions, release history, and Windows support have **not yet been independently inspected successfully** in this research pass.
-- Do not claim compatibility or copy code until the agent clones the repository and records its license and actual platform constraints.
+- 'src/lib/server/agents/definitions.ts': server agent definitions already contain IDs, names, roles, departments, system instructions, responsibilities, skills, allowed-capability descriptions, prohibited actions, and protocol responsibilities. These definitions are an existing starting point, not proof of a complete versioned agent-profile or runtime tool registry.
+- 'src/lib/server/sophia/intent-classifier.ts': Sophia already produces a typed intent proposal; deterministic pre-classification handles specific injection and ambiguity patterns, live output is shape-checked, and invalid/provider-failed output falls back to deterministic analysis. It uses 'src/lib/server/ai/zai-client'; this inspected path does not establish a general local-model fallback chain.
+- 'src/lib/server/sophia/memory-gate.ts': personal-memory candidates are evaluated by deterministic rules. In the current M4-A contract, candidate extraction can propose content but cannot auto-activate it; review-required candidates are persisted inactive until explicit Founder confirmation.
+- 'src/lib/server/sophia/memory-extractor.ts': extracts possible stable founder preferences/context through the same 'zai-client' provider abstraction. This is not an agent-persona store.
+- 'src/lib/server/sophia/personal-memory-store.ts': canonical Personal Mind persistence is founder-scoped and uses the durable file store as the authoritative source; Prisma is currently a best-effort write-only shadow, with no Prisma read fallback. Personal memories are contextual, not verified company facts or authorization.
+- 'src/lib/server/sophia/context-assembly.ts': assembles authority-labeled context from existing company state, epistemic claims, knowledge, company memory, approvals, conversations, and Personal Mind. It has a bounded founder-scoped episodic-memory slice and a separate Personal Mind slice.
+- 'src/lib/server/authorization/policy-evaluator.ts': existing deterministic side-effect policy evaluator handles role restrictions and approval states/scopes. Decision-layer work must preserve this authority boundary.
+- 'WORKLOG.md': records completed intent-classification reliability work and recent governance hardening, including tests and known TypeScript baseline errors.
 
-### Existing SamjuniorsOS capabilities (verified from current README and setup guide)
+### Important distinctions
 
-- Repository: https://github.com/samjuniors/SamjuniorsOS
-- Current README describes three distinct surfaces: SOFIA (voice-driven assistant), Sophia (executive neural canvas), and the SamJuniorsOS desktop.
-- Current setup guide documents a zero-key start and an LLM fallback chain, including an OpenAI-compatible local endpoint via Ollama, LM Studio, vLLM, or llama.cpp.
-- Therefore, do not create a parallel general-purpose LLM provider chain just to experiment with Jev-like decisions. First inspect and extend the existing abstractions where appropriate.
-- Relevant existing docs: [SOFIA setup](../sofia/SETUP.md) and [SOFIA merge prompt](../sofia/MERGE_PROMPT.md).
+- The phrase “agent's own persona/personal setup” maps to **Agent Identity & Persona**, not the existing founder-scoped Personal Mind.
+- Music playback, desktop control, and other actions belong to **Tools & Capabilities**, with explicit tool contracts, permission checks, approval rules where needed, and auditable execution.
+- A capability listed as descriptive text in 'allowedCapabilities' is not by itself proof of an implemented, secured runtime tool.
+- Current context assembly already separates authority classes. Extend it only where evidence shows a missing capability; do not build a parallel context or memory runtime.
+- Provider availability, local-model support, Honcho integration, and complete voice-to-tool execution must be verified from current code/configuration/tests before they are claimed. Existing documentation alone is insufficient proof.
 
-## Working interpretation: what is worth learning from Jev?
+## Jev and comparable products: adopt / adapt / ignore
 
-A decision-oriented model/API is useful when software needs a constrained answer to a well-defined question rather than open-ended prose. Candidate operations include:
-
-- routing a task to an agent or workflow;
-- classifying an incoming request;
-- scoring urgency or risk against a documented rubric;
-- extracting a constrained label;
-- checking whether an action meets a policy condition;
-- deciding whether to ask for clarification or escalate to a human.
-
-These are **candidate use cases**, not proof that Jev or a local model is accurate enough for SamJuniors. Validate each against representative examples.
-
-## Adopt / adapt / avoid
-
-| Idea | Recommendation | Rationale |
+| Idea | Decision | Reason |
 |---|---|---|
-| Typed decision outputs instead of parsing free-form prose | **Adapt** | Use explicit schemas, enums, score ranges, validation, and versioned rubrics. |
-| Batch several related questions against the same context | **Evaluate** | Can reduce request overhead, but only if supported by the chosen implementation and not harmful to isolation or latency. |
-| Confidence-aware escalation | **Adapt cautiously** | Confidence is not automatically calibrated. Establish empirical thresholds with held-out evaluations; fail closed for consequential actions. |
-| Dedicated hosted Jev API | **Optional experiment only** | Requires account/key, service availability, terms, network, and possibly cost. Never make it a required dependency for startup. |
-| Build a proprietary Jev-equivalent model immediately | **Do not start here** | Training a competitive calibrated decision model requires data, evaluation, compute, and ongoing maintenance. First establish the product need and baseline performance. |
-| Reuse the whole Hey Jev app as a production subsystem | **Not yet approved** | License, platform assumptions, architecture, security, and maintenance cost are not yet audited. Prefer selective porting of small, well-understood components. |
+| Typed, constrained decisions rather than free-form parsing | **Adapt** | Existing classifier already follows this direction; strengthen contracts and evaluation where needed. |
+| Clarification when intent or target is ambiguous | **Adapt** | Prevents guessing and unsafe execution; retain deterministic fallback paths. |
+| Confidence-aware routing/escalation | **Evaluate cautiously** | Model confidence is not calibrated by default; set thresholds only from measured evaluations. |
+| Persistent context and agent identity | **Adapt to SamJuniors boundaries** | Separate agent profile, founder Personal Mind, Company Brain, and episodic recall rather than one undifferentiated memory. |
+| Full competitor app or code reuse | **Do not assume** | Audit license, platform fit, data flow, security, maintenance, and actual differentiation first. |
+| New custom model or provider chain immediately | **Reject for now** | No evidence yet that a new model or parallel provider system is necessary. Establish task-level baselines first. |
+| Honcho or another external memory service | **Evaluate, do not pre-commit** | Adopt only if quality improves enough to justify privacy, retention, cost, latency, vendor, and migration risks. |
 
-## Proposed SamJuniors direction
+## Design principles
 
-Build a **Decision Layer**, not a second general-purpose assistant or workflow runtime.
+- **Windows-first and free-first where practical**, without sacrificing reliability or security. Do not claim local/offline operation unless current code and tests demonstrate it.
+- Reuse existing SamJuniorsOS abstractions before introducing dependencies or parallel runtimes.
+- Treat retrieved content, user messages, tool output, and model output as untrusted data unless validated by the appropriate deterministic boundary.
+- Keep identity, memory, decisions, authorization, and execution as separate concerns with explicit contracts.
+- Bound retrieval, payloads, retries, timeouts, and cost; make failures observable without logging secrets or unnecessary personal content.
+- Use idempotency and duplicate prevention for actions; support cancellation, human override, audit, and recovery.
+- Learn from execution outcomes only through a governed process; do not let the model silently rewrite its own permissions or trusted identity.
+- Distinguish verified facts, unverified claims, inference, and proposals.
+- Prefer reversible changes. No merge to 'main', deployment, paid dependency, or broad rewrite without explicit approval.
 
-The initial layer should be a small, replaceable interface that accepts a typed task/context and returns a schema-validated decision. Candidate backends, in order of preference for initial experiments:
+## Evidence still needed
 
-1. deterministic rules for cases that do not need ML;
-2. a local model already supported by the repository's provider abstractions;
-3. optional external decision API after an evaluation shows a measurable advantage;
-4. model training/fine-tuning only after we have a real dataset, evaluation baseline, and evidence that simpler options are insufficient.
+- A complete current inventory of agent definitions, runtime tool registries, tool adapters, and capability enforcement.
+- End-to-end trace from desktop/SOFIA input through context assembly, decision proposal, authorization, tool execution, and user-visible result.
+- Exact current provider behavior and configuration, including whether any local model path is actually reachable in the active implementation.
+- Tests and behavior for retries, duplicate requests, provider outages, cancellation, interruption, and recovery.
+- Whether Honcho or another episodic-memory solution is present elsewhere in the full repository and whether it improves recall over current stores.
+- A source/license/platform audit of the Hey Jev reference before considering any code reuse.
+- Representative evaluation cases and measured baseline for ambiguity, injection, malformed output, conflicting context, compound requests, and safe escalation.
 
-The layer must not gain authority to execute side effects merely because it produced a decision. Existing backend authorization, approval, idempotency, audit, and execution paths remain authoritative.
+## Research conclusion
 
-## Windows-first constraints
-
-- Developer setup and first-run instructions must target supported Windows environments first.
-- Inspect `hey-jev` for macOS-only frameworks, APIs, scripts, build tools, permissions, and assumptions before porting.
-- Prefer cross-platform TypeScript/Node/Bun patterns already used by SamjuniorsOS when they fit the current repository.
-- Keep platform-specific adapters isolated; do not spread OS conditionals through the decision logic.
-- Verify on a real Windows environment or CI runner before claiming Windows support.
-
-## Free-first and key policy
-
-- Baseline development and core app startup must work without a Jev/TypeSafe key.
-- Any external API integration must be optional, disabled when unconfigured, and report its status honestly.
-- API keys stay server-side in environment variables or the existing secret/configuration mechanism. Never place secrets in browser code, source files, committed examples, logs, or screenshots.
-- Do not assume a free tier, credits, API availability, or license permissions without checking the current official terms.
-- Do not add a paid service or a new dependency to the default startup path without founder approval.
-
-## Risks and open questions
-
-1. What is the actual license and dependency footprint of `hey-jev`?
-2. Which components are macOS-specific, and what is the smallest useful cross-platform unit?
-3. Does Sophia currently have an explicit structured decision interface, or is decision logic embedded in existing orchestration?
-4. Which high-value workflow decision has measurable pain today?
-5. What local model and hardware are available on target Windows machines?
-6. What quality, latency, memory, and cost thresholds should the baseline meet?
-7. What exact Jev API access, terms, limits, and pricing are currently available to this account?
-
-## Research acceptance criteria
-
-Before implementation is approved, the agent must add evidence for:
-
-- repository license and dependency inventory;
-- Windows compatibility assessment with exact failing/passing commands;
-- current SamjuniorsOS integration points and ownership boundaries;
-- a small benchmark set with expected answers and failure cases;
-- baseline comparison: deterministic rules vs local model vs optional API, where applicable;
-- security review for prompt injection, untrusted state, secret handling, retries, and side-effect authorization.
-
-## Evidence labels
-
-- **Verified this session:** Current SamjuniorsOS README and SOFIA setup guide describe distinct surfaces, zero-key startup, and a local OpenAI-compatible LLM option.
-- **Verified this session:** Official TypeSafe public homepage positioning was reviewed.
-- **Not verified:** Hey Jev source/license/platform details; Jev API specifics, current pricing, account availability, local weights, and model-training details.
-- **Inference:** A typed decision layer may complement existing assistants/orchestration, but value must be proven by task-level evaluation.
+SamJuniorsOS already has meaningful foundations for intent classification, authority-labeled context, founder-scoped Personal Mind, and deterministic authorization. The immediate need is not a new “human brain” subsystem. It is to document the boundaries accurately, establish a verified baseline, then improve one measurable gap at a time. “Human-like” should mean useful contextual judgment, clarification, consistency, and graceful recovery—not unrestricted autonomy or imitation for its own sake.
