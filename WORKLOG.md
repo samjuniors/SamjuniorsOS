@@ -2346,3 +2346,25 @@ NEXT ACTION:
 8. Harden, test, document rollback, and request Founder approval before merge/deployment.
 
 **Execution rule:** One task at a time. After each task, report branch, commit, changed files, verification, limitations, and the next single task; then wait for Founder direction.
+
+
+## Runtime Identity, Tool, and Execution Inventory — Task 2 Complete (2026-10-04)
+
+**Evidence document:** `docs/research/runtime-capability-inventory.md`  
+**Status:** Source-level inventory completed on `feat/decision-layer-architecture-baseline`. No runtime code changed and no tests were executed in this task.
+
+### Verified source path
+
+`/api/sofia/ask` (authenticated Founder) → `executeSophiaTurn` (conversation ownership, idempotency, in-flight duplicate coalescing, persistence) → `SophiaContextAssembler` → `SophiaIntentClassifier` → `SophiaServerGateway` (strips untrusted identity/authorization fields) → `MultiAgentOrchestrator` for authorized Founder directive proposals → existing specialist-agent protocol → deterministic tool selection → gated web/GitHub research paths where selected → evidence/epistemic lineage → assistant persistence and SSE response.
+
+### Inventory findings
+
+- Existing agent definitions are static server definitions with role/persona instructions, responsibilities, skills, descriptive capability lists, prohibited actions, and protocol responsibilities; a versioned user-configurable persona store was not established by this inspection.
+- Web research and read-only GitHub research have execution paths; actual provider/account availability is configuration-dependent.
+- `finance_transfer` and `github_issue_create` are explicitly marked unconfigured; approval metadata does not make them executable.
+- SOFIA speech capability discovery is distinct from server tool authorization. `src/sofia/lib/music.ts` plays local interface sound cues, not arbitrary operating-system music control.
+- General desktop/machine-control execution was not found in the inspected server tool registry/path. Operational inspection dispatch and run steering explicitly acknowledge that their execution hooks are not wired.
+- Follow-up risk: the GitHub research branch passes a hard-coded `founder-001` label into Composio `sessionScope.userId`; trace its expected meaning and test coverage before changing it.
+- Relevant test files were located in the repository tree, but their presence is not a passing result. Provider credentials, connected accounts, real device behavior, and failure recovery were not verified.
+
+**Next roadmap task:** Task 3 — define canonical contracts for agent identity/persona, memory boundaries, decision proposals, and tool capabilities, reusing current abstractions and documenting only evidenced gaps.
