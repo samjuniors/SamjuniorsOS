@@ -2368,3 +2368,23 @@ NEXT ACTION:
 - Relevant test files were located in the repository tree, but their presence is not a passing result. Provider credentials, connected accounts, real device behavior, and failure recovery were not verified.
 
 **Next roadmap task:** Task 3 — define canonical contracts for agent identity/persona, memory boundaries, decision proposals, and tool capabilities, reusing current abstractions and documenting only evidenced gaps.
+
+
+## Task 3 — Canonical Identity, Memory, Decision, and Capability Contracts (2026-10-04)
+
+**Status:** COMPLETE — documentation only on `feat/decision-layer-architecture-baseline`. No runtime code, data model, dependency, or provider configuration changed.
+
+### What was recorded
+- Added `docs/architecture/agent-memory-decision-capability-contracts.md`.
+- Defined boundaries and ownership for Agent Identity & Persona, Personal Mind, Company Brain, Episodic Memory, untrusted decision proposals, trusted validated commands, executable tool capabilities, and deterministic governance.
+- Documented identity/profile versioning expectations, founder-scoped personal memory, authority/provenance requirements, access/retention/deletion limitations, capability availability criteria, and failure semantics.
+- Mapped contracts to inspected repository abstractions; preserved existing stores and the proposal-versus-command trust boundary.
+- Explicitly retained the unresolved hard-coded `founder-001` provider-scope question for a separate trace before any code change.
+
+### Verification and limits
+- Documentation files are to be re-fetched from the feature branch after the sequential writes.
+- No tests were run because this task changed documentation only.
+- The contract tables describe required behavior; they do not establish that every existing runtime path currently satisfies every requirement.
+- No merge, deployment, or main-branch change.
+
+**Next single task:** Task 4 — build a small versioned decision-reliability evaluation set and measure the existing classifier/gateway behavior before changing implementation.
