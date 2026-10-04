@@ -2300,3 +2300,49 @@ NEXT ACTION:
 - Await Founder review of `doc/SOPHIA_JARVIS_AUDIT.md` before initiating any implementation.
 
 
+
+
+## Agent Identity, Memory Boundaries, and Decision Layer — Architecture Baseline (2026-10-04)
+
+**Status:** Task 1 documentation baseline recorded on `feat/decision-layer-architecture-baseline`. No runtime implementation was changed in this task.
+
+### Agreed architecture
+
+- **Agent Identity & Persona:** who an agent is, including identity, role, personality, responsibilities, and configured behavior.
+- **Tools & Capabilities:** what an agent can actually do (e.g. music playback, desktop control, integrations). Capabilities are executable tools, not memories; persona text does not grant permission.
+- **Personal Mind:** founder-scoped personal preferences/context; not company truth, agent identity, instruction authority, or authorization.
+- **Company Brain:** company facts, strategy, policies, projects, decisions, and operational knowledge with appropriate authority and provenance.
+- **Episodic Memory:** relevant interaction history; assess Honcho or alternatives only if current retrieval has a demonstrated gap.
+- **Decision Layer:** intent interpretation, context selection, ambiguity handling, planning, typed proposals, and failure recovery.
+- **Governance:** model output and memory cannot authorize side effects or bypass deterministic policy, approvals, idempotency, or audit.
+
+### Repository evidence reviewed
+
+- `src/lib/server/agents/definitions.ts`: static server-side agent definitions include roles, responsibilities, skills, capability descriptions, prohibitions, and protocol responsibilities.
+- `src/lib/server/sophia/intent-classifier.ts`: typed proposals, deterministic pre-classification for selected injection/ambiguity cases, live-output shape validation, and deterministic fallback. Uses `zai-client`.
+- `src/lib/server/sophia/memory-gate.ts` and `memory-extractor.ts`: model proposes personal-memory candidates; deterministic validation applies, and review-required candidates remain inactive until Founder confirmation.
+- `src/lib/server/sophia/personal-memory-store.ts`: founder-scoped Personal Mind; durable file store is authoritative, Prisma is best-effort write-only shadow, and no Prisma read fallback exists.
+- `src/lib/server/sophia/context-assembly.ts`: current authority-labeled context assembly already includes separate Personal Mind and bounded episodic context.
+- `src/lib/server/authorization/policy-evaluator.ts`: deterministic side-effect authorization and approval evaluation.
+- Existing WORKLOG sections record classifier reliability and governance hardening; those are not reimplemented by this documentation task.
+
+### Corrections and limits
+
+- The existing founder Personal Mind store is not an agent-persona registry.
+- Descriptive capability lists do not prove a secured runtime tool is implemented.
+- Do not claim a general local-model fallback, Honcho integration, or complete voice-to-tool lifecycle without verifying the active code and tests.
+- No new memory system, provider chain, dependency, model training, UI, or runtime code was added.
+- This task did not run tests because only documentation was changed; document consistency and GitHub writes still require verification.
+
+### Roadmap order
+
+1. Complete and verify this repository/architecture documentation baseline.
+2. Inventory actual agent identity, tool registry/adapters, permissions, and one end-to-end request path.
+3. Define canonical contracts for identity, memory, decision proposals, and capabilities.
+4. Establish a decision reliability evaluation set and baseline.
+5. Assess current memory/episodic recall and Honcho only against measured gaps.
+6. Validate SOFIA voice and desktop capability execution end-to-end.
+7. Compare models/providers only if evidence justifies it.
+8. Harden, test, document rollback, and request Founder approval before merge/deployment.
+
+**Execution rule:** One task at a time. After each task, report branch, commit, changed files, verification, limitations, and the next single task; then wait for Founder direction.
