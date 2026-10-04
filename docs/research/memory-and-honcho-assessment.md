@@ -8,7 +8,7 @@
 
 **Do not integrate Honcho at this stage.** Preserve the current SamJuniorsOS memory boundaries and deterministic retrieval architecture. The current repository already has founder-scoped Personal Mind, bounded episodic conversation retrieval, authority-partitioned Company Brain retrieval, and a frozen retrieval benchmark. The benchmark history shows that retrieval gaps identified in the original baseline were closed by targeted, in-repository changes without adding a graph database or external retrieval service.
 
-Honcho's differentiated value is portable, reasoning-oriented memory shared across separate AI tools. That is not yet a demonstrated requirement for the current SamJuniorsOS request path. The remaining evidenced generation-faithfulness failure is downstream of retrieval: the required evidence is present in context, but the model omits a transitive dependency and incorrectly claims completeness. Adding another memory system would not directly solve that failure.
+Honcho's differentiated value is portable, reasoning-oriented memory shared across separate AI tools. That is not yet a demonstrated requirement for the current SamJuniorsOS request path. The M5.4 prompt/1 baseline did show a generation-faithfulness failure: the model omitted a transitive dependency despite receiving the evidence. However, a versioned prompt/2 remediation experiment is already present in this repository and its archived results show that the issue was resolved under the measured harness conditions. Adding another memory system would not solve the original failure, and no further retrieval change is indicated by that evidence.
 
 **Decision:** IGNORE for the current implementation; RECONSIDER only if a reproducible cross-session, paraphrase, or cross-tool recall failure remains after a representative benchmark and the storage/deletion architecture is ready. This is not a claim that Honcho is technically weak.
 
@@ -46,7 +46,7 @@ Honcho's differentiated value is portable, reasoning-oriented memory shared acro
 - M5.2 added deterministic query-conditioned retrieval, temporal change enumeration, current-vs-retired knowledge labeling, structured decision projection, and episodic recall hygiene.
 - M5.3 added an as-of read model and bounded relational dependency traversal rather than a graph database or separate retrieval service.
 - The committed frozen retrieval benchmark reports A3 render recall of **1.0000** and zero retrieval/authority failures across its 13 synthetic queries. This is evidence for the benchmark's defined workload, not proof of perfect retrieval on real founder data.
-- M5.4's three valid generation batteries each recorded 10 PASS / 2 FAIL out of 12 scenarios. S6/S9 repeatedly fail because the model returns only the direct dependent and asserts completeness even though the assembled context contains the transitive dependency. The evidence is present; this is a generation-faithfulness problem, not a retrieval gap.
+- M5.4 prompt/1 baseline: three valid batteries each recorded 10 PASS / 2 FAIL out of 12; S6/S9 failed as `GF_SUPPORTED_FACT_MISS`. The repository also contains `docs/architecture/M5_4_PROMPT2_REMEDIATION.md`, versioned prompt/2 code, and three valid archived prompt/2 batteries. I inspected the six committed JSON artifacts: prompt/1 has 10/12 PASS in each battery; prompt/2 has 12/12 PASS in each battery, with S6 and S9 passing 3/3 each. The fixture digest and S6/S9 context digests are identical across the arms. The prompt/2 report records the other offline regression suites as passing at the time of that experiment; they were not rerun in this current task. This is evidence of a successful controlled harness remediation, not proof that the same clause is already in the production persona prompt.
 
 ### Persistence and deployment risk
 
@@ -74,7 +74,7 @@ Honcho provides a peer/session/message model, background reasoning over interact
 | Deletion | A hosted purge/workspace deletion API is documented, but application-level deletion still needs a tested mapping from founder/conversation identity to every remote peer/session/message and a reconciliation path for failures. Deleting local data alone would not prove remote deletion. |
 | Licensing/operations | The open-source core is AGPL-3.0; assess obligations before modifying and operating it as a network service. Self-hosting avoids the hosted data boundary but adds service, database, model-provider, monitoring, backup, upgrade, and security operations. |
 | Cost/latency | Requires measurement against SamJuniors' own corpus, query frequency, token volume, depth settings, and latency budget; marketing benchmarks are not an adoption case. |
-| Evidence fit today | No reproducible failure in the current frozen retrieval benchmark requires Honcho. Current known M5.4 failures are generation-side. |
+| Evidence fit today | No reproducible failure in the current frozen retrieval benchmark requires Honcho. The M5.4 harness's original generation-side failure has a successful, archived prompt/2 remediation; production-prompt adoption remains a separate decision. |
 
 The currently published hosted terms state that availability is not guaranteed absent a separate SLA and that retention depends on the tier. The privacy policy currently published by Honcho describes a 90-day default for customer content, 90-day API logs and rolling backups, and US-centered processing/subprocessors. These terms/policies may change and must be rechecked before any adoption. Hosted account setup for a minor also requires the parent/guardian consent and supervision specified in Honcho's terms.
 
@@ -121,6 +121,6 @@ A separate persistence/deletion audit is also warranted before production-scale 
 ## Evidence boundaries
 
 - Repository source and committed benchmark documents/results were inspected on the feature branch; the suites were not re-run for this assessment.
-- The A3 retrieval numbers and M5.4 generation-battery results are transcribed from existing committed evidence, not newly generated by this task.
+- The A3 retrieval numbers and M5.4 generation-battery results are transcribed from existing committed evidence, not newly generated by this task. The six prompt/1 and prompt/2 JSON battery artifacts were read and their summary, prompt version, fixture digest, S6/S9 verdicts, and context digests were compared programmatically; no live model calls or test suites were run.
 - Honcho claims are based on the linked public product, SDK, repository, privacy-policy, and terms pages as accessed 2026-10-04. They are vendor-published claims, not independent security or performance validation.
 - No runtime code, dependency, schema, provider configuration, test, or data-store behavior changed.
