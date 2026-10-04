@@ -2388,3 +2388,18 @@ NEXT ACTION:
 - No merge, deployment, or main-branch change.
 
 **Next single task:** Task 4 — build a small versioned decision-reliability evaluation set and measure the existing classifier/gateway behavior before changing implementation.
+
+
+## Task 4 — Decision Reliability Evaluation (2026-10-04)
+
+**Status:** IN PROGRESS — versioned evaluation catalog created; execution baseline pending.
+
+- Added `docs/research/decision-reliability-evaluation-v1.md` (v1.0.0).
+- Mapped existing deterministic classifier, gateway, authority-hardening, and honesty tests to 26 evaluation scenarios; separated existing coverage from cases not yet directly covered.
+- Identified the deterministic test commands in the repository. Source inspection is not a test result.
+- The intent contract suite has 22 named assertions and a provider-mocked fixture child for valid proposals, malformed outputs, injection, ambiguity, provider-down fallback, echo containment, and approval resolution.
+- Related suites pin conversation ownership, duplicate-turn behavior (including a documented known issue), and honest reporting for unconfigured capabilities.
+- No test commands were executed in this pass. Pass/fail totals, timings, and runtime environment remain unknown.
+- Direct coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification loops remains unverified or absent in the inspected suites.
+
+**Next single action:** Run the deterministic suites in the repository environment and record exact results before proposing runtime fixes.
