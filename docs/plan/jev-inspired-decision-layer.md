@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 4 baseline recorded — deterministic suites reported 49/49 passing; known reliability limitations remain unfixed and require separate approval before runtime changes.  
+**Status:** Task 4 baseline recorded; targeted S6 idempotency fix implemented on the feature branch and awaiting local regression verification.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -79,11 +79,11 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 - Reported execution at commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`: intent contract 22/22, honesty consolidation 17/17, and authority hardening 10/10; total 49 passed, 0 failed, all commands exit 0.
 - The intent suite used a provider SDK fake. Live-provider quality suites were intentionally out of scope.
 - Authority S8–S10 ran with an ambient `DATABASE_URL` pointing at the shared development database. The execution report states cleanup verification found no residue; future runs should use a dedicated worktree-local test database.
-- Known limitations remain pinned, not fixed: S4 unknown-conversation provisioning, S6 duplicate re-execution on a bogus conversation/turn ID, and compound-objective loss under the single-kind intent contract.
+- S4 unknown-conversation provisioning remains unchanged, as does compound-objective loss under the single-kind intent contract. The S6 stale-ID duplicate-replay path has a targeted implementation and updated regression assertion; verification is pending.
 - EVAL-023…026 remain not directly covered by dedicated deterministic regressions: provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
 - No runtime implementation, tests, dependencies, or environment configuration were changed as part of recording the baseline.
 
-**Acceptance:** Met for the initial deterministic execution baseline and failure/coverage classification. This is not a live-provider quality claim or release-readiness result.
+**Acceptance:** Initial deterministic baseline and failure/coverage classification are recorded. The S6 fix is not accepted as complete until the relevant suites are rerun against the updated branch in an isolated test environment. This is not a live-provider quality claim or release-readiness result.
 
 ### Task 5 — Memory and Honcho assessment
 - Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
