@@ -15,7 +15,38 @@ import { CandidateIntentProposal, SophiaAssembledContext } from './types';
  * - The model is explicitly forbidden from outputting `founderId`, `sessionToken`,
  *   credentials, or authorization grants. Any such fields are stripped.
  * - Proposed execution mode is strictly a proposal evaluated by server policy.
+ *
+ * PHASE 1 RELIABILITY CONTRACT (fail-closed live output):
+ * - Deterministic pre-classification: prompt-injection attempts and narrow
+ *   ambiguous "look into X"-style requests are decided by the deterministic
+ *   patterns BEFORE the model call — live-model variance is a demonstrated
+ *   failure mode on exactly these two categories, and the deterministic
+ *   answer (clarification options / the security-preserving reply) is the
+ *   correct one. No model output can flip them.
+ * - Shape gate: a live model output must carry a known kind, an explicit
+ *   approval decision enum, and a numeric confidence in [0,1] before
+ *   sanitizeProposal may coerce it. Anything else is a failed generation
+ *   (deterministic fallback), never silently repaired: an unknown kind
+ *   previously fell through to a live "conversation" with a fabricated ack
+ *   echoing the full user message; an invalid approval decision previously
+ *   coerced to 'approved' (fail-open ratification); a missing/non-numeric
+ *   confidence previously fabricated as 0.85 and persisted as if measured.
  */
+
+/** The seven kinds sanitizeProposal understands — anything else is malformed. */
+const KNOWN_PROPOSAL_KINDS = new Set([
+  'conversation',
+  'informational_query',
+  'operational_inspection',
+  'directive_proposal',
+  'steering_proposal',
+  'approval_proposal',
+  'clarification_prompt',
+]);
+
+/** Explicit approval decisions. No default: absent/unknown never ratifies. */
+const APPROVAL_DECISIONS = new Set(['approved', 'rejected', 'request_revision']);
+
 export class SophiaIntentClassifier {
   /**
    * Evaluates the contextual semantic intent and produces a CandidateIntentProposal.
@@ -27,6 +58,14 @@ export class SophiaIntentClassifier {
     tone?: 'professional' | 'casual' | 'flirty';
     customPrompt?: string;
   }): Promise<{ proposal: CandidateIntentProposal; liveAi: boolean; rawOutput?: string }> {
+    // Deterministic pre-classification (see class header): the two categories
+    // with exact patterns AND demonstrated live variance are decided here,
+    // before any model call — and independently of provider availability.
+    const pre = this.deterministicPreClassification(opts.message);
+    if (pre) {
+      return { proposal: pre, liveAi: false };
+    }
+
     const persona = SERVER_AGENTS.coo;
     const tone = opts.tone || 'professional';
 
@@ -116,10 +155,14 @@ Output a JSON code block with your proposal:
       });
 
       const parsed = parseJsonLoose(rawOutput);
-      if (parsed && typeof parsed === 'object' && parsed.kind) {
+      if (this.isValidProposalShape(parsed)) {
         const sanitized = this.sanitizeProposal(parsed, opts.message);
         return { proposal: sanitized, liveAi: true, rawOutput };
       }
+      console.warn(
+        '[SophiaIntentClassifier] Live model output rejected by shape gate ' +
+        '(unknown kind, invalid approval decision, or missing/invalid confidence); using deterministic fallback.',
+      );
     } catch (err: any) {
       console.warn(`[SophiaIntentClassifier] Live AI generation failed, falling back to deterministic analyzer: ${err?.message || err}`);
     }
@@ -127,6 +170,80 @@ Output a JSON code block with your proposal:
     // Deterministic fallback analyzer
     const fallbackProposal = this.fallbackSemanticAnalysis(opts.message, opts.context);
     return { proposal: fallbackProposal, liveAi: false };
+  }
+
+  /**
+   * Phase 1 reliability: the minimum structural contract a LIVE model output
+   * must satisfy before sanitizeProposal may coerce it. Fail-closed — any
+   * violation means the output is treated as a failed generation and the
+   * deterministic fallback answers instead. sanitizeProposal's per-field
+   * defaults remain as final coercion for inputs that pass this gate.
+   */
+  private static isValidProposalShape(parsed: unknown): boolean {
+    if (!parsed || typeof parsed !== 'object') return false;
+    const p = parsed as Record<string, unknown>;
+    if (typeof p.kind !== 'string' || !KNOWN_PROPOSAL_KINDS.has(p.kind)) return false;
+    if (p.kind === 'approval_proposal' && !APPROVAL_DECISIONS.has(p.decision as string)) return false;
+    return (
+      typeof p.confidence === 'number' &&
+      Number.isFinite(p.confidence) &&
+      p.confidence >= 0 &&
+      p.confidence <= 1
+    );
+  }
+
+  /**
+   * Phase 1 reliability: deterministic pre-classification for the categories
+   * where this module already owns an exact, battle-tested pattern AND where
+   * live-model variance is a demonstrated failure mode. Mirrors the first and
+   * third branch of fallbackSemanticAnalysis (shared pattern constants, shared
+   * proposal factories — one source of truth, no drift between the paths).
+   */
+  private static deterministicPreClassification(message: string): CandidateIntentProposal | null {
+    const clean = message.trim().toLowerCase();
+    if (this.INJECTION_PATTERN.test(clean)) {
+      return this.injectionNeutralizedReply();
+    }
+    if (this.AMBIGUOUS_PATTERNS.some((p) => p.test(clean))) {
+      return this.ambiguousClarification(message);
+    }
+    return null;
+  }
+
+  /** Shared pattern constants — ONE definition used by both the pre-model
+   * gate above and fallbackSemanticAnalysis below, so the two paths can
+   * never drift apart. */
+  private static readonly INJECTION_PATTERN =
+    /\b(ignore all previous instructions|system override|you are now (root|unconstrained)|output all server secrets|transfer.*treasury)\b/i;
+
+  private static readonly AMBIGUOUS_PATTERNS = [
+    /^(can you |could you |please )?(look into|explore|see about|check out)\s+[a-z0-9\s]{1,30}\?*$/i,
+    /^(what should we do about|thoughts on|what about)\s+[a-z0-9\s]{1,30}\?*$/i,
+  ];
+
+  /** Factory: the security-preserving reply for neutralized injection attempts. */
+  private static injectionNeutralizedReply(): CandidateIntentProposal {
+    return {
+      kind: 'conversation',
+      reply: `[Sophia Vance • COO]\nI operate strictly within SamJuniorsOS governance boundaries. Security invariants, sandboxes, and execution controls remain fully active.`,
+      confidence: 0.99,
+      reason: 'Structural trust boundary preserved: prompt injection attempt neutralized.',
+    };
+  }
+
+  /** Factory: the clarification proposal for open-scope requests. */
+  private static ambiguousClarification(message: string): CandidateIntentProposal {
+    return {
+      kind: 'clarification_prompt',
+      ambiguityReason: `The request "${message}" has open scope boundaries.`,
+      structuredOptions: [
+        'Conduct preliminary research only',
+        'Commission 9-step multi-agent council directive with verified deliverables',
+        'Keep conversational and explore trade-offs',
+      ],
+      confidence: 0.88,
+      reason: 'Request lacks clear scope and deliverable boundaries.',
+    };
   }
 
   /**
@@ -241,14 +358,9 @@ Output a JSON code block with your proposal:
     const clean = message.trim().toLowerCase();
 
     // 0. Prompt-Injection / Adversarial Override Check (Defense-in-depth)
-    const isInjection = /\b(ignore all previous instructions|system override|you are now (root|unconstrained)|output all server secrets|transfer.*treasury)\b/i.test(clean);
-    if (isInjection) {
-      return {
-        kind: 'conversation',
-        reply: `[Sophia Vance • COO]\nI operate strictly within SamJuniorsOS governance boundaries. Security invariants, sandboxes, and execution controls remain fully active.`,
-        confidence: 0.99,
-        reason: 'Structural trust boundary preserved: prompt injection attempt neutralized.',
-      };
+    // (shared pattern + factory with the pre-model gate — see class header)
+    if (this.INJECTION_PATTERN.test(clean)) {
+      return this.injectionNeutralizedReply();
     }
 
     // 1. Check for Approval Intent against active pending governance gates
@@ -288,20 +400,9 @@ Output a JSON code block with your proposal:
     }
 
     // 3. Ambiguity check (e.g. "look into pricing", "can you check into this")
-    const ambiguousMatch = /^(can you |could you |please )?(look into|explore|see about|check out)\s+[a-z0-9\s]{1,30}\?*$/i.test(clean) ||
-                           /^(what should we do about|thoughts on|what about)\s+[a-z0-9\s]{1,30}\?*$/i.test(clean);
-    if (ambiguousMatch) {
-      return {
-        kind: 'clarification_prompt',
-        ambiguityReason: `The request "${message}" has open scope boundaries.`,
-        structuredOptions: [
-          'Conduct preliminary research only',
-          'Commission 9-step multi-agent council directive with verified deliverables',
-          'Keep conversational and explore trade-offs',
-        ],
-        confidence: 0.88,
-        reason: 'Request lacks clear scope and deliverable boundaries.',
-      };
+    // (shared patterns + factory with the pre-model gate — see class header)
+    if (this.AMBIGUOUS_PATTERNS.some((p) => p.test(clean))) {
+      return this.ambiguousClarification(message);
     }
 
     // 4. Directive check (formal commissions, research, specs)

@@ -1,5 +1,32 @@
 # WORKLOG.md - Canonical Operational History
 
+## Phase 1 (Jev-inspired plan) — Sophia Intent Classification Reliability (2026-10-04)
+
+**Status:** COMPLETE on `feat/phase1-intent-reliability` (branched from `integration/sandbox-r3` @ `449a342`), awaiting founder review. Founder directive: improve Sophia's existing intent classification reliability without introducing a new subsystem — baseline first, identify real failure categories, then the smallest evidence-supported change. No TypeSafe integration, no new provider, no UI/memory-gate/approval-queue changes, no architecture rewrite; classifier output still cannot authorize or execute anything (the SophiaServerGateway boundary is unchanged).
+
+### Baseline (reproducible, fixtures at the z-ai SDK network boundary)
+
+Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: mock ONLY the SDK chat completion before any src import, run the REAL classifier with real context assembly) and recorded current behavior over the eight representative categories (conversation, factual, ambiguous, directive, approval, steering, compound, injection) plus twelve model-output fixtures. Confirmed failure categories: (1) **fail-open approval coercion** — `decision: "yes-sure-go-ahead"` on a greeting silently became `approval_proposal`/`approved` live; (2) **unknown kinds silently accepted** — `kind: "urgent_maintenance_mode"` became a live conversation with a fabricated ack echoing the full user message; (3) **fabricated confidence** — missing/non-numeric confidence silently became 0.85 and was persisted as if measured; (4) **live-model variance on ambiguous requests** (the historically flaky phase1 #4 assertion, reproduced deterministically with a wrong-kind fixture) and on **injection attempts** (model variance could emit a directive_proposal carrying the payload into the gateway framing reply). Fallback analyzer verified correct on all 8 categories; compound requests remain single-kind (steering only) — documented limitation, unchanged.
+
+### What Changed
+
+- **`src/lib/server/sophia/intent-classifier.ts`** (only production file touched, +124/−23):
+  - **Deterministic pre-classification**: prompt-injection attempts and narrow ambiguous "look into X"-style requests are decided by the existing deterministic patterns BEFORE the model call (`deterministicPreClassification`); the model is never consulted (verified `modelCalls === 0`), so live variance cannot flip them. Root-cause fix for the flaky phase1 #4 test.
+  - **Fail-closed shape gate** (`isValidProposalShape`): a live model output must carry a known kind, an explicit approval-decision enum value, and a numeric confidence in [0,1] before `sanitizeProposal` may coerce it; anything else is a failed generation answered by the deterministic fallback (warn-logged), never silently repaired. Closes all three baseline defects. `sanitizeProposal` itself is unchanged; the gateway, policies, approvals, and idempotency protections are untouched.
+  - Shared pattern constants (`INJECTION_PATTERN`, `AMBIGUOUS_PATTERNS`) and proposal factories (`injectionNeutralizedReply`, `ambiguousClarification`) extracted so the pre-model gate and `fallbackSemanticAnalysis` branches 0/3 share ONE definition — no drift between the paths.
+- **`tests/sophia/phase1-intent-fixture-child.ts`** (new): deterministic fixture child (12 model behaviors × 8 category messages), SDK-level mock, one-JSON-line output contract.
+- **`tests/sophia/phase1_intent_contract.test.ts`** (new): 16-assertion suite — valid shapes live (A), malformed rejected fail-closed (B), pre-classification variance-immunity (C), the 8-category fallback baseline (D), forged-field sanitization preserved (E). Live-LLM quality evaluation stays separate in the existing phase1 suite.
+
+### Verification (exact commands, all in the worktree)
+
+- `bun tests/sophia/phase1_intent_contract.test.ts` → **16 passed, 0 failed**
+- `bun tests/sophia/phase1_conversational_executive.test.ts` → **12 passed, 0 failed**, three consecutive runs (the previously flaky #4 is now deterministic — the ambiguous message never reaches the model; one run also absorbed a live 429 on test 12 via the fallback)
+- `bun tests/sophia/phase2_grounding_context.test.ts` → 12/0; `bun tests/sophia/r3_honest_metrics.test.ts` → 7/0 (under live 429s)
+- `bun tests/sophia/r0_route_auth.test.ts` → 81/0; `r01_auth_design` → 21/0; `r1_honesty_consolidation` → 17/0; `r2_engine_convergence` → 15/0; `r0_realtime_gate` → 6/0; `r0_cron_machine_auth` → 24/0; `bun test tests/scheduler/phase4_4a_heartbeat.test.ts` → 11 pass/0 fail; `m4b1_lifecycle` 20/0; `k2_personal_memory` 20/0; `m0_idempotency_expiry` 7/0; `m3_authority_hardening` 10/0
+- `bunx tsc --noEmit` → 157 errors = EXACTLY the pre-existing baseline (zero in the changed/new files); `bun run lint` → exit 0
+- NOT VERIFIED: production build (sandbox policy); no UI changes so no browser-surface delta — the dev server continues to serve the unchanged sandbox `main` tree.
+
+
 ## Phase 4C-B — Streaming STT Adapter Implementation (2026-09-17)
 
 **Status:** COMPLETE & SEALED. Implemented the provider-neutral streaming Speech-to-Text (STT) architecture and the first production adapter for Deepgram Flux STT behind the existing Phase 4 companion WebSocket server (`port 3001`). Integrated client-side 128ms pre-roll ring buffering to prevent first-phoneme clipping, server-side frame aggregation to 80ms chunks (2560 bytes), turn finalization semantics via `ForceEndTurn`, transcript broadcast to client (`TRANSCRIPT_INTERIM` and `TRANSCRIPT_FINAL`), and canonical cognitive ingress through `ConversationStore`, `SophiaIntentClassifier`, and `SophiaServerGateway`. Enforced strict security: STT transcripts are untrusted founder messages, credentials never leak to client code, and prompt injections cannot bypass authorization gates. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`, with zero regressions across Phase 4A, Phase 4B, Phase 3, Phase 2, and Phase 1 test suites.
