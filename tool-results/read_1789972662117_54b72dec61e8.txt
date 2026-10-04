@@ -1,0 +1,780 @@
+     1→import { useEffect, useRef } from 'react'
+     2→import { Scene } from './scene/Scene'
+     3→import { Hud } from './ui/Hud'
+     4→import { Boot } from './ui/Boot'
+     5→import { Ignition } from './ui/Ignition'
+     6→import { Diagnostics } from './ui/Diagnostics'
+     7→import { CommandLine } from './ui/CommandLine'
+     8→import { useStore } from './store'
+     9→import { startVoice, setWakePersona, type Voice, type VoiceMode } from './lib/voice'
+    10→import { createSpeaker, cycleVoice, currentVoiceName } from './lib/tts'
+    11→import * as sfx from './lib/sfx'
+    12→import * as music from './lib/music'
+    13→import * as hands from './lib/hands'
+    14→import { listenForClap } from './lib/clap'
+    15→import * as camera from './lib/camera'
+    16→import * as kokoro from './lib/kokoro'
+    17→import { TTS_ENGINE } from './config'
+    18→import { forTool, attention, setFillerPersona } from './lib/fillers'
+    19→import { personaById } from './lib/personas'
+    20→import {
+    21→  ask,
+    22→  warm,
+    23→  interrupt,
+    24→  watchServers,
+    25→  watchPanels,
+    26→  watchBlades,
+    27→  watchCapture,
+    28→  watchUi,
+    29→  watchConnection,
+    30→  connectedLabels,
+    31→  usingBridge,
+    32→  type Msg,
+    33→} from './lib/brain'
+    34→import { startAnalyser, micLevel } from './lib/audio'
+    35→import { probeCapabilities } from './lib/capabilities'
+    36→import { env } from './config'
+    37→
+    38→/**
+    39→ * The conversation.
+    40→ *
+    41→ * This used to be a sequential loop — greet, await a capture, await an answer,
+    42→ * repeat — with the microphone opened and closed around each step. That shape
+    43→ * cannot be interrupted: while it is awaiting the answer, nothing is listening,
+    44→ * so there is no way for the user to get a word in.
+    45→ *
+    46→ * It is an event machine now. The voice loop runs continuously and pushes
+    47→ * events at us; every one of them is legal in every phase. Saying anything at
+    48→ * all stops him talking, and whatever you say next becomes the new turn.
+    49→ */
+    50→
+    51→/** How long to wait for someone to start speaking after he wakes. Generous:
+    52→ *  people say his name and *then* think about what they wanted. */
+    53→const AWAIT_SPEECH_MS = 14000
+    54→
+    55→/** After an answer, how long the mic stays open for a follow-up before he
+    56→ *  drops back to standby. Long enough that you don't have to say the name
+    57→ *  again to continue a thought. */
+    58→const FOLLOW_UP_MS = 11000
+    59→
+    60→/** crypto.randomUUID needs a secure context, which a LAN address over plain
+    61→ *  http is not. Not worth failing a whole turn over an id. */
+    62→const newId = () =>
+    63→  globalThis.crypto?.randomUUID?.() ??
+    64→  `id${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+    65→
+    66→/** The same mishearings voice.ts accepts for the wake word — otherwise a turn
+    67→ *  that woke the machine as “travis” gets that word sent on to the model as a
+    68→ *  question. Read fresh from the persona each time: the character can change
+    69→ *  under a long-lived page, and a stale name would strip the wrong word. */
+    70→const namePattern = () => personaById(useStore.getState().persona).heardAs
+    71→/** A bare vocative — “Sofia”, “hey sofia” — with nothing asked. */
+    72→const bareName = () =>
+    73→  new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*(?:${namePattern()})[\\s,.!?]*$`, 'i')
+    74→/** A leading vocative on a real command: “Sofia, what's the weather”. */
+    75→const leadingName = () =>
+    76→  new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*(?:${namePattern()})\\b[\\s,.:!?-]*`, 'i')
+    77→
+    78→export default function App() {
+    79→  const store = useStore
+    80→  const phase = useStore((s) => s.phase)
+    81→  const persona = useStore((s) => s.persona)
+    82→  const history = useRef<Msg[]>([])
+    83→  const speaker = useRef<ReturnType<typeof createSpeaker> | null>(null)
+    84→  const voice = useRef<Voice | null>(null)
+    85→
+    86→  // -- persona ------------------------------------------------------------
+    87→
+    88→  /**
+    89→   * Everything that has to follow the character, gathered in one place so a
+    90→   * switch is atomic: the wake word the recogniser hunts for, the filler
+    91→   * lines it speaks, and the document title. The HUD, the dial and the boot
+    92→   * screen subscribe to the store themselves.
+    93→   */
+    94→  useEffect(() => {
+    95→    const p = personaById(persona)
+    96→    setWakePersona(persona)
+    97→    setFillerPersona(persona)
+    98→    document.title = p.mark
+    99→  }, [persona])
+   100→
+   101→  /**
+   102→   * Monotonic turn counter. Every await in a turn checks it on the way out:
+   103→   * if it has moved, that turn was superseded by a barge-in and must not touch
+   104→   * the phase, the speaker, or the busy state on its way to the floor.
+   105→   */
+   106→  const turn = useRef(0)
+   107→  const booting = useRef(false)
+   108→  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+   109→  const voicePoll = useRef<ReturnType<typeof setInterval> | null>(null)
+   110→  /** Set by the voice loop's mic failure — the one error that means voice is
+   111→   *  off for good, and so the one that must outlive startVoice returning. */
+   112→  const micDead = useRef(false)
+   113→
+   114→  // -- helpers --------------------------------------------------------------
+   115→
+   116→  const clearIdle = () => {
+   117→    if (idleTimer.current) clearTimeout(idleTimer.current)
+   118→    idleTimer.current = null
+   119→  }
+   120→
+   121→  const silence = () => {
+   122→    speaker.current?.cancel()
+   123→    speaker.current = null
+   124→  }
+   125→
+   126→  const goDormant = () => {
+   127→    clearIdle()
+   128→    silence()
+   129→    turn.current++
+   130→    const s = store.getState()
+   131→    s.setCaption('')
+   132→    s.setActiveTool(null)
+   133→    music.working(false)
+   134→    music.duck(false)
+   135→    sfx.duck(false)
+   136→    s.setPhase('dormant')
+   137→  }
+   138→
+   139→  /** Open the mic and wait. `window` is how long before he gives up. */
+   140→  const listen = (window: number) => {
+   141→    clearIdle()
+   142→    const s = store.getState()
+   143→    s.setCaption('')
+   144→    s.setPhase('listening')
+   145→    sfx.play('listen')
+   146→    idleTimer.current = setTimeout(goDormant, window)
+   147→  }
+   148→
+   149→  // -- one turn -------------------------------------------------------------
+   150→
+   151→  const respond = async (said: string): Promise<void> => {
+   152→    const mine = ++turn.current
+   153→    const stale = () => mine !== turn.current
+   154→
+   155→    clearIdle()
+   156→    const s = store.getState()
+   157→    // Last turn's panels and blades go now, before the new answer starts
+   158→    // putting its own up. Anything the model marked sticky survives.
+   159→    s.clearPanels()
+   160→    s.clearBlades()
+   161→    s.setCaption('')
+   162→    s.pushTurn({ id: newId(), role: 'user', text: said })
+   163→    s.setPhase('thinking')
+   164→
+   165→    const spk = createSpeaker()
+   166→    speaker.current = spk
+   167→    sfx.duck(true)
+   168→    music.duck(true)
+   169→
+   170→    const turnId = newId()
+   171→    let started = false
+   172→    let filled = false
+   173→
+   174→    try {
+   175→      const { text } = await ask(said, history.current, {
+   176→        onText: (delta) => {
+   177→          if (stale()) return
+   178→          if (!started) {
+   179→            started = true
+   180→            store.getState().setPhase('speaking')
+   181→            // The answer arriving is what ends the tool phase — a timer would
+   182→            // clear the readout while a slow tool was still running.
+   183→            store.getState().setActiveTool(null)
+   184→            music.working(false)
+   185→            store.getState().pushTurn({ id: turnId, role: 'jarvis', text: '' })
+   186→          }
+   187→          store.getState().appendToLastTurn(delta)
+   188→          spk.push(delta)
+   189→        },
+   190→        onTool: (name) => {
+   191→          if (stale()) return
+   192→          // Only claim the tooling phase while he has nothing to say yet.
+   193→          // Setting it unconditionally pinned the machine in 'tooling' for the
+   194→          // rest of any answer that called a tool after it started talking,
+   195→          // which also broke the reactor's lip-sync for the remainder.
+   196→          if (!started) store.getState().setPhase('tooling')
+   197→          store.getState().setActiveTool(name)
+   198→          sfx.play('tool')
+   199→          music.working(true)
+   200→          // Say something the moment work starts — a tool can take ten seconds
+   201→          // and silence that long reads as a crash. Once per turn only; a
+   202→          // chain of five tools shouldn't produce five apologies.
+   203→          if (!filled && !started) {
+   204→            filled = true
+   205→            spk.say(forTool(name))
+   206→          }
+   207→        },
+   208→        // The character the brain should answer as — re-read per turn so a
+   209→        // mid-session persona switch takes effect on the very next question.
+   210→      }, store.getState().persona)
+   211→
+   212→      if (stale()) return
+   213→
+   214→      // The bridge keeps conversation state in its own session, so history is
+   215→      // only threaded through on the direct path.
+   216→      if (!usingBridge) {
+   217→        history.current.push({ role: 'user', content: said })
+   218→        history.current.push({ role: 'assistant', content: text || '…' })
+   219→        if (history.current.length > 16) {
+   220→          history.current = history.current.slice(-16)
+   221→        }
+   222→      }
+   223→
+   224→      await spk.end()
+   225→      if (stale()) return
+   226→      sfx.play('done')
+   227→    } catch (err) {
+   228→      if (stale()) return
+   229→      console.error(err)
+   230→      sfx.play('error')
+   231→      store
+   232→        .getState()
+   233→        .setError(err instanceof Error ? err.message : 'Something went wrong.')
+   234→    } finally {
+   235→      if (!stale()) {
+   236→        speaker.current = null
+   237→        sfx.duck(false)
+   238→        music.duck(false)
+   239→        store.getState().setActiveTool(null)
+   240→        music.working(false)
+   241→        // Stay open. Having to say his name again to add one more sentence is
+   242→        // the difference between a conversation and a vending machine.
+   243→        listen(FOLLOW_UP_MS)
+   244→      }
+   245→    }
+   246→  }
+   247→
+   248→  // -- voice events ---------------------------------------------------------
+   249→
+   250→  /** What the voice loop should do with what it hears, derived from phase. */
+   251→  const mode = (): VoiceMode => {
+   252→    switch (store.getState().phase) {
+   253→      case 'offline':
+   254→      case 'boot':
+   255→        return 'deaf'
+   256→      case 'dormant':
+   257→        return 'wake'
+   258→      case 'waking':
+   259→      case 'listening':
+   260→        return 'command'
+   261→      default:
+   262→        return 'guard' // thinking, tooling, speaking
+   263→    }
+   264→  }
+   265→
+   266→  const onWake = (trailing: string) => {
+   267→    const phase = store.getState().phase
+   268→    if (phase === 'offline' || phase === 'boot') return
+   269→
+   270→    store.getState().setError(null)
+   271→    sfx.play('wake')
+   272→
+   273→    // "Jarvis, what's happening in AI this week" in one breath. Waiting for a
+   274→    // greeting he didn't need is the most common way an assistant wastes time.
+   275→    if (trailing) {
+   276→      void respond(trailing)
+   277→      return
+   278→    }
+   279→
+   280→    store.getState().setPhase('waking')
+   281→
+   282→    // Answer to his name. Deliberately NOT awaited any more: the microphone is
+   283→    // already open and the echo filter knows his voice, so the user can talk
+   284→    // straight over the greeting instead of waiting it out.
+   285→    const greeting = createSpeaker()
+   286→    speaker.current = greeting
+   287→    greeting.say(attention())
+   288→    void greeting.end()
+   289→
+   290→    listen(AWAIT_SPEECH_MS)
+   291→  }
+   292→
+   293→  /**
+   294→   * Someone started talking. This is the whole point of the rewrite: he stops,
+   295→   * immediately, whatever he was doing.
+   296→   */
+   297→  const onSpeechStart = () => {
+   298→    clearIdle()
+   299→    const phase = store.getState().phase
+   300→    if (phase === 'offline' || phase === 'boot' || phase === 'dormant') return
+   301→
+   302→    const wasBusy =
+   303→      phase === 'thinking' || phase === 'tooling' || phase === 'speaking'
+   304→
+   305→    silence()
+   306→    if (wasBusy) {
+   307→      // Abandon the answer in flight. The turn counter moves in respond()'s
+   308→      // replacement; bumping it here covers the case where nothing replaces it.
+   309→      turn.current++
+   310→      interrupt()
+   311→      store.getState().setActiveTool(null)
+   312→      music.working(false)
+   313→      sfx.duck(false)
+   314→      music.duck(false)
+   315→    }
+   316→    store.getState().setPhase('listening')
+   317→  }
+   318→
+   319→  const onUtterance = (text: string) => {
+   320→    const phase = store.getState().phase
+   321→    if (phase === 'offline' || phase === 'boot' || phase === 'dormant') return
+   322→
+   323→    // People keep using the name as a vocative once they're already talking to
+   324→    // the machine. Strip it rather than sending "sofia" to the model as a
+   325→    // question.
+   326→    if (bareName().test(text)) {
+   327→      listen(AWAIT_SPEECH_MS)
+   328→      return
+   329→    }
+   330→    const said = text.replace(leadingName(), '').trim()
+   331→    if (!said) {
+   332→      listen(AWAIT_SPEECH_MS)
+   333→      return
+   334→    }
+   335→
+   336→    void respond(said)
+   337→  }
+   338→
+   339→  /**
+   340→   * The typed command line. A `jarvis:say` event is the keyboard's version of
+   341→   * a recognised utterance: same road, same rules. Idle, it starts a turn;
+   342→   * busy, it barge-ins exactly like speaking over him does — the in-flight
+   343→   * answer is interrupted, its turn goes stale, and this one replaces it.
+   344→   */
+   345→  const onSay = (e: Event) => {
+   346→    const said = String((e as CustomEvent<string>).detail ?? '').trim()
+   347→    if (!said) return
+   348→
+   349→    const phase = store.getState().phase
+   350→    if (phase === 'boot') return
+   351→
+   352→    if (phase === 'offline') {
+   353→      // The ignition screen is still up; boot first, then ask the moment the
+   354→      // interface lands.
+   355→      void powerOn().then(() => respond(said))
+   356→      return
+   357→    }
+   358→
+   359→    if (phase === 'thinking' || phase === 'tooling' || phase === 'speaking') {
+   360→      silence()
+   361→      interrupt()
+   362→    }
+   363→    void respond(said)
+   364→  }
+   365→
+   366→  const onPartial = (text: string) => {
+   367→    store.getState().setCaption(text)
+   368→  }
+   369→
+   370→  const onVoiceError = (message: string) => {
+   371→    store.getState().setError(message)
+   372→    // The two mic failures are the only ones that mean voice is off for good
+   373→    // — transient recogniser hiccups fire this too, and must not flip the
+   374→    // standby hint to “type a command”. The ref survives startVoice returning
+   375→    // its dead object, so the optimistic setVoiceLive(true) after it cannot
+   376→    // overwrite what happened here.
+   377→    if (/microphone/i.test(message)) {
+   378→      micDead.current = true
+   379→      store.getState().setVoiceLive(false)
+   380→    }
+   381→  }
+   382→
+   383→  // -- power on -------------------------------------------------------------
+   384→
+   385→  const powerOn = async () => {
+   386→    // The ignition button and the space bar can both land here, and the phase
+   387→    // only moves after the first await — so without this a double press boots
+   388→    // twice, arming two voice loops and two download polls.
+   389→    if (booting.current) return
+   390→    booting.current = true
+   391→
+   392→    try {
+   393→      await ignite()
+   394→    } catch (err) {
+   395→      // The guard must not outlive a failed boot. Audio unlock can be refused,
+   396→      // the microphone prompt dismissed, the bridge unreachable at the wrong
+   397→      // moment — and with the flag still latched the ignition button was dead
+   398→      // for the rest of the page, recoverable only by reloading. Reset it and
+   399→      // put the button back so the user can simply press it again.
+   400→      booting.current = false
+   401→      console.error('[jarvis] power-up failed:', err)
+   402→      store.getState().setPhase('offline')
+   403→      store
+   404→        .getState()
+   405→        .setError(
+   406→          err instanceof Error
+   407→            ? `Power-up failed: ${err.message}`
+   408→            : 'Power-up failed. Click to try again.',
+   409→        )
+   410→    }
+   411→  }
+   412→
+   413→  const ignite = async () => {
+   414→    const s = store.getState()
+   415→
+   416→    // Must happen inside the click handler — browsers won't start an
+   417→    // AudioContext or speech synthesis without a user gesture.
+   418→    await sfx.unlockAudio()
+   419→    sfx.play('boot')
+   420→    // The score. Must be started from inside this click handler for the same
+   421→    // reason as the rest of the audio.
+   422→    music.enable()
+   423→    music.playBoot()
+   424→    music.startAmbient()
+   425→
+   426→    s.setPhase('boot')
+   427→
+   428→    watchServers((servers) => store.getState().setConnected(servers))
+   429→    watchPanels((panel) => store.getState().pushPanel(panel))
+   430→    watchBlades((blade) => store.getState().pushBlade(blade))
+   431→
+   432→    /**
+   433→     * JARVIS asking to see something.
+   434→     *
+   435→     * Announced on screen for as long as it takes, with whatever he said he was
+   436→     * looking for. The camera's own light is on too, but a hardware light that
+   437→     * appears with no explanation is exactly the thing that makes people
+   438→     * distrust an assistant — so the interface says it before they have to ask.
+   439→     */
+   440→    watchCapture(async (req) => {
+   441→      const note =
+   442→        req.mode === 'watch'
+   443→          ? req.when === 'past'
+   444→            ? req.reason || 'reviewing the last few seconds'
+   445→            : `${req.reason || 'watching'} · ${req.seconds}s`
+   446→          : req.reason || 'taking a look'
+   447→      store.getState().setLooking(note)
+   448→
+   449→      // The past is only available if something has been remembering it, and
+   450→      // that only happens while the camera is on screen. Answering plainly
+   451→      // beats opening the camera and recording the next few seconds instead,
+   452→      // which is a different question from the one that was asked.
+   453→      if (req.mode === 'watch' && req.when === 'past' && camera.bufferedSeconds() < 1) {
+   454→        store.getState().setLooking(null)
+   455→        return {
+   456→          error:
+   457→            'There is no recent footage — the camera has to be open on screen ' +
+   458→            'for me to remember what just happened. Ask me to open the camera, ' +
+   459→            'and I can watch from then on.',
+   460→        }
+   461→      }
+   462→
+   463→      // Held for the whole capture. Without this the stream can be torn down by
+   464→      // whoever else was using it half way through a six-second watch.
+   465→      let held = false
+   466→      try {
+   467→        await camera.holdCamera()
+   468→        held = true
+   469→        if (req.mode === 'look') return camera.grabFrame()
+   470→        if (req.when === 'past') {
+   471→          const grid = camera.recentGrid(req.seconds, 9)
+   472→          return grid ?? { error: 'There is not enough recent footage to review.' }
+   473→        }
+   474→        return await camera.watchAhead(req.seconds, 9)
+   475→      } catch (err) {
+   476→        return {
+   477→          error:
+   478→            (err as DOMException)?.name === 'NotAllowedError'
+   479→              ? 'The camera is not permitted, so I cannot see anything.'
+   480→              : `The camera could not be read: ${(err as Error)?.message ?? err}`,
+   481→        }
+   482→      } finally {
+   483→        if (held) camera.releaseCamera()
+   484→        store.getState().setLooking(null)
+   485→      }
+   486→    })
+   487→
+   488→    // The interface is JARVIS's to drive. These arrive out of band, pushed
+   489→    // mid-turn the way panels are, so a command can retint the reactor or put
+   490→    // something into orbit while he is still speaking the sentence about it.
+   491→    watchUi((op, args) => {
+   492→      const s = store.getState()
+   493→      const a = (args ?? {}) as Record<string, never>
+   494→      switch (op) {
+   495→        case 'patch':
+   496→          s.applyUi(args)
+   497→          break
+   498→        case 'orbit':
+   499→          if (a.action === 'add') s.addOrbit(args)
+   500→          else if (a.action === 'remove') s.removeOrbit(String(a.id))
+   501→          else s.clearOrbits()
+   502→          break
+   503→        case 'effect':
+   504→          s.fireEffect(a.kind)
+   505→          break
+   506→        case 'reset':
+   507→          s.resetUi()
+   508→          break
+   509→        case 'screen':
+   510→          s.clearScreen(a.what ?? 'all')
+   511→          break
+   512→        default:
+   513→          console.warn('[jarvis] unknown ui op:', op, args)
+   514→      }
+   515→    })
+   516→    // In bridge mode the conversation lives in the agent session, which is tied
+   517→    // to the socket — so a drop silently wipes his memory while the transcript
+   518→    // on screen still shows it. Better to say so than to let him quietly forget.
+   519→    watchConnection((state) => {
+   520→      if (state === 'lost') {
+   521→        store.getState().setError('Bridge connection lost — reconnecting.')
+   522→      } else if (state === 'reconnected') {
+   523→        store
+   524→          .getState()
+   525→          .setError('Bridge reconnected. The previous conversation was not kept.')
+   526→      }
+   527→    })
+   528→    const warming = warm().catch((err: Error) => s.setError(err.message))
+   529→
+   530→    if (!usingBridge && !env.anthropicKey) {
+   531→      s.setError(
+   532→        'No Anthropic API key — copy .env.example to .env.local and set VITE_ANTHROPIC_API_KEY.',
+   533→      )
+   534→    }
+   535→
+   536→    // Pull the neural voice down during the boot sequence so the first
+   537→    // "Hey Jarvis" isn't waiting on an 86MB download. Deliberately not awaited
+   538→    // — if it's slow, JARVIS comes up on the system voice and swaps over the
+   539→    // moment the model is ready.
+   540→    if (TTS_ENGINE === 'kokoro') {
+   541→      void kokoro.load()
+   542→      voicePoll.current = setInterval(() => {
+   543→        const p = kokoro.loadProgress()
+   544→        if (kokoro.isReady() || kokoro.isUnavailable()) {
+   545→          store.getState().setBootNote('')
+   546→          if (voicePoll.current) clearInterval(voicePoll.current)
+   547→          voicePoll.current = null
+   548→        } else if (p > 0 && p < 1) {
+   549→          store.getState().setBootNote(`voice ${Math.round(p * 100)}%`)
+   550→        }
+   551→      }, 200)
+   552→    }
+   553→
+   554→    // Long enough for the four-beat start-up sequence in Boot.tsx to play —
+   555→    // status bar, rings, suit schematic, reactor power-up — before the live
+   556→    // interface takes over. Kept a touch under the boot cue so the music is
+   557→    // still rising as the reactor lands.
+   558→    await new Promise((r) => setTimeout(r, 9200)) // boot sequence
+   559→    await warming
+   560→    store.getState().setConnected(connectedLabels())
+   561→    store.getState().setVoice(currentVoiceName())
+   562→
+   563→    // The analyser is what makes the reactor pulse with your voice. It needs a
+   564→    // getUserMedia stream; speech recognition does not, and gets its own. So a
+   565→    // failure here costs the animation and nothing else — saying "voice input
+   566→    // is unavailable" was both alarming and untrue.
+   567→    try {
+   568→      await startAnalyser()
+   569→    } catch {
+   570→      console.warn(
+   571→        '[jarvis] no microphone stream — the reactor will not pulse with your ' +
+   572→          'voice. Speech recognition is unaffected.',
+   573→      )
+   574→    }
+   575→
+   576→    // Ask the bridge which speech engines exist before the loop starts, so the
+   577→    // first turn already uses ElevenLabs when a key is present and the browser
+   578→    // fallback when it is not — no flag, no reload.
+   579→    await probeCapabilities()
+   580→
+   581→    // One voice loop, started once, running until the page closes.
+   582→    voice.current = await startVoice({
+   583→      mode,
+   584→      onWake,
+   585→      onSpeechStart,
+   586→      onPartial,
+   587→      onUtterance,
+   588→      onError: onVoiceError,
+   589→    })
+   590→
+   591→    // The loop is live unless the mic failed on the way up — a denied mic
+   592→    // reports itself through onError before this line runs, and that verdict
+   593→    // is the one that must stick.
+   594→    if (!micDead.current) store.getState().setVoiceLive(true)
+   595→
+   596→    store.getState().setPhase('dormant')
+   597→  }
+   598→
+   599→  // -- clap to start --------------------------------------------------------
+   600→
+   601→  /**
+   602→   * A clap brings him up, as an alternative to the button.
+   603→   *
+   604→   * Only while the ignition screen is showing, and torn down the moment he
+   605→   * boots — the microphone is about to belong to the voice loop, and two
+   606→   * analysers arguing over the same stream is how you get an assistant that
+   607→   * hears half of what you say.
+   608→   *
+   609→   * Deliberately silent about failure. If the microphone is refused, or has not
+   610→   * been granted yet, the button is still right there; announcing an error
+   611→   * about a feature nobody asked for would be worse than quietly doing without.
+   612→   */
+   613→  useEffect(() => {
+   614→    if (phase !== 'offline') return
+   615→    let live: { stop: () => void } | null = null
+   616→    let gone = false
+   617→    void listenForClap(() => {
+   618→      if (!gone) void powerOn()
+   619→    }).then((l) => {
+   620→      if (gone) l.stop()
+   621→      else live = l
+   622→    })
+   623→    return () => {
+   624→      gone = true
+   625→      live?.stop()
+   626→    }
+   627→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   628→  }, [phase])
+   629→
+   630→  // -- level pump + keys ----------------------------------------------------
+   631→
+   632→  useEffect(() => {
+   633→    let raf = 0
+   634→
+   635→    const pump = () => {
+   636→      const st = store.getState()
+   637→      // While speaking, follow JARVIS's own output rather than the mic, so the
+   638→      // orb lip-syncs instead of reacting to room noise.
+   639→      const lvl =
+   640→        st.phase === 'speaking' && speaker.current
+   641→          ? speaker.current.level()
+   642→          : micLevel()
+   643→      st.setLevel(lvl)
+   644→      raf = requestAnimationFrame(pump)
+   645→    }
+   646→    pump()
+   647→
+   648→    const onKey = (e: KeyboardEvent) => {
+   649→      const tag = (e.target as HTMLElement)?.tagName
+   650→      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+   651→
+   652→      // V auditions the next British voice installed on this machine. Which
+   653→      // ones exist varies per Mac, so hearing them beats trusting a ranking.
+   654→      // Bare V only — ⌘V and ⌃V are paste, and swallowing those was rude.
+   655→      if (
+   656→        e.key === 'v' &&
+   657→        !e.repeat &&
+   658→        !e.metaKey &&
+   659→        !e.ctrlKey &&
+   660→        !e.altKey
+   661→      ) {
+   662→        e.preventDefault()
+   663→        const name = cycleVoice()
+   664→        store.getState().setVoice(name)
+   665→        silence()
+   666→        const demo = createSpeaker()
+   667→        speaker.current = demo
+   668→        demo.say(personaById(store.getState().persona).fillers.voiceSet)
+   669→        void demo.end()
+   670→        return
+   671→      }
+   672→
+   673→      // G puts the camera on and starts tracking hands. Off by default and
+   674→      // never implicit: a webcam that turns itself on because an interface
+   675→      // thought it might be useful is not a trade anyone agreed to.
+   676→      if (e.key === 'g' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+   677→        e.preventDefault()
+   678→        const on = store.getState().gestures
+   679→        if (on) {
+   680→          hands.disableHands()
+   681→          store.getState().setGestures(false)
+   682→        } else {
+   683→          store.getState().setError(null)
+   684→          void hands
+   685→            .enableHands()
+   686→            .then(() => store.getState().setGestures(true))
+   687→            .catch((err: Error) => {
+   688→              store.getState().setGestures(false)
+   689→              store
+   690→                .getState()
+   691→                .setError(
+   692→                  err?.name === 'NotAllowedError'
+   693→                    ? 'Camera access denied — gesture control is unavailable.'
+   694→                    : `Gesture control failed to start: ${err?.message ?? err}`,
+   695→                )
+   696→            })
+   697→        }
+   698→        return
+   699→      }
+   700→
+   701→      // T speaks a fixed line, bypassing the wake word, the recogniser and the
+   702→      // model entirely. When "I can't hear him" is the report, this is the one
+   703→      // keypress that separates a broken voice engine from a broken voice loop
+   704→      // — and it prints the verdict rather than making you infer it.
+   705→      if (e.key === 't' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) {
+   706→        e.preventDefault()
+   707→        silence()
+   708→        const t = createSpeaker()
+   709→        speaker.current = t
+   710→        t.say('Audio test. If you can hear this, speech output is working, sir.')
+   711→        void t.end().then(() => {
+   712→          const d = (window as unknown as Record<string, Record<string, unknown>>).__tts
+   713→          console.info('[jarvis] audio test →', d)
+   714→          if (d && d.started === 0 && d.rescued === 0) {
+   715→            store.getState().setError(
+   716→              `No sound produced. engine=${d.engine} voice=${d.voice} error=${d.lastError || 'none'}`,
+   717→            )
+   718→          }
+   719→        })
+   720→        return
+   721→      }
+   722→
+   723→      // Escape stands the whole thing down — the one thing the old build had
+   724→      // no key for at all.
+   725→      if (e.key === 'Escape') {
+   726→        e.preventDefault()
+   727→        if (store.getState().phase !== 'offline') goDormant()
+   728→        return
+   729→      }
+   730→
+   731→      // Space starts a turn without the wake word. Worth using while filming so
+   732→      // a missed wake word doesn't cost a take.
+   733→      if (e.code !== 'Space' || e.repeat) return
+   734→      e.preventDefault()
+   735→
+   736→      const phase = store.getState().phase
+   737→      if (phase === 'offline') {
+   738→        void powerOn()
+   739→      } else if (phase === 'boot') {
+   740→        /* ignore — the boot sequence owns the phase until it finishes */
+   741→      } else if (
+   742→        phase === 'thinking' ||
+   743→        phase === 'tooling' ||
+   744→        phase === 'speaking'
+   745→      ) {
+   746→        onSpeechStart()
+   747→        listen(AWAIT_SPEECH_MS)
+   748→      } else {
+   749→        onWake('')
+   750→      }
+   751→    }
+   752→    window.addEventListener('keydown', onKey)
+   753→    window.addEventListener('jarvis:say', onSay as EventListener)
+   754→
+   755→    return () => {
+   756→      cancelAnimationFrame(raf)
+   757→      window.removeEventListener('keydown', onKey)
+   758→      window.removeEventListener('jarvis:say', onSay as EventListener)
+   759→      clearIdle()
+   760→      if (voicePoll.current) clearInterval(voicePoll.current)
+   761→      voice.current?.stop()
+   762→      speaker.current?.cancel()
+   763→      // The camera must not outlive the page that turned it on.
+   764→      hands.disableHands()
+   765→    }
+   766→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   767→  }, [])
+   768→
+   769→  return (
+   770→    <>
+   771→      <Scene />
+   772→      <Hud />
+   773→      <Boot />
+   774→      <Diagnostics />
+   775→      <CommandLine />
+   776→      <Ignition onStart={() => void powerOn()} />
+   777→    </>
+   778→  )
+   779→}
+   780→

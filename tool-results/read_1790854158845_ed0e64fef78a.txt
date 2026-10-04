@@ -1,0 +1,721 @@
+     1→import {
+     2→  ScheduledWorkItem,
+     3→  ScheduleType,
+     4→  RecurrenceRule,
+     5→  ScheduledExecutionRecord,
+     6→  ScheduledWorkFilter,
+     7→} from '../../../types/scheduling';
+     8→import { InMemoryScheduledWorkStore } from './scheduler-store';
+     9→import { InMemoryWorkflowStore } from './store';
+    10→import { WorkflowRuntime } from './runtime';
+    11→import { v4 as uuidv4 } from 'uuid';
+    12→import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordination/lease-manager';
+    13→import { validateStepTransition, validateInstanceTransition } from './state-machine';
+    14→import type { ScheduledOccurrenceContext } from './runtime';
+    15→
+    16→export interface ScheduleWorkParams {
+    17→  workflowInstanceId: string;
+    18→  stepId: string;
+    19→  scheduleType: ScheduleType;
+    20→  executeAt: string; // ISO 8601 string
+    21→  recurrence?: RecurrenceRule;
+    22→  idempotencyKey?: string;
+    23→  metadata?: Record<string, any>;
+    24→  provenance?: {
+    25→    createdByRole?: any;
+    26→    workflowId?: string;
+    27→    stepName?: string;
+    28→  };
+    29→}
+    30→
+    31→export interface DueWorkEvaluationResult {
+    32→  processedCount: number;
+    33→  results: Array<{
+    34→    scheduleId: string;
+    35→    occurrenceId: string;
+    36→    status: 'completed' | 'failed' | 'awaiting_approval' | 'skipped' | 'cancelled';
+    37→    error?: string;
+    38→  }>;
+    39→}
+    40→
+    41→export class WorkflowScheduler {
+    42→  private schedulerStore: InMemoryScheduledWorkStore;
+    43→  private workflowStore: InMemoryWorkflowStore;
+    44→  private runtime: WorkflowRuntime;
+    45→  private leaseManager: LeaseManager;
+    46→  private workerId: string;
+    47→  private leaseTtlMs: number;
+    48→
+    49→  constructor(
+    50→    schedulerStore?: InMemoryScheduledWorkStore,
+    51→    workflowStore?: InMemoryWorkflowStore,
+    52→    runtime?: WorkflowRuntime,
+    53→    leaseManager?: LeaseManager,
+    54→    workerId?: string,
+    55→    leaseTtlMs: number = 30000
+    56→  ) {
+    57→    this.schedulerStore = schedulerStore || InMemoryScheduledWorkStore.getInstance();
+    58→    this.workflowStore = workflowStore || InMemoryWorkflowStore.getInstance();
+    59→    this.runtime = runtime || new WorkflowRuntime();
+    60→    this.leaseManager = leaseManager || getLeaseManager();
+    61→    this.workerId = workerId || generateWorkerIdentity();
+    62→    this.leaseTtlMs = leaseTtlMs;
+    63→  }
+    64→
+    65→  getWorkerId(): string {
+    66→    return this.workerId;
+    67→  }
+    68→
+    69→  getLeaseManager(): LeaseManager {
+    70→    return this.leaseManager;
+    71→  }
+    72→
+    73→  async renewScheduleLease(scheduleId: string): Promise<boolean> {
+    74→    const leaseKey = `sched-item:${scheduleId}`;
+    75→    return this.leaseManager.renew(leaseKey, this.workerId, this.leaseTtlMs);
+    76→  }
+    77→
+    78→  /**
+    79→   * Normalize any input date to a canonical UTC ISO-8601 string.
+    80→   */
+    81→  private canonicalizeTimestamp(dateInput: string | Date | number): string {
+    82→    const d = new Date(dateInput);
+    83→    if (isNaN(d.getTime())) {
+    84→      throw new Error(`Invalid timestamp provided: ${dateInput}`);
+    85→    }
+    86→    return d.toISOString();
+    87→  }
+    88→
+    89→  /**
+    90→   * Schedule a workflow step for future or recurring execution.
+    91→   */
+    92→  async scheduleWork(params: ScheduleWorkParams): Promise<ScheduledWorkItem> {
+    93→    const { workflowInstanceId, stepId, scheduleType, executeAt, recurrence, idempotencyKey, metadata, provenance } = params;
+    94→
+    95→    // 1. Verify workflow instance exists and is not in terminal state
+    96→    const workflow = await this.workflowStore.getInstance(workflowInstanceId);
+    97→    if (!workflow) {
+    98→      throw new Error(`Cannot schedule step: Workflow instance ${workflowInstanceId} not found`);
+    99→    }
+   100→    if (workflow.status === 'completed' || workflow.status === 'cancelled' || workflow.status === 'failed') {
+   101→      throw new Error(`Cannot schedule step: Workflow instance is in terminal state (${workflow.status})`);
+   102→    }
+   103→
+   104→    // 2. Verify step exists in definition and instance
+   105→    const stepState = workflow.stepStates[stepId];
+   106→    if (!stepState) {
+   107→      throw new Error(`Cannot schedule step: Step ${stepId} not found in instance ${workflowInstanceId}`);
+   108→    }
+   109→
+   110→    // 3. Check for existing schedule with identical idempotencyKey
+   111→    const idKey = idempotencyKey || `idem-${workflowInstanceId}-${stepId}-${scheduleType}-${new Date(executeAt).getTime()}`;
+   112→    const existing = await this.schedulerStore.list({ workflowInstanceId, stepId });
+   113→    const duplicate = existing.find(item => item.idempotencyKey === idKey && (item.status === 'scheduled' || item.status === 'triggered'));
+   114→    if (duplicate) {
+   115→      return duplicate; // Idempotent return
+   116→    }
+   117→
+   118→    // 4. Canonicalize execution timestamp
+   119→    const canonicalExecuteAt = this.canonicalizeTimestamp(executeAt);
+   120→    const now = new Date().toISOString();
+   121→
+   122→    // 5. Build Recurrence Rule if applicable
+   123→    let recurrenceRule: RecurrenceRule | undefined = undefined;
+   124→    if (scheduleType === 'recurring') {
+   125→      recurrenceRule = {
+   126→        intervalMs: recurrence?.intervalMs,
+   127→        intervalUnit: recurrence?.intervalUnit || 'hours',
+   128→        intervalValue: recurrence?.intervalValue || 1,
+   129→        maxOccurrences: recurrence?.maxOccurrences,
+   130→        currentOccurrence: 1,
+   131→        endDate: recurrence?.endDate ? this.canonicalizeTimestamp(recurrence.endDate) : undefined,
+   132→      };
+   133→    }
+   134→
+   135→    const scheduledItem: ScheduledWorkItem = {
+   136→      id: `sched-${uuidv4()}`,
+   137→      workflowInstanceId,
+   138→      stepId,
+   139→      scheduleType,
+   140→      executeAt: canonicalExecuteAt,
+   141→      recurrence: recurrenceRule,
+   142→      status: 'scheduled',
+   143→      createdAt: now,
+   144→      updatedAt: now,
+   145→      executionHistory: [],
+   146→      idempotencyKey: idKey,
+   147→      metadata: metadata || {},
+   148→      provenance: provenance || {
+   149→        workflowId: workflow.workflowId,
+   150→      },
+   151→    };
+   152→
+   153→    // Transition step to 'waiting' if currently pending.
+   154→    //
+   155→    // Phase 4.4B.1 — park the step WITHOUT the transitionStep readiness
+   156→    // cascade: that cascade evaluates the step with NO occurrence context and
+   157→    // would manufacture an unbound approval request at schedule time, before
+   158→    // any occurrence is due. A scheduled step's readiness is evaluated
+   159→    // authoritatively by the due-work pass below (with occurrence context).
+   160→    // Validated direct transition (pending/ready → waiting).
+   161→    if (stepState.status === 'pending' || stepState.status === 'ready') {
+   162→      try {
+   163→        const parkWorkflow = await this.workflowStore.getInstance(workflowInstanceId);
+   164→        const parkStep = parkWorkflow?.stepStates[stepId];
+   165→        if (parkWorkflow && parkStep && (parkStep.status === 'pending' || parkStep.status === 'ready')) {
+   166→          validateStepTransition(parkStep.status, 'waiting');
+   167→          parkStep.status = 'waiting';
+   168→          parkWorkflow.updatedAt = new Date().toISOString();
+   169→          await this.workflowStore.saveInstance(parkWorkflow);
+   170→        }
+   171→      } catch {
+   172→        // Best-effort park: the step stays pending/ready — execution is still
+   173→        // gated by the schedule's executeAt in the due-work evaluation.
+   174→      }
+   175→    }
+   176→
+   177→    await this.schedulerStore.save(scheduledItem);
+   178→    return scheduledItem;
+   179→  }
+   180→
+   181→  /**
+   182→   * Deterministic Due-Work Evaluation.
+   183→   * Evaluates all scheduled items due at or before asOfTime with bounded batch size and distributed leases.
+   184→   */
+   185→  async evaluateDueWork(asOfTime?: string, batchLimit: number = 50): Promise<DueWorkEvaluationResult> {
+   186→    const cutoff = asOfTime ? this.canonicalizeTimestamp(asOfTime) : new Date().toISOString();
+   187→    const dueItems = await this.schedulerStore.listDue(cutoff, batchLimit);
+   188→
+   189→    const evaluationResult: DueWorkEvaluationResult = {
+   190→      processedCount: dueItems.length,
+   191→      results: [],
+   192→    };
+   193→
+   194→    for (const item of dueItems) {
+   195→      // Occurrence identity (Phase 4.4A correctness fix):
+   196→      // - recurring items: occurrence = recurrence.currentOccurrence (stable until
+   197→      //   completion advances it).
+   198→      // - one-time items: occurrence = 1 + number of FAILED attempts — retries
+   199→      //   legitimately advance the occurrence. Records that are NOT execution
+   200→      //   attempts (repeated awaiting_approval entries, or an in-flight/crashed
+   201→      //   'triggered' claim) must NOT consume the occurrence number: deriving it
+   202→      //   from raw history length fabricated phantom occurrences on repeated
+   203→      //   heartbeats and could re-execute an already-claimed occurrence under a
+   204→      //   new number (at-least-once instead of at-most-once).
+   205→      const occurrenceNumber = item.recurrence?.currentOccurrence || (
+   206→        item.executionHistory.filter(h => h.status === 'failed').length + 1
+   207→      );
+   208→      const occurrenceId = `${item.id}-occ-${occurrenceNumber}`;
+   209→      // Phase 4.4B.1 — the occurrence identity is threaded into EVERY runtime
+   210→      // and gate call below, binding approval requests and authorizations to
+   211→      // exactly this occurrence (per-occurrence founder approval invariant).
+   212→      const occurrenceContext: ScheduledOccurrenceContext = {
+   213→        occurrenceId,
+   214→        occurrenceNumber,
+   215→        scheduleId: item.id,
+   216→      };
+   217→      const leaseKey = `sched-item:${item.id}`;
+   218→
+   219→      // Acquire distributed lease before evaluating or executing this work item
+   220→      const claim = await this.leaseManager.acquire(leaseKey, this.workerId, this.leaseTtlMs, {
+   221→        workflowInstanceId: item.workflowInstanceId,
+   222→        stepId: item.stepId,
+   223→        occurrenceId,
+   224→      });
+   225→
+   226→      if (!claim.acquired) {
+   227→        evaluationResult.results.push({
+   228→          scheduleId: item.id,
+   229→          occurrenceId,
+   230→          status: 'skipped',
+   231→          error: `Active lease held by worker: ${claim.activeLease?.holderId || 'another_worker'}`,
+   232→        });
+   233→        continue;
+   234→      }
+   235→
+   236→      try {
+   237→        // 1. Idempotency Check: Prevent duplicate execution of this specific occurrence
+   238→        const existingOcc = item.executionHistory.find(h => h.occurrenceId === occurrenceId);
+   239→        if (existingOcc && (existingOcc.status === 'triggered' || existingOcc.status === 'completed')) {
+   240→          evaluationResult.results.push({
+   241→            scheduleId: item.id,
+   242→            occurrenceId,
+   243→            status: 'skipped',
+   244→          });
+   245→          continue;
+   246→        }
+   247→
+   248→        // 2. Load Workflow Instance & Definition
+   249→        const workflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+   250→        if (!workflow) {
+   251→          item.status = 'failed';
+   252→          item.updatedAt = new Date().toISOString();
+   253→          await this.schedulerStore.update(item);
+   254→          evaluationResult.results.push({
+   255→            scheduleId: item.id,
+   256→            occurrenceId,
+   257→            status: 'failed',
+   258→            error: `Workflow instance not found: ${item.workflowInstanceId}`,
+   259→          });
+   260→          continue;
+   261→        }
+   262→
+   263→        // 3. Parent Workflow Terminal State Check
+   264→        if (workflow.status === 'completed' || workflow.status === 'cancelled' || workflow.status === 'failed') {
+   265→          item.status = 'cancelled';
+   266→          item.updatedAt = new Date().toISOString();
+   267→          item.cancellationState = {
+   268→            cancelledAt: new Date().toISOString(),
+   269→            cancelledBy: 'system',
+   270→            reason: `Parent workflow is in terminal state: ${workflow.status}`,
+   271→          };
+   272→          await this.schedulerStore.update(item);
+   273→          evaluationResult.results.push({
+   274→            scheduleId: item.id,
+   275→            occurrenceId,
+   276→            status: 'cancelled',
+   277→            error: `Parent workflow terminal (${workflow.status})`,
+   278→          });
+   279→          continue;
+   280→        }
+   281→
+   282→        // 4. Load Step Definition & Check Step Existence
+   283→        const def = await this.workflowStore.getDefinition(workflow.workflowId, workflow.version);
+   284→        const stepDef = def?.steps.find(s => s.id === item.stepId);
+   285→        const stepState = workflow.stepStates[item.stepId];
+   286→
+   287→        if (!def || !stepDef || !stepState) {
+   288→          item.status = 'failed';
+   289→          item.updatedAt = new Date().toISOString();
+   290→          await this.schedulerStore.update(item);
+   291→          evaluationResult.results.push({
+   292→            scheduleId: item.id,
+   293→            occurrenceId,
+   294→            status: 'failed',
+   295→            error: `Step definition or state missing for step: ${item.stepId}`,
+   296→          });
+   297→          continue;
+   298→        }
+   299→
+   300→        // 5. If step is already completed or cancelled (and not recurring)
+   301→        if ((stepState.status === 'completed' || stepState.status === 'cancelled') && item.scheduleType !== 'recurring') {
+   302→          item.status = stepState.status;
+   303→          item.updatedAt = new Date().toISOString();
+   304→          await this.schedulerStore.update(item);
+   305→          evaluationResult.results.push({
+   306→            scheduleId: item.id,
+   307→            occurrenceId,
+   308→            status: 'completed',
+   309→          });
+   310→          continue;
+   311→        }
+   312→
+   313→        // If recurring and step was completed from a prior occurrence, reset
+   314→        // status to ready for this new occurrence.
+   315→        //
+   316→        // Phase 4.4B.1 — the reset ALSO clears the step's approval state: the
+   317→        // prior occurrence's approval is single-use and occurrence-bound, so
+   318→        // it must never authorize THIS occurrence. Without this reset the
+   319→        // scheduler's own approval check (step 8) would be satisfied by the
+   320→        // stale `approvalState: 'approved'` and the occurrence could execute
+   321→        // without a fresh founder approval. Uses the same validated
+   322→        // direct-patch style as the retry recovery below (completed→ready is
+   323→        // a sanctioned recurring transition in the state machine).
+   324→        if (item.scheduleType === 'recurring' && stepState.status === 'completed') {
+   325→          try {
+   326→            const resetWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+   327→            const resetStep = resetWorkflow?.stepStates[item.stepId];
+   328→            if (resetWorkflow && resetStep && resetStep.status === 'completed') {
+   329→              validateStepTransition(resetStep.status, 'ready');
+   330→              resetStep.status = 'ready';
+   331→              resetStep.approvalState = undefined;
+   332→              resetStep.approvalId = undefined;
+   333→              resetStep.blockedReason = undefined;
+   334→              resetStep.authorizationReasonCode = undefined;
+   335→              resetWorkflow.updatedAt = new Date().toISOString();
+   336→              await this.workflowStore.saveInstance(resetWorkflow);
+   337→            }
+   338→          } catch {
+   339→            // Best-effort: on failure the next wake surfaces honest blocked /
+   340→            // awaiting_approval state — never silent re-execution.
+   341→          }
+   342→        }
+   343→
+   344→        // 6. Wake Workflow Runtime & Re-evaluate Readiness
+   345→        await this.runtime.evaluateReadiness(item.workflowInstanceId, occurrenceContext);
+   346→        const recheckedWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
+   347→        const recheckedStepState = recheckedWorkflow.stepStates[item.stepId];
+   348→
+   349→        // 7. Dependency & Prerequisites Check
+   350→        if (
+   351→          recheckedStepState.status === 'blocked' || 
+   352→          recheckedStepState.status === 'pending' || 
+   353→          recheckedStepState.status === 'waiting'
+   354→        ) {
+   355→          evaluationResult.results.push({
+   356→            scheduleId: item.id,
+   357→            occurrenceId,
+   358→            status: 'skipped',
+   359→            error: recheckedStepState.blockedReason || `Step dependencies not fulfilled (status: ${recheckedStepState.status})`,
+   360→          });
+   361→          continue;
+   362→        }
+   363→
+   364→        // 8. Re-evaluate Side-Effect Authorization at Wake Time (Defense-in-depth)
+   365→        let classification = stepDef.sideEffectClassification || (stepDef.requiresApproval ? 'external_communication' : 'read_only');
+   366→        const wakeAuth = await this.runtime.getGate().evaluateAuthorization({
+   367→          employeeRole: stepDef.assignedRole,
+   368→          skillId: stepDef.skill,
+   369→          actionName: stepDef.name,
+   370→          classification,
+   371→          workflowContext: {
+   372→            workflowId: workflow.workflowId,
+   373→            workflowInstanceId: item.workflowInstanceId,
+   374→            stepId: item.stepId,
+   375→            objective: def.objective,
+   376→            // Phase 4.4B.1 — wake-time re-authorization is occurrence-bound:
+   377→            // a prior occurrence's approval cannot authorize this wake.
+   378→            occurrenceId,
+   379→          },
+   380→          target: stepDef.targetContext,
+   381→          requestedBy: stepDef.assignedRole,
+   382→        });
+   383→
+   384→        if (wakeAuth.effect === 'denied') {
+   385→          await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'blocked');
+   386→          evaluationResult.results.push({
+   387→            scheduleId: item.id,
+   388→            occurrenceId,
+   389→            status: 'skipped',
+   390→            error: `Side-effect authorization denied on wake: ${wakeAuth.reason}`,
+   391→          });
+   392→          continue;
+   393→        }
+   394→
+   395→        // Strict Governance & Approval Check
+   396→        // If step requires approval and approval has NOT been granted:
+   397→        if ((stepDef.requiresApproval || wakeAuth.effect === 'approval_required') && recheckedStepState.approvalState !== 'approved') {
+   398→          // Transition step to awaiting_approval if not already
+   399→          if (recheckedStepState.status !== 'awaiting_approval') {
+   400→            await this.runtime.transitionStep(item.workflowInstanceId, item.stepId, 'awaiting_approval');
+   401→          }
+   402→
+   403→          const occRecord: ScheduledExecutionRecord = {
+   404→            occurrenceId,
+   405→            occurrenceNumber,
+   406→            triggeredAt: new Date().toISOString(),
+   407→            status: 'awaiting_approval',
+   408→            error: 'Step requires Founder approval before execution',
+   409→          };
+   410→
+   411→          item.lastTriggeredAt = new Date().toISOString();
+   412→          // Replace or add record
+   413→          const recIndex = item.executionHistory.findIndex(h => h.occurrenceId === occurrenceId);
+   414→          if (recIndex >= 0) {
+   415→            item.executionHistory[recIndex] = occRecord;
+   416→          } else {
+   417→            item.executionHistory.push(occRecord);
+   418→          }
+   419→
+   420→          await this.schedulerStore.update(item);
+   421→
+   422→          evaluationResult.results.push({
+   423→            scheduleId: item.id,
+   424→            occurrenceId,
+   425→            status: 'awaiting_approval',
+   426→            error: 'Awaiting Founder approval',
+   427→          });
+   428→          continue; // Strictly NEVER execute without approval
+   429→        }
+   430→
+   431→        // 9. Execute Eligible Step
+   432→        const startTime = Date.now();
+   433→        const triggerTime = new Date().toISOString();
+   434→
+   435→        const occRecord: ScheduledExecutionRecord = {
+   436→          occurrenceId,
+   437→          occurrenceNumber,
+   438→          triggeredAt: triggerTime,
+   439→          status: 'triggered',
+   440→        };
+   441→
+   442→        item.lastTriggeredAt = triggerTime;
+   443→        // Replace any prior non-attempt record for this occurrence (e.g. the
+   444→        // awaiting_approval entry is superseded once approval is granted) —
+   445→        // never append duplicate records for the same occurrence.
+   446→        const recIdx = item.executionHistory.findIndex(h => h.occurrenceId === occurrenceId);
+   447→        if (recIdx >= 0) {
+   448→          item.executionHistory[recIdx] = occRecord;
+   449→        } else {
+   450→          item.executionHistory.push(occRecord);
+   451→        }
+   452→        await this.schedulerStore.update(item);
+   453→
+   454→        try {
+   455→          // Execute Ready Step via Runtime (which delegates to ServerAgentExecutor)
+   456→          await this.runtime.executeReadyStep(
+   457→            item.workflowInstanceId,
+   458→            item.stepId,
+   459→            `scheduler-${this.workerId}`,
+   460→            occurrenceContext
+   461→          );
+   462→
+   463→          // Fetch final step state after execution
+   464→          const finalWorkflow = (await this.workflowStore.getInstance(item.workflowInstanceId))!;
+   465→          const finalStepState = finalWorkflow.stepStates[item.stepId];
+   466→          const durationMs = Date.now() - startTime;
+   467→
+   468→          if (finalStepState.status === 'completed') {
+   469→            occRecord.status = 'completed';
+   470→            occRecord.completedAt = new Date().toISOString();
+   471→            occRecord.durationMs = durationMs;
+   472→            occRecord.result = finalStepState.outputs;
+   473→
+   474→            // Handle Schedule Completion or Recurrence Advance
+   475→            if (item.scheduleType === 'recurring' && item.recurrence) {
+   476→              const nextOccNumber = occurrenceNumber + 1;
+   477→              const maxOcc = item.recurrence.maxOccurrences;
+   478→              const nextExecuteAt = this.calculateNextRecurrence(item.executeAt, item.recurrence);
+   479→
+   480→              const isPastEndDate = item.recurrence.endDate && new Date(nextExecuteAt).getTime() > new Date(item.recurrence.endDate).getTime();
+   481→              const isMaxOccReached = maxOcc !== undefined && nextOccNumber > maxOcc;
+   482→
+   483→              if (isPastEndDate || isMaxOccReached) {
+   484→                item.status = 'completed';
+   485→              } else {
+   486→                item.status = 'scheduled';
+   487→                item.executeAt = nextExecuteAt;
+   488→                item.recurrence.currentOccurrence = nextOccNumber;
+   489→
+   490→                // Phase 4.4B fix (defect D1): with the REAL runtime a
+   491→                // single-step workflow instance reaches terminal 'completed'
+   492→                // when its step completes, which caused the next heartbeat's
+   493→                // parent-terminal check to CANCEL the recurring schedule after
+   494→                // its first occurrence. Reopen the instance for the next
+   495→                // occurrence (completed→running is a sanctioned recurring
+   496→                // transition in the state machine, mirroring step completed→
+   497→                // ready). The instance reload is required: the pre-execution
+   498→                // snapshot is stale after executeReadyStep persisted new state.
+   499→                try {
+   500→                  const postExecWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+   501→                  if (postExecWorkflow && postExecWorkflow.status === 'completed') {
+   502→                    validateInstanceTransition(postExecWorkflow.status, 'running');
+   503→                    postExecWorkflow.status = 'running';
+   504→                    postExecWorkflow.updatedAt = new Date().toISOString();
+   505→                    await this.workflowStore.saveInstance(postExecWorkflow);
+   506→                  }
+   507→                } catch {
+   508→                  // Reopen is best-effort: if it fails, the next wake's
+   509→                  // parent-terminal check will surface the schedule as
+   510→                  // cancelled — honest, never silent re-execution.
+   511→                }
+   512→              }
+   513→            } else {
+   514→              item.status = 'completed';
+   515→            }
+   516→
+   517→            item.updatedAt = new Date().toISOString();
+   518→            await this.schedulerStore.update(item);
+   519→
+   520→            evaluationResult.results.push({
+   521→              scheduleId: item.id,
+   522→              occurrenceId,
+   523→              status: 'completed',
+   524→            });
+   525→          } else if (finalStepState.status === 'failed') {
+   526→            // Handle Step Failure & Retry Policy
+   527→            occRecord.status = 'failed';
+   528→            occRecord.completedAt = new Date().toISOString();
+   529→            occRecord.durationMs = durationMs;
+   530→            occRecord.error = finalStepState.error || 'Execution failed';
+   531→
+   532→            const retryPolicy = stepDef.retryPolicy || { maxRetries: 0, backoffMs: 1000 };
+   533→            if (finalStepState.retryCount < retryPolicy.maxRetries) {
+   534→              // Schedule Retry with backoff
+   535→              const backoffTime = new Date(Date.now() + retryPolicy.backoffMs).toISOString();
+   536→              item.status = 'scheduled';
+   537→              item.executeAt = backoffTime;
+   538→
+   539→              // Phase 4.4B retry recovery (defect D1-family): with the REAL
+   540→              // runtime the failed attempt also drives the parent instance to
+   541→              // terminal 'failed' and leaves the step 'failed' — the retry
+   542→              // wake would then be CANCELLED by the parent-terminal check and
+   543→              // executeReadyStep rejects non-'ready' steps. Reset the step for
+   544→              // the retry (failed→ready is a sanctioned scheduler-recovery
+   545→              // transition), advance the runtime-owned retryCount (nothing
+   546→              // else increments it), and reopen the parent instance so the
+   547→              // schedule survives to actually retry.
+   548→              //
+   549→              // Phase 4.4B.1 — the retry reset ALSO clears the approval state:
+   550→              // a consumed occurrence approval must never authorize the retry
+   551→              // attempt (fresh founder approval per execution attempt).
+   552→              try {
+   553→                const retryWorkflow = await this.workflowStore.getInstance(item.workflowInstanceId);
+   554→                const retryStep = retryWorkflow?.stepStates[item.stepId];
+   555→                if (retryWorkflow && retryStep) {
+   556→                  validateStepTransition(retryStep.status, 'ready');
+   557→                  retryStep.status = 'ready';
+   558→                  retryStep.retryCount = (retryStep.retryCount ?? 0) + 1;
+   559→                  retryStep.approvalState = undefined;
+   560→                  retryStep.approvalId = undefined;
+   561→                  retryStep.blockedReason = undefined;
+   562→                  retryStep.authorizationReasonCode = undefined;
+   563→                  if (retryWorkflow.status === 'failed') {
+   564→                    validateInstanceTransition(retryWorkflow.status, 'running');
+   565→                    retryWorkflow.status = 'running';
+   566→                  }
+   567→                  retryWorkflow.updatedAt = new Date().toISOString();
+   568→                  await this.workflowStore.saveInstance(retryWorkflow);
+   569→                }
+   570→              } catch {
+   571→                // Recovery is best-effort: on failure the next wake's
+   572→                // parent-terminal check cancels the schedule honestly.
+   573→              }
+   574→            } else {
+   575→              // Retries exhausted
+   576→              item.status = 'failed';
+   577→            }
+   578→
+   579→            item.updatedAt = new Date().toISOString();
+   580→            await this.schedulerStore.update(item);
+   581→
+   582→            evaluationResult.results.push({
+   583→              scheduleId: item.id,
+   584→              occurrenceId,
+   585→              status: 'failed',
+   586→              error: occRecord.error,
+   587→            });
+   588→          }
+   589→        } catch (err: any) {
+   590→          occRecord.status = 'failed';
+   591→          occRecord.completedAt = new Date().toISOString();
+   592→          occRecord.error = err.message || 'Execution error';
+   593→          item.status = 'failed';
+   594→          item.updatedAt = new Date().toISOString();
+   595→          await this.schedulerStore.update(item);
+   596→
+   597→          evaluationResult.results.push({
+   598→            scheduleId: item.id,
+   599→            occurrenceId,
+   600→            status: 'failed',
+   601→            error: err.message,
+   602→          });
+   603→        }
+   604→      } finally {
+   605→        await this.leaseManager.release(leaseKey, this.workerId);
+   606→      }
+   607→    }
+   608→
+   609→    return evaluationResult;
+   610→  }
+   611→
+   612→  /**
+   613→   * Calculate the next execution timestamp based on RecurrenceRule.
+   614→   */
+   615→  calculateNextRecurrence(currentExecuteAt: string, recurrence: RecurrenceRule): string {
+   616→    const current = new Date(currentExecuteAt).getTime();
+   617→    let addMs = 0;
+   618→
+   619→    if (recurrence.intervalMs && recurrence.intervalMs > 0) {
+   620→      addMs = recurrence.intervalMs;
+   621→    } else {
+   622→      const val = recurrence.intervalValue || 1;
+   623→      switch (recurrence.intervalUnit) {
+   624→        case 'minutes':
+   625→          addMs = val * 60 * 1000;
+   626→          break;
+   627→        case 'hours':
+   628→          addMs = val * 60 * 60 * 1000;
+   629→          break;
+   630→        case 'days':
+   631→          addMs = val * 24 * 60 * 60 * 1000;
+   632→          break;
+   633→        case 'weeks':
+   634→          addMs = val * 7 * 24 * 60 * 60 * 1000;
+   635→          break;
+   636→        default:
+   637→          addMs = val * 60 * 60 * 1000; // Default 1 hour
+   638→      }
+   639→    }
+   640→
+   641→    return new Date(current + addMs).toISOString();
+   642→  }
+   643→
+   644→  /**
+   645→   * Cancel a scheduled work item.
+   646→   */
+   647→  async cancelSchedule(id: string, cancelledBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
+   648→    return this.schedulerStore.cancel(id, cancelledBy, reason);
+   649→  }
+   650→
+   651→  /**
+   652→   * Phase 4.4B — Pause a scheduled work item (founder action).
+   653→   * Paused items are excluded from due-work evaluation (listDue only returns
+   654→   * status 'scheduled') so they can never execute while paused. Pausing is
+   655→   * only valid from 'scheduled' — a 'triggered' occurrence is already
+   656→   * executing and must not be silently halted mid-flight.
+   657→   */
+   658→  async pauseSchedule(id: string, pausedBy: string = 'founder', reason?: string): Promise<ScheduledWorkItem> {
+   659→    const item = await this.schedulerStore.get(id);
+   660→    if (!item) {
+   661→      throw new Error(`Scheduled work item not found: ${id}`);
+   662→    }
+   663→    if (item.status !== 'scheduled') {
+   664→      throw new Error(`Cannot pause schedule in status '${item.status}' (only active 'scheduled' items can be paused)`);
+   665→    }
+   666→    const now = new Date().toISOString();
+   667→    item.status = 'paused';
+   668→    item.updatedAt = now;
+   669→    item.pausedState = {
+   670→      pausedAt: now,
+   671→      pausedBy,
+   672→      reason: reason || 'Paused by Founder',
+   673→    };
+   674→    await this.schedulerStore.update(item);
+   675→    return item;
+   676→  }
+   677→
+   678→  /**
+   679→   * Phase 4.4B — Resume a paused schedule (founder action).
+   680→   * Restores 'scheduled' exactly as persisted: if the next occurrence is
+   681→   * already overdue it will execute on the next heartbeat (honest catch-up,
+   682→   * never silently skipped or fabricated as fresh).
+   683→   */
+   684→  async resumeSchedule(id: string, resumedBy: string = 'founder'): Promise<ScheduledWorkItem> {
+   685→    const item = await this.schedulerStore.get(id);
+   686→    if (!item) {
+   687→      throw new Error(`Scheduled work item not found: ${id}`);
+   688→    }
+   689→    if (item.status !== 'paused') {
+   690→      throw new Error(`Cannot resume schedule in status '${item.status}' (only 'paused' items can be resumed)`);
+   691→    }
+   692→    item.status = 'scheduled';
+   693→    item.updatedAt = new Date().toISOString();
+   694→    // pausedState is retained as provenance of the pause window.
+   695→    // Phase 4.4C — the resume itself is recorded on that provenance
+   696→    // (resumedAt/resumedBy): the authoritative signal the Activity projection
+   697→    // derives "automation resumed" from. Without it a resume left no derivable
+   698→    // timestamp (updatedAt is not a resume signal).
+   699→    if (item.pausedState) {
+   700→      item.pausedState.resumedAt = item.updatedAt;
+   701→      item.pausedState.resumedBy = resumedBy;
+   702→    }
+   703→    await this.schedulerStore.update(item);
+   704→    return item;
+   705→  }
+   706→
+   707→  /**
+   708→   * Get a single schedule by ID.
+   709→   */
+   710→  async getSchedule(id: string): Promise<ScheduledWorkItem | null> {
+   711→    return this.schedulerStore.get(id);
+   712→  }
+   713→
+   714→  /**
+   715→   * List schedules with optional filter.
+   716→   */
+   717→  async listSchedules(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]> {
+   718→    return this.schedulerStore.list(filter);
+   719→  }
+   720→}
+   721→

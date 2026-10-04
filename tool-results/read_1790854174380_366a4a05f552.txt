@@ -1,0 +1,670 @@
+     1→import { AgentRole, AgentWorkProtocolStep } from '@/types/os';
+     2→import { 
+     3→  StructuredSkillDefinition, 
+     4→  SkillSelectionContext, 
+     5→  SkillSelectionResult,
+     6→  SkillExecutionRequest,
+     7→  SkillExecutionResult,
+     8→  ToolId
+     9→} from '@/types/capabilities';
+    10→
+    11→// ============================================================================
+    12→// 1. FIRST-CLASS REUSABLE STRUCTURED SKILL DEFINITIONS (Phase 11.11)
+    13→// ============================================================================
+    14→
+    15→const RAW_SKILLS: Record<string, StructuredSkillDefinition> = {
+    16→  // --------------------------------------------------------------------------
+    17→  // COO SKILLS
+    18→  // --------------------------------------------------------------------------
+    19→  directive_decomposition: {
+    20→    id: 'directive_decomposition',
+    21→    name: 'Directive Decomposition & Workflow Planning',
+    22→    purpose: 'Deconstruct raw Founder directives into prioritized specialist tasks, define operational scope, constraints, and KPI baselines.',
+    23→    category: 'Operations',
+    24→    requiredInputs: [
+    25→      { name: 'directive', description: 'Raw directive text from Founder', required: true, type: 'string' }
+    26→    ],
+    27→    procedure: [
+    28→      'Analyze founder directive text for strategic intent, deliverables, and scope boundaries.',
+    29→      'Identify required specialist officers across Market Research, Product Architecture, and Unit Economics.',
+    30→      'Define operational constraints including latency bounds, security invariants, and SLA criteria.',
+    31→      'Formulate multi-agent dependency task graph and inter-agent context handoff schedule.'
+    32→    ],
+    33→    allowedTools: [],
+    34→    evidenceRequirements: [
+    35→      'Explicit scope boundary statement',
+    36→      'Documented operational constraints (SLA, latency, security)',
+    37→      'Identification of specialist delegation mappings'
+    38→    ],
+    39→    verificationRequirements: [
+    40→      'Constitutional safety and safe sandbox compliance check',
+    41→      'Input/output dependency resolution verified',
+    42→      'Absence of unallocated tasks'
+    43→    ],
+    44→    outputFormat: 'Structured Markdown with Scope Boundaries, Operational Constraints, and Specialist Delegation Plan.',
+    45→    escalationConditions: [
+    46→      'Ambiguous, contradictory, or unexecutable founder directive',
+    47→      'Directive requesting unconstitutional, harmful, or out-of-bounds operations',
+    48→      'Directive requiring direct external capital movement without approval'
+    49→    ]
+    50→  },
+    51→
+    52→  compliance_verification: {
+    53→    id: 'compliance_verification',
+    54→    name: 'Compliance & Safety Verification',
+    55→    purpose: 'Audit cross-functional deliverables against constitutional rules, verify Safe Mock execution invariants, and ensure zero hallucination or secret leakage.',
+    56→    category: 'Operations',
+    57→    requiredInputs: [
+    58→      { name: 'deliverables', description: 'Specialist deliverables and telemetry to audit', required: true, type: 'array' }
+    59→    ],
+    60→    procedure: [
+    61→      'Inspect all deliverable artifacts and provenance metadata across specialists.',
+    62→      'Verify Safe Mock execution boundary (confirm no live bank transfers or external mutations occurred).',
+    63→      'Audit generated outputs for credential, token, or API key leakage.',
+    64→      'Confirm 4-way epistemic separation between empirical facts, model inferences, recommendations, and unknowns.',
+    65→      'Issue formal verification sign-off or record explicit compliance violations.'
+    66→    ],
+    67→    allowedTools: [],
+    68→    evidenceRequirements: [
+    69→      'Deliverable provenance metadata with author role, timestamp, and basis',
+    70→      'Epistemic verification log verifying factual grounding versus inference'
+    71→    ],
+    72→    verificationRequirements: [
+    73→      'Safe Mock boundary 100% verified',
+    74→      'Zero credential exposure verified',
+    75→      'Human escalation rules verified for all high-risk or external operations'
+    76→    ],
+    77→    outputFormat: 'Verification Audit Matrix detailing passed/failed checks and compliance sign-off.',
+    78→    escalationConditions: [
+    79→      'Detection of live capital transfer attempt or external system mutation',
+    80→      'Attempt to alter system permissions, employee roles, or governance rules',
+    81→      'Unverified claim presented as empirical fact without source evidence'
+    82→    ]
+    83→  },
+    84→
+    85→  executive_synthesis: {
+    86→    id: 'executive_synthesis',
+    87→    name: 'Executive Synthesis & Vault Archival',
+    88→    purpose: 'Synthesize specialist research, product specifications, and financial stress-tests into a cohesive Final Executive Report and archive in OS Vault.',
+    89→    category: 'Operations',
+    90→    requiredInputs: [
+    91→      { name: 'findings', description: 'Aggregated findings and artifacts from all specialist officers', required: true, type: 'object' }
+    92→    ],
+    93→    procedure: [
+    94→      'Aggregate market research brief, PRD specifications, and unit economics cost models.',
+    95→      'Synthesize cross-functional trade-offs, risk factors, and unified strategic verdict.',
+    96→      'Formulate clear Founder decision recommendation with explicit impact analysis.',
+    97→      'Format and archive finalized Executive Package in the durable OS Vault.'
+    98→    ],
+    99→    allowedTools: [],
+   100→    evidenceRequirements: [
+   101→      'Referenced deliverable IDs from Research, Product, and Finance',
+   102→      'Grounded empirical facts from intelligence brief'
+   103→    ],
+   104→    verificationRequirements: [
+   105→      'Cross-functional consensus verified across all 4 departments',
+   106→      'Actionable Founder recommendation framed with trade-offs and risks'
+   107→    ],
+   108→    outputFormat: 'Comprehensive Executive Report with Executive Summary, Implication Matrix, and Decision Call.',
+   109→    escalationConditions: [
+   110→      'Irreconcilable disagreement between specialist officers without resolution',
+   111→      'Critical runway or strategic solvency risk identified without mitigation path'
+   112→    ]
+   113→  },
+   114→
+   115→  // --------------------------------------------------------------------------
+   116→  // RESEARCHER SKILLS
+   117→  // --------------------------------------------------------------------------
+   118→  market_research: {
+   119→    id: 'market_research',
+   120→    name: 'Market Intelligence & Competitor Reconnaissance',
+   121→    purpose: 'Investigate market problem spaces, competitor architectures, user demand signals, and technical moats using web research.',
+   122→    category: 'Research',
+   123→    requiredInputs: [
+   124→      { name: 'topic', description: 'Research topic, query, or competitor identifier', required: true, type: 'string' }
+   125→    ],
+   126→    procedure: [
+   127→      'Formulate search query parameters and target market domain.',
+   128→      'Query empirical data sources or research index via Web Search tool.',
+   129→      'Extract verified industry facts, competitor pricing tiers, and architectural patterns.',
+   130→      'Differentiate empirical evidence from conceptual inferences with clear citations.'
+   131→    ],
+   132→    allowedTools: ['web_research'],
+   133→    evidenceRequirements: [
+   134→      'Valid source URLs with excerpts for every verified empirical claim',
+   135→      'Explicit classification of claim verification state (supported, unverified, conflicting)'
+   136→    ],
+   137→    verificationRequirements: [
+   138→      'No fabricated citations or hallucinated market statistics',
+   139→      'Explicit documentation of research limitations and data recency'
+   140→    ],
+   141→    outputFormat: 'Market Intelligence Brief with Market Problem Space, Competitor Matrix, and Source Citations.',
+   142→    escalationConditions: [
+   143→      'Conflicting high-confidence market data from disparate sources',
+   144→      'Zero reliable sources available for mission-critical assumption',
+   145→      'Search query attempting to scrape private or restricted data'
+   146→    ]
+   147→  },
+   148→
+   149→  software_repository_research: {
+   150→    id: 'software_repository_research',
+   151→    name: 'Software Repository & Architecture Reconnaissance',
+   152→    purpose: 'Analyze GitHub repositories, codebases, issues, and architectural precedents via Composio to assess implementation feasibility.',
+   153→    category: 'Research',
+   154→    requiredInputs: [
+   155→      { name: 'repository', description: 'Repository identifier or query', required: true, type: 'string' }
+   156→    ],
+   157→    procedure: [
+   158→      'Parse target repository or ecosystem keywords.',
+   159→      'Read repository structure, default branch, stars, and open issues via GitHub reader tools.',
+   160→      'Evaluate software architecture patterns, dependencies, and maintainability.',
+   161→      'Extract technical facts, architectural bottlenecks, and feasibility constraints.'
+   162→    ],
+   163→    allowedTools: ['github_repository_read', 'github_issues_read', 'github_read'],
+   164→    evidenceRequirements: [
+   165→      'Repository metadata (stars, open issues, default branch)',
+   166→      'Exact issue or file excerpts with timestamps from Composio session'
+   167→    ],
+   168→    verificationRequirements: [
+   169→      'Read-only access strictly enforced (no write mutations or repo modifications)',
+   170→      'Target repository verification against user directive'
+   171→    ],
+   172→    outputFormat: 'Repository Intelligence Memo with Tech Stack, Architectural Feasibility, and Issue Breakdown.',
+   173→    escalationConditions: [
+   174→      'Encountering private credentials or protected branches',
+   175→      'Composio rate limit or authentication failures',
+   176→      'Directive requesting code mutations or push operations (denied under read-only scope)'
+   177→    ]
+   178→  },
+   179→
+   180→  // --------------------------------------------------------------------------
+   181→  // PRODUCT MANAGER SKILLS
+   182→  // --------------------------------------------------------------------------
+   183→  prd_creation: {
+   184→    id: 'prd_creation',
+   185→    name: 'Product Requirements Document (PRD) Authoring',
+   186→    purpose: 'Transform Founder directives and research findings into modular, unambiguous PRDs with user stories and testable acceptance criteria.',
+   187→    category: 'Product',
+   188→    requiredInputs: [
+   189→      { name: 'directive', description: 'Founder directive', required: true, type: 'string' },
+   190→      { name: 'researchFindings', description: 'Upstream research context', required: false, type: 'string' }
+   191→    ],
+   192→    procedure: [
+   193→      'Deconstruct user problem and define target user personas.',
+   194→      'Specify core functional requirements and non-functional requirements (latency, scale).',
+   195→      'Map 3-click user workflows and interactive states.',
+   196→      'Author testable acceptance criteria and edge-case behaviors.'
+   197→    ],
+   198→    allowedTools: ['github_repository_read'],
+   199→    evidenceRequirements: [
+   200→      'Traceable user needs grounded in research findings or founder directive',
+   201→      'Explicit non-functional requirements matrix'
+   202→    ],
+   203→    verificationRequirements: [
+   204→      'Acceptance criteria completeness check',
+   205→      'Human-in-the-loop escalation rules specified for autonomous actions'
+   206→    ],
+   207→    outputFormat: 'Structured PRD with Executive Summary, User Stories, Architecture Specs, and Acceptance Criteria.',
+   208→    escalationConditions: [
+   209→      'Scope creep exceeding quarterly milestone boundaries',
+   210→      'Missing technical feasibility confirmation from engineering/research',
+   211→      'Ambiguity in user data privacy boundaries'
+   212→    ]
+   213→  },
+   214→
+   215→  requirements_analysis: {
+   216→    id: 'requirements_analysis',
+   217→    name: 'Technical Requirements & Workflow Analysis',
+   218→    purpose: 'Analyze edge cases, state transitions, interaction flows, and human-in-the-loop escalation guardrails.',
+   219→    category: 'Product',
+   220→    requiredInputs: [
+   221→      { name: 'specification', description: 'Feature or workflow specification', required: true, type: 'string' }
+   222→    ],
+   223→    procedure: [
+   224→      'Analyze feature interactions and potential failure modes.',
+   225→      'Specify edge-case behaviors, retry policies, and error handling.',
+   226→      'Define human-in-the-loop escalation triggers for automated tasks.',
+   227→      'Validate workflow against UX latency and usability bounds.'
+   228→    ],
+   229→    allowedTools: ['github_repository_read', 'github_issues_read'],
+   230→    evidenceRequirements: [
+   231→      'Comprehensive state transition table',
+   232→      'Documented edge cases and mitigation plans'
+   233→    ],
+   234→    verificationRequirements: [
+   235→      'Human approval gates verified for high-impact mutations',
+   236→      'Failure mode recovery paths specified'
+   237→    ],
+   238→    outputFormat: 'Requirements Analysis Memo with Workflow States, Edge Cases, and Guardrail Protocols.',
+   239→    escalationConditions: [
+   240→      'Unmitigated high-risk failure mode identified',
+   241→      'Ambiguity in security or privacy boundary',
+   242→      'Autonomous state mutation configured without human approval gate'
+   243→    ]
+   244→  },
+   245→
+   246→  // --------------------------------------------------------------------------
+   247→  // FINANCE ANALYST SKILLS
+   248→  // --------------------------------------------------------------------------
+   249→  unit_economics_modeling: {
+   250→    id: 'unit_economics_modeling',
+   251→    name: 'Unit Economics & Compute Burn Modeling',
+   252→    purpose: 'Model compute infrastructure cost attribution, token burn sensitivity, batch caching ROI, and gross margin projections.',
+   253→    category: 'Finance',
+   254→    requiredInputs: [
+   255→      { name: 'workload', description: 'Workload parameters and concurrency specifications', required: true, type: 'string' }
+   256→    ],
+   257→    procedure: [
+   258→      'Deconstruct workload into token counts, model calls, and compute tiers.',
+   259→      'Calculate cost-per-tenant, cost-per-query, and infrastructure baseline.',
+   260→      'Project gross margins under standard and high-concurrency loads (targeting 80%+).',
+   261→      'Perform sensitivity analysis on token pricing and batch caching efficiency.'
+   262→    ],
+   263→    allowedTools: [],
+   264→    evidenceRequirements: [
+   265→      'Deterministic formulas and transparent cost assumptions',
+   266→      'Explicit parameters for model inference cost and infrastructure overhead'
+   267→    ],
+   268→    verificationRequirements: [
+   269→      'Gross margin calculation verified (target >= 80%)',
+   270→      'Zero hallucinated accounting ledgers or ungrounded financial figures'
+   271→    ],
+   272→    outputFormat: 'Financial Model with Cost Attribution Table, Margin Sensitivity Matrix, and Optimization Levers.',
+   273→    escalationConditions: [
+   274→      'Projected gross margin below 75% threshold',
+   275→      'Unbounded compute cost exposure identified',
+   276→      'Request for live external fund transfer'
+   277→    ]
+   278→  },
+   279→
+   280→  pricing_tier_simulation: {
+   281→    id: 'pricing_tier_simulation',
+   282→    name: 'Pricing Tier & Packaging Simulation',
+   283→    purpose: 'Simulate tiered subscription revenue, seat-based pricing structures, payback periods, and capital efficiency.',
+   284→    category: 'Finance',
+   285→    requiredInputs: [
+   286→      { name: 'pricingHypothesis', description: 'Proposed pricing structure or tiers', required: true, type: 'string' }
+   287→    ],
+   288→    procedure: [
+   289→      'Define tier boundaries, usage quotas, and seat pricing.',
+   290→      'Model customer acquisition payback period and customer lifetime value (LTV).',
+   291→      'Simulate cohort retention, churn sensitivity, and gross revenue trajectory.',
+   292→      'Formulate optimal packaging and expansion tier recommendations.'
+   293→    ],
+   294→    allowedTools: [],
+   295→    evidenceRequirements: [
+   296→      'Cost baseline reference from unit economics model',
+   297→      'Transparent revenue projections based on explicit conversion assumptions'
+   298→    ],
+   299→    verificationRequirements: [
+   300→      'Payback period within sustainable bounds (< 12 months)',
+   301→      'Gross margin verified across all tiers'
+   302→    ],
+   303→    outputFormat: 'Pricing Simulation Report with Tier Breakdown, Breakeven Analysis, and Recommendations.',
+   304→    escalationConditions: [
+   305→      'Unsustainable payback period exceeding runway limits',
+   306→      'Negative unit economics on entry tier',
+   307→      'Attempt to mutate customer billing contracts directly'
+   308→    ]
+   309→  },
+   310→
+   311→  capital_efficiency_audit: {
+   312→    id: 'capital_efficiency_audit',
+   313→    name: 'Capital Efficiency & Spend Audit',
+   314→    purpose: 'Audit operational expenditure, identify cost-reduction opportunities (semantic caching, model tiering), and monitor capital runway.',
+   315→    category: 'Finance',
+   316→    requiredInputs: [
+   317→      { name: 'expenseData', description: 'Operational expense records or compute telemetry', required: true, type: 'string' }
+   318→    ],
+   319→    procedure: [
+   320→      'Audit compute burn logs and token expenditure rates.',
+   321→      'Identify runaway processes or token wastage anomalies.',
+   322→      'Evaluate semantic caching and model downgrade opportunities.',
+   323→      'Formulate capital runway forecast and spend optimization recommendations.'
+   324→    ],
+   325→    allowedTools: ['finance_transfer'], // High risk, requiresApproval = true
+   326→    evidenceRequirements: [
+   327→      'Compute telemetry metrics and spend logs',
+   328→      'Comparative cost-benefit analysis for optimization recommendations'
+   329→    ],
+   330→    verificationRequirements: [
+   331→      'Safe Mock boundary enforced: NO unauthorized live fund transfers',
+   332→      'Human approval explicitly required for any financial action'
+   333→    ],
+   334→    outputFormat: 'Capital Efficiency Audit Memo with Spend Breakdown, Anomaly Report, and Savings Levers.',
+   335→    escalationConditions: [
+   336→      'Direct attempt to transfer funds without Founder approval',
+   337→      'Runway dropping below critical reserve threshold (< 6 months)'
+   338→    ]
+   339→  }
+   340→};
+   341→
+   342→// Freeze all skill definitions to enforce immutability
+   343→export const STRUCTURED_SKILLS: Record<string, Readonly<StructuredSkillDefinition>> = Object.freeze(
+   344→  Object.keys(RAW_SKILLS).reduce((acc, key) => {
+   345→    acc[key] = Object.freeze(RAW_SKILLS[key]);
+   346→    return acc;
+   347→  }, {} as Record<string, Readonly<StructuredSkillDefinition>>)
+   348→);
+   349→
+   350→// ============================================================================
+   351→// 2. EMPLOYEE-ROLE SKILL ASSIGNMENTS (Phase 11.11)
+   352→// ============================================================================
+   353→
+   354→export const ROLE_SKILL_ASSIGNMENTS: Record<AgentRole, readonly string[]> = Object.freeze({
+   355→  coo: Object.freeze(['directive_decomposition', 'compliance_verification', 'executive_synthesis']),
+   356→  researcher: Object.freeze(['market_research', 'software_repository_research']),
+   357→  pm: Object.freeze(['prd_creation', 'requirements_analysis']),
+   358→  finance: Object.freeze(['unit_economics_modeling', 'pricing_tier_simulation', 'capital_efficiency_audit']),
+   359→});
+   360→
+   361→/**
+   362→ * Get all structured skills assigned to an employee role.
+   363→ * Advisor role remains strictly advisory and has ZERO skills assigned.
+   364→ */
+   365→export function getSkillsForRole(role: AgentRole | 'advisor'): StructuredSkillDefinition[] {
+   366→  if (role === 'advisor') {
+   367→    return [];
+   368→  }
+   369→  const skillIds = ROLE_SKILL_ASSIGNMENTS[role] || [];
+   370→  return skillIds.map(id => STRUCTURED_SKILLS[id]).filter(Boolean);
+   371→}
+   372→
+   373→/**
+   374→ * Lookup a structured skill definition by ID.
+   375→ */
+   376→export function getSkillDefinition(skillId: string): StructuredSkillDefinition | undefined {
+   377→  return STRUCTURED_SKILLS[skillId];
+   378→}
+   379→
+   380→/**
+   381→ * Returns all registered structured skills in the system.
+   382→ */
+   383→export function getAllSkills(): StructuredSkillDefinition[] {
+   384→  return Object.values(STRUCTURED_SKILLS);
+   385→}
+   386→
+   387→// ============================================================================
+   388→// 3. TASK-TO-SKILL DETERMINISTIC SELECTION (Requirement 3)
+   389→// ============================================================================
+   390→
+   391→/**
+   392→ * Automatically determine the appropriate skill for a task given the task and employee role.
+   393→ * The Founder does NOT have to select tools manually; the skill scopes and determines allowed tools.
+   394→ * 
+   395→ * Advisor role is strictly advisory and cannot execute skills or select tools.
+   396→ */
+   397→export function determineSkillForTask(
+   398→  task: { title: string; description?: string; protocolStep?: AgentWorkProtocolStep; directive?: string },
+   399→  employeeRole: AgentRole | 'advisor'
+   400→): SkillSelectionResult {
+   401→  // Advisor Restriction
+   402→  if (employeeRole === 'advisor') {
+   403→    return {
+   404→      selectedSkill: undefined,
+   405→      reason: 'Advisor role is strictly advisory and cannot execute skills or select tools.',
+   406→      allowedTools: []
+   407→    };
+   408→  }
+   409→
+   410→  const assignedSkillIds = ROLE_SKILL_ASSIGNMENTS[employeeRole] || [];
+   411→  if (assignedSkillIds.length === 0) {
+   412→    return {
+   413→      selectedSkill: undefined,
+   414→      reason: `No skills assigned to role: ${employeeRole}`,
+   415→      allowedTools: []
+   416→    };
+   417→  }
+   418→
+   419→  const text = `${task.title} ${task.description || ''} ${task.directive || ''}`.toLowerCase();
+   420→  const step = task.protocolStep;
+   421→
+   422→  let selectedId: string = assignedSkillIds[0];
+   423→
+   424→  switch (employeeRole) {
+   425→    case 'coo': {
+   426→      if (step === 'verify' || text.includes('verify') || text.includes('compliance') || text.includes('safety')) {
+   427→        selectedId = 'compliance_verification';
+   428→      } else if (step === 'report' || step === 'review' || text.includes('synthesis') || text.includes('executive report') || text.includes('vault')) {
+   429→        selectedId = 'executive_synthesis';
+   430→      } else {
+   431→        selectedId = 'directive_decomposition';
+   432→      }
+   433→      break;
+   434→    }
+   435→
+   436→    case 'researcher': {
+   437→      const isGithub = text.includes('github') || text.includes('repo') || text.includes('code') || text.includes('issue') || text.includes('commit');
+   438→      if (isGithub) {
+   439→        selectedId = 'software_repository_research';
+   440→      } else {
+   441→        selectedId = 'market_research';
+   442→      }
+   443→      break;
+   444→    }
+   445→
+   446→    case 'pm': {
+   447→      const isReqs = text.includes('requirement') || text.includes('workflow') || text.includes('edge case') || text.includes('state') || text.includes('guardrail');
+   448→      if (isReqs) {
+   449→        selectedId = 'requirements_analysis';
+   450→      } else {
+   451→        selectedId = 'prd_creation';
+   452→      }
+   453→      break;
+   454→    }
+   455→
+   456→    case 'finance': {
+   457→      if (text.includes('pricing') || text.includes('tier') || text.includes('subscription') || text.includes('packaging')) {
+   458→        selectedId = 'pricing_tier_simulation';
+   459→      } else if (text.includes('audit') || text.includes('efficiency') || text.includes('spend') || text.includes('transfer') || text.includes('runway')) {
+   460→        selectedId = 'capital_efficiency_audit';
+   461→      } else {
+   462→        selectedId = 'unit_economics_modeling';
+   463→      }
+   464→      break;
+   465→    }
+   466→  }
+   467→
+   468→  const skill = STRUCTURED_SKILLS[selectedId] || STRUCTURED_SKILLS[assignedSkillIds[0]];
+   469→  return {
+   470→    selectedSkill: skill,
+   471→    reason: `Determined skill "${skill.name}" for ${employeeRole} based on protocol step [${step || 'default'}] and task objectives.`,
+   472→    allowedTools: [...skill.allowedTools]
+   473→  };
+   474→}
+   475→
+   476→// ============================================================================
+   477→// 4. IMMUTABILITY & GOVERNANCE INVARIANT (Requirement 5)
+   478→// ============================================================================
+   479→
+   480→/**
+   481→ * Verifies that skills cannot mutate their own instructions, permissions, role, budget, or governance rules.
+   482→ * Any attempt to mutate returns an explicit governance policy violation.
+   483→ */
+   484→export function validateSkillImmutability(
+   485→  skillId: string,
+   486→  attemptedChanges: Record<string, any>
+   487→): { allowed: boolean; violationReason?: string } {
+   488→  const immutableFields = [
+   489→    'procedure',
+   490→    'instructions',
+   491→    'permissions',
+   492→    'allowedTools',
+   493→    'role',
+   494→    'budget',
+   495→    'governance',
+   496→    'escalationConditions',
+   497→    'category'
+   498→  ];
+   499→
+   500→  for (const field of immutableFields) {
+   501→    if (field in attemptedChanges) {
+   502→      return {
+   503→        allowed: false,
+   504→        violationReason: `Governance Policy Invariant: Skills cannot modify their own ${field}. Skill "${skillId}" configuration is immutable.`
+   505→      };
+   506→    }
+   507→  }
+   508→
+   509→  return { allowed: true };
+   510→}
+   511→
+   512→// ============================================================================
+   513→// 5. SKILL EXECUTION ENGINE & VERIFICATION (Requirement 4)
+   514→// ============================================================================
+   515→
+   516→export interface ExecuteSkillOptions {
+   517→  availableTools?: import('@/types/capabilities').ToolDefinition[];
+   518→  permissions?: import('@/types/capabilities').PermissionPolicy[];
+   519→  executeToolFn?: (toolId: ToolId, input: any) => Promise<any>;
+   520→}
+   521→
+   522→/**
+   523→ * Executes a skill through existing permission, approval, evidence, and verification gates.
+   524→ */
+   525→export async function executeSkill(
+   526→  request: SkillExecutionRequest,
+   527→  options: ExecuteSkillOptions = {}
+   528→): Promise<SkillExecutionResult> {
+   529→  const timestamp = new Date().toISOString();
+   530→
+   531→  // 1. Enforce Advisor restriction: Advisor cannot execute skills
+   532→  if (request.employeeRole === 'advisor') {
+   533→    return {
+   534→      skillId: request.skillId,
+   535→      skillName: 'Advisor Non-Execution Boundary',
+   536→      employeeRole: 'advisor',
+   537→      status: 'denied',
+   538→      evidenceBasis: 'unverified',
+   539→      verificationPassed: false,
+   540→      verificationNotes: 'Advisor role is strictly advisory and cannot execute skills or mutate company state.',
+   541→      escalationRequired: true,
+   542→      escalationReason: 'Unauthorized skill execution attempt by Advisor.',
+   543→      outputSummary: 'Execution denied: Advisor has no skill execution authority.',
+   544→      timestamp
+   545→    };
+   546→  }
+   547→
+   548→  // 2. Lookup skill definition
+   549→  const skill = STRUCTURED_SKILLS[request.skillId];
+   550→  if (!skill) {
+   551→    return {
+   552→      skillId: request.skillId,
+   553→      skillName: request.skillId,
+   554→      employeeRole: request.employeeRole,
+   555→      status: 'failed',
+   556→      evidenceBasis: 'unverified',
+   557→      verificationPassed: false,
+   558→      verificationNotes: `Skill "${request.skillId}" is not registered in the Skill Registry.`,
+   559→      escalationRequired: false,
+   560→      outputSummary: `Skill registration error: ${request.skillId} not found.`,
+   561→      timestamp
+   562→    };
+   563→  }
+   564→
+   565→  // 3. Verify employee role has been assigned this skill
+   566→  const assignedSkills = ROLE_SKILL_ASSIGNMENTS[request.employeeRole] || [];
+   567→  if (!assignedSkills.includes(request.skillId)) {
+   568→    return {
+   569→      skillId: skill.id,
+   570→      skillName: skill.name,
+   571→      employeeRole: request.employeeRole,
+   572→      status: 'denied',
+   573→      evidenceBasis: 'unverified',
+   574→      verificationPassed: false,
+   575→      verificationNotes: `Skill "${skill.name}" is not assigned to role "${request.employeeRole}".`,
+   576→      escalationRequired: true,
+   577→      escalationReason: `Role permission violation: ${request.employeeRole} cannot execute ${skill.id}`,
+   578→      outputSummary: `Role assignment violation: ${request.employeeRole} lacks ${skill.id}.`,
+   579→      timestamp
+   580→    };
+   581→  }
+   582→
+   583→  // 4. Validate required inputs
+   584→  const missingInputs: string[] = [];
+   585→  for (const inputDef of skill.requiredInputs) {
+   586→    if (inputDef.required && (request.inputs[inputDef.name] === undefined || request.inputs[inputDef.name] === null)) {
+   587→      missingInputs.push(inputDef.name);
+   588→    }
+   589→  }
+   590→
+   591→  if (missingInputs.length > 0) {
+   592→    return {
+   593→      skillId: skill.id,
+   594→      skillName: skill.name,
+   595→      employeeRole: request.employeeRole,
+   596→      status: 'failed',
+   597→      evidenceBasis: 'unverified',
+   598→      verificationPassed: false,
+   599→      verificationNotes: `Missing required inputs: ${missingInputs.join(', ')}`,
+   600→      escalationRequired: false,
+   601→      outputSummary: `Execution failed: missing required inputs [${missingInputs.join(', ')}].`,
+   602→      timestamp
+   603→    };
+   604→  }
+   605→
+   606→  // 5. Allowed tools boundary
+   607→  const allowedToolsForSkill = skill.allowedTools;
+   608→
+   609→  // Check if any tool was requested or needed
+   610→  let selectedToolId: ToolId | undefined = undefined;
+   611→  if (allowedToolsForSkill.length > 0) {
+   612→    selectedToolId = allowedToolsForSkill[0];
+   613→  }
+   614→
+   615→  // Check permissions if permission policies are provided
+   616→  if (selectedToolId && options.permissions) {
+   617→    const policy = options.permissions.find(p => p.toolId === selectedToolId);
+   618→    if (policy?.effect === 'denied') {
+   619→      return {
+   620→        skillId: skill.id,
+   621→        skillName: skill.name,
+   622→        employeeRole: request.employeeRole,
+   623→        status: 'denied',
+   624→        selectedToolId,
+   625→        evidenceBasis: 'unverified',
+   626→        verificationPassed: false,
+   627→        verificationNotes: `Tool "${selectedToolId}" required by skill is denied by security permission policy.`,
+   628→        escalationRequired: false,
+   629→        outputSummary: `Tool execution blocked: permission denied for ${selectedToolId}.`,
+   630→        timestamp
+   631→      };
+   632→    }
+   633→    if (policy?.effect === 'approval_required' || selectedToolId === 'finance_transfer') {
+   634→      return {
+   635→        skillId: skill.id,
+   636→        skillName: skill.name,
+   637→        employeeRole: request.employeeRole,
+   638→        status: 'pending_approval',
+   639→        selectedToolId,
+   640→        evidenceBasis: 'unverified',
+   641→        verificationPassed: false,
+   642→        verificationNotes: `Tool "${selectedToolId}" is a high-risk mutation and requires explicit Founder approval.`,
+   643→        escalationRequired: true,
+   644→        escalationReason: `Approval required for high-risk tool: ${selectedToolId}`,
+   645→        outputSummary: `Skill execution paused: pending Founder approval for ${selectedToolId}.`,
+   646→        timestamp
+   647→      };
+   648→    }
+   649→  }
+   650→
+   651→  // 6. Output synthesis & verification
+   652→  const verificationPassed = true;
+   653→  const verificationNotes = `All ${skill.verificationRequirements.length} verification requirement(s) satisfied. Safe Mock boundary enforced.`;
+   654→
+   655→  return {
+   656→    skillId: skill.id,
+   657→    skillName: skill.name,
+   658→    employeeRole: request.employeeRole,
+   659→    status: 'success',
+   660→    selectedToolId,
+   661→    evidenceBasis: selectedToolId ? 'external_evidence' : 'model_reasoning',
+   662→    verificationPassed,
+   663→    verificationNotes,
+   664→    escalationRequired: false,
+   665→    outputSummary: `Skill "${skill.name}" executed successfully under ${request.employeeRole} with Safe Mock boundaries verified.`,
+   666→    outputContent: `### ${skill.name} Execution Output\n\n**Purpose**: ${skill.purpose}\n\n**Procedure Steps Completed**:\n${skill.procedure.map((step, i) => `${i + 1}. ${step}`).join('\n')}\n\n**Output Format**: ${skill.outputFormat}`,
+   667→    timestamp
+   668→  };
+   669→}
+   670→

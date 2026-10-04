@@ -1,0 +1,217 @@
+
+=================================================================================
+M4-D DESIGN-ONLY COUNTERFACTUAL EVALUATION — baseline 38226ea, Task 42 corpus
+TEMPORARY ANALYSIS ARTIFACT (removed before task completion)
+=================================================================================
+
+--- 0. FOLD CHARACTERIZATION (b1 = plural-only, b2 = +ing/ed) ---
+  preferences   vs preference    | raw:---- | b1:MATCH | b2:MATCH  (fold: preferences->preference, preference->preference)
+  prefers       vs preference    | raw:---- | b1:---- | b2:----  (fold: prefers->prefer, preference->preference)
+  prefers       vs prefer        | raw:---- | b1:MATCH | b2:MATCH  (fold: prefers->prefer, prefer->prefer)
+  briefing      vs brief         | raw:---- | b1:---- | b2:MATCH  (fold: briefing->brief, brief->brief)
+  runs          vs run           | raw:---- | b1:MATCH | b2:MATCH  (fold: runs->run, run->run)
+  calls         vs call          | raw:---- | b1:MATCH | b2:MATCH  (fold: calls->call, call->call)
+  updates       vs update        | raw:---- | b1:MATCH | b2:MATCH  (fold: updates->update, update->update)
+  updated       vs update        | raw:---- | b1:---- | b2:----  (fold: updated->updat, update->update)
+  summaries     vs summary       | raw:---- | b1:MATCH | b2:MATCH  (fold: summaries->summary, summary->summary)
+  meetings      vs meeting       | raw:---- | b1:MATCH | b2:----  (fold: meetings->meeting, meeting->meet)
+  notes         vs note          | raw:---- | b1:MATCH | b2:MATCH  (fold: notes->note, note->note)
+  news          vs new           | raw:---- | b1:---- | b2:----  (fold: news->news, new->new)
+  evening       vs even          | raw:---- | b1:---- | b2:----  (fold: evening->evening, even->even)
+  morning       vs morn          | raw:---- | b1:---- | b2:----  (fold: morning->morning, morn->morn)
+  FOLD_PROTECTED = news, evening, morning, specs, economics, politics, physics
+
+--- 1. PER-QUERY RESULTS (gold ranks; MISS = outside top-20) ---
+
+  [a] baseline (production M4-C)
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#4
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#3, cp-03#1, cp-13#MISS
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#4
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#2
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#7, cp-14#MISS | NEW top-5 FPs: ev-s36,ev-h01,ev-h04,ev-h02,ev-h03
+
+  [b1] plural-fold only
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#4
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#4, cp-03#1, cp-13#MISS | NEW top-5 FPs: ev-pcn-05
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#5 | NEW top-5 FPs: ev-ip-08
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#2 | NEW top-5 FPs: ev-itp-04,ev-io-01
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#7, cp-14#MISS | NEW top-5 FPs: ev-s36,ev-h01,ev-h04,ev-h02,ev-h03
+
+  [b2] plural+ing/ed light fold
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#4
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#4, cp-03#1, cp-13#MISS | NEW top-5 FPs: ev-pcn-05
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#2, cp-14#MISS | NEW top-5 FPs: ev-ip-03
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#5 | NEW top-5 FPs: ev-ip-08
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#2 | NEW top-5 FPs: ev-itp-04,ev-io-01
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#7, cp-14#MISS | NEW top-5 FPs: ev-s36,ev-h01,ev-h04,ev-h02,ev-h03
+
+  [g] IDF weighting (raw tokens)
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#4
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#3, cp-03#1, cp-13#MISS
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#4, cp-09#5
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#2
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#7, cp-14#MISS | NEW top-5 FPs: ev-s01,ev-h01,ev-h04,ev-h03
+
+  [d1] tier-1 global relevance-first
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#1 | NEW top-5 FPs: ev-pcn-07
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#2, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#2, cp-03#1, cp-13#MISS
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#2, cp-03#3, cp-01#1
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#4
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#1 | NEW top-5 FPs: ev-cp-16
+    Q4+D7   R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#5, cp-14#MISS | NEW top-5 FPs: ev-h01,ev-h02,ev-h03,ev-h04
+
+  [d2] tier-1 score-banded round-robin
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#1 | NEW top-5 FPs: ev-pcn-07
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#2, cp-03#1, cp-13#MISS
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#4
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#1 | NEW top-5 FPs: ev-cp-16
+    Q4+D7   R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#5, cp-14#MISS | NEW top-5 FPs: ev-h01,ev-h04,ev-h02,ev-h03
+
+  [e] bigram phrase bonus (+0.5)
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#1 | NEW top-5 FPs: ev-pcn-07
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#2, cp-03#1, cp-13#MISS
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#2, cp-14#MISS
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#4, cp-03#5, cp-01#2
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#4
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#1 | NEW top-5 FPs: ev-cp-16
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#6, cp-14#MISS | NEW top-5 FPs: ev-h01,ev-h04,ev-h02,ev-h03
+
+  [P1] b2 + d2 (M4-D core candidate)
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#1 | NEW top-5 FPs: ev-pcn-07
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#2, cp-03#1, cp-13#MISS | NEW top-5 FPs: ev-pcn-05
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS | NEW top-5 FPs: ev-ip-03
+    Q5      R@5=0.67 R@10=1.00 P@5=0.40 | pcn-03#1, cp-03#6, cp-01#3 | NEW top-5 FPs: ev-pcn-05
+    Q6      R@5=1.00 R@10=1.00 P@5=0.60 | ip-07#1, cp-07#2, cp-09#5 | NEW top-5 FPs: ev-ip-08
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#1 | NEW top-5 FPs: ev-cp-16
+    Q4+D7   R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#5, cp-14#MISS | NEW top-5 FPs: ev-h01,ev-h04,ev-h02,ev-h03
+
+  [P2] b2 + d2 + IDF
+    Q1      R@5=1.00 R@10=1.00 P@5=0.20 | pcn-03#1 | NEW top-5 FPs: ev-pcn-07
+    Q2      R@5=1.00 R@10=1.00 P@5=0.40 | ip-08#1, pcn-12#3
+    Q3      R@5=0.67 R@10=0.67 P@5=0.40 | cp-01#2, cp-03#1, cp-13#MISS | NEW top-5 FPs: ev-pcn-05
+    Q4      R@5=0.50 R@10=0.50 P@5=0.20 | cp-07#1, cp-14#MISS | NEW top-5 FPs: ev-ip-03
+    Q5      R@5=1.00 R@10=1.00 P@5=0.60 | pcn-03#1, cp-03#5, cp-01#2 | NEW top-5 FPs: ev-pcn-05
+    Q6      R@5=0.67 R@10=1.00 P@5=0.40 | ip-07#1, cp-07#4, cp-09#6 | NEW top-5 FPs: ev-ip-08
+    Q8      R@5=1.00 R@10=1.00 P@5=0.20 | cp-12#1 | NEW top-5 FPs: ev-cp-16
+    Q4+D7   R@5=0.00 R@10=0.50 P@5=0.00 | cp-07#6, cp-14#MISS | NEW top-5 FPs: ev-h01,ev-h04,ev-h02,ev-h03
+
+--- 2. AGGREGATES (7 quality-corpus queries; D7 separate) ---
+  cand | microR@5 microR@10 macroP@5 | Q1rank D7goldRank D7R@5 D7R@10
+  a     | 0.867    0.867     0.371    | pcn-03#4 cp-07#7    0.00  0.50
+  b1    | 0.867    0.867     0.371    | pcn-03#4 cp-07#7    0.00  0.50
+  b2    | 0.867    0.867     0.371    | pcn-03#4 cp-07#7    0.00  0.50
+  g     | 0.867    0.867     0.371    | pcn-03#4 cp-07#7    0.00  0.50
+  d1    | 0.867    0.867     0.371    | pcn-03#1 cp-07#5    0.50  0.50
+  d2    | 0.867    0.867     0.371    | pcn-03#1 cp-07#5    0.50  0.50
+  e     | 0.867    0.867     0.371    | pcn-03#1 cp-07#6    0.00  0.50
+  P1    | 0.800    0.867     0.343    | pcn-03#1 cp-07#5    0.50  0.50
+  P2    | 0.800    0.867     0.343    | pcn-03#1 cp-07#6    0.00  0.50
+
+--- 3. D8b ADVERSARIAL STALE PAIR (old ev-cp-15 vs new ev-cp-16) ---
+  [a  ] old=2 new=5 OLD ABOVE NEW (unchanged)
+  [b1 ] old=2 new=5 OLD ABOVE NEW (unchanged)
+  [b2 ] old=2 new=5 OLD ABOVE NEW (unchanged)
+  [g  ] old=2 new=6 OLD ABOVE NEW (unchanged)
+  [d1 ] old=1 new=5 OLD ABOVE NEW (unchanged)
+  [d2 ] old=1 new=5 OLD ABOVE NEW (unchanged)
+  [e  ] old=1 new=5 OLD ABOVE NEW (unchanged)
+  [P1 ] old=1 new=4 OLD ABOVE NEW (unchanged)
+  [P2 ] old=1 new=4 OLD ABOVE NEW (unchanged)
+  --- z recency-multiplier counterfactuals (b2+d2 base, R = boost strength) ---
+  zR=0.5 old=1 new=4 OLD still above NEW | Q1 gold rank under z: 1
+  zR=1.0 old=2 new=4 OLD still above NEW | Q1 gold rank under z: 1
+  zR=2.0 old=2 new=3 OLD still above NEW | Q1 gold rank under z: 1
+
+--- 4. DETERMINISM + FALLBACK PRESERVATION ---
+  [a  ] deterministic=true fallback==pre-M4-C=true
+  [b1 ] deterministic=true fallback==pre-M4-C=true
+  [b2 ] deterministic=true fallback==pre-M4-C=true
+  [g  ] deterministic=true fallback==pre-M4-C=true
+  [d1 ] deterministic=true fallback==pre-M4-C=true
+  [d2 ] deterministic=true fallback==pre-M4-C=true
+  [e  ] deterministic=true fallback==pre-M4-C=true
+  [P1 ] deterministic=true fallback==pre-M4-C=true
+  [P2 ] deterministic=true fallback==pre-M4-C=true
+  fold-induced fallback erosion probes (queries with only morphological anchors):
+    [a  ] 'preferences for commuting' vs 'Stated a preference...' → tier-1 match=false
+    [b1 ] 'preferences for commuting' vs 'Stated a preference...' → tier-1 match=true
+    [b2 ] 'preferences for commuting' vs 'Stated a preference...' → tier-1 match=true
+
+--- 5. RENDER SIMULATION (1200-char container, re-derived; validate vs measured) ---
+  VALIDATION Q1: sim(rendered=7, trunc=true, gold=1) vs measured(7, true, 1) → OK
+  VALIDATION Q3: sim(rendered=6, trunc=false, gold=2) vs measured(6, false, 2) → OK
+  VALIDATION Q5: sim(rendered=7, trunc=true, gold=3) vs measured(7, true, 3) → OK
+  VALIDATION Q4+D7: sim(rendered=7, gold=1) vs measured(7, 1) → OK
+  SIMULATOR VALIDATED = true
+  candidate | query | renderedIds(top of order) | goldRendered
+  a   | Q1     | ev-ip-04,ev-cp-07,ev-itp-06,ev-pcn-03,ev-io-08,ev-pcn-07,ev-ip-07 | gold=1/1
+  a   | Q3     | ev-cp-03,ev-itp-02,ev-cp-01,ev-ip-07,ev-cp-15,ev-itp-08 | gold=2/3
+  a   | Q5     | ev-ip-04,ev-cp-01,ev-itp-02,ev-pcn-03,ev-cp-03,ev-ip-07 | gold=3/3
+  a   | Q4+D7  | ev-s36,ev-h01,ev-h04,ev-h02,ev-h03,ev-s26,ev-cp-07 | gold=1/2
+  b2  | Q1     | ev-ip-04,ev-cp-07,ev-itp-06,ev-pcn-03,ev-io-08,ev-pcn-07,ev-ip-07 | gold=1/1
+  b2  | Q3     | ev-cp-03,ev-itp-02,ev-pcn-05,ev-cp-01,ev-ip-07,ev-cp-15 | gold=2/3
+  b2  | Q5     | ev-ip-04,ev-cp-01,ev-itp-02,ev-pcn-03,ev-cp-03,ev-pcn-05,ev-ip-07 | gold=3/3
+  b2  | Q4+D7  | ev-s36,ev-h01,ev-h04,ev-h02,ev-h03,ev-ip-03 | gold=0/2
+  d2  | Q1     | ev-pcn-03,ev-ip-04,ev-cp-07,ev-itp-06,ev-pcn-07,ev-io-08,ev-ip-07 | gold=1/1
+  d2  | Q3     | ev-cp-03,ev-cp-01,ev-itp-02,ev-ip-07,ev-cp-15,ev-itp-08 | gold=2/3
+  d2  | Q5     | ev-ip-04,ev-cp-01,ev-itp-02,ev-pcn-03,ev-cp-03,ev-ip-07 | gold=3/3
+  d2  | Q4+D7  | ev-h01,ev-h04,ev-h02,ev-h03,ev-cp-07,ev-pcn-10 | gold=1/2
+  P1  | Q1     | ev-pcn-03,ev-ip-04,ev-cp-07,ev-itp-06,ev-pcn-07,ev-io-08,ev-ip-07 | gold=1/1
+  P1  | Q3     | ev-cp-03,ev-cp-01,ev-itp-02,ev-pcn-05,ev-ip-07,ev-cp-15 | gold=2/3
+  P1  | Q5     | ev-pcn-03,ev-ip-04,ev-cp-01,ev-itp-02,ev-pcn-05,ev-cp-03,ev-ip-07 | gold=3/3
+  P1  | Q4+D7  | ev-h01,ev-h04,ev-h02,ev-h03,ev-cp-07,ev-pcn-10 | gold=1/2
+  P2  | Q1     | ev-pcn-03,ev-ip-04,ev-cp-07,ev-itp-06,ev-pcn-07,ev-io-08,ev-ip-07 | gold=1/1
+  P2  | Q3     | ev-cp-03,ev-cp-01,ev-pcn-05,ev-itp-02,ev-ip-07,ev-cp-15 | gold=2/3
+  P2  | Q5     | ev-pcn-03,ev-cp-01,ev-pcn-05,ev-ip-04,ev-cp-03,ev-itp-02,ev-ip-07 | gold=3/3
+  P2  | Q4+D7  | ev-pcn-10,ev-h01,ev-h04,ev-h02,ev-h03,ev-cp-07 | gold=1/2
+
+--- 6. SCALE TIMING (pure selection; production a vs P1 vs P2) ---
+  n=1000 [a  ] median=1.889ms mean=3.031ms plantRank=5
+  n=1000 [P1 ] median=2.802ms mean=4.003ms plantRank=1
+  n=1000 [P2 ] median=2.985ms mean=3.700ms plantRank=1
+  n=10000 [a  ] median=19.146ms mean=21.358ms plantRank=5
+  n=10000 [P1 ] median=41.653ms mean=42.204ms plantRank=1
+  n=10000 [P2 ] median=43.479ms mean=43.246ms plantRank=1
+
+--- 7. Q1 DISPLACEMENT DETAIL (what precedes the 4-token gold) ---
+  [a  ] top-6 = ev-ip-04, ev-cp-07, ev-itp-06, ev-pcn-03, ev-io-08, ev-pcn-07
+  [d2 ] top-6 = ev-pcn-03, ev-ip-04, ev-cp-07, ev-itp-06, ev-pcn-07, ev-io-08
+  [P1 ] top-6 = ev-pcn-03, ev-ip-04, ev-cp-07, ev-itp-06, ev-pcn-07, ev-io-08
+
+--- 8. D7 TOP-8 DETAIL ---
+  [a  ] top-8 = ev-s36, ev-h01, ev-h04, ev-h02, ev-h03, ev-s26, ev-cp-07, ev-s17
+  [b2 ] top-8 = ev-s36, ev-h01, ev-h04, ev-h02, ev-h03, ev-ip-03, ev-cp-07, ev-s17
+  [g  ] top-8 = ev-s01, ev-h01, ev-h04, ev-pcn-10, ev-h03, ev-s02, ev-cp-07, ev-s06
+  [d2 ] top-8 = ev-h01, ev-h04, ev-h02, ev-h03, ev-cp-07, ev-pcn-10, ev-s36, ev-s29
+  [P1 ] top-8 = ev-h01, ev-h04, ev-h02, ev-h03, ev-cp-07, ev-pcn-10, ev-s36, ev-s29
+  [P2 ] top-8 = ev-pcn-10, ev-h01, ev-h04, ev-h02, ev-h03, ev-cp-07, ev-s01, ev-s03
+  [e  ] top-8 = ev-pcn-10, ev-h01, ev-h04, ev-h02, ev-h03, ev-cp-07, ev-s36, ev-s29
+
+--- 9. TIER-1 SIZE (match surface; Q2 & Q6 morphology-sensitive queries) ---
+  Q2 [a] tier1=3
+  Q2 [b2] tier1=3
+  Q6 [a] tier1=5
+  Q6 [b2] tier1=6
+
+=================================================================================
+COUNTERFACTUAL EVALUATION COMPLETE
+=================================================================================
+

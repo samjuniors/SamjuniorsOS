@@ -1,0 +1,709 @@
+     1→     1→import {
+     2→     2→  EvidenceSource,
+     3→     3→  EpistemicSignal,
+     4→     4→  EpistemicClaim,
+     5→     5→  CanonicalFact,
+     6→     6→  VerificationPolicyResult,
+     7→     7→  GovernedMemoryObject,
+     8→     8→} from '@/types/epistemic';
+     9→     9→import { AgentRole } from '@/types/os';
+    10→    10→import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+    11→    11→import { prisma } from '@/lib/server/db/prisma';
+    12→    12→import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/db/authority';
+    13→    13→import { extractTokens } from '@/lib/server/knowledge/knowledge-store';
+    14→    14→
+    15→    15→/**
+    16→    16→ * M5.2 — query-conditioned canonical-fact retrieval parameters.
+    17→    17→ *
+    18→    18→ * LIFECYCLE AUTHORITY (unchanged by M5.2): validityState remains the ONLY
+    19→    19→ * eligibility authority for truth-bearing rendering. `includeSuperseded`
+    20→    20→ * exists so a HISTORY-intent caller can retrieve superseded facts as clearly
+    21→    21→ * labeled historical evidence — it NEVER changes what counts as current
+    22→    22→ * truth (slice 4A renders only active facts; superseded facts render only
+    23→    23→ * under a non-truth-bearing historical projection in context-assembly).
+    24→    24→ */
+    25→    25→export interface FactQueryParams {
+    26→    26→  queryText: string;
+    27→    27→  /** Maximum number of facts to return (default 5). */
+    28→    28→  limit?: number;
+    29→    29→  /** Include validityState === 'superseded' facts (history intent). */
+    30→    30→  includeSuperseded?: boolean;
+    31→    31→}
+    32→    32→
+    33→    33→export interface IEpistemicClaimStore {
+    34→    34→  saveSource(source: EvidenceSource): Promise<void>;
+    35→    35→  getSource(id: string): Promise<EvidenceSource | null>;
+    36→    36→  listSources(): Promise<EvidenceSource[]>;
+    37→    37→  saveSignal(signal: EpistemicSignal): Promise<void>;
+    38→    38→  getSignal(id: string): Promise<EpistemicSignal | null>;
+    39→    39→  saveClaim(claim: EpistemicClaim): Promise<void>;
+    40→    40→  getClaim(id: string): Promise<EpistemicClaim | null>;
+    41→    41→  listClaims(filter?: {
+    42→    42→    status?: EpistemicClaim['verificationStatus'];
+    43→    43→    category?: EpistemicClaim['category'];
+    44→    44→    proposedBy?: EpistemicClaim['proposedBy'];
+    45→    45→  }): Promise<EpistemicClaim[]>;
+    46→    46→  recordVerification(verification: VerificationPolicyResult): Promise<void>;
+    47→    47→  getVerification(claimId: string): Promise<VerificationPolicyResult | null>;
+    48→    48→  saveFact(fact: CanonicalFact): Promise<void>;
+    49→    49→  getFact(id: string): Promise<CanonicalFact | null>;
+    50→    50→  listActiveFacts(filter?: {
+    51→    51→    category?: CanonicalFact['category'];
+    52→    52→    subject?: string;
+    53→    53→  }): Promise<CanonicalFact[]>;
+    54→    54→  listAllFacts(): Promise<CanonicalFact[]>;
+    55→    55→  queryFacts(params: FactQueryParams): Promise<CanonicalFact[]>;
+    56→    56→  markFactSuperseded(factId: string, supersededById: string): Promise<void>;
+    57→    57→}
+    58→    58→
+    59→    59→/**
+    60→    60→ * M5.2 — deterministic lexical fact scoring, shared by both store modes so
+    61→    61→ * local and authoritative retrieval rank identically. Uses the SAME shared
+    62→    62→ * extractTokens/stop-word pipeline as CompanyKnowledgeStore.queryKnowledge
+    63→    63→ * (M4-C convention — no second tokenizer). Subject identifiers tokenize
+    64→    64→ * with underscores as spaces ('lumora_pricing' → 'lumora pricing') so a
+    65→    65→ * stored subject remains reachable from natural-language queries.
+    66→    66→ * Pure function; zero-overlap facts score 0.
+    67→    67→ */
+    68→    68→export function scoreFactAgainstQuery(fact: CanonicalFact, queryText: string): number {
+    69→    69→  const queryTokens = new Set(extractTokens(queryText));
+    70→    70→  if (queryTokens.size === 0) return 0;
+    71→    71→  const factTokens = new Set([
+    72→    72→    ...extractTokens(fact.statement),
+    73→    73→    ...extractTokens((fact.subject || '').replace(/_/g, ' ')),
+    74→    74→  ]);
+    75→    75→  let matched = 0;
+    76→    76→  for (const token of queryTokens) {
+    77→    77→    if (factTokens.has(token)) matched++;
+    78→    78→  }
+    79→    79→  return matched;
+    80→    80→}
+    81→    81→
+    82→    82→/**
+    83→    83→ * M5.2 — deterministic query-conditioned fact ranking (shared by both
+    84→    84→ * modes): score DESC, then promotedAt DESC, then id ASC (total stable order).
+    85→    85→ * Zero-score facts are excluded (a fact that shares no token with the query
+    86→    86→ * is not query-relevant; the CALLER applies the documented never-empty
+    87→    87→ * fallback when every candidate scores zero).
+    88→    88→ */
+    89→    89→export function rankFactsForQuery(
+    90→    90→  facts: CanonicalFact[],
+    91→    91→  queryText: string,
+    92→    92→  limit: number
+    93→    93→): CanonicalFact[] {
+    94→    94→  return facts
+    95→    95→    .map((fact) => ({ fact, score: scoreFactAgainstQuery(fact, queryText) }))
+    96→    96→    .filter((entry) => entry.score > 0)
+    97→    97→    .sort((a, b) => {
+    98→    98→      if (b.score !== a.score) return b.score - a.score;
+    99→    99→      const ta = Date.parse(a.fact.promotedAt || '') || 0;
+   100→   100→      const tb = Date.parse(b.fact.promotedAt || '') || 0;
+   101→   101→      if (tb !== ta) return tb - ta;
+   102→   102→      return a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0;
+   103→   103→    })
+   104→   104→    .slice(0, limit)
+   105→   105→    .map((entry) => entry.fact);
+   106→   106→}
+   107→   107→
+   108→   108→/**
+   109→   109→ * Authoritative Epistemic Store (target: PostgreSQL — see M0 naming note).
+   110→   110→ * DATABASE REALITY: in this sandbox branch the Prisma schema is the SQLite port,
+   111→   111→ * so "Postgres*" classes currently run against SQLite via Prisma. The class
+   112→   112→ * names refer to the target architecture (M6 migration milestone).
+   113→   113→ * Direct persistence via Prisma. Fail-closed on database failure.
+   114→   114→ */
+   115→   115→export class PostgresEpistemicStore implements IEpistemicClaimStore {
+   116→   116→  private static instance: PostgresEpistemicStore;
+   117→   117→
+   118→   118→  public static getInstance(): PostgresEpistemicStore {
+   119→   119→    if (!PostgresEpistemicStore.instance) {
+   120→   120→      PostgresEpistemicStore.instance = new PostgresEpistemicStore();
+   121→   121→    }
+   122→   122→    return PostgresEpistemicStore.instance;
+   123→   123→  }
+   124→   124→
+   125→   125→  // =========================================================================
+   126→   126→  // Sources
+   127→   127→  // =========================================================================
+   128→   128→
+   129→   129→  public async saveSource(source: EvidenceSource): Promise<void> {
+   130→   130→    const db = await requireAuthoritativeDatabase();
+   131→   131→    await db.epistemicSource.upsert({
+   132→   132→      where: { id: source.id },
+   133→   133→      create: {
+   134→   134→        id: source.id,
+   135→   135→        sourceSystem: source.sourceSystem,
+   136→   136→        uri: source.uri || null,
+   137→   137→        title: source.title,
+   138→   138→        rawContent: source.rawContent,
+   139→   139→        contentHash: source.contentHash,
+   140→   140→        capturedAt: new Date(source.capturedAt),
+   141→   141→        capturedBy: source.capturedBy,
+   142→   142→        metadata: (source.metadata as any) ?? {},
+   143→   143→        provenanceKind: source.provenanceKind || 'live_operational',
+   144→   144→      },
+   145→   145→      update: {
+   146→   146→        title: source.title,
+   147→   147→        rawContent: source.rawContent,
+   148→   148→        metadata: (source.metadata as any) ?? {},
+   149→   149→        provenanceKind: source.provenanceKind || 'live_operational',
+   150→   150→      },
+   151→   151→    });
+   152→   152→  }
+   153→   153→
+   154→   154→  public async getSource(id: string): Promise<EvidenceSource | null> {
+   155→   155→    const db = await requireAuthoritativeDatabase();
+   156→   156→    const found = await db.epistemicSource.findUnique({ where: { id } });
+   157→   157→    if (!found) return null;
+   158→   158→    return {
+   159→   159→      id: found.id,
+   160→   160→      sourceSystem: found.sourceSystem as any,
+   161→   161→      uri: found.uri || undefined,
+   162→   162→      title: found.title,
+   163→   163→      rawContent: found.rawContent,
+   164→   164→      contentHash: found.contentHash,
+   165→   165→      capturedAt: found.capturedAt.toISOString(),
+   166→   166→      capturedBy: found.capturedBy as AgentRole | 'founder' | 'system',
+   167→   167→      metadata: (found.metadata as any) || {},
+   168→   168→      provenanceKind: found.provenanceKind as any,
+   169→   169→    };
+   170→   170→  }
+   171→   171→
+   172→   172→  public async listSources(): Promise<EvidenceSource[]> {
+   173→   173→    const db = await requireAuthoritativeDatabase();
+   174→   174→    const records = await db.epistemicSource.findMany({
+   175→   175→      orderBy: { createdAt: 'desc' },
+   176→   176→    });
+   177→   177→    return records.map((found) => ({
+   178→   178→      id: found.id,
+   179→   179→      sourceSystem: found.sourceSystem as any,
+   180→   180→      uri: found.uri || undefined,
+   181→   181→      title: found.title,
+   182→   182→      rawContent: found.rawContent,
+   183→   183→      contentHash: found.contentHash,
+   184→   184→      capturedAt: found.capturedAt.toISOString(),
+   185→   185→      capturedBy: found.capturedBy as AgentRole | 'founder' | 'system',
+   186→   186→      metadata: (found.metadata as any) || {},
+   187→   187→      provenanceKind: found.provenanceKind as any,
+   188→   188→    }));
+   189→   189→  }
+   190→   190→
+   191→   191→  // =========================================================================
+   192→   192→  // Signals
+   193→   193→  // =========================================================================
+   194→   194→
+   195→   195→  public async saveSignal(signal: EpistemicSignal): Promise<void> {
+   196→   196→    const db = await requireAuthoritativeDatabase();
+   197→   197→    await db.epistemicSignal.upsert({
+   198→   198→      where: { id: signal.id },
+   199→   199→      create: {
+   200→   200→        id: signal.id,
+   201→   201→        sourceId: signal.sourceId,
+   202→   202→        signalType: signal.signalType,
+   203→   203→        extractedObservation: signal.extractedObservation,
+   204→   204→        data: (signal.data as any) ?? {},
+   205→   205→        confidence: signal.confidence || 'high_confidence',
+   206→   206→        timestamp: new Date(signal.timestamp),
+   207→   207→      },
+   208→   208→      update: {
+   209→   209→        extractedObservation: signal.extractedObservation,
+   210→   210→        data: (signal.data as any) ?? {},
+   211→   211→        confidence: signal.confidence || 'high_confidence',
+   212→   212→      },
+   213→   213→    });
+   214→   214→  }
+   215→   215→
+   216→   216→  public async getSignal(id: string): Promise<EpistemicSignal | null> {
+   217→   217→    const db = await requireAuthoritativeDatabase();
+   218→   218→    const found = await db.epistemicSignal.findUnique({ where: { id } });
+   219→   219→    if (!found) return null;
+   220→   220→    return {
+   221→   221→      id: found.id,
+   222→   222→      sourceId: found.sourceId,
+   223→   223→      signalType: found.signalType as any,
+   224→   224→      extractedObservation: found.extractedObservation,
+   225→   225→      data: (found.data as Record<string, any>) || undefined,
+   226→   226→      confidence: found.confidence as any,
+   227→   227→      timestamp: found.timestamp.toISOString(),
+   228→   228→    };
+   229→   229→  }
+   230→   230→
+   231→   231→  // =========================================================================
+   232→   232→  // Claims
+   233→   233→  // =========================================================================
+   234→   234→
+   235→   235→  public async saveClaim(claim: EpistemicClaim): Promise<void> {
+   236→   236→    const db = await requireAuthoritativeDatabase();
+   237→   237→    await db.epistemicClaim.upsert({
+   238→   238→      where: { id: claim.id },
+   239→   239→      create: {
+   240→   240→        id: claim.id,
+   241→   241→        sourceId: claim.sourceId || null,
+   242→   242→        signalId: claim.signalId || null,
+   243→   243→        statement: claim.statement,
+   244→   244→        subject: claim.subject,
+   245→   245→        category: claim.category,
+   246→   246→        proposedBy: claim.proposedBy,
+   247→   247→        confidence: claim.confidence || 'unverified',
+   248→   248→        verificationStatus: claim.verificationStatus || 'pending',
+   249→   249→        evidenceReferences: (claim.evidenceReferences as any) ?? [],
+   250→   250→        verificationNotes: claim.verificationNotes || null,
+   251→   251→        reviewedAt: claim.reviewedAt ? new Date(claim.reviewedAt) : null,
+   252→   252→        reviewedBy: claim.reviewedBy || null,
+   253→   253→        rejectionReason: claim.rejectionReason || null,
+   254→   254→        createdAt: new Date(claim.createdAt),
+   255→   255→      },
+   256→   256→      update: {
+   257→   257→        statement: claim.statement,
+   258→   258→        subject: claim.subject,
+   259→   259→        category: claim.category,
+   260→   260→        confidence: claim.confidence || 'unverified',
+   261→   261→        verificationStatus: claim.verificationStatus || 'pending',
+   262→   262→        evidenceReferences: (claim.evidenceReferences as any) ?? [],
+   263→   263→        verificationNotes: claim.verificationNotes || null,
+   264→   264→        reviewedAt: claim.reviewedAt ? new Date(claim.reviewedAt) : null,
+   265→   265→        reviewedBy: claim.reviewedBy || null,
+   266→   266→        rejectionReason: claim.rejectionReason || null,
+   267→   267→      },
+   268→   268→    });
+   269→   269→  }
+   270→   270→
+   271→   271→  public async getClaim(id: string): Promise<EpistemicClaim | null> {
+   272→   272→    const db = await requireAuthoritativeDatabase();
+   273→   273→    const found = await db.epistemicClaim.findUnique({ where: { id } });
+   274→   274→    if (!found) return null;
+   275→   275→    return this.mapPrismaToClaim(found);
+   276→   276→  }
+   277→   277→
+   278→   278→  public async listClaims(filter?: {
+   279→   279→    status?: EpistemicClaim['verificationStatus'];
+   280→   280→    category?: EpistemicClaim['category'];
+   281→   281→    proposedBy?: EpistemicClaim['proposedBy'];
+   282→   282→  }): Promise<EpistemicClaim[]> {
+   283→   283→    const db = await requireAuthoritativeDatabase();
+   284→   284→    const where: any = {};
+   285→   285→    if (filter?.status) where.verificationStatus = filter.status;
+   286→   286→    if (filter?.category) where.category = filter.category;
+   287→   287→    if (filter?.proposedBy) where.proposedBy = filter.proposedBy;
+   288→   288→
+   289→   289→    const claims = await db.epistemicClaim.findMany({
+   290→   290→      where,
+   291→   291→      orderBy: { createdAt: 'desc' },
+   292→   292→    });
+   293→   293→
+   294→   294→    return claims.map((c) => this.mapPrismaToClaim(c));
+   295→   295→  }
+   296→   296→
+   297→   297→  // =========================================================================
+   298→   298→  // Verifications
+   299→   299→  // =========================================================================
+   300→   300→
+   301→   301→  public async recordVerification(verification: VerificationPolicyResult): Promise<void> {
+   302→   302→    const db = await requireAuthoritativeDatabase();
+   303→   303→    await db.epistemicVerification.upsert({
+   304→   304→      where: { claimId: verification.claimId },
+   305→   305→      create: {
+   306→   306→        claimId: verification.claimId,
+   307→   307→        passed: verification.passed,
+   308→   308→        policyOutcome: verification.policyOutcome,
+   309→   309→        conflictingFactIds: (verification.conflictingFactIds as any) ?? [],
+   310→   310→        reason: verification.reason,
+   311→   311→        verifiedAt: new Date(verification.verifiedAt),
+   312→   312→        verifiedBy: verification.verifiedBy,
+   313→   313→        precedenceNote: verification.precedenceNote || null,
+   314→   314→      },
+   315→   315→      update: {
+   316→   316→        passed: verification.passed,
+   317→   317→        policyOutcome: verification.policyOutcome,
+   318→   318→        conflictingFactIds: (verification.conflictingFactIds as any) ?? [],
+   319→   319→        reason: verification.reason,
+   320→   320→        verifiedAt: new Date(verification.verifiedAt),
+   321→   321→        verifiedBy: verification.verifiedBy,
+   322→   322→        precedenceNote: verification.precedenceNote || null,
+   323→   323→      },
+   324→   324→    });
+   325→   325→  }
+   326→   326→
+   327→   327→  public async getVerification(claimId: string): Promise<VerificationPolicyResult | null> {
+   328→   328→    const db = await requireAuthoritativeDatabase();
+   329→   329→    const found = await db.epistemicVerification.findUnique({ where: { claimId } });
+   330→   330→    if (!found) return null;
+   331→   331→    return {
+   332→   332→      claimId: found.claimId,
+   333→   333→      passed: found.passed,
+   334→   334→      policyOutcome: found.policyOutcome as any,
+   335→   335→      conflictingFactIds: (found.conflictingFactIds as any) || [],
+   336→   336→      reason: found.reason,
+   337→   337→      verifiedAt: found.verifiedAt.toISOString(),
+   338→   338→      verifiedBy: found.verifiedBy,
+   339→   339→      precedenceNote: found.precedenceNote || undefined,
+   340→   340→    };
+   341→   341→  }
+   342→   342→
+   343→   343→  // =========================================================================
+   344→   344→  // Canonical Facts
+   345→   345→  // =========================================================================
+   346→   346→
+   347→   347→  public async saveFact(fact: CanonicalFact): Promise<void> {
+   348→   348→    const db = await requireAuthoritativeDatabase();
+   349→   349→    await db.canonicalFact.upsert({
+   350→   350→      where: { id: fact.id },
+   351→   351→      create: {
+   352→   352→        id: fact.id,
+   353→   353→        claimId: fact.claimId,
+   354→   354→        sourceId: fact.sourceId || null,
+   355→   355→        statement: fact.statement,
+   356→   356→        subject: fact.subject,
+   357→   357→        category: fact.category,
+   358→   358→        validityState: fact.validityState || 'active',
+   359→   359→        supersededById: fact.supersededById || null,
+   360→   360→        confidence: fact.confidence || 'verified_fact',
+   361→   361→        promotedAt: new Date(fact.promotedAt),
+   362→   362→        promotedBy: fact.promotedBy,
+   363→   363→        provenance: (fact.provenance as any) ?? {},
+   364→   364→      },
+   365→   365→      update: {
+   366→   366→        statement: fact.statement,
+   367→   367→        subject: fact.subject,
+   368→   368→        category: fact.category,
+   369→   369→        validityState: fact.validityState || 'active',
+   370→   370→        supersededById: fact.supersededById || null,
+   371→   371→        confidence: fact.confidence || 'verified_fact',
+   372→   372→        provenance: (fact.provenance as any) ?? {},
+   373→   373→      },
+   374→   374→    });
+   375→   375→  }
+   376→   376→
+   377→   377→  public async getFact(id: string): Promise<CanonicalFact | null> {
+   378→   378→    const db = await requireAuthoritativeDatabase();
+   379→   379→    const found = await db.canonicalFact.findUnique({ where: { id } });
+   380→   380→    if (!found) return null;
+   381→   381→    return this.mapPrismaToFact(found);
+   382→   382→  }
+   383→   383→
+   384→   384→  public async listActiveFacts(filter?: {
+   385→   385→    category?: CanonicalFact['category'];
+   386→   386→    subject?: string;
+   387→   387→  }): Promise<CanonicalFact[]> {
+   388→   388→    const db = await requireAuthoritativeDatabase();
+   389→   389→    const where: any = { validityState: 'active' };
+   390→   390→    if (filter?.category) where.category = filter.category;
+   391→   391→    if (filter?.subject) where.subject = filter.subject;
+   392→   392→
+   393→   393→    const facts = await db.canonicalFact.findMany({
+   394→   394→      where,
+   395→   395→      orderBy: { promotedAt: 'desc' },
+   396→   396→    });
+   397→   397→
+   398→   398→    return facts.map((f) => this.mapPrismaToFact(f));
+   399→   399→  }
+   400→   400→
+   401→   401→  /**
+   402→   402→   * M5.2 — every fact regardless of validityState (change enumeration /
+   403→   403→   * supersession-history reads). Ordered promotedAt DESC, id ASC.
+   404→   404→   */
+   405→   405→  public async listAllFacts(): Promise<CanonicalFact[]> {
+   406→   406→    const db = await requireAuthoritativeDatabase();
+   407→   407→    const facts = await db.canonicalFact.findMany({
+   408→   408→      orderBy: [{ promotedAt: 'desc' }, { id: 'asc' }],
+   409→   409→    });
+   410→   410→    return facts.map((f) => this.mapPrismaToFact(f));
+   411→   411→  }
+   412→   412→
+   413→   413→  /**
+   414→   414→   * M5.2 — query-conditioned fact retrieval (authoritative mode). Fetches
+   415→   415→   * the eligible rows (active, plus superseded when includeSuperseded) and
+   416→   416→   * applies the shared deterministic rankFactsForQuery — the SAME ranking
+   417→   417→   * the local mode uses, so retrieval semantics never diverge by mode.
+   418→   418→   */
+   419→   419→  public async queryFacts(params: FactQueryParams): Promise<CanonicalFact[]> {
+   420→   420→    const db = await requireAuthoritativeDatabase();
+   421→   421→    const where: any = params.includeSuperseded
+   422→   422→      ? { validityState: { in: ['active', 'superseded'] } }
+   423→   423→      : { validityState: 'active' };
+   424→   424→    const facts = await db.canonicalFact.findMany({ where });
+   425→   425→    return rankFactsForQuery(facts.map((f) => this.mapPrismaToFact(f)), params.queryText, params.limit ?? 5);
+   426→   426→  }
+   427→   427→
+   428→   428→  public async markFactSuperseded(factId: string, supersededById: string): Promise<void> {
+   429→   429→    const db = await requireAuthoritativeDatabase();
+   430→   430→    await db.canonicalFact.update({
+   431→   431→      where: { id: factId },
+   432→   432→      data: {
+   433→   433→        validityState: 'superseded',
+   434→   434→        supersededById,
+   435→   435→      },
+   436→   436→    });
+   437→   437→  }
+   438→   438→
+   439→   439→  private mapPrismaToClaim(c: any): EpistemicClaim {
+   440→   440→    return {
+   441→   441→      id: c.id,
+   442→   442→      sourceId: c.sourceId || undefined,
+   443→   443→      signalId: c.signalId || undefined,
+   444→   444→      statement: c.statement,
+   445→   445→      subject: c.subject,
+   446→   446→      category: c.category as any,
+   447→   447→      proposedBy: c.proposedBy,
+   448→   448→      confidence: c.confidence as any,
+   449→   449→      verificationStatus: c.verificationStatus as any,
+   450→   450→      evidenceReferences: (c.evidenceReferences as any) || [],
+   451→   451→      verificationNotes: c.verificationNotes || undefined,
+   452→   452→      reviewedAt: c.reviewedAt ? c.reviewedAt.toISOString() : undefined,
+   453→   453→      reviewedBy: c.reviewedBy || undefined,
+   454→   454→      rejectionReason: c.rejectionReason || undefined,
+   455→   455→      createdAt: c.createdAt.toISOString(),
+   456→   456→    };
+   457→   457→  }
+   458→   458→
+   459→   459→  private mapPrismaToFact(f: any): CanonicalFact {
+   460→   460→    return {
+   461→   461→      id: f.id,
+   462→   462→      claimId: f.claimId,
+   463→   463→      sourceId: f.sourceId || undefined,
+   464→   464→      statement: f.statement,
+   465→   465→      subject: f.subject,
+   466→   466→      category: f.category as any,
+   467→   467→      validityState: f.validityState as any,
+   468→   468→      supersededById: f.supersededById || undefined,
+   469→   469→      confidence: f.confidence as any,
+   470→   470→      promotedAt: f.promotedAt.toISOString(),
+   471→   471→      promotedBy: f.promotedBy,
+   472→   472→      provenance: (f.provenance as any) || {},
+   473→   473→    };
+   474→   474→  }
+   475→   475→}
+   476→   476→
+   477→   477→/**
+   478→   478→ * Dual-Mode Epistemic Store.
+   479→   479→ * In Authoritative Mode: delegates directly to PostgresEpistemicStore (fail-closed).
+   480→   480→ * In Test/Local Mode: uses fast in-memory maps with local file persistence.
+   481→   481→ */
+   482→   482→export class EpistemicClaimStore implements IEpistemicClaimStore {
+   483→   483→  private static instance: EpistemicClaimStore | null = null;
+   484→   484→
+   485→   485→  public sources: Map<string, EvidenceSource> = new Map();
+   486→   486→  public signals: Map<string, EpistemicSignal> = new Map();
+   487→   487→  public claims: Map<string, EpistemicClaim> = new Map();
+   488→   488→  public facts: Map<string, CanonicalFact> = new Map();
+   489→   489→  public verifications: Map<string, VerificationPolicyResult> = new Map();
+   490→   490→
+   491→   491→  constructor() {
+   492→   492→    this.loadFromDurableStorage();
+   493→   493→  }
+   494→   494→
+   495→   495→  public static getInstance(): EpistemicClaimStore {
+   496→   496→    if (!EpistemicClaimStore.instance) {
+   497→   497→      EpistemicClaimStore.instance = new EpistemicClaimStore();
+   498→   498→    }
+   499→   499→    return EpistemicClaimStore.instance;
+   500→   500→  }
+   501→   501→
+   502→   502→  public loadFromDurableStorage(): void {
+   503→   503→    try {
+   504→   504→      const fileStore = DurableFileStore.getInstance();
+   505→   505→
+   506→   506→      const sourcesDisk = fileStore.readCollection<EvidenceSource>('epistemic_sources');
+   507→   507→      Object.values(sourcesDisk).forEach((s) => this.sources.set(s.id, s));
+   508→   508→
+   509→   509→      const signalsDisk = fileStore.readCollection<EpistemicSignal>('epistemic_signals');
+   510→   510→      Object.values(signalsDisk).forEach((sig) => this.signals.set(sig.id, sig));
+   511→   511→
+   512→   512→      const claimsDisk = fileStore.readCollection<EpistemicClaim>('epistemic_claims');
+   513→   513→      Object.values(claimsDisk).forEach((c) => this.claims.set(c.id, c));
+   514→   514→
+   515→   515→      const factsDisk = fileStore.readCollection<CanonicalFact>('canonical_facts');
+   516→   516→      Object.values(factsDisk).forEach((f) => this.facts.set(f.id, f));
+   517→   517→
+   518→   518→      const verificationsDisk = fileStore.readCollection<VerificationPolicyResult>('epistemic_verifications');
+   519→   519→      Object.values(verificationsDisk).forEach((v) => this.verifications.set(v.claimId, v));
+   520→   520→    } catch (err) {
+   521→   521→      console.warn('[EpistemicClaimStore] Failed to load from durable storage:', err);
+   522→   522→    }
+   523→   523→  }
+   524→   524→
+   525→   525→  public async saveSource(source: EvidenceSource): Promise<void> {
+   526→   526→    if (isAuthoritativeMode()) {
+   527→   527→      return PostgresEpistemicStore.getInstance().saveSource(source);
+   528→   528→    }
+   529→   529→    this.sources.set(source.id, { ...source });
+   530→   530→    try {
+   531→   531→      DurableFileStore.getInstance().saveItem('epistemic_sources', source.id, source);
+   532→   532→    } catch {}
+   533→   533→  }
+   534→   534→
+   535→   535→  public async getSource(id: string): Promise<EvidenceSource | null> {
+   536→   536→    if (isAuthoritativeMode()) {
+   537→   537→      return PostgresEpistemicStore.getInstance().getSource(id);
+   538→   538→    }
+   539→   539→    const s = this.sources.get(id);
+   540→   540→    return s ? { ...s } : null;
+   541→   541→  }
+   542→   542→
+   543→   543→  public async listSources(): Promise<EvidenceSource[]> {
+   544→   544→    if (isAuthoritativeMode()) {
+   545→   545→      return PostgresEpistemicStore.getInstance().listSources();
+   546→   546→    }
+   547→   547→    return Array.from(this.sources.values());
+   548→   548→  }
+   549→   549→
+   550→   550→  public async saveSignal(signal: EpistemicSignal): Promise<void> {
+   551→   551→    if (isAuthoritativeMode()) {
+   552→   552→      return PostgresEpistemicStore.getInstance().saveSignal(signal);
+   553→   553→    }
+   554→   554→    this.signals.set(signal.id, { ...signal });
+   555→   555→    try {
+   556→   556→      DurableFileStore.getInstance().saveItem('epistemic_signals', signal.id, signal);
+   557→   557→    } catch {}
+   558→   558→  }
+   559→   559→
+   560→   560→  public async getSignal(id: string): Promise<EpistemicSignal | null> {
+   561→   561→    if (isAuthoritativeMode()) {
+   562→   562→      return PostgresEpistemicStore.getInstance().getSignal(id);
+   563→   563→    }
+   564→   564→    const sig = this.signals.get(id);
+   565→   565→    return sig ? { ...sig } : null;
+   566→   566→  }
+   567→   567→
+   568→   568→  public async saveClaim(claim: EpistemicClaim): Promise<void> {
+   569→   569→    if (isAuthoritativeMode()) {
+   570→   570→      return PostgresEpistemicStore.getInstance().saveClaim(claim);
+   571→   571→    }
+   572→   572→    this.claims.set(claim.id, { ...claim });
+   573→   573→    try {
+   574→   574→      DurableFileStore.getInstance().saveItem('epistemic_claims', claim.id, claim);
+   575→   575→    } catch {}
+   576→   576→  }
+   577→   577→
+   578→   578→  public async getClaim(id: string): Promise<EpistemicClaim | null> {
+   579→   579→    if (isAuthoritativeMode()) {
+   580→   580→      return PostgresEpistemicStore.getInstance().getClaim(id);
+   581→   581→    }
+   582→   582→    const c = this.claims.get(id);
+   583→   583→    return c ? { ...c } : null;
+   584→   584→  }
+   585→   585→
+   586→   586→  public async listClaims(filter?: {
+   587→   587→    status?: EpistemicClaim['verificationStatus'];
+   588→   588→    category?: EpistemicClaim['category'];
+   589→   589→    proposedBy?: EpistemicClaim['proposedBy'];
+   590→   590→  }): Promise<EpistemicClaim[]> {
+   591→   591→    if (isAuthoritativeMode()) {
+   592→   592→      return PostgresEpistemicStore.getInstance().listClaims(filter);
+   593→   593→    }
+   594→   594→    let result = Array.from(this.claims.values());
+   595→   595→    if (filter?.status) {
+   596→   596→      result = result.filter((c) => c.verificationStatus === filter.status);
+   597→   597→    }
+   598→   598→    if (filter?.category) {
+   599→   599→      result = result.filter((c) => c.category === filter.category);
+   600→   600→    }
+   601→   601→    if (filter?.proposedBy) {
+   602→   602→      result = result.filter((c) => c.proposedBy === filter.proposedBy);
+   603→   603→    }
+   604→   604→    return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+   605→   605→  }
+   606→   606→
+   607→   607→  public async recordVerification(verification: VerificationPolicyResult): Promise<void> {
+   608→   608→    if (isAuthoritativeMode()) {
+   609→   609→      return PostgresEpistemicStore.getInstance().recordVerification(verification);
+   610→   610→    }
+   611→   611→    this.verifications.set(verification.claimId, { ...verification });
+   612→   612→    try {
+   613→   613→      DurableFileStore.getInstance().saveItem('epistemic_verifications', verification.claimId, verification);
+   614→   614→    } catch {}
+   615→   615→  }
+   616→   616→
+   617→   617→  public async getVerification(claimId: string): Promise<VerificationPolicyResult | null> {
+   618→   618→    if (isAuthoritativeMode()) {
+   619→   619→      return PostgresEpistemicStore.getInstance().getVerification(claimId);
+   620→   620→    }
+   621→   621→    const v = this.verifications.get(claimId);
+   622→   622→    return v ? { ...v } : null;
+   623→   623→  }
+   624→   624→
+   625→   625→  public async saveFact(fact: CanonicalFact): Promise<void> {
+   626→   626→    if (isAuthoritativeMode()) {
+   627→   627→      return PostgresEpistemicStore.getInstance().saveFact(fact);
+   628→   628→    }
+   629→   629→    this.facts.set(fact.id, { ...fact });
+   630→   630→    try {
+   631→   631→      DurableFileStore.getInstance().saveItem('canonical_facts', fact.id, fact);
+   632→   632→    } catch {}
+   633→   633→  }
+   634→   634→
+   635→   635→  public async getFact(id: string): Promise<CanonicalFact | null> {
+   636→   636→    if (isAuthoritativeMode()) {
+   637→   637→      return PostgresEpistemicStore.getInstance().getFact(id);
+   638→   638→    }
+   639→   639→    const f = this.facts.get(id);
+   640→   640→    return f ? { ...f } : null;
+   641→   641→  }
+   642→   642→
+   643→   643→  public async listActiveFacts(filter?: {
+   644→   644→    category?: CanonicalFact['category'];
+   645→   645→    subject?: string;
+   646→   646→  }): Promise<CanonicalFact[]> {
+   647→   647→    if (isAuthoritativeMode()) {
+   648→   648→      return PostgresEpistemicStore.getInstance().listActiveFacts(filter);
+   649→   649→    }
+   650→   650→    let result = Array.from(this.facts.values()).filter((f) => f.validityState === 'active');
+   651→   651→    if (filter?.category) {
+   652→   652→      result = result.filter((f) => f.category === filter.category);
+   653→   653→    }
+   654→   654→    if (filter?.subject) {
+   655→   655→      result = result.filter((f) => f.subject.toLowerCase() === filter.subject!.toLowerCase());
+   656→   656→    }
+   657→   657→    return result.sort((a, b) => b.promotedAt.localeCompare(a.promotedAt));
+   658→   658→  }
+   659→   659→
+   660→   660→  /**
+   661→   661→   * M5.2 — every fact regardless of validityState (local mode). Ordered
+   662→   662→   * promotedAt DESC, id ASC — identical order contract to the authoritative
+   663→   663→   * mode. Superseded facts retain their supersededById pointers.
+   664→   664→   */
+   665→   665→  public async listAllFacts(): Promise<CanonicalFact[]> {
+   666→   666→    if (isAuthoritativeMode()) {
+   667→   667→      return PostgresEpistemicStore.getInstance().listAllFacts();
+   668→   668→    }
+   669→   669→    return Array.from(this.facts.values())
+   670→   670→      .sort((a, b) => {
+   671→   671→        if (b.promotedAt !== a.promotedAt) return b.promotedAt.localeCompare(a.promotedAt);
+   672→   672→        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+   673→   673→      })
+   674→   674→      .map((f) => ({ ...f }));
+   675→   675→  }
+   676→   676→
+   677→   677→  /**
+   678→   678→   * M5.2 — query-conditioned canonical-fact retrieval (local mode).
+   679→   679→   * Deterministic lexical ranking over the shared tokenizer (see
+   680→   680→   * rankFactsForQuery). Zero-overlap facts are excluded; the CALLER applies
+   681→   681→   * the documented never-empty fallback (A0 top-3-newest) when nothing
+   682→   682→   * matches. includeSuperseded adds superseded facts to the candidate pool
+   683→   683→   * WITHOUT changing their lifecycle state or truth position.
+   684→   684→   */
+   685→   685→  public async queryFacts(params: FactQueryParams): Promise<CanonicalFact[]> {
+   686→   686→    if (isAuthoritativeMode()) {
+   687→   687→      return PostgresEpistemicStore.getInstance().queryFacts(params);
+   688→   688→    }
+   689→   689→    const pool = Array.from(this.facts.values()).filter((f) =>
+   690→   690→      params.includeSuperseded
+   691→   691→        ? f.validityState === 'active' || f.validityState === 'superseded'
+   692→   692→        : f.validityState === 'active'
+   693→   693→    );
+   694→   694→    return rankFactsForQuery(pool, params.queryText, params.limit ?? 5);
+   695→   695→  }
+   696→   696→
+   697→   697→  public async markFactSuperseded(factId: string, supersededById: string): Promise<void> {
+   698→   698→    if (isAuthoritativeMode()) {
+   699→   699→      return PostgresEpistemicStore.getInstance().markFactSuperseded(factId, supersededById);
+   700→   700→    }
+   701→   701→    const fact = this.facts.get(factId);
+   702→   702→    if (fact) {
+   703→   703→      fact.validityState = 'superseded';
+   704→   704→      fact.supersededById = supersededById;
+   705→   705→      await this.saveFact(fact);
+   706→   706→    }
+   707→   707→  }
+   708→   708→}
+   709→   709→

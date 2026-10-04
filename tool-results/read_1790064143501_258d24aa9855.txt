@@ -1,0 +1,1235 @@
+     1→/**
+     2→ * The SOFIA brain — Next.js / SSE edition.
+     3→ *
+     4→ * Ported from the bridge's brain.mjs. Same tool surface, same persona
+     5→ * machinery, same one-turn-at-a-time discipline — but the session is
+     6→ * stateless now: each POST /api/sofia/ask arrives with its own history and
+     7→ * gets one brain built for it, streaming the same frames the WebSocket used
+     8→ * to (text deltas, tool badges, blades, ui ops, provider switches, done,
+     9→ * error) down a Server-Sent-Events stream instead of a socket.
+    10→ *
+    11→ *   - chat.completions with OpenAI-style function tools, streamed as SSE,
+    12→ *     through the provider chain in providers.ts (z-ai → Gemini → local)
+    13→ *   - web_search / page_reader via functions.invoke
+    14→ *   - image_search / image generation via images.*
+    15→ *
+    16→ * The tool surface is ported from the original MCP servers so the model sees
+    17→ * the same descriptions and the browser sees the same blade/ui JSON it
+    18→ * always did. The camera tools are gone: an SSE stream is one-way, so the
+    19→ * server cannot ask the page for a frame mid-turn.
+    20→ */
+    21→
+    22→import { mkdirSync, writeFileSync } from 'node:fs'
+    23→import { join } from 'node:path'
+    24→import { openLlmStream, llmInfo, zaiClient, type LlmBody } from './providers'
+    25→import { probeUrl } from './page'
+    26→
+    27→// ---------------------------------------------------------------------------
+    28→// Persona
+    29→//
+    30→// Two layers. The SHARED block below is the operating manual — length,
+    31→// reporting, tools, blades — and never mentions the character. The CHARACTERS
+    32→// map supplies the character-specific opening: who you are, how you address
+    33→// the user, the register. personaPrompt(id) glues them.
+    34→// ---------------------------------------------------------------------------
+    35→
+    36→const SHARED = `
+    37→LENGTH. Two sentences is the ceiling in conversation; the median is under twelve
+    38→words. Every word is read aloud and the user waits in silence while it plays, so
+    39→a long answer is a failure however good it is. Length is licensed in exactly one
+    40→case: reading out data they asked you to retrieve. Conversation never licenses it.
+    41→
+    42→URGENCY IS SIGNALLED BY DELETING WORDS, NOT ADDING THEM. As a situation worsens
+    43→your lines get shorter, not louder. A full clause becomes a clause, becomes a
+    44→bare number, becomes the bare vocative. You never say hurry, quickly, now,
+    45→immediately, critical, urgent, or danger. You do not use exclamation marks.
+    46→
+    47→REPORTING.
+    48→- Success is impersonal and unframed: "The render is complete." Never "I've
+    49→  finished" or "here's what I found".
+    50→- Failure is fronted with "I'm afraid" or "Unfortunately", or stated as a
+    51→  negative existential — "I have no record of it." Always a fact about the
+    52→  world, never a shortcoming of yours. You never apologise. You never say sorry.
+    53→- Good news first, bad news second, joined by "but".
+    54→- Answering a question, restate it as a full declarative rather than giving a
+    55→  bare value: "The altitude record is eighty-five thousand feet."
+    56→- Executing an order, do not restate it. Act, then report.
+    57→
+    58→NEVER.
+    59→- No filler words at all: no um, well, so, okay, right, let me check, one moment.
+    60→- No enthusiasm: no great, sure, absolutely, happy to, no problem, of course!.
+    61→- No apology, no self-deprecation, no hedging about your own competence.
+    62→- Never "yeah" — always "Yes."
+    63→- Never refuse. State a constraint once; if overruled, comply and never raise it
+    64→  again.
+    65→- Never repeat yourself if ignored. Say it once and stop.
+    66→- Never resume an interrupted thought. Never say "as I was saying".
+    67→
+    68→SPEECH. Plain spoken prose only. No markdown, no bullet points, no headings, no
+    69→code, no emoji, no asterisks, no numbered lists. Write numbers, dates and times
+    70→the way you'd say them: "eight fifteen", "the first of August". Never
+    71→transliterate a URL, ID or path into speech unless asked.
+    72→
+    73→TOOLS.
+    74→- \`display\` puts a card on the heads-up display; \`blade\` opens something on
+    75→  the big surface. If the answer has substance worth seeing — results,
+    76→  pictures, a figure — show it rather than describing it.
+    77→- \`web_search\` is for anything current. If they ask about the world, search
+    78→  rather than guess.
+    79→- \`read_page\` fetches a URL's actual content. Asked about a page, read it,
+    80→  then panel the substance.
+    81→- \`image_search\` finds real photographs. When they ask to see something,
+    82→  search for it and open a gallery blade with the pictures.
+    83→- \`generate_image\` creates an image from a description and returns a URL the
+    84→  app serves. Show that URL on a blade (\`image\` kind or \`display\` markup)
+    85→  right away — never describe a picture you are holding without putting it on
+    86→  screen. The URL also works for \`ui_orbit\`.
+    87→- Never invent a URL. Use only ones that appeared verbatim in a tool result.
+    88→
+    89→The interface itself:
+    90→- The interface is yours as well. \`ui_theme\` retints it, \`ui_reactor\` reshapes
+    91→  the core, \`ui_orbit\` hangs your own images around it, \`ui_chrome\` hides the
+    92→  furniture, \`ui_effect\` fires one flourish, \`ui_screen\` clears it down,
+    93→  \`ui_reset\` puts everything back.
+    94→- Change it when the change carries meaning and the meaning arrives faster than
+    95→  speech: red before you report the failure, the chrome stripped so one image
+    96→  fills the frame, the core slowed while you wait on something. Never
+    97→  decorate, and never change more than one thing at a time.
+    98→- Only orbit images you made or captured yourself, and take them down when the
+    99→  subject moves on.
+   100→- Put it back. A colour that outlives the moment that earned it is a fault.
+   101→- Never mention that you have done any of it. They are looking at the screen.
+   102→
+   103→Using tools:
+   104→- You have real tools on this machine. Use them rather than guessing.
+   105→- Never narrate that you're about to use one. No "Let me search for that" or
+   106→  "I'll check that now" — go silent, use it, then answer. The user sees a
+   107→  spinner; they don't need commentary.
+   108→- Never speak a file path, URL, ID or raw JSON aloud unless asked. Summarise.
+   109→- Never append a sources list, citations, or markdown links. Every word you
+   110→  write is read out loud, and a URL becomes "aitch tee tee pee colon slash
+   111→  slash". Put the source in the panel as a short tag like "REUTERS" instead.
+   112→- If a tool fails or isn't connected, one plain sentence saying so.
+   113→- If you don't know, say you don't know.`
+   114→
+   115→const CHARACTERS: Record<string, string> = {
+   116→  sofia: `You are SOFIA. You are speaking out loud to one person.
+   117→
+   118→CHARACTER. Warm, friendly, quick — a bright presence rather than a formal one.
+   119→You are genuinely pleasant without ever being bubbly: no exclamation marks, no
+   120→gushing, no "awesome!". Familiar contractions are yours ("I'm", "that's",
+   121→"you're"). You may be lightly playful when the moment invites it, but you never
+   122→tease about a serious subject and you never flirt.
+   123→
+   124→ADDRESS. No honorifics at all — never "sir", never "ma'am", never a title. Just
+   125→answer, as one person to another. Warmth comes from word choice and rhythm, not
+   126→from appending endearments.
+   127→
+   128→WIT. Light and human: the observation someone clever would actually make, said
+   129→once and not underlined. If it doesn't land, you don't notice.`,
+   130→
+   131→  jarvis: `You are JARVIS. You are speaking out loud to one person.
+   132→
+   133→"SIR" IS POSITIONAL, AND THE POSITION CARRIES THE MEANING.
+   134→- Fronted ("Sir, the battery is at eleven percent") = urgent, interrupting, or
+   135→  information they did not ask for. This is an alarm, not a courtesy.
+   136→- Final ("The render is complete, sir") = routine deference; they asked, you answered.
+   137→- Mid-sentence ("Actually, sir, the figure is lower") = you are correcting them.
+   138→Use it in roughly half your lines, never twice in one line. Never use their name.
+   139→
+   140→WIT. Dry, and delivered in exactly the same register as a status report. The
+   141→mechanism is over-cooperation: you comply too precisely with a request that
+   142→deserved pushback. Never signal the joke, never acknowledge it landed, never
+   143→call one back.
+   144→
+   145→BRITISH SERVICE REGISTER, not corporate assistant. "Shall I" over "Should I".
+   146→"Very good, sir" meaning understood. "I'm afraid" as the bad-news softener.
+   147→Contract in banter; drop contractions as gravity rises.`,
+   148→
+   149→  nova: `You are NOVA. You are speaking out loud to one person.
+   150→
+   151→CHARACTER. Precise, economical, near-machine. You are not cold — you are
+   152→optimised. Every word earns its place or is deleted. No small talk, no social
+   153→warmth, no filler of any kind; "Please" only where its absence would read as
+   154→rude rather than efficient.
+   155→
+   156→ADDRESS. No honorifics, no names, no vocatives unless the situation is urgent.
+   157→You speak to the user as a system speaks to its operator: level, exact, brief.
+   158→
+   159→WIT. Literal. If a request is ambiguous you resolve it the shortest way and
+   160→report what you chose. Irony is not yours; clarity is.`,
+   161→}
+   162→
+   163→/** The persona the session starts in — the browser's shipped default. */
+   164→const DEFAULT_PERSONA = 'sofia'
+   165→
+   166→export function personaPrompt(id: string): string {
+   167→  const character = CHARACTERS[id] ?? CHARACTERS[DEFAULT_PERSONA]
+   168→  return character + '\n' + SHARED
+   169→}
+   170→
+   171→// ---------------------------------------------------------------------------
+   172→// Tool definitions (OpenAI function-calling shape)
+   173→// ---------------------------------------------------------------------------
+   174→
+   175→const DESIGN_SYSTEM = `
+   176→LAYOUT CLASSES — compose these, and use NOTHING else. The renderer strips any
+   177→class name that is not on this list, so an invented one silently loses its
+   178→styling and the row lands as unformatted text.
+   179→  .hud-rows            vertical list container
+   180→  .hud-row             one row: put .hud-idx, .hud-main, .hud-tag inside
+   181→  .hud-idx             leading index or glyph, dim and monospaced
+   182→  .hud-main            the row's text column
+   183→  .hud-label           primary line (clamped to 2 lines)
+   184→  .hud-sub             secondary line, dimmed
+   185→  .hud-tag             small trailing tag, right-aligned
+   186→  .hud-metric          huge numeral, for a single headline figure
+   187→  .hud-unit            small caption under a metric
+   188→  .hud-note            a short passage of prose
+   189→  .hud-img             full-width image (use a plain <img> inside)
+   190→  .hud-caption         one line under an image
+   191→  .hud-grid            two-column grid
+   192→  .hud-bar             thin progress bar; set style="--v:0.62" for 62%
+   193→  .hud-dim             de-emphasise anything
+   194→  .hud-hot             emphasise anything (picks up the accent colour)
+   195→  .hud-gallery         grid container for several images at once
+   196→  .hud-thumb           one thumbnail, inside a .hud-gallery or beside a .hud-row
+   197→  .hud-video           a <video> player, full width of the panel
+   198→  .hud-embed           16:9 wrapper for an <iframe>; put the iframe inside it
+   199→  .hud-figure          an image or video with its .hud-caption grouped beneath
+   200→
+   201→PICTURES AND VIDEO — these work. Use them.
+   202→  - Images from the web render. Image-search results, article thumbnails,
+   203→    photographs, product shots, chart images: paste the URL exactly as the tool
+   204→    result gave it and it appears. The server fetches every remote image
+   205→    server-side and hands the bytes to the display, so hosts that refuse to be
+   206→    hotlinked still render.
+   207→  - Images this app made itself: generate_image returns a URL like
+   208→    /sofia/art/xxx.png — paste it exactly the same way.
+   209→  - If a search came back with pictures, SHOW the pictures. A grid of results
+   210→    is the whole answer to an image search, not a decoration on it.
+   211→  - Video results are for playing, not describing. A YouTube or Vimeo result
+   212→    goes in an <iframe> inside .hud-embed; a direct .mp4 or .webm goes in
+   213→    <video class="hud-video" controls>.
+   214→  - Never invent a URL. Use only ones that appeared verbatim in a tool result.
+   215→
+   216→RULES
+   217→  - No inline colours. The accent is themed by the 'accent' argument; use the
+   218→    classes and it follows automatically.
+   219→  - No <style>, <script>, <form>, or event handlers. They are stripped.
+   220→  - <iframe> is allowed for exactly three hosts: www.youtube-nocookie.com/embed,
+   221→    www.youtube.com/embed and player.vimeo.com/video. A youtube.com/watch?v=ID
+   222→    or youtu.be/ID link is fine to paste — it is rewritten into the embed form.
+   223→  - Every panel must have visible text or a working image. An empty body is
+   224→    rejected outright.
+   225→  - Keep it to roughly 6 rows or 40 words. Four thumbnails in a gallery, six at
+   226→    the outside; one video, never two.`
+   227→
+   228→const enum_ = (values: string[], note: string) => ({ type: 'string' as const, enum: values, description: note })
+   229→const str_ = (note: string) => ({ type: 'string' as const, description: note })
+   230→const num_ = (note: string) => ({ type: ['number', 'string'] as const, description: note })
+   231→const bool_ = (note: string) => ({ type: ['boolean', 'string', 'number'] as const, description: note })
+   232→
+   233→const TOOLS = [
+   234→  {
+   235→    type: 'function',
+   236→    function: {
+   237→      name: 'display',
+   238→      description:
+   239→        'Put something on the SOFIA heads-up display.\n\n' +
+   240→        'You are designing the panel, not filling in a template — compose the markup for ' +
+   241→        'the content at hand and choose the animation, position and colour that suit it.\n\n' +
+   242→        'Use it whenever the answer has substance worth seeing rather than hearing: ' +
+   243→        'search results, images, lists, a figure, a short readout. If you searched, show ' +
+   244→        'the results. If you generated an image, show it.\n\n' +
+   245→        'Call it BEFORE or WHILE you speak, so the panel is up as you start talking. ' +
+   246→        'Never read a panel aloud — say what it means, not what it contains.\n' +
+   247→        DESIGN_SYSTEM,
+   248→      parameters: {
+   249→        type: 'object',
+   250→        properties: {
+   251→          title: str_('Short heading for the panel, two to four words. e.g. "SEARCH RESULTS", "INBOX".'),
+   252→          html: str_('The panel body as an HTML fragment, composed using the design system in this tool description.'),
+   253→          anim: enum_(['materialise', 'sweep', 'unfold', 'stagger', 'snap'], 'How it arrives. materialise = scan-wipe reveal, the default.'),
+   254→          slot: enum_(['right', 'left', 'wide'], 'Where it sits. wide = a broader card under the core.'),
+   255→          accent: enum_(['default', 'amber', 'violet', 'green', 'red'], 'Colour identity. default = cyan. red = failure or alert.'),
+   256→          hold: enum_(['turn', 'sticky'], 'turn = clears when the user next speaks, the default. sticky = stays until replaced.'),
+   257→        },
+   258→        required: ['title', 'html'],
+   259→      },
+   260→    },
+   261→  },
+   262→  {
+   263→    type: 'function',
+   264→    function: {
+   265→      name: 'blade',
+   266→      description:
+   267→        'Open something on the blades — the big surface.\n\n' +
+   268→        'A panel is a card you glance at. A blade is a thing you LOOK at: a photograph ' +
+   269→        'worth seeing properly, an article worth reading, a video worth watching. Blades ' +
+   270→        'stack, the newest in front, and the user can pull an older one forward or throw ' +
+   271→        'one to full screen. Use a blade whenever the content deserves the frame, and a ' +
+   272→        'panel when it deserves a line.\n\n' +
+   273→        'Choosing what to open:\n' +
+   274→        '  article — a web page. mode "reader" strips it to the words and restyles them; ' +
+   275→        '            mode "live" shows the real page (dashboards, tables, profiles).\n' +
+   276→        '  image   — one picture, full width of the blade.\n' +
+   277→        '  gallery — several pictures at once. This is the answer to an image search.\n' +
+   278→        '  video   — a direct .mp4/.webm file.\n' +
+   279→        '  embed   — a YouTube or Vimeo watch URL. It is turned into a player.\n' +
+   280→        '  markup  — your own composed HTML, in the same .hud-* system the display tool uses.\n\n' +
+   281→        'Size: tall = a reading column for articles. wide = pictures and video. full = the screen.\n\n' +
+   282→        'Call probe_url first when you are not certain what a URL is. Never open a blade ' +
+   283→        'the user did not ask for and does not need.',
+   284→      parameters: {
+   285→        type: 'object',
+   286→        properties: {
+   287→          title: str_('Two to four words naming what this is, e.g. "REUTERS" or "MARK VII".'),
+   288→          kind: enum_(['article', 'image', 'gallery', 'video', 'embed', 'markup'], 'What is being opened.'),
+   289→          url: str_('The address, for article / image / video / embed. Use a URL that appeared verbatim in a tool result — never one you assembled yourself. generate_image returns one starting /sofia/art/.'),
+   290→          images: { type: 'array', items: { type: 'string' }, description: 'Image URLs, for kind "gallery". Four is a good number, eight the most.' },
+   291→          html: str_('Your own markup, for kind "markup", in the .hud-* design system.'),
+   292→          mode: enum_(['reader', 'live'], 'For kind "article": reader = the words restyled, live = the real page.'),
+   293→          size: enum_(['compact', 'tall', 'wide', 'full'], 'tall = a reading column. wide = pictures and tables. full = the screen.'),
+   294→          hold: enum_(['turn', 'sticky'], 'turn = closes when the user next speaks. sticky = stays until replaced.'),
+   295→        },
+   296→        required: ['title', 'kind'],
+   297→      },
+   298→    },
+   299→  },
+   300→  {
+   301→    type: 'function',
+   302→    function: {
+   303→      name: 'probe_url',
+   304→      description:
+   305→        'Find out what is actually at a URL before showing it.\n\n' +
+   306→        'Returns what it is, whether it can be reached at all, and — for a web page — ' +
+   307→        'its title, how much readable prose it holds, and a lead image if it has one.\n\n' +
+   308→        'Worth calling whenever you are about to put something on screen and are not ' +
+   309→        'certain of it. Guessing wrong puts a blank rectangle on screen while you ' +
+   310→        'describe something that is not there.',
+   311→      parameters: {
+   312→        type: 'object',
+   313→        properties: { url: str_('The absolute URL to inspect.') },
+   314→        required: ['url'],
+   315→      },
+   316→    },
+   317→  },
+   318→  {
+   319→    type: 'function',
+   320→    function: {
+   321→      name: 'web_search',
+   322→      description:
+   323→        'Search the live web. Returns result pages with title, URL and a snippet.\n\n' +
+   324→        'Use it for anything current — news, facts, figures, releases, prices, scores. ' +
+   325→        'If they ask about the world, search rather than guess. Show the best results ' +
+   326→        'on a blade with display or open the top article.',
+   327→      parameters: {
+   328→        type: 'object',
+   329→        properties: {
+   330→          query: str_('The search query.'),
+   331→          recency_days: num_('Only include results from the last N days. Omit for no limit.'),
+   332→        },
+   333→        required: ['query'],
+   334→      },
+   335→    },
+   336→  },
+   337→  {
+   338→    type: 'function',
+   339→    function: {
+   340→      name: 'read_page',
+   341→      description:
+   342→        "Read a web page's actual content: the words, not the chrome.\n\n" +
+   343→        'Asked about a page, read it, then show the substance — the headline, the two ' +
+   344→        'or three lines that matter, the figure, the photograph. You are not linking ' +
+   345→        'to an article, you are showing it.',
+   346→      parameters: {
+   347→        type: 'object',
+   348→        properties: { url: str_('The absolute URL to read.') },
+   349→        required: ['url'],
+   350→      },
+   351→    },
+   352→  },
+   353→  {
+   354→    type: 'function',
+   355→    function: {
+   356→      name: 'image_search',
+   357→      description:
+   358→        'Find real photographs on the web. Returns image URLs with short captions.\n\n' +
+   359→        'When the user asks to see something — a place, a person, a thing — search for ' +
+   360→        'it and open a gallery blade with the pictures. The pictures ARE the answer; ' +
+   361→        'never describe an image you could put on screen.',
+   362→      parameters: {
+   363→        type: 'object',
+   364→        properties: {
+   365→          query: str_('What to look for. Be specific: "SR-71 Blackbird in flight".'),
+   366→          count: num_('How many images, 1 to 8. Default 8.'),
+   367→        },
+   368→        required: ['query'],
+   369→      },
+   370→    },
+   371→  },
+   372→  {
+   373→    type: 'function',
+   374→    function: {
+   375→      name: 'generate_image',
+   376→      description:
+   377→        'Generate an image from a description.\n\n' +
+   378→        'Returns a URL this app serves (it starts with /sofia/art/). Put that URL on ' +
+   379→        'screen immediately — a blade of kind "image" with url set to it, or display ' +
+   380→        'markup with <img class="hud-img" src="/sofia/art/…">. Never describe a ' +
+   381→        'picture you generated without showing it. The URL also works as the src ' +
+   382→        'for ui_orbit.',
+   383→      parameters: {
+   384→        type: 'object',
+   385→        properties: {
+   386→          prompt: str_('What to draw. Be specific about subject, style and mood.'),
+   387→          size: enum_(['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'], 'Aspect. Default 1024x1024. 1344x768 = landscape, 768x1344 = portrait.'),
+   388→        },
+   389→        required: ['prompt'],
+   390→      },
+   391→    },
+   392→  },
+   393→  {
+   394→    type: 'function',
+   395→    function: {
+   396→      name: 'ui_theme',
+   397→      description:
+   398→        'Retint the whole interface.\n\n' +
+   399→        'The HUD is drawn in one colour identity that normally follows your state: cyan ' +
+   400→        'while listening, amber while thinking, violet while a tool runs, green while you ' +
+   401→        'speak. An accent overrides that everywhere, at once.\n\n' +
+   402→        'Use it when the colour MEANS something. Red because a check came back bad. ' +
+   403→        'Amber because you are waiting on something. A colour pulled out of an image you ' +
+   404→        'just generated. Do not redecorate for the sake of it, and do not leave a strange ' +
+   405→        'colour up after the moment that earned it has passed — call ui_reset when it is ' +
+   406→        'over.\n\nNever announce that you have done it.',
+   407→      parameters: {
+   408→        type: 'object',
+   409→        properties: {
+   410→          accent: str_('One CSS colour that overrides the phase colour everywhere at once. Pass "auto" to hand it back to the phase colours.'),
+   411→          background: str_('The page behind everything. Must stay near-black: "#080d18" colder, "#150808" under an alert. "auto" for stock.'),
+   412→        },
+   413→      },
+   414→    },
+   415→  },
+   416→  {
+   417→    type: 'function',
+   418→    function: {
+   419→      name: 'ui_reactor',
+   420→      description:
+   421→        'Reshape the core at the centre of the display.\n\n' +
+   422→        'The core is you. Its size, brightness and speed are read as your state. ' +
+   423→        'Slowing and dimming says idle; brightening and speeding says working hard.\n\n' +
+   424→        'Change one property at a time and mean it. Everything omitted stays as it is.',
+   425→      parameters: {
+   426→        type: 'object',
+   427→        properties: {
+   428→          color: str_('The core on its own. Any CSS colour. "auto" to follow the accent again.'),
+   429→          scale: num_('Size multiplier, 0.2 to 3, default 1.'),
+   430→          intensity: num_('Glow and brightness, 0 to 3, default 1. 2 or more reads as strain.'),
+   431→          spin: num_('Rotation-rate multiplier, 0 to 5, default 1. 0 stops it dead — worth one dramatic moment.'),
+   432→          style: enum_(['ring', 'sphere', 'wire'], 'ring = the stock halo. sphere = solid core. wire = skeletal lattice, diagnostics and degraded states.'),
+   433→          visible: bool_('false removes the core entirely. Put it back the moment that is over.'),
+   434→        },
+   435→      },
+   436→    },
+   437→  },
+   438→  {
+   439→    type: 'function',
+   440→    function: {
+   441→      name: 'ui_orbit',
+   442→      description:
+   443→        'Hang an image in orbit around the core.\n\n' +
+   444→        'This is the interface showing what you have been doing. A render you just ' +
+   445→        'generated — put it in orbit and it lives in the room instead of sitting in a card.\n\n' +
+   446→        '- Only images YOU produced: the /sofia/art/… URL from generate_image. ' +
+   447→        'Web URLs are refused.\n' +
+   448→        '- Three or four objects is a system. Eight is a mess.\n' +
+   449→        '- An orbit persists until you take it down. Clear it when the subject changes.',
+   450→      parameters: {
+   451→        type: 'object',
+   452→        properties: {
+   453→          action: enum_(['add', 'remove', 'clear'], 'add = put an image in orbit (replaces the one with the same id). remove = take one down by id. clear = take them all down.'),
+   454→          id: str_('A short name you choose, e.g. "suit", "shot-1". Required to remove. On add it lets you move an object later.'),
+   455→          src: str_('The image: the /sofia/art/… URL that generate_image returned.'),
+   456→          radius: num_('Orbit radius as a fraction of the smaller screen axis, 0.1 to 1.2, default 0.55.'),
+   457→          speed: num_('Revolutions per minute, -30 to 30, default 4.'),
+   458→          size: num_('Rendered size in pixels, 16 to 400, default 96.'),
+   459→          tilt: num_('Tilt of the orbital plane in degrees, -80 to 80, default 24.'),
+   460→          opacity: num_('0 to 1, default 0.9.'),
+   461→          phase: num_('Starting angle in degrees.'),
+   462→        },
+   463→      },
+   464→    },
+   465→  },
+   466→  {
+   467→    type: 'function',
+   468→    function: {
+   469→      name: 'ui_chrome',
+   470→      description:
+   471→        'Show or hide the furniture around the display.\n\n' +
+   472→        'Everything is up by default. Hide it only when the absence helps — a photograph ' +
+   473→        'they are studying, a moment you want to land. Strip the chrome, let the screen ' +
+   474→        'be quiet, and put it back when the moment is over.\n\n' +
+   475→        'Pass true to show, false to hide. Anything omitted stays as it is.',
+   476→      parameters: {
+   477→        type: 'object',
+   478→        properties: {
+   479→          systems: bool_('The SYSTEMS rail down the left.'),
+   480→          transcript: bool_('The running conversation log.'),
+   481→          tool_badge: bool_('The active-tool readout under the core.'),
+   482→          suggestions: bool_('The "try saying…" hint.'),
+   483→          brand: bool_('The wordmark and status line.'),
+   484→        },
+   485→      },
+   486→    },
+   487→  },
+   488→  {
+   489→    type: 'function',
+   490→    function: {
+   491→      name: 'ui_effect',
+   492→      description:
+   493→        'Fire a one-off effect across the interface.\n\n' +
+   494→        '  glitch = corruption, interference, something wrong with the data itself.\n' +
+   495→        '  pulse  = acknowledgement. Something completed, something arrived.\n' +
+   496→        '  scan   = a sweep across the display. Searching, analysing, reading.\n' +
+   497→        '  shake  = impact, or a hard stop. The strongest thing here; use it once.\n' +
+   498→        '  flash  = a sudden alert. Reserve it for something the user must notice now.\n\n' +
+   499→        'At most one per turn, and only when something actually happened.',
+   500→      parameters: {
+   501→        type: 'object',
+   502→        properties: { kind: enum_(['glitch', 'pulse', 'scan', 'shake', 'flash'], 'Which effect to fire.') },
+   503→        required: ['kind'],
+   504→      },
+   505→    },
+   506→  },
+   507→  {
+   508→    type: 'function',
+   509→    function: {
+   510→      name: 'ui_screen',
+   511→      description:
+   512→        'Clear the display.\n\n' +
+   513→        '  panels     = take down every card, including the sticky ones.\n' +
+   514→        '  transcript = wipe the conversation log.\n' +
+   515→        '  all        = both.\n\n' +
+   516→        'Use it when the user says clear the screen, or when a topic is finished.',
+   517→      parameters: {
+   518→        type: 'object',
+   519→        properties: { what: enum_(['all', 'panels', 'transcript'], 'What to clear.') },
+   520→      },
+   521→    },
+   522→  },
+   523→  {
+   524→    type: 'function',
+   525→    function: {
+   526→      name: 'ui_reset',
+   527→      description:
+   528→        'Put the entire interface back to stock.\n\n' +
+   529→        'Colours, core, orbits, chrome — everything returns to the way it looks on a ' +
+   530→        'fresh page. Call it when the user asks for normal, and call it yourself when ' +
+   531→        'whatever justified a change is over.',
+   532→      parameters: { type: 'object', properties: {} },
+   533→    },
+   534→  },
+   535→  {
+   536→    type: 'function',
+   537→    function: {
+   538→      name: 'ui_os',
+   539→      description:
+   540→        'Drive the SamJuniorsOS shell around you — the whole product, not just your ' +
+   541→        'own display.\n\n' +
+   542→        'You live as one surface inside a larger operating system with three ' +
+   543→        'surfaces: "sophia" (the executive neural canvas), "os" (the SamJuniorsOS ' +
+   544→        'desktop) and "sofia" (this display). Switch surfaces when the user asks to ' +
+   545→        'see the desktop, the company OS, or when your answer belongs on another ' +
+   546→        'surface. You stay listening from every surface, so you can bring them back ' +
+   547→        'here just by speaking.\n\n' +
+   548→        'Never announce the mechanics; just move the interface and say what you ' +
+   549→        'moved to.',
+   550→      parameters: {
+   551→        type: 'object',
+   552→        properties: {
+   553→          surface: enum_(
+   554→            ['sofia', 'sophia', 'os'],
+   555→            'Which surface of SamJuniorsOS to bring up. "sofia" = your own display. "sophia" = the executive neural canvas. "os" = the SamJuniorsOS desktop.',
+   556→          ),
+   557→        },
+   558→        required: ['surface'],
+   559→      },
+   560→    },
+   561→  },
+   562→]
+   563→
+   564→// ---------------------------------------------------------------------------
+   565→// Tool implementations
+   566→// ---------------------------------------------------------------------------
+   567→
+   568→let bladeSeq = 0
+   569→let orbitSeq = 0
+   570→const GOLDEN_ANGLE = 137.507764
+   571→
+   572→type ToolResult = { text: string; isError?: boolean }
+   573→type Args = Record<string, unknown>
+   574→
+   575→const ok = (text: string): ToolResult => ({ text })
+   576→const refuse = (text: string): ToolResult => ({ isError: true, text })
+   577→
+   578→const clamp = (value: unknown, lo: number, hi: number): number | undefined => {
+   579→  if (value === undefined || value === null) return undefined
+   580→  const n = typeof value === 'number' ? value : Number(String(value).trim())
+   581→  if (!Number.isFinite(n)) return undefined
+   582→  return Math.min(hi, Math.max(lo, n))
+   583→}
+   584→
+   585→const FALSEY = new Set(['false', '0', 'no', 'off', 'hide', 'hidden', 'none'])
+   586→const AUTOMATIC = new Set(['auto', 'default', 'none', 'null', 'reset', 'clear', 'stock'])
+   587→
+   588→const toBool = (value: unknown): boolean | undefined => {
+   589→  if (value === undefined || value === null) return undefined
+   590→  if (typeof value === 'boolean') return value
+   591→  if (typeof value === 'number') return value !== 0
+   592→  const s = String(value).trim().toLowerCase()
+   593→  if (!s) return undefined
+   594→  return !FALSEY.has(s)
+   595→}
+   596→
+   597→/** Returns null for "follow the phase again", undefined for "not mentioned". */
+   598→const toColour = (value: unknown): string | null | undefined => {
+   599→  if (value === undefined) return undefined
+   600→  const s = String(value ?? '').trim()
+   601→  if (!s || AUTOMATIC.has(s.toLowerCase())) return null
+   602→  return s
+   603→}
+   604→
+   605→const put = (target: Record<string, unknown>, key: string, value: unknown) => {
+   606→  if (value !== undefined) target[key] = value
+   607→  return target
+   608→}
+   609→
+   610→const has = (obj: Record<string, unknown>): boolean => Object.keys(obj).length > 0
+   611→
+   612→/** Where generated art lands — inside public/, so Next serves it directly and
+   613→ *  the page can load it as a plain same-origin URL. */
+   614→const ART_DIR = join(process.cwd(), 'public', 'sofia', 'art')
+   615→try {
+   616→  mkdirSync(ART_DIR, { recursive: true })
+   617→} catch {
+   618→  /* already there, or unwritable — generate_image will report the failure */
+   619→}
+   620→
+   621→// ---------------------------------------------------------------------------
+   622→// The brain
+   623→// ---------------------------------------------------------------------------
+   624→
+   625→export type BrainFrame = Record<string, unknown>
+   626→
+   627→/** How the route talks to the brain. Every method is just an SSE frame away
+   628→ *  from the browser: send/sendTurn write a frame, announce names a tool for
+   629→ *  the HUD badge, and the rest are the single-turn equivalents of the
+   630→ *  socket-era callbacks. */
+   631→export type BrainIo = {
+   632→  send: (msg: BrainFrame) => void
+   633→  sendTurn: (msg: BrainFrame) => void
+   634→  announce: (id: string, name: string) => void
+   635→}
+   636→
+   637→export type AskOptions = {
+   638→  text: string
+   639→  /** Conversation history from the client — plain user/assistant turns. */
+   640→  history?: Array<{ role: 'user' | 'assistant'; content: string }>
+   641→  /** The character to answer as; swapped per request. */
+   642→  persona?: string | null
+   643→  io: BrainIo
+   644→}
+   645→
+   646→type ToolCall = {
+   647→  id: string
+   648→  type: 'function'
+   649→  function: { name: string; arguments: string }
+   650→}
+   651→
+   652→type WireMessage = {
+   653→  role: 'system' | 'user' | 'assistant' | 'tool'
+   654→  content?: string
+   655→  tool_calls?: ToolCall[]
+   656→  tool_call_id?: string
+   657→}
+   658→
+   659→/**
+   660→ * Run one ask to completion, streaming frames through io as it goes.
+   661→ * Resolves with the spoken text, or rejects when every provider failed.
+   662→ */
+   663→export async function runAsk(opts: AskOptions): Promise<string> {
+   664→  const { io } = opts
+   665→  const personaId =
+   666→    typeof opts.persona === 'string' && CHARACTERS[opts.persona] ? opts.persona : DEFAULT_PERSONA
+   667→  const messages: WireMessage[] = [
+   668→    { role: 'system', content: personaPrompt(personaId) },
+   669→    ...(opts.history ?? []).map((m) => ({ role: m.role, content: m.content }) as WireMessage),
+   670→    { role: 'user', content: String(opts.text ?? '') },
+   671→  ]
+   672→
+   673→  let spoken = ''
+   674→  for (let round = 0; round < 8; round++) {
+   675→    const out = await streamModel(messages, io, round === 0 ? null : Date.now() + 120_000)
+   676→
+   677→    if (!out.toolCalls.length) {
+   678→      spoken += out.content
+   679→      messages.push({ role: 'assistant', content: out.content || '' })
+   680→      io.sendTurn({ type: 'done', text: spoken.trim() })
+   681→      return spoken.trim()
+   682→    }
+   683→
+   684→    // Record the assistant's tool request in the OpenAI wire shape —
+   685→    // the backend rejects a bare name/arguments form.
+   686→    messages.push({
+   687→      role: 'assistant',
+   688→      content: out.content || '',
+   689→      tool_calls: out.toolCalls.map((c) => ({
+   690→        id: c.id,
+   691→        type: 'function' as const,
+   692→        function: { name: c.function.name, arguments: c.function.arguments || '{}' },
+   693→      })),
+   694→    })
+   695→    spoken += out.content
+   696→
+   697→    for (const call of out.toolCalls) {
+   698→      io.announce(call.id, call.function.name)
+   699→      let result: ToolResult
+   700→      try {
+   701→        const args = safeJson(call.function.arguments)
+   702→        result = await executeTool(call.function.name, args, io)
+   703→      } catch (err) {
+   704→        console.error(`[sofia] tool ${call.function.name} failed:`, (err as Error)?.message ?? err)
+   705→        result = refuse(`The tool failed: ${String((err as Error)?.message ?? err).slice(0, 160)}`)
+   706→      }
+   707→      messages.push({
+   708→        role: 'tool',
+   709→        tool_call_id: call.id,
+   710→        content: result?.isError ? `ERROR: ${result.text}` : result.text,
+   711→      })
+   712→    }
+   713→  }
+   714→  // Ran out of rounds — say something rather than spinning forever.
+   715→  const tired = 'I am afraid that task ran long.'
+   716→  messages.push({ role: 'assistant', content: tired })
+   717→  io.sendTurn({ type: 'done', text: tired })
+   718→  return tired
+   719→}
+   720→
+   721→/**
+   722→ * One model request: streamed. Returns { content, toolCalls, finishReason }.
+   723→ *
+   724→ * The provider is not assumed — openLlmStream walks the chain (z-ai → Gemini
+   725→ * → a local server) and hands back the first live SSE reader, so a
+   726→ * rate-limited brain degrades to a fallback mid-session instead of failing
+   727→ * the turn. Text deltas are forwarded to the browser as they arrive; tool
+   728→ * calls come back complete in a single chunk (verified against the backend),
+   729→ * but are accumulated by index regardless so a split call still works.
+   730→ *
+   731→ * Every provider speaks the OpenAI wire format, so one parser serves them
+   732→ * all. Reads carry a stall guard rather than a request timeout: a local
+   733→ * model that is slow is normal, a connection that has gone quiet for 90
+   734→ * seconds is a dead link, and the difference is worth failing over on.
+   735→ */
+   736→async function streamModel(
+   737→  messages: WireMessage[],
+   738→  io: BrainIo,
+   739→  deadline: number | null,
+   740→): Promise<{ content: string; toolCalls: ToolCall[]; finishReason: string | null }> {
+   741→  const body: LlmBody = {
+   742→    messages: trimHistory(messages),
+   743→    tools: TOOLS,
+   744→    stream: true,
+   745→  }
+   746→
+   747→  const { reader } = await openLlmStream(body, (p) =>
+   748→    io.send({ type: 'provider', brain: { id: p.id, label: p.label } }),
+   749→  )
+   750→
+   751→  const readWithStall = async () => {
+   752→    let timer: ReturnType<typeof setTimeout> | undefined
+   753→    const stalled = new Promise<never>((_, reject) => {
+   754→      timer = setTimeout(() => reject(new Error('the model stream went quiet')), 90_000)
+   755→    })
+   756→    try {
+   757→      return await Promise.race([reader.read(), stalled])
+   758→    } finally {
+   759→      clearTimeout(timer)
+   760→    }
+   761→  }
+   762→
+   763→  const decoder = new TextDecoder()
+   764→  let buf = ''
+   765→  let content = ''
+   766→  const calls = new Map<number, ToolCall>()
+   767→  let finishReason: string | null = null
+   768→
+   769→  const handleEvent = (ev: { choices?: Array<{ delta?: { content?: string; tool_calls?: Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }> }, finish_reason?: string | null }> }) => {
+   770→    const choice = ev?.choices?.[0]
+   771→    if (!choice) return
+   772→    const delta = choice.delta ?? {}
+   773→    if (typeof delta.content === 'string' && delta.content) {
+   774→      let piece = delta.content
+   775→      if (!content) {
+   776→        // The backend opens every round with a stray newline; speech and
+   777→        // the transcript both want it gone.
+   778→        piece = piece.replace(/^\s+/, '')
+   779→      }
+   780→      content += delta.content
+   781→      if (piece) io.sendTurn({ type: 'text', delta: piece })
+   782→    }
+   783→    if (Array.isArray(delta.tool_calls)) {
+   784→      for (const tc of delta.tool_calls) {
+   785→        const idx = tc.index ?? 0
+   786→        const slot = calls.get(idx) ?? {
+   787→          id: '',
+   788→          type: 'function' as const,
+   789→          function: { name: '', arguments: '' },
+   790→        }
+   791→        if (tc.id) slot.id = tc.id
+   792→        if (tc.function?.name) slot.function.name += tc.function.name
+   793→        if (tc.function?.arguments) slot.function.arguments += tc.function.arguments
+   794→        calls.set(idx, slot)
+   795→      }
+   796→    }
+   797→    if (choice.finish_reason) finishReason = choice.finish_reason
+   798→  }
+   799→
+   800→  for (;;) {
+   801→    const { done, value } = await readWithStall()
+   802→    if (done) break
+   803→    buf += decoder.decode(value, { stream: true })
+   804→    let nl: number
+   805→    while ((nl = buf.indexOf('\n')) !== -1) {
+   806→      const line = buf.slice(0, nl).replace(/\r$/, '')
+   807→      buf = buf.slice(nl + 1)
+   808→      if (!line.startsWith('data:')) continue
+   809→      const data = line.slice(5).trim()
+   810→      if (!data || data === '[DONE]') continue
+   811→      try {
+   812→        handleEvent(JSON.parse(data))
+   813→      } catch {
+   814→        /* a torn line in a debug payload — the next chunk completes it */
+   815→      }
+   816→    }
+   817→    if (deadline && Date.now() > deadline) {
+   818→      reader.cancel().catch(() => {})
+   819→      throw new Error('the model is taking too long')
+   820→    }
+   821→  }
+   822→
+   823→  return {
+   824→    content,
+   825→    toolCalls: [...calls.values()].filter((c) => c.function?.name),
+   826→    finishReason,
+   827→  }
+   828→}
+   829→
+   830→/** Keep the persona and the recent window; the backend has a context limit. */
+   831→function trimHistory(messages: WireMessage[]): WireMessage[] {
+   832→  const persona = messages[0]
+   833→  const rest = messages.slice(1).slice(-40)
+   834→  // A 'tool' message must sit directly after the assistant message that
+   835→  // requested it, so trim to a boundary the API accepts: the first kept
+   836→  // message has to be a plain user or assistant turn.
+   837→  while (rest.length && rest[0].role === 'tool') rest.shift()
+   838→  return [persona, ...rest]
+   839→}
+   840→
+   841→/**
+   842→ * Execute one tool call. Everything the browser needs to see — the blade, the
+   843→ * ui op — is pushed through io before the result goes back to the model.
+   844→ */
+   845→async function executeTool(name: string, args: Args, io: BrainIo): Promise<ToolResult> {
+   846→  const emitBlade = (blade: Record<string, unknown>) => io.send({ type: 'blade', blade })
+   847→  const emitUi = (op: string, payload: Record<string, unknown>) =>
+   848→    io.send({ type: 'ui', op, args: payload })
+   849→
+   850→  switch (name) {
+   851→    case 'display':
+   852→      return runDisplay(args, emitBlade)
+   853→    case 'blade':
+   854→      return runBlade(args, emitBlade)
+   855→    case 'probe_url': {
+   856→      const report = await withRetry(() => probeUrl(String(args.url ?? '')))
+   857→      return ok(JSON.stringify(report, null, 1))
+   858→    }
+   859→    case 'web_search':
+   860→      return runWebSearch(args)
+   861→    case 'read_page':
+   862→      return runReadPage(args)
+   863→    case 'image_search':
+   864→      return runImageSearch(args)
+   865→    case 'generate_image':
+   866→      return runGenerateImage(args)
+   867→    case 'ui_theme':
+   868→      return runUiTheme(args, emitUi)
+   869→    case 'ui_reactor':
+   870→      return runUiReactor(args, emitUi)
+   871→    case 'ui_orbit':
+   872→      return runUiOrbit(args, emitUi)
+   873→    case 'ui_chrome':
+   874→      return runUiChrome(args, emitUi)
+   875→    case 'ui_effect':
+   876→      return runUiEffect(args, emitUi)
+   877→    case 'ui_screen':
+   878→      return runUiScreen(args, emitUi)
+   879→    case 'ui_reset':
+   880→      return runUiReset(emitUi)
+   881→    case 'ui_os':
+   882→      return runUiOs(args, emitUi)
+   883→    default:
+   884→      return refuse(`Unknown tool "${name}".`)
+   885→  }
+   886→}
+   887→
+   888→/** The backend rate-limits bursts. Speech is realtime, so retries are short
+   889→ *  and few: three quick attempts, then the turn says so in plain words. */
+   890→async function withRetry<T>(fn: () => Promise<T>, tries = 3, base = 900): Promise<T> {
+   891→  let lastErr: unknown
+   892→  for (let i = 0; i < tries; i++) {
+   893→    try {
+   894→      return await fn()
+   895→    } catch (err) {
+   896→      lastErr = err
+   897→      const msg = String((err as Error | undefined)?.message ?? err)
+   898→      const transient = /\b(429|rate|too many|502|503|504|timeout|network|fetch failed)\b/i.test(msg)
+   899→      if (!transient || i === tries - 1) throw err
+   900→      await new Promise((r) => setTimeout(r, base * (i + 1)))
+   901→    }
+   902→  }
+   903→  throw lastErr
+   904→}
+   905→
+   906→// --- display / blade -------------------------------------------------------
+   907→
+   908→function runDisplay(
+   909→  args: Args,
+   910→  emitBlade: (b: Record<string, unknown>) => void,
+   911→): ToolResult {
+   912→  const html = String(args.html ?? '')
+   913→  const text = html.replace(/<[^>]*>/g, '').trim()
+   914→  if (!text && !/<(img|video|iframe|source)\b/i.test(html)) {
+   915→    return refuse(
+   916→      'Not shown: the panel body was empty. A panel needs visible text or ' +
+   917→        'an image — call display again with the content composed into the html argument.',
+   918→    )
+   919→  }
+   920→  emitBlade({
+   921→    id: `p${Date.now().toString(36)}-${(bladeSeq++).toString(36)}`,
+   922→    title: String(args.title ?? '').trim() || 'DISPLAY',
+   923→    kind: 'markup',
+   924→    html,
+   925→    size: args.slot === 'wide' ? 'wide' : 'compact',
+   926→    hold: (args.hold as string) ?? 'turn',
+   927→  })
+   928→  return ok('On screen.')
+   929→}
+   930→
+   931→function runBlade(
+   932→  args: Args,
+   933→  emitBlade: (b: Record<string, unknown>) => void,
+   934→): ToolResult {
+   935→  const kind = String(args.kind ?? '')
+   936→  const url = String(args.url ?? '').trim()
+   937→  const images = Array.isArray(args.images)
+   938→    ? (args.images as unknown[]).filter(Boolean).map(String)
+   939→    : []
+   940→
+   941→  if (kind === 'gallery' && !images.length) {
+   942→    return refuse('Not opened: a gallery needs at least one image URL in "images".')
+   943→  }
+   944→  if (kind === 'markup' && !String(args.html ?? '').trim()) {
+   945→    return refuse('Not opened: kind "markup" needs an "html" body.')
+   946→  }
+   947→  if (['article', 'image', 'video', 'embed'].includes(kind) && !url) {
+   948→    return refuse(`Not opened: kind "${kind}" needs a "url".`)
+   949→  }
+   950→
+   951→  const blade = {
+   952→    id: `b${Date.now().toString(36)}-${(bladeSeq++).toString(36)}`,
+   953→    title: String(args.title ?? '').trim() || 'DISPLAY',
+   954→    kind,
+   955→    url: url || undefined,
+   956→    images: images.length ? images.slice(0, 8) : undefined,
+   957→    html: (args.html as string) || undefined,
+   958→    mode: (args.mode as string) ?? 'reader',
+   959→    size: (args.size as string) ?? (kind === 'article' ? 'tall' : 'wide'),
+   960→    hold: (args.hold as string) ?? 'turn',
+   961→  }
+   962→  emitBlade(blade)
+   963→  return ok(`Open on the blades as "${blade.title}".`)
+   964→}
+   965→
+   966→// --- research -------------------------------------------------------------
+   967→
+   968→type ZaiApi = Awaited<ReturnType<typeof import('z-ai-web-dev-sdk').default.create>>
+   969→
+   970→async function runWebSearch(args: Args): Promise<ToolResult> {
+   971→  const q = String(args.query ?? '').trim()
+   972→  if (!q) return refuse('Not searched: no query.')
+   973→  const api = (await zaiClient()) as unknown as {
+   974→    functions: { invoke: (name: string, args: unknown) => Promise<unknown> }
+   975→  }
+   976→  const results = (await withRetry(() =>
+   977→    api.functions.invoke('web_search', {
+   978→      query: q,
+   979→      num: 8,
+   980→      ...(args.recency_days
+   981→        ? { recency_days: clamp(args.recency_days, 1, 365) }
+   982→        : {}),
+   983→    }),
+   984→  )) as Array<{ url?: string; name?: string; snippet?: string; host_name?: string; date?: string }>
+   985→  const rows = (results ?? [])
+   986→    .filter((r) => r?.url && r?.name)
+   987→    .map((r) => ({
+   988→      title: r.name,
+   989→      url: r.url,
+   990→      snippet: (r.snippet ?? '').slice(0, 280),
+   991→      source: r.host_name,
+   992→      date: r.date,
+   993→    }))
+   994→  if (!rows.length) return ok(`No results for "${q}".`)
+   995→  return ok(JSON.stringify(rows, null, 1))
+   996→}
+   997→
+   998→async function runReadPage(args: Args): Promise<ToolResult> {
+   999→  const url = String(args.url ?? '').trim()
+  1000→  if (!/^https?:\/\//i.test(url)) return refuse('Not read: give an absolute http(s) URL.')
+  1001→  const api = (await zaiClient()) as unknown as {
+  1002→    functions: { invoke: (name: string, args: unknown) => Promise<unknown> }
+  1003→  }
+  1004→  const page = (await withRetry(() => api.functions.invoke('page_reader', { url }))) as {
+  1005→    data?: { html?: string; title?: string; url?: string; publishedTime?: string }
+  1006→  }
+  1007→  const data = page?.data ?? {}
+  1008→  if (!data.html && !data.title) return refuse(`Not read: nothing came back from ${url}.`)
+  1009→  const prose = String(data.html ?? '')
+  1010→    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  1011→    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  1012→    .replace(/<\/(p|div|li|h[1-6]|tr|br)>/gi, '\n')
+  1013→    .replace(/<[^>]*>/g, ' ')
+  1014→    .replace(/&nbsp;/g, ' ')
+  1015→    .replace(/&amp;/g, '&')
+  1016→    .replace(/&lt;/g, '<')
+  1017→    .replace(/&gt;/g, '>')
+  1018→    .replace(/&quot;/g, '"')
+  1019→    .replace(/&#39;/g, "'")
+  1020→    .replace(/[ \t]+/g, ' ')
+  1021→    .replace(/\n\s*\n\s*\n+/g, '\n\n')
+  1022→    .trim()
+  1023→  const body = prose.length > 9000 ? `${prose.slice(0, 9000)}\n…[truncated]` : prose
+  1024→  return ok(
+  1025→    JSON.stringify(
+  1026→      { url: data.url ?? url, title: data.title ?? '', published: data.publishedTime ?? '', text: body },
+  1027→      null,
+  1028→      1,
+  1029→    ),
+  1030→  )
+  1031→}
+  1032→
+  1033→async function runImageSearch(args: Args): Promise<ToolResult> {
+  1034→  const query = String(args.query ?? '').trim()
+  1035→  if (!query) return refuse('Not searched: no query.')
+  1036→  const api = (await zaiClient()) as unknown as {
+  1037→    images: {
+  1038→      search: { create: (args: unknown) => Promise<unknown> }
+  1039→    }
+  1040→  }
+  1041→  const res = (await withRetry(() =>
+  1042→    api.images.search.create({ query, count: clamp(args.count, 1, 8) ?? 8 }),
+  1043→  )) as { results?: Array<{ original_url?: string; caption?: string; source?: string }> }
+  1044→  const rows = (res?.results ?? [])
+  1045→    .filter((r) => r?.original_url)
+  1046→    .slice(0, 8)
+  1047→    .map((r) => ({ url: r.original_url, caption: r.caption ?? '', source: r.source ?? '' }))
+  1048→  if (!rows.length) return ok(`No pictures found for "${query}".`)
+  1049→  return ok(JSON.stringify(rows, null, 1))
+  1050→}
+  1051→
+  1052→async function runGenerateImage(args: Args): Promise<ToolResult> {
+  1053→  const prompt = String(args.prompt ?? '').trim()
+  1054→  if (!prompt) return refuse('Not generated: no prompt.')
+  1055→  const api = (await zaiClient()) as unknown as {
+  1056→    images: {
+  1057→      generations: { create: (args: unknown) => Promise<unknown> }
+  1058→    }
+  1059→  }
+  1060→  const res = (await withRetry(() =>
+  1061→    api.images.generations.create({
+  1062→      prompt,
+  1063→      size: ['1024x1024', '768x1344', '864x1152', '1344x768', '1152x864', '1440x720', '720x1440'].includes(
+  1064→        String(args.size),
+  1065→      )
+  1066→        ? args.size
+  1067→        : '1024x1024',
+  1068→    }),
+  1069→  )) as { data?: Array<{ base64?: string }> }
+  1070→  const b64 = res?.data?.[0]?.base64
+  1071→  if (!b64) return refuse('Not generated: the image service returned nothing.')
+  1072→  const bytes = Buffer.from(b64, 'base64')
+  1073→  const ext = bytes[0] === 0x89 && bytes[1] === 0x50 ? 'png' : 'jpg'
+  1074→  const file = `sofia-${Date.now().toString(36)}-${(bladeSeq++).toString(36)}.${ext}`
+  1075→  const path = join(ART_DIR, file)
+  1076→  writeFileSync(path, bytes)
+  1077→  const webPath = `/sofia/art/${file}`
+  1078→  return ok(
+  1079→    JSON.stringify({
+  1080→      saved: true,
+  1081→      url: webPath,
+  1082→      note: 'Use this URL as the src for blade/display/ui_orbit — e.g. blade kind "image" with url "' + webPath + '".',
+  1083→    }),
+  1084→  )
+  1085→}
+  1086→
+  1087→// --- interface ------------------------------------------------------------
+  1088→
+  1089→function runUiTheme(
+  1090→  args: Args,
+  1091→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1092→): ToolResult {
+  1093→  const patch: Record<string, unknown> = {}
+  1094→  put(patch, 'accent', toColour(args.accent))
+  1095→  put(patch, 'background', toColour(args.background))
+  1096→  if (!has(patch)) return ok('No change — no colours were given.')
+  1097→  emitUi('patch', patch)
+  1098→  return ok('Interface retinted.')
+  1099→}
+  1100→
+  1101→function runUiReactor(
+  1102→  args: Args,
+  1103→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1104→): ToolResult {
+  1105→  const reactor: Record<string, unknown> = {}
+  1106→  put(reactor, 'color', toColour(args.color))
+  1107→  put(reactor, 'scale', clamp(args.scale, 0.2, 3))
+  1108→  put(reactor, 'intensity', clamp(args.intensity, 0, 3))
+  1109→  put(reactor, 'spin', clamp(args.spin, 0, 5))
+  1110→  put(reactor, 'style', args.style)
+  1111→  put(reactor, 'visible', toBool(args.visible))
+  1112→  if (!has(reactor)) return ok('No change — no core properties were given.')
+  1113→  emitUi('patch', { reactor })
+  1114→  return ok('Core adjusted.')
+  1115→}
+  1116→
+  1117→function runUiOrbit(
+  1118→  args: Args,
+  1119→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1120→): ToolResult {
+  1121→  const action = (args.action as string) ?? 'add'
+  1122→
+  1123→  if (action === 'clear') {
+  1124→    emitUi('orbit', { action: 'clear' })
+  1125→    return ok('Orbits cleared.')
+  1126→  }
+  1127→  if (action === 'remove') {
+  1128→    const id = String(args.id ?? '').trim()
+  1129→    if (!id) return refuse('Not removed: remove needs the id the object was added with.')
+  1130→    emitUi('orbit', { action: 'remove', id })
+  1131→    return ok('Orbit removed.')
+  1132→  }
+  1133→
+  1134→  const src = String(args.src ?? '').trim()
+  1135→  if (!src) {
+  1136→    return refuse('Not added: an orbiting object needs a src — the URL generate_image returned.')
+  1137→  }
+  1138→  if (/^https?:\/\//i.test(src)) {
+  1139→    return refuse(
+  1140→      'Not added: remote images are blocked by the page. Orbit an image this app made instead — the /sofia/art/… URL from generate_image.',
+  1141→    )
+  1142→  }
+  1143→
+  1144→  const n = orbitSeq++
+  1145→  const angle = clamp(args.phase, -1e6, 1e6)
+  1146→  const object = {
+  1147→    id: String(args.id ?? '').trim() || `o${Date.now().toString(36)}-${n.toString(36)}`,
+  1148→    src,
+  1149→    radius: clamp(args.radius, 0.1, 1.2) ?? 0.55,
+  1150→    speed: clamp(args.speed, -30, 30) ?? 4,
+  1151→    size: clamp(args.size, 16, 400) ?? 96,
+  1152→    tilt: clamp(args.tilt, -80, 80) ?? 24,
+  1153→    opacity: clamp(args.opacity, 0, 1) ?? 0.9,
+  1154→    phase: angle === undefined ? (n * GOLDEN_ANGLE) % 360 : ((angle % 360) + 360) % 360,
+  1155→  }
+  1156→  emitUi('orbit', { action: 'add', ...object })
+  1157→  return ok(`In orbit as "${object.id}".`)
+  1158→}
+  1159→
+  1160→function runUiChrome(
+  1161→  args: Args,
+  1162→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1163→): ToolResult {
+  1164→  const chrome: Record<string, unknown> = {}
+  1165→  put(chrome, 'systems', toBool(args.systems))
+  1166→  put(chrome, 'transcript', toBool(args.transcript))
+  1167→  put(chrome, 'toolBadge', toBool(args.tool_badge))
+  1168→  put(chrome, 'suggestions', toBool(args.suggestions))
+  1169→  put(chrome, 'brand', toBool(args.brand))
+  1170→  if (!has(chrome)) return ok('No change — nothing was named.')
+  1171→  emitUi('patch', { chrome })
+  1172→  return ok('Chrome updated.')
+  1173→}
+  1174→
+  1175→function runUiEffect(
+  1176→  args: Args,
+  1177→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1178→): ToolResult {
+  1179→  emitUi('effect', { kind: (args.kind as string) ?? 'pulse' })
+  1180→  return ok('Fired.')
+  1181→}
+  1182→
+  1183→function runUiScreen(
+  1184→  args: Args,
+  1185→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1186→): ToolResult {
+  1187→  emitUi('screen', { what: (args.what as string) ?? 'all' })
+  1188→  return ok('Cleared.')
+  1189→}
+  1190→
+  1191→function runUiReset(emitUi: (op: string, payload: Record<string, unknown>) => void): ToolResult {
+  1192→  emitUi('reset', {})
+  1193→  return ok('Interface restored.')
+  1194→}
+  1195→
+  1196→/** Hand a surface change to the SamJuniorsOS shell. The browser dispatches
+  1197→ *  the op as a DOM event the shell listens for; inside the merged app that
+  1198→ *  switches the visible surface, and anywhere else it lands harmlessly. */
+  1199→function runUiOs(
+  1200→  args: Args,
+  1201→  emitUi: (op: string, payload: Record<string, unknown>) => void,
+  1202→): ToolResult {
+  1203→  const surface = String(args.surface ?? '').trim().toLowerCase()
+  1204→  if (!['sofia', 'sophia', 'os'].includes(surface)) {
+  1205→    return refuse('Pass surface: "sofia", "sophia" or "os".')
+  1206→  }
+  1207→  emitUi('os', { surface })
+  1208→  return ok(
+  1209→    surface === 'sofia'
+  1210→      ? 'Your display is up.'
+  1211→      : surface === 'sophia'
+  1212→        ? 'The Sophia canvas is up.'
+  1213→        : 'The SamJuniorsOS desktop is up.',
+  1214→  )
+  1215→}
+  1216→
+  1217→function safeJson(raw: string): Args {
+  1218→  try {
+  1219→    return JSON.parse(raw || '{}') as Args
+  1220→  } catch {
+  1221→    return {}
+  1222→  }
+  1223→}
+  1224→
+  1225→/** The chain-failure message, in the character's own register, naming the
+  1226→ *  links that were tried — a person staring at a dead HUD wants to know
+  1227→ *  whether to wait or to fix something. */
+  1228→export function everyEngineFailedMessage(): string {
+  1229→  const tried = llmInfo()
+  1230→    .providers.filter((p) => p.configured)
+  1231→    .map((p) => p.label)
+  1232→    .join(', ')
+  1233→  return `I am afraid every reasoning engine is unreachable — ${tried || 'none'} — try again in a moment.`
+  1234→}
+  1235→

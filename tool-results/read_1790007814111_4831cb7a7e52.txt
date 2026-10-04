@@ -1,0 +1,720 @@
+     1→import { AgentRole } from '@/types/os';
+     2→import {
+     3→  AssembledEmployeeContext,
+     4→  ContextAssemblyPipelineStep,
+     5→  ContextAssemblyRequest,
+     6→  ContextConflict,
+     7→  CurrentEvidenceInput,
+     8→  EPISTEMIC_LABELS,
+     9→  EpistemicClassification,
+    10→  EpistemicLabel,
+    11→  ICompanyKnowledgeStore,
+    12→  ICompanyMemoryStore,
+    13→  ICompanyStateStore,
+    14→  InjectedContextItem,
+    15→  RetrievedKnowledgeItem,
+    16→  RetrievedStateItem,
+    17→} from '@/types/context';
+    18→import { RetrievedHistoricalMemory } from '@/types/os';
+    19→import { CompanyStateStore } from '../state/state-store';
+    20→import { CompanyKnowledgeStore } from '../knowledge/knowledge-store';
+    21→import { CompanyMemoryStore } from '../memory/memory-store';
+    22→import { ContextualRetrievalService } from './context-retrieval';
+    23→import { SERVER_AGENTS } from '../agents/definitions';
+    24→import { determineSkillForTask } from '@/lib/skills/skill-registry';
+    25→import { createHash } from 'crypto';
+    26→
+    27→/**
+    28→ * PHASE 11.13: DETERMINISTIC EMPLOYEE CONTEXT ASSEMBLY SERVICE
+    29→ * 
+    30→ * Pipeline:
+    31→ * Task → Employee Role → Skill → relevant State/Knowledge/Memory → current evidence → final employee context
+    32→ * 
+    33→ * Invariants & Governance:
+    34→ * 1. Role & Skill-Aware: Employees only receive context directly pertinent to their assigned skill and role.
+    35→ * 2. Strict Epistemic Labels:
+    36→ *    - 'current verified evidence'
+    37→ *    - 'company state'
+    38→ *    - 'company knowledge'
+    39→ *    - 'historical memory'
+    40→ *    - 'AI inference'
+    41→ * 3. Precedence Hierarchy: Current Verified Evidence / State > Company Knowledge > Historical Memory.
+    42→ * 4. Provenance: Every injected context item retains full provenance metadata and selection reasoning.
+    43→ * 5. Budget & Noise Management: Rejection of irrelevant company items, enforcing strict character and item limits.
+    44→ * 6. Immutability & Employee Isolation: Context Assembly is strictly read-only and frozen. Employees cannot mutate context stores.
+    45→ * 7. Advisor Boundary: Advisor uses the assembly layer for consultative reasoning but cannot execute skills.
+    46→ */
+    47→export class ContextAssemblyService {
+    48→  private static defaultInstance: ContextAssemblyService | null = null;
+    49→
+    50→  constructor(
+    51→    private stateStore: ICompanyStateStore = CompanyStateStore.getInstance(),
+    52→    private knowledgeStore: ICompanyKnowledgeStore = CompanyKnowledgeStore.getInstance(),
+    53→    private memoryStore: ICompanyMemoryStore = CompanyMemoryStore.getInstance(),
+    54→    private retrievalService: ContextualRetrievalService = ContextualRetrievalService.getInstance()
+    55→  ) {}
+    56→
+    57→  public static getInstance(): ContextAssemblyService {
+    58→    if (!ContextAssemblyService.defaultInstance) {
+    59→      ContextAssemblyService.defaultInstance = new ContextAssemblyService();
+    60→    }
+    61→    return ContextAssemblyService.defaultInstance;
+    62→  }
+    63→
+    64→  /**
+    65→   * Main Assembly Entry Point
+    66→   * Executes the 8-stage deterministic Context Assembly pipeline.
+    67→   */
+    68→  public async assembleContextForTask(
+    69→    request: ContextAssemblyRequest
+    70→  ): Promise<AssembledEmployeeContext> {
+    71→    const timestamp = new Date().toISOString();
+    72→    const taskId = request.taskId || `task-ctx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    73→    const pipelineStages: ContextAssemblyPipelineStep[] = [];
+    74→
+    75→    // ------------------------------------------------------------------------
+    76→    // STAGE 1: TASK INTAKE & SCOPING
+    77→    // ------------------------------------------------------------------------
+    78→    const cleanTaskTitle = request.taskTitle?.trim() || 'Untitled Operational Task';
+    79→    const cleanTaskDescription = request.taskDescription?.trim() || cleanTaskTitle;
+    80→    const directive = request.directive?.trim();
+    81→
+    82→    pipelineStages.push({
+    83→      stage: 'task_intake',
+    84→      description: `Task intake parsed: "${cleanTaskTitle}"`,
+    85→      status: 'completed',
+    86→      timestamp: new Date().toISOString(),
+    87→      details: { taskId, directive: directive || 'None specified' },
+    88→    });
+    89→
+    90→    // ------------------------------------------------------------------------
+    91→    // STAGE 2: ROLE RESOLUTION & EMPLOYEE ISOLATION
+    92→    // ------------------------------------------------------------------------
+    93→    const role = request.role;
+    94→    const agentDef = SERVER_AGENTS[role as AgentRole] || {
+    95→      id: role,
+    96→      name: role === 'advisor' ? 'Founder Intelligence' : role.toUpperCase(),
+    97→      role: role === 'advisor' ? 'Founder Strategic Advisor' : 'Operational Officer',
+    98→      department: role === 'advisor' ? 'Executive Advisory' : 'Operations',
+    99→      skills: [],
+   100→      allowedCapabilities: [],
+   101→      prohibitedActions: [],
+   102→      systemInstruction: '',
+   103→      responsibilities: [],
+   104→      protocolResponsibilities: {},
+   105→    };
+   106→
+   107→    pipelineStages.push({
+   108→      stage: 'role_resolution',
+   109→      description: `Role resolved to [${role}] (${agentDef.name}, ${agentDef.department})`,
+   110→      status: 'completed',
+   111→      timestamp: new Date().toISOString(),
+   112→      details: { role, department: agentDef.department },
+   113→    });
+   114→
+   115→    // ------------------------------------------------------------------------
+   116→    // STAGE 3: SKILL BINDING & PARAMETER EXTRACTION
+   117→    // ------------------------------------------------------------------------
+   118→    let skillId = request.explicitSkillId || '';
+   119→    let skillName = '';
+   120→    let skillPurpose = '';
+   121→
+   122→    if (role === 'advisor') {
+   123→      skillId = 'strategic_advisory';
+   124→      skillName = 'Strategic Cognitive Co-Pilot';
+   125→      skillPurpose = 'Provide scenario modeling, trade-off analysis, and executive strategic guidance without execution.';
+   126→    } else {
+   127→      const skillDecision = determineSkillForTask(
+   128→        {
+   129→          title: cleanTaskTitle,
+   130→          description: cleanTaskDescription,
+   131→          protocolStep: request.protocolStep,
+   132→          directive,
+   133→        },
+   134→        role as AgentRole
+   135→      );
+   136→      skillId = skillDecision.selectedSkill?.id || 'standard_execution';
+   137→      skillName = skillDecision.selectedSkill?.name || 'Standard Specialist Execution';
+   138→      skillPurpose = skillDecision.selectedSkill?.purpose || 'Execute assigned task within role boundaries.';
+   139→    }
+   140→
+   141→    pipelineStages.push({
+   142→      stage: 'skill_binding',
+   143→      description: `Bound task to skill "${skillName}" (${skillId})`,
+   144→      status: 'completed',
+   145→      timestamp: new Date().toISOString(),
+   146→      details: { skillId, skillName, skillPurpose },
+   147→    });
+   148→
+   149→    // ------------------------------------------------------------------------
+   150→    // STAGE 4: ROLE & SKILL-AWARE CONTEXTUAL RETRIEVAL
+   151→    // ------------------------------------------------------------------------
+   152→    const combinedQuery = [
+   153→      cleanTaskTitle,
+   154→      cleanTaskDescription,
+   155→      directive || '',
+   156→      skillId,
+   157→      skillName,
+   158→      ...(request.keywords || []),
+   159→      ...(request.tags || []),
+   160→      ...(request.currentFacts || []),
+   161→    ].join(' ').trim();
+   162→
+   163→    // Query stores through their role-scoped interfaces
+   164→    const [rawStateItems, rawKnowledgeItems, rawMemoryItems] = await Promise.all([
+   165→      this.stateStore.queryState({
+   166→        query: combinedQuery,
+   167→        role: role as any,
+   168→        tags: request.tags,
+   169→        keywords: request.keywords,
+   170→        limit: 5,
+   171→      }),
+   172→      this.knowledgeStore.queryKnowledge({
+   173→        queryText: combinedQuery,
+   174→        role: role as any,
+   175→        tags: request.tags,
+   176→        keywords: request.keywords,
+   177→        limit: 4,
+   178→      }),
+   179→      this.memoryStore.queryMemories({
+   180→        queryText: combinedQuery,
+   181→        tags: request.tags,
+   182→        keywords: request.keywords,
+   183→        currentFacts: request.currentFacts,
+   184→        limit: 4,
+   185→      }),
+   186→    ]);
+   187→
+   188→    // Relevance threshold filtering: keep items with score >= 0.25
+   189→    const filteredState = rawStateItems.filter((s) => s.relevanceScore >= 0.25);
+   190→    const filteredKnowledge = rawKnowledgeItems.filter((k) => k.relevanceScore >= 0.25);
+   191→    const filteredMemory = rawMemoryItems.filter((m) => (m.relevanceScore ?? 0.5) >= 0.25);
+   192→
+   193→    // Calculate excluded noise metrics
+   194→    const [allProducts, allInits, allKnowledge, allMemories] = await Promise.all([
+   195→      this.stateStore.getProducts(),
+   196→      this.stateStore.getInitiatives(),
+   197→      this.knowledgeStore.getAllKnowledge(),
+   198→      this.memoryStore.getAllMemories(),
+   199→    ]);
+   200→
+   201→    const totalStatePool = allProducts.length + allInits.length;
+   202→    const stateExcluded = Math.max(0, totalStatePool - filteredState.length);
+   203→    const knowledgeExcluded = Math.max(0, allKnowledge.length - filteredKnowledge.length);
+   204→    const memoryExcluded = Math.max(0, allMemories.length - filteredMemory.length);
+   205→
+   206→    pipelineStages.push({
+   207→      stage: 'retrieval',
+   208→      description: `Retrieved ${filteredState.length} State, ${filteredKnowledge.length} Knowledge, and ${filteredMemory.length} Memory items (Filtered out ${stateExcluded + knowledgeExcluded + memoryExcluded} unneeded items).`,
+   209→      status: 'completed',
+   210→      timestamp: new Date().toISOString(),
+   211→      details: {
+   212→        stateCount: filteredState.length,
+   213→        knowledgeCount: filteredKnowledge.length,
+   214→        memoryCount: filteredMemory.length,
+   215→        stateExcluded,
+   216→        knowledgeExcluded,
+   217→        memoryExcluded,
+   218→      },
+   219→    });
+   220→
+   221→    // ------------------------------------------------------------------------
+   222→    // STAGE 5: CURRENT VERIFIED EVIDENCE INGESTION
+   223→    // ------------------------------------------------------------------------
+   224→    const injectedEvidence: InjectedContextItem[] = [];
+   225→    if (request.currentEvidence && request.currentEvidence.length > 0) {
+   226→      for (const ev of request.currentEvidence) {
+   227→        const itemContent = ev.summary + (ev.data ? `\nData: ${JSON.stringify(ev.data)}` : '');
+   228→        injectedEvidence.push({
+   229→          id: `evidence:${ev.id}`,
+   230→          title: ev.title,
+   231→          epistemicClassification: 'current_evidence',
+   232→          epistemicLabel: EPISTEMIC_LABELS.current_evidence,
+   233→          sourceSystem: 'current_evidence',
+   234→          sourceId: ev.id,
+   235→          authority: `Verified Tool Run (${ev.sourceToolOrTest})`,
+   236→          relevanceScore: ev.relevanceScore ?? 1.0,
+   237→          matchReason: ev.matchReason || `Empirical verification from ${ev.sourceToolOrTest}`,
+   238→          selectionReason: ev.selectionReason || `Direct empirical output for active task "${cleanTaskTitle}"`,
+   239→          characterCount: itemContent.length,
+   240→          content: itemContent,
+   241→          timestamp: ev.timestamp || timestamp,
+   242→          provenance: {
+   243→            sourceSystem: 'current_evidence',
+   244→            sourceId: `evidence:${ev.id}`,
+   245→            sourceTitle: ev.title,
+   246→            epistemicType: 'current_evidence',
+   247→            epistemicLabel: EPISTEMIC_LABELS.current_evidence,
+   248→            authority: `Verified Tool Run (${ev.sourceToolOrTest})`,
+   249→            timestamp: ev.timestamp || timestamp,
+   250→            confidence: (ev as any).confidence || 'unverified',
+   251→            notes: 'Real-time empirical observation — takes top epistemic precedence',
+   252→          },
+   253→        });
+   254→      }
+   255→    }
+   256→
+   257→    pipelineStages.push({
+   258→      stage: 'evidence_injection',
+   259→      description: `Injected ${injectedEvidence.length} current verified evidence item(s).`,
+   260→      status: 'completed',
+   261→      timestamp: new Date().toISOString(),
+   262→      details: { evidenceCount: injectedEvidence.length },
+   263→    });
+   264→
+   265→    // Transform State items into InjectedContextItems
+   266→    const injectedState: InjectedContextItem[] = filteredState.map((s) => {
+   267→      const content = `${s.summary}\nEntity: ${s.entityType} | ID: ${s.id}`;
+   268→      return {
+   269→        id: `state:${s.id}`,
+   270→        title: s.title,
+   271→        epistemicClassification: 'current_truth',
+   272→        epistemicLabel: EPISTEMIC_LABELS.current_truth,
+   273→        sourceSystem: 'company_state',
+   274→        sourceId: s.id,
+   275→        authority: s.provenance?.authority || 'Operational Ground Truth',
+   276→        relevanceScore: s.relevanceScore,
+   277→        matchReason: s.matchReason,
+   278→        selectionReason: `Selected for ${agentDef.name} (${role}) executing ${skillName} because entity matches active operational state.`,
+   279→        characterCount: content.length,
+   280→        content,
+   281→        timestamp: s.provenance?.timestamp || timestamp,
+   282→        provenance: {
+   283→          ...s.provenance,
+   284→          epistemicLabel: EPISTEMIC_LABELS.current_truth,
+   285→        },
+   286→      };
+   287→    });
+   288→
+   289→    // Transform Knowledge items into InjectedContextItems
+   290→    const injectedKnowledge: InjectedContextItem[] = filteredKnowledge.map((k) => {
+   291→      const content = `[${k.documentId}] ${k.summary}\n${k.contentSnippet}`;
+   292→      return {
+   293→        id: `knowledge:${k.documentId}`,
+   294→        title: k.title,
+   295→        epistemicClassification: 'durable_reference',
+   296→        epistemicLabel: EPISTEMIC_LABELS.durable_reference,
+   297→        sourceSystem: 'company_knowledge',
+   298→        sourceId: k.documentId,
+   299→        authority: k.provenance?.authority || 'Verified Standard Operating Procedure',
+   300→        relevanceScore: k.relevanceScore,
+   301→        matchReason: k.matchReason,
+   302→        selectionReason: `Selected for ${agentDef.name} (${role}) executing ${skillName} because document provides governing SOP/spec for ${k.category}.`,
+   303→        characterCount: content.length,
+   304→        content,
+   305→        timestamp: k.provenance?.timestamp || timestamp,
+   306→        provenance: {
+   307→          ...k.provenance,
+   308→          epistemicLabel: EPISTEMIC_LABELS.durable_reference,
+   309→        },
+   310→      };
+   311→    });
+   312→
+   313→    // Transform Memory items into InjectedContextItems
+   314→    const injectedMemory: InjectedContextItem[] = filteredMemory.map((m) => {
+   315→      const content = `Past Action: "${m.approvedAction || m.pastAction}"\nOutcome: ${m.executionOutcome}\nConfidence: ${m.epistemicConfidence}`;
+   316→      return {
+   317→        id: `memory:${m.memoryId || m.id || 'mem-1'}`,
+   318→        title: m.approvedAction || m.pastAction || 'Historical Precedent',
+   319→        epistemicClassification: 'historical_memory',
+   320→        epistemicLabel: EPISTEMIC_LABELS.historical_memory,
+   321→        sourceSystem: 'company_memory',
+   322→        sourceId: m.memoryId || m.id || 'mem-1',
+   323→        authority: 'Founder-Approved Historical Precedent',
+   324→        relevanceScore: m.relevanceScore ?? 0.6,
+   325→        matchReason: m.relevanceExplanation || 'Historical decision precedent',
+   326→        selectionReason: `Selected for ${agentDef.name} (${role}) to provide historical precedent context without treating past actions as new evidence.`,
+   327→        characterCount: content.length,
+   328→        content,
+   329→        timestamp: m.provenance?.timestamp || timestamp,
+   330→        isConflicting: m.isConflicting,
+   331→        provenance: {
+   332→          sourceSystem: 'company_memory',
+   333→          sourceId: `memory:${m.memoryId || m.id}`,
+   334→          sourceTitle: m.approvedAction || m.pastAction || 'Historical Precedent',
+   335→          epistemicType: 'historical_memory',
+   336→          epistemicLabel: EPISTEMIC_LABELS.historical_memory,
+   337→          authority: 'Founder-Approved Historical Precedent',
+   338→          timestamp: m.provenance?.timestamp || timestamp,
+   339→          confidence: (m.epistemicConfidence as any) || 'unverified',
+   340→          immutablePrecedent: true,
+   341→          notes: 'Precedent only — never new empirical evidence',
+   342→        },
+   343→      };
+   344→    });
+   345→
+   346→    // ------------------------------------------------------------------------
+   347→    // STAGE 6: CONFLICT ARBITRATION & EPISTEMIC PRECEDENCE
+   348→    // Rule: Current Verified Evidence / State > Company Knowledge > Historical Memory
+   349→    // ------------------------------------------------------------------------
+   350→    const currentFacts = [
+   351→      ...(request.currentFacts || []),
+   352→      ...injectedEvidence.map((e) => e.title),
+   353→      ...injectedState.map((s) => s.title),
+   354→    ];
+   355→
+   356→    const conflicts = this.retrievalService.detectConflicts(
+   357→      filteredState,
+   358→      filteredKnowledge,
+   359→      filteredMemory,
+   360→      currentFacts
+   361→    );
+   362→
+   363→    // If conflicts exist, mark lower-precedence items and annotate resolution
+   364→    if (conflicts.length > 0) {
+   365→      for (const conflict of conflicts) {
+   366→        if (conflict.lowerPrecedenceItem.sourceSystem === 'company_memory') {
+   367→          const mem = injectedMemory.find((m) => m.id === conflict.lowerPrecedenceItem.id);
+   368→          if (mem) {
+   369→            mem.isConflicting = true;
+   370→            mem.conflictResolutionNote = `Superseded by ${conflict.higherPrecedenceItem.sourceSystem}: ${conflict.resolutionSummary}`;
+   371→          }
+   372→        }
+   373→      }
+   374→    }
+   375→
+   376→    pipelineStages.push({
+   377→      stage: 'conflict_arbitration',
+   378→      description:
+   379→        conflicts.length > 0
+   380→          ? `Detected ${conflicts.length} epistemic conflict(s); applied strict state/evidence precedence overrides.`
+   381→          : 'Zero epistemic conflicts detected across all context sources.',
+   382→      status: conflicts.length > 0 ? 'flagged' : 'completed',
+   383→      timestamp: new Date().toISOString(),
+   384→      details: { conflictCount: conflicts.length, conflicts },
+   385→    });
+   386→
+   387→    // ------------------------------------------------------------------------
+   388→    // STAGE 7: CONTEXT BUDGETING & TOKEN/CHARACTER MANAGEMENT
+   389→    // ------------------------------------------------------------------------
+   390→    const maxBudgetChars = request.maxBudgetChars || 12000;
+   391→    const maxItemsPerCategory = {
+   392→      evidence: 4,
+   393→      state: 4,
+   394→      knowledge: 3,
+   395→      memory: 3,
+   396→    };
+   397→
+   398→    // Apply category caps
+   399→    const budgetedEvidence = injectedEvidence.slice(0, maxItemsPerCategory.evidence);
+   400→    const budgetedState = injectedState.slice(0, maxItemsPerCategory.state);
+   401→    const budgetedKnowledge = injectedKnowledge.slice(0, maxItemsPerCategory.knowledge);
+   402→    const budgetedMemory = injectedMemory.slice(0, maxItemsPerCategory.memory);
+   403→
+   404→    let allItems: InjectedContextItem[] = [
+   405→      ...budgetedEvidence,
+   406→      ...budgetedState,
+   407→      ...budgetedKnowledge,
+   408→      ...budgetedMemory,
+   409→    ];
+   410→
+   411→    let totalChars = allItems.reduce((acc, it) => acc + it.characterCount, 0);
+   412→    let isTruncated = false;
+   413→    let truncatedItemCount = 0;
+   414→
+   415→    // If budget exceeded, trim lower-precedence items first (Memory -> Knowledge -> State -> Evidence)
+   416→    if (totalChars > maxBudgetChars) {
+   417→      isTruncated = true;
+   418→      // Sort by epistemic precedence and relevance score descending
+   419→      const precedenceWeight: Record<EpistemicClassification, number> = {
+   420→        current_evidence: 4,
+   421→        current_truth: 3,
+   422→        canonical_fact: 3,
+   423→        durable_reference: 2,
+   424→        historical_memory: 1,
+   425→        ai_inference: 0,
+   426→      };
+   427→
+   428→      allItems.sort((a, b) => {
+   429→        const weightDiff = (precedenceWeight[b.epistemicClassification] || 0) - (precedenceWeight[a.epistemicClassification] || 0);
+   430→        if (weightDiff !== 0) return weightDiff;
+   431→        return b.relevanceScore - a.relevanceScore;
+   432→      });
+   433→
+   434→      const keptItems: InjectedContextItem[] = [];
+   435→      let runningChars = 0;
+   436→
+   437→      for (const item of allItems) {
+   438→        if (runningChars + item.characterCount <= maxBudgetChars) {
+   439→          keptItems.push(item);
+   440→          runningChars += item.characterCount;
+   441→        } else {
+   442→          truncatedItemCount++;
+   443→        }
+   444→      }
+   445→
+   446→      allItems = keptItems;
+   447→      totalChars = runningChars;
+   448→    }
+   449→
+   450→    const budgetUtilizationPct = Math.min(100, Math.round((totalChars / maxBudgetChars) * 100));
+   451→
+   452→    pipelineStages.push({
+   453→      stage: 'budget_enforcement',
+   454→      description: `Context budget: ${totalChars}/${maxBudgetChars} chars (${budgetUtilizationPct}%). Truncated: ${truncatedItemCount} items.`,
+   455→      status: 'completed',
+   456→      timestamp: new Date().toISOString(),
+   457→      details: {
+   458→        maxBudgetChars,
+   459→        totalChars,
+   460→        budgetUtilizationPct,
+   461→        isTruncated,
+   462→        truncatedItemCount,
+   463→      },
+   464→    });
+   465→
+   466→    // ------------------------------------------------------------------------
+   467→    // STAGE 8: FORMATTED PROMPT GENERATION & FINAL ASSEMBLY
+   468→    // ------------------------------------------------------------------------
+   469→    const finalEvidence = allItems.filter((i) => i.epistemicClassification === 'current_evidence');
+   470→    const finalState = allItems.filter((i) => i.epistemicClassification === 'current_truth');
+   471→    const finalKnowledge = allItems.filter((i) => i.epistemicClassification === 'durable_reference');
+   472→    const finalMemory = allItems.filter((i) => i.epistemicClassification === 'historical_memory');
+   473→
+   474→    const formattedSeparatedSections = this.formatSeparatedSections({
+   475→      taskId,
+   476→      taskTitle: cleanTaskTitle,
+   477→      role: role as any,
+   478→      employeeName: agentDef.name,
+   479→      skillName,
+   480→      evidence: finalEvidence,
+   481→      state: finalState,
+   482→      knowledge: finalKnowledge,
+   483→      memory: finalMemory,
+   484→      conflicts,
+   485→    });
+   486→
+   487→    const formattedPrompt = [
+   488→      formattedSeparatedSections.evidenceSection,
+   489→      formattedSeparatedSections.stateSection,
+   490→      formattedSeparatedSections.knowledgeSection,
+   491→      formattedSeparatedSections.memorySection,
+   492→      formattedSeparatedSections.conflictsSection,
+   493→    ].filter(Boolean).join('\n\n');
+   494→
+   495→    // Create deterministic hash for provenance and immutability guarantee
+   496→    const hashInput = JSON.stringify({
+   497→      taskId,
+   498→      role,
+   499→      skillId,
+   500→      itemIds: allItems.map((i) => i.id),
+   501→      timestamp,
+   502→    });
+   503→    const immutableSnapshotHash = createHash('sha256').update(hashInput).digest('hex').slice(0, 16);
+   504→
+   505→    pipelineStages.push({
+   506→      stage: 'final_assembly',
+   507→      description: `Assembly complete. Snapshot [${immutableSnapshotHash}] assembled with ${allItems.length} verified context items.`,
+   508→      status: 'completed',
+   509→      timestamp: new Date().toISOString(),
+   510→      details: {
+   511→        totalItems: allItems.length,
+   512→        snapshotHash: immutableSnapshotHash,
+   513→      },
+   514→    });
+   515→
+   516→    const assembledContext: AssembledEmployeeContext = {
+   517→      contextId: `ctx-${Date.now()}-${immutableSnapshotHash}`,
+   518→      taskId,
+   519→      taskTitle: cleanTaskTitle,
+   520→      taskDescription: cleanTaskDescription,
+   521→      directive,
+   522→      employeeRole: role as any,
+   523→      employeeName: agentDef.name,
+   524→      skillId,
+   525→      skillName,
+   526→      skillPurpose,
+   527→      timestamp,
+   528→      pipelineStages,
+   529→      currentEvidence: finalEvidence,
+   530→      companyState: finalState,
+   531→      companyKnowledge: finalKnowledge,
+   532→      historicalMemory: finalMemory,
+   533→      allInjectedItems: allItems,
+   534→      totalInjectedItems: allItems.length,
+   535→      conflicts,
+   536→      budget: {
+   537→        maxTotalCharacters: maxBudgetChars,
+   538→        maxItemsPerCategory,
+   539→        totalCharactersUsed: totalChars,
+   540→        budgetUtilizationPct,
+   541→        isTruncated,
+   542→        truncatedItemCount,
+   543→      },
+   544→      excludedNoise: {
+   545→        stateItemsExcludedCount: stateExcluded,
+   546→        knowledgeItemsExcludedCount: knowledgeExcluded,
+   547→        memoryItemsExcludedCount: memoryExcluded,
+   548→        sampleExcludedTitles: [
+   549→          ...allKnowledge.slice(0, 2).map((k) => k.title),
+   550→          ...allMemories.slice(0, 2).map((m) => m.approvedAction),
+   551→        ],
+   552→        rejectionReason: 'Items were excluded because their relevance score fell below threshold or they are outside the role/skill domain.',
+   553→      },
+   554→      isReadOnly: true,
+   555→      immutableSnapshotHash,
+   556→      formattedPrompt,
+   557→      formattedSeparatedSections,
+   558→    };
+   559→
+   560→    // Deep freeze the context object to prevent any downstream mutation by employees
+   561→    return Object.freeze(assembledContext);
+   562→  }
+   563→
+   564→  /**
+   565→   * Helper for Founder Intelligence Advisor Queries
+   566→   */
+   567→  public async assembleContextForAdvisor(
+   568→    question: string,
+   569→    options: {
+   570→      targetContext?: any;
+   571→      currentFacts?: string[];
+   572→      keywords?: string[];
+   573→      maxBudgetChars?: number;
+   574→    } = {}
+   575→  ): Promise<AssembledEmployeeContext> {
+   576→    return this.assembleContextForTask({
+   577→      taskId: `advisor-ctx-${Date.now()}`,
+   578→      taskTitle: question,
+   579→      taskDescription: 'Founder Intelligence strategic scenario and trade-off evaluation',
+   580→      role: 'advisor',
+   581→      explicitSkillId: 'strategic_advisory',
+   582→      currentFacts: options.currentFacts,
+   583→      keywords: options.keywords,
+   584→      maxBudgetChars: options.maxBudgetChars || 16000,
+   585→    });
+   586→  }
+   587→
+   588→  /**
+   589→   * Formats partitioned prompt sections with standardized epistemic labels.
+   590→   */
+   591→  private formatSeparatedSections(data: {
+   592→    taskId: string;
+   593→    taskTitle: string;
+   594→    role: string;
+   595→    employeeName: string;
+   596→    skillName: string;
+   597→    evidence: InjectedContextItem[];
+   598→    state: InjectedContextItem[];
+   599→    knowledge: InjectedContextItem[];
+   600→    memory: InjectedContextItem[];
+   601→    conflicts: ContextConflict[];
+   602→  }) {
+   603→    // 1. Evidence Section
+   604→    const evLines: string[] = [
+   605→      '=================================================================',
+   606→      '=== SECTION 1: CURRENT VERIFIED EVIDENCE [EMPIRICAL OBSERVATIONS] ===',
+   607→      '=================================================================',
+   608→      `EPISTEMIC LABEL: "${EPISTEMIC_LABELS.current_evidence}"`,
+   609→      'Real-time empirical verification from automated test runs and live tool executions.',
+   610→      'Takes top epistemic precedence over theoretical assumptions or historical precedents.',
+   611→      '',
+   612→    ];
+   613→    if (data.evidence.length === 0) {
+   614→      evLines.push('No empirical tool evidence attached to initial task prompt.');
+   615→    } else {
+   616→      data.evidence.forEach((ev, idx) => {
+   617→        evLines.push(`[EVIDENCE-${idx + 1}] ${ev.title}`);
+   618→        evLines.push(`  - Epistemic Label: ${ev.epistemicLabel}`);
+   619→        evLines.push(`  - Summary: ${ev.content}`);
+   620→        evLines.push(`  - Provenance: [Source: ${ev.provenance.sourceId}] [Authority: ${ev.provenance.authority}]`);
+   621→        evLines.push(`  - Selection Reason: ${ev.selectionReason}`);
+   622→        evLines.push('');
+   623→      });
+   624→    }
+   625→
+   626→    // 2. State Section
+   627→    const stateLines: string[] = [
+   628→      '=================================================================',
+   629→      '=== SECTION 2: COMPANY STATE [OPERATIONAL GROUND TRUTH] ===',
+   630→      '=================================================================',
+   631→      `EPISTEMIC LABEL: "${EPISTEMIC_LABELS.current_truth}"`,
+   632→      'Verified operational reality across active initiatives, financial metrics, and company architecture.',
+   633→      '',
+   634→    ];
+   635→    if (data.state.length === 0) {
+   636→      stateLines.push('No specific company state records matched this task.');
+   637→    } else {
+   638→      data.state.forEach((st, idx) => {
+   639→        stateLines.push(`[STATE-${idx + 1}] ${st.title}`);
+   640→        stateLines.push(`  - Epistemic Label: ${st.epistemicLabel}`);
+   641→        stateLines.push(`  - Summary: ${st.content}`);
+   642→        stateLines.push(`  - Provenance: [Source: ${st.provenance.sourceId}] [Authority: ${st.provenance.authority}]`);
+   643→        stateLines.push(`  - Selection Reason: ${st.selectionReason}`);
+   644→        stateLines.push('');
+   645→      });
+   646→    }
+   647→
+   648→    // 3. Knowledge Section
+   649→    const knowLines: string[] = [
+   650→      '=================================================================',
+   651→      '=== SECTION 3: COMPANY KNOWLEDGE [DURABLE REFERENCE & SOPS] ===',
+   652→      '=================================================================',
+   653→      `EPISTEMIC LABEL: "${EPISTEMIC_LABELS.durable_reference}"`,
+   654→      'Durable standard operating procedures, architectural specifications, and governance policies.',
+   655→      '',
+   656→    ];
+   657→    if (data.knowledge.length === 0) {
+   658→      knowLines.push('No durable knowledge documents matched this task.');
+   659→    } else {
+   660→      data.knowledge.forEach((kn, idx) => {
+   661→        knowLines.push(`[KNOWLEDGE-${idx + 1}] ${kn.title}`);
+   662→        knowLines.push(`  - Epistemic Label: ${kn.epistemicLabel}`);
+   663→        knowLines.push(`  - Summary: ${kn.content}`);
+   664→        knowLines.push(`  - Provenance: [Source: ${kn.provenance.sourceId}] [Authority: ${kn.provenance.authority}]`);
+   665→        knowLines.push(`  - Selection Reason: ${kn.selectionReason}`);
+   666→        knowLines.push('');
+   667→      });
+   668→    }
+   669→
+   670→    // 4. Memory Section
+   671→    const memLines: string[] = [
+   672→      '=================================================================',
+   673→      '=== SECTION 4: HISTORICAL MEMORY [PRECEDENT ONLY — NOT NEW EVIDENCE] ===',
+   674→      '=================================================================',
+   675→      `EPISTEMIC LABEL: "${EPISTEMIC_LABELS.historical_memory}"`,
+   676→      'Historical decisions and execution outcomes. NEVER treat as current empirical evidence or automated approvals.',
+   677→      '',
+   678→    ];
+   679→    if (data.memory.length === 0) {
+   680→      memLines.push('No historical memories matched this task.');
+   681→    } else {
+   682→      data.memory.forEach((mem, idx) => {
+   683→        memLines.push(`[MEMORY-${idx + 1}] ${mem.title}`);
+   684→        memLines.push(`  - Epistemic Label: ${mem.epistemicLabel}`);
+   685→        memLines.push(`  - Details: ${mem.content}`);
+   686→        memLines.push(`  - Provenance: [Source: ${mem.provenance.sourceId}] [Authority: ${mem.provenance.authority}]`);
+   687→        memLines.push(`  - Selection Reason: ${mem.selectionReason}`);
+   688→        if (mem.isConflicting) {
+   689→          memLines.push(`  - [!] CONFLICT OVERRIDE: ${mem.conflictResolutionNote || 'Superseded by current verified state.'}`);
+   690→        }
+   691→        evLines.push('');
+   692→      });
+   693→    }
+   694→
+   695→    // 5. Conflicts Section
+   696→    const conflictLines: string[] = [];
+   697→    if (data.conflicts.length > 0) {
+   698→      conflictLines.push('=================================================================');
+   699→      conflictLines.push('=== SECTION 5: CONFLICT RESOLUTION & PRECEDENCE OVERRIDES ===');
+   700→      conflictLines.push('=================================================================');
+   701→      data.conflicts.forEach((c, idx) => {
+   702→        conflictLines.push(`[CONFLICT-${idx + 1}] ${c.conflictType.toUpperCase()}`);
+   703→        conflictLines.push(`  - Override Rule: ${c.precedenceRule}`);
+   704→        conflictLines.push(`  - Resolution: ${c.resolutionSummary}`);
+   705→        conflictLines.push(`  - Superior: ${c.higherPrecedenceItem.title} (${c.higherPrecedenceItem.epistemicType})`);
+   706→        conflictLines.push(`  - Subordinated: ${c.lowerPrecedenceItem.title} (${c.lowerPrecedenceItem.epistemicType})`);
+   707→        conflictLines.push('');
+   708→      });
+   709→    }
+   710→
+   711→    return {
+   712→      evidenceSection: evLines.join('\n'),
+   713→      stateSection: stateLines.join('\n'),
+   714→      knowledgeSection: knowLines.join('\n'),
+   715→      memorySection: memLines.join('\n'),
+   716→      conflictsSection: conflictLines.join('\n'),
+   717→    };
+   718→  }
+   719→}
+   720→

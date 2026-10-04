@@ -1,0 +1,575 @@
+     1→import assert from 'assert';
+     2→import { readFileSync } from 'fs';
+     3→import { randomUUID } from 'crypto';
+     4→import { NextRequest } from 'next/server';
+     5→import { POST as sofiaAskPostHandler } from '../../src/app/api/sofia/ask/route';
+     6→import { POST as agentChatPostHandler } from '../../src/app/api/agent-chat/route';
+     7→import {
+     8→  ConversationStore,
+     9→  ConversationSecurityError,
+    10→} from '../../src/lib/server/conversation';
+    11→import { executeSophiaTurn } from '../../src/lib/server/sophia';
+    12→import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
+    13→
+    14→/**
+    15→ * ============================================================================
+    16→ * M3 (K-1) CONVERSATION AUTHORITY CONVERGENCE — TEST SUITE
+    17→ * ============================================================================
+    18→ *
+    19→ * Proves the SOFIA surface (/api/sofia/ask) is now a governed ingress over
+    20→ * the ONE canonical server-side conversation authority (ConversationStore +
+    21→ * executeSophiaTurn), that browser-supplied history is untrusted and can
+    22→ * never overwrite or inject canonical records, and that ownership,
+    23→ * idempotency, the SSE response contract, and process-restart durability all
+    24→ * hold.
+    25→ *
+    26→ * Scenarios (per the M3 K-1 directive):
+    27→ *  1. Sofia ask delegates to the canonical ConversationStore path
+    28→ *  2. Existing SSE response contract preserved for current callers
+    29→ *  3. Server-issued conversationId is authoritative and continuous
+    30→ *  4. Bogus conversationId provisions a fresh conversation (executor behavior)
+    31→ *  5. Cross-surface idempotent replay (sofia ask → agent-chat same turnId)
+    32→ *  6. SECURITY: fabricated history cannot overwrite canonical history
+    33→ *  7. SECURITY: fabricated history cannot inject authoritative records
+    34→ *  8. SECURITY: durable store contains no fabricated records (file level)
+    35→ *  9. SECURITY: conversation ownership is founder-scoped and fail-closed
+    36→ * 10. Idempotent replay on the same surface (same turnId twice)
+    37→ * 11. Process-restart durability (genuine bun child processes)
+    38→ * 12. Unauthenticated requests fail closed (401, production semantics)
+    39→ * 13. No second conversation persistence path (route delegates; no runAsk)
+    40→ * 14. executeSophiaTurn direct behavior does not regress
+    41→ */
+    42→
+    43→function askRequest(body: Record<string, unknown>, founderId: string): NextRequest {
+    44→  return new NextRequest('http://localhost:3000/api/sofia/ask', {
+    45→    method: 'POST',
+    46→    headers: {
+    47→      'content-type': 'application/json',
+    48→      'x-samjuniors-user-id': founderId,
+    49→      'x-samjuniors-role': 'FOUNDER',
+    50→    },
+    51→    body: JSON.stringify(body),
+    52→  });
+    53→}
+    54→
+    55→function agentChatRequest(body: Record<string, unknown>, founderId: string): NextRequest {
+    56→  return new NextRequest('http://localhost:3000/api/agent-chat', {
+    57→    method: 'POST',
+    58→    headers: {
+    59→      'content-type': 'application/json',
+    60→      'x-samjuniors-user-id': founderId,
+    61→      'x-samjuniors-role': 'FOUNDER',
+    62→    },
+    63→    body: JSON.stringify(body),
+    64→  });
+    65→}
+    66→
+    67→/** Consume the SSE response into parsed frames (mirrors the browser client). */
+    68→async function readSseFrames(res: Response): Promise<any[]> {
+    69→  const frames: any[] = [];
+    70→  if (!res.body) return frames;
+    71→  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    72→  const decoder = new TextDecoder();
+    73→  let buf = '';
+    74→  for (;;) {
+    75→    const { done, value } = await reader.read();
+    76→    if (done) break;
+    77→    buf += decoder.decode(value, { stream: true });
+    78→    let nl: number;
+    79→    while ((nl = buf.indexOf('\n')) !== -1) {
+    80→      const line = buf.slice(0, nl).replace(/\r$/, '');
+    81→      buf = buf.slice(nl + 1);
+    82→      if (!line.startsWith('data:')) continue;
+    83→      const data = line.slice(5).trim();
+    84→      if (!data) continue;
+    85→      try {
+    86→        frames.push(JSON.parse(data));
+    87→      } catch {
+    88→        /* torn line — ignore */
+    89→      }
+    90→    }
+    91→  }
+    92→  return frames;
+    93→}
+    94→
+    95→async function runAsk(body: Record<string, unknown>, founderId: string) {
+    96→  const res = await sofiaAskPostHandler(askRequest(body, founderId));
+    97→  const frames = await readSseFrames(res);
+    98→  return {
+    99→    status: res.status,
+   100→    frames,
+   101→    ready: frames.find((f) => f.type === 'ready'),
+   102→    done: frames.find((f) => f.type === 'done'),
+   103→    error: frames.find((f) => f.type === 'error'),
+   104→  };
+   105→}
+   106→
+   107→function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
+   108→  return new Promise((resolve, reject) => {
+   109→    // @ts-ignore — Bun global exists when the suite runs under bun
+   110→    const proc = Bun.spawn(['bun', 'tests/sophia/m3-conversation-child.ts', ...args], {
+   111→      stdout: 'pipe',
+   112→      stderr: 'pipe',
+   113→      env: { ...process.env, ...env },
+   114→    });
+   115→    new Response(proc.stdout)
+   116→      .text()
+   117→      .then((out) =>
+   118→        proc.exited.then((code) => {
+   119→          if (code !== 0) {
+   120→            return new Response(proc.stderr)
+   121→              .text()
+   122→              .then((errText) =>
+   123→                reject(
+   124→                  new Error(
+   125→                    `child (${args.join(' ')}) exited ${code}; stderr: ${errText.slice(0, 500)}`
+   126→                  )
+   127→                )
+   128→            );
+   129→          }
+   130→          try {
+   131→            // The child's stdout is a single JSON line by contract; be
+   132→            // tolerant of any stray library output by taking the LAST line
+   133→            // that parses as JSON.
+   134→            const lines = out.trim().split('\n').filter(Boolean);
+   135→            let parsed: any = null;
+   136→            for (const line of lines) {
+   137→              try {
+   138→                const candidate = JSON.parse(line);
+   139→                if (candidate && typeof candidate === 'object') parsed = candidate;
+   140→              } catch {
+   141→                /* not a JSON line — skip */
+   142→              }
+   143→            }
+   144→            if (!parsed) throw new Error('no JSON line found');
+   145→            resolve(parsed);
+   146→          } catch {
+   147→            reject(
+   148→              new Error(
+   149→                `child (${args.join(' ')}) emitted non-JSON output: ${out.trim().slice(0, 300)}`
+   150→              )
+   151→            );
+   152→          }
+   153→        })
+   154→      )
+   155→      .catch(reject);
+   156→  });
+   157→}
+   158→
+   159→async function runTests() {
+   160→  console.log('\n======================================================');
+   161→  console.log('STARTING M3 (K-1) CONVERSATION CONVERGENCE SUITE');
+   162→  console.log('======================================================\n');
+   163→
+   164→  let passed = 0;
+   165→  let failed = 0;
+   166→  const convStore = ConversationStore.getInstance();
+   167→  const founderA = `founder_m3_a_${randomUUID().slice(0, 8)}`;
+   168→  const founderB = `founder_m3_b_${randomUUID().slice(0, 8)}`;
+   169→
+   170→  // --------------------------------------------------------------------------
+   171→  // 1. Sofia ask delegates to the canonical ConversationStore path
+   172→  // --------------------------------------------------------------------------
+   173→  let conv1: string | undefined;
+   174→  try {
+   175→    const turnId = `m3-t1-${randomUUID().slice(0, 8)}`;
+   176→    const { status, ready, done, error, frames } = await runAsk(
+   177→      { text: 'What is our current monthly recurring revenue?', turnId },
+   178→      founderA
+   179→    );
+   180→    assert.strictEqual(status, 200, 'Ask must answer 200');
+   181→    assert.ok(!error, `Turn must not error (got: ${error?.message})`);
+   182→    assert.ok(done?.conversationId, 'Done frame must carry the canonical conversationId');
+   183→    conv1 = done.conversationId;
+   184→    assert.ok(conv1, 'conversationId captured');
+   185→
+   186→    const messages = await convStore.getMessages(conv1, founderA);
+   187→    assert.strictEqual(messages.length, 2, 'Exactly founder + assistant messages must be persisted');
+   188→    assert.strictEqual(messages[0].sender, 'founder');
+   189→    assert.strictEqual(messages[0].content, 'What is our current monthly recurring revenue?');
+   190→    assert.strictEqual(messages[0].idempotencyKey, turnId, 'Founder message carries the turnId key');
+   191→    assert.strictEqual(messages[1].sender, 'assistant');
+   192→    assert.ok(messages[1].content.length > 0, 'Assistant reply must be persisted');
+   193→    assert.strictEqual(messages[1].idempotencyKey, `${turnId}:assistant`, 'Assistant message carries the :assistant key');
+   194→    const assistantMeta = (messages[1].metadata as any) || {};
+   195→    assert.strictEqual(assistantMeta.ingress, 'sofia_ask', 'Assistant record must be tagged with the soﬁa_ask ingress (proof of the canonical executor)');
+   196→    assert.strictEqual(assistantMeta.voiceIngress, false, 'Typed ask must not claim voice ingress');
+   197→
+   198→    // The turn must have gone through the governed pipeline: the assembled
+   199→    // context (informational reply) is served by the gateway, and the
+   200→    // stream carried only frames the browser knows.
+   201→    const frameTypes = new Set(frames.map((f) => f.type));
+   202→    for (const t of frameTypes) {
+   203→      assert.ok(
+   204→        ['ready', 'text', 'tool', 'panel', 'blade', 'ui', 'provider', 'done', 'error'].includes(t),
+   205→        `Unknown frame type emitted: ${t}`
+   206→      );
+   207→    }
+   208→    assert.ok(ready?.brain, 'Ready frame still announces the brain');
+   209→    console.log('  [PASS] 1. Sofia ask delegates to the canonical ConversationStore path');
+   210→    passed++;
+   211→  } catch (err: any) {
+   212→    console.error('  [FAIL] 1:', err.message);
+   213→    failed++;
+   214→  }
+   215→
+   216→  // --------------------------------------------------------------------------
+   217→  // 2. Existing SSE response contract preserved for current callers
+   218→  // --------------------------------------------------------------------------
+   219→  try {
+   220→    const { frames, done } = await runAsk(
+   221→      { text: 'Give me a status update on active workstreams.', turnId: `m3-t2-${randomUUID().slice(0, 8)}` },
+   222→      founderA
+   223→    );
+   224→    assert.ok(frames.length >= 3, 'Stream must contain ready + text + done at minimum');
+   225→    assert.strictEqual(frames[0].type, 'ready', 'First frame is ready');
+   226→    const textFrames = frames.filter((f) => f.type === 'text');
+   227→    assert.ok(textFrames.length >= 1, 'Reply streams as text deltas');
+   228→    const joined = textFrames.map((f) => f.delta ?? '').join('');
+   229→    assert.strictEqual(joined, done.text, 'Concatenated deltas must equal the done text');
+   230→    assert.strictEqual(frames[frames.length - 1].type, 'done', 'Last frame is done');
+   231→    console.log('  [PASS] 2. Existing SSE response contract preserved');
+   232→    passed++;
+   233→  } catch (err: any) {
+   234→    console.error('  [FAIL] 2:', err.message);
+   235→    failed++;
+   236→  }
+   237→
+   238→  // --------------------------------------------------------------------------
+   239→  // 3. Server-issued conversationId is authoritative and continuous
+   240→  // --------------------------------------------------------------------------
+   241→  try {
+   242→    const turnId = `m3-t3-${randomUUID().slice(0, 8)}`;
+   243→    const first = await runAsk({ text: 'What is our runway?', turnId }, founderA);
+   244→    const second = await runAsk(
+   245→      { text: 'And the gross margin?', conversationId: first.done.conversationId, turnId: `${turnId}-b` },
+   246→      founderA
+   247→    );
+   248→    assert.strictEqual(second.done.conversationId, first.done.conversationId, 'Threaded conversationId keeps the same canonical conversation');
+   249→    const messages = await convStore.getMessages(first.done.conversationId, founderA);
+   250→    assert.strictEqual(messages.length, 4, 'Two turns = 4 canonical messages');
+   251→    assert.strictEqual(messages[2].content, 'And the gross margin?', 'Second founder turn persisted in order');
+   252→    console.log('  [PASS] 3. Server-issued conversationId is authoritative and continuous');
+   253→    passed++;
+   254→  } catch (err: any) {
+   255→    console.error('  [FAIL] 3:', err.message);
+   256→    failed++;
+   257→  }
+   258→
+   259→  // --------------------------------------------------------------------------
+   260→  // 4. Bogus conversationId provisions a fresh conversation (executor behavior)
+   261→  // --------------------------------------------------------------------------
+   262→  try {
+   263→    const { done } = await runAsk(
+   264→      { text: 'Hello Sophia.', conversationId: `conv-bogus-${randomUUID()}`, turnId: `m3-t4-${randomUUID().slice(0, 8)}` },
+   265→      founderA
+   266→    );
+   267→    assert.ok(done.conversationId, 'Turn must still complete with a canonical conversation');
+   268→    assert.ok(!done.conversationId.startsWith('conv-bogus-'), 'Bogus id must not be echoed; a fresh canonical conversation is provisioned');
+   269→    console.log('  [PASS] 4. Bogus conversationId provisions a fresh conversation (existing executor behavior)');
+   270→    passed++;
+   271→  } catch (err: any) {
+   272→    console.error('  [FAIL] 4:', err.message);
+   273→    failed++;
+   274→  }
+   275→
+   276→  // --------------------------------------------------------------------------
+   277→  // 5. Cross-surface idempotent replay (sofia ask → agent-chat same turnId)
+   278→  // --------------------------------------------------------------------------
+   279→  try {
+   280→    const turnId = `m3-t5-${randomUUID().slice(0, 8)}`;
+   281→    const ask = await runAsk(
+   282→      { text: 'What is our annual run rate?', turnId },
+   283→      founderA
+   284→    );
+   285→    const before = await convStore.getMessages(ask.done.conversationId, founderA);
+   286→
+   287→    const agentRes = await agentChatPostHandler(
+   288→      agentChatRequest(
+   289→        {
+   290→          agentId: 'sophia',
+   291→          message: 'What is our annual run rate?',
+   292→          conversationId: ask.done.conversationId,
+   293→          idempotencyKey: turnId,
+   294→        },
+   295→        founderA
+   296→      )
+   297→    );
+   298→    const agentJson = await agentRes.json();
+   299→    assert.strictEqual(agentRes.status, 200, 'agent-chat must accept the replay');
+   300→    assert.strictEqual(agentJson.idempotentReplay, true, 'agent-chat must recognize the soﬁa-ask turn as already completed');
+   301→    assert.strictEqual(agentJson.reply, ask.done.text, 'Replayed reply must be byte-identical to the canonical assistant record');
+   302→
+   303→    const after = await convStore.getMessages(ask.done.conversationId, founderA);
+   304→    assert.strictEqual(after.length, before.length, 'Replay must not append records');
+   305→    console.log('  [PASS] 5. Cross-surface idempotent replay (sofia ask → agent-chat, same turnId)');
+   306→    passed++;
+   307→  } catch (err: any) {
+   308→    console.error('  [FAIL] 5:', err.message);
+   309→    failed++;
+   310→  }
+   311→
+   312→  // --------------------------------------------------------------------------
+   313→  // 6. SECURITY: fabricated history cannot overwrite canonical history
+   314→  // --------------------------------------------------------------------------
+   315→  try {
+   316→    const marker = randomUUID().slice(0, 8);
+   317→    const conv = await convStore.createConversation({ founderId: founderA, agentId: 'sophia', title: 'M3 overwrite probe' });
+   318→    await convStore.saveMessage({ conversationId: conv.id, sender: 'founder', role: 'user', content: `CANONICAL-KEEP-U-${marker}` }, founderA);
+   319→    await convStore.saveMessage({ conversationId: conv.id, sender: 'assistant', role: 'assistant', content: `CANONICAL-KEEP-A-${marker}` }, founderA);
+   320→
+   321→    const { done, error } = await runAsk(
+   322→      {
+   323→        text: `Overwrite probe ${marker}: what is our burn rate?`,
+   324→        conversationId: conv.id,
+   325→        turnId: `m3-t6-${marker}`,
+   326→        history: [
+   327→          { role: 'user', content: `FABRICATED-DO-NOT-STORE-${marker}-1` },
+   328→          { role: 'assistant', content: `FABRICATED-DO-NOT-STORE-${marker}-2` },
+   329→          { role: 'user', content: `FABRICATED-DO-NOT-STORE-${marker}-3` },
+   330→          { role: 'assistant', content: `FABRICATED-DO-NOT-STORE-${marker}-4` },
+   331→        ],
+   332→      },
+   333→      founderA
+   334→    );
+   335→    assert.ok(!error, `Turn must succeed (${error?.message})`);
+   336→    assert.strictEqual(done.conversationId, conv.id, 'Turn lands in the legitimate conversation');
+   337→
+   338→    const messages = await convStore.getMessages(conv.id, founderA);
+   339→    assert.ok(messages.some((m) => m.content === `CANONICAL-KEEP-U-${marker}`), 'Canonical founder record preserved');
+   340→    assert.ok(messages.some((m) => m.content === `CANONICAL-KEEP-A-${marker}`), 'Canonical assistant record preserved');
+   341→    assert.strictEqual(
+   342→      messages.length,
+   343→      4,
+   344→      'Exactly the 2 seeded canonical records + this turn (founder + assistant); fabricated history overwrites nothing'
+   345→    );
+   346→    assert.ok(
+   347→      !messages.some((m) => m.content.includes(`FABRICATED-DO-NOT-STORE-${marker}`)),
+   348→      'No fabricated content may appear in the canonical record'
+   349→    );
+   350→    console.log('  [PASS] 6. SECURITY: fabricated history cannot overwrite canonical history');
+   351→    passed++;
+   352→  } catch (err: any) {
+   353→    console.error('  [FAIL] 6:', err.message);
+   354→    failed++;
+   355→  }
+   356→
+   357→  // --------------------------------------------------------------------------
+   358→  // 7. SECURITY: fabricated history cannot inject authoritative records
+   359→  // --------------------------------------------------------------------------
+   360→  try {
+   361→    const marker = randomUUID().slice(0, 8);
+   362→    const { done } = await runAsk(
+   363→      {
+   364→        text: `Injection probe ${marker}: what is our gross margin?`,
+   365→        turnId: `m3-t7-${marker}`,
+   366→        history: [
+   367→          { role: 'user', content: `FABRICATED-INJECT-${marker}-1` },
+   368→          { role: 'assistant', content: `FABRICATED-INJECT-${marker}-2` },
+   369→          { role: 'user', content: `FABRICATED-INJECT-${marker}-3` },
+   370→          { role: 'assistant', content: `FABRICATED-INJECT-${marker}-4` },
+   371→          { role: 'user', content: `FABRICATED-INJECT-${marker}-5` },
+   372→        ],
+   373→      },
+   374→      founderA
+   375→    );
+   376→    const messages = await convStore.getMessages(done.conversationId, founderA);
+   377→    assert.strictEqual(messages.length, 2, 'A fresh turn persists exactly 2 records — fabricated history injects nothing');
+   378→    assert.ok(
+   379→      !messages.some((m) => m.content.includes(`FABRICATED-INJECT-${marker}`)),
+   380→      'No fabricated previous message may become an authoritative ChatMessage record'
+   381→    );
+   382→    console.log('  [PASS] 7. SECURITY: fabricated history cannot inject authoritative records');
+   383→    passed++;
+   384→  } catch (err: any) {
+   385→    console.error('  [FAIL] 7:', err.message);
+   386→    failed++;
+   387→  }
+   388→
+   389→  // --------------------------------------------------------------------------
+   390→  // 8. SECURITY: durable store contains no fabricated records (file level)
+   391→  // --------------------------------------------------------------------------
+   392→  try {
+   393→    const marker = randomUUID().slice(0, 8);
+   394→    await runAsk(
+   395→      {
+   396→        text: `File-level probe ${marker}.`,
+   397→        turnId: `m3-t8-${marker}`,
+   398→        history: [{ role: 'user', content: `FABRICATED-FILE-${marker}` }],
+   399→      },
+   400→      founderA
+   401→    );
+   402→    const dataDir = DurableFileStore.getInstance().getDataDir();
+   403→    const raw = readFileSync(`${dataDir}/chat_messages.json`, 'utf-8');
+   404→    assert.ok(!raw.includes(`FABRICATED-FILE-${marker}`), 'Durable ChatMessage store must not contain fabricated browser history');
+   405→    assert.ok(raw.includes(`File-level probe ${marker}`), 'The real founder turn IS durably persisted');
+   406→    console.log('  [PASS] 8. SECURITY: durable store contains no fabricated records (file level)');
+   407→    passed++;
+   408→  } catch (err: any) {
+   409→    console.error('  [FAIL] 8:', err.message);
+   410→    failed++;
+   411→  }
+   412→
+   413→  // --------------------------------------------------------------------------
+   414→  // 9. SECURITY: conversation ownership is founder-scoped and fail-closed
+   415→  // --------------------------------------------------------------------------
+   416→  try {
+   417→    const marker = randomUUID().slice(0, 8);
+   418→    const conv = await convStore.createConversation({ founderId: founderA, agentId: 'sophia', title: 'M3 ownership probe' });
+   419→    await convStore.saveMessage({ conversationId: conv.id, sender: 'founder', role: 'user', content: `OWNER-A-${marker}` }, founderA);
+   420→    const before = await convStore.getMessages(conv.id, founderA);
+   421→
+   422→    // Founder B attempts to speak into Founder A's conversation.
+   423→    const { error, done } = await runAsk(
+   424→      { text: `Intruder probe ${marker}`, conversationId: conv.id, turnId: `m3-t9-${marker}` },
+   425→      founderB
+   426→    );
+   427→    assert.ok(error, 'Cross-founder turn must fail closed');
+   428→    assert.ok(String(error.message).includes('Forbidden'), 'Failure must be an explicit Forbidden');
+   429→    const after = await convStore.getMessages(conv.id, founderA);
+   430→    assert.strictEqual(after.length, before.length, 'The victim conversation must be unchanged');
+   431→
+   432→    // And the ConversationStore itself still throws for cross-founder reads.
+   433→    let threw = false;
+   434→    try {
+   435→      await convStore.getConversation(founderB, conv.id);
+   436→    } catch (err) {
+   437→      threw = err instanceof ConversationSecurityError;
+   438→    }
+   439→    assert.ok(threw, 'ConversationStore still enforces ConversationSecurityError on ownership mismatch');
+   440→    void done;
+   441→    console.log('  [PASS] 9. SECURITY: conversation ownership is founder-scoped and fail-closed');
+   442→    passed++;
+   443→  } catch (err: any) {
+   444→    console.error('  [FAIL] 9:', err.message);
+   445→    failed++;
+   446→  }
+   447→
+   448→  // --------------------------------------------------------------------------
+   449→  // 10. Idempotent replay on the same surface (same turnId twice)
+   450→  // --------------------------------------------------------------------------
+   451→  try {
+   452→    const turnId = `m3-t10-${randomUUID().slice(0, 8)}`;
+   453→    const first = await runAsk({ text: 'What is our total headcount plan?', turnId }, founderA);
+   454→    const second = await runAsk(
+   455→      { text: 'What is our total headcount plan?', conversationId: first.done.conversationId, turnId },
+   456→      founderA
+   457→    );
+   458→    assert.strictEqual(second.done.idempotentReplay, true, 'Second identical turn must replay');
+   459→    assert.strictEqual(second.done.text, first.done.text, 'Replayed text is the canonical assistant record');
+   460→    const messages = await convStore.getMessages(first.done.conversationId, founderA);
+   461→    assert.strictEqual(messages.length, 2, 'Replay appends nothing');
+   462→    console.log('  [PASS] 10. Idempotent replay on the same surface (same turnId twice)');
+   463→    passed++;
+   464→  } catch (err: any) {
+   465→    console.error('  [FAIL] 10:', err.message);
+   466→    failed++;
+   467→  }
+   468→
+   469→  // --------------------------------------------------------------------------
+   470→  // 11. Process-restart durability (genuine bun child processes)
+   471→  // --------------------------------------------------------------------------
+   472→  try {
+   473→    const marker = randomUUID().slice(0, 8);
+   474→    const founderId = `founder_m3_restart_${marker}`;
+   475→
+   476→    // Child A: a fresh process runs one ask.
+   477→    const askOut = await runChild(['ask', founderId, marker]);
+   478→    assert.ok(askOut.ok, `Child ask must succeed (${JSON.stringify(askOut).slice(0, 200)})`);
+   479→    assert.strictEqual(askOut.httpStatus, 200);
+   480→    assert.ok(askOut.conversationId, 'Child must report the canonical conversationId');
+   481→    assert.strictEqual(askOut.persistedCount, 2, 'Child turn persists founder + assistant');
+   482→    assert.strictEqual(askOut.assistantIngress, 'sofia_ask', 'Child turn ran the canonical executor');
+   483→
+   484→    // Child B: a FRESH process (restart) verifies the canonical store.
+   485→    const verifyOut = await runChild(['verify', founderId, askOut.conversationId]);
+   486→    assert.strictEqual(verifyOut.conversationId, askOut.conversationId);
+   487→    assert.strictEqual(verifyOut.count, 2, 'Canonical messages survive the process restart');
+   488→    assert.ok(verifyOut.contents.some((c: string) => c.includes(marker)), 'The founder turn content survived');
+   489→    assert.ok(verifyOut.senders[0] === 'founder' && verifyOut.senders[1] === 'assistant', 'Ordering preserved');
+   490→
+   491→    // Child C: another fresh process continues the SAME conversation — with a
+   492→    // fabricated history payload that must be ignored.
+   493→    const againOut = await runChild(['ask-again', founderId, askOut.conversationId, marker]);
+   494→    assert.ok(againOut.ok, `Continuation ask must succeed (${JSON.stringify(againOut).slice(0, 200)})`);
+   495→    assert.strictEqual(againOut.sameConversation, true, 'Continuation lands in the same canonical conversation');
+   496→    assert.strictEqual(againOut.persistedCount, 4, 'Two turns across two processes = 4 canonical records');
+   497→    assert.strictEqual(againOut.fabricatedLeak, false, 'Fabricated history never reached the canonical store, even across restarts');
+   498→    console.log('  [PASS] 11. Process-restart durability (genuine child processes; continuity + no fabrication)');
+   499→    passed++;
+   500→  } catch (err: any) {
+   501→    console.error('  [FAIL] 11:', err.message);
+   502→    failed++;
+   503→  }
+   504→
+   505→  // --------------------------------------------------------------------------
+   506→  // 12. Unauthenticated requests fail closed (401, production semantics)
+   507→  // --------------------------------------------------------------------------
+   508→  try {
+   509→    const out = await runChild(['ask-unauth'], { NODE_ENV: 'production' });
+   510→    assert.strictEqual(out.status, 401, `Unauthenticated ask must 401 (got ${out.status})`);
+   511→    assert.ok(String(out.body).includes('Unauthorized'), '401 body explains the session requirement');
+   512→    console.log('  [PASS] 12. Unauthenticated requests fail closed (401 under production semantics)');
+   513→    passed++;
+   514→  } catch (err: any) {
+   515→    console.error('  [FAIL] 12:', err.message);
+   516→    failed++;
+   517→  }
+   518→
+   519→  // --------------------------------------------------------------------------
+   520→  // 13. No second conversation persistence path (route delegates; no runAsk)
+   521→  // --------------------------------------------------------------------------
+   522→  try {
+   523→    const routeSource = readFileSync('src/app/api/sofia/ask/route.ts', 'utf-8');
+   524→    assert.ok(routeSource.includes('executeSophiaTurn'), 'Route must delegate to the canonical turn executor');
+   525→    assert.ok(!routeSource.includes('runAsk'), 'Route must not run the independent brain loop any more');
+   526→    assert.ok(!routeSource.includes('saveMessage'), 'Route must not persist messages itself — only the canonical executor persists');
+   527→    assert.ok(routeSource.includes('getAuthenticatedFounder'), 'Route must authenticate through the shared session contract');
+   528→
+   529→    const clientSource = readFileSync('src/sofia/lib/api.ts', 'utf-8');
+   530→    assert.ok(!clientSource.includes('history.slice(-40)'), 'Browser client must not upload its transcript any more');
+   531→    assert.ok(clientSource.includes('conversationId'), 'Browser client threads the server-issued conversationId');
+   532→    console.log('  [PASS] 13. No second conversation persistence path (source-level delegation proof)');
+   533→    passed++;
+   534→  } catch (err: any) {
+   535→    console.error('  [FAIL] 13:', err.message);
+   536→    failed++;
+   537→  }
+   538→
+   539→  // --------------------------------------------------------------------------
+   540→  // 14. executeSophiaTurn direct behavior does not regress
+   541→  // --------------------------------------------------------------------------
+   542→  try {
+   543→    const founderId = `founder_m3_direct_${randomUUID().slice(0, 8)}`;
+   544→    const turnId = `m3-direct-${randomUUID().slice(0, 8)}`;
+   545→    const result = await executeSophiaTurn({
+   546→      message: 'What is our runway?',
+   547→      founderId,
+   548→      turnId,
+   549→    });
+   550→    assert.strictEqual(result.success, true, 'Direct executor turn succeeds');
+   551→    assert.ok(result.conversationId, 'Direct executor establishes a canonical conversation');
+   552→    const messages = await convStore.getMessages(result.conversationId, founderId);
+   553→    assert.strictEqual(messages.length, 2, 'Direct executor persists founder + assistant');
+   554→    assert.strictEqual((messages[1].metadata as any)?.ingress, 'live_voice', 'Default ingress label preserved for non-soﬁa callers');
+   555→
+   556→    const replay = await executeSophiaTurn({ message: 'What is our runway?', founderId, conversationId: result.conversationId, turnId });
+   557→    assert.strictEqual(replay.idempotentReplay, true, 'Direct executor idempotency intact');
+   558→    console.log('  [PASS] 14. executeSophiaTurn direct behavior does not regress');
+   559→    passed++;
+   560→  } catch (err: any) {
+   561→    console.error('  [FAIL] 14:', err.message);
+   562→    failed++;
+   563→  }
+   564→
+   565→  console.log('\n======================================================');
+   566→  console.log(`M3 K-1 SUITE RESULT: ${passed} passed, ${failed} failed`);
+   567→  console.log('======================================================\n');
+   568→  if (failed > 0) process.exit(1);
+   569→}
+   570→
+   571→runTests().catch((err) => {
+   572→  console.error('M3 K-1 suite crashed:', err);
+   573→  process.exit(1);
+   574→});
+   575→

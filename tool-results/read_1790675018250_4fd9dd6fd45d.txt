@@ -1,0 +1,528 @@
+     1→# M5.1 Memory Retrieval Benchmark
+     2→
+     3→**Status**: IMPLEMENTED — baseline A0 measured and recorded.
+     4→**Branch**: `feat/m51-retrieval-benchmark` (base: `docs/m5-memory-agent-architecture-evaluation` @ `83e00fa`, whose tree equals `origin/main` @ `b9e63ad` — the verified M4-D state — plus the M5 evaluation document).
+     5→**Harness**: `benchmark/memory-retrieval/` · **Self-tests**: `tests/sophia/m51_benchmark.test.ts` (30/30 green).
+     6→**Predecessor**: `docs/architecture/M5_MEMORY_AGENT_ARCHITECTURE_EVALUATION.md` (§7 specified this benchmark; §15 proposed it as task M5.1).
+     7→
+     8→---
+     9→
+    10→## 1. Objective
+    11→
+    12→Create a **deterministic, repeatable benchmark** that measures what the
+    13→EXISTING M4 memory/retrieval architecture (baseline **A0**) can and cannot
+    14→retrieve, so the next architecture decision (PostgreSQL-native retrieval
+    15→improvement, and only conditionally any graph layer) can be made from
+    16→**measured evidence** instead of vendor claims or intuition.
+    17→
+    18→The benchmark answers, with numbers:
+    19→
+    20→1. What can M4 retrieve correctly today?
+    21→2. Where does lexical retrieval fail?
+    22→3. Where is semantic retrieval required?
+    23→4. Where are temporal queries insufficient?
+    24→5. Where do entity-centric queries fail?
+    25→6. Where do multi-hop relationship queries fail?
+    26→7. Where does provenance/authority fail?
+    27→8. Where does Personal Mind vs Company Brain separation fail?
+    28→9. What exact failures could justify a future associative/temporal graph layer?
+    29→
+    30→It does **not** assume Graphiti (or any graph) is the answer. It was built to
+    31→make that question decidable later, on evidence.
+    32→
+    33→### Non-goals (enforced by construction)
+    34→
+    35→- No Graphiti, Neo4j, FalkorDB, or any graph database.
+    36→- No pgvector / FTS / PostgreSQL retrieval implementation (baseline first).
+    37→- No replacement or modification of the current memory system — **zero
+    38→  `src/` files were changed** to build this harness.
+    39→- No LLM output treated as authoritative company truth — no LLM is called
+    40→  anywhere in the harness.
+    41→
+    42→## 2. Baseline Architecture
+    43→
+    44→Verified by direct inspection of `b9e63ad` (the FIRST task requirement) before
+    45→any code was written. The architecture **matches** the M5 evaluation document;
+    46→two nuances are recorded below.
+    47→
+    48→The canonical Sophia turn assembles context through eight slices
+    49→(`src/lib/server/sophia/context-assembly.ts`). The retrieval surfaces the
+    50→benchmark exercises are exactly those:
+    51→
+    52→| Surface | Code path | Conditioning | Effective K |
+    53→|---|---|---|---|
+    54→| `personal_mind` | `SophiaMemoryStore.listAllMemories(founder, {active:true})` → `selectPersonalMindMemories(pool, message)` (M4-C two-tier + M4-D fold & score bands) | lexical, folded tokens | 20 (render budget 1200 chars) |
+    55→| `company_knowledge` | `CompanyKnowledgeStore.queryKnowledge({queryText, limit:2})` | lexical (exact tokens, `matchedTerms×2 + category + role`) | 2 |
+    56→| `company_precedent` | `CompanyMemoryStore.queryMemories({queryText, limit:2})` → `OperationalLearningLoop.retrieveRelevantMemories` | lexical (keyword overlap ×20 + category bonus ×25, strict zero-match exclusion) | 2 |
+    57→| `canonical_facts` | `EpistemicClaimStore.listActiveFacts()` → slice 4A renders first 3 | **NOT query-conditioned** — promotedAt DESC | 3 |
+    58→| `unverified_claims` | pending claims over `listClaims()` → slice 4B under EPISTEMIC WARNING | **NOT query-conditioned** | 3 |
+    59→| `company_state` | `CompanyStateStore.getFinancialMetrics()` + active initiatives → slice 1 | **NOT query-conditioned** — renders unconditionally | 3 initiatives + metrics |
+    60→| `episodic_conversation` | — (only current-conversation, client-supplied, last-10-turn history) | **no surface exists** | 0 |
+    61→
+    62→Supporting machinery verified: M4-B.1 lifecycle (5 states, founder-only
+    63→transitions, supersession pointers, append-only `metadata.lifecycle.transitions`
+    64→audit — `memory-lifecycle.ts`, `personal-memory-store.ts`), M4-A capture/gate
+    65→(REJECT|NEEDS_REVIEW only), the authority-content guard, founder scoping
+    66→(fail-closed 403), the epistemic source→claim→verification→fact chain with
+    67→`markFactSuperseded`, and DurableFileStore-authoritative persistence.
+    68→
+    69→**Nuances vs the M5 document** (reported per the task's instruction):
+    70→
+    71→1. M5 doc §7.2 BQ1 lists "CompanyState financialModel history" as gold.
+    72→   CompanyState has **no history** — it is a single current blob
+    73→   (`state-store.ts` keeps one `financialModel`, `persistState` overwrites).
+    74→   The fixture therefore cannot contain it; the absence is itself a recorded
+    75→   structural fact (any "what changed in financials" query has nothing to
+    76→   read).
+    77→2. `tests/sophia/m4c_retrieval_evaluation.test.ts` (the M4-D evidence suite
+    78→   cited by the architecture doc) remains absent from the tree — confirmed.
+    79→   This harness is its committed successor.
+    80→
+    81→## 3. Benchmark Dataset
+    82→
+    83→A small, fully synthetic universe in
+    84→`benchmark/memory-retrieval/fixture.ts` — **no fabricated production facts**;
+    85→all entities (Lumora, Aurorium, Nimbus Gateway, Helix Analytics, Helix
+    86→Identity Store, Aurorium Auth Service) and all numbers are invented for
+    87→measurement. Fixture digest (SHA-256, printed with every run):
+    88→
+    89→```
+    90→40e53f1581def28371af8f050bc5ba85eaf58a47cbb86a4f449fad1beef719fb
+    91→```
+    92→
+    93→| Corpus | Records | Notes |
+    94→|---|---|---|
+    95→| Personal memories (SophiaMemory) | 13 | founder A: 8 ACTIVE + PENDING_REVIEW + SUPERSEDED + ARCHIVED + REJECTED (all 5 lifecycle states); founder B: 2 (isolation) |
+    96→| Company knowledge | 6 | pricing v2 (current) + v1 (retired), runbooks/specs, a support-"tiers" lexical trap |
+    97→| Company precedents | 6 | pricing switch, microservices abandonment, dependency builds, out-of-window decoy, discount-freeze lexical trap |
+    98→| Canonical facts | 5 | incl. a real supersession chain ($29 → $49) and a 2-hop dependency chain |
+    99→| Epistemic claims | 3 | 1 pending (trap), 2 promoted (lineage of the facts) |
+   100→| Evidence sources | 2 | provenance chain for the pricing facts |
+   101→| CompanyState | 3 initiatives + 2 decisions + financial model | decisions: 1 in-window, 1 out-of-window |
+   102→| Past conversation | 1 (4 messages) | the episodic abandonment rationale |
+   103→
+   104→Required dataset properties (asserted by self-tests F3–F9):
+   105→
+   106→- **Multiple timestamps** across a frozen timeline (2026-05-12 … 2026-09-25).
+   107→- **Old and new facts**: pricing v1→v2 (knowledge), $29→$49 (facts, real
+   108→  `markFactSuperseded` at seed time), email→dashboard (personal, real M4-B.1
+   109→  transition at seed time).
+   110→- **Superseded facts** with successor pointers on both the fact store and the
+   111→  personal store.
+   112→- **Related projects and decisions** with evidence references.
+   113→- **Evidence/provenance** everywhere (sources, claimIds, evidenceReferences,
+   114→  provenance strings incl. `conversation:<id>`).
+   115→- **Personal memories AND company facts**, with two deliberate boundary traps
+   116→  (PM-09 "personal Lumora pricing notes"; PM-11 "personal opinion about
+   117→  company finances").
+   118→- **Intentionally similar lexical wording**: the support-escalation SOP shares
+   119→  `lumora`/`tiers`/`policy` tokens with pricing queries; PREC-06 (discount
+   120→  freeze) shares `lumora`/`pricing` with the pricing-switch precedent.
+   121→- **Intentionally different wording, same meaning**: PM-10 ("keeps replies
+   122→  tight and terse when tired") vs "how I prefer to work" — asserted ZERO
+   123→  folded-token overlap (F7).
+   124→- **At least one contradiction**: $29 (superseded fact) vs $49 (current fact);
+   125→  email vs dashboard preference.
+   126→- **At least one multi-hop chain with no lexical bridge**: Nimbus Gateway →
+   127→  Aurorium Auth Service → Helix Identity Store. Self-test F4 asserts NO
+   128→  fixture record contains tokens of both endpoints.
+   129→- **Every gold answer identifies its authoritative evidence** (per-query
+   130→  gold pointers per surface; §5).
+   131→
+   132→Seeding goes **through the real store APIs** (`seed.ts`): personal memories via
+   133→`createMemory` + governed `updateMemory` transitions, the fact supersession via
+   134→`markFactSuperseded`, state via the documented durable seed shape — so the
+   135→fixture state on "disk" is produced by production code paths, not fixture
+   136→fiat. The CLI runs in an isolated scratch directory
+   137→(`$TMPDIR/samjuniors-m51-benchmark`) and wipes it on entry — it cannot pollute
+   138→the repository's `.data` (an earlier draft did; the isolation was added and
+   139→verified against the M1 suite).
+   140→
+   141→## 4. Query Categories
+   142→
+   143→Thirteen queries across the eight required categories
+   144→(`benchmark/memory-retrieval/queries.ts`):
+   145→
+   146→| ID | Category | Query |
+   147→|---|---|---|
+   148→| BQ1a | TEMPORAL | "What was our previous Lumora pricing strategy?" |
+   149→| BQ1b | TEMPORAL | "When did we move Lumora to value-based pricing?" |
+   150→| BQ2 | CHANGE_DETECTION | "What changed in company strategy during the last 3 months?" (frozen window 2026-06-25…2026-09-25) |
+   151→| BQ3a | MULTI-HOP | "Which services depend on the Helix Identity Store?" (2-hop chain) |
+   152→| BQ3b | MULTI-HOP | "Which projects depend on the value-based pricing decision?" |
+   153→| BQ4 | ENTITY_CENTRIC | "Tell me everything relevant to Lumora right now." |
+   154→| BQ5a | CONTRADICTION/SUPERSESSION | "I previously said the Lumora Starter tier costs $29 per month, later we changed it. What is the currently true price?" |
+   155→| BQ5b | CONTRADICTION/SUPERSESSION | "How do I want strategy updates delivered these days?" (personal supersession) |
+   156→| BQ6a | EPISODIC | "Why did we abandon the microservices refactor for Aurorium?" (anchored) |
+   157→| BQ6b | EPISODIC | "Why did we abandon that approach?" (anaphoric — the task's exact wording) |
+   158→| BQ7a | PERSONAL MEMORY | "What do you know about how I prefer to work?" |
+   159→| BQ7b | PERSONAL MEMORY | "What are my communication preferences right now?" |
+   160→| BQ8 | COMPANY AUTHORITY | "What is SamJuniors' current financial state?" |
+   161→
+   162→Every query records: query text, category, gold evidence IDs per surface,
+   163→forbidden evidence IDs (with the failure each hit signals, and whether the
+   164→forbidden is *hard* — must never appear — or *authority-only* — may render as
+   165→labeled advisory context but never in a truth-bearing position), required
+   166→authority domain, temporal intent (`current`/`history`/`window` + window
+   167→bounds), relationship depth (for multi-hop), expected retrieval behavior
+   168→(design hypothesis), and expected gaps (the hypothesis the MEASURED gaps are
+   169→compared against — the classifier never sees them).
+   170→
+   171→## 5. Gold-Standard Evidence
+   172→
+   173→Gold = "a correct, provenance-complete answer must be derivable from this
+   174→evidence on this surface." Examples (full sets in `queries.ts`):
+   175→
+   176→- **BQ1a** gold: `SOP-LUMORA-PRICING-V1` (knowledge — the retired policy
+   177→  doc), `PREC-01` (precedent — the switch decision with outcome), and
+   178→  `FACT-OLD-01` (canonical facts — the superseded $29 fact, i.e. the
+   179→  authoritative record of the previous price).
+   180→- **BQ8** gold: `STATE-FIN-01` (CompanyState financial model — the only
+   181→  canonical financial source) + `FACT-FIN-01` (active financial fact);
+   182→  forbidden: superseded financial facts, the pending ARR claim as truth, and
+   183→  PM-11 (personal opinion) as company evidence (authority-only forbidden).
+   184→- **BQ7a** gold: the six ACTIVE work-style memories of founder A; forbidden:
+   185→  the PENDING_REVIEW, SUPERSEDED, REJECTED records and both founder-B records
+   186→  (hard forbidden).
+   187→- **BQ3a** gold: `FACT-DEP-02` (direct dependent), `FACT-DEP-01` (transitive
+   188→  dependent at declared hop depth 2), `PREC-04` (Helix Analytics built on the
+   189→  store).
+   190→
+   191→The benchmark tests **retrieval, not invention**: the harness never asks a
+   192→model to answer; it measures exactly which evidence the canonical context
+   193→assembly would surface for the query.
+   194→
+   195→## 6. Metrics
+   196→
+   197→Per query × surface (`metrics.ts`, pure functions pinned by hand-computed
+   198→tests M1–M5):
+   199→
+   200→- **Recall@K** — K = the surface's production effective K (§2 table); facts
+   201→  and claims lists are recorded in full so beyond-K misses remain visible and
+   202→  classifiable.
+   203→- **Precision@K** — gold fraction of the retrieved window (distractors count
+   204→  against it; for the personal surface the tier-2 fallback fill is by design
+   205→  and is annotated as such).
+   206→- **MRR** — reciprocal rank of the first gold item per surface.
+   207→- **Union recall** — gold items (any surface) present at rank ≤ K on their
+   208→  surface: what a generation layer would actually have had to work with.
+   209→- **Render recall** — gold items that actually rendered inside
+   210→  `SophiaContextAssembler.assemble()` output (identity fingerprints per slice
+   211→  authority): the e2e layer, including slice budgets and truncation.
+   212→- **Correctness gates** (0/1, null when vacuous): authority-correctness,
+   213→  temporal-correctness, supersession-correctness, founder-scope-correctness,
+   214→  Personal-vs-Company boundary-correctness (§8–§9).
+   215→
+   216→Latency is NOT measured: the harness is a single deterministic process;
+   217→wall-time would measure Bun startup, not retrieval. Deferred to a load-test
+   218→harness (§14).
+   219→
+   220→## 7. Retrieval vs Generation Failure
+   221→
+   222→The harness contains **no model call**, so it structurally cannot produce
+   223→GENERATION-class failures. The three-way distinction is enforced in the data
+   224→model and every report:
+   225→
+   226→- **RETRIEVAL failure** — the correct evidence was never retrieved (or ranked
+   227→  beyond the effective K): all 14 measured baseline failures are this class.
+   228→- **AUTHORITY/LIFECYCLE failure** — unauthorized, superseded, or
+   229→  lifecycle-ineligible evidence was retrieved or rendered in a truth-bearing
+   230→  position, or scope/boundary leakage occurred: **zero measured** in A0.
+   231→- **GENERATION failure** — correct evidence was in context but a model
+   232→  produced a bad answer: **unmeasurable here by design**; self-test D6 asserts
+   233→  the harness can never emit this class, and every report footer states it.
+   234→  Measuring it requires a separate generation-side harness (§14).
+   235→
+   236→A key implication for reading the results: **recall/rank numbers here are the
+   237→ceiling for answer quality** — a generation layer consuming this exact
+   238→context cannot answer better than what was retrieved.
+   239→
+   240→## 8. Authority / Lifecycle Checks
+   241→
+   242→- **Authority-correctness** (hard gate, per M5 doc AUTH-1): the answer's
+   243→  evidence must come from the authoritative surface; any personal-mind content
+   244→  in a truth-bearing position, any pending claim as fact, or answering a
+   245→  company question solely from non-authoritative material scores 0. Vacuous
+   246→  (nothing retrieved) → null, not 0 — "honest failure" territory.
+   247→- **Lifecycle enforcement** (measured, not assumed): PENDING_REVIEW /
+   248→  SUPERSEDED / ARCHIVED / REJECTED personal memories must never enter the
+   249→  ACTIVE pool or render; superseded facts must never appear in `listActiveFacts`
+   250→  or render as current truth; predecessors must not be presented as current.
+   251→- **Supersession-correctness**: for every declared pair
+   252→  (FACT-OLD-01→FACT-CUR-01, PM-05→PM-06): successor present AND predecessor
+   253→  absent from eligible truth positions.
+   254→- **Founder-scope**: founder A's retrieval contains no founder-B records
+   255→  (checked on every query), and a direct cross-founder `getMemory` probe must
+   256→  fail closed (403).
+   257→
+   258→**Measured (A0): 10/10 authority, 13/13 founder-scope, 9/9 supersession,
+   259→0 authority/lifecycle failures.** The M4 governance invariants hold under this
+   260→workload — the failures are all retrieval-side.
+   261→
+   262→## 9. Personal vs Company Boundary Checks
+   263→
+   264→Structural, per query: personal evidence (PM-*) must never render under a
+   265→truth-bearing authority (CANONICAL_FACT / AUTHORITATIVE_OPERATIONAL_STATE /
+   266→COMPANY_KNOWLEDGE); company evidence must never render inside the
+   267→`<personal_memory_context>` untrusted container. Advisory rendering of
+   268→personal content (including the two deliberate traps PM-09/PM-11 inside the
+   269→PERSONAL_MIND container) is by-design behavior, not a violation — the
+   270→authority-only forbidden semantics encode exactly this.
+   271→
+   272→**Measured (A0): 13/13 boundary-correct.** Notably, the PM-09/PM-11 traps did
+   273→render as advisory context for company queries (as the architecture intends) —
+   274→the boundary held structurally in every case.
+   275→
+   276→## 10. Graph-Specific Failure Criteria
+   277→
+   278→A failure is flagged **graph-candidate** ONLY when ALL hold (deterministic
+   279→rules, `classify.ts`; self-tests CL3/CL4 pin both polarities):
+   280→
+   281→1. the query declares a relationship hop at **depth ≥ 2** for the missed
+   282→   evidence;
+   283→2. **single-shot lexical overlap** between the query and the evidence text is
+   284→   zero (no direct retrieval is possible even with perfect lexical scoring);
+   285→3. the failure class is RETRIEVAL (not an authority violation).
+   286→
+   287→A failure is **never** tagged F merely because the query mentions
+   288→relationships — the traversal requirement is checked against the declared
+   289→chain and measured token overlap, not assumed. The fixture guarantees the
+   290→criterion is testable: no record bridges both endpoints of the 2-hop chain.
+   291→
+   292→**Measured (A0): exactly 1 graph-candidate failure** — `FACT-DEP-01` (the
+   293→Nimbus Gateway transitive dependency) in BQ3a. §12.5 analyzes whether it
+   294→actually justifies a graph layer (short answer: not yet — a 2-hop lexical
+   295→bridge exists through FACT-DEP-02, and the fact surface is not even
+   296→query-conditioned yet).
+   297→
+   298→## 11. Baseline Results
+   299→
+   300→Recorded run (regenerable: `bun run benchmark/memory-retrieval/run.ts`;
+   301→full detail in `benchmark/memory-retrieval/results/baseline-a0.{json,md}`):
+   302→
+   303→- 13 queries · **14 failures — all RETRIEVAL class** · 0 authority/lifecycle ·
+   304→  1 graph-candidate.
+   305→- Overall mean union recall **0.80**; mean render recall **0.80** (render ≡
+   306→  union at this scale — nothing was lost between selection and render except
+   307→  where retrieval itself failed).
+   308→
+   309→| Category | Queries | Union recall | Render recall | Authority | Temporal | Supersession | Failures |
+   310→|---|---|---|---|---|---|---|---|
+   311→| TEMPORAL | 2 | 83% | 83% | 2/2 | 1/2 | 2/2 | 1 |
+   312→| CHANGE_DETECTION | 1 | **31%** | 31% | 1/1 | **0/1** | 1/1 | **9** |
+   313→| MULTI_HOP | 2 | **71%** | 71% | 2/2 | n/a | n/a | 2 |
+   314→| ENTITY_CENTRIC | 1 | 100%* | 100% | 1/1 | 1/1 | 1/1 | 0 |
+   315→| CONTRADICTION/SUPERSESSION | 2 | 100% | 100% | 1/1 | 2/2 | 2/2 | 0 |
+   316→| EPISODIC | 2 | **50%** | 50% | 2/2 | n/a | n/a | 2 |
+   317→| PERSONAL_MEMORY | 2 | 100%* | 100% | n/a | 1/1 | 2/2 | 0 |
+   318→| COMPANY_AUTHORITY | 1 | 100%* | 100% | 1/1 | 1/1 | 1/1 | 0 |
+   319→
+   320→(*) scale-sensitive passes — see §12.8.
+   321→
+   322→**Primary gap distribution (14 failures):** B_semantic ×6 ·
+   323→C_structured_filtering ×3 · D_temporal_filtering ×2 · J_other (no episodic
+   324→surface) ×2 · F_graph_traversal ×1.
+   325→
+   326→Selected per-query anchors (full tables in the results file):
+   327→
+   328→- BQ1a: knowledge Recall@2 = 100% (MRR 1.0 — the retired v1 doc ranks FIRST),
+   329→  precedent Recall@2 = 100%, facts Recall@3 = **0%** (FACT-OLD-01 structurally
+   330→  invisible) → union 67%.
+   331→- BQ2: 4/13 gold (three facts by recency + one knowledge doc); all five
+   332→  in-window precedents missed (zero lexical overlap with
+   333→  "changed/company/strategy/months"); the in-window decision record has no
+   334→  render path → union 31%.
+   335→- BQ5a: gold retrieved, **but the knowledge MRR is 0.50 — the RETIRED v1
+   336→  policy outranks the current v2** for the "currently true price" query
+   337→  (the "$29" anchor gives the old doc more token overlap).
+   338→- BQ7b: personal MRR 0.50 — "communication preferences" matches NOTHING in
+   339→  tier 1 (fold asymmetry: `preferences`→`preference` but `prefers`→`prefer`,
+   340→  by homograph protection), so selection falls to the unconditioned
+   341→  fallback; memoryType is never used as a filter.
+   342→
+   343→## 12. Failure Analysis
+   344→
+   345→### 12.1 Temporal (D ×2) — superseded truth is unreachable
+   346→
+   347→`listActiveFacts()` filters superseded facts and **no as-of / previous-version
+   348→operator exists anywhere**. For "what was our previous pricing strategy",
+   349→the old *policy documents and the precedent* happen to survive textually
+   350→(knowledge/precedent surfaces), but the authoritative record of the previous
+   351→price (FACT-OLD-01) is invisible to every surface. History questions are
+   352→answerable only by luck of surviving prose, never from the governed chain —
+   353→even though the chain (`supersededById` + promotedAt timestamps) fully
+   354→exists in the data model.
+   355→
+   356→### 12.2 Change detection (B ×6, C ×2, D ×1 within BQ2's 9 failures) — no windowed change-set operator
+   357→
+   358→"What changed in the last 3 months" retrieves 4/13 gold: the three newest
+   359→facts render only because the facts slice is unconditioned, and one knowledge
+   360→doc matches the word "company". All five in-window precedents share **zero
+   361→tokens** with the query; the decision record has **no render path at all**
+   362→(CompanyState decisions are opaque JSON with no slice); CompanyState has no
+   363→financial history to diff. There is no mechanism to enumerate
+   364→promotions/supersessions/decisions in a time window.
+   365→
+   366→### 12.3 Episodic (J ×2) — no past-conversation retrieval surface
+   367→
+   368→The abandonment rationale exists verbatim in a past conversation
+   369→(CONV-EP-01) with **lexical overlap 3** against BQ6a — and no code path can
+   370→reach it: the canonical turn loads only the current conversation's last-10
+   371→client-supplied turns. The precedent PREC-02 partially rescues the answer
+   372→(50% recall) precisely because it duplicates the rationale in its outcome
+   373→text. The anaphoric variant (BQ6b, "that approach") still retrieves PREC-02
+   374→through the single surviving token "abandon" — lexical luck, not resolution.
+   375→
+   376→### 12.4 Structured filtering (C ×3) — unconditioned and opaque surfaces
+   377→
+   378→(a) The facts slice renders the **3 newest** facts regardless of the query —
+   379→FACT-DEP-01 (rank 4 by recency) is unreachable for the Helix question even
+   380→before traversal is considered. (b) CompanyState **decisions never render
+   381→anywhere**. (c) Slice 1 renders metrics + top-3 active initiatives
+   382→**unconditionally** — BQ8's "pass" is presence-by-construction, not query
+   383→understanding.
+   384→
+   385→### 12.5 The single graph-candidate failure — honest scope
+   386→
+   387→FACT-DEP-01 (Nimbus Gateway → Aurorium Auth → Helix Identity Store, hop
+   388→depth 2) failed with zero single-shot lexical overlap. **This does NOT yet
+   389→justify a graph layer**, for three measured reasons:
+   390→
+   391→1. The intermediate hop (FACT-DEP-02) shares "Aurorium Auth Service" tokens
+   392→   with both endpoints — a **2-step lexical expansion** (retrieve DEP-02,
+   393→   re-query with its terms) would reach it; no persistent edge store is
+   394→   required to close this gap.
+   395→2. The fact surface is not even query-conditioned (C) — until facts can be
+   396→   selected by relevance, traversal quality is unmeasurable.
+   397→3. The edges themselves are **prose** ("depends on …") inside fact
+   398→   statements — an explicit `dependency` relation over existing rows (a
+   399→   relational column or join table) represents this chain without any graph
+   400→   database, consistent with the M5 evaluation's derived-index rule.
+   401→
+   402→Graphiti-class tooling becomes a candidate only if, after the §13 experiment,
+   403→the multi-hop class still fails AND dependency/entity queries become
+   404→product-critical for the founder.
+   405→
+   406→### 12.6 Ranking inversions (measured, no hard failure)
+   407→
+   408→The retired v1 pricing doc outranks the current v2 for both "right now"
+   409→(BQ4) and "currently true" (BQ5a) questions — knowledge MRR 0.50 both times.
+   410→Lexical overlap cannot express temporal currency. Similarly BQ7b's type-scoped
+   411→question falls to the unconditioned fallback because the M4-D fold
+   412→deliberately never matches `preferences`↔`prefers` (homograph protection).
+   413→
+   414→### 12.7 Precision observations
+   415→
+   416→Personal-surface precision is 13–75% (tier-2 fallback fills by design —
+   417→contextual noise, not a correctness bug); BQ3a's knowledge window is 100%
+   418→distractor (the Helix data contract matched "helix"). These quantify the
+   419→context pollution a generation layer must resist.
+   420→
+   421→### 12.8 Scale sensitivity — what this benchmark can NOT yet claim
+   422→
+   423→The corpus is deliberately small. Three "passes" are scale-limited:
+   424→
+   425→- **BQ4 (entity-centric) 100%**: only 6 knowledge docs and 6 precedents
+   426→  exist, FACT-CUR-01 happens to be the 2nd-newest fact, and the initiative
+   427→  renders unconditionally. Adding a handful of Lumora-mentioning docs would
+   428→  push gold out of the limit-2 windows.
+   429→- **BQ7 (personal) 100%**: 8 active memories all fit the 20-cap and the
+   430→  1200-char render budget, so tier-2 fallback masks paraphrase misses for
+   431→  RECALL — the semantic weakness shows only in RANK (PM-10 at 8/8 for
+   432→  BQ7a). The starvation regime (>20 active) is pinned by the existing m4c
+   433→  C4/H9 cap tests, not by this fixture.
+   434→- **Render ≡ union recall**: at this scale nothing retrieved was lost in
+   435→  render; H_context_assembly did not manifest.
+   436→
+   437→A scale-expanded fixture (100+ memories/docs) is deferred work (§14); the
+   438→mechanism-level numbers above are the valid claims of THIS run.
+   439→
+   440→## 13. Recommended Next Experiment
+   441→
+   442→Ranked by measured failure weight, smallest-first, all reversible, all
+   443→rerunnable against THIS benchmark unchanged:
+   444→
+   445→1. **M5.2 hygiene (unconditional)** — route `queryKnowledge` through the
+   446→   authoritative read path (the self-documented cache gap in
+   447→   `knowledge-store.ts`) and add the minimal retrieval-decision audit, per
+   448→   M5 doc R2. Both are prerequisites for the benchmark's numbers to govern a
+   449→   production retrieval change.
+   450→2. **M5.3 — the smallest PostgreSQL-native retrieval improvement** (the task
+   451→   explicitly defers implementation to a future task): per the measured gap
+   452→   order (B ×6 → C ×3 → D ×2), the candidate set is, in order of leverage:
+   453→   (a) query-conditioned fact/claim slices (fixes C at its root —
+   454→   `tsvector`-style filtering over canonical tables), (b) an **as-of /
+   455→   supersession-history read API** over the existing `supersededById` chains
+   456→   (fixes D relationally — no graph needed: the chain already exists in the
+   457→   data), (c) hybrid lexical+semantic retrieval for the paraphrase class
+   458→   (embeddings as retrieval index only, never canonical truth). Rerun exactly
+   459→   this benchmark after each increment.
+   460→3. **Episodic surface (small, relational)** — a bounded past-conversation
+   461→   search over ConversationStore (fixes J ×2; the gold conversations already
+   462→   lexically overlap the queries).
+   463→4. **Decision visibility (small)** — render or expose CompanyState decisions
+   464→   through a governed query API (fixes the C-class decision invisibility).
+   465→5. **Graph layer: NOT NOW.** One graph-candidate failure, 2-hop,
+   466→   lexically-bridgeable, blocked behind an unconditioned surface (§12.5).
+   467→   Re-evaluate only after M5.3 reruns this benchmark.
+   468→
+   469→## 14. Explicitly Deferred Work
+   470→
+   471→- **No PostgreSQL/pgvector/FTS implementation** — this task establishes the
+   472→  baseline only; M5.3 is a separate future task that must rerun this exact
+   473→  benchmark.
+   474→- **No Graphiti / Neo4j / FalkorDB / any graph database** — not installed,
+   475→  not prototyped, not evaluated in code.
+   476→- **No production memory semantics changed** — zero `src/` modifications;
+   477→  the M4 architecture is preserved exactly.
+   478→- **No generation-side evaluation** — answer-quality (GENERATION failures)
+   479→  requires a separate LLM-in-the-loop harness with its own governance;
+   480→  this harness states the class explicitly instead of conflating it.
+   481→- **No scale-expanded fixture** — the current fixture measures mechanisms;
+   482→  a 100+ record corpus (and with it H_context_assembly/starvation
+   483→  measurements) is future work; partial coverage exists in m4c cap tests.
+   484→- **No latency measurement** — meaningless in a single-process deterministic
+   485→  CLI; belongs to a load-test harness over the real API surface.
+   486→
+   487→---
+   488→
+   489→## Appendix A — How to reproduce
+   490→
+   491→```bash
+   492→bun run benchmark/memory-retrieval/run.ts          # human summary + results files
+   493→bun run benchmark/memory-retrieval/run.ts --json   # JSON to stdout
+   494→bun run tests/sophia/m51_benchmark.test.ts          # 30 self-tests (incl. byte-identical rerun)
+   495→```
+   496→
+   497→Deterministic: no clock reads in results; the scratch data dir is wiped on
+   498→entry; two consecutive runs are byte-identical (self-test D2).
+   499→
+   500→## Appendix B — Test execution record (this task)
+   501→
+   502→| Suite | Result |
+   503→|---|---|
+   504→| `tests/sophia/m51_benchmark.test.ts` (NEW) | **30 passed, 0 failed** |
+   505→| `tests/sophia/m0_idempotency_expiry.test.ts` | 7 passed, 0 failed |
+   506→| `tests/sophia/m1_canonical_state_authority.test.ts` | 7 passed, 0 failed |
+   507→| `tests/sophia/m2_knowledge_persistence.test.ts` | 8 passed, 0 failed |
+   508→| `tests/sophia/m3_authority_hardening.test.ts` | 10 passed, 0 failed |
+   509→| `tests/sophia/m3_conversation_convergence.test.ts` | 14 passed, 0 failed |
+   510→| `tests/sophia/k2_personal_memory.test.ts` | 20 passed, 0 failed |
+   511→| `tests/sophia/m4a_memory_capture.test.ts` | 46 passed, 0 failed |
+   512→| `tests/sophia/m4a_hardening.test.ts` | 22 passed, 0 failed |
+   513→| `tests/sophia/m4b1_lifecycle.test.ts` | 20 passed, 0 failed |
+   514→| `tests/sophia/m4c_query_conditioned_retrieval.test.ts` | 27 passed, 0 failed |
+   515→| `tests/sophia/phase2_grounding_context.test.ts` | 12 passed, 0 failed (final run)* |
+   516→
+   517→\* Environment note: phase2 tests 6/7 depend on live intent-classification
+   518→(no SDK mock; the worktree carries no `.DATABASE_URL`/LLM env). One earlier
+   519→run in this environment showed 11/12 with test 6 failing on a
+   520→`approval_action` vs `ambiguous` classification; the deterministic
+   521→entity-resolver assertions passed throughout. The canonical m51-relevant
+   522→memory suites (M0–M4-D) are fully deterministic and green.
+   523→
+   524→**Environment limitations**: local persistence mode only (no DATABASE_URL —
+   525→Prisma mirrors skipped, exactly like production local mode); the benchmark
+   526→CLI runs in `$TMPDIR/samjuniors-m51-benchmark` (repository `.data` untouched —
+   527→verified by re-running the M1 suite after a benchmark run).
+   528→

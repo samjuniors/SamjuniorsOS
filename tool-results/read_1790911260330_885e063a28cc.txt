@@ -1,0 +1,738 @@
+     1→/**
+     2→ * SamJuniorsOS — real runtime adapter (Phase 3.4).
+     3→ *
+     4→ * Thin client-side read model / command adapter over the EXISTING server APIs:
+     5→ *   POST /api/orchestrate          — Founder directive → MultiAgentOrchestrator (9-step council)
+     6→ *   POST /api/agent-chat           — conversational interaction with the authoritative personas
+     7→ *   GET  /api/agents               — authoritative workforce roster (definitions.ts)
+     8→ *   GET  /api/agents/runs          — durable per-step agent execution records (AgentRunStore)
+     9→ *   GET  /api/workflow/approvals   — Founder approval gate records (SideEffectAuthorizationGate)
+    10→ *   POST /api/workflow/approvals   — approve / reject a real approval record
+    11→ *   GET  /api/activity             — authoritative company Activity projection (Phase 4.4C)
+    12→ *
+    13→ * The UI store (osStore) is fed from this adapter; the store never invents
+    14→ * server state and the graph therefore only ever visualizes authoritative
+    15→ * workflow/agent state. No backend domain model is duplicated here — the
+    16→ * types below are UI-side projections (read models) of server responses.
+    17→ */
+    18→import { os, presentationFor } from "./osStore";
+    19→import type { Agent, AttentionItem, Decision, Workstream, Stage } from "./osStore";
+    20→import type { GraphDTO } from "@/types/graph";
+    21→import type { SchedulerStatusProjection } from "@/types/scheduling";
+    22→import type { ActivityEventDTO, ActivityResponseDTO } from "@/types/activity";
+    23→import type { EpistemicBoardDTO } from "@/types/epistemic";
+    24→import { serverActivityToEvent } from "./surfaceSchema";
+    25→
+    26→/* ------------------------------------------------------------------ id mapping
+    27→ * UI graph/persona ids (used since the graph phase) ↔ authoritative AgentRole
+    28→ * ids from lib/server/agents/definitions.ts.
+    29→ */
+    30→const UI_TO_SERVER: Record<string, string> = {
+    31→  sophia: "coo",
+    32→  thorne: "researcher",
+    33→  maya: "pm",
+    34→  julian: "finance",
+    35→};
+    36→const SERVER_TO_UI: Record<string, string> = {
+    37→  coo: "sophia",
+    38→  researcher: "thorne",
+    39→  pm: "maya",
+    40→  finance: "julian",
+    41→};
+    42→
+    43→export const toServerAgentId = (uiId: string): string => UI_TO_SERVER[uiId] ?? uiId;
+    44→export const toUiAgentId = (serverId: string): string => SERVER_TO_UI[serverId] ?? serverId;
+    45→
+    46→/* ------------------------------------------------------------------ read-model types */
+    47→
+    48→export interface ServerAgentDef {
+    49→  id: string;
+    50→  name: string;
+    51→  role: string;
+    52→  department: string;
+    53→  responsibilities: string[];
+    54→  skills: string[];
+    55→  capabilities: string[];
+    56→}
+    57→
+    58→export interface AgentRunRecord {
+    59→  runId: string;
+    60→  agentId: string;
+    61→  agentName: string;
+    62→  protocolStep: string;
+    63→  taskTitle: string;
+    64→  directive: string;
+    65→  status: "running" | "completed" | "failed" | "halted";
+    66→  durationMs: number;
+    67→  outputContent: string;
+    68→  timestamp: string;
+    69→}
+    70→
+    71→export interface ApprovalRecord {
+    72→  id: string;
+    73→  decision: "pending" | "approved" | "rejected" | "revoked" | "expired";
+    74→  actionName: string;
+    75→  classification: string;
+    76→  workflowInstanceId: string;
+    77→  stepId: string;
+    78→  employeeRole: string;
+    79→  requestedAt: string;
+    80→  notes?: string;
+    81→  target?: { summary?: string; targetSystem?: string };
+    82→  workflowObjective?: string;
+    83→}
+    84→
+    85→export interface OrchestrationRun {
+    86→  id: string;
+    87→  directive: string;
+    88→  timestamp: string;
+    89→  status: string;
+    90→  title: string;
+    91→  summary: string;
+    92→  liveAi?: boolean;
+    93→  plan: Array<{ stage: number; title: string; agentId: string; protocolStep: string; status: string }>;
+    94→  messages: Array<{ id: string; sender: string; text: string; type: string; protocolStep?: string }>;
+    95→  deliverables: Array<{ name: string; owner: string }>;
+    96→  executiveResult?: {
+    97→    recommendation: string;
+    98→    verificationStatus: string;
+    99→    executionOutcome: string;
+   100→    founderDecision?: { required: boolean; title: string; recommendation: string; why: string; impact: string; status: string };
+   101→  };
+   102→  verificationResult?: { isCompliant: boolean; checksFailed: string[] };
+   103→  executionSummary?: { totalAgentsInvoked: number; agentsInvoked: string[]; totalTasksExecuted: number; executionMode: string };
+   104→}
+   105→
+   106→/* ------------------------------------------------------------------ protocol → stage */
+   107→
+   108→const STEP_STAGE: Record<string, Stage> = {
+   109→  understand: "discovery",
+   110→  research: "discovery",
+   111→  analyze: "discovery",
+   112→  plan: "build",
+   113→  build_execute: "build",
+   114→  test: "build",
+   115→  verify: "review",
+   116→  review: "review",
+   117→  report: "ship",
+   118→};
+   119→
+   120→/** A directive is considered in-flight while any of its runs landed this recently. */
+   121→const IN_FLIGHT_WINDOW_MS = 150_000;
+   122→
+   123→/* ------------------------------------------------------------------ fetch helpers */
+   124→
+   125→function getDevAuthHeaders(): Record<string, string> {
+   126→  const secret = process.env.NEXT_PUBLIC_SAMJUNIORS_DEV_SECRET || "samjuniors_dev_secret_local";
+   127→  if (typeof window !== "undefined") {
+   128→    try {
+   129→      document.cookie = `samjuniors-dev-as=founder; path=/; SameSite=Lax`;
+   130→      document.cookie = `samjuniors-dev-secret=${secret}; path=/; SameSite=Lax`;
+   131→    } catch {
+   132→      /* ignore */
+   133→    }
+   134→  }
+   135→  return {
+   136→    "x-samjuniors-dev-as": "founder",
+   137→    "x-samjuniors-dev-secret": secret,
+   138→  };
+   139→}
+   140→
+   141→async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
+   142→  const devHeaders = getDevAuthHeaders();
+   143→  const res = await fetch(url, {
+   144→    ...init,
+   145→    headers: {
+   146→      ...devHeaders,
+   147→      ...init?.headers,
+   148→    },
+   149→  });
+   150→  let body: any = null;
+   151→  try { body = await res.json(); } catch { /* non-JSON error body */ }
+   152→  if (!res.ok) {
+   153→    throw new Error(body?.error || `Request failed (${res.status} ${url})`);
+   154→  }
+   155→  return body as T;
+   156→}
+   157→
+   158→/* ------------------------------------------------------------------ roster */
+   159→
+   160→export async function fetchRoster(): Promise<ServerAgentDef[]> {
+   161→  const data = await jsonFetch<{ success: boolean; agents: ServerAgentDef[] }>("/api/agents");
+   162→  return data.agents ?? [];
+   163→}
+   164→
+   165→/* ------------------------------------------------------------------ agent runs */
+   166→
+   167→export async function fetchRuns(limit = 200): Promise<AgentRunRecord[]> {
+   168→  const data = await jsonFetch<{ success: boolean; runs: AgentRunRecord[] }>(`/api/agents/runs?limit=${limit}`);
+   169→  return data.runs ?? [];
+   170→}
+   171→
+   172→/* ------------------------------------------------------------------ approvals */
+   173→
+   174→export async function fetchApprovals(): Promise<ApprovalRecord[]> {
+   175→  const data = await jsonFetch<{ totalCount: number; approvals: ApprovalRecord[] }>("/api/workflow/approvals?status=pending");
+   176→  return data.approvals ?? [];
+   177→}
+   178→
+   179→export async function decideApproval(approvalId: string, action: "approve" | "reject", reason?: string): Promise<void> {
+   180→  await jsonFetch("/api/workflow/approvals", {
+   181→    method: "POST",
+   182→    headers: { "Content-Type": "application/json" },
+   183→    body: JSON.stringify({ action, approvalId, reason: reason || `Founder decision via SamJuniorsOS (${action})` }),
+   184→  });
+   185→  if (typeof window !== "undefined") {
+   186→    window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+   187→  }
+   188→}
+   189→
+   190→/* ------------------------------------------------------------------ company activity (Phase 4.4C) */
+   191→
+   192→/** Authoritative company Activity projection (GET /api/activity). This is
+   193→ *  what the Activity surface presents as the company's actual history —
+   194→ *  replacing the client-only os.log as the primary Activity source. The
+   195→ *  server projects it deterministically from authoritative records, so it
+   196→ *  survives browser reload/restart by construction. */
+   197→export async function fetchActivity(limit = 60): Promise<ActivityEventDTO[]> {
+   198→  const data = await jsonFetch<ActivityResponseDTO>(`/api/activity?limit=${limit}`);
+   199→  return data.events ?? [];
+   200→}
+   201→
+   202→/* ------------------------------------------------------------------ epistemic board (Phase 4.4E) */
+   203→
+   204→/** Authoritative founder epistemic board projection
+   205→ *  (GET /api/epistemic?view=board): claims with resolved Source→Signal
+   206→ *  lineage, active facts and memories — the read model behind the founder
+   207→ *  epistemic surface. Server-authoritative; never persisted client-side. */
+   208→export async function fetchEpistemicBoard(): Promise<EpistemicBoardDTO> {
+   209→  const data = await jsonFetch<{ success: boolean; data: EpistemicBoardDTO }>("/api/epistemic?view=board");
+   210→  return data.data;
+   211→}
+   212→
+   213→/** Founder epistemic action through the EXISTING founder-gated
+   214→ *  /api/epistemic POST surface (verify_claim | reject_claim |
+   215→ *  promote_to_fact | promote_to_memory). Returns an honest success/error —
+   216→ *  the caller refreshes the board from the server afterwards so the UI never
+   217→ *  optimistically mutates governed epistemic state. */
+   218→export async function epistemicAction(
+   219→  action: "verify_claim" | "reject_claim" | "promote_to_fact" | "promote_to_memory",
+   220→  payload: Record<string, unknown>
+   221→): Promise<{ ok: true; data?: unknown } | { ok: false; error: string }> {
+   222→  try {
+   223→    const data = await jsonFetch<{ success: boolean; data?: unknown }>("/api/epistemic", {
+   224→      method: "POST",
+   225→      headers: { "Content-Type": "application/json" },
+   226→      body: JSON.stringify({ action, ...payload }),
+   227→    });
+   228→    return { ok: true, data: data.data };
+   229→  } catch (err) {
+   230→    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+   231→  }
+   232→}
+   233→
+   234→/** Refresh the epistemic board from the server into the OS store. Used after
+   235→ *  every founder epistemic action (the board is re-projected, never locally
+   236→ *  mutated — governed state advances only through the server). */
+   237→export async function refreshEpistemicBoard(): Promise<boolean> {
+   238→  try {
+   239→    const board = await fetchEpistemicBoard();
+   240→    os.setServerEpistemic(board);
+   241→    return true;
+   242→  } catch (err) {
+   243→    os.log(`Epistemic board unavailable: ${err instanceof Error ? err.message : String(err)}`);
+   244→    return false;
+   245→  }
+   246→}
+   247→
+   248→
+   249→/* ------------------------------------------------------------------ authoritative graph (Phase 4.3B) */
+   250→
+   251→export type GraphFetchResponse =
+   252→  | { success: true; data: GraphDTO }
+   253→  | { success: false; unavailable: boolean; error: string; code?: string };
+   254→
+   255→export async function fetchGraphOverview(): Promise<GraphFetchResponse> {
+   256→  try {
+   257→    const devHeaders = getDevAuthHeaders();
+   258→    const res = await fetch("/api/graph", { headers: devHeaders });
+   259→    let body: any = null;
+   260→    try { body = await res.json(); } catch { /* non-json */ }
+   261→    if (res.status === 401) {
+   262→      return { success: false, unavailable: false, error: "Unauthorized: Session required", code: "unauthorized" };
+   263→    }
+   264→    if (res.status === 503) {
+   265→      return {
+   266→        success: false,
+   267→        unavailable: true,
+   268→        error: body?.error || "Authoritative persistence is unavailable",
+   269→        code: body?.code || "reads_unavailable",
+   270→      };
+   271→    }
+   272→    if (!res.ok) {
+   273→      return {
+   274→        success: false,
+   275→        unavailable: false,
+   276→        error: body?.error || `Graph overview failed (${res.status})`,
+   277→        code: body?.code || "request_failed",
+   278→      };
+   279→    }
+   280→    return { success: true, data: body as GraphDTO };
+   281→  } catch (err) {
+   282→    const msg = err instanceof Error ? err.message : String(err);
+   283→    return { success: false, unavailable: false, error: msg, code: "network_error" };
+   284→  }
+   285→}
+   286→
+   287→
+   288→/* ------------------------------------------------------------------ automation heartbeat status (Phase 4.4A) */
+   289→
+   290→export type SchedulerStatusFetch =
+   291→  | { success: true; data: SchedulerStatusProjection }
+   292→  | { success: false; error: string; code?: string };
+   293→
+   294→/** Fetches the honest scheduler status projection. Never fabricates: on any
+   295→ *  failure the caller is expected to keep (or show) "unavailable" rather
+   296→ *  than inventing automation state. */
+   297→export async function fetchSchedulerStatus(): Promise<SchedulerStatusFetch> {
+   298→  try {
+   299→    const devHeaders = getDevAuthHeaders();
+   300→    const res = await fetch("/api/workflow/scheduling/status", { headers: devHeaders });
+   301→    let body: any = null;
+   302→    try { body = await res.json(); } catch { /* non-json */ }
+   303→    if (res.status === 401) {
+   304→      return { success: false, error: "Unauthorized: Session required", code: "unauthorized" };
+   305→    }
+   306→    if (!res.ok) {
+   307→      return { success: false, error: body?.error || `Scheduler status failed (${res.status})`, code: "request_failed" };
+   308→    }
+   309→    return { success: true, data: body as SchedulerStatusProjection };
+   310→  } catch (err) {
+   311→    const msg = err instanceof Error ? err.message : String(err);
+   312→    return { success: false, error: msg, code: "network_error" };
+   313→  }
+   314→}
+   315→
+   316→/* ------------------------------------------------------------------ automation schedule lifecycle (Phase 4.4B) */
+   317→
+   318→export interface ScheduleListItem {
+   319→  id: string;
+   320→  workflowInstanceId: string;
+   321→  stepId: string;
+   322→  scheduleType: string;
+   323→  executeAt: string;
+   324→  status: "scheduled" | "paused" | "triggered" | "completed" | "failed" | "cancelled";
+   325→  recurrence?: {
+   326→    intervalUnit?: string;
+   327→    intervalValue?: number;
+   328→    currentOccurrence?: number;
+   329→    maxOccurrences?: number;
+   330→  };
+   331→  pausedState?: { pausedAt: string; pausedBy: string; reason?: string };
+   332→  cancellationState?: { cancelledAt: string; cancelledBy: string; reason?: string };
+   333→  executionHistory?: Array<{ occurrenceId: string; status: string; triggeredAt: string; error?: string }>;
+   334→  provenance?: { createdByRole?: string; stepName?: string; workflowId?: string };
+   335→  // Enrichment from the server (GET list + actions route)
+   336→  workflowObjective?: string;
+   337→  workflowStatus?: string;
+   338→  stepStatus?: string;
+   339→  stepApprovalState?: string;
+   340→}
+   341→
+   342→export interface CreateScheduleInput {
+   343→  directive: string;
+   344→  scheduleType: "recurring" | "one_time";
+   345→  executeAt?: string;
+   346→  intervalUnit?: "minutes" | "hours" | "days" | "weeks";
+   347→  intervalValue?: number;
+   348→  maxOccurrences?: number;
+   349→  requiresApproval?: boolean;
+   350→}
+   351→
+   352→/** Creates a scheduled directive through the EXISTING founder directive path
+   353→ *  (POST /api/orchestrate with a schedule payload). Server-side validation is
+   354→ *  authoritative; invalid recurrence surfaces as an honest thrown error. */
+   355→export async function createScheduledDirective(input: CreateScheduleInput): Promise<ScheduleListItem> {
+   356→  const data = await jsonFetch<{ success: boolean; scheduled: boolean; data: { schedule: ScheduleListItem } }>(
+   357→    "/api/orchestrate",
+   358→    {
+   359→      method: "POST",
+   360→      headers: { "Content-Type": "application/json" },
+   361→      body: JSON.stringify({
+   362→        directive: input.directive.trim(),
+   363→        schedule: {
+   364→          scheduleType: input.scheduleType,
+   365→          executeAt: input.executeAt,
+   366→          intervalUnit: input.intervalUnit,
+   367→          intervalValue: input.intervalValue,
+   368→          maxOccurrences: input.maxOccurrences,
+   369→          requiresApproval: input.requiresApproval,
+   370→        },
+   371→      }),
+   372→    }
+   373→  );
+   374→  return data.data.schedule;
+   375→}
+   376→
+   377→/** Lists the founder's automation schedules (authoritative enrichment incl. objective). */
+   378→export async function fetchSchedules(): Promise<ScheduleListItem[]> {
+   379→  const data = await jsonFetch<{ totalCount: number; schedules: ScheduleListItem[] }>(
+   380→    "/api/workflow/scheduling"
+   381→  );
+   382→  return data.schedules ?? [];
+   383→}
+   384→
+   385→export type ScheduleLifecycleAction = "pause" | "resume" | "cancel";
+   386→
+   387→/** Applies a lifecycle action. Failures throw honestly (never fake success). */
+   388→export async function applyScheduleAction(
+   389→  scheduleId: string,
+   390→  action: ScheduleLifecycleAction,
+   391→  reason?: string
+   392→): Promise<ScheduleListItem> {
+   393→  const data = await jsonFetch<{ success: boolean; schedule: ScheduleListItem }>(
+   394→    "/api/workflow/scheduling/actions",
+   395→    {
+   396→      method: "POST",
+   397→      headers: { "Content-Type": "application/json" },
+   398→      body: JSON.stringify({ scheduleId, action, reason }),
+   399→    }
+   400→  );
+   401→  return data.schedule;
+   402→}
+   403→
+   404→/* ------------------------------------------------------------------ chat */
+   405→
+   406→export interface ChatReply {
+   407→  reply: string;
+   408→  liveAi: boolean;
+   409→  intent: string;
+   410→  name: string;
+   411→  conversationId?: string;
+   412→  messageId?: string;
+   413→}
+   414→
+   415→export async function agentChat(opts: {
+   416→  agentId: string;
+   417→  message: string;
+   418→  conversationId?: string;
+   419→  idempotencyKey?: string;
+   420→  history?: Array<{ sender: "user" | "agent"; text: string }>;
+   421→}): Promise<ChatReply> {
+   422→  const data = await jsonFetch<ChatReply & { success: boolean; conversationId?: string; messageId?: string }>("/api/agent-chat", {
+   423→    method: "POST",
+   424→    headers: { "Content-Type": "application/json" },
+   425→    body: JSON.stringify({
+   426→      agentId: opts.agentId,
+   427→      message: opts.message,
+   428→      conversationId: opts.conversationId,
+   429→      idempotencyKey: opts.idempotencyKey,
+   430→      history: (opts.history ?? []).slice(-10),
+   431→    }),
+   432→  });
+   433→  return {
+   434→    reply: data.reply,
+   435→    liveAi: !!data.liveAi,
+   436→    intent: data.intent,
+   437→    name: data.name,
+   438→    conversationId: data.conversationId,
+   439→    messageId: data.messageId,
+   440→  };
+   441→}
+   442→
+   443→export async function fetchConversation(conversationId: string): Promise<{
+   444→  success: boolean;
+   445→  conversation: any;
+   446→  messages: Array<{
+   447→    id: string;
+   448→    conversationId: string;
+   449→    sender: 'founder' | 'assistant' | 'system';
+   450→    role: 'user' | 'assistant' | 'system';
+   451→    content: string;
+   452→    createdAt: string;
+   453→  }>;
+   454→}> {
+   455→  return jsonFetch(`/api/agent-chat?conversationId=${encodeURIComponent(conversationId)}`);
+   456→}
+   457→
+   458→export async function listConversations(): Promise<{
+   459→  success: boolean;
+   460→  conversations: Array<{
+   461→    id: string;
+   462→    title: string;
+   463→    agentId: string;
+   464→    status: string;
+   465→    createdAt: string;
+   466→    updatedAt: string;
+   467→  }>;
+   468→}> {
+   469→  return jsonFetch('/api/agent-chat');
+   470→}
+   471→
+   472→export async function fetchWsTicket(conversationId?: string): Promise<{
+   473→  success: boolean;
+   474→  ticket: string;
+   475→  expiresInSeconds: number;
+   476→  wsPort: number;
+   477→}> {
+   478→  return jsonFetch('/api/auth/ws-ticket', {
+   479→    method: 'POST',
+   480→    headers: { 'Content-Type': 'application/json' },
+   481→    body: JSON.stringify({ conversationId }),
+   482→  });
+   483→}
+   484→
+   485→/* ------------------------------------------------------------------ directive dispatch */
+   486→
+   487→/** Mirrors the backend's explicit-directive heuristics (agent-chat route) closely
+   488→ *  enough to route founder commands from the ask bar to the real orchestration path. */
+   489→export function looksLikeDirective(text: string): boolean {
+   490→  const clean = text.trim().toLowerCase();
+   491→  const patterns = [
+   492→    /\b(research|investigate|analyze|evaluate|audit|model|draft|design|create|build|prepare|synthesize|simulate|spec|spec out)\b.+\b(and (give|provide|recommend|write|report|present|model)|recommendation|proposal|prd|spec|plan|deliverable|architecture|breakdown|forecast|strategy)\b/i,
+   493→    /^(research|investigate|analyze|evaluate|audit|model|draft|design|create|build|prepare|synthesize|simulate)\s+(the|our|a|an|all)\s+/i,
+   494→    /\b(give me a recommendation|give me a plan|create a prd|draft a prd|model the unit economics|model our pricing|audit compute burn|conduct a research|run an analysis|synthesize a proposal)\b/i,
+   495→    /^(execute|orchestrate|launch task|run task|start initiative)\b/i,
+   496→    /^(prepare|research|analyze|build|create|model|draft|evaluate|audit|generate)\b/i,
+   497→    /^(work|start)\b/i,
+   498→  ];
+   499→  return patterns.some((p) => p.test(clean));
+   500→}
+   501→
+   502→export async function orchestrate(directive: string, agents?: string[]): Promise<OrchestrationRun> {
+   503→  const data = await jsonFetch<{ success: boolean; data: OrchestrationRun; liveAi?: boolean }>("/api/orchestrate", {
+   504→    method: "POST",
+   505→    headers: { "Content-Type": "application/json" },
+   506→    body: JSON.stringify({ directive: directive.trim(), agents: agents ?? ["coo", "researcher", "pm", "finance"] }),
+   507→  });
+   508→  return data.data;
+   509→}
+   510→
+   511→/** Dispatch a founder directive to the real orchestration path. While the council
+   512→ *  executes (~minutes), polls the durable agent-run store so the OS surfaces and
+   513→ *  the operating graph visualize REAL step-by-step progress — never simulated. */
+   514→export async function dispatchDirective(directive: string, opts?: { agents?: string[] }): Promise<OrchestrationRun> {
+   515→  const poll = setInterval(() => {
+   516→    syncFromServer({ quiet: true }).catch(() => { /* transient poll failure — next tick retries */ });
+   517→  }, 3000);
+   518→  try {
+   519→    const run = await orchestrate(directive, opts?.agents);
+   520→    clearInterval(poll);
+   521→    applyOrchestrationRun(run);
+   522→    await syncFromServer();
+   523→    if (typeof window !== "undefined") {
+   524→      window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+   525→    }
+   526→    return run;
+   527→  } catch (err) {
+   528→    clearInterval(poll);
+   529→    // Sync whatever steps actually persisted server-side before the failure,
+   530→    // then surface the honest error — no fake local success.
+   531→    await syncFromServer().catch(() => undefined);
+   532→    if (typeof window !== "undefined") {
+   533→      window.dispatchEvent(new CustomEvent("samjuniors:graph-refresh"));
+   534→    }
+   535→    throw err instanceof Error ? err : new Error(String(err));
+   536→  }
+   537→}
+   538→
+   539→/** One-line real summary of a completed run (for Sophia's reply). */
+   540→export function summarizeRun(run: OrchestrationRun): string {
+   541→  const verified = run.verificationResult?.isCompliant;
+   542→  const outcome = run.executiveResult?.executionOutcome ?? run.status;
+   543→  const parts: string[] = [];
+   544→  parts.push(run.liveAi === false ? "Council executed in safe unconfigured mode." : `Directive executed: ${run.title}.`);
+   545→  if (verified === true) parts.push("Constitutional verification passed.");
+   546→  if (verified === false) parts.push(`Verification rejected: ${(run.verificationResult?.checksFailed ?? ["unknown"]).join("; ")}.`);
+   547→  if (run.executionSummary) parts.push(`${run.executionSummary.totalTasksExecuted} protocol steps · ${run.executionSummary.agentsInvoked.length} agents · ${run.deliverables.length} deliverables.`);
+   548→  if (run.executiveResult?.founderDecision?.required) parts.push(`A decision is waiting for you: ${run.executiveResult.founderDecision.title}.`);
+   549→  parts.push(`Outcome: ${outcome}.`);
+   550→  return parts.join(" ");
+   551→}
+   552→
+   553→/* ------------------------------------------------------------------ run → read-model mapping */
+   554→
+   555→function hashId(prefix: string, text: string): string {
+   556→  let h = 5381;
+   557→  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+   558→  return `${prefix}-${(h >>> 0).toString(36)}`;
+   559→}
+   560→
+   561→const titleOf = (directive: string) => (directive.length > 60 ? `${directive.slice(0, 58)}…` : directive);
+   562→
+   563→/** Groups durable agent-run records by directive and derives honest workstreams:
+   564→ *  stage from the furthest real protocol step, owner from the latest specialist
+   565→ *  that actually executed, and state from real recency. */
+   566→export function workstreamsFromRuns(runs: AgentRunRecord[], dismissed: string[] = []): Workstream[] {
+   567→  const groups = new Map<string, AgentRunRecord[]>();
+   568→  for (const r of runs) {
+   569→    const key = r.directive?.trim();
+   570→    if (!key) continue;
+   571→    (groups.get(key) ?? groups.set(key, []).get(key)!).push(r);
+   572→  }
+   573→
+   574→  const work: Workstream[] = [];
+   575→  for (const [directive, group] of groups) {
+   576→    const sorted = [...group].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+   577→    const latest = sorted[sorted.length - 1];
+   578→    const id = hashId("srv", directive);
+   579→    if (dismissed.includes(id)) continue;
+   580→
+   581→    const specialistRuns = sorted.filter((r) => r.agentId !== "coo");
+   582→    const latestSpecialist = specialistRuns[specialistRuns.length - 1];
+   583→    const owner = latestSpecialist ? toUiAgentId(latestSpecialist.agentId) : "sophia";
+   584→
+   585→    const hasReport = sorted.some((r) => r.protocolStep === "report");
+   586→    const lastStep = latest.protocolStep;
+   587→    const age = Date.now() - new Date(latest.timestamp).getTime();
+   588→    const inFlight = !hasReport && age < IN_FLIGHT_WINDOW_MS;
+   589→
+   590→    const stage: Stage = hasReport ? "done" : STEP_STAGE[lastStep] ?? "discovery";
+   591→    const state: Workstream["state"] = hasReport ? "done" : inFlight ? "active" : "paused";
+   592→
+   593→    work.push({
+   594→      id,
+   595→      title: titleOf(directive),
+   596→      owner,
+   597→      stage,
+   598→      state,
+   599→      note: `${sorted.length} real protocol steps · last: ${latest.taskTitle}`,
+   600→      at: new Date(latest.timestamp).getTime(),
+   601→      origin: "server",
+   602→      directive,
+   603→    });
+   604→    if (work.length >= 5) break; // most recent directives only — groups arrive in run-recency order
+   605→  }
+   606→  return work;
+   607→}
+   608→
+   609→/** Real agent runtime state from durable run records. Only agents currently
+   610→ *  participating in an in-flight directive show "working"; everything else
+   611→ *  decays to ready. Founder's local offline choices are preserved by osStore. */
+   612→export function agentStatesFromRuns(runs: AgentRunRecord[], work: Workstream[]): Record<string, { state: Agent["state"]; current?: string }> {
+   613→  const out: Record<string, { state: Agent["state"]; current?: string }> = {};
+   614→  const active = work.some((w) => w.state === "active");
+   615→  if (!active) return out;
+   616→
+   617→  for (const r of runs) {
+   618→    const uiId = toUiAgentId(r.agentId);
+   619→    if (out[uiId]?.state === "working") continue;
+   620→    const age = Date.now() - new Date(r.timestamp).getTime();
+   621→    if (age < IN_FLIGHT_WINDOW_MS) {
+   622→      out[uiId] = { state: "working", current: r.taskTitle };
+   623→    }
+   624→  }
+   625→  return out;
+   626→}
+   627→
+   628→/* ------------------------------------------------------------------ full sync */
+   629→
+   630→let syncing: Promise<void> | null = null;
+   631→
+   632→/** Pulls roster + runs + approvals + the company Activity projection from the
+   633→ *  server and feeds the OS store. Server-origin state REPLACES local
+   634→ *  projections; local founder records (notes, focus, offline choices) are
+   635→ *  preserved. The Activity projection (Phase 4.4C) is the AUTHORITATIVE
+   636→ *  company Activity source — the client os.log remains only an ambient
+   637→ *  browser-session supplement. */
+   638→export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> {
+   639→  if (syncing) return syncing;
+   640→  syncing = (async () => {
+   641→    try {
+   642→      const [roster, runs, approvals, activity, epistemic] = await Promise.all([
+   643→        fetchRoster(),
+   644→        fetchRuns(),
+   645→        fetchApprovals(),
+   646→        fetchActivity().catch((err) => {
+   647→          // Activity is additive to the core sync: an activity-specific failure
+   648→          // must not take down roster/runs/approvals sync. Honest signal only.
+   649→          os.log(`Company activity unavailable: ${err instanceof Error ? err.message : String(err)}`);
+   650→          return null;
+   651→        }),
+   652→        fetchEpistemicBoard().catch((err) => {
+   653→          // Phase 4.4E: the epistemic board is likewise additive — a
+   654→          // board-specific failure degrades honestly without breaking the
+   655→          // core sync. Governed epistemic state is never faked locally.
+   656→          os.log(`Epistemic board unavailable: ${err instanceof Error ? err.message : String(err)}`);
+   657→          return null;
+   658→        }),
+   659→      ]);
+   660→      applyServerReadModel({ roster, runs, approvals });
+   661→      if (activity) os.setServerActivity(activity.map(serverActivityToEvent));
+   662→      if (epistemic) os.setServerEpistemic(epistemic);
+   663→    } catch (err) {
+   664→      if (!opts?.quiet) {
+   665→        // Honest signal — never fake a successful sync.
+   666→        os.log(`Server sync unavailable: ${err instanceof Error ? err.message : String(err)}`);
+   667→      }
+   668→      throw err;
+   669→    } finally {
+   670→      syncing = null;
+   671→    }
+   672→  })();
+   673→  return syncing;
+   674→}
+   675→
+   676→function applyServerReadModel(input: { roster: ServerAgentDef[]; runs: AgentRunRecord[]; approvals: ApprovalRecord[] }) {
+   677→  const { roster, runs, approvals } = input;
+   678→  const dismissed = os.getDismissed();
+   679→  const work = workstreamsFromRuns(runs, dismissed);
+   680→  const agentStates = agentStatesFromRuns(runs, work);
+   681→
+   682→  // Agents: authoritative identity (existence/name/role) from the server roster,
+   683→  // presentation copy from the UI's own constants, runtime state from real runs.
+   684→  const agents: Agent[] = roster.map((def) => {
+   685→    const uiId = toUiAgentId(def.id);
+   686→    const presentation = presentationFor(uiId);
+   687→    const rt = agentStates[uiId];
+   688→    return {
+   689→      ...presentation,
+   690→      id: uiId,
+   691→      name: def.name,
+   692→      role: def.role,
+   693→      state: rt?.state ?? "ready",
+   694→      current: rt?.current,
+   695→    };
+   696→  });
+   697→
+   698→  // Decisions + attention from REAL pending approval gate records.
+   699→  const decisions: Decision[] = approvals.map((a) => ({
+   700→    id: a.id,
+   701→    title: a.actionName,
+   702→    context: a.target?.summary || a.notes || `${a.classification} · ${a.workflowInstanceId}`,
+   703→    options: ["Approve", "Reject"],
+   704→    raisedBy: SERVER_TO_UI[a.employeeRole] ?? a.employeeRole,
+   705→    at: new Date(a.requestedAt).getTime(),
+   706→    status: "open",
+   707→    approvalId: a.id,
+   708→  }));
+   709→
+   710→  const attention: AttentionItem[] = approvals.map((a) => ({
+   711→    id: `att-${a.id}`,
+   712→    kind: "decision",
+   713→    title: a.actionName,
+   714→    detail: a.target?.summary || a.notes,
+   715→    from: SERVER_TO_UI[a.employeeRole] ?? a.employeeRole,
+   716→    at: new Date(a.requestedAt).getTime(),
+   717→    decisionId: a.id,
+   718→    server: true,
+   719→  }));
+   720→
+   721→  os.applyServerState({ agents, work, decisions, attention });
+   722→}
+   723→
+   724→/** Ingests a just-completed orchestration run (full fidelity from the response). */
+   725→export function applyOrchestrationRun(run: OrchestrationRun) {
+   726→  // Founder decision request surfaced as real attention from the run.
+   727→  const fd = run.executiveResult?.founderDecision;
+   728→  if (fd?.required && fd.status === "pending") {
+   729→    os.addAttention({
+   730→      kind: "decision",
+   731→      title: fd.title,
+   732→      detail: `${fd.why} · ${fd.impact}`,
+   733→      from: "sophia",
+   734→    });
+   735→  }
+   736→  os.log(`Directive executed: ${titleOf(run.directive)} (${run.executionSummary?.totalTasksExecuted ?? 0} steps, ${run.deliverables.length} deliverables)`);
+   737→}
+   738→

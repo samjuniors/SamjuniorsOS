@@ -1,0 +1,742 @@
+     1→     1→/**
+     2→     2→ * The resilience layer — every provider chain in one place.
+     3→     3→ *
+     4→     4→ * The assistant is a conversation, and a conversation dies the moment one
+     5→     5→ * sentence goes unanswered. Every external service it depends on — the model
+     6→     6→ * that thinks, the transcriber that hears, the voice that speaks — has a
+     7→     7→ * moment where it rate-limits, times out, or simply goes down. So none of
+     8→     8→ * them is load-bearing alone: each is one link in a chain, and the chain is
+     9→     9→ * walked on failure, automatically, mid-turn.
+    10→    10→ *
+    11→    11→ *   LLM   z-ai (built-in, no key) → Gemini → any local OpenAI-compatible
+    12→    12→ *         server (Ollama, LM Studio, vLLM, llama.cpp)
+    13→    13→ *   STT   Deepgram → ElevenLabs Scribe → z-ai ASR (no key) → a local
+    14→    14→ *         OpenAI-compatible transcription server (faster-whisper, LocalAI)
+    15→    15→ *   TTS   ElevenLabs → z-ai neural → a local OpenAI-compatible speech server
+    16→    16→ *         (kokoro-fastapi, LocalAI, openedai-speech) → the browser's own voice
+    17→    17→ *
+    18→    18→ * Three ideas make the chains safe rather than just long:
+    19→    19→ *
+    20→    20→ *   Circuit breakers. A provider that fails twice in a row (LLM) or three
+    21→    21→ *   times (STT) is skipped for a cooldown — 90s / 60s — so a dead provider
+    22→    22→ *   costs one failed attempt, not one per sentence. When every link is
+    23→    23→ *   cooling the chain is walked anyway, in order: a retry is better than a
+    24→    24→ *   shrug. Any success heals the provider immediately.
+    25→    25→ *
+    26→    26→ *   Pins. SOFIA_LLM_PROVIDER / SOFIA_STT_PROVIDER / SOFIA_TTS_PROVIDER
+    27→    27→ *   collapse a chain to one link on purpose — for testing, or because a
+    28→    28→ *   person has decided they know better than the ladder. (The JARVIS_*
+    29→    29→ *   spellings from the bridge era still work as aliases.)
+    30→    30→ *
+    31→    31→ *   Honesty. llmInfo() / sttInfo() are the single source of truth for
+    32→    32→ *   /api/sofia/health, which is what the settings panel shows the user:
+    33→    33→ *   which links exist, which are configured, which one is answering right
+    34→    34→ *   now. A fallback you can't see is a fallback you can't trust.
+    35→    35→ *
+    36→    36→ * Everything speaks the OpenAI wire format — the request bodies and the
+    37→    37→ * SSE event stream — which is why one parser (in brain.ts) serves every
+    38→    38→ * link: the z-ai SDK, Gemini's OpenAI-compat endpoint and a local server
+    39→    39→ * all say `data: {"choices":[{"delta":{...}}]}`.
+    40→    40→ *
+    41→    41→ * Ported from bridge/providers.mjs (Vite era) — behaviour identical; the env
+    42→    42→ * vars gained SOFIA_* aliases and Next.js loads .env.local itself.
+    43→    43→ */
+    44→    44→
+    45→    45→import ZAI from 'z-ai-web-dev-sdk'
+    46→    46→import { readFileSync } from 'node:fs'
+    47→    47→import { homedir } from 'node:os'
+    48→    48→import { join } from 'node:path'
+    49→    49→
+    50→    50→// ---------------------------------------------------------------------------
+    51→    51→// Shared z-ai client — the brain, the speech engine and the transcriber all
+    52→    52→// ride one SDK instance (it only reads config; the win is one place to fail).
+    53→    53→// ---------------------------------------------------------------------------
+    54→    54→
+    55→    55→type ZaiClient = Awaited<ReturnType<typeof ZAI.create>>
+    56→    56→
+    57→    57→let zaiShared: ZaiClient | null = null
+    58→    58→let zaiBroken = false
+    59→    59→
+    60→    60→/** The one SDK instance for this process. Throws when the machine has no z-ai
+    61→    61→ *  credentials at all (a local checkout without the sandbox's auth) — callers
+    62→    62→ *  treat that as "provider unavailable", never as a crash. */
+    63→    63→export async function zaiClient(): Promise<ZaiClient> {
+    64→    64→  if (zaiShared) return zaiShared
+    65→    65→  if (zaiBroken) throw new Error('z-ai sdk is not available on this machine')
+    66→    66→  try {
+    67→    67→    zaiShared = (await ZAI.create()) as ZaiClient
+    68→    68→    return zaiShared
+    69→    69→  } catch (err) {
+    70→    70→    zaiBroken = true
+    71→    71→    console.error('[sofia] z-ai sdk unavailable:', errText(err))
+    72→    72→    throw new Error('z-ai sdk is not available on this machine')
+    73→    73→  }
+    74→    74→}
+    75→    75→
+    76→    76→/** For status displays: false once a create() has failed — the local-machine
+    77→    77→ *  case, where every z-ai link is honestly OFF rather than erroring per call. */
+    78→    78→export function zaiAvailable(): boolean {
+    79→    79→  return !zaiBroken
+    80→    80→}
+    81→    81→
+    82→    82→// ---------------------------------------------------------------------------
+    83→    83→// Circuit breaker — the one abstraction every chain shares.
+    84→    84→// ---------------------------------------------------------------------------
+    85→    85→
+    86→    86→type GuardState = { fails: number; until: number }
+    87→    87→
+    88→    88→function makeGuard(threshold: number, cooldownMs: number) {
+    89→    89→  const state = new Map<string, GuardState>()
+    90→    90→
+    91→    91→  const trip = (id: string) => {
+    92→    92→    const s = state.get(id) ?? { fails: 0, until: 0 }
+    93→    93→    s.fails += 1
+    94→    94→    // Only a run of failures opens the breaker, and opening it resets the
+    95→    95→    // count, so the cooldown that follows is a fixed window, not a ratchet.
+    96→    96→    if (s.fails >= threshold) {
+    97→    97→      s.until = Date.now() + cooldownMs
+    98→    98→      s.fails = 0
+    99→    99→    }
+   100→   100→    state.set(id, s)
+   101→   101→  }
+   102→   102→  return {
+   103→   103→    trip,
+   104→   104→    heal: (id: string) => state.set(id, { fails: 0, until: 0 }),
+   105→   105→    cooling: (id: string) => {
+   106→   106→      const s = state.get(id)
+   107→   107→      return Boolean(s && s.until > Date.now())
+   108→   108→    },
+   109→   109→  }
+   110→   110→}
+   111→   111→
+   112→   112→const LLM_GUARD = makeGuard(2, 90_000)
+   113→   113→const STT_GUARD = makeGuard(3, 60_000)
+   114→   114→
+   115→   115→const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+   116→   116→const errText = (err: unknown) =>
+   117→   117→  String((err as Error | undefined)?.message ?? err).replace(/\s+/g, ' ').slice(0, 180)
+   118→   118→
+   119→   119→/** Errors worth one quick retry before the chain moves on. */
+   120→   120→function isTransient(err: unknown): boolean {
+   121→   121→  return /\b(429|rate|too many|502|503|504|timeout|network|fetch failed|ECONN)\b/i.test(
+   122→   122→    errText(err),
+   123→   123→  )
+   124→   124→}
+   125→   125→
+   126→   126→/** A provider that refused our tool schema (small local models often do)
+   127→   127→ *  gets one retry without tools — a plain answer beats a failed turn. A
+   128→   128→ *  missing endpoint (404) is NOT a schema refusal, or every typo would
+   129→   129→ *  silently strip the tools for good. Latched so the retry is paid once per
+   130→   130→ *  provider, not once per turn. */
+   131→   131→function looksLikeToolRejection(err: unknown): boolean {
+   132→   132→  const t = errText(err)
+   133→   133→  return /(\b400\b|\b422\b|unsupported|not support|tool|function)/i.test(t)
+   134→   134→}
+   135→   135→
+   136→   136→// ---------------------------------------------------------------------------
+   137→   137→// Env plumbing — Next.js loads .env.local / .env into process.env itself.
+   138→   138→// ---------------------------------------------------------------------------
+   139→   139→
+   140→   140→const env = (name: string): string => (process.env[name] ?? '').trim()
+   141→   141→
+   142→   142→/** SOFIA_* is the Next-era spelling; JARVIS_* still works for anyone who
+   143→   143→ *  carried their old bridge .env.local across the port. */
+   144→   144→function envAlias(sofia: string, jarvis: string): string {
+   145→   145→  return env(sofia) || env(jarvis)
+   146→   146→}
+   147→   147→
+   148→   148→/** Ollama's OpenAI compatibility lives under /v1; a user who points at the
+   149→   149→ *  bare port (:11434) means it, so the suffix is added rather than demanded. */
+   150→   150→function normaliseBase(raw: string, { appendV1 = true } = {}): string {
+   151→   151→  let base = raw.replace(/\/+$/, '')
+   152→   152→  if (appendV1 && !/\/v\d+$/.test(base)) base += '/v1'
+   153→   153→  return base
+   154→   154→}
+   155→   155→
+   156→   156→function llmPinId(): string {
+   157→   157→  return envAlias('SOFIA_LLM_PROVIDER', 'JARVIS_LLM_PROVIDER').toLowerCase()
+   158→   158→}
+   159→   159→function sttPinId(): string {
+   160→   160→  return envAlias('SOFIA_STT_PROVIDER', 'JARVIS_STT_PROVIDER').toLowerCase()
+   161→   161→}
+   162→   162→export function ttsPinId(): string {
+   163→   163→  return envAlias('SOFIA_TTS_PROVIDER', 'JARVIS_TTS_PROVIDER').toLowerCase()
+   164→   164→}
+   165→   165→
+   166→   166→// ---------------------------------------------------------------------------
+   167→   167→// The LLM chain — z-ai → Gemini → local.
+   168→   168→// ---------------------------------------------------------------------------
+   169→   169→
+   170→   170→const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
+   171→   171→
+   172→   172→function geminiKey(): string {
+   173→   173→  // GEMINI_API_KEY is the one everyone has; GOOGLE_API_KEY is the one Google's
+   174→   174→  // own quickstarts hand out — accept both rather than making a person rename.
+   175→   175→  return env('GEMINI_API_KEY') || env('GOOGLE_API_KEY')
+   176→   176→}
+   177→   177→
+   178→   178→function localLlmBase(): string {
+   179→   179→  const direct = env('LOCAL_LLM_BASE_URL')
+   180→   180→  if (direct) return normaliseBase(direct)
+   181→   181→  // OLLAMA_BASE_URL is set by the tooling around Ollama more often than
+   182→   182→  // anyone types ours — accept it as an alias rather than losing the link.
+   183→   183→  const ollama = env('OLLAMA_BASE_URL')
+   184→   184→  if (ollama) return normaliseBase(ollama)
+   185→   185→  return ''
+   186→   186→}
+   187→   187→
+   188→   188→/** What the whole server sends the model. Kept loose on purpose: tool
+   189→   189→ *  definitions and messages come straight from brain.ts's own shapes. */
+   190→   190→export type LlmBody = {
+   191→   191→  messages: Array<Record<string, unknown>>
+   192→   192→  tools?: unknown[]
+   193→   193→  stream?: boolean
+   194→   194→  [key: string]: unknown
+   195→   195→}
+   196→   196→
+   197→   197→/** One SSE reader from any OpenAI-compatible chat endpoint. The shape —
+   198→   198→ *  `data: {...}\n\n` lines ending in `data: [DONE]` — is exactly what
+   199→   199→ *  brain.ts already parses for the z-ai SDK's streams. */
+   200→   200→async function openAiCompatReader(
+   201→   201→  url: string,
+   202→   202→  key: string,
+   203→   203→  body: LlmBody,
+   204→   204→): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+   205→   205→  const res = await fetch(url, {
+   206→   206→    method: 'POST',
+   207→   207→    headers: {
+   208→   208→      'content-type': 'application/json',
+   209→   209→      ...(key ? { authorization: `Bearer ${key}` } : {}),
+   210→   210→    },
+   211→   211→    body: JSON.stringify(body),
+   212→   212→    // No abort signal: it would kill the body mid-stream, and local models
+   213→   213→    // legitimately take their time. The brain's own stall guard owns hangs.
+   214→   214→  })
+   215→   215→  if (!res.ok) {
+   216→   216→    const detail = await res.text().catch(() => '')
+   217→   217→    throw new Error(`${res.status} ${res.statusText} ${String(detail).slice(0, 200)}`)
+   218→   218→  }
+   219→   219→  const reader = res.body?.getReader()
+   220→   220→  if (!reader) throw new Error('the provider returned no stream')
+   221→   221→  return reader
+   222→   222→}
+   223→   223→
+   224→   224→type LlmProvider = {
+   225→   225→  id: string
+   226→   226→  label: string
+   227→   227→  note: string
+   228→   228→  available: () => boolean
+   229→   229→  model?: string
+   230→   230→  start: (body: LlmBody) => Promise<ReadableStreamDefaultReader<Uint8Array>>
+   231→   231→}
+   232→   232→
+   233→   233→/** Each link adapts the shared body to its own dialect. */
+   234→   234→function buildLlmBody(p: { id: string; model?: string }, body: LlmBody, withTools: boolean): LlmBody {
+   235→   235→  const tools =
+   236→   236→    withTools && Array.isArray(body.tools) && body.tools.length ? body.tools : undefined
+   237→   237→  if (p.id === 'zai') {
+   238→   238→    // `thinking` is a z-ai extension; harmless nowhere else but not theirs
+   239→   239→    // to carry, so it stays on the one link that reads it.
+   240→   240→    return { ...body, tools, thinking: { type: 'disabled' } }
+   241→   241→  }
+   242→   242→  const out: LlmBody = { ...body, tools, model: p.model }
+   243→   243→  delete out.thinking
+   244→   244→  return out
+   245→   245→}
+   246→   246→
+   247→   247→const LLM_CHAIN: LlmProvider[] = [
+   248→   248→  {
+   249→   249→    id: 'zai',
+   250→   250→    label: 'Z-AI',
+   251→   251→    note: 'built-in, no key',
+   252→   252→    available: () => zaiAvailable(),
+   253→   253→    async start(body) {
+   254→   254→      const api = await zaiClient()
+   255→   255→      const res = await (api.chat.completions.create as (b: unknown) => Promise<Response>)(
+   256→   256→        body,
+   257→   257→      )
+   258→   258→      const reader = (res as unknown as { getReader?: () => ReadableStreamDefaultReader<Uint8Array> })
+   259→   259→        .getReader
+   260→   260→        ? (res as unknown as { getReader: () => ReadableStreamDefaultReader<Uint8Array> }).getReader()
+   261→   261→        : null
+   262→   262→      if (!reader) throw new Error('the model returned no stream')
+   263→   263→      return reader
+   264→   264→    },
+   265→   265→  },
+   266→   266→  {
+   267→   267→    id: 'gemini',
+   268→   268→    label: 'GEMINI',
+   269→   269→    note: 'GEMINI_API_KEY',
+   270→   270→    available: () => Boolean(geminiKey()),
+   271→   271→    get model() {
+   272→   272→      return env('GEMINI_MODEL') || 'gemini-2.0-flash'
+   273→   273→    },
+   274→   274→    async start(body) {
+   275→   275→      return openAiCompatReader(GEMINI_URL, geminiKey(), body)
+   276→   276→    },
+   277→   277→  },
+   278→   278→  {
+   279→   279→    id: 'local',
+   280→   280→    label: 'LOCAL',
+   281→   281→    note: 'LOCAL_LLM_BASE_URL',
+   282→   282→    available: () => Boolean(localLlmBase()),
+   283→   283→    get model() {
+   284→   284→      return env('LOCAL_LLM_MODEL') || env('OLLAMA_MODEL') || 'llama3.1'
+   285→   285→    },
+   286→   286→    async start(body) {
+   287→   287→      return openAiCompatReader(
+   288→   288→        `${localLlmBase()}/chat/completions`,
+   289→   289→        env('LOCAL_LLM_API_KEY'),
+   290→   290→        body,
+   291→   291→      )
+   292→   292→    },
+   293→   293→  },
+   294→   294→]
+   295→   295→
+   296→   296→// Latched per provider once a tool rejection is seen — see looksLikeToolRejection.
+   297→   297→const noTools = new Set<string>()
+   298→   298→
+   299→   299→/** The last outcome per provider, for /health: 'never' | 'ok' | 'err'. */
+   300→   300→const llmHealth = new Map<string, string>([
+   301→   301→  ['zai', 'never'],
+   302→   302→  ['gemini', 'never'],
+   303→   303→  ['local', 'never'],
+   304→   304→])
+   305→   305→const llmErrors = new Map<string, string>()
+   306→   306→
+   307→   307→let activeLlm = 'zai'
+   308→   308→
+   309→   309→export type LlmLinkInfo = {
+   310→   310→  id: string
+   311→   311→  label: string
+   312→   312→  note: string
+   313→   313→  configured: boolean
+   314→   314→  healthy: boolean
+   315→   315→  state: string
+   316→   316→  cooling: boolean
+   317→   317→  tools: boolean
+   318→   318→  error: string | null
+   319→   319→}
+   320→   320→
+   321→   321→export type LlmInfo = {
+   322→   322→  active: string
+   323→   323→  label: string
+   324→   324→  pin: string | null
+   325→   325→  providers: LlmLinkInfo[]
+   326→   326→}
+   327→   327→
+   328→   328→/**
+   329→   329→ * Walk the chain and return the first live SSE reader.
+   330→   330→ *
+   331→   331→ * `announce(provider)` fires exactly when the active link *changes* — the
+   332→   332→ * browser turns that into the BRAIN rail line, so a person can see the
+   333→   333→ * moment Gemini takes over. Failures are announced the loud way instead: a
+   334→   334→ * warning on the server log naming the link and the error.
+   335→   335→ */
+   336→   336→export async function openLlmStream(
+   337→   337→  body: LlmBody,
+   338→   338→  announce?: (p: LlmProvider) => void,
+   339→   339→): Promise<{ reader: ReadableStreamDefaultReader<Uint8Array>; provider: LlmProvider }> {
+   340→   340→  const configured = LLM_CHAIN.filter((p) => p.available())
+   341→   341→  if (!configured.length) throw new Error('no llm provider is configured')
+   342→   342→
+   343→   343→  const pinId = llmPinId()
+   344→   344→  const pin = pinId ? configured.find((p) => p.id === pinId) : null
+   345→   345→  if (pinId && !pin) {
+   346→   346→    console.warn(`[sofia] SOFIA_LLM_PROVIDER="${pinId}" matches nothing — using the chain`)
+   347→   347→  }
+   348→   348→  const ordered = pin ? [pin] : configured
+   349→   349→
+   350→   350→  let awake = ordered.filter((p) => !LLM_GUARD.cooling(p.id))
+   351→   351→  if (!awake.length) {
+   352→   352→    // Every link cooling. Try them in order anyway — a chain that has given
+   353→   353→    // up is worse than one that keeps failing loudly.
+   354→   354→    awake = ordered
+   355→   355→  }
+   356→   356→
+   357→   357→  let lastErr: unknown
+   358→   358→  for (const p of awake) {
+   359→   359→    for (let attempt = 0; attempt < 2; attempt++) {
+   360→   360→      const withTools = !noTools.has(p.id)
+   361→   361→      try {
+   362→   362→        const reader = await p.start(buildLlmBody(p, body, withTools))
+   363→   363→        if (activeLlm !== p.id) {
+   364→   364→          activeLlm = p.id
+   365→   365→          announce?.(p)
+   366→   366→        }
+   367→   367→        llmHealth.set(p.id, 'ok')
+   368→   368→        llmErrors.delete(p.id)
+   369→   369→        LLM_GUARD.heal(p.id)
+   370→   370→        return { reader, provider: p }
+   371→   371→      } catch (err) {
+   372→   372→        lastErr = err
+   373→   373→        // First failure with tools + a rejection-shaped error + never latched:
+   374→   374→        // retry the same link once with the tools stripped.
+   375→   375→        if (attempt === 0 && withTools && !noTools.has(p.id) && looksLikeToolRejection(err)) {
+   376→   376→          noTools.add(p.id)
+   377→   377→          console.warn(`[sofia] llm "${p.id}" refused the tool schema — continuing without tools`)
+   378→   378→          continue
+   379→   379→        }
+   380→   380→        if (!isTransient(err) || attempt === 1) break
+   381→   381→        await sleep(600)
+   382→   382→      }
+   383→   383→    }
+   384→   384→    LLM_GUARD.trip(p.id)
+   385→   385→    llmHealth.set(p.id, 'err')
+   386→   386→    llmErrors.set(p.id, errText(lastErr))
+   387→   387→    console.warn(`[sofia] llm provider "${p.id}" failed: ${errText(lastErr)}`)
+   388→   388→  }
+   389→   389→  throw lastErr ?? new Error('every llm provider failed')
+   390→   390→}
+   391→   391→
+   392→   392→/** What /api/sofia/health and the settings panel show about the brain. */
+   393→   393→export function llmInfo(): LlmInfo {
+   394→   394→  const pin = llmPinId()
+   395→   395→  const active = LLM_CHAIN.find((p) => p.id === activeLlm) ?? LLM_CHAIN[0]
+   396→   396→  return {
+   397→   397→    active: activeLlm,
+   398→   398→    label: active.label,
+   399→   399→    pin: pin || null,
+   400→   400→    providers: LLM_CHAIN.map((p) => ({
+   401→   401→      id: p.id,
+   402→   402→      label: p.label,
+   403→   403→      note: p.note,
+   404→   404→      configured: p.available(),
+   405→   405→      // 'never' reads as ready-to-serve, not broken.
+   406→   406→      healthy: llmHealth.get(p.id) !== 'err',
+   407→   407→      state: llmHealth.get(p.id) ?? 'never',
+   408→   408→      cooling: LLM_GUARD.cooling(p.id),
+   409→   409→      tools: !noTools.has(p.id),
+   410→   410→      error: llmErrors.get(p.id) ?? null,
+   411→   411→    })),
+   412→   412→  }
+   413→   413→}
+   414→   414→
+   415→   415→// ---------------------------------------------------------------------------
+   416→   416→// The STT chain — Deepgram → ElevenLabs → z-ai → local.
+   417→   417→// ---------------------------------------------------------------------------
+   418→   418→
+   419→   419→export function elevenKey(): string | null {
+   420→   420→  if (env('ELEVENLABS_API_KEY')) return env('ELEVENLABS_API_KEY')
+   421→   421→  // Borrowed from the Claude Code MCP config when present — the same trick
+   422→   422→  // the old bridge used, kept so the chain owns one key source.
+   423→   423→  try {
+   424→   424→    const cfg = JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8')) as {
+   425→   425→      mcpServers?: Record<string, { env?: Record<string, string> }>
+   426→   426→    }
+   427→   427→    return cfg.mcpServers?.elevenlabs?.env?.ELEVENLABS_API_KEY ?? null
+   428→   428→  } catch {
+   429→   429→    return null
+   430→   430→  }
+   431→   431→}
+   432→   432→
+   433→   433→function localSttBase(): string {
+   434→   434→  const raw = env('LOCAL_STT_URL')
+   435→   435→  return raw ? normaliseBase(raw) : ''
+   436→   436→}
+   437→   437→
+   438→   438→/** The extension is the only hint a transcription server gets about the
+   439→   439→ *  codec — derive it from the content-type the recorder reported. */
+   440→   440→function extFromType(type: string | undefined): string {
+   441→   441→  const t = String(type ?? '')
+   442→   442→  if (t.includes('ogg')) return 'ogg'
+   443→   443→  if (t.includes('mp4') || t.includes('mpeg')) return 'mp4'
+   444→   444→  if (t.includes('wav')) return 'wav'
+   445→   445→  return 'webm'
+   446→   446→}
+   447→   447→
+   448→   448→/**
+   449→   449→ * z-ai ASR is keyless, which makes it the difference between "server-side
+   450→   450→ * transcription needs a key" and "it works for everyone" — but on a machine
+   451→   451→ * without the sandbox's z-ai credentials it cannot work at all. So it is
+   452→   452→ * probed once at startup with half a second of silence: ok means live,
+   453→   453→ * rate-limited means live (a quota window closes on its own), and an auth
+   454→   454→ * error means honestly OFF.
+   455→   455→ */
+   456→   456→const asrProbe = { state: 'pending' as 'pending' | 'ok' | 'no', detail: '' }
+   457→   457→
+   458→   458→function silenceWav(): Buffer {
+   459→   459→  const samples = 8000 // half a second of 16kHz zeros
+   460→   460→  const buf = Buffer.alloc(44 + samples * 2)
+   461→   461→  buf.write('RIFF', 0)
+   462→   462→  buf.writeUInt32LE(36 + samples * 2, 4)
+   463→   463→  buf.write('WAVE', 8)
+   464→   464→  buf.write('fmt ', 12)
+   465→   465→  buf.writeUInt32LE(16, 16)
+   466→   466→  buf.writeUInt16LE(1, 20) // PCM
+   467→   467→  buf.writeUInt16LE(1, 22) // mono
+   468→   468→  buf.writeUInt32LE(16000, 24)
+   469→   469→  buf.writeUInt32LE(32000, 28)
+   470→   470→  buf.writeUInt16LE(2, 32)
+   471→   471→  buf.writeUInt16LE(16, 34)
+   472→   472→  buf.write('data', 36)
+   473→   473→  buf.writeUInt32LE(samples * 2, 40)
+   474→   474→  return buf
+   475→   475→}
+   476→   476→
+   477→   477→export async function probeZaiAsr(): Promise<'ok' | 'no' | 'pending'> {
+   478→   478→  try {
+   479→   479→    const api = await zaiClient()
+   480→   480→    const res = await (
+   481→   481→      api.audio.asr.create as (b: unknown) => Promise<{ text?: unknown }>
+   482→   482→    ).call(api.audio.asr, { file_base64: silenceWav().toString('base64') })
+   483→   483→    asrProbe.state = 'ok'
+   484→   484→    asrProbe.detail = typeof res?.text === 'string' ? '' : 'unexpected shape'
+   485→   485→  } catch (err) {
+   486→   486→    const text = errText(err)
+   487→   487→    if (/\b(429|rate|too many|502|503|504)\b/i.test(text)) {
+   488→   488→      // A quota window — the same one that trips the LLM chain — not an
+   489→   489→      // outage. Available, and the breaker will absorb the failures.
+   490→   490→      asrProbe.state = 'ok'
+   491→   491→      asrProbe.detail = 'rate-limited at probe time'
+   492→   492→    } else {
+   493→   493→      asrProbe.state = 'no'
+   494→   494→      asrProbe.detail = text
+   495→   495→    }
+   496→   496→  }
+   497→   497→  console.log(
+   498→   498→    `[sofia] z-ai asr: ${asrProbe.state}${asrProbe.detail ? ` (${asrProbe.detail})` : ''}`,
+   499→   499→  )
+   500→   500→  return asrProbe.state
+   501→   501→}
+   502→   502→
+   503→   503→type SttProvider = {
+   504→   504→  id: string
+   505→   505→  label: string
+   506→   506→  note: string
+   507→   507→  available: () => boolean
+   508→   508→  transcribe: (buffer: Buffer, type: string | undefined) => Promise<string>
+   509→   509→}
+   510→   510→
+   511→   511→const STT_CHAIN: SttProvider[] = [
+   512→   512→  {
+   513→   513→    id: 'deepgram',
+   514→   514→    label: 'DEEPGRAM',
+   515→   515→    note: 'DEEPGRAM_API_KEY',
+   516→   516→    available: () => Boolean(env('DEEPGRAM_API_KEY')),
+   517→   517→    async transcribe(buffer, type) {
+   518→   518→      const model = env('DEEPGRAM_MODEL') || 'nova-3'
+   519→   519→      const res = await fetch(
+   520→   520→        `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(model)}&smart_format=true`,
+   521→   521→        {
+   522→   522→          method: 'POST',
+   523→   523→          headers: {
+   524→   524→            authorization: `Token ${env('DEEPGRAM_API_KEY')}`,
+   525→   525→            'content-type': String(type ?? 'audio/webm'),
+   526→   526→          },
+   527→   527→          body: new Uint8Array(buffer),
+   528→   528→          signal: AbortSignal.timeout(20_000),
+   529→   529→        },
+   530→   530→      )
+   531→   531→      if (!res.ok) throw new Error(`deepgram ${res.status}: ${errText(await res.text())}`)
+   532→   532→      const data = (await res.json()) as {
+   533→   533→        results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string }> }> }
+   534→   534→      }
+   535→   535→      return String(
+   536→   536→        data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '',
+   537→   537→      ).trim()
+   538→   538→    },
+   539→   539→  },
+   540→   540→  {
+   541→   541→    id: 'elevenlabs',
+   542→   542→    label: 'ELEVENLABS',
+   543→   543→    note: 'ELEVENLABS_API_KEY',
+   544→   544→    available: () => Boolean(elevenKey()),
+   545→   545→    async transcribe(buffer, type) {
+   546→   546→      const form = new FormData()
+   547→   547→      form.append('model_id', 'scribe_v1')
+   548→   548→      form.append(
+   549→   549→        'file',
+   550→   550→        new Blob([new Uint8Array(buffer)], { type: String(type ?? 'audio/webm') }),
+   551→   551→        `speech.${extFromType(type)}`,
+   552→   552→      )
+   553→   553→      const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+   554→   554→        method: 'POST',
+   555→   555→        headers: { 'xi-api-key': elevenKey() ?? '' },
+   556→   556→        body: form,
+   557→   557→        signal: AbortSignal.timeout(30_000),
+   558→   558→      })
+   559→   559→      if (!res.ok) throw new Error(`scribe ${res.status}: ${errText(await res.text())}`)
+   560→   560→      const data = (await res.json()) as { text?: string }
+   561→   561→      return String(data?.text ?? '').trim()
+   562→   562→    },
+   563→   563→  },
+   564→   564→  {
+   565→   565→    id: 'zai',
+   566→   566→    label: 'Z-AI ASR',
+   567→   567→    note: 'built-in, no key',
+   568→   568→    available: () => zaiAvailable() && asrProbe.state !== 'no',
+   569→   569→    async transcribe(buffer) {
+   570→   570→      const api = await zaiClient()
+   571→   571→      const res = await (
+   572→   572→        api.audio.asr.create as (b: unknown) => Promise<{ text?: unknown }>
+   573→   573→      ).call(api.audio.asr, {
+   574→   574→        file_base64: Buffer.from(new Uint8Array(buffer)).toString('base64'),
+   575→   575→      })
+   576→   576→      return String((res as { text?: string })?.text ?? '').trim()
+   577→   577→    },
+   578→   578→  },
+   579→   579→  {
+   580→   580→    id: 'local',
+   581→   581→    label: 'LOCAL',
+   582→   582→    note: 'LOCAL_STT_URL',
+   583→   583→    available: () => Boolean(localSttBase()),
+   584→   584→    async transcribe(buffer, type) {
+   585→   585→      const form = new FormData()
+   586→   586→      form.append('model', env('LOCAL_STT_MODEL') || 'whisper-1')
+   587→   587→      form.append(
+   588→   588→        'file',
+   589→   589→        new Blob([new Uint8Array(buffer)], { type: String(type ?? 'audio/webm') }),
+   590→   590→        `speech.${extFromType(type)}`,
+   591→   591→      )
+   592→   592→      const res = await fetch(`${localSttBase()}/audio/transcriptions`, {
+   593→   593→        method: 'POST',
+   594→   594→        headers: env('LOCAL_STT_API_KEY')
+   595→   595→          ? { authorization: `Bearer ${env('LOCAL_STT_API_KEY')}` }
+   596→   596→          : {},
+   597→   597→        body: form,
+   598→   598→        signal: AbortSignal.timeout(30_000),
+   599→   599→      })
+   600→   600→      if (!res.ok) throw new Error(`local stt ${res.status}: ${errText(await res.text())}`)
+   601→   601→      const data = (await res.json()) as { text?: string }
+   602→   602→      return String(data?.text ?? '').trim()
+   603→   603→    },
+   604→   604→  },
+   605→   605→]
+   606→   606→
+   607→   607→const sttErrors = new Map<string, string>()
+   608→   608→const sttHealth = new Map<string, string>()
+   609→   609→let activeStt = ''
+   610→   610→
+   611→   611→/**
+   612→   612→ * Transcribe one segment through the first link that answers. Per-request
+   613→   613→ * fallthrough (not just breaker-driven): a segment is a few hundred
+   614→   614→ * milliseconds of speech, and the words are only useful now.
+   615→   615→ */
+   616→   616→export async function transcribeAnywhere(
+   617→   617→  buffer: Buffer,
+   618→   618→  type: string | undefined,
+   619→   619→): Promise<{ text: string; provider: string }> {
+   620→   620→  const configured = STT_CHAIN.filter((p) => p.available())
+   621→   621→  if (!configured.length) throw new Error('no transcription provider is configured')
+   622→   622→
+   623→   623→  const pinId = sttPinId()
+   624→   624→  const pin = pinId ? configured.find((p) => p.id === pinId) : null
+   625→   625→  if (pinId && !pin) {
+   626→   626→    console.warn(`[sofia] SOFIA_STT_PROVIDER="${pinId}" matches nothing — using the chain`)
+   627→   627→  }
+   628→   628→  const ordered = pin ? [pin] : configured
+   629→   629→
+   630→   630→  let awake = ordered.filter((p) => !STT_GUARD.cooling(p.id))
+   631→   631→  if (!awake.length) awake = ordered
+   632→   632→
+   633→   633→  let lastErr: unknown
+   634→   634→  for (const p of awake) {
+   635→   635→    try {
+   636→   636→      const text = await p.transcribe(buffer, type)
+   637→   637→      sttHealth.set(p.id, 'ok')
+   638→   638→      sttErrors.delete(p.id)
+   639→   639→      STT_GUARD.heal(p.id)
+   640→   640→      activeStt = p.id
+   641→   641→      return { text, provider: p.id }
+   642→   642→    } catch (err) {
+   643→   643→      lastErr = err
+   644→   644→      STT_GUARD.trip(p.id)
+   645→   645→      sttHealth.set(p.id, 'err')
+   646→   646→      sttErrors.set(p.id, errText(err))
+   647→   647→      console.warn(`[sofia] stt provider "${p.id}" failed: ${errText(err)}`)
+   648→   648→    }
+   649→   649→  }
+   650→   650→  throw lastErr ?? new Error('every transcription provider failed')
+   651→   651→}
+   652→   652→
+   653→   653→export type SttLinkInfo = {
+   654→   654→  id: string
+   655→   655→  label: string
+   656→   656→  note: string
+   657→   657→  configured: boolean
+   658→   658→  state: string
+   659→   659→  healthy: boolean
+   660→   660→  cooling: boolean
+   661→   661→  error: string | null
+   662→   662→  detail: string
+   663→   663→}
+   664→   664→
+   665→   665→export type SttInfo = {
+   666→   666→  pin: string | null
+   667→   667→  active: string
+   668→   668→  providers: SttLinkInfo[]
+   669→   669→}
+   670→   670→
+   671→   671→/** Chain status for /health. `available` decides the browser's engine pick. */
+   672→   672→export function sttInfo(): SttInfo {
+   673→   673→  const pinId = sttPinId()
+   674→   674→  const providers: SttLinkInfo[] = STT_CHAIN.map((p) => {
+   675→   675→    const state =
+   676→   676→      p.id === 'zai' && asrProbe.state === 'pending'
+   677→   677→        ? 'never'
+   678→   678→        : (sttHealth.get(p.id) ?? 'never')
+   679→   679→    return {
+   680→   680→      id: p.id,
+   681→   681→      label: p.label,
+   682→   682→      note: p.note,
+   683→   683→      configured: p.available(),
+   684→   684→      state,
+   685→   685→      healthy: state !== 'err',
+   686→   686→      cooling: STT_GUARD.cooling(p.id),
+   687→   687→      error: sttErrors.get(p.id) ?? null,
+   688→   688→      detail: p.id === 'zai' ? asrProbe.detail : '',
+   689→   689→    }
+   690→   690→  })
+   691→   691→  return {
+   692→   692→    pin: pinId || null,
+   693→   693→    active: activeStt || providers.find((p) => p.configured)?.id || '',
+   694→   694→    providers,
+   695→   695→  }
+   696→   696→}
+   697→   697→
+   698→   698→/** Does any server-side transcriber exist? The browser asks this once at boot
+   699→   699→ *  through /health's `stt` field to choose VAD+segments vs its own
+   700→   700→ *  SpeechRecognition. Pending probes count as yes — optimistic beats deaf. */
+   701→   701→export function anySttAvailable(): boolean {
+   702→   702→  return STT_CHAIN.some((p) => p.available())
+   703→   703→}
+   704→   704→
+   705→   705→// ---------------------------------------------------------------------------
+   706→   706→// The local TTS tier — an OpenAI-compatible /audio/speech endpoint.
+   707→   707→// ---------------------------------------------------------------------------
+   708→   708→
+   709→   709→function localTtsBase(): string {
+   710→   710→  const raw = env('LOCAL_TTS_URL')
+   711→   711→  return raw ? normaliseBase(raw) : ''
+   712→   712→}
+   713→   713→
+   714→   714→export function localTtsAvailable(): boolean {
+   715→   715→  return Boolean(localTtsBase())
+   716→   716→}
+   717→   717→
+   718→   718→/** One utterance as an audio buffer from a local speech server
+   719→   719→ *  (kokoro-fastapi, LocalAI, openedai-speech — anything speaking the
+   720→   720→ *  OpenAI /v1/audio/speech shape). */
+   721→   721→export async function synthesizeLocalTts(text: string): Promise<Buffer> {
+   722→   722→  const base = localTtsBase()
+   723→   723→  const res = await fetch(`${base}/audio/speech`, {
+   724→   724→    method: 'POST',
+   725→   725→    headers: {
+   726→   726→      'content-type': 'application/json',
+   727→   727→      ...(env('LOCAL_TTS_API_KEY')
+   728→   728→        ? { authorization: `Bearer ${env('LOCAL_TTS_API_KEY')}` }
+   729→   729→        : {}),
+   730→   730→    },
+   731→   731→    body: JSON.stringify({
+   732→   732→      model: env('LOCAL_TTS_MODEL') || 'kokoro',
+   733→   733→      voice: env('LOCAL_TTS_VOICE') || 'af_sky',
+   734→   734→      input: text,
+   735→   735→      response_format: 'mp3',
+   736→   736→    }),
+   737→   737→    signal: AbortSignal.timeout(30_000),
+   738→   738→  })
+   739→   739→  if (!res.ok) throw new Error(`local tts ${res.status}: ${errText(await res.text())}`)
+   740→   740→  return Buffer.from(await res.arrayBuffer())
+   741→   741→}
+   742→   742→

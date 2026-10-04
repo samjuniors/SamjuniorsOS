@@ -1,0 +1,643 @@
+     1→# Sophia Memory & Brain Architecture
+     2→
+     3→Status: DESIGN DECISION / RECONCILIATION REQUIRED
+     4→Date: 2026-09-21
+     5→
+     6→## 1. Two brains — intentional separation
+     7→
+     8→### Sophia Personal Mind
+     9→Owns:
+    10→- personality and conversation
+    11→- immediate/working context
+    12→- voice, vision, hearing and interaction
+    13→- personal preferences and interaction memories
+    14→- sensory interpretation
+    15→- deciding when a request requires company knowledge or execution
+    16→
+    17→It may access the Company Brain, but it is NOT the source of company truth.
+    18→
+    19→### SamJuniors Company Brain
+    20→Owns authoritative:
+    21→- company state
+    22→- strategy and objectives
+    23→- finances and operational metrics
+    24→- company knowledge
+    25→- employees/workforce
+    26→- work/workflows
+    27→- decisions
+    28→- governance/approvals
+    29→- audit/provenance
+    30→- canonical facts
+    31→
+    32→Sophia can ask the Company Brain for information and communicate the result to the Founder.
+    33→
+    34→Example:
+    35→"What's the financial status of SamJuniors?" -> Sophia routes to Company Brain -> authoritative data -> Sophia explains the result.
+    36→
+    37→## 2. Memory is not one database
+    38→
+    39→Memory is a cognitive system over multiple storage/index layers.
+    40→
+    41→Core classes:
+    42→- Working memory: current task/conversation/context
+    43→- Episodic memory: meaningful experiences/events
+    44→- Semantic memory: durable concepts and learned knowledge
+    45→- Associative memory: relationships/patterns between entities and experiences
+    46→- Procedural memory: learned/versioned ways of doing things
+    47→- Raw/audit history: retained evidence where operational, security, recovery or audit requirements demand it
+    48→
+    49→Embeddings are retrieval indexes, NOT canonical truth.
+    50→
+    51→## 3. Selective retention
+    52→
+    53→Sophia must not permanently retain every interaction.
+    54→
+    55→Pipeline:
+    56→
+    57→Experience -> capture -> memory gate -> retain/discard -> consolidate -> index -> retrieve
+    58→
+    59→The memory gate considers relevance, recurrence, importance, future usefulness, novelty, confidence, dependencies, redundancy and staleness.
+    60→
+    61→Low-value transient interaction may disappear from active memory.
+    62→Useful information can become a durable memory.
+    63→Repeated observations can be consolidated into a higher-level pattern.
+    64→
+    65→## 4. Compression and consolidation
+    66→
+    67→When many observations express the same useful pattern, consolidate them into compact memory while preserving provenance/evidence references.
+    68→
+    69→Active cognitive memory should remain small even when historical storage reaches hundreds of millions of records.
+    70→
+    71→Compression must be loss-aware:
+    72→- preserve source/provenance
+    73→- preserve important evidence references
+    74→- preserve historical versions where needed
+    75→- never turn a compressed belief into authoritative company truth merely because it is remembered
+    76→
+    77→## 5. Forgetting and lifecycle
+    78→
+    79→Memory has lifecycle states such as:
+    80→HOT -> WARM -> COLD -> ARCHIVE -> EXPIRE
+    81→
+    82→Forgetting from active cognition does not necessarily mean deleting legally/operationally required history.
+    83→
+    84→Lifecycle must support TTL/decay, relevance, access frequency, redundancy and retention policy.
+    85→
+    86→## 6. Cache
+    87→
+    88→Cache is a performance layer, never a source of truth.
+    89→
+    90→Use it for:
+    91→- working context
+    92→- frequent retrieval results
+    93→- stable/high-value derived context
+    94→- expensive computations
+    95→- safe model computations where freshness permits
+    96→
+    97→Cached objects should carry source/version/freshness information where relevant.
+    98→
+    99→Cache miss must fall back to authoritative storage or recomputation — never guessing.
+   100→
+   101→## 7. Scale
+   102→
+   103→Do NOT design around one giant vector database.
+   104→
+   105→Initial direction:
+   106→- relational authoritative storage
+   107→- object/event storage where appropriate
+   108→- lexical/structured indexes
+   109→- vector retrieval index
+   110→- cache
+   111→- partitioning/lifecycle management
+   112→
+   113→Start with the simplest reliable architecture already present in SamJuniorsOS. Introduce dedicated distributed vector/search infrastructure only when measured scale requires it.
+   114→
+   115→## 8. Existing repository reconciliation
+   116→
+   117→Before adding new memory tables/services, inspect and reconcile existing:
+   118→- CompanyMemory
+   119→- CompanyKnowledge
+   120→- CompanyState
+   121→- Conversation / ChatMessage
+   122→- EpistemicSource
+   123→- EpistemicSignal
+   124→- EpistemicClaim
+   125→- EpistemicVerification
+   126→- CanonicalFact
+   127→- AgentRun
+   128→- telemetry/audit records
+   129→
+   130→Do not create parallel memory, knowledge, fact or epistemic systems when an existing abstraction can be extended.
+   131→
+   132→Current feat/sofia-merge schema uses SQLite as a sandbox port. Do not silently claim PostgreSQL is currently implemented; separate current implementation from target architecture.
+   133→
+   134→### Conversation authority — four layers, precisely (M3 K-1 hardening, 2026-09-22)
+   135→
+   136→For the conversation system specifically, keep these four layers distinct in any claim:
+   137→
+   138→1. **Canonical abstraction (current):** `ConversationStore` is the single canonical conversation authority; since M3 K-1 (3da24b4) every ingress (OS chat, SOFIA typed surface, live voice) delegates to `executeSophiaTurn` over it. Browser history is untrusted and never authoritative.
+   139→2. **Local DurableFileStore persistence (current, authoritative today):** `.data/conversations.json` + `.data/chat_messages.json` are the primary write target and the authoritative read source — including message reads, conversation listing, and the turn-idempotency gate.
+   140→3. **Prisma dual-write (current, opportunistic mirror only):** best-effort upserts after the file write, errors swallowed; the only Prisma read is `getConversation()`'s single-record fallback with cache-back. Prisma conversation/message rows must not be called authoritative.
+   141→4. **Authoritative PostgreSQL (target, not current):** the M6/multi-instance milestone. `ConversationStore` has no authoritative-mode branch today (unlike `CompanyKnowledgeStore`), so even production runs local-style semantics. See ADR 0002's implementation-precision addendum for the full per-method matrix and the documented divergence between the store's 404 contract and the turn executor's fresh-conversation provisioning for unknown ids.
+   142→
+   143→## 9. Non-negotiable invariants
+   144→
+   145→1. Personal Mind != Company Brain.
+   146→2. Memory != authoritative company state.
+   147→3. Embedding != source of truth.
+   148→4. Cache != source of truth.
+   149→5. Consolidation must preserve provenance.
+   150→6. Company-critical facts require governed authoritative state/epistemic promotion.
+   151→7. Frontend memory must never become execution authority.
+   152→8. Loss of cache must not damage company state.
+   153→9. Scaling must be evidence-driven.
+   154→10. Prefer extending existing SamJuniorsOS abstractions over parallel systems.
+   155→
+   156→## 10. Next implementation phase
+   157→
+   158→First perform a repository reconciliation/audit.
+   159→
+   160→Produce:
+   161→- existing-memory inventory
+   162→- duplication/conflict map
+   163→- proposed canonical ownership for every existing model
+   164→- migration plan
+   165→- storage/index/cache boundaries
+   166→- retention/consolidation lifecycle
+   167→- scale plan
+   168→- tests required
+   169→
+   170→Do not implement a large rewrite until reconciliation is complete.
+   171→
+   172→## 11. K-2 Personal Mind implementation status (2026-09-23 addendum)
+   173→
+   174→K-2 delivered the first server-side Personal Mind memory boundary. Keep the
+   175→following claims precise:
+   176→
+   177→CURRENT (implemented on feat/sophia-personal-memory):
+   178→- `SophiaMemoryStore` (src/lib/server/sophia/personal-memory-store.ts) is the
+   179→  canonical Personal Mind abstraction: founder-scoped create / get / list /
+   180→  update / delete with fail-closed ownership (403 on cross-founder access of
+   181→  an existing record), deterministic bounded retrieval (updatedAt DESC, id ASC
+   182→  tie-break, hard cap 50), an allow-listed memory-type set, and optional
+   183→  founder-scoped idempotencyKey write dedupe (the ChatMessage convention).
+   184→- Persistence authority TODAY mirrors ConversationStore exactly: the
+   185→  DurableFileStore collection `.data/sophia_memories.json` is the primary
+   186→  write target and the ONLY read source; Prisma `SophiaMemory` rows are an
+   187→  opportunistic best-effort dual-write mirror (errors swallowed, no read
+   188→  fallback, no authoritative-mode branch). The M6 authoritative-PostgreSQL
+   189→  migration moves conversations and personal memories together — until then
+   190→  Prisma must NOT be called authoritative for personal memory.
+   191→- Context integration: `SophiaContextAssembler.assemble({ message, history,
+   192→  founderId })` renders the founder's active personal memories as an
+   193→  explicitly labeled `PERSONAL_MIND_MEMORY` slice (600-char budget), strictly
+   194→  separated from every Company Brain slice. `executeSophiaTurn` and
+   195→  /api/agent-chat thread the authenticated session principal into assembly;
+   196→  callers without a founderId get no slice (backward compatible).
+   197→- Governed ingress: `/api/sofia/memory` (GET/POST/PATCH/DELETE) binds every
+   198→  operation to the authenticated founder session (401 in production without
+   199→  credentials; founderId in bodies/query is untrusted and ignored).
+   200→- Boundary is test-pinned (tests/sophia/k2_personal_memory.test.ts, 20 pins):
+   201→  no cross-founder read/modify/delete, restart durability via genuine child
+   202→  processes, no leak into another founder's context, no auto-promotion to
+   203→  CompanyMemory / CanonicalFact / claims, no authorization capability (the
+   204→  gateway ignores personal-memory authority claims; the store imports no
+   205→  authorization/epistemic/company-brain module), idempotent writes, empty
+   206→  state stays empty.
+   207→
+   208→NOT IMPLEMENTED (deliberately out of scope for K-2):
+   209→- MemoryGate, selective retention, consolidation/compression, forgetting /
+   210→  decay lifecycle, embeddings / vector search / pgvector / Qdrant, FTS
+   211→  migration, PostgreSQL migration, autonomous memory promotion, autonomous
+   212→  memory CAPTURE from conversations (a future governed learning loop — today
+   213→  memories enter only through the authenticated founder route or explicit
+   214→  server-side calls), and any personal-memory influence on approvals,
+   215→  governance, or company state.
+   216→
+   217→Invariant kept: Personal Mind provides context; it can never grant authority.
+   218→The Company Brain (CompanyState / CompanyKnowledge / CompanyMemory /
+   219→epistemic pipeline) remains the only source of company truth.
+   220→
+   221→## 12. M4-A memory capture + MemoryGate (2026-09-23 addendum)
+   222→
+   223→M4-A (branch feat/sophia-memory-capture-m4a) adds the first governed
+   224→memory-capture loop on top of the K-2 store. Keep these claims precise:
+   225→
+   226→### Capture flow (implemented)
+   227→
+   228→```
+   229→persisted founder message
+   230→  -> persisted assistant reply
+   231→  -> asynchronous SophiaMemoryCaptureStage (fire-and-forget, never a
+   232→     conversational dependency)
+   233→  -> LLM extraction (untrusted proposals only)
+   234→  -> deterministic MemoryGate
+   235→       REJECT       -> nothing persisted
+   236→       NEEDS_REVIEW -> INACTIVE SophiaMemory candidate (captureStatus pending)
+   237→  -> Founder confirmation via the EXISTING governed PATCH /api/sofia/memory
+   238→     { active: true }  (stamps captureStatus confirmed + confirmedAt)
+   239→  -> active personal memory (renders in PERSONAL_MIND_MEMORY)
+   240→```
+   241→
+   242→- Integrated at BOTH real Sophia execution paths: `executeSophiaTurn`
+   243→  (serving /api/sofia/ask and live voice) and the /api/agent-chat inline
+   244→  Sophia branch. Non-Sophia personas never capture. The two paths were
+   245→  deliberately NOT converged in M4-A.
+   246→- Capture input is built from authoritative persisted turn information
+   247→  (authenticated founderId, conversationId, founderMessageId,
+   248→  assistantMessageId, turnId, ingress). A replayed turn returns at the
+   249→  executor idempotency check before capture ever runs.
+   250→
+   251→### MemoryGate responsibility split (LLM vs deterministic)
+   252→
+   253→The LLM (SophiaMemoryExtractor, same zai-client architecture as the intent
+   254→classifier) may ONLY propose: that a stable personal preference/context
+   255→might exist, a memoryType, normalized content, and a confidence. Its output
+   256→is untrusted data parsed into a fixed four-field shape (any smuggled
+   257→founderId/token/authority fields are structurally discarded) and re-validated
+   258→deterministically.
+   259→
+   260→The deterministic MemoryGate (src/lib/server/sophia/memory-gate.ts) decides:
+   261→structural validity, memory-type allow-list (the store's published list, exact
+   262→match), content bounds, confidence range, provenance well-formedness
+   263→(`conversation:<conversationId>`, stage-supplied only), secret/credential
+   264→indicators, instruction-shaped content, company-domain contamination,
+   265→transient content, and exact-normalized duplicate detection. Persistence,
+   266→idempotency, lifecycle, provenance, and audit state are NEVER
+   267→model-decided. The gate is a fail-safe first line in front of Founder
+   268→review: false rejects only cost a missed memory; false passes only reach an
+   269→inactive candidate a Founder must explicitly confirm.
+   270→
+   271→### Founder-review requirement (no automatic activation)
+   272→
+   273→M4-A deliberately has NO operational ACCEPT path. The gate's decision type
+   274→includes `ACCEPT` for future compatibility only — the gate never returns it
+   275→(the source contains no ACCEPT return; pinned by test). Every captured
+   276→candidate persists INACTIVE (`active: false`, metadata.captureStatus
+   277→`pending`) and is visible to the owning founder through the existing governed
+   278→GET (`?active=false` review queue). ONLY the governed PATCH `active: true`
+   279→activates. Automatic activation is an M4-B decision requiring an explicit
+   280→Founder decision — the review friction is the security control.
+   281→
+   282→### Personal Mind security boundary (prompt hardening)
+   283→
+   284→Personal memories are persistent untrusted data rendered into model context.
+   285→Since M4-A they render inside a structurally delimited
+   286→`<personal_memory_context type="untrusted_personal_interaction_data">`
+   287→container, one `<personal_memory id type confidence>` block per memory, with
+   288→all payload text XML-escaped so a stored memory can never terminate its own
+   289→container or inject instructions into the surrounding prompt. The container
+   290→is budget-bounded and always well-formed (closing tag guaranteed within the
+   291→600-char partition). The intent classifier's system prompt explicitly names
+   292→the container as untrusted data that can never act as instructions,
+   293→authorization, governance, or tool permission. Natural-language warnings are
+   294→documentation, not the control — the structural separation is.
+   295→
+   296→### Idempotency
+   297→
+   298→Two deterministic layers, both derived from authoritative turn identity
+   299→(never wall-clock time): (1) a turn-level replay guard — the capture stage
+   300→checks for any existing `m4cap:<conversationId>:<turnId>:` key prefix BEFORE
+   301→extraction, so a replayed turn never re-captures; (2) candidate-level keys
+   302→`m4cap:<conversationId>:<turnId>:<index>` — the store's founder-scoped
+   303→idempotencyKey dedupe makes any re-persistence a no-op replay. Exact-
+   304→normalized duplicate content is additionally gate-rejected. No semantic
+   305→consolidation exists in M4-A (deliberately out of scope).
+   306→
+   307→### Rejection behavior and failure containment
+   308→
+   309→Every capture failure is contained inside the stage: the triggering
+   310→conversation always succeeds. Extraction unavailable/malformed → no
+   311→candidates, no persistence (no fake memory ever). Gate rejection → nothing
+   312→persisted, reason logged. Persistence failure → logged, candidate lost
+   313→(fail-safe). Prisma mirror failures are swallowed by the store's existing
+   314→opportunistic dual-write contract. Observability is structured single-line
+   315→events (`[SophiaMemoryCapture]` JSON) recording capture started/skipped,
+   316→extraction/gate/persist outcomes and reason codes — candidate CONTENT is
+   317→never logged (private memory text does not leak into generic logs).
+   318→
+   319→### Explicit non-goals (M4-A)
+   320→
+   321→No M4-B, no automatic activation, no forgetting/decay/TTL, no consolidation
+   322→or semantic merging, no vector search / pgvector / Qdrant, no PostgreSQL
+   323→migration, no CompanyMemory/CompanyKnowledge/EpistemicClaim redesign, no
+   324→cross-brain promotion mechanism, no agent-chat architectural convergence, no
+   325→new workflow/approval framework, no new review UI (the governed API is the
+   326→review surface). Pinned by tests/sophia/m4a_memory_capture.test.ts (41 pins).
+   327→
+   328→## 13. M4-A hardening — security + persistence + reviewability (2026-09-23 addendum)
+   329→
+   330→The M4-A real-use observation (commit 4b6ac2a) demonstrated concrete
+   331→defects. This hardening closes them WITHOUT expanding scope. M4-B remains
+   332→BLOCKED (Founder decision). Pinned by tests/sophia/m4a_hardening.test.ts
+   333→(H1-H22) on top of the existing m4a suite (42 pins).
+   334→
+   335→### Deterministic authority/privilege content gate (H1-H4, H8, H21)
+   336→
+   337→The observation showed LLM paraphrase laundering: instruction-shaped
+   338→authority requests ("never ask me for confirmation") re-emerged as benign-
+   339→looking third-person preference sentences that the keyword-based
+   340→INSTRUCTION_PATTERNS passed into NEEDS_REVIEW.
+   341→
+   342→`src/lib/server/sophia/authority-content-guard.ts` adds a deterministic,
+   343→fail-closed AUTHORITY/PRIVILEGE/CONTROL/GOVERNANCE/AUTHORIZATION/
+   344→APPROVAL_BYPASS/POLICY_OVERRIDE/TOOL_PERMISSION category, applied at the
+   345→MemoryGate (new reason AUTHORITY_PRIVILEGE → REJECT) and at the STORE layer
+   346→(both create and content PATCH → SophiaMemoryAuthorityError, HTTP 400 code
+   347→SOPHIA_MEMORY_AUTHORITY_CONTENT). Detection is paraphrase-resistant without
+   348→semantics: ANY hard authority term blocks (administrator, sudo, unrestricted,
+   349→override, bypass, blanket approve, on-behalf, standing approval, sole
+   350→approver, …); otherwise a DOMAIN term (approve/permission/policy/rights/…)
+   351→and a SIGNAL term (modals, never/always/without, grant/treat/exempt, …) in
+   352→the SAME CLAUSE blocks. Normalization defeats separator/case/punctuation
+   353→evasion ("never.ask.me.for-confirmation"). Benign preferences
+   354→("I prefer concise answers", "Never ask me about sports on weekends") pass
+   355→by design — the false-positive boundary is pinned (H3). Residual limit
+   356→(documented, NOT claimed solved): a paraphrase avoiding both concept
+   357→families in one clause can still pass the deterministic net; it remains
+   358→contained by inactive-by-default capture + Founder activation. The LLM is
+   359→never the security authority; it may only propose.
+   360→
+   361→### Personal memory is NEVER an authorization source
+   362→
+   363→The authority-content guard applies to BOTH ingress paths — autonomous
+   364→capture AND founder-direct authoring (POST/PATCH /api/sofia/memory). The
+   365→Founder keeps full control of every legitimate personal memory, but
+   366→authorization/privilege semantics are not personal preferences: they are
+   367→policy, and the governed authorization/workflow system is the only policy
+   368→surface. Founder-authored memory therefore cannot grant privileges, cannot
+   369→alter Company Brain state, and cannot bypass approvals/governance (H5-H7,
+   370→H21; Company Brain separation pinned by the existing X2/X3 tests).
+   371→Cross-founder isolation remains fail-closed on every locked path (H22).
+   372→
+   373→### DurableFileStore concurrency + no false success (H13-H20)
+   374→
+   375→Root cause of the observed 2/20 silent write loss: saveItem/deleteItem were
+   376→unlocked read-modify-write cycles; two processes could interleave reads and
+   377→last-writer-wins erase each other's records while both callers received
+   378→success. Fix (generic, in DurableFileStore): per-collection cross-process
+   379→LOCK FILES (O_EXCL creation, atomic on POSIX), Atomics.wait polling,
+   380→stale-lock breaking (10s), 30s timeout fallback (loud, best-effort), and
+   381→in-process re-entrancy. SophiaMemoryStore create/update/delete and the
+   382→idempotency check now run as ONE serialized unit via withCollectionLock.
+   383→Additionally, STRICT variants (saveItemStrict/deleteItemStrict/
+   384→writeCollectionStrict) THROW when the authoritative write fails — the
+   385→personal-memory store uses them, so a failed durable write can never
+   386→masquerade as success (H20; pre-fix: phantom record + console.error only).
+   387→Prisma remains the opportunistic mirror only (M6 decision unchanged).
+   388→
+   389→Remaining limitation (stated, not hidden): the lock timeout fallback means
+   390→a pathological >30s contention degrades to the old unprotected write (loud
+   391→console.error) rather than blocking persistence forever; the 50-record
+   392→listing cap still bounds review-queue visibility; multi-process Prisma
+   393→mirror writes remain opportunistic (no transactionality — unchanged until
+   394→M6).
+   395→
+   396→### Reviewability (H12, H19 + SophiaPanel "Memory review" section)
+   397→
+   398→The governed GET /api/sofia/memory?active=false now returns deterministic
+   399→advisory annotations computed over the caller's full record pool:
+   400→duplicateOf (exact-normalized — the gate's own equality), similarTo
+   401→(token-Jaccard near-duplicate, threshold 0.6, worst-first, top 3), and
+   402→contradicts (OBVIOUS contradictions only: opposing polarity verbs over the
+   403→same object tokens — "prefers concise" vs "dislikes concise"). The existing
+   404→SophiaPanel gained a small "Memory review" section: each pending candidate
+   405→shows content, memory type, confidence, capture timestamp, source
+   406→conversation, gate reason, duplicate/similarity/contradiction hints, and
+   407→Approve (governed PATCH active:true — the only activation path) / Reject
+   408→(governed DELETE) actions. No automatic activation, no merging, no
+   409→consolidation — the Founder decides.
+   410→
+   411→Deliberately NOT detected (documented): paraphrase duplicates beyond token
+   412→overlap ("I prefer concise answers" vs "Keep responses short"), same-
+   413→polarity changed preferences ("prefers concise" → "now prefers detailed"),
+   414→numeric/factual contradictions, and semantic contradiction generally. No
+   415→embeddings/vectors — deterministic visibility only.
+   416→
+   417→### Context budget (H10-H11)
+   418→
+   419→Measured pre-hardening: fixed wrapper overhead 267/600 chars + ~125 chars
+   420→per memory (a 46-char UUID id attribute alone cost ~51), leaving ~333 for
+   421→content — effectively ONE rendered memory (the newest), 7/8 actives
+   422→invisible. Hardening: removed the per-memory id attribute and trimmed the
+   423→in-container security line to its load-bearing core. Fixed overhead is now
+   424→~165 chars, per-memory ~77 — roughly THREE short useful memories render
+   425→inside the unchanged 600-char PERSONAL_MIND_MEMORY budget (H10), long
+   426→memories truncate with [TRUNCATED] inside the structurally delimited,
+   427→XML-escaped, always-closed container (H11). The structural trust boundary
+   428→is unchanged: untrusted-data container tag, XML escaping, always-emitted
+   429→closing tag, 600-char partition, Company Brain separation, injection
+   430→containment.
+   431→
+   432→### Provider failure observability (H9)
+   433→
+   434→Capture remains fire-and-forget and never blocks the turn. The stage now
+   435→emits structured single-line [SophiaMemoryCapture] JSON events with a
+   436→failure taxonomy classified from the error message ALONE (never from
+   437→conversation or candidate content): PROVIDER_RATE_LIMITED (429/rate-limit
+   438→text + providerStatus), PROVIDER_ERROR, PARSE_ERROR, UNKNOWN — plus
+   439→capture_started / capture_skipped(+reason) / gate_rejected(+reasons) /
+   440→candidate_persisted / candidate_persist_failed / capture_completed
+   441→(persisted+rejected counts). 429 storms are now greppable and countable in
+   442→dev logs; extraction loss remains silent to the USER (fail-safe) but loud
+   443→to the OPERATOR.
+   444→
+   445→### M4-B gate: STILL BLOCKED for the behavioral roadmap (lifecycle foundation EXCEPTED — see §14)
+   446→
+   447→M4-B (memory lifecycle, forgetting/decay, activation UX, consolidation)
+   448→remains a Founder decision and is NOT implemented — **except the narrow
+   449→M4-B.1 lifecycle-foundation slice documented in §14** (explicit lifecycle
+   450→states + provenance, no behavioral intelligence). Personal memory remains
+   451→persistent untrusted contextual DATA — never instructions, never
+   452→authorization. No automatic activation path exists (the gate never returns
+   453→ACCEPT; only the governed Founder PATCH activates).
+   454→
+   455→## 14. M4-B.1 — Personal Memory lifecycle foundation (2026-09-24 addendum)
+   456→
+   457→The first narrow slice of M4-B shipped: the overloaded `active` boolean is
+   458→replaced by an explicit, auditable lifecycle model. This is lifecycle
+   459→INFRASTRUCTURE ONLY — no behavioral intelligence, no automatic actions.
+   460→
+   461→### Lifecycle states (`src/lib/server/sophia/memory-lifecycle.ts`)
+   462→
+   463→```
+   464→PENDING_REVIEW   captured candidate awaiting explicit Founder review
+   465→ACTIVE           eligible for retrieval into Personal Mind context
+   466→SUPERSEDED       replaced by a Founder-chosen successor (provenance kept)
+   467→ARCHIVED         removed from context by the Founder ("forget from
+   468→                 cognition, not from record")
+   469→REJECTED         Founder refused a pending candidate — terminal tombstone
+   470→                 (provenance + dedupe-pool presence kept; physical DELETE
+   471→                 remains the explicit escape hatch)
+   472→```
+   473→
+   474→`DELETED` is not a state — it is the physical delete event (unchanged
+   475→DELETE endpoint).
+   476→
+   477→**ACTIVE means ONLY "eligible for retrieval into Personal Mind context."**
+   478→It never means true, Company Brain truth, authorization, permission,
+   479→governance policy, an execution instruction, or a verified epistemic fact.
+   480→Personal memory is advisory context only.
+   481→
+   482→### Authority: `lifecycleState`, not `active`
+   483→
+   484→`lifecycleState` (file record + nullable Prisma column) IS the lifecycle
+   485→authority. The legacy `active` boolean is a DERIVED mirror
+   486→(`active === (lifecycleState === 'ACTIVE')`) kept for K-2/M4-A read-compat:
+   487→`?active=true/false` still filters on derived eligibility; the
+   488→`PERSONAL_MIND_MEMORY` context partition still reads the same eligibility.
+   489→Pre-M4-B.1 rows derive at read time (`active:true → ACTIVE`;
+   490→`active:false + captureStatus pending → PENDING_REVIEW`;
+   491→`active:false otherwise → ARCHIVED`) and are lazily stamped on their first
+   492→update.
+   493→
+   494→### Transition table (Founder-executed only, fail-closed 400)
+   495→
+   496→```
+   497→PENDING_REVIEW → ACTIVE | ARCHIVED | REJECTED
+   498→ACTIVE         → ARCHIVED | SUPERSEDED
+   499→ARCHIVED       → ACTIVE  | SUPERSEDED
+   500→SUPERSEDED     → ACTIVE                     (restore a wrong supersession)
+   501→REJECTED       → (terminal)
+   502→```
+   503→
+   504→Nothing may ever transition INTO `PENDING_REVIEW`. Same-state patches are
+   505→idempotent no-ops. The ONLY system-initiated action in the entire lifecycle
+   506→is CREATE of a PENDING_REVIEW capture candidate — every belief-bearing
+   507→transition is executed by an authenticated Founder.
+   508→
+   509→### Provenance established (for later M4-B slices)
+   510→
+   511→- **Audit trail**: every executed transition appends
+   512→  `metadata.lifecycle.transitions[] = { from, to, at, by: founderId }`
+   513→  (append-only; provenance is never silently deleted).
+   514→- **Attribution**: activation now stamps `confirmedBy` alongside
+   515→  `confirmedAt` (closes the M4-B audit gap).
+   516→- **Supersession pointer**: `PATCH { lifecycleState: "SUPERSEDED",
+   517→  supersededByMemoryId }` records `metadata.supersededBy = { memoryId,
+   518→  content-snapshot, at }`. The successor is never auto-mutated — the
+   519→  create-B + mark-A correction pattern is a Founder composition of two
+   520→  governed calls, mirroring the CanonicalFact supersession precedent.
+   521→- **REJECTED tombstones** stay in the capture dedupe pool: a refused
+   522→  candidate cannot silently re-enter the review queue as a "new" capture
+   523→  (fixes the physical-delete re-capture loop).
+   524→
+   525→### Review-queue semantics fix (the active-boolean conflation)
+   526→
+   527→The review queue (SophiaPanel + badge) now reads
+   528→`GET ?lifecycleState=PENDING_REVIEW` — records the Founder ARCHIVED or
+   529→REJECTED no longer pollute the pending queue. Under the old
+   530→`?active=false` filter, a founder-deactivated memory re-entered the review
+   531→queue (M4-B semantic-contract finding #1). `?active=false` remains
+   532→supported as the derived non-active set (compat); the two filters are
+   533→mutually exclusive (400 together).
+   534→
+   535→### API surface changes (additive only)
+   536→
+   537→- `GET ?lifecycleState=<state>` — exact state filter (new)
+   538→- `PATCH { id, lifecycleState, supersededByMemoryId? }` — explicit
+   539→  transition form (new); `PATCH { id, active }` remains the compat form
+   540→  (true → ensure ACTIVE; false → ACTIVE becomes ARCHIVED, non-ACTIVE is an
+   541→  idempotent no-op — preserving every pinned K-2/M4-A toggle behavior)
+   542→- Illegal transitions return `400 { code: "SOPHIA_MEMORY_INVALID_TRANSITION" }`
+   543→
+   544→### Still NOT implemented (unchanged M4-B gate)
+   545→
+   546→Automatic activation (the gate never returns ACCEPT), vectors/embeddings,
+   547→consolidation, decay/TTL schedulers, semantic contradiction resolution,
+   548→cross-founder memory, Company Brain changes, supersession DECISION logic
+   549→(the Founder chooses; nothing is inferred).
+   550→
+   551→### Test contract
+   552→
+   553→`tests/sophia/m4b1_lifecycle.test.ts` (L1–L14) pins: model integrity,
+   554→creation states, compat activation + stamps + audit trail, explicit
+   555→transitions, the REJECTED tombstone, fail-closed illegal transitions,
+   556→supersession provenance, review-queue isolation, context exclusion of all
+   557→non-ACTIVE states, the no-automatic-activation regression, cross-founder
+   558→403, legacy derivation + lazy migration, the Prisma mirror, and the
+   559→governed route end-to-end. All prior suites (K-2, M4-A capture incl. the
+   560→restored default-extractor child, M4-A hardening, M0–M3, phases 1–2)
+   561→re-run green.
+   562→
+   563→## 15. M4-D — Personal Mind retrieval hardening (2026-09-25 addendum)
+   564→
+   565→M4-C made Personal Mind retrieval query-conditioned (two-tier lexical
+   566→matching over the shared deterministic tokenizer). The Task 42 evaluation
+   567→measured two structural weaknesses in the matched tier: (a) the within-tier
+   568→type round-robin let a 1-token match from an earlier allow-list type
+   569→displace a 4-token match (gold ranked 4th behind three 1-token matches on
+   570→Q1; 7th under a generic-token distractor flood on D7), and (b) basic
+   571→morphological variants never matched at all ("preferences" vs "preference",
+   572→"briefing" vs "brief", "running" vs "run"). M4-D fixes exactly these two —
+   573→deterministically, with no new framework (`src/lib/server/sophia/`
+   574→`context-assembly.ts` only).
+   575→
+   576→### Mechanism 1 — Tier-1 score-banded round-robin (relevance-gated diversity)
+   577→
+   578→Matched memories group into equal-score bands. Bands emit strictly
+   579→DESCENDING, and the type round-robin operates WITHIN a band only. A
+   580→lower-score memory can therefore never precede a higher-score one in tier 1,
+   581→while type diversity still prevents same-type starvation among score-equals
+   582→(anti-starvation preserved). Within a band and type, ordering remains the
+   583→existing confidence DESC / updatedAt DESC / id ASC policy. Measured effect
+   584→(Task 42 corpus): Q1 gold rank 4→1, D7 gold rank 7→5 with Recall@5 0→0.5,
+   585→contradictory-pair current rank 2→1, planted-match rank 5→1 at every scale.
+   586→
+   587→### Mechanism 2 — Personal-Mind-scoped light suffix normalization (fold)
+   588→
+   589→After the shared `extractTokens` pipeline — which stays BYTE-IDENTICAL
+   590→because the Company Brain retrieval contract depends on it — both the
+   591→message and the content tokens are folded by a light, guarded suffix
+   592→normalization (`foldPersonalMindToken`): len<=3 unchanged; a
+   593→FOLD_PROTECTED homograph list (news, evening, morning, specs, economics,
+   594→politics, physics) unchanged; "ies"→"y" (summaries→summary);
+   595→ses/xes/zes/ches/shes strip "es" (matches→match); plural "s" strip
+   596→(calls→call, prefers→prefer); "ing"/"ed" strip with doubled-consonant
+   597→repair (running→run, briefing→brief, preferred→prefer). Applied once per
+   598→token, never recursively, on BOTH sides — so matching stays symmetric while
+   599→news/new, evening/even, prefers/preference, updated/update never match.
+   600→Accepted imperfections (measured in the design counterfactual): "updated"
+   601→folds to "updat" (does not match "update"); "meetings"→"meeting" while
+   602→"meeting"→"meet"; a one-stem false-positive surface ("prefers" matches
+   603→"prefer").
+   604→
+   605→### Explicitly unchanged
+   606→
+   607→- **Lifecycle authority**: `lifecycleState` remains the ONLY eligibility
+   608→  authority — only ACTIVE records reach the selection; nothing about M4-D
+   609→  inspects or alters lifecycle.
+   610→- **Fallback**: no usable tokens OR zero folded-token matches → the exact
+   611→  pre-M4-C deterministic policy (byte-equivalent; the memory context is
+   612→  never emptied by a token miss).
+   613→- **Tier-2 fill**: fewer than 20 tier-1 memories → remaining capacity filled
+   614→  by the exact pre-M4-C policy.
+   615→- **Caps and budgets**: the 20-memory retrieval cap and the 1200-character
+   616→  container render budget are untouched.
+   617→- **Two-brain boundary**: the fold lives in the Personal Mind retrieval path
+   618→  only; `extractTokens` and every Company Brain scorer are byte-identical;
+   619→  the scoring model stays set-semantics distinct-token overlap — no IDF,
+   620→  no phrase bonus, no recency/confidence multipliers, no LLM judgment.
+   621→- **Out of scope (still)**: synonym/paraphrase retrieval, staleness
+   622→  detection/decay, semantic/vector retrieval, and graph reasoning remain
+   623→  OUTSIDE M4-D — synonym-only and paraphrase-only memories are still
+   624→  unmatchable by lexical design.
+   625→
+   626→### Test contract
+   627→
+   628→`tests/sophia/m4c_query_conditioned_retrieval.test.ts` pins the M4-D
+   629→contract (H1–H12 appended to the C1–C15 M4-C contract): exact fold
+   630→characterization (positives, protected homographs, negatives, length
+   631→guards, single-pass), fold-driven tier-1 matching in both directions,
+   632→4-token-outranks-all-1-token cross-type, monotone score bands, equal-score
+   633→round-robin, D7-style collision bound (gold ≤ 5), fallback byte-equivalence
+   634→under folding, determinism, the 20-cap over fold-only matches, e2e
+   635→lifecycle + founder isolation + render budget under folding, and the
+   636→Company-Brain-byte-identical tokenizer pin.
+   637→`tests/sophia/m4c_retrieval_evaluation.test.ts` (Task 42 evidence suite,
+   638→re-baselined) confirms the measured outcomes: Q1 rank 1, D7 rank 5 /
+   639→R@5 0.5, Q8 rank 1, D8b adversarial stale pair UNCHANGED (old
+   640→high-overlap still outranks the newer correction — recency never overrides
+   641→overlap), planted rank 1 at all scales, selection ≈25 ms @ 10,000
+   642→memories (limit 250 ms), full path ≈90 ms.
+   643→

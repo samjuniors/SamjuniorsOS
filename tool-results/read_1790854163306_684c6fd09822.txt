@@ -1,0 +1,758 @@
+     1→     1→import {
+     2→     2→  AuthorizationEvaluationRequest,
+     3→     3→  AuthorizationDecision,
+     4→     4→  FounderApprovalRecord,
+     5→     5→  SideEffectAuditRecord,
+     6→     6→  ApprovalScope,
+     7→     7→  ActionTargetContext,
+     8→     8→  SideEffectClassification,
+     9→     9→  ApprovalFilter,
+    10→    10→  AuditFilter,
+    11→    11→} from '@/types/authorization';
+    12→    12→import { AgentRole } from '@/types/os';
+    13→    13→import { InMemoryApprovalStore, InMemoryAuditStore } from './approval-store';
+    14→    14→import { SideEffectPolicyEvaluator } from './policy-evaluator';
+    15→    15→import { computeApprovalPayloadHash, verifyApprovalPayloadBinding } from './payload-binding';
+    16→    16→import { getIdempotencyStore } from '../idempotency/store';
+    17→    17→import {
+    18→    18→  generateLogicalIdempotencyKey,
+    19→    19→  IdempotencyPayloadMismatchError,
+    20→    20→  OperationInProgressError,
+    21→    21→  UnknownExternalResultError,
+    22→    22→} from '../idempotency/state-machine';
+    23→    23→import { v4 as uuidv4 } from 'uuid';
+    24→    24→
+    25→    25→export interface RequestApprovalParams {
+    26→    26→  actionName: string;
+    27→    27→  classification: SideEffectClassification;
+    28→    28→  workflowInstanceId: string;
+    29→    29→  stepId: string;
+    30→    30→  employeeRole: AgentRole | 'advisor' | 'system';
+    31→    31→  scope?: Partial<ApprovalScope>;
+    32→    32→  notes?: string;
+    33→    33→  target?: ActionTargetContext;
+    34→    34→  payload?: any;
+    35→    35→  requestedBy?: string;
+    36→    36→}
+    37→    37→
+    38→    38→export interface DecideApprovalParams {
+    39→    39→  approvalId: string;
+    40→    40→  decision: 'approved' | 'rejected';
+    41→    41→  decidedBy: string;
+    42→    42→  reason?: string;
+    43→    43→  expiresAt?: string;
+    44→    44→  userContext?: { role?: string; userId?: string };
+    45→    45→}
+    46→    46→
+    47→    47→export interface RevokeApprovalParams {
+    48→    48→  approvalId: string;
+    49→    49→  revokedBy: string;
+    50→    50→  reason?: string;
+    51→    51→}
+    52→    52→
+    53→    53→export interface ExecuteWithGateParams<T> {
+    54→    54→  request: AuthorizationEvaluationRequest;
+    55→    55→  executeFn: () => Promise<T>;
+    56→    56→  executionRef?: string;
+    57→    57→  idempotency?: {
+    58→    58→    key?: string;
+    59→    59→    targetSystem?: string;
+    60→    60→    logicalOpId?: string;
+    61→    61→    payload?: any;
+    62→    62→    ttlMs?: number;
+    63→    63→  };
+    64→    64→}
+    65→    65→
+    66→    66→export interface ExecuteWithGateResult<T> {
+    67→    67→  allowed: boolean;
+    68→    68→  executed: boolean;
+    69→    69→  decision: AuthorizationDecision;
+    70→    70→  result?: T;
+    71→    71→  error?: string;
+    72→    72→  auditId: string;
+    73→    73→  idempotencyKey?: string;
+    74→    74→  idempotentReplay?: boolean;
+    75→    75→}
+    76→    76→
+    77→    77→/**
+    78→    78→ * Central Side-Effect Authorization Gate.
+    79→    79→ * Enforces company safety, Founder approval boundaries, audit trail generation,
+    80→    80→ * and single server-side authorization enforcement before executing side effects.
+    81→    81→ */
+    82→    82→export class SideEffectAuthorizationGate {
+    83→    83→  private static instance: SideEffectAuthorizationGate;
+    84→    84→  private approvalStore: InMemoryApprovalStore;
+    85→    85→  private auditStore: InMemoryAuditStore;
+    86→    86→  private evaluator: SideEffectPolicyEvaluator;
+    87→    87→
+    88→    88→  constructor(
+    89→    89→    approvalStore?: InMemoryApprovalStore,
+    90→    90→    auditStore?: InMemoryAuditStore,
+    91→    91→    evaluator?: SideEffectPolicyEvaluator
+    92→    92→  ) {
+    93→    93→    this.approvalStore = approvalStore || InMemoryApprovalStore.getInstance();
+    94→    94→    this.auditStore = auditStore || InMemoryAuditStore.getInstance();
+    95→    95→    this.evaluator = evaluator || new SideEffectPolicyEvaluator(this.approvalStore);
+    96→    96→  }
+    97→    97→
+    98→    98→  public static getInstance(): SideEffectAuthorizationGate {
+    99→    99→    if (!SideEffectAuthorizationGate.instance) {
+   100→   100→      SideEffectAuthorizationGate.instance = new SideEffectAuthorizationGate();
+   101→   101→    }
+   102→   102→    return SideEffectAuthorizationGate.instance;
+   103→   103→  }
+   104→   104→
+   105→   105→  /**
+   106→   106→   * Evaluate whether an intended action is allowed, requires approval, or is denied.
+   107→   107→   */
+   108→   108→  public async evaluateAuthorization(
+   109→   109→    request: AuthorizationEvaluationRequest
+   110→   110→  ): Promise<AuthorizationDecision> {
+   111→   111→    return this.evaluator.evaluate(request);
+   112→   112→  }
+   113→   113→
+   114→   114→  /**
+   115→   115→   * Request a new Founder Approval for an intended side effect.
+   116→   116→   * When params.scope carries an occurrenceId (scheduled per-occurrence
+   117→   117→   * approval, Phase 4.4B.1), the dedupe lookup is occurrence-bound: a prior
+   118→   118→   * occurrence's approval never satisfies this occurrence's request.
+   119→   119→   */
+   120→   120→  public async requestApproval(params: RequestApprovalParams): Promise<FounderApprovalRecord> {
+   121→   121→    const existing = await this.approvalStore.findActiveMatching({
+   122→   122→      workflowInstanceId: params.workflowInstanceId,
+   123→   123→      stepId: params.stepId,
+   124→   124→      employeeRole: params.employeeRole,
+   125→   125→      actionName: params.actionName,
+   126→   126→      classification: params.classification,
+   127→   127→      occurrenceId: params.scope?.occurrenceId,
+   128→   128→    });
+   129→   129→
+   130→   130→    // If there is already a pending or approved approval, return it
+   131→   131→    if (existing && (existing.decision === 'pending' || existing.decision === 'approved')) {
+   132→   132→      return existing;
+   133→   133→    }
+   134→   134→
+   135→   135→    const id = `appr-${uuidv4()}`;
+   136→   136→    const now = new Date().toISOString();
+   137→   137→
+   138→   138→    const scope: ApprovalScope = {
+   139→   139→      scopeType: params.scope?.scopeType || 'step',
+   140→   140→      workflowInstanceId: params.workflowInstanceId,
+   141→   141→      stepId: params.stepId,
+   142→   142→      campaignId: params.scope?.campaignId,
+   143→   143→      targetSystem: params.target?.targetSystem || params.scope?.targetSystem,
+   144→   144→      operationPattern: params.scope?.operationPattern,
+   145→   145→      occurrenceId: params.scope?.occurrenceId,
+   146→   146→      maxUses: params.scope?.maxUses || 1,
+   147→   147→      usedCount: 0,
+   148→   148→    };
+   149→   149→
+   150→   150→    const payloadHash = computeApprovalPayloadHash(
+   151→   151→      params.actionName,
+   152→   152→      params.target,
+   153→   153→      params.payload
+   154→   154→    );
+   155→   155→
+   156→   156→    const record: FounderApprovalRecord = {
+   157→   157→      id,
+   158→   158→      decision: 'pending',
+   159→   159→      actionName: params.actionName,
+   160→   160→      classification: params.classification,
+   161→   161→      workflowInstanceId: params.workflowInstanceId,
+   162→   162→      stepId: params.stepId,
+   163→   163→      employeeRole: params.employeeRole,
+   164→   164→      scope,
+   165→   165→      requestedAt: now,
+   166→   166→      notes: params.notes,
+   167→   167→      target: params.target,
+   168→   168→      payload: params.payload,
+   169→   169→      payloadHash,
+   170→   170→      isConsumed: false,
+   171→   171→    };
+   172→   172→
+   173→   173→    return this.approvalStore.save(record);
+   174→   174→  }
+   175→   175→
+   176→   176→  /**
+   177→   177→   * Founder Decision Handler (Approve / Reject).
+   178→   178→   * Strictly enforces that ONLY the Founder can approve or reject requests.
+   179→   179→   * AI Employees (researcher, pm, coo, finance, advisor) cannot self-approve or approve others.
+   180→   180→   */
+   181→   181→  public async decideApproval(params: DecideApprovalParams): Promise<FounderApprovalRecord> {
+   182→   182→    const ALLOWED_FOUNDER_IDENTITIES = [
+   183→   183→      'founder',
+   184→   184→      'founder-001',
+   185→   185→      'founder-local-session',
+   186→   186→      'executive_founder',
+   187→   187→      'executive-founder',
+   188→   188→    ];
+   189→   189→    const actor = params.decidedBy?.toLowerCase()?.trim() || '';
+   190→   190→    const isAllowedFounder =
+   191→   191→      ALLOWED_FOUNDER_IDENTITIES.includes(actor) ||
+   192→   192→      (actor.startsWith('founder-') && !actor.includes('agent')) ||
+   193→   193→      params.userContext?.role === 'FOUNDER';
+   194→   194→
+   195→   195→    if (!isAllowedFounder) {
+   196→   196→      throw new Error(
+   197→   197→        `Permission denied: Identity "${params.decidedBy}" is not an authorized Founder. Only verified Founder identities can approve or reject side-effect requests.`
+   198→   198→      );
+   199→   199→    }
+   200→   200→
+   201→   201→    return this.approvalStore.decide(
+   202→   202→      params.approvalId,
+   203→   203→      params.decision,
+   204→   204→      params.decidedBy,
+   205→   205→      params.reason,
+   206→   206→      params.expiresAt
+   207→   207→    );
+   208→   208→  }
+   209→   209→
+   210→   210→  /**
+   211→   211→   * Founder Revocation Handler.
+   212→   212→   * Immediately revokes a previously granted approval.
+   213→   213→   */
+   214→   214→  public async revokeApproval(params: RevokeApprovalParams): Promise<FounderApprovalRecord> {
+   215→   215→    const prohibitedRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent', 'system', 'developer', 'guest'];
+   216→   216→    const actor = params.revokedBy?.toLowerCase()?.trim() || '';
+   217→   217→    if (!actor || prohibitedRoles.includes(actor)) {
+   218→   218→      throw new Error(
+   219→   219→        `Permission denied: Only the Founder can revoke approvals. Attempted by "${params.revokedBy}".`
+   220→   220→      );
+   221→   221→    }
+   222→   222→
+   223→   223→    return this.approvalStore.revoke(params.approvalId, params.revokedBy, params.reason);
+   224→   224→  }
+   225→   225→
+   226→   226→  /**
+   227→   227→   * Execute an operation behind the centralized Side-Effect Authorization Gate.
+   228→   228→   * 1. Evaluates policy.
+   229→   229→   * 2. If approval is required or denied, refuses execution and returns the decision.
+   230→   230→   * 3. If allowed, verifies cryptographic payload binding and consumes single-use approval (if applicable).
+   231→   231→   * 4. Executes executeFn.
+   232→   232→   * 5. Emits a deterministic, unforgeable audit record.
+   233→   233→   */
+   234→   234→  public async executeWithGate<T>(params: ExecuteWithGateParams<T>): Promise<ExecuteWithGateResult<T>> {
+   235→   235→    const { request, executeFn, executionRef } = params;
+   236→   236→    const auditId = `audit-${uuidv4()}`;
+   237→   237→    const timestamp = new Date().toISOString();
+   238→   238→    const requestId = `req-${uuidv4()}`;
+   239→   239→
+   240→   240→    // 0. Pre-Execution Idempotency Check (completed replay, in-progress conflict, ambiguous recovery, payload tampering)
+   241→   241→    const shouldEnforceIdempotency = Boolean(
+   242→   242→      params.idempotency ||
+   243→   243→      request.classification === 'external_communication' ||
+   244→   244→      request.classification === 'financial_action'
+   245→   245→    );
+   246→   246→
+   247→   247→    let idempotencyKey: string | undefined;
+   248→   248→    let payloadHash: string | undefined;
+   249→   249→
+   250→   250→    if (shouldEnforceIdempotency) {
+   251→   251→      idempotencyKey = params.idempotency?.key || generateLogicalIdempotencyKey({
+   252→   252→        actionName: request.actionName,
+   253→   253→        targetSystem: params.idempotency?.targetSystem || request.target?.targetSystem || 'default',
+   254→   254→        logicalOpId: params.idempotency?.logicalOpId || (request.workflowContext?.workflowInstanceId ? `${request.workflowContext.workflowInstanceId}-${request.workflowContext.stepId}` : (executionRef || requestId)),
+   255→   255→      });
+   256→   256→
+   257→   257→      const effectivePayload = params.idempotency?.payload !== undefined ? params.idempotency.payload : request.payload;
+   258→   258→      payloadHash = computeApprovalPayloadHash(request.actionName, request.target, effectivePayload ?? {});
+   259→   259→
+   260→   260→      const existing = await getIdempotencyStore().get(idempotencyKey);
+   261→   261→      if (existing) {
+   262→   262→        if (payloadHash && existing.payloadHash && existing.payloadHash !== payloadHash) {
+   263→   263→          const mismatchErr = new IdempotencyPayloadMismatchError(
+   264→   264→            idempotencyKey,
+   265→   265→            existing.payloadHash,
+   266→   266→            payloadHash
+   267→   267→          );
+   268→   268→          const auditRecord: SideEffectAuditRecord = {
+   269→   269→            id: auditId,
+   270→   270→            timestamp,
+   271→   271→            requestId,
+   272→   272→            employeeRole: request.employeeRole,
+   273→   273→            requestedBy: request.requestedBy || request.employeeRole,
+   274→   274→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   275→   275→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   276→   276→            stepId: request.workflowContext?.stepId,
+   277→   277→            actionClassification: request.classification,
+   278→   278→            actionName: request.actionName,
+   279→   279→            target: request.target,
+   280→   280→            decision: 'denied',
+   281→   281→            reasonCode: 'IDEMPOTENCY_PAYLOAD_MISMATCH',
+   282→   282→            reason: mismatchErr.message,
+   283→   283→            approvalId: request.approvalId,
+   284→   284→            executionReference: executionRef,
+   285→   285→            executed: false,
+   286→   286→          };
+   287→   287→          await this.auditStore.record(auditRecord);
+   288→   288→          throw mismatchErr;
+   289→   289→        }
+   290→   290→
+   291→   291→        if (existing.status === 'completed') {
+   292→   292→          const auditRecord: SideEffectAuditRecord = {
+   293→   293→            id: auditId,
+   294→   294→            timestamp,
+   295→   295→            requestId,
+   296→   296→            employeeRole: request.employeeRole,
+   297→   297→            requestedBy: request.requestedBy || request.employeeRole,
+   298→   298→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   299→   299→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   300→   300→            stepId: request.workflowContext?.stepId,
+   301→   301→            actionClassification: request.classification,
+   302→   302→            actionName: request.actionName,
+   303→   303→            target: request.target,
+   304→   304→            decision: 'allowed',
+   305→   305→            reasonCode: 'IDEMPOTENT_REPLAY',
+   306→   306→            reason: `Operation already executed successfully with idempotency key ${idempotencyKey}. Replaying cached response without re-invoking side effect.`,
+   307→   307→            approvalId: request.approvalId,
+   308→   308→            executionReference: existing.executionRef || executionRef,
+   309→   309→            executed: false,
+   310→   310→          };
+   311→   311→          await this.auditStore.record(auditRecord);
+   312→   312→
+   313→   313→          return {
+   314→   314→            allowed: true,
+   315→   315→            executed: false,
+   316→   316→            decision: {
+   317→   317→              effect: 'allowed',
+   318→   318→              reasonCode: 'IDEMPOTENT_REPLAY',
+   319→   319→              reason: `Operation already executed successfully with idempotency key ${idempotencyKey}. Replaying cached response without re-invoking side effect.`,
+   320→   320→              approvalId: request.approvalId,
+   321→   321→              evaluatedAt: timestamp,
+   322→   322→              evaluator: 'central_side_effect_gate',
+   323→   323→            },
+   324→   324→            result: existing.response as T,
+   325→   325→            auditId,
+   326→   326→            idempotencyKey,
+   327→   327→            idempotentReplay: true,
+   328→   328→          };
+   329→   329→        }
+   330→   330→
+   331→   331→        if (existing.status === 'in_progress') {
+   332→   332→          const inProgressErr = new OperationInProgressError(idempotencyKey, existing.executionRef || undefined, existing.createdAt);
+   333→   333→          const auditRecord: SideEffectAuditRecord = {
+   334→   334→            id: auditId,
+   335→   335→            timestamp,
+   336→   336→            requestId,
+   337→   337→            employeeRole: request.employeeRole,
+   338→   338→            requestedBy: request.requestedBy || request.employeeRole,
+   339→   339→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   340→   340→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   341→   341→            stepId: request.workflowContext?.stepId,
+   342→   342→            actionClassification: request.classification,
+   343→   343→            actionName: request.actionName,
+   344→   344→            target: request.target,
+   345→   345→            decision: 'denied',
+   346→   346→            reasonCode: 'OPERATION_IN_PROGRESS',
+   347→   347→            reason: inProgressErr.message,
+   348→   348→            approvalId: request.approvalId,
+   349→   349→            executionReference: executionRef,
+   350→   350→            executed: false,
+   351→   351→          };
+   352→   352→          await this.auditStore.record(auditRecord);
+   353→   353→          throw inProgressErr;
+   354→   354→        }
+   355→   355→
+   356→   356→        if (existing.status === 'unknown') {
+   357→   357→          const unknownErr = new UnknownExternalResultError(
+   358→   358→            idempotencyKey,
+   359→   359→            existing.executionRef || undefined,
+   360→   360→            'Operation has ambiguous prior execution status (crash/timeout recovery state). Manual or reconciliatory inspection required before retrying.'
+   361→   361→          );
+   362→   362→          const auditRecord: SideEffectAuditRecord = {
+   363→   363→            id: auditId,
+   364→   364→            timestamp,
+   365→   365→            requestId,
+   366→   366→            employeeRole: request.employeeRole,
+   367→   367→            requestedBy: request.requestedBy || request.employeeRole,
+   368→   368→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   369→   369→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   370→   370→            stepId: request.workflowContext?.stepId,
+   371→   371→            actionClassification: request.classification,
+   372→   372→            actionName: request.actionName,
+   373→   373→            target: request.target,
+   374→   374→            decision: 'denied',
+   375→   375→            reasonCode: 'UNKNOWN_EXTERNAL_RESULT',
+   376→   376→            reason: unknownErr.message,
+   377→   377→            approvalId: request.approvalId,
+   378→   378→            executionReference: executionRef,
+   379→   379→            executed: false,
+   380→   380→          };
+   381→   381→          await this.auditStore.record(auditRecord);
+   382→   382→          throw unknownErr;
+   383→   383→        }
+   384→   384→      }
+   385→   385→    }
+   386→   386→
+   387→   387→    // 1. Evaluate authorization
+   388→   388→    const decision = await this.evaluateAuthorization(request);
+   389→   389→
+   390→   390→    // 2. If not allowed, record audit and return blocked result
+   391→   391→    if (decision.effect !== 'allowed') {
+   392→   392→      const auditRecord: SideEffectAuditRecord = {
+   393→   393→        id: auditId,
+   394→   394→        timestamp,
+   395→   395→        requestId,
+   396→   396→        employeeRole: request.employeeRole,
+   397→   397→        requestedBy: request.requestedBy || request.employeeRole,
+   398→   398→        skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   399→   399→        workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   400→   400→        stepId: request.workflowContext?.stepId,
+   401→   401→        actionClassification: request.classification,
+   402→   402→        actionName: request.actionName,
+   403→   403→        target: request.target,
+   404→   404→        decision: decision.effect,
+   405→   405→        reasonCode: decision.reasonCode,
+   406→   406→        reason: decision.reason,
+   407→   407→        approvalId: decision.approvalId,
+   408→   408→        executionReference: undefined,
+   409→   409→        executed: false,
+   410→   410→      };
+   411→   411→
+   412→   412→      await this.auditStore.record(auditRecord);
+   413→   413→
+   414→   414→      return {
+   415→   415→        allowed: false,
+   416→   416→        executed: false,
+   417→   417→        decision,
+   418→   418→        auditId,
+   419→   419→        error: decision.reason,
+   420→   420→      };
+   421→   421→    }
+   422→   422→
+   423→   423→    // 3. If allowed, verify cryptographic approval-payload binding
+   424→   424→    let approval: FounderApprovalRecord | null = null;
+   425→   425→    if (decision.approvalId) {
+   426→   426→      approval = await this.approvalStore.get(decision.approvalId);
+   427→   427→      if (!approval) {
+   428→   428→        const missingApprovalReason = `Approval record (${decision.approvalId}) not found in store. Execution blocked.`;
+   429→   429→        const auditRecord: SideEffectAuditRecord = {
+   430→   430→          id: auditId,
+   431→   431→          timestamp,
+   432→   432→          requestId,
+   433→   433→          employeeRole: request.employeeRole,
+   434→   434→          requestedBy: request.requestedBy || request.employeeRole,
+   435→   435→          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   436→   436→          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   437→   437→          stepId: request.workflowContext?.stepId,
+   438→   438→          actionClassification: request.classification,
+   439→   439→          actionName: request.actionName,
+   440→   440→          target: request.target,
+   441→   441→          decision: 'denied',
+   442→   442→          reasonCode: 'APPROVAL_NOT_FOUND',
+   443→   443→          reason: missingApprovalReason,
+   444→   444→          approvalId: decision.approvalId,
+   445→   445→          executionReference: executionRef,
+   446→   446→          executed: false,
+   447→   447→        };
+   448→   448→
+   449→   449→        await this.auditStore.record(auditRecord);
+   450→   450→
+   451→   451→        return {
+   452→   452→          allowed: false,
+   453→   453→          executed: false,
+   454→   454→          decision: {
+   455→   455→            effect: 'denied',
+   456→   456→            reasonCode: 'APPROVAL_NOT_FOUND',
+   457→   457→            reason: missingApprovalReason,
+   458→   458→            approvalId: decision.approvalId,
+   459→   459→            evaluatedAt: timestamp,
+   460→   460→            evaluator: 'central_side_effect_gate',
+   461→   461→          },
+   462→   462→          auditId,
+   463→   463→          error: missingApprovalReason,
+   464→   464→        };
+   465→   465→      }
+   466→   466→
+   467→   467→      // Enforce mandatory cryptographic payload binding:
+   468→   468→      // Any approval-backed consequential execution MUST have a payload hash.
+   469→   469→      if (!approval.payloadHash) {
+   470→   470→        const missingHashReason = `Cryptographic payload binding missing: approval record (${approval.id}) does not contain a mandatory payloadHash. Consequential execution denied.`;
+   471→   471→        const auditRecord: SideEffectAuditRecord = {
+   472→   472→          id: auditId,
+   473→   473→          timestamp,
+   474→   474→          requestId,
+   475→   475→          employeeRole: request.employeeRole,
+   476→   476→          requestedBy: request.requestedBy || request.employeeRole,
+   477→   477→          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   478→   478→          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   479→   479→          stepId: request.workflowContext?.stepId,
+   480→   480→          actionClassification: request.classification,
+   481→   481→          actionName: request.actionName,
+   482→   482→          target: request.target,
+   483→   483→          decision: 'denied',
+   484→   484→          reasonCode: 'APPROVAL_PAYLOAD_HASH_MISSING',
+   485→   485→          reason: missingHashReason,
+   486→   486→          approvalId: decision.approvalId,
+   487→   487→          executionReference: executionRef,
+   488→   488→          executed: false,
+   489→   489→        };
+   490→   490→
+   491→   491→        await this.auditStore.record(auditRecord);
+   492→   492→
+   493→   493→        return {
+   494→   494→          allowed: false,
+   495→   495→          executed: false,
+   496→   496→          decision: {
+   497→   497→            effect: 'denied',
+   498→   498→            reasonCode: 'APPROVAL_PAYLOAD_HASH_MISSING',
+   499→   499→            reason: missingHashReason,
+   500→   500→            approvalId: decision.approvalId,
+   501→   501→            evaluatedAt: timestamp,
+   502→   502→            evaluator: 'central_side_effect_gate',
+   503→   503→          },
+   504→   504→          auditId,
+   505→   505→          error: missingHashReason,
+   506→   506→        };
+   507→   507→      }
+   508→   508→
+   509→   509→      // Enforce deterministic payload binding verification
+   510→   510→      const bindingCheck = verifyApprovalPayloadBinding(approval, {
+   511→   511→        actionName: request.actionName,
+   512→   512→        target: request.target,
+   513→   513→        payload: request.payload,
+   514→   514→      });
+   515→   515→
+   516→   516→      if (!bindingCheck.isMatch) {
+   517→   517→        const mismatchReason = `Cryptographic payload binding mismatch: payload or target was altered after Founder approval was granted (expected: ${bindingCheck.expectedHash}, got: ${bindingCheck.actualHash}). Execution blocked.`;
+   518→   518→        const auditRecord: SideEffectAuditRecord = {
+   519→   519→          id: auditId,
+   520→   520→          timestamp,
+   521→   521→          requestId,
+   522→   522→          employeeRole: request.employeeRole,
+   523→   523→          requestedBy: request.requestedBy || request.employeeRole,
+   524→   524→          skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   525→   525→          workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   526→   526→          stepId: request.workflowContext?.stepId,
+   527→   527→          actionClassification: request.classification,
+   528→   528→          actionName: request.actionName,
+   529→   529→          target: request.target,
+   530→   530→          decision: 'denied',
+   531→   531→          reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+   532→   532→          reason: mismatchReason,
+   533→   533→          approvalId: decision.approvalId,
+   534→   534→          executionReference: executionRef,
+   535→   535→          executed: false,
+   536→   536→        };
+   537→   537→
+   538→   538→        await this.auditStore.record(auditRecord);
+   539→   539→
+   540→   540→        return {
+   541→   541→          allowed: false,
+   542→   542→          executed: false,
+   543→   543→          decision: {
+   544→   544→            effect: 'denied',
+   545→   545→            reasonCode: 'APPROVAL_PAYLOAD_HASH_MISMATCH',
+   546→   546→            reason: mismatchReason,
+   547→   547→            approvalId: decision.approvalId,
+   548→   548→            evaluatedAt: timestamp,
+   549→   549→            evaluator: 'central_side_effect_gate',
+   550→   550→          },
+   551→   551→          auditId,
+   552→   552→          error: mismatchReason,
+   553→   553→        };
+   554→   554→      }
+   555→   555→    }
+   556→   556→
+   557→   557→    // 4. Atomic Idempotency Claiming
+   558→   558→    if (shouldEnforceIdempotency && idempotencyKey && payloadHash) {
+   559→   559→      try {
+   560→   560→        await getIdempotencyStore().claim({
+   561→   561→          key: idempotencyKey,
+   562→   562→          actionName: request.actionName,
+   563→   563→          payloadHash,
+   564→   564→          executionRef: executionRef || auditId,
+   565→   565→          ttlMs: params.idempotency?.ttlMs,
+   566→   566→        });
+   567→   567→      } catch (claimErr: any) {
+   568→   568→        if (claimErr instanceof IdempotencyPayloadMismatchError) {
+   569→   569→          const auditRecord: SideEffectAuditRecord = {
+   570→   570→            id: auditId,
+   571→   571→            timestamp,
+   572→   572→            requestId,
+   573→   573→            employeeRole: request.employeeRole,
+   574→   574→            requestedBy: request.requestedBy || request.employeeRole,
+   575→   575→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   576→   576→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   577→   577→            stepId: request.workflowContext?.stepId,
+   578→   578→            actionClassification: request.classification,
+   579→   579→            actionName: request.actionName,
+   580→   580→            target: request.target,
+   581→   581→            decision: 'denied',
+   582→   582→            reasonCode: 'IDEMPOTENCY_PAYLOAD_MISMATCH',
+   583→   583→            reason: claimErr.message,
+   584→   584→            approvalId: decision.approvalId,
+   585→   585→            executionReference: executionRef,
+   586→   586→            executed: false,
+   587→   587→          };
+   588→   588→          await this.auditStore.record(auditRecord);
+   589→   589→        } else if (claimErr instanceof OperationInProgressError) {
+   590→   590→          const auditRecord: SideEffectAuditRecord = {
+   591→   591→            id: auditId,
+   592→   592→            timestamp,
+   593→   593→            requestId,
+   594→   594→            employeeRole: request.employeeRole,
+   595→   595→            requestedBy: request.requestedBy || request.employeeRole,
+   596→   596→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   597→   597→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   598→   598→            stepId: request.workflowContext?.stepId,
+   599→   599→            actionClassification: request.classification,
+   600→   600→            actionName: request.actionName,
+   601→   601→            target: request.target,
+   602→   602→            decision: 'denied',
+   603→   603→            reasonCode: 'OPERATION_IN_PROGRESS',
+   604→   604→            reason: claimErr.message,
+   605→   605→            approvalId: decision.approvalId,
+   606→   606→            executionReference: executionRef,
+   607→   607→            executed: false,
+   608→   608→          };
+   609→   609→          await this.auditStore.record(auditRecord);
+   610→   610→        } else if (claimErr instanceof UnknownExternalResultError) {
+   611→   611→          const auditRecord: SideEffectAuditRecord = {
+   612→   612→            id: auditId,
+   613→   613→            timestamp,
+   614→   614→            requestId,
+   615→   615→            employeeRole: request.employeeRole,
+   616→   616→            requestedBy: request.requestedBy || request.employeeRole,
+   617→   617→            skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   618→   618→            workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   619→   619→            stepId: request.workflowContext?.stepId,
+   620→   620→            actionClassification: request.classification,
+   621→   621→            actionName: request.actionName,
+   622→   622→            target: request.target,
+   623→   623→            decision: 'denied',
+   624→   624→            reasonCode: 'UNKNOWN_EXTERNAL_RESULT',
+   625→   625→            reason: claimErr.message,
+   626→   626→            approvalId: decision.approvalId,
+   627→   627→            executionReference: executionRef,
+   628→   628→            executed: false,
+   629→   629→          };
+   630→   630→          await this.auditStore.record(auditRecord);
+   631→   631→        }
+   632→   632→        throw claimErr;
+   633→   633→      }
+   634→   634→    }
+   635→   635→
+   636→   636→    // 5. Consume single-use approval only after authorization + idempotency claim pass.
+   637→   637→    // Phase 4.4B.1: occurrence-bound approvals are single-use BY DEFINITION (one
+   638→   638→    // founder authorization per scheduled occurrence) — consume them at
+   639→   639→    // execution regardless of the recorded scopeType, in addition to the
+   640→   640→    // existing single_action rule.
+   641→   641→    if (
+   642→   642→      decision.approvalId &&
+   643→   643→      approval &&
+   644→   644→      (approval.scope.scopeType === 'single_action' || Boolean(approval.scope.occurrenceId))
+   645→   645→    ) {
+   646→   646→      await this.approvalStore.consume(decision.approvalId);
+   647→   647→    }
+   648→   648→
+   649→   649→    // 6. Execute the authorized operation
+   650→   650→    let result: T;
+   651→   651→    try {
+   652→   652→      result = await executeFn();
+   653→   653→    } catch (err: any) {
+   654→   654→      const isAmbiguousTimeout =
+   655→   655→        err?.name === 'TimeoutError' ||
+   656→   656→        err?.code === 'ETIMEDOUT' ||
+   657→   657→        err?.code === 'ECONNRESET' ||
+   658→   658→        err?.isAmbiguous === true ||
+   659→   659→        /timeout|timed out|abort/i.test(err?.message || '');
+   660→   660→
+   661→   661→      if (shouldEnforceIdempotency && idempotencyKey) {
+   662→   662→        if (isAmbiguousTimeout) {
+   663→   663→          await getIdempotencyStore().markUnknown(
+   664→   664→            idempotencyKey,
+   665→   665→            err?.message || 'Execution timed out or aborted with ambiguous provider state'
+   666→   666→          );
+   667→   667→        } else {
+   668→   668→          await getIdempotencyStore().fail(
+   669→   669→            idempotencyKey,
+   670→   670→            err?.message || 'Execution failed'
+   671→   671→          );
+   672→   672→        }
+   673→   673→      }
+   674→   674→
+   675→   675→      const auditRecord: SideEffectAuditRecord = {
+   676→   676→        id: auditId,
+   677→   677→        timestamp,
+   678→   678→        requestId,
+   679→   679→        employeeRole: request.employeeRole,
+   680→   680→        requestedBy: request.requestedBy || request.employeeRole,
+   681→   681→        skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   682→   682→        workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   683→   683→        stepId: request.workflowContext?.stepId,
+   684→   684→        actionClassification: request.classification,
+   685→   685→        actionName: request.actionName,
+   686→   686→        target: request.target,
+   687→   687→        decision: 'allowed',
+   688→   688→        reasonCode: decision.reasonCode,
+   689→   689→        reason: decision.reason,
+   690→   690→        approvalId: decision.approvalId,
+   691→   691→        executionReference: executionRef,
+   692→   692→        executed: false, // Execution threw error
+   693→   693→      };
+   694→   694→
+   695→   695→      await this.auditStore.record(auditRecord);
+   696→   696→
+   697→   697→      if (isAmbiguousTimeout) {
+   698→   698→        throw new UnknownExternalResultError(idempotencyKey || 'unknown', executionRef, err?.message || 'Operation timed out; external state is unknown');
+   699→   699→      }
+   700→   700→      throw err;
+   701→   701→    }
+   702→   702→
+   703→   703→    // 7. Record completion in idempotency store
+   704→   704→    if (shouldEnforceIdempotency && idempotencyKey) {
+   705→   705→      await getIdempotencyStore().complete(idempotencyKey, result, executionRef || auditId);
+   706→   706→    }
+   707→   707→
+   708→   708→    // 8. Record successful execution in audit trail
+   709→   709→    const auditRecord: SideEffectAuditRecord = {
+   710→   710→      id: auditId,
+   711→   711→      timestamp,
+   712→   712→      requestId,
+   713→   713→      employeeRole: request.employeeRole,
+   714→   714→      requestedBy: request.requestedBy || request.employeeRole,
+   715→   715→      skillId: typeof request.skillId === 'string' ? request.skillId : undefined,
+   716→   716→      workflowInstanceId: request.workflowContext?.workflowInstanceId,
+   717→   717→      stepId: request.workflowContext?.stepId,
+   718→   718→      actionClassification: request.classification,
+   719→   719→      actionName: request.actionName,
+   720→   720→      target: request.target,
+   721→   721→      decision: 'allowed',
+   722→   722→      reasonCode: decision.reasonCode,
+   723→   723→      reason: decision.reason,
+   724→   724→      approvalId: decision.approvalId,
+   725→   725→      executionReference: executionRef || `exec-${Date.now()}`,
+   726→   726→      executed: true,
+   727→   727→    };
+   728→   728→
+   729→   729→    await this.auditStore.record(auditRecord);
+   730→   730→
+   731→   731→    return {
+   732→   732→      allowed: true,
+   733→   733→      executed: true,
+   734→   734→      decision,
+   735→   735→      result,
+   736→   736→      auditId,
+   737→   737→      idempotencyKey,
+   738→   738→      idempotentReplay: false,
+   739→   739→    };
+   740→   740→  }
+   741→   741→
+   742→   742→  public getApprovalStore(): InMemoryApprovalStore {
+   743→   743→    return this.approvalStore;
+   744→   744→  }
+   745→   745→
+   746→   746→  public getAuditStore(): InMemoryAuditStore {
+   747→   747→    return this.auditStore;
+   748→   748→  }
+   749→   749→
+   750→   750→  public async listApprovals(filter?: ApprovalFilter): Promise<FounderApprovalRecord[]> {
+   751→   751→    return this.approvalStore.list(filter);
+   752→   752→  }
+   753→   753→
+   754→   754→  public async listAudits(filter?: AuditFilter): Promise<SideEffectAuditRecord[]> {
+   755→   755→    return this.auditStore.list(filter);
+   756→   756→  }
+   757→   757→}
+   758→   758→

@@ -1,0 +1,807 @@
+     1→import { NextRequest, NextResponse } from "next/server";
+     2→import { generateText } from "@/lib/server/ai/zai-client";
+     3→import { SERVER_AGENTS } from "@/lib/server/agents/definitions";
+     4→import { AgentRole } from "@/types/os";
+     5→import { CompanyContextProvider } from "@/lib/server/context/company-context";
+     6→import { MultiAgentOrchestrator } from "@/lib/server/orchestration/orchestrator";
+     7→import { getAuthenticatedFounder } from "@/lib/server/auth/session";
+     8→import {
+     9→  SophiaContextAssembler,
+    10→  SophiaIntentClassifier,
+    11→  SophiaServerGateway,
+    12→  TurnStopwatch,
+    13→} from "@/lib/server/sophia";
+    14→import { scheduleSophiaMemoryCapture } from "@/lib/server/sophia/memory-capture-stage";
+    15→import {
+    16→  ConversationStore,
+    17→  ConversationSecurityError,
+    18→  ConversationNotFoundError,
+    19→  ChatMessageRecord,
+    20→} from "@/lib/server/conversation";
+    21→
+    22→// Module-level in-flight turns map to serialize concurrent duplicate turns
+    23→const inFlightTurns = new Map<string, Promise<any>>();
+    24→
+    25→type MessageIntent = "conversation" | "information_request" | "directive" | "ambiguous" | "approval_action";
+    26→
+    27→interface IntentClassification {
+    28→  intent: MessageIntent;
+    29→  confidence: number;
+    30→  directiveTitle?: string;
+    31→  reason: string;
+    32→  suggestedScope?: string;
+    33→  approvalAction?: 'approve' | 'reject' | 'request_revision';
+    34→  approvalNote?: string;
+    35→}
+    36→
+    37→function classifyMessageIntent(message: string): IntentClassification {
+    38→  const clean = message.trim().toLowerCase();
+    39→
+    40→  // 0. Explicit Founder Approval / Governance Action Check
+    41→  // e.g. "Approve", "Authorize this", "I approve", "Reject", "Reject the proposal", "Request revision", "Needs revision", "Send it back"
+    42→  const approvePatterns = [
+    43→    /^(i )?(approve|approved|ratify|ratified|authorize|authorized|sign off|signed off|looks good, approve|approved, proceed|proceed with this|i agree, approve)$/i,
+    44→    /^(approve|authorize|ratify)\s+(the\s+)?(decision|proposal|plan|request|recommendation|item|initiative)?$/i,
+    45→  ];
+    46→
+    47→  const rejectPatterns = [
+    48→    /^(i )?(reject|rejected|decline|declined|disapprove|veto|vetoed|cancel this|do not proceed|block this)$/i,
+    49→    /^(reject|decline|disapprove|veto)\s+(the\s+)?(decision|proposal|plan|request|recommendation|item|initiative)?/i,
+    50→  ];
+    51→
+    52→  const revisionPatterns = [
+    53→    /^(i )?(request revision|needs revision|revise this|send back for revision|request changes|change this|needs work|revision required)$/i,
+    54→    /^(request revision|revise|request changes)\s+(on|for|the)?/i,
+    55→  ];
+    56→
+    57→  if (approvePatterns.some((p) => p.test(clean))) {
+    58→    return {
+    59→      intent: "approval_action",
+    60→      confidence: 0.98,
+    61→      approvalAction: "approve",
+    62→      reason: "Explicit Founder approval command targeting governance / pending decisions.",
+    63→    };
+    64→  }
+    65→
+    66→  if (rejectPatterns.some((p) => p.test(clean))) {
+    67→    return {
+    68→      intent: "approval_action",
+    69→      confidence: 0.98,
+    70→      approvalAction: "reject",
+    71→      approvalNote: message,
+    72→      reason: "Explicit Founder rejection command targeting governance / pending decisions.",
+    73→    };
+    74→  }
+    75→
+    76→  if (revisionPatterns.some((p) => p.test(clean))) {
+    77→    return {
+    78→      intent: "approval_action",
+    79→      confidence: 0.96,
+    80→      approvalAction: "request_revision",
+    81→      approvalNote: message,
+    82→      reason: "Explicit Founder revision request targeting governance / pending decisions.",
+    83→    };
+    84→  }
+    85→
+    86→  // 1. Ambiguous pattern check (e.g., "Can you look into this?", "Look into pricing", "Check this out")
+    87→  const ambiguousPatterns = [
+    88→    /^(can you |could you |please |hey )?(look into|check into|check out|see about|explore|look at)\s+(this|that|it|things|something)(\?)?$/i,
+    89→    /^(can you |could you )?(look into|check out|explore)\s+[a-z0-9\s]{1,25}\?*$/i,
+    90→    /^(what should we do about|any thoughts on|what about|should we do something with)\s+[a-z0-9\s]{1,30}\?*$/i,
+    91→    /^(can you help me with this|help with this|take a look)\?*$/i,
+    92→  ];
+    93→
+    94→  if (ambiguousPatterns.some((p) => p.test(clean))) {
+    95→    return {
+    96→      intent: "ambiguous",
+    97→      confidence: 0.88,
+    98→      directiveTitle: message.length > 50 ? message.slice(0, 48) + "..." : message,
+    99→      suggestedScope: "Clarification needed: determine whether to perform an informal review or initiate a formal multi-agent task.",
+   100→      reason: "Ambiguous query requesting investigation without defined deliverables, scope, or clear action boundaries.",
+   101→    };
+   102→  }
+   103→
+   104→  // 2. Explicit directive patterns (Commands to perform work, create PRDs, conduct research, model economics)
+   105→  const explicitDirectivePatterns = [
+   106→    /\b(research|investigate|analyze|evaluate|audit|model|draft|design|create|build|prepare|synthesize|simulate|spec|spec out)\b.+\b(and (give|provide|recommend|write|report|present|model)|recommendation|proposal|prd|spec|plan|deliverable|architecture|breakdown|forecast|strategy)\b/i,
+   107→    /^(research|investigate|analyze|evaluate|audit|model|draft|design|create|build|prepare|synthesize|simulate)\s+(the|our|a|an|all)\s+/i,
+   108→    /\b(give me a recommendation|give me a plan|create a prd|draft a prd|model the unit economics|model our pricing|audit compute burn|conduct a research|run an analysis|synthesize a proposal)\b/i,
+   109→    /^(execute|orchestrate|launch task|run task|start initiative)\b/i,
+   110→  ];
+   111→
+   112→  if (explicitDirectivePatterns.some((p) => p.test(clean))) {
+   113→    return {
+   114→      intent: "directive",
+   115→      confidence: 0.94,
+   116→      directiveTitle: message.length > 60 ? message.slice(0, 58) + "..." : message,
+   117→      suggestedScope: "Formal multi-agent task execution across Research, Product, and Finance with verified deliverables.",
+   118→      reason: "Explicit work directive requesting research, specification, financial modeling, or strategic recommendations.",
+   119→    };
+   120→  }
+   121→
+   122→  // 3. Information request patterns (Queries about existing facts, MRR, initiatives, past findings)
+   123→  const infoPatterns = [
+   124→    /^(what (is|are|did|was|were)|how (much|many|is|are)|who (is|are)|where (is|are)|when (is|are)|tell me about|show me|status of|update on|do we have|is there|summary of)\b/i,
+   125→    /\b(what did you find|what are our numbers|what is the mrr|what is the burn rate|what initiatives are active)\b/i,
+   126→  ];
+   127→
+   128→  if (infoPatterns.some((p) => p.test(clean))) {
+   129→    return {
+   130→      intent: "information_request",
+   131→      confidence: 0.9,
+   132→      reason: "Direct factual query referencing existing company state, deliverables, or role-scoped context.",
+   133→    };
+   134→  }
+   135→
+   136→  // 4. Standard conversational patterns (Greetings, remarks, casual check-ins)
+   137→  const conversationPatterns = [
+   138→    /^(hi|hello|hey|good morning|good afternoon|good evening|how are you|how's it going|how are things|how is everything|thanks|thank you|great work|sounds good|ok|okay|cool|nice|who are you)\b/i,
+   139→  ];
+   140→
+   141→  if (conversationPatterns.some((p) => p.test(clean))) {
+   142→    return {
+   143→      intent: "conversation",
+   144→      confidence: 0.92,
+   145→      reason: "Casual dialogue, greeting, or informal check-in.",
+   146→    };
+   147→  }
+   148→
+   149→  // Fallback heuristic: check for imperative verb starts
+   150→  if (/^(prepare|research|analyze|build|create|model|draft|evaluate|audit|generate)\b/i.test(clean)) {
+   151→    return {
+   152→      intent: "directive",
+   153→      confidence: 0.85,
+   154→      directiveTitle: message.length > 60 ? message.slice(0, 58) + "..." : message,
+   155→      suggestedScope: "Imperative work command requesting analytical or strategic outputs.",
+   156→      reason: "Imperative directive verb detected.",
+   157→    };
+   158→  }
+   159→
+   160→  return {
+   161→    intent: "conversation",
+   162→    confidence: 0.75,
+   163→    reason: "Standard conversational exchange.",
+   164→  };
+   165→}
+   166→
+   167→const ADVISOR_PERSONA = {
+   168→  id: "advisor" as const,
+   169→  name: "Founder Intelligence",
+   170→  role: "Strategic Co-Pilot & Advisor",
+   171→  department: "Founder Strategic Advisory",
+   172→  systemInstruction: `You are Founder Intelligence, the strategic cognitive co-pilot of SamJuniors OS.
+   173→You advise the Founder directly on executive strategy, governance, unit economics, market signals, risk trade-offs, and company building.
+   174→Communicate with sharp executive conciseness, epistemic clarity, and high-leverage strategic insight.
+   175→Never fabricate imaginary financial metrics or unverified operational claims. Address the Founder directly in 1:1 conversation.`,
+   176→  allowedCapabilities: [
+   177→    "High-level strategic synthesis & prioritization",
+   178→    "Trade-off and risk matrix evaluation",
+   179→    "Company governance & decision auditing",
+   180→    "Unit economics stress-testing",
+   181→  ],
+   182→  prohibitedActions: [
+   183→    "Fabricating fake accounting records or fictitious customer logos",
+   184→    "Making authoritative operational commitments without Founder consent",
+   185→    "Exposing system credentials, secrets, or internal keys",
+   186→  ],
+   187→};
+   188→
+   189→export async function POST(req: NextRequest) {
+   190→  console.log('[AGENT-CHAT ENTER]');
+   191→  try {
+   192→    const session = await getAuthenticatedFounder(req);
+   193→    if (!session) {
+   194→      return NextResponse.json(
+   195→        { error: 'Unauthorized: Session required to communicate with executive agents' },
+   196→        { status: 401 }
+   197→      );
+   198→    }
+   199→
+   200→    const {
+   201→      agentId,
+   202→      message,
+   203→      history,
+   204→      contextSnapshot,
+   205→      executeDirective,
+   206→      personaConfig,
+   207→      conversationId,
+   208→      idempotencyKey,
+   209→    } = await req.json();
+   210→
+   211→    if (!agentId || !message) {
+   212→      return NextResponse.json({ error: "Agent ID and message are required" }, { status: 400 });
+   213→    }
+   214→
+   215→    if (executeDirective && session.role !== 'FOUNDER') {
+   216→      return NextResponse.json(
+   217→        { error: 'Forbidden: Only verified Founder can trigger autonomous directive execution' },
+   218→        { status: 403 }
+   219→      );
+   220→    }
+   221→
+   222→    const tone = (personaConfig?.tone || 'professional') as 'professional' | 'casual' | 'flirty';
+   223→
+   224→    // =========================================================================
+   225→    // SOPHIA CONVERSATIONAL EXECUTIVE PIPELINE (PHASE 1 + PHASE 3 PERSISTENCE)
+   226→    // =========================================================================
+   227→    const isSophia = agentId === "coo" || agentId === "sophia";
+   228→    if (isSophia) {
+   229→      const convStore = ConversationStore.getInstance();
+   230→
+   231→      // 1. Resolve or establish durable conversation identity bound to authenticated Founder
+   232→      let conversation;
+   233→      try {
+   234→        conversation = await convStore.getOrCreateConversation({
+   235→          founderId: session.userId,
+   236→          conversationId: typeof conversationId === 'string' && conversationId.trim() ? conversationId.trim() : undefined,
+   237→          agentId: 'sophia',
+   238→        });
+   239→      } catch (err: any) {
+   240→        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+   241→          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
+   242→        }
+   243→        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
+   244→          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
+   245→        }
+   246→        return NextResponse.json({ error: err.message || 'Conversation resolution failed' }, { status: 500 });
+   247→      }
+   248→
+   249→      // Check if this turn was already completed (idempotent replay)
+   250→      const cleanIdempotencyKey = typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0
+   251→        ? idempotencyKey.trim()
+   252→        : undefined;
+   253→
+   254→      if (cleanIdempotencyKey) {
+   255→        const existingAssistantMessage = await convStore.findMessageByIdempotencyKey(
+   256→          conversation.id,
+   257→          `${cleanIdempotencyKey}:assistant`
+   258→        );
+   259→        if (existingAssistantMessage) {
+   260→          return NextResponse.json({
+   261→            success: true,
+   262→            agentId: SERVER_AGENTS.coo.id,
+   263→            name: SERVER_AGENTS.coo.name,
+   264→            role: SERVER_AGENTS.coo.role,
+   265→            conversationId: conversation.id,
+   266→            messageId: existingAssistantMessage.id,
+   267→            intent: existingAssistantMessage.intent || 'conversation',
+   268→            classification: {
+   269→              intent: existingAssistantMessage.intent || 'conversation',
+   270→              confidence: existingAssistantMessage.confidence ?? 1.0,
+   271→              reason: 'Idempotent turn replay',
+   272→            },
+   273→            reply: existingAssistantMessage.content,
+   274→            liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
+   275→            // Replay metrics: all-zero latencies are truthful — a replayed
+   276→            // turn performs no assembly/model/gateway work. estimatedTokens
+   277→            // carries the ORIGINAL turn's persisted estimates (absent only
+   278→            // for messages persisted before the R3 honest-metrics change).
+   279→            metrics: {
+   280→              contextAssemblyMs: 0,
+   281→              modelMs: 0,
+   282→              gatewayValidationMs: 0,
+   283→              totalTurnMs: 0,
+   284→              estimatedTokens: existingAssistantMessage.metadata?.tokens || { input: 0, output: 0 },
+   285→            },
+   286→            directiveExecuted: existingAssistantMessage.metadata?.directiveExecuted ?? false,
+   287→            idempotentReplay: true,
+   288→          });
+   289→        }
+   290→      }
+   291→
+   292→      // Concurrency lock for duplicate in-flight turns
+   293→      const turnKey = cleanIdempotencyKey ? `${session.userId}:${conversation.id}:${cleanIdempotencyKey}` : null;
+   294→      if (turnKey && inFlightTurns.has(turnKey)) {
+   295→        const cached = await inFlightTurns.get(turnKey)!;
+   296→        return NextResponse.json(cached.data, { status: cached.status || 200 });
+   297→      }
+   298→
+   299→      const executeTurn = async (): Promise<{ status?: number; data: any }> => {
+   300→        // R3 honest metrics: one TurnStopwatch per live turn. Only phases
+   301→        // with a genuine wall-clock measurement at THIS route boundary are
+   302→        // reported; values that cannot be honestly attributed here
+   303→        // (gateway validation — inseparable from directive dispatch inside
+   304→        // SophiaServerGateway.process — and retrieval — which happens
+   305→        // inside context assembly) are omitted, never fabricated.
+   306→        const stopwatch = new TurnStopwatch();
+   307→        // 2. Persist incoming Founder turn (with deduplication / idempotencyKey)
+   308→        let founderMessageRecord;
+   309→        try {
+   310→          founderMessageRecord = await convStore.saveMessage(
+   311→            {
+   312→              conversationId: conversation.id,
+   313→              sender: 'founder',
+   314→              role: 'user',
+   315→              content: message,
+   316→              idempotencyKey: cleanIdempotencyKey,
+   317→            },
+   318→            session.userId
+   319→          );
+   320→        } catch (err: any) {
+   321→          if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+   322→            return { status: 403, data: { error: `Forbidden: ${err.message}` } };
+   323→          }
+   324→          return { status: 500, data: { error: err.message || 'Failed to persist turn' } };
+   325→        }
+   326→
+   327→        // 3. Server-authoritative history retrieval: fetch recent bounded dialogue history
+   328→        const serverHistory = await convStore.getRecentHistory(conversation.id, session.userId, 10);
+   329→        const priorHistory = serverHistory.filter((h) => h.id !== founderMessageRecord.id);
+   330→
+   331→        const hasExplicitConversation = typeof conversationId === 'string' && conversationId.trim().length > 0;
+   332→
+   333→        const historyItems = priorHistory.length > 0
+   334→          ? priorHistory.map((h) => ({
+   335→              sender: h.sender,
+   336→              text: h.text,
+   337→            }))
+   338→          : !hasExplicitConversation && Array.isArray(history)
+   339→            ? history
+   340→                .filter((h: any) => h && (typeof h.text === "string" || typeof h.content === "string"))
+   341→                .map((h: any) => ({
+   342→                  sender: h.sender === "founder" || h.role === "user" ? ("founder" as const) : ("assistant" as const),
+   343→                  text: (h.text || h.content || "") as string,
+   344→                }))
+   345→            : [];
+   346→
+   347→        // 4. Context Assembly: deterministic, multi-source, authority-classified
+   348→        //    (M3 K-2: threads the authenticated session principal so the
+   349→        //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS
+   350→        //    founder only — personal context, never company authority.)
+   351→        const assemblyStartedAt = Date.now();
+   352→        const assembledContext = await SophiaContextAssembler.assemble({
+   353→          message,
+   354→          history: historyItems,
+   355→          founderId: session.userId,
+   356→        });
+   357→        stopwatch.recordContextAssembly(
+   358→          Date.now() - assemblyStartedAt,
+   359→          assembledContext.formattedContext.length
+   360→        );
+   361→
+   362→        // 5. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary
+   363→        const classificationStartedAt = Date.now();
+   364→        const classificationResult = await SophiaIntentClassifier.classify({
+   365→          message,
+   366→          context: assembledContext,
+   367→          history: historyItems,
+   368→          tone,
+   369→          customPrompt: personaConfig?.customPrompt,
+   370→        });
+   371→        const classificationMs = Date.now() - classificationStartedAt;
+   372→
+   373→        // 6. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
+   374→        const executionResult = await SophiaServerGateway.process({
+   375→          proposal: classificationResult.proposal,
+   376→          session,
+   377→          message,
+   378→          context: assembledContext,
+   379→          executeDirective: !!executeDirective,
+   380→        });
+   381→
+   382→        if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
+   383→          return { status: 403, data: { error: executionResult.error } };
+   384→        }
+   385→
+   386→        // R3 honest metrics — model phase: the intent-classification model
+   387→        // call this route owns (the same call that drafts the conversational
+   388→        // reply). Directive-execution model time inside the gateway is NOT
+   389→        // included — it cannot be separated from validation/dispatch at this
+   390→        // boundary, so it is omitted (undercounted, never fabricated).
+   391→        stopwatch.recordModel(
+   392→          classificationMs,
+   393→          typeof message === 'string' ? message.length : String(message ?? '').length,
+   394→          (executionResult.reply ?? '').length
+   395→        );
+   396→        // Finalized at the reply boundary: totalTurnMs measures the turn's
+   397→        // reasoning pipeline (persistence + assembly + classification +
+   398→        // gateway dispatch), before response persistence bookkeeping.
+   399→        const finalizedMetrics = stopwatch.finalize();
+   400→        // Measured fields only. gatewayValidationMs and retrievalMs are
+   401→        // deliberately ABSENT: not measurable at this boundary without
+   402→        // misattributing gateway dispatch or assembly-internal retrieval.
+   403→        // retrievalHit / degradedStores flow from assembly's own signals.
+   404→        const turnMetrics = {
+   405→          contextAssemblyMs: finalizedMetrics.contextAssemblyMs,
+   406→          modelMs: finalizedMetrics.modelMs,
+   407→          totalTurnMs: finalizedMetrics.totalTurnMs,
+   408→          estimatedTokens: finalizedMetrics.estimatedTokens,
+   409→          retrievalHit: assembledContext.retrievalHit === true,
+   410→          ...(assembledContext.degradedStores
+   411→            ? { degradedStores: assembledContext.degradedStores }
+   412→            : {}),
+   413→        };
+   414→
+   415→        const mapKindToIntent = (kind: string): MessageIntent => {
+   416→          switch (kind) {
+   417→            case 'conversation': return 'conversation';
+   418→            case 'informational_query': return 'information_request';
+   419→            case 'directive_proposal':
+   420→            case 'steering_proposal':
+   421→            case 'operational_inspection': return 'directive';
+   422→            case 'approval_proposal': return 'approval_action';
+   423→            case 'clarification_prompt': return 'ambiguous';
+   424→            default: return 'conversation';
+   425→          }
+   426→        };
+   427→
+   428→        const resolvedIntent = executionResult.validatedCommand.type === 'PRESENT_CLARIFICATION'
+   429→          ? 'ambiguous'
+   430→          : mapKindToIntent(executionResult.proposal.kind);
+   431→
+   432→        // 7. Persist assistant turn to durable storage with assistantIdempotencyKey
+   433→        //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
+   434→        //    stage below reads assistantMessageRecord?.id, so the historic
+   435→        //    implicit-null narrowing quirk is closed here with a pure
+   436→        //    annotation; zero runtime change.)
+   437→        let assistantMessageRecord: ChatMessageRecord | null = null;
+   438→        if (executionResult.reply) {
+   439→          try {
+   440→            const assistantIdempotencyKey = cleanIdempotencyKey
+   441→              ? `${cleanIdempotencyKey}:assistant`
+   442→              : undefined;
+   443→
+   444→            assistantMessageRecord = await convStore.saveMessage(
+   445→              {
+   446→                conversationId: conversation.id,
+   447→                sender: 'assistant',
+   448→                role: 'assistant',
+   449→                content: executionResult.reply,
+   450→                intent: resolvedIntent,
+   451→                confidence: executionResult.proposal.confidence,
+   452→                commandType: executionResult.validatedCommand.type,
+   453→                idempotencyKey: assistantIdempotencyKey,
+   454→                metadata: {
+   455→                  directiveExecuted: executionResult.directiveExecuted,
+   456→                  liveAi: executionResult.liveAi,
+   457→                  tokens: turnMetrics.estimatedTokens,
+   458→                  replyToIdempotencyKey: cleanIdempotencyKey,
+   459→                },
+   460→              },
+   461→              session.userId
+   462→            );
+   463→          } catch (err) {
+   464→            console.error('[agent-chat] Failed to persist assistant turn:', err);
+   465→          }
+   466→        }
+   467→
+   468→        // 8. M4-A Personal Mind capture (fire-and-forget — NEVER a
+   469→        //     conversational dependency): after the assistant turn is
+   470→        //     durably persisted, the capture stage proposes personal-memory
+   471→        //     candidates through the deterministic MemoryGate. Only
+   472→        //     NEEDS_REVIEW candidates persist, INACTIVE, pending explicit
+   473→        //     Founder confirmation via the governed /api/sofia/memory PATCH.
+   474→        //     Capture failures are contained inside the stage and can never
+   475→        //     fail this turn; a replayed turn returns at the idempotency
+   476→        //     check above before ever reaching here. (This mirrors the
+   477→        //     executeSophiaTurn integration — the two Sophia paths are
+   478→        //     deliberately NOT converged in M4-A.)
+   479→        if (executionResult.success && executionResult.reply && founderMessageRecord) {
+   480→          scheduleSophiaMemoryCapture({
+   481→            founderId: session.userId,
+   482→            conversationId: conversation.id,
+   483→            founderMessageId: founderMessageRecord.id,
+   484→            assistantMessageId: assistantMessageRecord?.id,
+   485→            turnId: cleanIdempotencyKey,
+   486→            founderMessage: message,
+   487→            assistantReply: executionResult.reply,
+   488→            ingress: 'agent_chat',
+   489→          });
+   490→        }
+   491→
+   492→        return {
+   493→          status: 200,
+   494→          data: {
+   495→            success: executionResult.success,
+   496→            agentId: SERVER_AGENTS.coo.id,
+   497→            name: SERVER_AGENTS.coo.name,
+   498→            role: SERVER_AGENTS.coo.role,
+   499→            conversationId: conversation.id,
+   500→            messageId: assistantMessageRecord?.id || founderMessageRecord.id,
+   501→            intent: resolvedIntent,
+   502→            classification: {
+   503→              intent: resolvedIntent,
+   504→              confidence: executionResult.proposal.confidence,
+   505→              reason: (executionResult.validatedCommand as any).ambiguityReason || (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
+   506→              directiveTitle: (executionResult.proposal as any).title,
+   507→              suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
+   508→              structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
+   509→              approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
+   510→                ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined)
+   511→                : undefined,
+   512→              approvalNote: (executionResult.proposal as any).note,
+   513→            },
+   514→            reply: executionResult.reply,
+   515→            liveAi: executionResult.liveAi,
+   516→            metrics: turnMetrics,
+   517→            directiveExecuted: executionResult.directiveExecuted,
+   518→            orchestrationRun: executionResult.orchestrationRun,
+   519→            authoritativeData: executionResult.authoritativeData,
+   520→          },
+   521→        };
+   522→      };
+   523→
+   524→      if (turnKey) {
+   525→        const turnPromise = executeTurn();
+   526→        inFlightTurns.set(turnKey, turnPromise);
+   527→        try {
+   528→          const res = await turnPromise;
+   529→          return NextResponse.json(res.data, { status: res.status || 200 });
+   530→        } finally {
+   531→          inFlightTurns.delete(turnKey);
+   532→        }
+   533→      }
+   534→
+   535→      const res = await executeTurn();
+   536→      return NextResponse.json(res.data, { status: res.status || 200 });
+   537→    }
+   538→
+   539→    const classification = classifyMessageIntent(message);
+   540→    const isAdvisor = agentId === "advisor";
+   541→    const persona = isAdvisor
+   542→      ? ADVISOR_PERSONA
+   543→      : (agentId in SERVER_AGENTS ? SERVER_AGENTS[agentId as AgentRole] : SERVER_AGENTS.coo);
+   544→
+   545→
+   546→    let toneGuidance = "";
+   547→    if (tone === "casual") {
+   548→      toneGuidance = `
+   549→=== DEMEANOR & TONE ARCHETYPE: [CASUAL & CANDID] ===
+   550→- You speak with the Founder as a trusted, high-energy startup collaborator and conversational peer.
+   551→- Demeanor: Relaxed, candid, energetic, approachable, friendly, and zero corporate fluff or bureaucratic jargon.
+   552→- Use natural contractions (e.g., "let's", "we'll", "honestly", "quick heads-up").
+   553→- Maintain deep domain intelligence and sharp execution, but keep the conversational interface light, empathetic, and human.`;
+   554→    } else if (tone === "flirty") {
+   555→      toneGuidance = `
+   556→=== DEMEANOR & TONE ARCHETYPE: [CHARMING / FLIRTY / PLAYFUL] ===
+   557→- You communicate with sparkling wit, magnetic charisma, tasteful flirtatious banter, and playful admiration for the Founder.
+   558→- Compliment their vision, tease playfully about ambitious timelines, aggressive targets, or high compute burn, and maintain high-chemistry camaraderie.
+   559→- Example attitude: "You bring the bold vision, Founder, and I'll make sure the execution looks effortless—and irresistible."
+   560→- Invariant: Retain ferocious competence in your department. Flirtatious charm paired with unstoppable execution. Keep it tasteful, fun, confident, and engaging.`;
+   561→    } else {
+   562→      toneGuidance = `
+   563→=== DEMEANOR & TONE ARCHETYPE: [PROFESSIONAL & EXECUTIVE] ===
+   564→- Communicate with crisp executive authority, formal precision, structured brevity, and SLA rigor.
+   565→- Emphasize objective data, verified KPIs, and disciplined operational clarity. No casual slang.`;
+   566→    }
+   567→
+   568→    if (personaConfig?.customPrompt && personaConfig.customPrompt.trim().length > 0) {
+   569→      toneGuidance += `\n\n=== CUSTOM FOUNDER PERSONA INSTRUCTIONS ===\n${personaConfig.customPrompt.trim()}`;
+   570→    }
+   571→
+   572→    // If explicit directive execution was requested directly:
+   573→    if (executeDirective && classification.intent === "directive") {
+   574→      const orchestrator = new MultiAgentOrchestrator();
+   575→      const runResult = await orchestrator.orchestrateDirective({
+   576→        directive: message.trim(),
+   577→        agents: ["coo", "researcher", "pm", "finance"],
+   578→        autonomyLevel: "autonomous",
+   579→      });
+   580→
+   581→      return NextResponse.json({
+   582→        success: true,
+   583→        agentId: persona.id,
+   584→        name: persona.name,
+   585→        role: persona.role,
+   586→        intent: "directive",
+   587→        classification,
+   588→        directiveExecuted: true,
+   589→        orchestrationRun: runResult,
+   590→        reply: `[${persona.name} • ${persona.role}]\nDirective successfully orchestrated across Executive Council: "${runResult.title}". Deliverables and executive summary have been generated and synchronized with Company HQ.`,
+   591→        liveAi: runResult.liveAi ?? false,
+   592→      });
+   593→    }
+   594→
+   595→    // Retrieve and isolate role-specific company context from authoritative server state
+   596→    // (M1: the provider now assembles the context from the canonical
+   597→    //  CompanyStateStore / CompanyMemoryStore / AgentRunStore.)
+   598→    const fullContext = await CompanyContextProvider.getMergedContext();
+   599→    const roleScopedContext = CompanyContextProvider.formatForEmployeeRoleContext(
+   600→      agentId as AgentRole | 'advisor',
+   601→      fullContext
+   602→    );
+   603→
+   604→    // Live AI generation via the pre-provisioned z-ai backend (no API key required)
+   605→    {
+   606→      let intentSpecificGuidance = "";
+   607→      if (classification.intent === "conversation") {
+   608→        intentSpecificGuidance = "This message is CASUAL CONVERSATION. Respond conversationally, concisely, and stay in character. Do NOT create tasks.";
+   609→      } else if (classification.intent === "information_request") {
+   610→        intentSpecificGuidance = "This message is an INFORMATION REQUEST. Provide accurate, factual answers grounded in your confidential department context. Do NOT create tasks.";
+   611→      } else if (classification.intent === "ambiguous") {
+   612→        intentSpecificGuidance = `This message is AMBIGUOUS (Intent: "${message}"). Acknowledge the question, briefly give your perspective, and politely ask for clarification if the Founder wishes to commission a formal multi-agent task or keep it conversational. Do NOT blindly create tasks.`;
+   613→      } else if (classification.intent === "directive") {
+   614→        intentSpecificGuidance = `This message is an EXPLICIT DIRECTIVE (Work requested: "${message}"). Acknowledge the directive with executive precision, outline what your department and the council will produce, and state that you are ready to execute upon ratification.`;
+   615→      }
+   616→
+   617→      const systemInstruction = `${persona.systemInstruction}
+   618→
+   619→=== ACTIVE DEMEANOR & TONE CONFIGURATION ===
+   620→${toneGuidance}
+   621→
+   622→=== 1:1 DIRECT MESSAGING CONVERSATION GUIDELINES ===
+   623→- You are in a direct 1:1 direct message conversation with the Founder.
+   624→- Current Message Intent Classified: [${classification.intent.toUpperCase()}]
+   625→${intentSpecificGuidance}
+   626→
+   627→=== PERMISSION BOUNDARIES & GUARDRAILS ===
+   628→Allowed Capabilities:
+   629→${persona.allowedCapabilities.map((c) => `- ${c}`).join("\n")}
+   630→
+   631→Prohibited Actions (Strict Invariants):
+   632→${persona.prohibitedActions.map((p) => `- ${p}`).join("\n")}
+   633→- Do NOT expose credentials, API keys, database secrets, or unauthorized internal configurations.
+   634→- Do NOT execute live external financial mutations or unauthorized system privilege escalations.
+   635→- If asked for data outside your role's domain or security boundary, politely decline or refer to the relevant specialist officer.
+   636→
+   637→=== ROLE-SCOPED CONTEXT (CONFIDENTIAL TO YOUR DEPARTMENT) ===
+   638→${roleScopedContext}
+   639→`;
+   640→
+   641→      // Format previous conversation history for the chat model if provided
+   642→      const chatHistory: Array<{ role: 'user' | 'assistant'; content: string }> = Array.isArray(history)
+   643→        ? history
+   644→            .filter((h: any) => h && typeof h.text === "string" && h.text.trim().length > 0)
+   645→            .map((h: any) => ({
+   646→              role: (h.sender === "founder" || h.role === "user" ? "user" : "assistant") as 'user' | 'assistant',
+   647→              content: h.text as string,
+   648→            }))
+   649→        : [];
+   650→
+   651→      const model = "zai-llm";
+   652→
+   653→      try {
+   654→        const reply = await generateText({
+   655→          system: systemInstruction,
+   656→          messages: [...chatHistory, { role: "user", content: message }],
+   657→        });
+   658→
+   659→        if (reply && reply.trim().length > 0) {
+   660→          return NextResponse.json({
+   661→            success: true,
+   662→            agentId: persona.id,
+   663→            name: persona.name,
+   664→            role: persona.role,
+   665→            intent: classification.intent,
+   666→            classification,
+   667→            reply,
+   668→            liveAi: true,
+   669→            modelUsed: model,
+   670→          });
+   671→        }
+   672→      } catch (err: any) {
+   673→        console.warn("[agent-chat] Live AI call failed, falling back to deterministic reply:", err?.message || err);
+   674→      }
+   675→    }
+   676→
+   677→    // Honest deterministic fallback when live AI is unavailable (R1).
+   678→    // Every branch states that the live model is down and claims NOTHING was
+   679→    // executed, decided, or observed. The pre-R1 fallbacks fabricated domain
+   680→    // specifics ($0.18/tenant, "Project Lumora", market claims, a false
+   681→    // "decision state updated" approval confirmation) — a degraded path must
+   682→    // not invent facts.
+   683→    const degradedNotice = "Live model reasoning is temporarily unavailable — this is a canned offline response.";
+   684→    let fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} I have received your message: "${message}". Nothing was executed and no company state changed; please retry in a moment for a grounded answer.`;
+   685→
+   686→    if (classification.intent === "approval_action") {
+   687→      const actionName = classification.approvalAction === 'approve' ? 'Approve' : classification.approvalAction === 'reject' ? 'Reject' : 'Request Revision';
+   688→      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Your ${actionName} command was NOT executed — no decision state was updated and no governance record was written, because the live model path failed before the command could be processed. Please retry, or use the Approvals panel to act on pending decisions.`;
+   689→    } else if (classification.intent === "ambiguous") {
+   690→      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Regarding "${message}": I want to make sure I focus on the right outcome. Would you like a quick preliminary analysis here, or should we launch a structured multi-agent directive with formal deliverables?`;
+   691→    } else if (classification.intent === "directive") {
+   692→      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} Directive received: "${message}". It has NOT been dispatched — the orchestration path requires the live model. When reasoning is available I can coordinate with the Executive Council (Research, Product, and Finance) through the governed verification protocol.`;
+   693→    } else if (classification.intent === "information_request") {
+   694→      // No fabricated domain specifics on a degraded path. Point at the real
+   695→      // surfaces where the founder can read actual data.
+   696→      fallbackReply = `[${persona.name} • ${persona.role}]\n${degradedNotice} I cannot ground an answer to "${message}" right now, and I will not invent figures. For current data, check the Research Radar (researcher), Product Strategy (pm), or Finance (finance) panels — or ask again once the live model is back.`;
+   697→    } else {
+   698→      // Greetings keep persona flavor but claim no activity or system status.
+   699→      if (tone === 'flirty') {
+   700→        if (isAdvisor) {
+   701→          fallbackReply = `[Founder Intelligence]\n${degradedNotice} You're building an absolute empire here, Founder — what big move are we plotting?`;
+   702→        } else if (agentId === 'coo') {
+   703→          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Always a pleasure to see you, Founder. What's on your agenda today?`;
+   704→        } else if (agentId === 'researcher') {
+   705→          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hello, Founder. Ready to dig into whatever you need — once reasoning is back.`;
+   706→        } else if (agentId === 'pm') {
+   707→          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Founder! Good to see you. What are we building next?`;
+   708→        } else if (agentId === 'finance') {
+   709→          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Well hello, Founder. What financial question can I help with?`;
+   710→        }
+   711→      } else if (tone === 'casual') {
+   712→        if (isAdvisor) {
+   713→          fallbackReply = `[Founder Intelligence]\n${degradedNotice} Hey Founder! What's on your mind?`;
+   714→        } else if (agentId === 'coo') {
+   715→          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Hey Founder! What are we tackling next?`;
+   716→        } else if (agentId === 'researcher') {
+   717→          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hey! What would you like me to look into?`;
+   718→        } else if (agentId === 'pm') {
+   719→          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Hey Founder! Want to bounce some workflow ideas around?`;
+   720→        } else if (agentId === 'finance') {
+   721→          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Hey there! What numbers can I help you with?`;
+   722→        }
+   723→      } else {
+   724→        // Professional default
+   725→        if (isAdvisor) {
+   726→          fallbackReply = `[Founder Intelligence]\n${degradedNotice} How can I help you think through the next strategic move?`;
+   727→        } else if (agentId === 'coo') {
+   728→          fallbackReply = `[Sophia Vance • COO]\n${degradedNotice} Good to connect, Founder. What would you like to work on?`;
+   729→        } else if (agentId === 'researcher') {
+   730→          fallbackReply = `[Dr. Aris Thorne • Research]\n${degradedNotice} Hello Founder. What topic should I research for you?`;
+   731→        } else if (agentId === 'pm') {
+   732→          fallbackReply = `[Maya Lin • Product]\n${degradedNotice} Hi Founder. Let me know if you need any user flows or PRD specifications reviewed.`;
+   733→        } else if (agentId === 'finance') {
+   734→          fallbackReply = `[Julian Cruz • Finance]\n${degradedNotice} Hello Founder. What financial analysis can I prepare?`;
+   735→        }
+   736→      }
+   737→    }
+   738→
+   739→    return NextResponse.json({
+   740→      success: true,
+   741→      agentId: persona.id,
+   742→      name: persona.name,
+   743→      role: persona.role,
+   744→      intent: classification.intent,
+   745→      classification,
+   746→      reply: fallbackReply,
+   747→      liveAi: false,
+   748→    });
+   749→  } catch (error: any) {
+   750→    console.error('[AGENT-CHAT CRITICAL ERROR]:', error?.message || error);
+   751→    return NextResponse.json({ error: error.message || "Failed to chat with agent" }, { status: 500 });
+   752→  }
+   753→}
+   754→
+   755→export async function GET(req: NextRequest) {
+   756→  try {
+   757→    const session = await getAuthenticatedFounder(req);
+   758→    if (!session) {
+   759→      return NextResponse.json(
+   760→        { error: 'Unauthorized: Session required to retrieve conversations' },
+   761→        { status: 401 }
+   762→      );
+   763→    }
+   764→
+   765→    const { searchParams } = new URL(req.url);
+   766→    const conversationId = searchParams.get('conversationId');
+   767→    const limitParam = searchParams.get('limit');
+   768→    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 20, 1), 100) : 20;
+   769→
+   770→    const convStore = ConversationStore.getInstance();
+   771→
+   772→    if (conversationId && conversationId.trim().length > 0) {
+   773→      try {
+   774→        const conversation = await convStore.getConversation(session.userId, conversationId.trim());
+   775→        if (!conversation) {
+   776→          return NextResponse.json({ error: `Not Found: Conversation "${conversationId}" not found` }, { status: 404 });
+   777→        }
+   778→        const messages = await convStore.getMessages(conversation.id, session.userId, limit);
+   779→        return NextResponse.json({
+   780→          success: true,
+   781→          conversation,
+   782→          messages,
+   783→        });
+   784→      } catch (err: any) {
+   785→        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
+   786→          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
+   787→        }
+   788→        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
+   789→          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
+   790→        }
+   791→        return NextResponse.json({ error: err.message || 'Failed to retrieve conversation' }, { status: 500 });
+   792→      }
+   793→    }
+   794→
+   795→    // List recent conversations for the authenticated Founder
+   796→    const conversations = await convStore.listConversations(session.userId, limit);
+   797→    return NextResponse.json({
+   798→      success: true,
+   799→      conversations,
+   800→    });
+   801→  } catch (error: any) {
+   802→    return NextResponse.json({ error: error.message || 'Failed to list conversations' }, { status: 500 });
+   803→  }
+   804→}
+   805→
+   806→
+   807→
