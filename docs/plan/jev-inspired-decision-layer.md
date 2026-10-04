@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 1 complete — repository baseline and architecture documentation recorded.  
+**Status:** Task 2 complete — source-level runtime identity, tool, and execution inventory recorded.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -58,12 +58,13 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 
 **Acceptance:** Documentation matches inspected code; no unverified capabilities are described as implemented; branch and commit are reported.
 
-### Task 2 — Inventory current identity, tools, and execution boundaries
-- Trace agent definitions to actual runtime registries/adapters and authorization enforcement.
-- Trace one representative desktop/SOFIA request through ingress, context assembly, proposal, governance, tool execution, and response.
-- Identify missing contracts and duplicated abstractions; do not change implementation until the inventory is complete.
+### Task 2 — Inventory current identity, tools, and execution boundaries — COMPLETE
+- Source-level inventory recorded in `docs/research/runtime-capability-inventory.md`.
+- Traced SOFIA ingress through canonical turn execution, context assembly, intent proposal, server gateway, orchestration, gated research tools, persistence, and SSE response.
+- Identified configured and unconfigured tools, current persona definition shape, missing general desktop-control adapter in the inspected runtime path, unwired inspection/steering dispatch, and a hard-coded provider scope identity requiring follow-up.
+- Tests were located but not run; provider/device behavior remains unverified.
 
-**Acceptance:** Evidence-based inventory with exact paths and one end-to-end sequence, including gaps and tests.
+**Acceptance:** Met for source-level inventory. Runtime tests and provider behavior remain explicit follow-up evidence, not assumed successes.
 
 ### Task 3 — Define and document canonical contracts
 - Specify contracts and ownership for Agent Identity & Persona, Personal Mind, Company Brain, Episodic Memory, Decision Proposals, and Tool Capabilities.
