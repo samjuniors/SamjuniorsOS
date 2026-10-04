@@ -2428,3 +2428,26 @@ NEXT ACTION:
 - No runtime code, tests, dependencies, environment configuration, merge, or deployment changed.
 - Updated `docs/research/decision-reliability-evaluation-v1.md` and `docs/plan/jev-inspired-decision-layer.md` to record the baseline and qualification.
 - **Next proposed implementation target:** investigate and design a narrowly scoped S6 idempotency fix, with a dedicated isolated test database. Do not change runtime code until the Founder authorizes that implementation task.
+
+
+## Task 4 Follow-up — S6 Stale-Conversation Retry Idempotency (2026-10-04)
+
+**Status:** IMPLEMENTED ON FEATURE BRANCH; LOCAL TEST VERIFICATION PENDING.
+
+### Current-repo changes
+- `src/lib/server/sophia/turn-executor.ts`: for an unknown non-empty supplied conversation ID plus a non-empty turn ID, derive a stable canonical conversation ID from SHA-256 of the JSON tuple `[founderId, suppliedConversationId, turnId]`. Resolve an existing founder-owned conversation at that ID before creating one. This lets sequential retries reach the existing assistant idempotency record without changing the S4 unknown-conversation provisioning policy.
+- `tests/sophia/m3_authority_hardening.test.ts`: replaced the S6 known-issue assertion with regression assertions for canonical conversation reuse, `idempotentReplay === true`, byte-identical reply, exactly two persisted messages, and separate founder-scoped identity.
+- No changes were made to ConversationStore persistence semantics, database schema, provider behavior, or authorization policy.
+
+### Why this approach
+- It is narrower than introducing a global idempotency registry or changing the existing unknown-conversation behavior to 404.
+- The raw caller-supplied ID is not stored as the canonical conversation ID; the derived ID is bounded and includes founder and turn identity.
+- Requests without a turn ID preserve their existing random-fork behavior.
+- S4 remains an explicit policy decision; compound-request loss and EVAL-023…026 coverage gaps remain open.
+
+### Verification status and limitations
+- GitHub source/test edits were committed separately: implementation `6cde78ac6eded638c9d076effce53b480ca99a69`; regression test `2eb9b8ec06d3235ce0ee80e4fbe3010e99e5f943`.
+- The evaluation and plan documents record that post-change tests have not yet run. Do not report the fix as verified until the updated intent, honesty, and authority suites run.
+- Future authority-suite execution must use an isolated test database, not the shared development database. Do not merge or deploy.
+
+**Next single action:** Pull the latest feature branch in an isolated worktree, configure a dedicated worktree-local test database, run the three baseline commands, and report exact results. Stop before any additional runtime changes.
