@@ -5,6 +5,7 @@ import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { AgentRunStore } from '../agents/run-store';
 import { SERVER_AGENTS } from '../agents/definitions';
 import { SophiaEntityResolver } from './entity-resolver';
+import { detectDependencyIntent } from '../retrieval/dependency-relations';
 import { CandidateIntentProposal, SophiaAssembledContext, ValidatedSophiaCommand, TurnMetrics } from './types';
 import { OrchestrationRun } from '@/types/os';
 
@@ -285,7 +286,59 @@ export class SophiaServerGateway {
       let factualReply = '';
       let authoritativeData: any = null;
 
-      if (sanitizedProposal.domain === 'company_metrics') {
+      // M5.4 S6/S9 — DEPENDENCY-PATH INFORMATIONAL QUERIES.
+      // SophiaContextAssembler (M5.3-C) projects a bounded, deterministic
+      // dependency-path slice ("Service Dependency Chain (Canonical Facts)",
+      // authority CANONICAL_FACT, max 8 edges / 4 facts, every line citing
+      // its [FACT-...] provenance) when — and only when — the founder's
+      // message anchors on a known DEPENDS_ON entity with active canonical
+      // facts. The deterministic reply must select that evidence: without
+      // this gate the generic domain dispatch answers dependency questions
+      // with unrelated COMPANY_KNOWLEDGE content, and the epistemic_fact
+      // dispatch summarizes an unrelated facts[0] record, dropping the
+      // direct and transitive dependent evidence entirely (verified
+      // production response-path regression R2/R3).
+      //
+      // Gating mirrors the assembler exactly — the SAME deterministic cue
+      // detector over the SAME founder message (never the model's domain
+      // guess), plus presence of a usable evidence slice in the
+      // ALREADY-ASSEMBLED context. Nothing new is retrieved here and no
+      // store is consulted: the slice is rendered as-is, so its canonical
+      // [FACT-...] provenance and the assembler's authority partitioning
+      // (company-scoped by construction; personal memory never enters it)
+      // carry through to the reply unchanged. Retrieved content is evidence
+      // for display, never authorization.
+      //
+      // Scope: this applies to the general / epistemic_fact dispatches
+      // where the failure lives. company_metrics and workstream_status
+      // keep their authoritative store replies — a dependency cue inside a
+      // metrics or run-state question must not hijack telemetry (no
+      // broad-regex misroutes of unrelated questions).
+      //
+      // Fail-safe: cue fired but the slice is missing, empty, or unusable
+      // (no citable [FACT- record) → fall through to the existing domain
+      // dispatch unchanged. No fabricated dependency answer, no silent
+      // completeness claim.
+      const dependencyIntent = detectDependencyIntent(message);
+      const dependencySlice = dependencyIntent.intent
+        ? opts.context.slices.find(
+            (s) =>
+              s.label === 'Service Dependency Chain (Canonical Facts)' &&
+              s.authority === 'CANONICAL_FACT' &&
+              s.content.trim().length > 0 &&
+              s.content.includes('[FACT-')
+          )
+        : undefined;
+
+      if (
+        dependencySlice &&
+        sanitizedProposal.domain !== 'company_metrics' &&
+        sanitizedProposal.domain !== 'workstream_status'
+      ) {
+        provenances.push(dependencySlice.provenance);
+        factualReply = `[${persona.name} • ${persona.role}]\nCompany Service Dependency Chain (Canonical-Fact Evidence):\n${dependencySlice.content}`;
+        authoritativeData = { dependencyPath: dependencySlice.content };
+      } else if (sanitizedProposal.domain === 'company_metrics') {
         // M1: read the canonical CompanyStateStore — previously this read the
         // hardcoded os-data financial constant through CompanyContextProvider.
         const fin = await CompanyStateStore.getInstance().getFinancialMetrics();
