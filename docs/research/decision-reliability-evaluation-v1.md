@@ -63,7 +63,7 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 
 ## Current source-inspection baseline (not an execution result)
 
-- The existing intent contract suite has 23 named assertions (A1-A5, B1-B6, C1-C5, D, E1, F1-F4) with a provider-mocked child fixture.
+- The existing intent contract suite has 22 named assertions (A1-A5, B1-B6, C1-C5, D, E1, F1-F4) with a provider-mocked child fixture.
 - The fixture child includes valid proposals, malformed kind/decision/confidence, injection, ambiguity, provider-down, echo containment, and approval-resolution scenarios.
 - Related authority hardening tests explicitly pin conversation ownership and duplicate-turn behavior, including known issue S6 where the same bogus conversation ID plus turn ID re-forks/re-executes.
 - The honesty suite checks that unconfigured capabilities do not fabricate successful execution.
