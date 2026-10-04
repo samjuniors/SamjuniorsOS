@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 2 complete — source-level runtime identity, tool, and execution inventory recorded.  
+**Status:** Task 3 complete — canonical identity, memory, decision, and capability contracts documented.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -66,12 +66,13 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 
 **Acceptance:** Met for source-level inventory. Runtime tests and provider behavior remain explicit follow-up evidence, not assumed successes.
 
-### Task 3 — Define and document canonical contracts
-- Specify contracts and ownership for Agent Identity & Persona, Personal Mind, Company Brain, Episodic Memory, Decision Proposals, and Tool Capabilities.
-- Define identity/versioning, provenance, retention/deletion boundaries, data access, and safe failure semantics.
-- Reuse current types and stores where they already satisfy the contract; avoid parallel systems.
+### Task 3 — Define and document canonical contracts — COMPLETE
+- Contract document: `docs/architecture/agent-memory-decision-capability-contracts.md`.
+- Defined ownership, trust boundaries, provenance, identity/versioning expectations, data access and deletion limitations, capability availability, and failure semantics for identity/persona, Personal Mind, Company Brain, episodic memory, decision proposals, validated commands, tools, and governance.
+- Mapped each contract to current source abstractions and marked gaps without adding a parallel store or changing runtime code.
+- Provider-scope identity concern remains open for a separately scoped trace; no change made.
 
-**Acceptance:** Contracts map to current code and explicitly identify only the necessary gaps.
+**Acceptance:** Met for architecture documentation. Runtime behavior, deletion coverage, and individual failure cases are not newly tested by this documentation task.
 
 ### Task 4 — Decision reliability evaluation
 - Build a small, versioned evaluation set from representative requests and adversarial cases.
