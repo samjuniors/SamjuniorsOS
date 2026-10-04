@@ -1,5 +1,30 @@
 # WORKLOG.md - Canonical Operational History
 
+## Branch Consolidation — Review Fixes, Single-Branch Model (2026-10-04)
+
+**Status:** COMPLETE on `development`. Founder directive: fix every issue from the Phase 1 review, commit and push everything, merge everything into ONE new branch, and delete all other stale branches (local + remote) leaving exactly `main` + `development`.
+
+### Review fixes (commit ce7d1c3)
+
+Every review finding fixed, plus two latent governance bugs discovered during the work:
+
+1. **request_revision fidelity** — the gateway's two-way branch folded a well-formed `request_revision` into `rejected`. All three decisions are now recorded verbatim (`ApprovalStatus`, `IApprovalStore`, both store implementations widened); `request_revision` authorizes nothing (every execution gate still authorizes on `'approved'` only); surfaced honestly in the activity projection status and the route's `approvalAction`.
+2. **Untrusted-ID corroboration** (new bug, found while verifying #1 — reproduced by phase2 test 6) — a live model that sees pending approval IDs in its `PENDING_GOVERNANCE_STATE` context could emit one as `approvalId`, and the gateway honored it as if the founder had cited it: silent ratification of ONE of several pending approvals (zero-guessing violation). A model-emitted `approvalId` is now honored ONLY when the founder's own message cites that ID verbatim; uncited IDs fall through to the resolver's deterministic paths (strict ambiguity → clarification, zero mutation). Pinned by contract test F4.
+3. **Pending-list filter no-op** (pre-existing tsc-baseline error) — gateway + context-assembly passed `{ decision: 'pending' }` where `ApprovalFilter` filters on `status`: the no-op surfaced decided records as pending candidates. Fixed in both src sites + the phase2/k2 test helpers.
+4. **Enum-mirror drift** — `KNOWN_PROPOSAL_KINDS` / `APPROVAL_DECISIONS` are now compiler-checked exhaustive `Record` mirrors of the `CandidateIntentProposal` contract unions (drift cannot compile).
+5. **Echo-ack reflection** — `sanitizeProposal`'s fabricated conversation ack is now static text (never echoes the raw user message; untrusted-input reflection stays out of assistant replies). Pinned by B6.
+6. **Dead `hasPendingApproval`** removed, with a comment pinning the DELIBERATE behavior (offline approvals surface as honest gateway resolutions, not silent conversation).
+7. **Injection-pattern scope + liveAi semantics** documented (ASCII-literal patterns are deliberate — fall-through is not a bypass; `liveAi:false` means "answered deterministically", not provider-down).
+
+Contract suite extended to **22 assertions** (B6 static-ack, C5 approval-flavored ambiguous body pinned to clarification, F1–F4 gateway decision fidelity incl. the uncited-ID zero-guessing pin). Full battery green: contract 22/0 ×2 (deterministic across durable-store leftovers), phase2 12/12 ×2 (test 6 fixed by #2), phase1 live 12/12, k2 20/0, r3 7/0, r0_route_auth 81/0, r01 21/0, r1 17/0, r2 15/0, realtime 6/0, cron 24/0, m4b1 20/0, m0 7/0, m3 10/0, scheduler heartbeat 11/0; lint exit 0; tsc 155 (pre-existing baseline minus the 4 filter-bug errors this change removes).
+
+### Consolidation (commits 88a34c8, e0eaffd)
+
+- `development` created at the Phase 1 tip (4eca348), fixes committed on it.
+- **88a34c8**: merged `origin/main` (founder docs — Jev decision-layer research + Windows-first plan; clean merge).
+- **e0eaffd**: merged sandbox `main` (unrelated histories — the sandbox lineage predates the canonical fork root). All 281 add/add conflicts resolved as OURS (development = the reviewed 47d58f7 port + r0-r3 + Phase 1 + governance fixes; main's only post-port changes were tool-results receipts and the lowercase `worklog.md`, which arrive as additions). `WORKLOG.md` resolved as ours (strict superset). The merged `src/`+`tests/` tree is byte-identical to the pre-merge fixed state (git-verified 0-line diff); delta = exactly main's 181 main-only environment files (tool-results/, upload/, worklog.md). Smoke-verified in the merge worktree: contract 22/0, lint exit 0.
+- **Repos end-state**: exactly two branches, `main` (canonical, = origin/main) and `development` (everything merged). All other local + remote branches deleted; branches carrying unmerged commits were preserved as local `archive/*` tags (tags, not branches) before deletion. `origin/main` untouched (no force, no push to main).
+
 ## Phase 1 (Jev-inspired plan) — Sophia Intent Classification Reliability (2026-10-04)
 
 **Status:** COMPLETE on `feat/phase1-intent-reliability` (branched from `integration/sandbox-r3` @ `449a342`), awaiting founder review. Founder directive: improve Sophia's existing intent classification reliability without introducing a new subsystem — baseline first, identify real failure categories, then the smallest evidence-supported change. No TypeSafe integration, no new provider, no UI/memory-gate/approval-queue changes, no architecture rewrite; classifier output still cannot authorize or execute anything (the SophiaServerGateway boundary is unchanged).
