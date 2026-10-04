@@ -80,4 +80,25 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 
 ## Baseline results
 
-**Status: PENDING EXECUTION.** No PASS/FAIL totals are recorded until the commands are run in the repository environment.
+**Status: EXECUTED — reported baseline recorded 2026-10-04.**  
+**Commit under test:** `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`  
+**Environment:** Bun 1.3.14; isolated linked worktree at `/home/z/baseline-wt`; `bun install --frozen-lockfile` completed with 546 packages and Prisma generation successful. Results below are transcribed from the repository execution report; they were not re-run by this documentation update.
+
+| Suite | Command | Exit code | Passed | Failed | Skipped / qualification |
+|---|---|---:|---:|---:|---|
+| Intent contract | `bun tests/sophia/phase1_intent_contract.test.ts` | 0 | 22 | 0 | Deterministic provider SDK boundary fake; no network |
+| Honesty consolidation | `bun tests/sophia/r1_honesty_consolidation.test.ts` | 0 | 17 | 0 | Expected network-down stderr in test 3.4 verifies honest zero-result fallback |
+| Authority hardening | `bun tests/sophia/m3_authority_hardening.test.ts` | 0 | 10 | 0 | S8–S10 ran because ambient `DATABASE_URL=file:/home/z/my-project/db/custom.db` was exported |
+
+**Reported total:** 49 passed, 0 failed, 0 skipped; all three commands exited 0. The authority suite's S8–S10 database pins used the shared development database, not a worktree-local isolated database. Post-run cleanup verification reportedly found zero test residue. This is a qualification on isolation, not evidence of a test failure.
+
+### Known limitations pinned by green tests
+
+- **S4:** unknown `conversationId` provisions a fresh conversation, diverging from ADR 0002 §7's blanket 404 expectation.
+- **S6:** retrying with the same bogus `conversationId` and `turnId` re-forks and re-executes because forking precedes conversation-scoped idempotency. Treat this as the highest-priority reliability concern in this baseline.
+- **Compound requests:** the single-kind intent contract can represent a compound halt-plus-commission request as `steering_proposal`, dropping the second objective.
+- **Not directly covered by dedicated deterministic regression cases:** provider timeout/partial execution, compound-request handling, conflicting current-vs-historical context, and clarification escalation (EVAL-023…026).
+
+### Interpretation
+
+The baseline establishes the behavior pinned by these three test suites only. It does not establish live-provider intent quality, end-to-end reliability, or correctness outside covered paths. Green tests that explicitly pin S4 and S6 document known limitations; they do not mean those behaviors are acceptable. Before future baseline runs, isolate `DATABASE_URL` to a dedicated test database so authority tests do not depend on or touch the shared development database.
