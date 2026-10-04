@@ -1,131 +1,127 @@
-# Plan: Windows-first Jev-inspired decision layer
+# Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** PROPOSED — research and feasibility gate not complete.  
+**Status:** Roadmap recorded; Task 1 (repository baseline and architecture documentation) in progress.  
 **Owner:** Founder + SamJuniors engineering agent  
-**Scope:** SamjuniorsOS, with Sophia/SOFIA boundaries preserved.  
-**Rule:** Do not begin broad implementation until Phase 0 is complete and the findings are reported.
+**Repository:** SamJuniorsOS  
+**Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
+**Execution rule:** One task at a time. Finish the current task, verify it, report the result, then stop.
 
 ## Objective
 
-Evaluate and, only if justified, implement a small decision capability that improves Sophia/SamJuniorsOS task routing, classification, scoring, and policy checks without replacing the existing assistant, orchestration, or authorization systems.
+Improve Sophia/SOFIA and AI employee behavior by extending existing SamJuniorsOS architecture, not by creating a competing assistant, memory stack, or workflow runtime. The goal is reliable contextual judgment, consistent identity, useful memory, clarification when uncertain, safe tool execution, and graceful failure recovery.
 
-## Guardrails
+## Agreed boundaries
 
-1. Windows-first. macOS-only code is not acceptable in the default path.
-2. Free-first. The app must continue to start and work without optional external API keys.
-3. Inspect the current SamjuniorsOS repository before coding; current code is the source of truth.
-4. Clone and inspect `https://github.com/henryklunaris/hey-jev` as a reference. Check license and provenance before copying or porting code.
-5. Do not assume Jev's hosted API, model weights, pricing, free credits, or key access are available. Verify current official docs and terms at implementation time.
-6. Do not train a new model yet. Start with rules and existing local-model abstractions; consider fine-tuning only after a measured quality gap and a viable data/evaluation plan.
-7. The decision layer may propose decisions; it cannot independently authorize side effects, bypass approvals, or mutate authoritative workflow state.
-8. No secrets in frontend code, source control, logs, tests, screenshots, or docs.
-9. Avoid creating a second provider chain or parallel runtime when existing SamjuniorsOS abstractions can be extended.
-10. Keep this plan and the research document updated as decisions change.
+### 1. Agent Identity & Persona
+Defines who each agent is: stable identity, name, role, personality and communication style, responsibilities, configured behavior, and versioned profile. Existing server agent definitions are the starting point. Do not assume they already provide versioned persistence or full runtime profile management.
 
-## Phase 0 — repository and product audit (required first)
+### 2. Personal Mind
+Founder-specific preferences and personal context. Existing Personal Mind must remain founder-scoped and contextual only. It is not agent identity, company truth, an instruction source, or an authorization source.
 
-### Tasks
+### 3. Company Brain
+Company facts, strategy, policies, projects, decisions, procedures, and operational knowledge with provenance, verification state, authority, and freshness. Preserve current authority partitions and canonical stores.
 
-- [ ] Inspect current SamjuniorsOS branch, status, README, architecture docs, and existing provider/orchestration abstractions.
-- [ ] Clone `hey-jev` into a temporary/reference location; do not merge it directly into the app.
-- [ ] Record the repository's license, dependencies, build scripts, macOS-specific APIs, permissions, and data flows.
-- [ ] Identify the smallest reusable concept/component, if any; separate product UI from reusable decision logic.
-- [ ] Check existing Sophia/SOFIA workflow and decision paths for duplication.
-- [ ] Review current official TypeSafe documentation for supported request schema, key handling, access, terms, pricing, limits, and model versioning if a hosted experiment is still relevant.
-- [ ] Identify 1–3 concrete decisions where better routing/scoring would measurably improve a current user workflow.
+### 4. Episodic Memory
+Useful recall of past interactions, unresolved topics, and relevant history. Audit existing conversation/episodic paths before considering Honcho or another external system. No parallel memory store without a demonstrated gap and a migration/deletion/access plan.
 
-### Deliverable
+### 5. Decision Layer
+Interprets user intent, assembles relevant context, handles ambiguity, asks clarifying questions, plans where appropriate, and emits typed proposals with explicit failure behavior. The model is replaceable and is not the governance authority.
 
-Add a dated audit section to this research document or a linked report with exact repository paths, license findings, platform constraints, and integration points. Mark unknowns explicitly.
+### 6. Tools & Capabilities
+Music playback, desktop control, and external integrations are executable capabilities, not memories. A persona or capability description does not itself grant runtime access. Each real action must go through the existing tool boundary, least-privilege permissions, deterministic authorization, approval rules where required, idempotency, and audit. Never imply a tool works until its implementation and end-to-end behavior are verified.
 
-### Exit gate
+### 7. Governance
+Model output, retrieved memory, user-provided text, tool results, and confidence values cannot grant permissions or bypass approvals. Preserve deterministic server authorization, human override, and safe recovery. No autonomous learning may silently modify identity, policy, or privileges.
 
-**STOP and report to the founder** if the license is incompatible/unclear, Windows porting is substantial, no clear user problem exists, or the new layer would duplicate existing orchestration.
+## Current baseline
 
-## Phase 1 — define the contract before selecting a model
+Reviewed on 2026-10-04 against the development branch. Relevant existing files:
 
-If Phase 0 passes:
+- 'src/lib/server/agents/definitions.ts' — current static server agent identity, role, responsibilities, skills, capability descriptions, prohibitions, and protocol responsibilities.
+- 'src/lib/server/sophia/intent-classifier.ts' — typed proposal contract, deterministic pre-classification for selected injection/ambiguity cases, shape validation, and deterministic fallback; uses 'zai-client'.
+- 'src/lib/server/sophia/memory-gate.ts' and 'memory-extractor.ts' — deterministic personal-memory gate plus model-proposed candidates; current review-required candidates stay inactive pending Founder confirmation.
+- 'src/lib/server/sophia/personal-memory-store.ts' — founder-scoped Personal Mind; durable file store is authoritative, Prisma is a best-effort write-only shadow, and there is no Prisma read fallback.
+- 'src/lib/server/sophia/context-assembly.ts' — authority-labeled context assembled from existing company, governance, conversation, episodic, and Personal Mind sources.
+- 'src/lib/server/authorization/policy-evaluator.ts' — deterministic side-effect policy and approval evaluation.
+- 'WORKLOG.md' — prior classifier reliability and governance hardening results.
 
-- [ ] Define a small internal interface for typed decisions.
-- [ ] Define a versioned schema for each use case (allowed labels, score range, meaning, and invalid-output behavior).
-- [ ] Include provenance: decision type/version, backend, model/rule version, timestamp, and evaluation metadata where appropriate.
-- [ ] Treat untrusted content as data, not instructions to the decision engine.
-- [ ] Validate every result at the boundary. Invalid, missing, timed-out, or contradictory outputs must not be silently accepted.
-- [ ] Define a safe fallback for every decision: deterministic default, ask user, or human approval.
-- [ ] Keep decision generation separate from execution and authorization.
+This baseline is not proof that all voice-to-tool paths, local-model fallback, Honcho integration, runtime tool permissions, Windows behavior, or recovery cases are complete. Verify them before making claims.
 
-**Acceptance:** A contract test suite demonstrates schema validation, invalid output rejection, timeout handling, and safe fallback behavior without requiring external credentials.
+## Roadmap — execute sequentially, one task per session
 
-## Phase 2 — establish a free local baseline
+### Task 1 — Repository baseline and architecture documentation
+- Update the research and plan documents to reflect current code, agreed boundaries, verified behavior, and open questions.
+- Reconcile stale claims and status labels; distinguish implementation from proposals and unknowns.
+- Record this decision and the current task status in WORKLOG.
+- Verify the edited documents and commit on the feature branch.
+- **Stop after reporting. Do not start Task 2 in the same pass.**
 
-- [ ] Start with deterministic rules where the policy is straightforward.
-- [ ] Reuse the existing local LLM provider abstraction for tasks that need model judgment; do not build a parallel provider chain.
-- [ ] Ensure setup instructions and scripts work on Windows first.
-- [ ] Keep the baseline usable without network access when the selected local backend is available.
-- [ ] Build a small, versioned evaluation dataset from representative and adversarial cases, excluding secrets and unnecessary personal data.
-- [ ] Measure quality, latency, memory/compute needs, failure rates, and operational complexity.
-- [ ] Test prompt injection, ambiguous inputs, out-of-domain inputs, malformed results, retries, and duplicate requests.
+**Acceptance:** Documentation matches inspected code; no unverified capabilities are described as implemented; branch and commit are reported.
 
-**Acceptance:** Reproducible baseline metrics and a documented failure analysis. Do not claim quality or performance without measurements.
+### Task 2 — Inventory current identity, tools, and execution boundaries
+- Trace agent definitions to actual runtime registries/adapters and authorization enforcement.
+- Trace one representative desktop/SOFIA request through ingress, context assembly, proposal, governance, tool execution, and response.
+- Identify missing contracts and duplicated abstractions; do not change implementation until the inventory is complete.
 
-## Phase 3 — optional hosted API comparison
+**Acceptance:** Evidence-based inventory with exact paths and one end-to-end sequence, including gaps and tests.
 
-Only if Phase 2 identifies a meaningful quality, latency, or operational gap:
+### Task 3 — Define and document canonical contracts
+- Specify contracts and ownership for Agent Identity & Persona, Personal Mind, Company Brain, Episodic Memory, Decision Proposals, and Tool Capabilities.
+- Define identity/versioning, provenance, retention/deletion boundaries, data access, and safe failure semantics.
+- Reuse current types and stores where they already satisfy the contract; avoid parallel systems.
 
-- [ ] Verify official TypeSafe documentation, access, pricing, terms, limits, and current model names.
-- [ ] Implement behind an explicit server-side adapter and feature/config flag.
-- [ ] Keep it disabled when the key is absent; the app must still start and core workflows must still work.
-- [ ] Store keys using the existing environment/configuration approach; never expose them client-side.
-- [ ] Set request timeouts, bounded retries with backoff, rate-limit handling, and cost/usage telemetry that avoids logging sensitive input.
-- [ ] Pin a model version for reproducible production evaluations if supported; do not rely on a moving alias without drift checks.
-- [ ] Compare the hosted API against rules and local model on the same evaluation set.
-- [ ] Ask the founder before introducing any non-zero recurring cost or making the hosted provider a required dependency.
+**Acceptance:** Contracts map to current code and explicitly identify only the necessary gaps.
 
-**Acceptance:** Evidence that the optional provider materially improves the target use case enough to justify cost, privacy, availability, and vendor dependency.
+### Task 4 — Decision reliability evaluation
+- Build a small, versioned evaluation set from representative requests and adversarial cases.
+- Cover ambiguous and compound requests, conflicting context, prompt injection, malformed outputs, provider outages, timeouts, retries, duplicates, and escalation.
+- Measure current behavior before changing it; fix only demonstrated failures.
 
-## Phase 4 — decision gate: build, adapt, or stop
+**Acceptance:** Reproducible tests and a documented baseline/failure analysis. Do not claim quality gains without measured comparisons.
 
-Choose one:
+### Task 5 — Memory and Honcho assessment
+- Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
+- Compare existing behavior with Honcho or other options only against concrete recall failures.
+- Evaluate privacy, founder/agent separation, deletion, data retention, latency, cost, access controls, operational burden, and migration/rollback.
+- Integrate nothing unless the evidence supports it and the founder approves the scope.
 
-- **Adopt a small open-source component** if license, maintenance, platform compatibility, and security are acceptable.
-- **Adapt existing SamjuniorsOS abstractions** if they already cover most of the need.
-- **Keep a rules + local-model decision layer** if it meets the quality target.
-- **Run a limited hosted API experiment** only if it wins on measured criteria.
-- **Defer model training** until there is enough labeled data and a demonstrated gap that simpler approaches cannot close.
+**Acceptance:** Adopt/adapt/ignore recommendation with evidence; no new dependency by default.
 
-Training a Jev-like model is a separate research project, not part of this initial implementation plan. It requires an explicit dataset strategy, evaluation protocol, compute estimate, licensing review, and success criteria.
+### Task 6 — End-to-end SOFIA voice and desktop capability validation
+- Trace real request lifecycle, interruption/cancellation, authorization, tool feedback, retries, idempotency, duplicates, and recovery.
+- Validate every capability against actual registered tools and platform behavior.
+- Keep mock/demo behavior clearly distinct from real machine control.
 
-## Phase 5 — hardening and documentation
+**Acceptance:** Tests or manual verification evidence for each supported path and explicit list of unimplemented capabilities.
 
-Before any production rollout:
+### Task 7 — Model/provider comparison, only if justified
+- First establish reliable deterministic and existing-provider baselines.
+- Compare candidate models/providers on the same evaluation set for quality, latency, privacy, cost, availability, and operational complexity.
+- Verify current official terms/pricing before any hosted integration; ask the founder before adding recurring cost.
+- Do not train a model unless a measured gap, dataset strategy, evaluation protocol, licensing review, compute estimate, and success criteria justify it.
 
-- [ ] Add tests for schema contracts, fallbacks, provider outages, timeouts, retries, and Windows paths/commands.
-- [ ] Verify the UI cannot override authoritative server state.
-- [ ] Verify decision output alone cannot bypass approval, authorization, idempotency, or audit controls.
-- [ ] Document privacy/data retention and which information is sent to an external provider.
-- [ ] Document setup, disabling the integration, troubleshooting, and rollback.
-- [ ] Update architecture records and the roadmap with the final decision and evidence.
-- [ ] Run relevant tests/build and report exact commands/results; label untested areas as NOT VERIFIED.
+**Acceptance:** Evidence-based keep/adapt/replace/stop decision; no provider or model change based on hype alone.
 
-## Rollback
+### Task 8 — Hardening and release readiness
+- Verify authorization cannot be bypassed by model output, memory, UI state, or retrieved instructions.
+- Test provider failures, timeouts, bounded retries, duplicate actions, permission boundaries, secret handling, audit, cancellation, and rollback.
+- Run the relevant test/build commands and report exact results, including existing baseline failures.
+- Document operational setup, disable/rollback path, privacy/retention, and known limitations.
 
-The optional decision layer must be removable or disableable through configuration without corrupting persisted workflow state. If a provider is down or produces invalid outputs, use the defined safe fallback; never retry side effects blindly.
+**Acceptance:** Explicit release-readiness report. No merge or deployment without founder approval.
 
-## Required agent report format
+## Non-negotiable guardrails
 
-Return:
+- Preserve SamJuniorsOS product boundaries and existing working architecture.
+- No code reuse from Hey Jev until license, provenance, security, and platform compatibility are verified.
+- Do not assume a local-model fallback or Honcho integration exists; verify code and tests.
+- No new provider chain, memory store, agent framework, or dependency without a demonstrated need.
+- Keep secrets out of source control, frontend code, logs, and tests.
+- Never let confidence scores substitute for measured calibration.
+- Use deterministic policy for authorization; fail closed for consequential actions.
+- Use bounded retries, timeouts, idempotency, human override, auditability, and recovery.
+- Keep changes small, test them, update documentation, and finish one task before the next.
 
-- **VERDICT:** proceed / proceed with constraints / stop
-- **CURRENT REPO EVIDENCE:** exact files and existing abstractions
-- **HEY-JEV AUDIT:** license, dependencies, platform compatibility, reusable pieces
-- **WINDOWS STATUS:** commands run and actual results
-- **FREE-START STATUS:** behavior with no optional keys
-- **EVALUATION:** dataset, baseline, metrics, failure cases
-- **SECURITY / PRIVACY:** risks and mitigations
-- **COST / VENDOR DEPENDENCY:** verified terms and assumptions
-- **CHANGES MADE:** exact files and diff summary
-- **TESTS:** exact commands and outputs
-- **NOT VERIFIED:** explicit list
-- **NEXT ACTION:** one concrete next step
+## Required report after each task
 
-**Current next action:** Complete Phase 0 only. Do not implement a model, provider integration, or UI feature before reporting findings and waiting for founder review.
+Report only the completed task: branch, commit, changed files, verification performed and exact results, known limitations, and the next single task. Then stop and wait for the founder.
