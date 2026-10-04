@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Roadmap recorded; Task 1 (repository baseline and architecture documentation) in progress.  
+**Status:** Task 1 complete — repository baseline and architecture documentation recorded.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
