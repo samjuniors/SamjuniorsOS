@@ -1,0 +1,41 @@
+name: Sophia production response-path regression
+
+on:
+  pull_request:
+    branches:
+      - feat/decision-layer-architecture-baseline
+    paths:
+      - "tests/sophia/production_response_path_regression.test.ts"
+      - "src/lib/server/sophia/**"
+      - "src/lib/server/retrieval/**"
+      - "benchmark/memory-retrieval/**"
+      - ".github/workflows/sophia-response-path-regression.yml"
+  push:
+    branches:
+      - test/sophia-production-response-path-regression
+    paths:
+      - "tests/sophia/production_response_path_regression.test.ts"
+      - "src/lib/server/sophia/**"
+      - "src/lib/server/retrieval/**"
+      - "benchmark/memory-retrieval/**"
+      - ".github/workflows/sophia-response-path-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  response-path-regression:
+    name: Run isolated S6/S9 regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Run production response-path regression
+        run: bun tests/sophia/production_response_path_regression.test.ts
