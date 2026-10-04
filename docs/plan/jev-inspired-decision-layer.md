@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 4 in progress — versioned evaluation set documented; execution baseline pending.  
+**Status:** Task 4 baseline recorded — deterministic suites reported 49/49 passing; known reliability limitations remain unfixed and require separate approval before runtime changes.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -74,13 +74,16 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 
 **Acceptance:** Met for architecture documentation. Runtime behavior, deletion coverage, and individual failure cases are not newly tested by this documentation task.
 
-### Task 4 — Decision reliability evaluation — IN PROGRESS
+### Task 4 — Decision reliability evaluation — BASELINE RECORDED
 - Evaluation catalog v1 recorded in `docs/research/decision-reliability-evaluation-v1.md`.
-- Mapped existing deterministic classifier/gateway tests to versioned cases; identified direct-coverage gaps for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification loops.
-- Source inspection confirms an existing deterministic fixture harness and related authority/honesty regression suites, but this pass did not execute them.
-- Next: run the deterministic suites in the repository environment, record exact pass/fail/blocked results, and classify failures before changing runtime behavior.
+- Reported execution at commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`: intent contract 22/22, honesty consolidation 17/17, and authority hardening 10/10; total 49 passed, 0 failed, all commands exit 0.
+- The intent suite used a provider SDK fake. Live-provider quality suites were intentionally out of scope.
+- Authority S8–S10 ran with an ambient `DATABASE_URL` pointing at the shared development database. The execution report states cleanup verification found no residue; future runs should use a dedicated worktree-local test database.
+- Known limitations remain pinned, not fixed: S4 unknown-conversation provisioning, S6 duplicate re-execution on a bogus conversation/turn ID, and compound-objective loss under the single-kind intent contract.
+- EVAL-023…026 remain not directly covered by dedicated deterministic regressions: provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
+- No runtime implementation, tests, dependencies, or environment configuration were changed as part of recording the baseline.
 
-**Acceptance:** Reproducible test execution and documented baseline/failure analysis. No quality gain claims without measured comparisons.
+**Acceptance:** Met for the initial deterministic execution baseline and failure/coverage classification. This is not a live-provider quality claim or release-readiness result.
 
 ### Task 5 — Memory and Honcho assessment
 - Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
