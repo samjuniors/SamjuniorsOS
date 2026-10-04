@@ -1,7 +1,7 @@
 # Decision Reliability Evaluation Set v1
 
 **Version:** 1.0.0  
-**Status:** Dataset and existing regression mapping defined; execution baseline pending.  
+**Status:** Original baseline and post-S6 regression verification recorded; live-provider quality remains out of scope.  
 **Created:** 2026-10-04  
 **Target branch:** `feat/decision-layer-architecture-baseline`  
 **Scope:** SOFIA intent proposal and gateway trust boundary; no live model quality claims.
@@ -104,11 +104,36 @@ Do not aggregate these cases into a single “AI accuracy” score. Report deter
 The baseline establishes the behavior pinned by these three test suites only. It does not establish live-provider intent quality, end-to-end reliability, or correctness outside covered paths. Green tests that explicitly pin S4 and S6 document known limitations; they do not mean those behaviors are acceptable. Before future baseline runs, isolate `DATABASE_URL` to a dedicated test database so authority tests do not depend on or touch the shared development database.
 
 
-## Post-baseline change — S6 targeted fix (verification pending)
+## Post-baseline change — S6 targeted fix (verified)
 
 **Implementation commit:** `6cde78ac6eded638c9d076effce53b480ca99a69`  
-**Regression-test commit:** `2eb9b8ec06d3235ce0ee80e4fbe3010e99e5f943`
+**Regression-test commit:** `2eb9b8ec06d3235ce0ee80e4fbe3010e99e5f943`  
+**Verified branch head:** `de1a57985bf0b7ec6566a3064c065ae4be427820`
 
-The turn executor now derives a stable, founder-scoped canonical conversation ID from the tuple `[founderId, suppliedUnknownConversationId, turnId]` when an unknown non-empty conversation ID and a non-empty turn ID are supplied. On retry, the executor resolves the same canonical conversation and the existing assistant idempotency record can replay the completed result. The raw caller-supplied ID is not used as the canonical conversation ID. Requests without a turn ID retain the existing random-fork behavior, and the S4 unknown-conversation policy remains unchanged.
+The turn executor derives a stable, founder-scoped canonical conversation ID from the tuple `[founderId, suppliedUnknownConversationId, turnId]` when an unknown non-empty conversation ID and a non-empty turn ID are supplied. On retry, the executor resolves the same canonical conversation and the existing assistant idempotency record replays the completed result. The raw caller-supplied ID is not used as the canonical conversation ID. Requests without a turn ID retain the existing random-fork behavior, and the S4 unknown-conversation policy remains unchanged.
 
-The S6 regression now asserts same canonical conversation, `idempotentReplay === true`, identical reply, no duplicate messages, and founder scoping. This is a source-level change only until the local regression suites are executed; no post-change pass claim is made here.
+### Post-fix verification report
+
+**Environment:** Bun 1.3.14; fresh detached worktree `/home/z/s6-verify-wt` at `de1a57985bf0b7ec6566a3064c065ae4be427820`; `bun install --frozen-lockfile` exit 0 (546 packages). A worktree-local SQLite database was initialized from the repository Prisma schema at `/home/z/s6-verify-wt/.data/decision-reliability-test.db`. The ambient shared-development `DATABASE_URL` was explicitly overridden for each suite command. The report states the shared DB mtime was unchanged, the isolated DB had zero conversations/messages after cleanup, and the worktree remained clean.
+
+| Suite | Command | Exit code | Passed | Failed | Skipped / qualification |
+|---|---|---:|---:|---:|---|
+| Intent contract | `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/phase1_intent_contract.test.ts` | 0 | 22 | 0 | Deterministic provider SDK boundary fake; no live provider |
+| Honesty consolidation | `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/r1_honesty_consolidation.test.ts` | 0 | 17 | 0 | Two expected stderr lines from the deliberate fetch stub in test 3.4 |
+| Authority hardening | `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/m3_authority_hardening.test.ts` | 0 | 10 | 0 | S8–S10 executed against the isolated DB; no conditional skips |
+| TypeScript | `bunx tsc --noEmit` | 1 | — | 153 existing diagnostics | Same 153-error set reproduced at original baseline commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`; the only diff was two existing `turn-executor.ts` TS2339 diagnostics shifting line numbers after inserted code |
+
+**Post-fix suite total:** 49 passed, 0 failed, 0 skipped across the three test suites. TypeScript checking remains non-green due to 153 diagnostics also present at the original baseline; this run found no new diagnostics relative to that baseline.
+
+### S6 regression assertions confirmed
+
+- Retry with the same supplied unknown conversation ID and turn ID resolves the same canonical conversation.
+- `idempotentReplay === true`.
+- Reply is byte-identical to the first response.
+- Exactly two persisted messages remain (one founder message and one assistant message); retry appends no duplicate.
+- Reusing the same supplied ID and turn ID under a different founder resolves to a separate founder-owned conversation with no cross-founder message leakage.
+- The raw supplied unknown ID itself does not become the canonical conversation ID.
+
+### Interpretation and remaining limits
+
+The S6 stale-ID retry duplicate-execution defect is fixed and pinned by the updated regression at the verified branch head. This is sequential/same-process idempotent replay through the existing conversation-scoped mechanism; it does not establish cross-process atomic exactly-once execution. S4 unknown-conversation provisioning policy remains unchanged. Compound-request objective loss remains an open issue, and EVAL-023…026 still lack dedicated deterministic regression coverage. Live-provider quality and release readiness are not established.
