@@ -96,6 +96,7 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 - **Decision: do not integrate Honcho now.** Adapt its emphasis on cross-session recall evaluation only if a representative workload reveals meaningful misses. Keep canonical company truth, Personal Mind lifecycle, and governance in existing SamJuniorsOS stores.
 - Identified follow-up risks: file-authoritative local persistence with best-effort Prisma shadows; no unified cross-store deletion/retention contract established; episodic lexical retrieval can miss paraphrase-only queries and searches only the 20 most recently updated conversations. A persistence/deletion audit is needed before production-scale or multi-instance claims.
 - No runtime code, dependencies, schema, provider configuration, or tests changed. Existing benchmark results were inspected, not rerun in this task.
+- The proposed M5.4 prompt-version experiment is already complete in the repository; do not duplicate it. The remaining decision is whether to separately evaluate the actual production persona prompt before considering any prompt promotion. The harness experiment alone does not authorize a production prompt change.
 
 **Acceptance:** Met for the read-only assessment and evidence-based adopt/adapt/ignore recommendation. No Honcho integration or new memory store was approved.
 
