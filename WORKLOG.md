@@ -2463,3 +2463,34 @@ NEXT ACTION:
 - Live-provider quality and release readiness are not established. TypeScript remains non-green due to the baseline-equivalent 153 diagnostics.
 
 **Next single action:** Stop here and await Founder direction. No merge, deployment, or additional runtime changes without approval.
+
+
+## Task 5 — Memory and Honcho Assessment (2026-10-04)
+
+**Status:** COMPLETE — read-only source audit and external-product assessment on `feat/decision-layer-architecture-baseline`. No runtime code or data-store behavior changed.
+
+### Evidence inspected
+- Personal Mind: `src/lib/server/sophia/personal-memory-store.ts`, `memory-extractor.ts`, `memory-gate.ts`, `memory-capture-stage.ts`, `memory-lifecycle.ts`, and `src/app/api/sofia/memory/route.ts`.
+- Episodic memory: `src/lib/server/conversation/store.ts` and the episodic slice in `src/lib/server/sophia/context-assembly.ts`.
+- Company Brain and retrieval: current context assembly, the M5.1/M5.2/M5.3 benchmark and retrieval documents/results, and M5.4 generation-faithfulness evidence.
+- Honcho public product overview, TypeScript SDK, open-source repository/license, hosted privacy policy, and hosted terms as accessed 2026-10-04.
+
+### Findings and decision
+- Personal Mind is founder-scoped and lifecycle-controlled. Model-extracted candidates are deterministic-gate checked and captured as `PENDING_REVIEW`; there is no automatic activation. Retrieval is bounded, deterministic, and lexical/query-conditioned. The durable file collection is authoritative; Prisma is a best-effort write-only shadow.
+- Episodic retrieval is founder-scoped, token-overlap based, and bounded to the 20 most recently updated conversations, up to 3 hits and 4 matched messages per hit; context is further bounded to 600 characters. Paraphrase-only and older-session recall can still miss.
+- Company Brain retrieval preserves authority partitions and includes temporal projections and bounded relational dependency traversal. Existing M5.3 benchmark evidence reports 1.0000 render recall and zero retrieval/authority failures across 13 synthetic queries; this does not establish production-wide performance.
+- Existing M5.4 generation evidence records stable S6/S9 failures: the model omits a transitive dependency despite the evidence being present in context. This is a generation-faithfulness issue, not evidence that a new memory store is needed.
+- **Verdict: do not integrate Honcho now.** Its strongest differentiator is reasoning-oriented, portable memory across separate AI tools; no current workflow requirement or representative retrieval failure establishes a need for it. Do not send raw conversations to a new hosted store by default.
+- The assessment records hosted data-egress, retention, subprocessor, deletion, availability, licensing, latency/cost, and operational considerations; any future adoption requires a re-check of current terms and a measured benchmark against the existing path.
+- A concrete follow-up risk remains: Personal Mind and ConversationStore use local-file authoritative reads with best-effort Prisma mirrors. A unified retention/deletion contract and multi-instance persistence guarantees were not established in this audit.
+
+### Documentation
+- Added `docs/research/memory-and-honcho-assessment.md`.
+- Updated `docs/plan/jev-inspired-decision-layer.md` to mark Task 5 complete and record the evidence-based no-integration decision.
+- No test suites were rerun for this documentation/audit task. Existing M5 benchmark values are transcribed from committed evidence, not newly generated here.
+- No dependency, schema, provider configuration, runtime implementation, merge, or deployment changed.
+
+### Recommended next priority
+Before broadening voice/desktop execution, consider a separate, narrowly scoped decision on the existing M5.4 generation-faithfulness S6/S9 failure (prompt-version experiment with archived before/after batteries, or explicitly accept/document the limitation). A separate persistence/deletion audit is also needed before production-scale or multi-instance claims.
+
+**Next single action:** Stop after Task 5 and await Founder direction.
