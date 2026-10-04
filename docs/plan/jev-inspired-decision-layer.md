@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 4 baseline and S6 post-fix regression verification recorded; 153 pre-existing TypeScript diagnostics remain unchanged. No merge or deployment.  
+**Status:** Tasks 1–5 completed on the feature branch. S6 regression suites are green; 153 baseline-equivalent TypeScript diagnostics remain. No merge or deployment.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -87,13 +87,17 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 
 **Acceptance:** The targeted S6 fix is accepted as verified for the covered sequential retry path. The original deterministic baseline remains historical, and TypeScript debt remains explicitly non-green. This is not a live-provider quality claim or release-readiness result.
 
-### Task 5 — Memory and Honcho assessment
-- Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
-- Compare existing behavior with Honcho or other options only against concrete recall failures.
-- Evaluate privacy, founder/agent separation, deletion, data retention, latency, cost, access controls, operational burden, and migration/rollback.
-- Integrate nothing unless the evidence supports it and the founder approves the scope.
+### Task 5 — Memory and Honcho assessment — COMPLETE
+- Assessment: `docs/research/memory-and-honcho-assessment.md`.
+- Re-inspected current Personal Mind, capture/gate/lifecycle, context assembly, ConversationStore episodic search, governed memory API, and existing M5.1–M5.4 benchmark evidence.
+- Verified the existing system already has founder-scoped Personal Mind, pending-review capture, deterministic query-conditioned lexical retrieval, bounded episodic search over up to 20 recent conversations, authority-partitioned Company Brain retrieval, and a frozen synthetic retrieval benchmark.
+- Existing M5.3 evidence reports 1.0000 render recall and zero retrieval/authority failures on its 13-query synthetic workload. Existing M5.4 evidence records a stable generation-faithfulness failure in S6/S9: the model omits a transitive dependency even though the context contains it. These are bounded benchmark claims, not production-wide guarantees.
+- Reviewed Honcho's current public product/SDK, hosted privacy policy and terms, and open-source AGPL-3.0 license. Honcho's strongest differentiator is reasoning-oriented, portable memory across separate tools; that requirement is not yet demonstrated in the current SamJuniorsOS workflow.
+- **Decision: do not integrate Honcho now.** Adapt its emphasis on cross-session recall evaluation only if a representative workload reveals meaningful misses. Keep canonical company truth, Personal Mind lifecycle, and governance in existing SamJuniorsOS stores.
+- Identified follow-up risks: file-authoritative local persistence with best-effort Prisma shadows; no unified cross-store deletion/retention contract established; episodic lexical retrieval can miss paraphrase-only queries and searches only the 20 most recently updated conversations. A persistence/deletion audit is needed before production-scale or multi-instance claims.
+- No runtime code, dependencies, schema, provider configuration, or tests changed. Existing benchmark results were inspected, not rerun in this task.
 
-**Acceptance:** Adopt/adapt/ignore recommendation with evidence; no new dependency by default.
+**Acceptance:** Met for the read-only assessment and evidence-based adopt/adapt/ignore recommendation. No Honcho integration or new memory store was approved.
 
 ### Task 6 — End-to-end SOFIA voice and desktop capability validation
 - Trace real request lifecycle, interruption/cancellation, authorization, tool feedback, retries, idempotency, duplicates, and recovery.
