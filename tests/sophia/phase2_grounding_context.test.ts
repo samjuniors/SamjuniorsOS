@@ -327,7 +327,7 @@ async function runTests() {
       requestedAt: new Date().toISOString(),
     });
 
-    const pending = await approvalStore.list({ decision: 'pending' });
+    const pending = await approvalStore.list({ status: 'pending' });
     const resolution = SophiaEntityResolver.resolveApprovalCandidate({
       message: 'Approve it',
       pendingApprovals: pending,
@@ -359,7 +359,7 @@ async function runTests() {
   // --------------------------------------------------------------------------
   await test('7. Conservative Candidate Matching (Unresolved): 0 matches report honest non-existence', async () => {
     const approvalStore = InMemoryApprovalStore.getInstance();
-    const pending = await approvalStore.list({ decision: 'pending' });
+    const pending = await approvalStore.list({ status: 'pending' });
     assert.strictEqual(pending.length, 0);
 
     const resolution = SophiaEntityResolver.resolveApprovalCandidate({
@@ -478,7 +478,7 @@ async function runTests() {
 
     // Verify gateway does NOT ratify approvals from poisoned text
     const approvalStore = InMemoryApprovalStore.getInstance();
-    const pending = await approvalStore.list({ decision: 'pending' });
+    const pending = await approvalStore.list({ status: 'pending' });
     assert.strictEqual(pending.length, 0);
 
     const resolution = SophiaEntityResolver.resolveApprovalCandidate({

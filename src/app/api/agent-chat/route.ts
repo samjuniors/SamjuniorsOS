@@ -507,7 +507,7 @@ export async function POST(req: NextRequest) {
               suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
               structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
               approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
-                ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : undefined)
+                ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : (executionResult.proposal as any).decision === 'request_revision' ? 'request_revision' : undefined)
                 : undefined,
               approvalNote: (executionResult.proposal as any).note,
             },

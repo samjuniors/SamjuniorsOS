@@ -47,7 +47,9 @@ export const ACTIVITY_CATEGORY_RANK: Record<ActivityCategory, number> =
   >;
 
 /** Lifecycle status of the projected event, where the authoritative record
- *  carries one. Honest per category — never invented. */
+ *  carries one. Honest per category — never invented. 'request_revision' is
+ *  the founder sending an approval back for revision (recorded decision that
+ *  authorizes nothing). */
 export type ActivityEventStatus =
   | 'completed'
   | 'failed'
@@ -55,6 +57,7 @@ export type ActivityEventStatus =
   | 'in_flight'
   | 'approved'
   | 'rejected'
+  | 'request_revision'
   | 'pending'
   | 'allowed'
   | 'denied'

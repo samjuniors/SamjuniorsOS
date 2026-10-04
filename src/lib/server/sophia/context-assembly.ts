@@ -712,7 +712,8 @@ export class SophiaContextAssembler {
     // =========================================================================
     try {
       const approvalStore = InMemoryApprovalStore.getInstance();
-      const pending = await approvalStore.list({ decision: 'pending' });
+      // ApprovalFilter filters on `status` (same historic no-op-key fix as the gateway)
+      const pending = await approvalStore.list({ status: 'pending' });
 
       if (pending.length > 0) {
         const approvalLines = pending.slice(0, 3).map((a) =>

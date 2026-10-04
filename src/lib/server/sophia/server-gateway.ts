@@ -145,12 +145,28 @@ export class SophiaServerGateway {
     // 2. APPROVAL PROPOSAL DISPATCH
     if (sanitizedProposal.kind === 'approval_proposal') {
       const approvalStore = InMemoryApprovalStore.getInstance();
-      const pendingApprovals = await approvalStore.list({ decision: 'pending' });
+      // ApprovalFilter filters on `status` — the historic `{ decision: ... }`
+      // key was a no-op that surfaced decided records as pending candidates.
+      const pendingApprovals = await approvalStore.list({ status: 'pending' });
 
       // Conservative candidate matching (zero guessing, no silent pendingApprovals[0] default)
+      // UNTRUSTED-ID CORROBORATION: an approvalId emitted by the model is a
+      // hint, not a founder citation. It is honored ONLY when the founder's
+      // own message cites that ID verbatim — otherwise a live model that
+      // picks an ID from its PENDING_GOVERNANCE_STATE context would
+      // disambiguate an ambiguous founder command by silent guessing
+      // (violating the zero-guessing invariant the resolver enforces).
+      // Fail-closed: uncited model IDs fall through to the resolver's
+      // deterministic dialogue-scan / keyword / pronoun paths.
+      const modelApprovalId =
+        typeof sanitizedProposal.approvalId === 'string' ? sanitizedProposal.approvalId.trim() : '';
+      const founderCitedApprovalId =
+        modelApprovalId.length > 0 && message.toLowerCase().includes(modelApprovalId.toLowerCase())
+          ? modelApprovalId
+          : undefined;
       const resolution = SophiaEntityResolver.resolveApprovalCandidate({
         message,
-        explicitId: sanitizedProposal.approvalId,
+        explicitId: founderCitedApprovalId,
         pendingApprovals,
       });
 
@@ -180,7 +196,10 @@ export class SophiaServerGateway {
       if (resolution.status === 'resolved') {
         const targetApproval = resolution.candidate;
 
-        // Ratify decision through authoritative approval store
+        // Ratify decision through authoritative approval store.
+        // All three decisions are recorded FAITHFULLY — 'request_revision' is
+        // its own recorded state (never folded into 'rejected'), and ONLY
+        // 'approved' ever authorizes execution downstream.
         if (sanitizedProposal.decision === 'approved') {
           await approvalStore.decide(targetApproval.id, 'approved', verifiedFounderId, sanitizedProposal.note);
           const reply = `[${persona.name} • ${persona.role}]\nFounder Governance Decision ratified: [Approved] for "${targetApproval.actionName}" (${targetApproval.id}). The bound payload hash and execution gate have been authorized.`;
@@ -199,7 +218,7 @@ export class SophiaServerGateway {
             liveAi: false,
             metrics,
           };
-        } else {
+        } else if (sanitizedProposal.decision === 'rejected') {
           await approvalStore.decide(targetApproval.id, 'rejected', verifiedFounderId, sanitizedProposal.note);
           const reply = `[${persona.name} • ${persona.role}]\nFounder Governance Decision recorded: [Rejected] for "${targetApproval.actionName}" (${targetApproval.id}). Execution halted; zero side effects performed.`;
           return {
@@ -208,6 +227,28 @@ export class SophiaServerGateway {
               type: 'RESOLVE_APPROVAL',
               approvalId: targetApproval.id,
               decision: 'rejected',
+              note: sanitizedProposal.note,
+              verifiedFounderId,
+            },
+            proposal: sanitizedProposal,
+            reply,
+            directiveExecuted: false,
+            liveAi: false,
+            metrics,
+          };
+        } else {
+          // 'request_revision' — the shape gate upstream guarantees the enum.
+          // Recorded as its own decision; authorizes nothing (execution gates
+          // authorize on 'approved' only); the requester must resubmit with
+          // revisions as a fresh governance request.
+          await approvalStore.decide(targetApproval.id, 'request_revision', verifiedFounderId, sanitizedProposal.note);
+          const reply = `[${persona.name} • ${persona.role}]\nFounder Governance Decision recorded: [Revision Requested] for "${targetApproval.actionName}" (${targetApproval.id}). Execution NOT authorized; the requesting agent must resubmit with the requested revisions.`;
+          return {
+            success: true,
+            validatedCommand: {
+              type: 'RESOLVE_APPROVAL',
+              approvalId: targetApproval.id,
+              decision: 'request_revision',
               note: sanitizedProposal.note,
               verifiedFounderId,
             },

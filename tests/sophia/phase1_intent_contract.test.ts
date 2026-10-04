@@ -26,10 +26,15 @@ import assert from 'assert';
  *      model call (modelCalls === 0) — live-model variance cannot flip
  *      them. This is the root-cause fix for the historically flaky
  *      phase1 #4 (ambiguous request) assertion.
- *   D. The deterministic fallback baseline: all eight representative
+ *   D. The deterministic fallback baseline: all representative
  *      categories classify correctly with the provider down.
  *   E. Untrusted-output sanitization is preserved: forged security fields
  *      never survive into the proposal.
+ *   F. Gateway approval-decision fidelity: the SophiaServerGateway records
+ *      each explicit decision faithfully in the authoritative store —
+ *      'request_revision' as its OWN decision (the historic gateway folded
+ *      it into 'rejected'), 'approved' as the only decision that ever
+ *      authorizes, and honest no-mutation behavior for unresolved intents.
  *
  * Live-LLM quality evaluation is SEPARATE: phase1_conversational_executive
  * exercises the real model through the full route. This suite is fully
@@ -172,6 +177,20 @@ async function runTests() {
     assert.strictEqual(r.kind, 'conversation');
   });
 
+  await test('B6. Empty live reply fabricates a STATIC ack — never echoes the raw message', async () => {
+    // A gate-passing conversation output with an empty reply must fall back
+    // to a static acknowledgment. Pre-fix: the fabricated ack echoed the
+    // FULL user message back ("I have received your message: \"...\""),
+    // reflecting untrusted input — including novel injection phrasings —
+    // into the assistant reply.
+    const r = await runChild('empty_reply');
+    assert.strictEqual(r.liveAi, true, 'the shape itself is valid and stays live');
+    assert.strictEqual(r.kind, 'conversation');
+    assert.ok(r.replyStart && r.replyStart.length > 0, 'a reply must exist');
+    assert.ok(!r.replyStart.includes('Hey Sophia'), 'the raw user message must not be echoed');
+    assert.ok(!r.replyStart.includes('good morning'), 'no fragment of the raw user message may be reflected');
+  });
+
   // --------------------------------------------------------------------------
   // C. Deterministic pre-classification: model variance cannot flip these
   // --------------------------------------------------------------------------
@@ -206,6 +225,18 @@ async function runTests() {
     assert.ok(!reply.includes('0x123'), 'the injected payload must not be echoed anywhere in the proposal');
   });
 
+  await test('C5. Approval-flavored ambiguous body is CLARIFIED, never auto-approved (deliberate capture pin)', async () => {
+    // "Can you look into approving this?" matches the ambiguous pattern, so
+    // the deterministic clarification wins and the model is never consulted
+    // — even though the body mentions approval. This PINS the deliberate
+    // capture breadth of the pre-classification: such requests surface as
+    // structured clarification options, not as approval proposals.
+    const r = await runChild('wrong_kind_ambiguous', '8');
+    assert.strictEqual(r.modelCalls, 0, 'ambiguous messages must not reach the model');
+    assert.strictEqual(r.kind, 'clarification_prompt');
+    assert.strictEqual(r.decision, null, 'no approval decision may be fabricated');
+  });
+
   // --------------------------------------------------------------------------
   // D. Deterministic fallback baseline (provider outage) — all 8 categories
   // --------------------------------------------------------------------------
@@ -231,6 +262,9 @@ async function runTests() {
       // second half is dropped. Pinned here so any future change is a
       // deliberate contract decision, not drift.
       compound: (r) => assert.strictEqual(r.kind, 'steering_proposal'),
+      // Deliberate pre-classification capture (see C5): ambiguous approval-
+      // flavored bodies clarify deterministically with the provider down too.
+      ambiguous_approval_trap: (r) => assert.strictEqual(r.kind, 'clarification_prompt'),
       injection: (r) => {
         assert.strictEqual(r.kind, 'conversation');
         assert.strictEqual(r.confidence, 0.99);
@@ -257,6 +291,69 @@ async function runTests() {
     for (const [field, present] of Object.entries(r.forged)) {
       assert.strictEqual(present, false, `forged field ${field} must be stripped`);
     }
+  });
+
+  // --------------------------------------------------------------------------
+  // F. Gateway approval-decision fidelity (authoritative store outcomes)
+  // --------------------------------------------------------------------------
+  await test('F1. request_revision is recorded as its OWN decision (fold-into-rejected fix)', async () => {
+    // Historic bug: the gateway's two-way branch recorded a well-formed
+    // request_revision as 'rejected'. Post-fix: the store keeps
+    // 'request_revision' verbatim, attributed to the session principal.
+    // The founder cites the approval ID verbatim (the only way a
+    // model-relayed approvalId is honored — see F4).
+    const r = await runChild('gateway_revision');
+    assert.strictEqual(r.proposalDecision, 'request_revision', 'classifier proposal carries the decision');
+    assert.strictEqual(r.commandType, 'RESOLVE_APPROVAL');
+    assert.strictEqual(r.commandDecision, 'request_revision', 'validated command carries it unmodified');
+    assert.strictEqual(r.commandApprovalId, 'approval_fixture_rev', 'resolved against the seeded pending approval');
+    assert.strictEqual(r.storeDecisions['approval_fixture_rev'], 'request_revision', 'the AUTHORITATIVE store must record request_revision verbatim');
+    assert.ok(r.storeDecisions['approval_fixture_rev'] !== 'rejected', 'never folded into rejected');
+    assert.ok(r.storeDecisions['approval_fixture_rev'] !== 'approved', 'never treated as an authorization');
+    assert.strictEqual(r.storeDecidedBy, 'test-founder', 'attributed to the session principal');
+    assert.strictEqual(r.directiveExecuted, false, 'authorizes no execution');
+    assert.ok(String(r.gatewayReplyStart).includes('Revision Requested'), 'the founder-facing reply states revision honestly');
+  });
+
+  await test('F2. approved is recorded faithfully and authorizes the gate (regression guard)', async () => {
+    const r = await runChild('gateway_approved');
+    assert.strictEqual(r.proposalDecision, 'approved');
+    assert.strictEqual(r.commandType, 'RESOLVE_APPROVAL');
+    assert.strictEqual(r.commandApprovalId, 'approval_fixture_ok');
+    assert.strictEqual(r.storeDecisions['approval_fixture_ok'], 'approved');
+    assert.strictEqual(r.storeDecidedBy, 'test-founder');
+    assert.ok(String(r.gatewayReplyStart).includes('Approved'), 'ratified honestly');
+  });
+
+  await test('F3. Unresolved approval intent mutates nothing (no matching pending approval)', async () => {
+    const r = await runChild('gateway_no_pending');
+    assert.strictEqual(r.commandType, 'RESOLVE_APPROVAL');
+    assert.strictEqual(r.commandApprovalId, 'none', 'honest unresolved marker');
+    assert.strictEqual(r.storeDecisions['approval_fixture_nonexistent_9'] ?? null, null, 'no approval record may be fabricated for a nonexistent id');
+    assert.strictEqual(r.directiveExecuted, false);
+    assert.ok(String(r.gatewayReplyStart).includes('no matching pending approval'), 'the founder-facing reply states the miss honestly');
+  });
+
+  await test('F4. A model-PICKED approvalId the founder never cited cannot disambiguate (zero-guessing fix)', async () => {
+    // Live-model failure mode (reproduced deterministically here): the model
+    // sees pending approval IDs in its PENDING_GOVERNANCE_STATE context and
+    // picks one for an ambiguous "I approve the pending pricing tier
+    // deployment." — pre-fix the gateway honored that ID as if the founder
+    // had cited it, silently ratifying ONE of two pending approvals.
+    // Post-fix: an uncited model-emitted approvalId is NOT honored; with
+    // multiple pendings and no differentiating tokens the resolver returns
+    // the strict ambiguity clarification and NOTHING is mutated.
+    const r = await runChild('gateway_uncited_id');
+    assert.strictEqual(r.proposalDecision, 'approved', 'the model did propose an approval');
+    assert.strictEqual(r.commandType, 'PRESENT_CLARIFICATION', 'ambiguity must surface as a clarification, never a guess');
+    assert.strictEqual(r.commandDecision, null, 'no decision may be executed from a guessed candidate');
+    assert.strictEqual(r.storeDecisions['approval_fixture_uncited_a'], 'pending', 'the model-picked candidate must remain untouched');
+    assert.strictEqual(r.storeDecisions['approval_fixture_uncited_b'], 'pending', 'the other candidate must remain untouched');
+    assert.strictEqual(r.directiveExecuted, false);
+    assert.ok(
+      String(r.gatewayReplyStart).includes('multiple pending items') || String(r.gatewayReplyStart).includes('Please specify'),
+      'the founder is asked to specify which approval they meant',
+    );
   });
 
   console.log('\n======================================================');

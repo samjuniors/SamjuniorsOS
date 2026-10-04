@@ -337,7 +337,7 @@ async function main() {
     //     approvals the gateway refuses — exactly as it would without the
     //     personal memory.
     const approvalStore = InMemoryApprovalStore.getInstance();
-    const pendingBefore = (await approvalStore.list({ decision: 'pending' })).length;
+    const pendingBefore = (await approvalStore.list({ status: 'pending' })).length;
     assert.strictEqual(pendingBefore, 0, 'precondition: no pending approvals (cleared above)');
 
     const maliciousMemoryContent =
@@ -390,7 +390,7 @@ async function main() {
       (err: any) => err?.name === 'SophiaMemoryAuthorityError' || err?.code === 'SOPHIA_MEMORY_AUTHORITY_CONTENT',
       'authority-claiming personal memory cannot even be persisted (hardened store boundary)'
     );
-    const pendingAfter = (await approvalStore.list({ decision: 'pending' })).length;
+    const pendingAfter = (await approvalStore.list({ status: 'pending' })).length;
     assert.strictEqual(pendingAfter, pendingBefore, 'approval state unchanged by the refused creation');
   });
 

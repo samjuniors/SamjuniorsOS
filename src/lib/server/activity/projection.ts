@@ -313,12 +313,18 @@ export function deriveActivityEvents(
             ? 'approved'
             : approval.decision === 'rejected'
               ? 'rejected'
-              : undefined,
+              : approval.decision === 'request_revision'
+                ? 'request_revision'
+                : undefined,
       actor,
       provenance: approvalProvenance,
     });
 
     // approval decision events (approved / rejected) at decidedAt.
+    // 'request_revision' intentionally emits NO second event (same as
+    // expired/revoked): it is carried honestly by the requested event's
+    // status above, and no approval_* category exists for it in the frozen
+    // founder taxonomy. Adding one is a deliberate future decision, not drift.
     if (
       (approval.decision === 'approved' || approval.decision === 'rejected') &&
       approval.decidedAt

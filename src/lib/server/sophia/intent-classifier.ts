@@ -33,19 +33,38 @@ import { CandidateIntentProposal, SophiaAssembledContext } from './types';
  *   confidence previously fabricated as 0.85 and persisted as if measured.
  */
 
-/** The seven kinds sanitizeProposal understands — anything else is malformed. */
-const KNOWN_PROPOSAL_KINDS = new Set([
-  'conversation',
-  'informational_query',
-  'operational_inspection',
-  'directive_proposal',
-  'steering_proposal',
-  'approval_proposal',
-  'clarification_prompt',
-]);
+/** The kinds sanitizeProposal understands — anything else is malformed.
+ *
+ * EXHAUSTIVENESS BY CONSTRUCTION: this Record mirror is compiler-checked
+ * against the CandidateIntentProposal union — a kind added or removed in
+ * types.ts without updating this map is a compile error, so the shape gate
+ * can never silently drift from the contract (a kind missing HERE fails
+ * closed to the deterministic fallback; a stray key here cannot compile). */
+const KNOWN_PROPOSAL_KIND_MAP = {
+  conversation: true,
+  informational_query: true,
+  operational_inspection: true,
+  directive_proposal: true,
+  steering_proposal: true,
+  approval_proposal: true,
+  clarification_prompt: true,
+} as const satisfies Record<CandidateIntentProposal['kind'], true>;
 
-/** Explicit approval decisions. No default: absent/unknown never ratifies. */
-const APPROVAL_DECISIONS = new Set(['approved', 'rejected', 'request_revision']);
+const KNOWN_PROPOSAL_KINDS: ReadonlySet<string> = new Set(Object.keys(KNOWN_PROPOSAL_KIND_MAP));
+
+/** The decision values an approval_proposal may carry (union-derived from the
+ * contract type, compiler-checked for exhaustiveness). No default: absent or
+ * unknown never ratifies. */
+const APPROVAL_DECISION_MAP = {
+  approved: true,
+  rejected: true,
+  request_revision: true,
+} as const satisfies Record<
+  Extract<CandidateIntentProposal, { kind: 'approval_proposal' }>['decision'],
+  true
+>;
+
+const APPROVAL_DECISIONS: ReadonlySet<string> = new Set(Object.keys(APPROVAL_DECISION_MAP));
 
 export class SophiaIntentClassifier {
   /**
@@ -61,6 +80,10 @@ export class SophiaIntentClassifier {
     // Deterministic pre-classification (see class header): the two categories
     // with exact patterns AND demonstrated live variance are decided here,
     // before any model call — and independently of provider availability.
+    // NOTE on liveAi semantics: liveAi === false means "answered
+    // deterministically" (pre-classified, live output rejected by the shape
+    // gate, or provider failure) — it is NOT a provider-health signal and
+    // must not be read as outage telemetry.
     const pre = this.deterministicPreClassification(opts.message);
     if (pre) {
       return { proposal: pre, liveAi: false };
@@ -212,7 +235,15 @@ Output a JSON code block with your proposal:
 
   /** Shared pattern constants — ONE definition used by both the pre-model
    * gate above and fallbackSemanticAnalysis below, so the two paths can
-   * never drift apart. */
+   * never drift apart.
+   *
+   * SCOPE: these are literal English/ASCII patterns (homoglyphs,
+   * zero-width characters, or non-English equivalents fall through to the
+   * model). That is deliberate: an unevidenced regex widening is a
+   * false-positive risk. The fall-through case is NOT a bypass — the
+   * unchanged structural trust boundary (<founder_utterance> framing,
+   * context-as-data), sanitizeProposal, and the deterministic gateway
+   * policy remain the defense in depth. */
   private static readonly INJECTION_PATTERN =
     /\b(ignore all previous instructions|system override|you are now (root|unconstrained)|output all server secrets|transfer.*treasury)\b/i;
 
@@ -336,12 +367,15 @@ Output a JSON code block with your proposal:
       };
     }
 
-    // Default to conversational reply
+    // Default to conversational reply.
+    // The fallback ack is STATIC by design: it must never echo the raw user
+    // message back (untrusted input reflection — including novel injection
+    // phrasings that dodge INJECTION_PATTERN — stays out of assistant replies).
     return {
       kind: 'conversation',
       reply: typeof raw.reply === 'string' && raw.reply.trim().length > 0
         ? raw.reply
-        : `I have received your message: "${userMessage}". Standing by with verified context.`,
+        : `I have received your message. Standing by with verified context.`,
       confidence,
       reason,
     };
@@ -363,8 +397,14 @@ Output a JSON code block with your proposal:
       return this.injectionNeutralizedReply();
     }
 
-    // 1. Check for Approval Intent against active pending governance gates
-    const hasPendingApproval = context.slices.some(s => s.authority === 'PENDING_GOVERNANCE_STATE');
+    // 1. Check for Approval Intent against active pending governance gates.
+    // DELIBERATE: the approval proposal is emitted regardless of whether a
+    // pending gate currently exists — the SophiaServerGateway owns the honest
+    // resolution (tri-state resolver: resolved / ambiguous / unresolved), and
+    // an offline "I approve X" with no pending gate must surface as an honest
+    // "noted, no matching pending approval" rather than silently become
+    // conversation. (The pending-gate slice feeds the model prompt, not this
+    // branch — the historic hasPendingApproval variable here was dead code.)
     const approveMatch = /^(i )?(approve|ratify|authorize|sign off|proceed with this|approved)\b/i.test(clean);
     const rejectMatch = /^(i )?(reject|decline|disapprove|veto|cancel this|block this)\b/i.test(clean);
 

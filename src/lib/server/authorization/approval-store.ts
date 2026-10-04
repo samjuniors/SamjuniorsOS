@@ -33,7 +33,7 @@ export interface IApprovalStore {
   }): Promise<FounderApprovalRecord | null>;
   decide(
     id: string,
-    decision: 'approved' | 'rejected',
+    decision: 'approved' | 'rejected' | 'request_revision',
     decidedBy: string,
     reason?: string,
     expiresAt?: string
@@ -203,7 +203,7 @@ export class PostgresApprovalStore implements IApprovalStore {
 
   public async decide(
     id: string,
-    decision: 'approved' | 'rejected',
+    decision: 'approved' | 'rejected' | 'request_revision',
     decidedBy: string,
     reason?: string,
     expiresAt?: string
@@ -629,7 +629,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
 
   public async decide(
     id: string,
-    decision: 'approved' | 'rejected',
+    decision: 'approved' | 'rejected' | 'request_revision',
     decidedBy: string,
     reason?: string,
     expiresAt?: string

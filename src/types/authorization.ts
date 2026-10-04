@@ -19,8 +19,17 @@ export type AuthorizationEffect = 'allowed' | 'approval_required' | 'denied';
 
 /**
  * Lifecycle status of a Founder Approval.
+ * 'request_revision': the Founder explicitly sent the item back for revision.
+ * It is a RECORDED decision, never an authorization — every execution gate
+ * in the codebase authorizes on `decision === 'approved'` only.
  */
-export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'revoked' | 'expired';
+export type ApprovalStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'request_revision'
+  | 'revoked'
+  | 'expired';
 
 /**
  * Granular scope bounding an approval.
