@@ -1,6 +1,6 @@
 # Plan: Agent Identity, Memory Boundaries, and Reliable Decision Layer
 
-**Status:** Task 4 baseline recorded; targeted S6 idempotency fix implemented on the feature branch and awaiting local regression verification.  
+**Status:** Task 4 baseline and S6 post-fix regression verification recorded; 153 pre-existing TypeScript diagnostics remain unchanged. No merge or deployment.  
 **Owner:** Founder + SamJuniors engineering agent  
 **Repository:** SamJuniorsOS  
 **Branch policy:** Work on a focused feature branch based on current development. Never modify main, merge, deploy, or start a later task without the founder's direction.  
@@ -79,11 +79,13 @@ This baseline is not proof that all voice-to-tool paths, local-model fallback, H
 - Reported execution at commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`: intent contract 22/22, honesty consolidation 17/17, and authority hardening 10/10; total 49 passed, 0 failed, all commands exit 0.
 - The intent suite used a provider SDK fake. Live-provider quality suites were intentionally out of scope.
 - Authority S8–S10 ran with an ambient `DATABASE_URL` pointing at the shared development database. The execution report states cleanup verification found no residue; future runs should use a dedicated worktree-local test database.
-- S4 unknown-conversation provisioning remains unchanged, as does compound-objective loss under the single-kind intent contract. The S6 stale-ID duplicate-replay path has a targeted implementation and updated regression assertion; verification is pending.
+- S4 unknown-conversation provisioning remains unchanged, as does compound-objective loss under the single-kind intent contract. The S6 stale-ID retry duplicate-execution defect is fixed and regression-tested at branch head `de1a57985bf0b7ec6566a3064c065ae4be427820`.
+- The post-fix isolated run passed the three deterministic suites: 22 intent contract, 17 honesty consolidation, and 10 authority hardening assertions (49 passed, 0 failed, 0 skipped). S8–S10 ran against a worktree-local SQLite database; the shared development DB mtime was unchanged.
+- `bunx tsc --noEmit` still exits 1 with 153 diagnostics. The report states the same 153-error set occurs at baseline commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`, with only two existing `turn-executor.ts` line-number shifts and no new diagnostics.
 - EVAL-023…026 remain not directly covered by dedicated deterministic regressions: provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
-- No runtime implementation, tests, dependencies, or environment configuration were changed as part of recording the baseline.
+- Live-provider quality and release readiness are not established. No merge or deployment occurred.
 
-**Acceptance:** Initial deterministic baseline and failure/coverage classification are recorded. The S6 fix is not accepted as complete until the relevant suites are rerun against the updated branch in an isolated test environment. This is not a live-provider quality claim or release-readiness result.
+**Acceptance:** The targeted S6 fix is accepted as verified for the covered sequential retry path. The original deterministic baseline remains historical, and TypeScript debt remains explicitly non-green. This is not a live-provider quality claim or release-readiness result.
 
 ### Task 5 — Memory and Honcho assessment
 - Audit all current conversation, episodic, Personal Mind, and Company Brain stores and retrieval paths.
