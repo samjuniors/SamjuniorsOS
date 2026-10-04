@@ -114,7 +114,7 @@ Reconsider only when all of the following are true:
 
 ## 5. Recommended next priority
 
-The most concrete memory-adjacent issue in the current evidence is not a missing memory vendor: it is the M5.4 generation-faithfulness failure for dependency-chain answers, where evidence is already in context but the model omits part of it. Before expanding autonomous voice/desktop execution, consider a separately scoped prompt-version experiment with archived before/after batteries—or explicitly accept and document the limitation. Do not change the retrieval layer to address a generation failure.
+The controlled M5.4 prompt-version experiment is already implemented and archived: prompt/1 produced stable S6/S9 failures (0/3 each), while prompt/2 produced stable passes (3/3 each) and 12/12 overall in each of three valid batteries. Do not duplicate that experiment or alter retrieval to solve the generation failure. The remaining decision is whether to run a separate evaluation using the actual production persona prompt and, only if warranted, promote the general relationship/completeness clause into that prompt. The harness intentionally uses its own versioned prompt, so its success alone does not authorize a production prompt change.
 
 A separate persistence/deletion audit is also warranted before production-scale or multi-instance claims: the file-authoritative stores, best-effort Prisma shadows, remote-provider data flows, backups, and conversation deletion semantics need a single documented lifecycle contract.
 
