@@ -2491,6 +2491,32 @@ NEXT ACTION:
 - No dependency, schema, provider configuration, runtime implementation, merge, or deployment changed.
 
 ### Recommended next priority
-The proposed prompt-version experiment is already present and has archived before/after evidence; do not duplicate it. The remaining generation-side question is whether to evaluate the actual production persona prompt separately before any prompt promotion. A separate persistence/deletion audit is also needed before production-scale or multi-instance claims.
+The controlled prompt-version experiment is already present and archived; do not duplicate it. A read-only trace of the production Sophia prompt and final-answer path is recorded in `docs/research/production-sophia-prompt-applicability-audit.md`. The production prompt classifies intent; the gateway builds informational replies deterministically, so a prompt A/B would not measure the original M5.4 factual-answer failure. The trace indicates that the gateway does not render the assembled dependency-path slice in its generic informational reply path. A separate persistence/deletion audit is still needed before production-scale or multi-instance claims.
 
-**Next single action:** Stop after this evidence reconciliation and await Founder direction; do not change the production prompt without separate authorization.
+**Next single action:** Stop after this evidence reconciliation and await Founder direction; do not change the production prompt or gateway behavior without separate authorization.
+
+
+## Production Sophia Prompt Applicability Audit (2026-10-04)
+
+**Status:** COMPLETE — read-only source trace on `feat/decision-layer-architecture-baseline`.
+
+### Sources inspected
+- `src/app/api/sofia/ask/route.ts`
+- `src/lib/server/sophia/turn-executor.ts`
+- `src/lib/server/sophia/intent-classifier.ts` — production `systemInstruction`, JSON proposal schema, and `sanitizeProposal()`.
+- `src/lib/server/sophia/context-assembly.ts` — dependency-intent detection and bounded, provenance-bearing `CANONICAL_FACT` dependency-path slice.
+- `src/lib/server/sophia/server-gateway.ts` — deterministic `informational_query` reply branches.
+- `tests/sophia/m53_dependency_relations.test.ts`, `tests/sophia/m54_scenario_contracts.test.ts`, and M5.4 design/remediation documents.
+
+### Finding and decision
+- The production prompt is for intent/proposal classification, not the M5.4 harness's standalone natural-language factual answer generation. For `informational_query`, `sanitizeProposal()` reconstructs the proposal without preserving a model-written factual reply; the gateway then builds the final reply from stores/context.
+- The context assembler tests already prove S6/S9 dependency evidence and both direct/transitive edges are present in context. The gateway's generic informational path selects `COMPANY_KNOWLEDGE`, `HISTORICAL_PRECEDENT`, or `RECENT_ACTIVITY`, but not the `CANONICAL_FACT` dependency-path slice. The `epistemic_fact` branch summarizes a single fact/claim rather than answering the dependency-path question.
+- **Do not run a production-prompt A/B or change the prompt yet.** It would not directly test/fix the factual-answer failure. The more appropriate next task is an isolated production response-path regression for S6/S9, followed by a separately approved minimal gateway fix if the regression confirms the gap.
+
+### Scope and limits
+- This is a static source-path finding, not a newly executed runtime test.
+- No test suites, live model calls, or database operations were run.
+- No runtime code, prompt text, dependencies, schemas, or benchmark artifacts changed.
+- No merge, deployment, or branch promotion occurred.
+
+**Next single action:** Await Founder direction on the production response-path regression; no further changes in this task.
