@@ -1,10 +1,9 @@
 import { createHash } from 'crypto';
-import { ConversationStore, ConversationSecurityError, ConversationNotFoundError, ChatMessageRecord } from '../conversation';
+import { ConversationStore, ConversationSecurityError, ChatMessageRecord } from '../conversation';
 import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
 import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
-import { SERVER_AGENTS } from '../agents/definitions';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
