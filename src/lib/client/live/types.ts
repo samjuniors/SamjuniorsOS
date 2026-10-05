@@ -29,6 +29,13 @@ export interface SophiaLiveClientOptions {
   onTranscriptFinal?: (turnId: string, text: string) => void;
   onSophiaResponse?: (response: any) => void;
   onError?: (error: LiveClientError) => void;
+  /** Phase 3 (SofiaUI voice runtime): per-chunk microphone RMS/peak metering
+   *  from the resampler worklet (SofiaUI AudioEngine math) — powers the orb's
+   *  real listening amplitude. ~32ms cadence while capture is active. */
+  onMicLevel?: (rms: number, peak: number) => void;
+  /** Phase 3 (SofiaUI voice runtime): transport loss notification with the
+   *  WebSocket close code — NOT fired for intentional destroy() teardown. */
+  onDisconnect?: (code: number) => void;
 }
 
 export interface VadFrameResult {

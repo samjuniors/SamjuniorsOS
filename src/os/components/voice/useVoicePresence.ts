@@ -8,18 +8,18 @@
  *     completed→ambient post-turn cadence, and the state-machine feeding)
  * The SofiaUI repository remains independent; one-way reference port.
  *
- * What this hook does NOT do (deliberate, per the approved migration plan):
- *   - No audio engine. Nothing captures or plays audio here. Sustained
- *     capture is owned by the existing live-voice client; the orb's motion
- *     uses SofiaUI's own designed fallback (VisualDirector procedural
- *     envelopes when hardware levels are absent). Real amplitude wiring
- *     arrives with the voice-runtime phase.
- *   - No wake word, no provider stack, no chat/terminal/settings surfaces.
- *   - Interruption goes through the EXISTING seam (liveBridge.interrupt →
- *     live-client INTERRUPT). The known server-side limitation (server work
- *     is not cancelled by stopping playback) is a pre-existing, documented
- *     defect scheduled for the cancellation phase — this port does not
- *     pretend to fix it and does not add a second protocol.
+ * Phase 3 (voice runtime): this hook now drives the orb with REAL audio
+ * amplitude — mic RMS from the live client's capture worklet and playback
+ * RMS from the spoken-reply engine — via the voice runtime facade
+ * (../../lib/voiceRuntime). When hardware levels are absent the ported
+ * VisualDirector still substitutes its designed procedural envelopes.
+ * Interruption routes through the runtime (playback stop + the existing
+ * bridge interrupt seam, which now cancels the in-flight server turn).
+ *
+ * What this hook still does NOT do (deliberate, per the approved migration
+ *   plan): no wake word, no provider stack, no chat/terminal/settings
+ *   surfaces, no second protocol. The runtime owns audio; this hook owns
+ *   presentation only.
  *
  * State mapping (destination live-voice status → ported SophiaState machine):
  *   connecting → wakeup (with orb convergence on first connect)
@@ -27,7 +27,9 @@
  *   listening  → listening (from speaking: barge-in choreography)
  *   transcribing → (stays listening)
  *   thinking   → thinking
- *   speaking    → speaking
+ *   speaking    → speaking (now REAL: held by the runtime's speaking gate
+ *                 until spoken playback drains, then → idle fires
+ *                 response_finished)
  *   interrupted → interrupted (→ listening, reason 'interrupted')
  *   error       → blocked
  *   speaking→idle fires 'response_finished' (→ completed, then ambient after
@@ -37,6 +39,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useOS, liveVoiceState, type LiveVoiceState } from "../../lib/osStore";
 import { liveBridge } from "../../lib/liveCompanionBridge";
+import { voiceRuntime } from "../../lib/voiceRuntime";
 import { SophiaState } from "./orb/SophiaState";
 import { VisualDirector } from "./orb/VisualDirector";
 import { ParticleRenderer } from "./orb/ParticleRenderer";
@@ -91,6 +94,11 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
 
   /* ---------------------------------------------------------------- engine */
   useEffect(() => {
+    // Phase 3 (voice runtime): attach the runtime for this widget's lifetime
+    // — spoken replies, metering, reconnection and cleanup are owned there.
+    // detach() on unmount is the explicit session cleanup contract.
+    voiceRuntime.attach();
+
     const fsm = new SophiaState();
     const director = new VisualDirector();
     fsmRef.current = fsm;
@@ -130,7 +138,9 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
       const dt = Math.min(0.05, Math.max(0.0005, (now - tPrevRef.current) / 1000));
       tPrevRef.current = now;
       director.state = fsm.current;
-      rendererRef.current.frame(director.frame(dt, { mic: 0, play: 0 }));
+      // Phase 3: REAL amplitude — mic RMS (capture worklet) while listening,
+      // playback RMS while speaking; procedural envelopes when absent.
+      rendererRef.current.frame(director.frame(dt, voiceRuntime.getLevels()));
     };
     rafRef.current = requestAnimationFrame(loop);
 
@@ -143,6 +153,9 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
       rendererRef.current = null;
       timersRef.current.forEach(clearTimeout);
       timersRef.current.clear();
+      // Phase 3: full explicit runtime cleanup on unmount (stops playback,
+      // aborts TTS fetches, removes listeners — the bridge/session survive).
+      voiceRuntime.detach();
     };
   }, []);
 
@@ -290,10 +303,13 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
     void liveBridge.toggleVoice(enabled);
   }, []);
 
-  /** Interrupt the current turn through the existing seam. Visual feedback
-   *  arrives via the transport's 'interrupted' status. */
+  /** Interrupt the current turn through the voice runtime: spoken output is
+   *  cut immediately and the existing bridge seam delivers INTERRUPT, which
+   *  the server now honors by cancelling the in-flight canonical turn
+   *  (Phase 3). Visual feedback arrives via the transport's 'interrupted'
+   *  status. */
   const onInterrupt = useCallback(() => {
-    liveBridge.interrupt();
+    voiceRuntime.interrupt();
   }, []);
 
   return {

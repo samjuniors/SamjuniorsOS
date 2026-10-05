@@ -5,7 +5,100 @@ Port of the SofiaUI voice-agent UI into SamJuniorsOS, branch
 Reference source: SofiaUI default branch (`main` @ `9e88dee`) — read-only,
 kept as an independent repository.
 
-## What was ported
+## Phase 3 — Voice runtime (this section added by the runtime phase)
+
+Phase 3 integrated the voice runtime behind the Phase 2 UI. The architectural
+boundary (per the approved migration plan and the phase requirements):
+SofiaUI provides the voice *interaction experience*; SamJuniorsOS remains
+authoritative for reasoning, conversations, memory, tools, permissions and
+execution. The canonical path is unchanged end-to-end: bridge →
+SophiaLiveClient (WS :3001, ticket auth) → DeepgramFlux STT →
+`executeSophiaTurn` (conversation store, turn IDs, idempotency, founder
+identity) → SOPHIA_RESPONSE → **the runtime speaks the reply**.
+
+### What was added / adapted
+
+| This tree | SofiaUI source | Status |
+|---|---|---|
+| `src/os/lib/voiceRuntime.ts` | `src/sophia/SophiaOS.ts` (lifecycle, cleanup sequencing, reconnect cadence, fixed system-voice level), `src/sophia/audio/AudioEngine.ts:248` (mic EMA) | adapted facade — the clearly-defined interface |
+| `src/os/lib/voicePlayback.ts` | `src/core/AudioOutput.ts` | adapted: graph/EMA/drain-debounce/stopImmediately kept; input is decoded per-sentence audio (wav/mpeg) instead of 24kHz PCM chunks |
+| worklet `mic_level` messages | `AudioEngine.ts` worklet RMS math | adapted into the existing resampler worklet (`audio-worklet-processor.ts`) |
+| `turn-executor.ts` `signal` + checkpoints + cancelled marker | — | new (canonical-path cancellation contract) |
+| `live/server.ts` INTERRUPT cancellation + late-final guard + executor seam | — | new server wiring |
+| `live-client.ts` turnId param + retained id + disconnect/device events | — | new client contracts (fixes the pinned interim-caption defect) |
+| `liveCompanionBridge.ts` event bus + speaking gate + reconnect | — | additive bridge surface |
+| `tests/sophia/sofiaui_voice_runtime.test.ts` | — | 30 contract assertions (A/B/C/D) |
+
+### Providers (reuse, no duplicates)
+
+- **STT**: the existing DeepgramFlux streaming path — untouched.
+- **TTS**: the existing founder-gated `POST /api/sofia/tts` ladder
+  (ElevenLabs → local server → z-ai neural, cached, keyless default), spoken
+  sentence-at-a-time; per-sentence failure falls back to the browser's
+  speechSynthesis — the route's own designed degradation. Secrets stay on
+  the server; no provider key reaches the browser. SofiaUI's provider
+  failover chain and all four providers were NOT ported.
+
+### Deliberate adaptations (temporary or permanent, with reasons)
+
+1. **Client-owned SPEAKING overlay.** The live server never enters SPEAKING
+   (it emits a trailing IDLE after SOPHIA_RESPONSE). The runtime drives the
+   store's `speaking` status itself and holds off the server's trailing IDLE
+   via a speaking gate in the bridge while audio plays; the engine's 350ms
+   drain settles it back to `idle` (Phase 2 mapping turns that into
+   `response_finished`). Stopping playback never cancels completed server
+   work — "stop playback" ≠ "cancel server work", by design.
+2. **Cancellation granularity.** INTERRUPT aborts the in-flight
+   `executeSophiaTurn` via AbortSignal; the executor stops at stage
+   boundaries and settles `cancelled: true`. In-flight provider calls inside
+   `SophiaServerGateway.process` run to completion and their result is
+   discarded (documented limitation — threading the signal into the
+   gateway/tool layer is a separate change). A cancelled turn with a
+   persisted founder message gets a `(turn interrupted)` assistant marker
+   under the standard `${turnId}:assistant` idempotency key, so retries
+   replay the cancellation instead of re-executing.
+3. **Late-final race closed server-side**: INTERRUPT marks the interrupted
+   turnId as processed; a racing Deepgram ForceEndTurn final after close is
+   dropped by the existing idempotency guard (plus a belt-and-braces
+   INTERRUPTED-state guard).
+4. **Reconnect semantics**: 1200ms base ×2 backoff, max 3 attempts (SofiaUI
+   cadence), suppressed for intentional close (1000) and supersession
+   (4409). Reconnect re-authenticates and re-acquires the mic; conversation
+   continuity is the durable conversationId. Limitation: an in-flight turn's
+   response delivery does not survive a drop (response delivery is
+   per-socket); `RESUME_SESSION` is not exercised by the runtime.
+5. **Mic path**: capture stays owned by the existing live client; the runtime
+   only consumes worklet metering. Device loss is detected via track `ended`
+   (fatal capture error) plus a `devicechange` enumeration backstop; both
+   route to explicit teardown (stop playback, close session, honest error)
+   and the Phase 2 permission modal owns recovery.
+6. **Duplicate events**: one utterance per turnId (spoken-set guard); server
+   side keeps the existing `processedTurnIds` suppression.
+
+### Known limitations / open items for later phases
+
+- **Cross-process ticket auth (pre-existing, out of scope)**: the WS ticket
+  store is in-memory; when the gateway (`:3001`) runs as a separate process
+  from Next.js, the ticket issued by `/api/auth/ws-ticket` cannot be
+  consumed by the gateway — browser voice sessions cannot authenticate in
+  split-process deployments. Verified in the smoke test (ticket POST 200 →
+  WS upgrade rejected); the gateway itself accepts browser connections via
+  the dev fallback. Fixing this (file/redis-backed ticket store, or a
+  shared process) is an infrastructure decision for the Founder.
+- `rendering` / `transforming` orb states remain untriggered: the live path
+  emits no tool-lifecycle events (SOPHIA_RESPONSE is the only turn event).
+  The bridge event surface is the natural hook when a turn-event stream
+  exists.
+- AudioWorklet metering is verified by typecheck/lint/smoke only (the
+  worklet cannot execute under bun); the browser mic/speaker paths were not
+  exercised with real hardware in this environment (contract tests +
+  render/state smoke instead — same honesty standard as Task 6).
+- The `bun test` harness truncates self-reporting suites mid-run in this
+  sandbox session (existing suites like phase4a/4c are affected
+  identically); the reliable runner is `bun run <suite>` with true exit
+  codes, which is what this phase used and reported.
+
+## Phase 2 — what was ported
 
 | Ported file (this tree) | SofiaUI source | Status |
 |---|---|---|

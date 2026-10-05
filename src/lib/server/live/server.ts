@@ -5,12 +5,22 @@ import { LiveSessionManager } from './session-manager';
 import { ClientLiveMessage, LIVE_CLOSE_CODES } from './types';
 import { STTProvider, CanonicalTranscriptEvent } from './stt/types';
 import { DeepgramFluxProvider } from './stt/deepgram-flux-provider';
-import { executeSophiaTurn } from '../sophia/turn-executor';
+import { executeSophiaTurn, ExecuteSophiaTurnOptions, SophiaTurnResult } from '../sophia/turn-executor';
+
+export type SophiaTurnExecutorFn = (opts: ExecuteSophiaTurnOptions) => Promise<SophiaTurnResult>;
 
 export interface LiveServerOptions {
   port?: number;
   sessionManager?: LiveSessionManager;
   sttProviderFactory?: () => STTProvider;
+  /**
+   * Phase 3 (SofiaUI voice runtime): canonical turn-executor seam. Defaults
+   * to executeSophiaTurn; injectable so cancellation wiring can be tested
+   * deterministically without live providers (same pattern as
+   * sttProviderFactory). The injected function MUST honor opts.signal the
+   * way the canonical executor does (settle, never throw, on abort).
+   */
+  turnExecutor?: SophiaTurnExecutorFn;
 }
 
 export class LiveInteractionServer {
@@ -26,10 +36,18 @@ export class LiveInteractionServer {
   private activeSttSessions: Map<WebSocket, { provider: STTProvider; turnId: string }> = new Map();
   private processedTurnIds: Map<string, number> = new Map();
 
+  // Phase 3 (SofiaUI voice runtime): in-flight canonical turn executions per
+  // socket, keyed by the socket that owns them. INTERRUPT aborts the active
+  // execution's controller so executeSophiaTurn settles at its next stage
+  // boundary instead of running to completion.
+  private turnExecutor: SophiaTurnExecutorFn;
+  private activeTurnExecutions: Map<WebSocket, { turnId: string; controller: AbortController }> = new Map();
+
   constructor(options: LiveServerOptions = {}) {
     this.port = options.port || parseInt(process.env.LIVE_WS_PORT || '3001', 10);
     this.sessionManager = options.sessionManager || LiveSessionManager.getInstance();
     this.sttProviderFactory = options.sttProviderFactory || (() => new DeepgramFluxProvider());
+    this.turnExecutor = options.turnExecutor || executeSophiaTurn;
 
     this.httpServer = http.createServer((req, res) => {
       // Basic HTTP health check endpoint on companion server
@@ -204,10 +222,30 @@ export class LiveInteractionServer {
       }
 
       case 'INTERRUPT': {
+        // Phase 3 (SofiaUI voice runtime): explicit turn cancellation.
+        //   1. Abort the in-flight canonical turn execution for this socket —
+        //      executeSophiaTurn settles at its next stage boundary with
+        //      cancelled: true (no reply is delivered).
+        //   2. Mark the interrupted turnId as processed so a racing late STT
+        //      final (Deepgram ForceEndTurn fires after close) can never
+        //      execute the interrupted turn — the pre-Phase-3 late-final
+        //      race is closed by the existing idempotency guard.
+        //   3. Clear the session's activeTurnId — the turn is over.
+        const activeExecution = this.activeTurnExecutions.get(ws);
+        if (activeExecution) {
+          activeExecution.controller.abort();
+        }
+        const interruptedTurnId = msg.turnId || client.session.activeTurnId;
+        if (interruptedTurnId) {
+          this.processedTurnIds.set(interruptedTurnId, Date.now());
+          this.cleanupOldTurnIds();
+        }
+        client.session.activeTurnId = undefined;
+
         this.sessionManager.setSessionState(ws, 'INTERRUPTED', 'Client barge-in signal');
         this.sessionManager.send(ws, {
           type: 'INTERRUPTED_ACK',
-          turnId: msg.turnId,
+          turnId: msg.turnId ?? interruptedTurnId,
           timestamp: Date.now(),
         });
 
@@ -340,6 +378,18 @@ export class LiveInteractionServer {
     if (this.processedTurnIds.has(turnId)) {
       return;
     }
+
+    // Phase 3: late-final race guard. A session in INTERRUPTED state never
+    // enters canonical execution — an INTERRUPT that landed between the
+    // STT final's emission and this handler (or that closed the STT session
+    // out from under a racing ForceEndTurn) must not execute the interrupted
+    // turn. The turnId-level guard is the processedTurnIds marking done by
+    // the INTERRUPT handler; this state-level guard is the second belt.
+    if (client.session.state === 'INTERRUPTED') {
+      this.processedTurnIds.set(turnId, Date.now());
+      return;
+    }
+
     this.processedTurnIds.set(turnId, Date.now());
     this.cleanupOldTurnIds();
 
@@ -363,28 +413,48 @@ export class LiveInteractionServer {
     // 3. Hand off to Sophia Cognitive Ingress
     this.sessionManager.setSessionState(ws, 'THINKING', 'Final transcript sent to Sophia cognitive ingress');
 
+    // Phase 3: register the in-flight execution so an INTERRUPT on this
+    // socket can abort it. One execution per socket at a time (the client is
+    // PTT-serial); the finally-guard below keeps a overlapping second turn
+    // from deleting the first's entry.
+    const controller = new AbortController();
+    this.activeTurnExecutions.set(ws, { turnId, controller });
+    let wasCancelled = false;
+
     try {
-      const sophiaResult = await executeSophiaTurn({
+      const sophiaResult = await this.turnExecutor({
         message: text,
         founderId: client.session.founderId,
         conversationId: client.session.conversationId,
         turnId,
+        signal: controller.signal,
       });
 
       if (sophiaResult.conversationId) {
         client.session.conversationId = sophiaResult.conversationId;
       }
 
-      this.sessionManager.send(ws, {
-        type: 'SOPHIA_RESPONSE',
-        turnId,
-        reply: sophiaResult.reply,
-        conversationId: sophiaResult.conversationId,
-        messageId: sophiaResult.assistantMessageId,
-        liveAi: sophiaResult.liveAi,
-        directiveExecuted: sophiaResult.directiveExecuted,
-        metrics: sophiaResult.metrics,
-      });
+      if (sophiaResult.cancelled) {
+        // Interrupted mid-execution: the turn was cancelled at a stage
+        // boundary (persisted as a cancelled marker when the founder
+        // message had already landed). No SOPHIA_RESPONSE is delivered —
+        // the client already holds INTERRUPTED_ACK for this barge-in.
+        wasCancelled = true;
+        console.log(
+          `[LiveInteractionServer] Turn ${turnId} cancelled by client interrupt; no reply delivered`
+        );
+      } else {
+        this.sessionManager.send(ws, {
+          type: 'SOPHIA_RESPONSE',
+          turnId,
+          reply: sophiaResult.reply,
+          conversationId: sophiaResult.conversationId,
+          messageId: sophiaResult.assistantMessageId,
+          liveAi: sophiaResult.liveAi,
+          directiveExecuted: sophiaResult.directiveExecuted,
+          metrics: sophiaResult.metrics,
+        });
+      }
     } catch (err: any) {
       console.error('[LiveInteractionServer] Error in Sophia turn execution:', err);
       this.sessionManager.send(ws, {
@@ -393,7 +463,15 @@ export class LiveInteractionServer {
         message: err.message || 'Sophia cognitive turn execution failed',
       });
     } finally {
-      this.sessionManager.setSessionState(ws, 'IDLE', 'Cognitive turn completed');
+      const activeExecution = this.activeTurnExecutions.get(ws);
+      if (activeExecution && activeExecution.turnId === turnId) {
+        this.activeTurnExecutions.delete(ws);
+      }
+      this.sessionManager.setSessionState(
+        ws,
+        'IDLE',
+        wasCancelled ? 'Cognitive turn cancelled by client interrupt' : 'Cognitive turn completed'
+      );
       this.closeSttSession(ws);
     }
   }
@@ -479,8 +557,15 @@ export class LiveInteractionServer {
 
     for (const [ws, activeStt] of this.activeSttSessions.entries()) {
       void activeStt.provider.close();
+      // Phase 3: settling in-flight turn executions on shutdown — the
+      // executors observe the abort at their next stage boundary.
+      const execution = this.activeTurnExecutions.get(ws);
+      if (execution) {
+        execution.controller.abort();
+      }
     }
     this.activeSttSessions.clear();
+    this.activeTurnExecutions.clear();
 
     return new Promise((resolve) => {
       for (const client of this.wss.clients) {

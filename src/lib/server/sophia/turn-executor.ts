@@ -17,6 +17,34 @@ export interface ExecuteSophiaTurnOptions {
    * 'live_voice'; the SOFIA ask surface passes 'sofia_ask'.
    */
   ingress?: string;
+  /**
+   * Cooperative cancellation (Phase 3 — SofiaUI voice runtime).
+   *
+   * When aborted, the turn stops at the NEXT stage boundary of this
+   * executor (before founder-message persistence, before the trust-boundary
+   * gateway, or before assistant persistence) and resolves with
+   * `cancelled: true` instead of throwing. In-flight provider calls inside
+   * SophiaServerGateway.process are NOT interrupted mid-flight — they run
+   * to completion server-side and their result is discarded (documented
+   * limitation; threading the signal deeper into the gateway/tool layer is
+   * a separate, larger change).
+   *
+   * Cancellation semantics for canonical persistence:
+   *   - Cancelled BEFORE the founder message is persisted: nothing is
+   *     recorded — the turn never entered the conversation, so a retry with
+   *     the same turnId re-executes (correct: it never executed).
+   *   - Cancelled AFTER the founder message is persisted: a terse cancelled
+   *     assistant marker is persisted under the standard
+   *     `${turnId}:assistant` idempotency key with
+   *     `metadata.cancelled = true`. This closes the idempotency loop — a
+   *     retry of the same turnId replays the cancellation marker instead of
+   *     re-executing the directive (the exactly-once guarantee holds across
+   *     cancellation).
+   *
+   * All in-flight-lock waiters for the same turn receive the same settled
+   * (possibly cancelled) result.
+   */
+  signal?: AbortSignal;
 }
 
 export interface SophiaTurnResult {
@@ -31,10 +59,72 @@ export interface SophiaTurnResult {
   metrics?: any;
   error?: string;
   idempotentReplay?: boolean;
+  /** True when the turn was stopped at a stage boundary by an aborted
+   * `signal` (Phase 3 cancellation) — no reply is delivered. */
+  cancelled?: boolean;
 }
+
+/** Persisted content of the cancelled-turn assistant marker (Phase 3). */
+export const SOPHIA_TURN_CANCELLED_MARKER = '(turn interrupted)';
 
 // In-flight turn concurrency locks across all ingress channels
 const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
+
+/**
+ * Builds the settled result for a turn cancelled at a stage boundary
+ * (Phase 3). If the founder message for this turn is already durably
+ * recorded, a cancelled assistant marker is persisted under the standard
+ * `${turnId}:assistant` idempotency key so retries replay the cancellation
+ * instead of re-executing (see ExecuteSophiaTurnOptions.signal docs).
+ */
+async function cancelledTurnResult(
+  conversationId: string,
+  founderId: string,
+  cleanTurnId: string | undefined,
+  ingress: string | undefined
+): Promise<SophiaTurnResult> {
+  let assistantMessageId: string | undefined;
+  if (conversationId && cleanTurnId) {
+    try {
+      const convStore = ConversationStore.getInstance();
+      const founderMessage = await convStore.findMessageByIdempotencyKey(conversationId, cleanTurnId);
+      if (founderMessage) {
+        const marker = await convStore.saveMessage(
+          {
+            conversationId,
+            sender: 'assistant',
+            role: 'assistant',
+            content: SOPHIA_TURN_CANCELLED_MARKER,
+            idempotencyKey: `${cleanTurnId}:assistant`,
+            intent: 'conversation',
+            metadata: {
+              cancelled: true,
+              ingress: ingress ?? 'live_voice',
+            },
+          },
+          founderId
+        );
+        assistantMessageId = marker.id;
+      }
+    } catch (err) {
+      // Marker persistence failure must not mask the cancellation itself —
+      // the turn is still cancelled; only the retry-dedupe guarantee is
+      // weakened for this turn.
+      console.error('[SophiaTurnExecutor] Failed to persist cancelled-turn marker:', err);
+    }
+  }
+  return {
+    success: false,
+    cancelled: true,
+    reply: '',
+    conversationId: conversationId || '',
+    assistantMessageId,
+    intent: 'conversation',
+    directiveExecuted: false,
+    liveAi: false,
+    error: 'Turn cancelled before completion',
+  };
+}
 
 /**
  * ============================================================================
@@ -69,7 +159,7 @@ const inFlightTurns = new Map<string, Promise<SophiaTurnResult>>();
  *   aligning the surfaces is a broader behavioral decision.
  */
 export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise<SophiaTurnResult> {
-  const { message, founderId, conversationId, turnId, executeDirective } = opts;
+  const { message, founderId, conversationId, turnId, executeDirective, signal } = opts;
   const cleanMessage = message ? message.trim() : '';
 
   if (!cleanMessage) {
@@ -85,6 +175,17 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   }
 
   const convStore = ConversationStore.getInstance();
+
+  const cleanTurnId = typeof turnId === 'string' && turnId.trim().length > 0 ? turnId.trim() : undefined;
+
+  // Phase 3 cancellation checkpoint 0 — before any resolution or persistence.
+  // A turn with NO durably recorded founder message leaves no record at all
+  // (a retry re-executes — it never executed); a turn whose founder message
+  // IS already recorded (pre-seeded or a prior partial execution) gets the
+  // cancelled assistant marker, closing the idempotency loop.
+  if (signal?.aborted) {
+    return cancelledTurnResult(conversationId || '', founderId, cleanTurnId, opts.ingress);
+  }
 
   // 1. Resolve or establish durable conversation identity bound to authenticated Founder
   let conversation;
@@ -129,7 +230,11 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
   }
 
-  const cleanTurnId = typeof turnId === 'string' && turnId.trim().length > 0 ? turnId.trim() : undefined;
+  // Phase 3 cancellation checkpoint 1 — after conversation resolution, before
+  // the replay lookup: an aborted caller wants no reply, replayed or not.
+  if (signal?.aborted) {
+    return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+  }
 
   // 2. Turn-Level Idempotency Check: if this turn was already completed, return cached assistant message
   if (cleanTurnId) {
@@ -148,6 +253,9 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
         metrics: existingAssistantMessage.metadata?.metrics,
         idempotentReplay: true,
+        // A previously cancelled turn replays as cancelled — callers must not
+        // present the marker as a live reply (Phase 3).
+        cancelled: existingAssistantMessage.metadata?.cancelled === true,
       };
     }
   }
@@ -159,6 +267,12 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   }
 
   const executeCore = async (): Promise<SophiaTurnResult> => {
+    // Phase 3 cancellation checkpoint 2 — before founder-message persistence:
+    // cancelled turns leave no conversation record (retry re-executes).
+    if (signal?.aborted) {
+      return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+    }
+
     // 4. Persist incoming Founder turn with idempotency key
     let founderMessageRecord;
     try {
@@ -182,6 +296,13 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         error: err.message || 'Failed to persist turn',
       };
+    }
+
+    // Phase 3 cancellation checkpoint 3 — after founder-message persistence,
+    // before history/context/intent/gateway: from here on, cancellation
+    // persists the assistant cancelled-marker (retry replays the cancel).
+    if (signal?.aborted) {
+      return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
     }
 
     // 5. Server-Authoritative bounded dialogue history retrieval
@@ -236,6 +357,15 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         error: executionResult.error,
       };
+    }
+
+    // Phase 3 cancellation checkpoint 4 — after the trust-boundary gateway,
+    // before assistant persistence and memory capture: a reply computed but
+    // not yet delivered is discarded; the cancelled marker records the
+    // interruption instead. (The gateway call itself runs to completion —
+    // see ExecuteSophiaTurnOptions.signal for the documented limitation.)
+    if (signal?.aborted) {
+      return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
     }
 
     // 9. Persist assistant turn to durable storage with assistant idempotency key

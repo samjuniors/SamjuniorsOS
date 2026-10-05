@@ -22,8 +22,11 @@
  *     LiveTranscriptRibbon already owns Space (push-to-talk). Only Escape
  *     (interrupt) is added, guarded against typing and open dialogs, so no
  *     two global keyboard systems compete.
- *   - Amplitude: no audio engine ships with this port; the orb moves on
- *     SofiaUI's designed procedural envelopes (see useVoicePresence).
+ *   - Amplitude (Phase 3): the orb moves on REAL audio levels from the voice
+ *     runtime — mic RMS from the live client's capture worklet while
+ *     listening, playback RMS from the spoken-reply engine while speaking —
+ *     with SofiaUI's designed procedural envelopes as the fallback when
+ *     levels are absent (see useVoicePresence / lib/voiceRuntime).
  */
 
 import { useEffect, useRef, useState } from "react";

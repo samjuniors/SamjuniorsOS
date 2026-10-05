@@ -55,6 +55,25 @@ class PcmResamplerProcessor extends AudioWorkletProcessor {
       // When full 512-sample chunk is accumulated, dispatch to main thread
       if (this.bufferIndex >= this.chunkSize) {
         const chunkToSend = new Int16Array(this.pcmBuffer);
+
+        // Phase 3 (SofiaUI voice runtime, SofiaUI AudioEngine math): per-chunk
+        // RMS + peak metering so the voice-presence orb reacts to real mic
+        // amplitude. Computed on the full chunk before dispatch; emitted with
+        // the same ~32ms cadence as the PCM chunk itself.
+        let sumSq = 0.0;
+        let peak = 0.0;
+        for (let i = 0; i < this.chunkSize; i++) {
+          const s = this.pcmBuffer[i] / 32768.0;
+          const a = s < 0 ? -s : s;
+          if (a > peak) peak = a;
+          sumSq += s * s;
+        }
+        this.port.postMessage({
+          type: 'mic_level',
+          rms: Math.sqrt(sumSq / this.chunkSize),
+          peak: peak,
+        });
+
         this.port.postMessage(
           {
             type: 'pcm_chunk',
