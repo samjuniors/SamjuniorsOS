@@ -1,0 +1,83 @@
+/*
+ * Voice presence — presentation styles ported from SofiaUI
+ * (github.com/samjuniors/SofiaUI) @ commit 9e88dee: src/styles.css.
+ *
+ * Scope note: SofiaUI's stylesheet is global; SamJuniorsOS composes several
+ * visual languages at once, so these classes are scoped under `.voice-presence`
+ * (the same isolation approach the destination already uses for `.sofia-scope`).
+ * Only the classes this widget actually uses were ported — the full SofiaUI
+ * sheet stays behind with its own app.
+ *
+ * Adaptations (visual language alignment, no behavioural change):
+ *   - `.voice-orb-fallback`  ← `.sophia-fallback` (WebGL-unavailable orb)
+ *   - `.voice-status-breathe` ← `.status-breathe` (active status dot breathing)
+ *   - interrupted flash ring is new: SofiaUI signals interruption through the
+ *     full-viewport palette crossfade alone; a widget-scale presence needs a
+ *     local flash to read as feedback.
+ * The reduced-motion block keeps SofiaUI's semantics: decorative motion stops,
+ * information (state text, dots, contrast) survives.
+ */
+
+.voice-presence .voice-orb-fallback {
+  position: absolute;
+  inset: 12%;
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 34% 30%, rgba(120, 180, 255, 0.22), transparent 42%),
+    radial-gradient(circle at 50% 78%, rgba(30, 90, 230, 0.35), transparent 60%),
+    radial-gradient(circle, rgba(6, 10, 30, 0.9) 60%, rgba(20, 60, 200, 0.55) 86%, rgba(60, 200, 255, 0.95) 96%, transparent 100%);
+  box-shadow:
+    0 0 24px rgba(50, 150, 255, 0.55),
+    0 0 90px rgba(40, 90, 255, 0.35),
+    inset 0 0 40px rgba(40, 120, 255, 0.35);
+  animation: voice-fb-breathe 6.5s ease-in-out infinite;
+}
+
+@keyframes voice-fb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.012);
+  }
+}
+
+/* Active status dot breathing (ported from .status-breathe). */
+.voice-presence .voice-status-breathe {
+  animation: voice-statusb 2.4s ease-in-out infinite;
+}
+
+@keyframes voice-statusb {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.4);
+  }
+}
+
+/* Interruption feedback: one brief rose ring around the stage while the
+   speaking→listening crossfade plays. SofiaUI shows this via the whole-page
+   palette; at widget scale we add a local ring. */
+.voice-presence.voice-flash .voice-stage {
+  box-shadow:
+    0 0 0 1px rgba(244, 63, 94, 0.55),
+    0 0 28px rgba(244, 63, 94, 0.35);
+}
+
+/* SofiaUI pauses with a global desaturation filter; the widget equivalent
+   keeps the same feeling without touching anything outside this scope. */
+.voice-presence.voice-paused .voice-pill,
+.voice-presence.voice-paused .voice-controls {
+  filter: grayscale(0.85) contrast(0.92) brightness(0.86);
+  transition: filter 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-presence .voice-orb-fallback,
+  .voice-presence .voice-status-breathe {
+    animation: none !important;
+  }
+}

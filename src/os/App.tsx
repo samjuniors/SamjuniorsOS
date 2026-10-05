@@ -7,6 +7,7 @@ import SophiaPanel from "./components/SophiaPanel";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
+import VoicePresence from "./components/voice/VoicePresence";
 import { BootScreen } from "./components/os/BootScreen";
 import { defaultSettings, type NeuralField, type Settings } from "./lib/field";
 import { os, useOS, openAttention, openDecisions, activeWork } from "./lib/osStore";
@@ -320,6 +321,12 @@ export default function App() {
 
       {/* Contextual Live Voice & STT Transcript Ribbon */}
       {tab !== "sofia" && <LiveTranscriptRibbon />}
+
+      {/* SofiaUI-derived voice presence (Phase 2 port): the state-driven orb,
+          mic-permission UX and interruption feedback for the live-voice
+          session — additive chrome beside the ribbon; the SOFIA tab keeps its
+          own full-screen voice surface. */}
+      {tab !== "sofia" && <VoicePresence />}
     </div>
   );
 }
