@@ -12,7 +12,6 @@ import ContextMenu, { type MenuItem } from "./ContextMenu";
 import TodoDrawer from "./TodoDrawer";
 import AgentQuickDock from "./AgentQuickDock";
 import PersonaModal from "./PersonaModal";
-import LiveTranscriptRibbon from "./LiveTranscriptRibbon";
 import { osSound, setOsMuted, setOsVolume } from "../../lib/osAudio";
 import { type FlowNode } from "../../lib/flow";
 import { os, useOS, openAttention, openDecisions, activeWork, agentName, liveVoiceState } from "../../lib/osStore";

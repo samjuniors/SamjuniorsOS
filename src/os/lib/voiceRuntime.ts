@@ -147,6 +147,15 @@ class VoiceRuntime {
     this.micEma = 0;
     this.playLevelOverride = null;
     liveBridge.setSpeakingGate(null);
+    // Phase 5 (parity area 13): the client-owned speaking overlay must not
+    // outlive the runtime. If we were mid-speech on unmount, the store's
+    // 'speaking' status would be stuck — nobody else owns settling it (the
+    // server never enters SPEAKING; the drain callback dies with the
+    // engine). Settle it honestly: idle when the session survives, otherwise
+    // disconnected.
+    if (getOS().liveVoice.status === 'speaking') {
+      os.setLiveVoice({ status: getOS().liveVoice.enabled ? 'idle' : 'disconnected' });
+    }
   }
 
   /* ---------------------------------------------------------------- levels */
@@ -216,7 +225,16 @@ class VoiceRuntime {
     // also cuts our playback — there is exactly one voice, not one per UI.
     if (!live.enabled || live.status === 'interrupted' || live.status === 'disconnected') {
       this.stopSpeaking();
-      this.clearReconnect();
+      // Phase 5 (P5-D3): the reconnect timer must NOT be cancelled by the
+      // transient 'disconnected' status itself. The disconnect event arms
+      // the reconnect, and the honest disconnect-error write that follows
+      // lands while the status is still 'disconnected' — treating that as
+      // a cancel trigger killed the armed reconnect and silently dropped
+      // session recovery. Only intentional stop signals cancel it: voice
+      // turned off, or a barge-in interrupt.
+      if (!live.enabled || live.status === 'interrupted') {
+        this.clearReconnect();
+      }
     }
   }
 

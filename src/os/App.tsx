@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -192,8 +194,14 @@ function SophiaScene({ onOpenOS: _onOpenOS }: { onOpenOS: () => void }) {
 
 /* --------------------------------------------------------------------- App */
 
-export default function App() {
-  const [tab, setTab] = useState<Tab>("sofia");
+export default function App({ legacyVoicePath = false }: { legacyVoicePath?: boolean }) {
+  // Phase 5 (parity-gated retirement, see docs/audit/PHASE5-PARITY-CHECKLIST.md):
+  // `legacyVoicePath` re-enables the old SOFIA voice surface verbatim (tab,
+  // boot default, always-mounted hidden surface). The default (false) makes
+  // the SofiaUI-derived voice presence — widget, ribbon and chat on the OS
+  // surfaces — the voice experience. Reversible until live-audio
+  // verification on a supported machine closes the parity residue.
+  const [tab, setTab] = useState<Tab>(legacyVoicePath ? "sofia" : "os");
   const [isBooting, setIsBooting] = useState(true);
   const router = useRouter();
 
@@ -211,17 +219,20 @@ export default function App() {
   // desktop, an answer arriving while the founder is elsewhere — her display
   // becomes the visible surface again. Not for thinking, not for listening;
   // only for speaking: the interface belongs to whoever is talking.
+  // Phase 5: legacy-path-only mechanism.
   useEffect(() => {
+    if (!legacyVoicePath) return;
     return useSofiaStore.subscribe((state, prev) => {
       if (state.phase === "speaking" && prev.phase !== "speaking") {
         setTab((t) => (t === "sofia" ? t : "sofia"));
       }
     });
-  }, []);
+  }, [legacyVoicePath]);
 
   // Her ui_os tool arrives as a DOM event — surface changes asked for in
   // plain words ("show me the desktop", "go to Sophia") land here.
   useEffect(() => {
+    if (!legacyVoicePath) return;
     const onSofiaOs = (e: Event) => {
       const surface = (e as CustomEvent<{ surface?: string }>).detail?.surface;
       if (surface === "sofia" || surface === "sophia" || surface === "os") {
@@ -231,15 +242,16 @@ export default function App() {
     };
     window.addEventListener("sofia:os", onSofiaOs);
     return () => window.removeEventListener("sofia:os", onSofiaOs);
-  }, []);
+  }, [legacyVoicePath]);
 
   // Tell her display whether it is on screen: hidden, her WebGL render loop
   // parks (the microphone and the voice stay live — she can still hear the
   // wake word and answer from any surface, and take the interface back the
   // moment she speaks).
   useEffect(() => {
+    if (!legacyVoicePath) return;
     useSofiaStore.getState().setVisible(tab === "sofia");
-  }, [tab]);
+  }, [tab, legacyVoicePath]);
 
   if (isBooting) {
     return <BootScreen onComplete={() => setIsBooting(false)} />;
@@ -272,17 +284,19 @@ export default function App() {
             <LayoutGrid size={12} className={tab === "os" ? "text-cyan-300" : "text-slate-400"} />
             <span>SamJuniorsOS</span>
           </button>
-          <button
-            onClick={() => { osSound.click(); setTab("sofia"); }}
-            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
-              tab === "sofia"
-                ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            <Radio size={12} className={tab === "sofia" ? "text-cyan-300" : "text-slate-400"} />
-            <span>SOFIA</span>
-          </button>
+          {legacyVoicePath && (
+            <button
+              onClick={() => { osSound.click(); setTab("sofia"); }}
+              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
+                tab === "sofia"
+                  ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Radio size={12} className={tab === "sofia" ? "text-cyan-300" : "text-slate-400"} />
+              <span>SOFIA</span>
+            </button>
+          )}
 
           {/* Route toggle: main canvas ⇄ design-system specimen (navigation, not a mode) */}
           <span aria-hidden="true" className="mx-0.5 h-3 w-px bg-white/10" />
@@ -300,13 +314,16 @@ export default function App() {
 
       {/* SOFIA's display: mounted for the whole session, hidden (not torn
           down) behind the other surfaces so her ears and her voice survive
-          tab switches — she is the assistant of the OS, not of one pane. */}
-      <div
-        className={`sofia-scope${tab === "sofia" ? "" : " sofia-scope-hidden"}`}
-        aria-hidden={tab !== "sofia"}
-      >
-        <SofiaSurface />
-      </div>
+          tab switches — she is the assistant of the OS, not of one pane.
+          Phase 5: legacy-path-only (never mounts on the new path). */}
+      {legacyVoicePath && (
+        <div
+          className={`sofia-scope${tab === "sofia" ? "" : " sofia-scope-hidden"}`}
+          aria-hidden={tab !== "sofia"}
+        >
+          <SofiaSurface />
+        </div>
+      )}
 
       {tab === "sophia" ? (
         <SophiaScene onOpenOS={() => setTab("os")} />
@@ -316,17 +333,18 @@ export default function App() {
 
       {/* While SOFIA's display is up, the OS's own conversation chrome
           stands down — she IS the conversation surface, with her own
-          command line, transcript and voice. */}
-      {tab !== "sofia" && <ChatPanel />}
+          command line, transcript and voice. Phase 5: on the new path the
+          chrome is always present. */}
+      {(!legacyVoicePath || tab !== "sofia") && <ChatPanel />}
 
       {/* Contextual Live Voice & STT Transcript Ribbon */}
-      {tab !== "sofia" && <LiveTranscriptRibbon />}
+      {(!legacyVoicePath || tab !== "sofia") && <LiveTranscriptRibbon />}
 
       {/* SofiaUI-derived voice presence (Phase 2 port): the state-driven orb,
           mic-permission UX and interruption feedback for the live-voice
-          session — additive chrome beside the ribbon; the SOFIA tab keeps its
-          own full-screen voice surface. */}
-      {tab !== "sofia" && <VoicePresence />}
+          session — additive chrome beside the ribbon; with the legacy SOFIA
+          tab retired (Phase 5) this is THE voice surface of the OS. */}
+      {(!legacyVoicePath || tab !== "sofia") && <VoicePresence />}
     </div>
   );
 }

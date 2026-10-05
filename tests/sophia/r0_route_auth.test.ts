@@ -35,6 +35,13 @@ import { NextRequest } from 'next/server';
 
 const AUDITS_FILE = path.resolve(process.cwd(), '.data', 'audits.json');
 
+// Phase 5 (parity-gated retirement): the legacy SOFIA voice-tab routes are
+// 410-gone by default (SAMJUNIORS_VOICE_LEGACY unset). This suite pins the
+// AUTH contract of those routes, so it runs them in their legacy-enabled
+// state; the flag-off 410 matrix (including auth precedence) is pinned by
+// tests/sophia/phase5_voice_parity.test.ts section H.
+process.env.SAMJUNIORS_VOICE_LEGACY = '1';
+
 // --- routes under test -------------------------------------------------------
 import { POST as sofiaStt } from '../../src/app/api/sofia/stt/route';
 import { POST as sofiaTts } from '../../src/app/api/sofia/tts/route';

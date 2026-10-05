@@ -12,11 +12,17 @@
 
 import { llmInfo, sttInfo, anySttAvailable, ttsPinId, localTtsAvailable } from '@/lib/server/providers'
 import { ZAI_VOICES, ttsEngineChoice } from '@/lib/server/voices'
+import { legacyVoicePathEnabled, legacyVoicePathDisabledResponse } from '@/lib/server/voice-legacy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  // Phase 5: the health inventory existed for the legacy SOFIA boot probe
+  // and settings sheet (its only consumers). Retired with the legacy path —
+  // which also retires the documented unauthenticated-inventory risk.
+  if (!legacyVoicePathEnabled()) return legacyVoicePathDisabledResponse()
+
   const engine = ttsEngineChoice()
   return Response.json({
     ok: true,

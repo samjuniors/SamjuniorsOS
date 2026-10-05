@@ -178,14 +178,21 @@ class LiveCompanionBridge {
       // 3. Connect WebSocket
       await client.connect();
 
-      // 4. Request microphone acquisition
+      // 4. Request microphone acquisition. Phase 5 (parity area 1): a
+      // connect-time capture failure must fail the session honestly. The
+      // previous behavior registered the client anyway and cleared the error
+      // on the line below — leaving a "healthy" idle session that could
+      // never capture, whose retry no-op'd (a client was already registered)
+      // and which never reached the Phase 2 permission modal through the
+      // transport path. Tear the transport down and throw: toggleVoice
+      // settles enabled:false + status:'error' + the /microphone/ error the
+      // modal recovers from, and a retry performs a clean reconnect.
       try {
         await client.startMicrophone();
       } catch (micErr: any) {
         console.warn('[LiveCompanionBridge] Microphone not started:', micErr);
-        os.setLiveVoice({
-          error: 'Microphone permission denied or device not found',
-        });
+        client.destroy();
+        throw new Error('Microphone permission denied or device not found');
       }
 
       this.client = client;

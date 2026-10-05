@@ -119,7 +119,10 @@ export class SophiaLiveClient {
         message: 'navigator.mediaDevices.getUserMedia is not supported by this browser',
         fatal: true,
       });
-      return;
+      // Phase 5 (parity, area 1): a fatal acquisition failure must not look
+      // like success — the bridge's connect path decides session fate from
+      // whether this throws (the worklet-failure path below already throws).
+      throw new Error('navigator.mediaDevices.getUserMedia is not supported by this browser');
     }
 
     // 1. Acquire MediaStream

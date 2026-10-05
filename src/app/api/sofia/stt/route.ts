@@ -13,6 +13,7 @@
 import { NextRequest } from 'next/server'
 import { transcribeAnywhere, anySttAvailable, sttInfo } from '@/lib/server/providers'
 import { getAuthenticatedFounder } from '@/lib/server/auth/session'
+import { legacyVoicePathEnabled, legacyVoicePathDisabledResponse } from '@/lib/server/voice-legacy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,11 @@ export async function POST(req: NextRequest) {
   if (!founder || founder.role !== 'FOUNDER') {
     return new Response('Founder session required', { status: 401 })
   }
+
+  // Phase 5: this route served only the legacy SOFIA voice surface (the new
+  // voice path streams STT through the WS gateway). Auth fires first; the
+  // retirement never weakens an existing control.
+  if (!legacyVoicePathEnabled()) return legacyVoicePathDisabledResponse()
 
   if (!anySttAvailable()) {
     return new Response('no transcription provider', { status: 503 })

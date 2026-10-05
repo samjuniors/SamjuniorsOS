@@ -5,6 +5,47 @@ Port of the SofiaUI voice-agent UI into SamJuniorsOS, branch
 Reference source: SofiaUI default branch (`main` @ `9e88dee`) — read-only,
 kept as an independent repository.
 
+## Phase 5 — Parity validation + reversible retirement of the old voice path
+
+Full checklist, execution record and verdicts:
+`docs/audit/PHASE5-PARITY-CHECKLIST.md`. Regression suite:
+`tests/sophia/phase5_voice_parity.test.ts` (57/0, exit 0). What changed in
+the voice path itself:
+
+- **P5-D1** — a connect-time microphone failure now fails the session
+  honestly (`LiveCompanionBridge.connect` destroys the transport and throws;
+  `startMicrophone` throws on the unsupported-mediaDevices path): the honest
+  `/microphone/` error feeds the Phase 2 permission modal, and the retry
+  performs a clean reconnect (previously the error was wiped and a
+  capture-less "healthy" idle session was registered, blocking retry).
+- **P5-D2** — `voiceRuntime.detach()` settles a stuck client-owned
+  `speaking` overlay (unmount mid-speech no longer leaves the store lying).
+- **P5-D3** — the store watcher no longer cancels the armed reconnect on the
+  transient `disconnected` status (the honest disconnect-error write used to
+  kill session recovery); only voice-off or a barge-in interrupt cancels.
+- **Legacy retirement (reversible):** the old SOFIA voice tab is retired from
+  the default experience behind `SAMJUNIORS_VOICE_LEGACY=1` (default off).
+  Flag off: no SOFIA tab, boot lands on the OS desktop, the widget/ribbon/
+  chat chrome is unconditional, and the six legacy-only routes
+  (`/api/sofia/{stt,health,img,media,page,file}`) answer **410 after
+  authentication** (auth still fails closed first — retirement never weakens
+  a control). Flag on: the old path is restored verbatim. `page.tsx` reads the
+  flag server-side per request (`force-dynamic`), so it is a runtime
+  decision, not a build constant.
+- The retirement is flag-gated rather than deleted because the two
+  physically-unverifiable parity residues — real microphone speech → live
+  streaming transcription (hardware + `DEEPGRAM_API_KEY`) and audible speaker
+  output — need a supported machine; once a human verifies them, the prepared
+  removal set in the Phase 5 checklist can be executed (source deletion of
+  `src/sofia/**` + the six routes + assets + their test references).
+
+Not weakened, not removed: `/api/sofia/ask` (canonical typed surface),
+`/api/sofia/tts` (the new path's TTS ladder), `/api/sofia/memory`, the live
+gateway + `executeSophiaTurn` and all company-context / memory /
+authorization / approval / audit infrastructure; the orphaned
+`/api/realtime/turn`, `/api/tts/*` and `/api/browser/read` routes stay
+(Founder decisions per the Phase 4 review).
+
 ## Phase 4 — Governance, interruption & security review (this section added by the review phase)
 
 A focused security/execution-governance review of the integrated voice path

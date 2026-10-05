@@ -18,6 +18,7 @@ import { realpathSync } from 'node:fs'
 import { isAbsolute, join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { getAuthenticatedFounder } from '@/lib/server/auth/session'
+import { legacyVoicePathEnabled, legacyVoicePathDisabledResponse } from '@/lib/server/voice-legacy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -57,6 +58,10 @@ export async function GET(req: NextRequest) {
   if (!founder || founder.role !== 'FOUNDER') {
     return new Response('Founder session required', { status: 401 })
   }
+
+  // Phase 5: served the legacy SOFIA orbits/blades local-image paths (the
+  // new voice path reads no local files). Auth fires first.
+  if (!legacyVoicePathEnabled()) return legacyVoicePathDisabledResponse()
 
   const asked = new URL(req.url).searchParams.get('path') ?? ''
   // Resolve symlinks BEFORE judging anything. A name ending in .png can be a

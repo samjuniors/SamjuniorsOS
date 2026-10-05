@@ -9,6 +9,7 @@
 import { NextRequest } from 'next/server'
 import { proxyMedia, isProxyError } from '@/lib/server/net'
 import { getAuthenticatedFounder } from '@/lib/server/auth/session'
+import { legacyVoicePathEnabled, legacyVoicePathDisabledResponse } from '@/lib/server/voice-legacy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,6 +24,10 @@ export async function GET(req: NextRequest) {
   if (!founder || founder.role !== 'FOUNDER') {
     return new Response('Founder session required', { status: 401 })
   }
+
+  // Phase 5: legacy SOFIA-blades-only proxy (new voice path fetches no
+  // remote media). Auth fires first; retirement never weakens a control.
+  if (!legacyVoicePathEnabled()) return legacyVoicePathDisabledResponse()
 
   const target = new URL(req.url).searchParams.get('url') ?? ''
   if (!target) return new Response('no url', { status: 400 })

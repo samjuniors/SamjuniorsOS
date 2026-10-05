@@ -14,6 +14,7 @@
 import { NextRequest } from 'next/server'
 import { renderPage } from '@/lib/server/page'
 import { getAuthenticatedFounder } from '@/lib/server/auth/session'
+import { legacyVoicePathEnabled, legacyVoicePathDisabledResponse } from '@/lib/server/voice-legacy'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -43,6 +44,10 @@ export async function GET(req: NextRequest) {
       },
     )
   }
+
+  // Phase 5: reader-mode renderer served only the legacy SOFIA blades (the
+  // new voice path renders no remote pages). Auth fires first.
+  if (!legacyVoicePathEnabled()) return legacyVoicePathDisabledResponse()
 
   const asked = new URL(req.url)
   const target = asked.searchParams.get('url') ?? ''
