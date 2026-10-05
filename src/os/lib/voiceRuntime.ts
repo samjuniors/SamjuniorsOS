@@ -49,6 +49,13 @@
  *               the transcript ribbon).
  *   interrupt() — stop spoken output immediately AND route the existing
  *               bridge interrupt seam (server-side turn cancellation).
+ *   Barge-in    — starting a PTT hold while a reply is still being spoken
+ *               cuts the playback (status 'listening' is a cut trigger in
+ *               the store watcher) WITHOUT sending INTERRUPT: the spoken
+ *               turn already completed and persisted server-side, so a
+ *               barge-in is a playback cut, not a canonical cancellation
+ *               (that stays interrupt()'s exclusive job — no second
+ *               interruption path exists).
  *
  * Adapted from SofiaUI @ 9e88dee (one-way reference port):
  *   - src/sophia/SophiaOS.ts — lifecycle/cleanup sequencing, 1200ms
@@ -221,9 +228,20 @@ class VoiceRuntime {
 
   private onStoreChange(): void {
     const live = getOS().liveVoice;
-    // Any surface turning voice off, interrupting, or losing the transport
-    // also cuts our playback — there is exactly one voice, not one per UI.
-    if (!live.enabled || live.status === 'interrupted' || live.status === 'disconnected') {
+    // Any surface turning voice off, interrupting, starting a PTT hold
+    // (barge-in — the founder speaks over Sophia; the orb already enters
+    // its barge-in choreography on this same 'listening' transition), or
+    // losing the transport also cuts our playback — there is exactly one
+    // voice, not one per UI. This is a PLAYBACK cut only: the turn that was
+    // being spoken has already completed and persisted server-side, so no
+    // INTERRUPT is sent here — cancelling in-flight server work remains
+    // the exclusive job of interrupt() (the existing seam).
+    if (
+      !live.enabled ||
+      live.status === 'interrupted' ||
+      live.status === 'disconnected' ||
+      live.status === 'listening'
+    ) {
       this.stopSpeaking();
       // Phase 5 (P5-D3): the reconnect timer must NOT be cancelled by the
       // transient 'disconnected' status itself. The disconnect event arms
@@ -254,8 +272,9 @@ class VoiceRuntime {
     // Never overlap utterances — a new reply cuts the previous one.
     this.stopSpeaking();
 
-    this.speakAbort = new AbortController();
-    const signal = this.speakAbort.signal;
+    const invocation = new AbortController();
+    this.speakAbort = invocation;
+    const signal = invocation.signal;
     this.speaking = true;
     liveBridge.setSpeakingGate(() => this.speaking);
 
@@ -294,19 +313,27 @@ class VoiceRuntime {
         this.speakPending--;
       }
     } finally {
-      this.speakPending = 0;
-      if (!signal.aborted && this.speaking) {
-        if (!scheduledAny) {
-          // Nothing audible happened (provider completely unavailable):
-          // settle the overlay honestly — the reply remains visible as text.
-          this.settleSpeaking(totalFailure);
-        } else if (!this.engine.hasActiveAudio()) {
-          // Everything scheduled has already drained while later sentences
-          // were still being fetched (edge race: the 350ms drain fired with
-          // speakPending > 0 and no further source ever arrived) — settle now.
-          this.settleSpeaking(false);
+      // Re-audit F3: only the invocation that still OWNS the runtime may
+      // touch its counters. An aborted speak's finally runs AFTER a newer
+      // speak (or the cut itself) already reset/owns the state — zeroing
+      // speakPending here would clobber the newer speak's pending count
+      // and let a drain during its next fetch gap settle the overlay
+      // early (stopSpeaking() owns the reset at cut time).
+      if (this.speakAbort === invocation) {
+        this.speakPending = 0;
+        if (!signal.aborted && this.speaking) {
+          if (!scheduledAny) {
+            // Nothing audible happened (provider completely unavailable):
+            // settle the overlay honestly — the reply remains visible as text.
+            this.settleSpeaking(totalFailure);
+          } else if (!this.engine.hasActiveAudio()) {
+            // Everything scheduled has already drained while later sentences
+            // were still being fetched (edge race: the 350ms drain fired with
+            // speakPending > 0 and no further source ever arrived) — settle now.
+            this.settleSpeaking(false);
+          }
+          // else: the engine's drain (handleDrained) owns the settle.
         }
-        // else: the engine's drain (handleDrained) owns the settle.
       }
     }
   }
@@ -389,11 +416,18 @@ class VoiceRuntime {
     this.speaking = false;
     liveBridge.setSpeakingGate(null);
     this.playLevelOverride = null;
-    os.setLiveVoice({
-      status: 'idle',
-      ...(withError ? { error: 'Voice playback unavailable — reply shown as text' } : {}),
-    });
-    if (getOS().sophia !== 'attentive') os.setSophia('idle');
+    // Re-audit F4: settle only the status this overlay owns. A newer
+    // interaction state that already replaced 'speaking' (e.g. a PTT hold
+    // that started during the final drain window) must not be stomped back
+    // to 'idle' by this older settlement — the newer state owns the store
+    // until its own flow transitions it.
+    if (getOS().liveVoice.status === 'speaking') {
+      os.setLiveVoice({
+        status: 'idle',
+        ...(withError ? { error: 'Voice playback unavailable — reply shown as text' } : {}),
+      });
+      if (getOS().sophia !== 'attentive') os.setSophia('idle');
+    }
   }
 
   /** Stop spoken output immediately. Always safe to call. Store status is NOT

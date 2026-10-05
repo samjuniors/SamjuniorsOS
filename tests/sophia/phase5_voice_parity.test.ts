@@ -13,7 +13,12 @@
  *     interruption during playback + fresh-turn recovery (E5), TTS provider
  *     failure → speechSynthesis fallback (E6), total failure → honest text
  *     settle (E7), interruption during LISTENING (E8), attach/detach
- *     idempotence + unmount cleanup + mid-speak detach settle (E1).
+ *     idempotence + unmount cleanup + mid-speak detach settle (E1),
+ *     post-re-audit pins: PTT barge-in during playback cuts the audio
+ *     through the existing state with NO second interruption path (E9),
+ *     an older speak's late settlement never clobbers a newer speak's
+ *     pending count (E10), a late settle never stomps a newer listening
+ *     status (E11).
  *   SECTION F — reconnect semantics: abnormal transport loss → automatic
  *     reconnect onto a fresh gateway with a working turn (F1), exhausted
  *     attempts → honest error (F2), intentional close → no reconnect (F3),
@@ -195,6 +200,11 @@ const net = {
   ticketFetches: 0,
   ttsMode: 'ok' as 'ok' | 'fail' | 'hang',
   ttsCalls: [] as string[],
+  /** Re-audit F3 pin: per-fetch delay queue in ms, shifted in fetch order
+   *  (0 default). The delays are deliberately NOT abort-aware — they stand
+   *  in for the unabortable stretch of a real fetch/decode so an older
+   * speak's settlement can land after a newer speak owns the runtime. */
+  ttsDelays: [] as number[],
 };
 let mintTicket: () => string = () => '';
 
@@ -214,6 +224,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     let body: { text?: string } = {};
     try { body = JSON.parse(String(init?.body ?? '{}')); } catch { /* body stays empty */ }
     net.ttsCalls.push(String(body.text ?? ''));
+    const fetchDelay = net.ttsDelays.length > 0 ? (net.ttsDelays.shift() as number) : 0;
+    if (fetchDelay > 0) await sleep(fetchDelay);
     if (net.ttsMode === 'fail') return new Response('provider down', { status: 500 });
     if (net.ttsMode === 'hang') {
       // A fetch that never resolves until aborted — for the mid-speak detach test.
@@ -473,6 +485,120 @@ async function runTests() {
     liveBridge.stopPtt();
     await bridgeTurn('E8b');
     await waitForCondition(() => getOS().liveVoice.status === 'idle', 6000, 'E8b: fresh turn works after listening interrupt');
+
+    // E9 (re-audit F2): barge-in — pressing PTT while Sophia speaks cuts the
+    // audible playback through the existing voice state/runtime. NO second
+    // interruption path fires: the spoken turn already completed server-side,
+    // so no INTERRUPT control frame is sent and the canonical cancellation
+    // semantics (interrupt() remains the only server-cancel seam) are
+    // untouched.
+    decodeDurationMs = 4000; // long playback so the press lands mid-speech
+    const ttsBeforeE9 = net.ttsCalls.length;
+    await bridgeTurn('E9');
+    await waitForCondition(() => net.ttsCalls.length >= ttsBeforeE9 + 1, 4000, 'E9: playback audio fetching');
+    assert(voiceRuntime.isSpeaking() === true, 'E9: runtime reports speaking during playback');
+    assert(getOS().liveVoice.status === 'speaking', 'E9: speaking overlay up during playback');
+
+    const e9Turn = liveBridge.startPtt(); // the barge-in: founder talks over Sophia
+    if (!e9Turn) throw new Error('startPtt returned null (E9)');
+    assert(voiceRuntime.isSpeaking() === false, 'E9: PTT barge-in cuts spoken output immediately (F2)');
+    assert(voiceRuntime.getLevels().play === 0, 'E9: playback level zeroed by the cut');
+    assert(
+      getOS().liveVoice.status === 'listening',
+      'E9: barge-in settles into listening — NOT interrupted (no second interruption path)'
+    );
+    const ttsAtBarge = net.ttsCalls.length;
+    await sleep(400);
+    assert(net.ttsCalls.length === ttsAtBarge, 'E9: no further TTS fetches after the barge-in cut');
+    assert(mockProvider.interruptCalled === false, 'E9: barge-in sent no INTERRUPT (playback cut is client-side only)');
+
+    // The barge-in turn completes normally — the session survived the cut.
+    await waitForCondition(
+      () => (mockProvider.options as { turnId?: string } | null)?.turnId === e9Turn,
+      4000,
+      'E9: barge-in STT session started'
+    );
+    liveBridge.stopPtt();
+    await waitForCondition(() => mockProvider.endTurnCalled === true, 4000, 'E9: STOP_PTT processed');
+    mockProvider.simulateEvent({
+      kind: 'final_transcript',
+      turnId: e9Turn,
+      text: 'hold on a second',
+      isFinal: true,
+      timestamp: Date.now(),
+    });
+    decodeDurationMs = 300;
+    await waitForCondition(() => getOS().liveVoice.status === 'speaking', 4000, 'E9: barge-in turn answered and speaks');
+    await waitForCondition(() => getOS().liveVoice.status === 'idle', 8000, 'E9: fresh reply settles after the barge-in');
+
+    // E10 (re-audit F3): an older speak's late settlement must never clobber
+    // a newer speak's pending count — the overlay must hold through the newer
+    // reply's inter-sentence fetch gap instead of settling early (the
+    // pre-fix aborted finally zeroed speakPending unconditionally).
+    decodeDurationMs = 200;
+    // Fetch plan (per-fetch delays, in fetch order — the delays are not
+    // abort-aware, standing in for the unabortable stretch of a real
+    // fetch/decode so A's settlement lands AFTER B's speak setup):
+    //   A s1: 0ms (plays 200ms) | A s2: 500ms — resolves after the cut,
+    //   after B's setup, before B's drain deadline (the late settlement)
+    //   B s1: 0ms (plays 200ms) | B s2: 1400ms (the inter-sentence gap)
+    const e10Base = net.ttsCalls.length;
+    net.ttsDelays = [0, 500, 0, 1400];
+    await bridgeTurn('E10-A'); // A: s1 plays; s2's fetch still in flight
+    await waitForCondition(() => net.ttsCalls.length >= e10Base + 2, 4000, 'E10: A sentence2 fetch in flight');
+    assert(voiceRuntime.isSpeaking() === true, 'E10: A speaking while its sentence2 fetch is in flight');
+
+    await bridgeTurn('E10-B'); // B supersedes A (barge-in cut + fresh reply)
+    await waitForCondition(() => net.ttsCalls.length >= e10Base + 3, 4000, 'E10: B sentence1 fetched');
+    // Now: B s1 has ended while B s2 is still inside its 1400ms gap, and A's
+    // late settlement landed inside that window. Pre-fix, the clobbered
+    // speakPending let the 350ms drain settle the overlay here (orb/pill
+    // idle while the reply was still being spoken).
+    await sleep(800);
+    assert(
+      voiceRuntime.isSpeaking() === true,
+      "F3: older speak's late settlement never clobbered the newer speak's pending count (overlay held through the fetch gap)"
+    );
+    assert(getOS().liveVoice.status === 'speaking', 'F3: status stays speaking through the inter-sentence gap');
+    net.ttsDelays = [];
+    decodeDurationMs = 300;
+    await waitForCondition(() => getOS().liveVoice.status === 'idle', 8000, 'E10: the newer reply settles after its true drain');
+
+    // E11 (re-audit F4): pressing PTT during the final drain window must not
+    // have the pending settle stomp the newer 'listening' status back to
+    // 'idle' mid-hold.
+    decodeDurationMs = 250;
+    await bridgeTurn('E11');
+    // Both sentences fetched + scheduled; the last fake source ends ~250ms
+    // after scheduling and the 350ms drain would settle at ~600ms. Wait INTO
+    // that window (after the audio ended, before the settle), then press.
+    await sleep(400);
+    assert(getOS().liveVoice.status === 'speaking', 'E11: reply still speaking inside the final drain window');
+    const e11Turn = liveBridge.startPtt();
+    if (!e11Turn) throw new Error('startPtt returned null (E11)');
+    assert(voiceRuntime.isSpeaking() === false, 'E11: PTT press during the drain window cuts the tail (F2)');
+    assert(getOS().liveVoice.status === 'listening', 'E11: press settles into listening');
+    await sleep(500); // past the would-be settle deadline
+    assert(
+      getOS().liveVoice.status === 'listening',
+      'F4: the late settle never stomps the newer listening status'
+    );
+    await waitForCondition(
+      () => (mockProvider.options as { turnId?: string } | null)?.turnId === e11Turn,
+      4000,
+      'E11: barge-in STT session started'
+    );
+    liveBridge.stopPtt();
+    await waitForCondition(() => mockProvider.endTurnCalled === true, 4000, 'E11: STOP_PTT processed');
+    mockProvider.simulateEvent({
+      kind: 'final_transcript',
+      turnId: e11Turn,
+      text: 'one more thing',
+      isFinal: true,
+      timestamp: Date.now(),
+    });
+    decodeDurationMs = 300;
+    await waitForCondition(() => getOS().liveVoice.status === 'idle', 8000, 'E11: post-barge-in turn settles');
 
     // E1: attach/detach lifecycle. E1a proves a single attach speaks; then:
     // a second attach is idempotent, one detach keeps the runtime alive

@@ -29,6 +29,12 @@
  *   G7. DeepgramFluxProvider: a rapid PTT tap (STOP_PTT while the socket is
  *       still CONNECTING) still produces ForceEndTurn once the socket opens —
  *       the turn's final transcript is not silently lost.
+ *   G8. /api/sofia/ask turnId ingress hardening (re-audit F1): the ask route
+ *       trims and validates the client-supplied turnId against the shared
+ *       turn-ID contract (turn-id.ts) — malformed / oversized / reserved-
+ *       character ids are rejected 400 before the SSE stream or any
+ *       persistence, and a whitespace-padded valid id normalizes to the
+ *       contract id (same durable idempotency keys as the unpadded id).
  *
  * Deterministic by construction: injected slow executor + mock/failing STT
  * providers, a stubbed global fetch for the Gemini provider, and real
@@ -47,6 +53,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { NextRequest } from 'next/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { LiveInteractionServer } from '../../src/lib/server/live/server';
 import type { SophiaTurnExecutorFn } from '../../src/lib/server/live/server';
 import { LiveSessionManager } from '../../src/lib/server/live/session-manager';
@@ -337,6 +344,104 @@ async function runTests() {
     assert(frames.some((f) => f.type === 'ready'), 'G4: ready frame contract preserved');
   }
 
+  (process.env as Record<string, string | undefined>).NODE_ENV = ORIGINAL_NODE_ENV ?? 'development';
+
+  /* ======================================================================
+   * SECTION G8 — /api/sofia/ask turnId validation at the trust boundary
+   * (re-audit F1 — the turn-id.ts contract claims the ask ingress).
+   * ==================================================================== */
+
+  console.log('\nSECTION G8: ask route turnId ingress hardening\n');
+
+  (process.env as Record<string, string | undefined>).NODE_ENV = 'development';
+  {
+    const founderId = 'founder-local-session'; // dev-mode founder identity
+    const convStore = ConversationStore.getInstance();
+    // Unique conversation per run (m3 pattern): the rejection assertions
+    // prove NOTHING lands in the store, so a fresh id guarantees a prior
+    // run's local file-store data can never be mistaken for this run's
+    // persistence (rerunnable on a shared dev worktree).
+    const convId = `conv_p4_ask_turnid_${randomUUID().slice(0, 8)}`;
+    await convStore.createConversation({
+      id: convId,
+      founderId,
+      agentId: 'sophia',
+      title: 'P4 ask turnId validation probe',
+    });
+
+    // Malformed ids are rejected at the boundary — before the SSE stream
+    // starts and before anything reaches the executor or the store.
+    const badIds = ['bad:id', 'x'.repeat(300), 'has space', 'uni\u2020code'];
+    for (const bad of badIds) {
+      const req = new NextRequest('http://localhost:3000/api/sofia/ask', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'turn id probe', conversationId: convId, turnId: bad }),
+      });
+      const res = await askRoutePOST(req);
+      assert(
+        res.status === 400,
+        `G8: malformed turnId (${bad.length > 10 ? `${bad.slice(0, 10)}…` : bad}) rejected with 400`
+      );
+      assert(
+        !String(res.headers.get('content-type') ?? '').includes('text/event-stream'),
+        'G8: rejected turnId never starts the SSE stream'
+      );
+    }
+
+    // Nothing persisted under the malformed keys — the executor never ran.
+    assert(
+      !(await convStore.findMessageByIdempotencyKey(convId, 'bad:id')),
+      'G8: rejected turnId never reaches durable keys (founder message)'
+    );
+    assert(
+      !(await convStore.findMessageByIdempotencyKey(convId, 'bad:id:assistant')),
+      'G8: rejected turnId never reaches durable keys (assistant marker — no key aliasing)'
+    );
+
+    // Trim normalization: a whitespace-padded VALID id trims to the contract
+    // id and replays idempotently through the canonical keys (G4 pattern with
+    // padding — proving the trim lands on the durable idempotency key).
+    await convStore.saveMessage(
+      {
+        conversationId: convId,
+        sender: 'founder',
+        role: 'user',
+        content: 'p4 trim probe',
+        idempotencyKey: 'p4_ask_trim_ok_1',
+      },
+      founderId
+    );
+    await convStore.saveMessage(
+      {
+        conversationId: convId,
+        sender: 'assistant',
+        role: 'assistant',
+        content: SOPHIA_TURN_CANCELLED_MARKER,
+        idempotencyKey: 'p4_ask_trim_ok_1:assistant',
+        intent: 'conversation',
+        metadata: { cancelled: true, ingress: 'sofia_ask' },
+      },
+      founderId
+    );
+    const trimReq = new NextRequest('http://localhost:3000/api/sofia/ask', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: 'p4 trim probe',
+        conversationId: convId,
+        turnId: '  p4_ask_trim_ok_1  ',
+      }),
+    });
+    const trimRes = await askRoutePOST(trimReq);
+    assert(trimRes.status === 200, 'G8: whitespace-padded valid turnId accepted');
+    const trimFrames = parseSseFrames(await trimRes.text());
+    const trimDone = trimFrames.find((f) => f.type === 'done');
+    assert(
+      trimDone?.cancelled === true && trimDone?.idempotentReplay === true,
+      'G8: padded turnId trimmed to the contract id (replayed the canonical idempotency key)'
+    );
+  }
   (process.env as Record<string, string | undefined>).NODE_ENV = ORIGINAL_NODE_ENV ?? 'development';
 
   /* ======================================================================

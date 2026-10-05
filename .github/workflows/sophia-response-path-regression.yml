@@ -6,8 +6,17 @@ on:
       - development
     paths:
       - "tests/sophia/production_response_path_regression.test.ts"
+      - "tests/sophia/sofiaui_voice_runtime.test.ts"
+      - "tests/sophia/phase4_governance_hardening.test.ts"
+      - "tests/sophia/phase5_voice_parity.test.ts"
       - "src/lib/server/sophia/**"
       - "src/lib/server/retrieval/**"
+      - "src/lib/server/live/**"
+      - "src/lib/server/voice-legacy.ts"
+      - "src/lib/client/live/**"
+      - "src/os/lib/**"
+      - "src/app/api/sofia/**"
+      - "src/app/api/realtime/**"
       - "benchmark/memory-retrieval/**"
       - ".github/workflows/sophia-response-path-regression.yml"
   push:
@@ -15,8 +24,17 @@ on:
       - development
     paths:
       - "tests/sophia/production_response_path_regression.test.ts"
+      - "tests/sophia/sofiaui_voice_runtime.test.ts"
+      - "tests/sophia/phase4_governance_hardening.test.ts"
+      - "tests/sophia/phase5_voice_parity.test.ts"
       - "src/lib/server/sophia/**"
       - "src/lib/server/retrieval/**"
+      - "src/lib/server/live/**"
+      - "src/lib/server/voice-legacy.ts"
+      - "src/lib/client/live/**"
+      - "src/os/lib/**"
+      - "src/app/api/sofia/**"
+      - "src/app/api/realtime/**"
       - "benchmark/memory-retrieval/**"
       - ".github/workflows/sophia-response-path-regression.yml"
 
@@ -39,3 +57,9 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Run production response-path regression
         run: bun tests/sophia/production_response_path_regression.test.ts
+      - name: Run SofiaUI voice runtime suite
+        run: bun tests/sophia/sofiaui_voice_runtime.test.ts
+      - name: Run Phase 4 governance hardening suite
+        run: bun tests/sophia/phase4_governance_hardening.test.ts
+      - name: Run Phase 5 voice parity suite
+        run: bun tests/sophia/phase5_voice_parity.test.ts

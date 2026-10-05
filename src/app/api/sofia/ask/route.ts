@@ -22,7 +22,11 @@
  *   - conversationId: canonical ConversationStore id (founder-bound,
  *     fail-closed on ownership mismatch). When absent, the canonical store
  *     provisions a new conversation; the id is returned on the done frame.
- *   - turnId: client turn identifier for idempotency; generated when absent.
+ *   - turnId: client turn identifier for idempotency; generated when absent;
+ *     trimmed, then validated against the shared turn-ID contract
+ *     (turn-id.ts — 1-128 chars of [A-Za-z0-9_-], `:` reserved for the
+ *     executor's `${turnId}:assistant` key composition) and rejected with
+ *     400 before the stream starts or anything persists.
  *   - persona / history: ACCEPTED FOR BACKWARDS COMPATIBILITY ONLY. They are
  *     untrusted client state — never persisted, never used to reconstruct or
  *     overwrite canonical conversation history. The authoritative dialogue
@@ -33,6 +37,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { executeSophiaTurn } from '@/lib/server/sophia'
 import { getAuthenticatedFounder } from '@/lib/server/auth/session'
 import { llmInfo, probeZaiAsr } from '@/lib/server/providers'
+import { isValidTurnId } from '@/lib/server/live/turn-id'
 
 // The z-ai ASR boot probe — fired once per server process, the first time
 // anyone asks anything. A pending probe reads as "available" in /health;
@@ -99,10 +104,18 @@ export async function POST(req: NextRequest) {
     typeof body.conversationId === 'string' && body.conversationId.trim()
       ? body.conversationId.trim()
       : undefined
-  const turnId =
-    typeof body.turnId === 'string' && body.turnId.trim()
-      ? body.turnId.trim()
-      : `sofia-ask-${crypto.randomUUID()}`
+  // Same trust-boundary contract the live voice protocol enforces at
+  // START_PTT/INTERRUPT (turn-id.ts): a client-supplied turnId becomes a
+  // durable idempotency key (`${turnId}` / `${turnId}:assistant`), so an
+  // oversized id is unbounded durable key material and a `:`-carrying id
+  // could alias another turn's keys. Trim first (whitespace-padded valid
+  // ids normalize to the contract id); reject the rest before the stream
+  // starts — nothing reaches the executor or the store.
+  const suppliedTurnId = typeof body.turnId === 'string' ? body.turnId.trim() : ''
+  if (suppliedTurnId && !isValidTurnId(suppliedTurnId)) {
+    return new Response('invalid turnId', { status: 400 })
+  }
+  const turnId = suppliedTurnId || `sofia-ask-${crypto.randomUUID()}`
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
