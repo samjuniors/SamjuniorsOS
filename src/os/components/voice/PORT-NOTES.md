@@ -5,6 +5,49 @@ Port of the SofiaUI voice-agent UI into SamJuniorsOS, branch
 Reference source: SofiaUI default branch (`main` @ `9e88dee`) — read-only,
 kept as an independent repository.
 
+## Phase 4 — Governance, interruption & security review (this section added by the review phase)
+
+A focused security/execution-governance review of the integrated voice path
+ran against the Phase 3 HEAD (`1b8de39`) and committed hardening on top.
+Full findings, verified-vs-theoretical classification and the verification
+record: `docs/audit/PHASE4-VOICE-GOVERNANCE-SECURITY-REVIEW.md`.
+Regression suite: `tests/sophia/phase4_governance_hardening.test.ts`
+(29/0, exit 0). Summary of what changed in the voice path itself:
+
+- `processedTurnIds` is now founder-scoped (`${founderId}:${turnId}`) — a
+  second authenticated socket can no longer pre-mark (poison) another
+  founder's predicted turnId into silent suppression via INTERRUPT.
+- Server-side turnId validation (`src/lib/server/live/turn-id.ts`):
+  START_PTT/INTERRUPT reject malformed/oversized/`:`-carrying ids with
+  `INVALID_TURN_ID` before they touch state, the suppression map or durable
+  idempotency keys.
+- Turn-settling `finally` (and the empty-transcript cleanup) is conditional
+  on the turn still owning the session — INTERRUPT → immediate START_PTT no
+  longer gets the newer turn's LISTENING state and STT provider stomped by
+  the interrupted turn's settle.
+- `/api/sofia/ask` never presents the `'(turn interrupted)'` marker as a
+  live assistant answer — cancelled replays settle with an honest empty
+  `done` frame carrying `cancelled: true`.
+- STT stream init failures are now reported `fatal: true` (the runtime's
+  capture-teardown routing depends on it) and leave no zombie provider
+  session entry.
+- DeepgramFluxProvider: a rapid PTT tap (STOP_PTT while the socket is
+  CONNECTING) still sends ForceEndTurn once the socket opens — the turn
+  is not silently lost.
+- Gemini API keys moved from `?key=` URL queries to the `x-goog-api-key`
+  header at both former sites (realtime provider + realtime/turn route).
+- `/api/browser/read` now rides the hardened `net.ts` SSRF pipeline
+  (previously localhost/RFC1918/::1 passed and the body was read unbounded).
+
+Remaining documented risks (Founder decisions, not fixed here): the
+cross-process/crash exactly-once windows on the canonical turn executor;
+the WS gateway's `NODE_ENV`-dependent dev fallback and all-interfaces bind;
+the cross-process in-memory ticket store (below); missing per-founder rate
+limits; the unauthenticated `/api/sofia/health` provider inventory. The
+desktop-control restriction holds: no machine-control primitives exist
+anywhere, nothing SofiaUI companion/desktop was ported or connected, and
+`/api/realtime/turn`'s actuator branches remain orphaned (zero UI callers).
+
 ## Phase 3 — Voice runtime (this section added by the runtime phase)
 
 Phase 3 integrated the voice runtime behind the Phase 2 UI. The architectural

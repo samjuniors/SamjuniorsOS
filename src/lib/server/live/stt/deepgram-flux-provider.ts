@@ -43,6 +43,10 @@ export class DeepgramFluxProvider implements STTProvider {
 
   private isConnected = false;
   private isTurnEnding = false;
+  /** Phase 4: endTurn() arrived while the socket was still CONNECTING
+   * (rapid PTT tap) — honor it as soon as the socket opens so the turn's
+   * final transcript is not silently lost. */
+  private pendingEndTurn = false;
 
   constructor(config: DeepgramFluxConfig = {}) {
     this.apiKey = config.apiKey || process.env.DEEPGRAM_API_KEY || '';
@@ -86,6 +90,7 @@ export class DeepgramFluxProvider implements STTProvider {
     this.sessionOpts = opts;
     this.audioBuffer = Buffer.alloc(0);
     this.isTurnEnding = false;
+    this.pendingEndTurn = false;
 
     // Fail closed if server credentials are absent
     if (!this.apiKey) {
@@ -129,6 +134,12 @@ export class DeepgramFluxProvider implements STTProvider {
         this.ws.on('open', () => {
           this.isConnected = true;
           resolve();
+          // Phase 4: endTurn() raced the handshake (rapid PTT tap) — force
+          // the end-of-turn now that the socket is open.
+          if (this.pendingEndTurn) {
+            this.pendingEndTurn = false;
+            void this.endTurn();
+          }
         });
 
         this.ws.on('message', (data: WebSocket.Data) => {
@@ -335,6 +346,13 @@ export class DeepgramFluxProvider implements STTProvider {
     this.isTurnEnding = true;
 
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      // Phase 4 (governance review): still CONNECTING (rapid PTT tap) —
+      // remember the intent and force the end-of-turn once the socket
+      // opens, otherwise the final transcript (and the turn) is silently
+      // lost while the session sits in THINKING forever.
+      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+        this.pendingEndTurn = true;
+      }
       return;
     }
 

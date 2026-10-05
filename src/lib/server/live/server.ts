@@ -6,6 +6,7 @@ import { ClientLiveMessage, LIVE_CLOSE_CODES } from './types';
 import { STTProvider, CanonicalTranscriptEvent } from './stt/types';
 import { DeepgramFluxProvider } from './stt/deepgram-flux-provider';
 import { executeSophiaTurn, ExecuteSophiaTurnOptions, SophiaTurnResult } from '../sophia/turn-executor';
+import { isValidTurnId } from './turn-id';
 
 export type SophiaTurnExecutorFn = (opts: ExecuteSophiaTurnOptions) => Promise<SophiaTurnResult>;
 
@@ -34,6 +35,11 @@ export class LiveInteractionServer {
   // Phase 4C-B STT streaming session management
   private sttProviderFactory: () => STTProvider;
   private activeSttSessions: Map<WebSocket, { provider: STTProvider; turnId: string }> = new Map();
+  // Phase 4 (governance review): completed/interrupted-turn suppression.
+  // Keys are `${founderId}:${turnId}` — scoped per founder so a client-
+  // controlled turnId from one authenticated socket can never pre-mark
+  // (poison) another founder's turn into silent suppression, which the
+  // pre-Phase-4 global keyspace allowed (verified defect; fixed here).
   private processedTurnIds: Map<string, number> = new Map();
 
   // Phase 3 (SofiaUI voice runtime): in-flight canonical turn executions per
@@ -186,6 +192,18 @@ export class LiveInteractionServer {
       }
 
       case 'START_PTT': {
+        // Phase 4 (governance review): turnIds are trust-boundary inputs —
+        // they become durable idempotency keys and suppression-map entries.
+        // Reject anything outside the validated space before it touches
+        // session state or persistence.
+        if (!isValidTurnId(msg.turnId)) {
+          this.sessionManager.send(ws, {
+            type: 'ERROR',
+            code: 'INVALID_TURN_ID',
+            message: 'START_PTT requires a turnId of 1-128 characters [A-Za-z0-9_-]',
+          });
+          return;
+        }
         client.session.activeTurnId = msg.turnId;
         this.sessionManager.setSessionState(ws, 'LISTENING', 'PTT press detected');
         this.sessionManager.send(ws, {
@@ -222,6 +240,17 @@ export class LiveInteractionServer {
       }
 
       case 'INTERRUPT': {
+        // Phase 4 (governance review): a malformed turnId must be rejected
+        // before it can touch the suppression map or the abort registry — a
+        // malformed id never identifies a legitimate in-flight turn.
+        if (msg.turnId !== undefined && !isValidTurnId(msg.turnId)) {
+          this.sessionManager.send(ws, {
+            type: 'ERROR',
+            code: 'INVALID_TURN_ID',
+            message: 'INTERRUPT turnId must be 1-128 characters [A-Za-z0-9_-], or absent',
+          });
+          return;
+        }
         // Phase 3 (SofiaUI voice runtime): explicit turn cancellation.
         //   1. Abort the in-flight canonical turn execution for this socket —
         //      executeSophiaTurn settles at its next stage boundary with
@@ -237,7 +266,11 @@ export class LiveInteractionServer {
         }
         const interruptedTurnId = msg.turnId || client.session.activeTurnId;
         if (interruptedTurnId) {
-          this.processedTurnIds.set(interruptedTurnId, Date.now());
+          // Phase 4: founder-scoped key (see processedTurnIds declaration).
+          this.processedTurnIds.set(
+            this.turnDedupeKey(client.session.founderId, interruptedTurnId),
+            Date.now()
+          );
           this.cleanupOldTurnIds();
         }
         client.session.activeTurnId = undefined;
@@ -358,11 +391,17 @@ export class LiveInteractionServer {
       });
     } catch (err: any) {
       console.error('[LiveInteractionServer] Failed to start STT stream:', err.message);
+      // Phase 4 (governance review): a stream that cannot start is FATAL for
+      // this turn's capture path — the client runtime routes fatal errors to
+      // explicit capture teardown and the permission-modal recovery loop.
+      // (Previously re-sent as fatal:false, which left a permanently broken
+      // STT provider reporting as recoverable, plus a zombie session entry.)
+      this.closeSttSession(ws);
       this.sessionManager.send(ws, {
         type: 'ERROR',
-        code: 'STT_INIT_FAILED',
+        code: err?.code || 'STT_INIT_FAILED',
         message: err.message || 'Failed to initialize speech recognition stream',
-        fatal: false,
+        fatal: true,
       });
     }
   }
@@ -373,9 +412,12 @@ export class LiveInteractionServer {
     event: CanonicalTranscriptEvent
   ): Promise<void> {
     const { turnId, text } = event;
+    // Phase 4: founder-scoped suppression key (see processedTurnIds
+    // declaration) — the same founder marks and looks up by construction.
+    const dedupeKey = this.turnDedupeKey(client.session.founderId, turnId);
 
     // Idempotency: Prevent duplicate final processing for the same turn
-    if (this.processedTurnIds.has(turnId)) {
+    if (this.processedTurnIds.has(dedupeKey)) {
       return;
     }
 
@@ -386,11 +428,11 @@ export class LiveInteractionServer {
     // turn. The turnId-level guard is the processedTurnIds marking done by
     // the INTERRUPT handler; this state-level guard is the second belt.
     if (client.session.state === 'INTERRUPTED') {
-      this.processedTurnIds.set(turnId, Date.now());
+      this.processedTurnIds.set(dedupeKey, Date.now());
       return;
     }
 
-    this.processedTurnIds.set(turnId, Date.now());
+    this.processedTurnIds.set(dedupeKey, Date.now());
     this.cleanupOldTurnIds();
 
     // 1. Send final transcript event to client
@@ -403,10 +445,16 @@ export class LiveInteractionServer {
       timestamp: event.timestamp,
     });
 
-    // 2. If transcript text is empty, reset state to IDLE and finish turn
+    // 2. If transcript text is empty, reset state to IDLE and finish turn.
+    //    Phase 4: conditional settle — a newer turn that already owns the
+    //    session must not have its LISTENING state / STT provider stomped by
+    //    this turn's cleanup (same guard as the execution finally below).
     if (!text || !text.trim()) {
-      this.sessionManager.setSessionState(ws, 'IDLE', 'Empty transcript received');
-      this.closeSttSession(ws);
+      const owningTurnId = client.session.activeTurnId;
+      if (owningTurnId === undefined || owningTurnId === turnId) {
+        this.sessionManager.setSessionState(ws, 'IDLE', 'Empty transcript received');
+        this.closeSttSession(ws);
+      }
       return;
     }
 
@@ -467,12 +515,21 @@ export class LiveInteractionServer {
       if (activeExecution && activeExecution.turnId === turnId) {
         this.activeTurnExecutions.delete(ws);
       }
-      this.sessionManager.setSessionState(
-        ws,
-        'IDLE',
-        wasCancelled ? 'Cognitive turn cancelled by client interrupt' : 'Cognitive turn completed'
-      );
-      this.closeSttSession(ws);
+      // Phase 4 (governance review): a newer turn may already own the session
+      // (INTERRUPT -> immediate START_PTT while this execution was still
+      // settling). Settling unconditionally would force IDLE over the newer
+      // turn's LISTENING and close its STT provider, silently dead-ending
+      // it. Only settle when this turn still owns the session (activeTurnId
+      // was cleared by INTERRUPT, or still points at this turn's id).
+      const owningTurnId = client.session.activeTurnId;
+      if (owningTurnId === undefined || owningTurnId === turnId) {
+        this.sessionManager.setSessionState(
+          ws,
+          'IDLE',
+          wasCancelled ? 'Cognitive turn cancelled by client interrupt' : 'Cognitive turn completed'
+        );
+        this.closeSttSession(ws);
+      }
     }
   }
 
@@ -482,6 +539,13 @@ export class LiveInteractionServer {
       void activeStt.provider.close();
       this.activeSttSessions.delete(ws);
     }
+  }
+
+  /** Phase 4 (governance review): per-founder suppression key — the map is
+   * scoped so a client-controlled turnId from one founder can never suppress
+   * another founder's turn. */
+  private turnDedupeKey(founderId: string, turnId: string): string {
+    return `${founderId}:${turnId}`;
   }
 
   private cleanupOldTurnIds(): void {

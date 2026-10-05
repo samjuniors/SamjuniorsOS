@@ -144,10 +144,15 @@ export async function POST(req: NextRequest) {
         const apiKey = process.env.GEMINI_API_KEY || '';
         if (apiKey && apiKey !== 'MY_GEMINI_API_KEY') {
           const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          // Phase 4 (governance review): key in the x-goog-api-key header,
+          // never the URL (query strings land in proxies and server logs).
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
           const transRes = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
             body: JSON.stringify({
               contents: [
                 {

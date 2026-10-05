@@ -131,13 +131,17 @@ Never state "As an AI text model I cannot create images, browse the web, or cont
             parts: currentParts,
           });
 
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
-            cleanKey
-          )}`;
+          // Phase 4 (governance review): the API key rides the documented
+          // x-goog-api-key header — never the URL. Query strings persist in
+          // proxies, access logs and error reporters; a header does not.
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
           const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': cleanKey,
+            },
             body: JSON.stringify({
               system_instruction: {
                 parts: [{ text: systemPrompt }],

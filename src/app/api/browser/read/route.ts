@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedFounder } from '@/lib/server/auth/session';
+import { fetchText, isProxyError, type FetchedText } from '@/lib/server/net';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,43 +28,39 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Missing url parameter', success: false }, { status: 400 });
     }
 
-    let parsedUrl: URL;
+    // URL format validation (the hardened pipeline re-parses and vets the
+    // target itself; this preserves the route's 400-on-garbage contract).
     try {
-      parsedUrl = new URL(targetUrl);
+      new URL(targetUrl);
     } catch {
       return NextResponse.json({ error: 'Invalid URL format', success: false }, { status: 400 });
     }
 
-    // Security guard: prevent SSRF to local cloud metadata or private IP ranges
-    const hostname = parsedUrl.hostname.toLowerCase();
-    if (
-      hostname === '169.254.169.254' ||
-      hostname === 'metadata.google.internal' ||
-      hostname.endsWith('.internal')
-    ) {
-      return NextResponse.json({ error: 'Access to internal network addresses is blocked', success: false }, { status: 403 });
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-
-    const res = await fetch(parsedUrl.toString(), {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
+    // Phase 4 (governance review): fetch through the hardened outbound
+    // pipeline (vetTarget scheme/host checks + guardedLookup DNS gate that
+    // refuses private addresses rebinding-safely + hand-followed redirects
+    // re-vetted per hop + a hard byte cap). The previous inline guard blocked
+    // only three metadata hostnames — localhost, 127.0.0.1, ::1, RFC1918
+    // and CGNAT all passed, redirects were auto-followed unvetted, and the
+    // response body was read unbounded (classic SSRF + memory-exhaustion
+    // surface). Same pipeline as /api/sofia/page|img|media.
+    let fetched: FetchedText;
+    try {
+      fetched = await fetchText(targetUrl, {
+        maxBytes: 2_000_000,
+        timeoutMs: 8000,
+      });
+    } catch (err: any) {
+      if (isProxyError(err)) {
+        return NextResponse.json({ error: err.message, success: false }, { status: err.status });
+      }
       return NextResponse.json(
-        { error: `Remote server returned status ${res.status}`, success: false },
-        { status: res.status }
+        { error: err?.message || 'Failed to fetch webpage content', success: false },
+        { status: 500 }
       );
     }
 
-    const contentType = res.headers.get('content-type') || '';
+    const contentType = fetched.type;
     if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
       return NextResponse.json({
         success: true,
@@ -74,7 +71,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const html = await res.text();
+    const html = fetched.text;
 
     // Extract title
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);

@@ -134,7 +134,20 @@ export async function POST(req: NextRequest) {
           ingress: 'sofia_ask',
         })
 
-        if (!result.success || !result.reply) {
+        if (result.cancelled) {
+          // Phase 4 (governance review): a cancelled turn — direct
+          // cancellation or a replay of the persisted cancelled marker —
+          // must never present '(turn interrupted)' as a live assistant
+          // answer. Settle the stream honestly: no text frames, an empty
+          // done frame carrying the cancelled flag.
+          send({
+            type: 'done',
+            text: '',
+            cancelled: true,
+            conversationId: result.conversationId,
+            idempotentReplay: result.idempotentReplay === true,
+          })
+        } else if (!result.success || !result.reply) {
           send({
             type: 'error',
             message: result.error || result.reply || 'The turn failed.',
