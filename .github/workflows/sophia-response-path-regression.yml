@@ -3,7 +3,7 @@ name: Sophia production response-path regression
 on:
   pull_request:
     branches:
-      - development
+      - main
     paths:
       - "tests/sophia/production_response_path_regression.test.ts"
       - "tests/sophia/sofiaui_voice_runtime.test.ts"
@@ -21,7 +21,7 @@ on:
       - ".github/workflows/sophia-response-path-regression.yml"
   push:
     branches:
-      - development
+      - main
     paths:
       - "tests/sophia/production_response_path_regression.test.ts"
       - "tests/sophia/sofiaui_voice_runtime.test.ts"
