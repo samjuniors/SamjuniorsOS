@@ -2300,3 +2300,223 @@ NEXT ACTION:
 - Await Founder review of `doc/SOPHIA_JARVIS_AUDIT.md` before initiating any implementation.
 
 
+
+
+## Agent Identity, Memory Boundaries, and Decision Layer — Architecture Baseline (2026-10-04)
+
+**Status:** Task 1 documentation baseline recorded on `feat/decision-layer-architecture-baseline`. No runtime implementation was changed in this task.
+
+### Agreed architecture
+
+- **Agent Identity & Persona:** who an agent is, including identity, role, personality, responsibilities, and configured behavior.
+- **Tools & Capabilities:** what an agent can actually do (e.g. music playback, desktop control, integrations). Capabilities are executable tools, not memories; persona text does not grant permission.
+- **Personal Mind:** founder-scoped personal preferences/context; not company truth, agent identity, instruction authority, or authorization.
+- **Company Brain:** company facts, strategy, policies, projects, decisions, and operational knowledge with appropriate authority and provenance.
+- **Episodic Memory:** relevant interaction history; assess Honcho or alternatives only if current retrieval has a demonstrated gap.
+- **Decision Layer:** intent interpretation, context selection, ambiguity handling, planning, typed proposals, and failure recovery.
+- **Governance:** model output and memory cannot authorize side effects or bypass deterministic policy, approvals, idempotency, or audit.
+
+### Repository evidence reviewed
+
+- `src/lib/server/agents/definitions.ts`: static server-side agent definitions include roles, responsibilities, skills, capability descriptions, prohibitions, and protocol responsibilities.
+- `src/lib/server/sophia/intent-classifier.ts`: typed proposals, deterministic pre-classification for selected injection/ambiguity cases, live-output shape validation, and deterministic fallback. Uses `zai-client`.
+- `src/lib/server/sophia/memory-gate.ts` and `memory-extractor.ts`: model proposes personal-memory candidates; deterministic validation applies, and review-required candidates remain inactive until Founder confirmation.
+- `src/lib/server/sophia/personal-memory-store.ts`: founder-scoped Personal Mind; durable file store is authoritative, Prisma is best-effort write-only shadow, and no Prisma read fallback exists.
+- `src/lib/server/sophia/context-assembly.ts`: current authority-labeled context assembly already includes separate Personal Mind and bounded episodic context.
+- `src/lib/server/authorization/policy-evaluator.ts`: deterministic side-effect authorization and approval evaluation.
+- Existing WORKLOG sections record classifier reliability and governance hardening; those are not reimplemented by this documentation task.
+
+### Corrections and limits
+
+- The existing founder Personal Mind store is not an agent-persona registry.
+- Descriptive capability lists do not prove a secured runtime tool is implemented.
+- Do not claim a general local-model fallback, Honcho integration, or complete voice-to-tool lifecycle without verifying the active code and tests.
+- No new memory system, provider chain, dependency, model training, UI, or runtime code was added.
+- This task did not run tests because only documentation was changed; document consistency and GitHub writes still require verification.
+
+### Roadmap order
+
+1. Complete and verify this repository/architecture documentation baseline.
+2. Inventory actual agent identity, tool registry/adapters, permissions, and one end-to-end request path.
+3. Define canonical contracts for identity, memory, decision proposals, and capabilities.
+4. Establish a decision reliability evaluation set and baseline.
+5. Assess current memory/episodic recall and Honcho only against measured gaps.
+6. Validate SOFIA voice and desktop capability execution end-to-end.
+7. Compare models/providers only if evidence justifies it.
+8. Harden, test, document rollback, and request Founder approval before merge/deployment.
+
+**Execution rule:** One task at a time. After each task, report branch, commit, changed files, verification, limitations, and the next single task; then wait for Founder direction.
+
+
+## Runtime Identity, Tool, and Execution Inventory — Task 2 Complete (2026-10-04)
+
+**Evidence document:** `docs/research/runtime-capability-inventory.md`  
+**Status:** Source-level inventory completed on `feat/decision-layer-architecture-baseline`. No runtime code changed and no tests were executed in this task.
+
+### Verified source path
+
+`/api/sofia/ask` (authenticated Founder) → `executeSophiaTurn` (conversation ownership, idempotency, in-flight duplicate coalescing, persistence) → `SophiaContextAssembler` → `SophiaIntentClassifier` → `SophiaServerGateway` (strips untrusted identity/authorization fields) → `MultiAgentOrchestrator` for authorized Founder directive proposals → existing specialist-agent protocol → deterministic tool selection → gated web/GitHub research paths where selected → evidence/epistemic lineage → assistant persistence and SSE response.
+
+### Inventory findings
+
+- Existing agent definitions are static server definitions with role/persona instructions, responsibilities, skills, descriptive capability lists, prohibited actions, and protocol responsibilities; a versioned user-configurable persona store was not established by this inspection.
+- Web research and read-only GitHub research have execution paths; actual provider/account availability is configuration-dependent.
+- `finance_transfer` and `github_issue_create` are explicitly marked unconfigured; approval metadata does not make them executable.
+- SOFIA speech capability discovery is distinct from server tool authorization. `src/sofia/lib/music.ts` plays local interface sound cues, not arbitrary operating-system music control.
+- General desktop/machine-control execution was not found in the inspected server tool registry/path. Operational inspection dispatch and run steering explicitly acknowledge that their execution hooks are not wired.
+- Follow-up risk: the GitHub research branch passes a hard-coded `founder-001` label into Composio `sessionScope.userId`; trace its expected meaning and test coverage before changing it.
+- Relevant test files were located in the repository tree, but their presence is not a passing result. Provider credentials, connected accounts, real device behavior, and failure recovery were not verified.
+
+**Next roadmap task:** Task 3 — define canonical contracts for agent identity/persona, memory boundaries, decision proposals, and tool capabilities, reusing current abstractions and documenting only evidenced gaps.
+
+
+## Task 3 — Canonical Identity, Memory, Decision, and Capability Contracts (2026-10-04)
+
+**Status:** COMPLETE — documentation only on `feat/decision-layer-architecture-baseline`. No runtime code, data model, dependency, or provider configuration changed.
+
+### What was recorded
+- Added `docs/architecture/agent-memory-decision-capability-contracts.md`.
+- Defined boundaries and ownership for Agent Identity & Persona, Personal Mind, Company Brain, Episodic Memory, untrusted decision proposals, trusted validated commands, executable tool capabilities, and deterministic governance.
+- Documented identity/profile versioning expectations, founder-scoped personal memory, authority/provenance requirements, access/retention/deletion limitations, capability availability criteria, and failure semantics.
+- Mapped contracts to inspected repository abstractions; preserved existing stores and the proposal-versus-command trust boundary.
+- Explicitly retained the unresolved hard-coded `founder-001` provider-scope question for a separate trace before any code change.
+
+### Verification and limits
+- Re-fetched the contract document, plan, and WORKLOG from the feature branch; expected headings/status markers were present.
+- No tests were run because this task changed documentation only.
+- The contract tables describe required behavior; they do not establish that every existing runtime path currently satisfies every requirement.
+- No merge, deployment, or main-branch change.
+
+**Next single task:** Task 4 — build a small versioned decision-reliability evaluation set and measure the existing classifier/gateway behavior before changing implementation.
+
+
+## Task 4 — Decision Reliability Evaluation (2026-10-04)
+
+**Status:** IN PROGRESS — versioned evaluation catalog created; execution baseline pending.
+
+- Added `docs/research/decision-reliability-evaluation-v1.md` (v1.0.0).
+- Mapped existing deterministic classifier, gateway, authority-hardening, and honesty tests to 26 evaluation scenarios; separated existing coverage from cases not yet directly covered.
+- Identified the deterministic test commands in the repository. Source inspection is not a test result.
+- The intent contract suite has 22 named assertions and a provider-mocked fixture child for valid proposals, malformed outputs, injection, ambiguity, provider-down fallback, echo containment, and approval resolution.
+- Related suites pin conversation ownership, duplicate-turn behavior (including a documented known issue), and honest reporting for unconfigured capabilities.
+- No test commands were executed in this pass. Pass/fail totals, timings, and runtime environment remain unknown.
+- Direct coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification loops remains unverified or absent in the inspected suites.
+
+**Next single action:** Run the deterministic suites in the repository environment and record exact results before proposing runtime fixes.
+
+
+## Task 4 — Decision Reliability Baseline Executed (2026-10-04)
+
+**Status:** BASELINE RECORDED — documentation-only update on `feat/decision-layer-architecture-baseline`. Execution details below were supplied in the baseline report and were not independently re-run by this documentation update.
+
+### Environment and results
+- Tested commit: `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`; isolated linked worktree at `/home/z/baseline-wt`; Bun 1.3.14.
+- `bun tests/sophia/phase1_intent_contract.test.ts`: exit 0, **22 passed / 0 failed**.
+- `bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed**. Expected network-down stderr in test 3.4 is part of the honest zero-result fallback test.
+- `bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed**.
+- Reported total: **49 passed / 0 failed / 0 skipped**, all three commands exit 0. The intent suite fakes the provider SDK boundary; this is not a live-provider quality result.
+- Authority S8–S10 were conditional on `DATABASE_URL` and ran because the sandbox exported `DATABASE_URL=file:/home/z/my-project/db/custom.db`. That pointed at the shared development database, not an isolated worktree-local test DB. The report states post-run verification found zero test residue. Isolate this database for future runs.
+
+### Known issues and coverage gaps
+- **S4:** unknown `conversationId` provisions a new conversation, diverging from ADR 0002 §7's blanket 404 expectation.
+- **S6:** the same bogus conversation ID + turn ID can re-fork and re-execute because fork occurs before conversation-scoped idempotency. Highest-priority reliability target identified by this baseline.
+- The single-kind intent contract can represent a compound halt-plus-commission request as `steering_proposal`, dropping the second objective.
+- EVAL-023…026 remain without dedicated deterministic regression coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
+- No new failures were reported. The green S4/S6 assertions pin known limitations; they do not mark those behaviors as acceptable.
+
+### Scope and next action
+- No runtime code, tests, dependencies, environment configuration, merge, or deployment changed.
+- Updated `docs/research/decision-reliability-evaluation-v1.md` and `docs/plan/jev-inspired-decision-layer.md` to record the baseline and qualification.
+- **Next proposed implementation target:** investigate and design a narrowly scoped S6 idempotency fix, with a dedicated isolated test database. Do not change runtime code until the Founder authorizes that implementation task.
+
+
+## Task 4 Follow-up — S6 Stale-Conversation Retry Idempotency (2026-10-04)
+
+**Status:** IMPLEMENTED AND VERIFIED ON FEATURE BRANCH; deterministic suites green, TypeScript check remains non-green with baseline-equivalent diagnostics.
+
+### Current-repo changes
+- `src/lib/server/sophia/turn-executor.ts`: for an unknown non-empty supplied conversation ID plus a non-empty turn ID, derive a stable canonical conversation ID from SHA-256 of the JSON tuple `[founderId, suppliedConversationId, turnId]`. Resolve an existing founder-owned conversation at that ID before creating one. This lets sequential retries reach the existing assistant idempotency record without changing the S4 unknown-conversation provisioning policy.
+- `tests/sophia/m3_authority_hardening.test.ts`: replaced the S6 known-issue assertion with regression assertions for canonical conversation reuse, `idempotentReplay === true`, byte-identical reply, exactly two persisted messages, and separate founder-scoped identity.
+- No changes were made to ConversationStore persistence semantics, database schema, provider behavior, or authorization policy.
+
+### Why this approach
+- It is narrower than introducing a global idempotency registry or changing the existing unknown-conversation behavior to 404.
+- The raw caller-supplied ID is not stored as the canonical conversation ID; the derived ID is bounded and includes founder and turn identity.
+- Requests without a turn ID preserve their existing random-fork behavior.
+- S4 remains an explicit policy decision; compound-request loss and EVAL-023…026 coverage gaps remain open.
+
+### Verification results
+- Verified branch head: `de1a57985bf0b7ec6566a3064c065ae4be427820`; fresh detached worktree at `/home/z/s6-verify-wt`; Bun 1.3.14; `bun install --frozen-lockfile` exit 0 with 546 packages.
+- Dedicated DB: `/home/z/s6-verify-wt/.data/decision-reliability-test.db`, initialized via `bunx prisma db push --skip-generate` (exit 0). Ambient `DATABASE_URL` was explicitly overridden for every suite command. The reported shared development DB mtime was unchanged; the isolated DB had zero conversations/messages after test cleanup; worktree status was clean.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/phase1_intent_contract.test.ts`: exit 0, **22 passed / 0 failed / 0 skipped**.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed / 0 skipped**. Two expected stderr lines came from the deliberate fetch stub in test 3.4.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed / 0 skipped**. S8–S10 executed against the isolated database.
+- Total: **49 passed / 0 failed / 0 skipped** across the three suites.
+- `bunx tsc --noEmit`: exit 1, **153 diagnostics**. Re-running at original baseline commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90` produced the same 153-error set; only two existing `turn-executor.ts` TS2339 diagnostics shifted line numbers due to the fix. No new TypeScript diagnostics were reported.
+- S6-specific assertions passed: same canonical conversation ID, `idempotentReplay === true`, identical reply, exactly two persisted messages, and founder-isolated canonical conversation/message ownership when another founder reuses the supplied unknown ID and turn ID. No memory-capture event was triggered on the replay.
+- No code, tests, dependencies, environment configuration, commits, pushes, merges, or deployments were performed during verification. The isolated verification worktree and throwaway DB were retained as reported.
+
+### Interpretation and limits
+- The stale supplied-conversation-ID duplicate-execution defect is fixed for the covered retry path and pinned by the regression.
+- This verifies the sequential/same-process replay path; it does not prove cross-process atomic exactly-once execution.
+- S4 unknown-conversation provisioning policy remains unchanged; compound-request objective loss remains open; EVAL-023…026 remain without dedicated deterministic regression coverage.
+- Live-provider quality and release readiness are not established. TypeScript remains non-green due to the baseline-equivalent 153 diagnostics.
+
+**Next single action:** Stop here and await Founder direction. No merge, deployment, or additional runtime changes without approval.
+
+
+## Task 5 — Memory and Honcho Assessment (2026-10-04)
+
+**Status:** COMPLETE — read-only source audit and external-product assessment on `feat/decision-layer-architecture-baseline`. No runtime code or data-store behavior changed.
+
+### Evidence inspected
+- Personal Mind: `src/lib/server/sophia/personal-memory-store.ts`, `memory-extractor.ts`, `memory-gate.ts`, `memory-capture-stage.ts`, `memory-lifecycle.ts`, and `src/app/api/sofia/memory/route.ts`.
+- Episodic memory: `src/lib/server/conversation/store.ts` and the episodic slice in `src/lib/server/sophia/context-assembly.ts`.
+- Company Brain and retrieval: current context assembly, the M5.1/M5.2/M5.3 benchmark and retrieval documents/results, and M5.4 generation-faithfulness evidence.
+- Honcho public product overview, TypeScript SDK, open-source repository/license, hosted privacy policy, and hosted terms as accessed 2026-10-04.
+
+### Findings and decision
+- Personal Mind is founder-scoped and lifecycle-controlled. Model-extracted candidates are deterministic-gate checked and captured as `PENDING_REVIEW`; there is no automatic activation. Retrieval is bounded, deterministic, and lexical/query-conditioned. The durable file collection is authoritative; Prisma is a best-effort write-only shadow.
+- Episodic retrieval is founder-scoped, token-overlap based, and bounded to the 20 most recently updated conversations, up to 3 hits and 4 matched messages per hit; context is further bounded to 600 characters. Paraphrase-only and older-session recall can still miss.
+- Company Brain retrieval preserves authority partitions and includes temporal projections and bounded relational dependency traversal. Existing M5.3 benchmark evidence reports 1.0000 render recall and zero retrieval/authority failures across 13 synthetic queries; this does not establish production-wide performance.
+- The M5.4 prompt/1 baseline records stable S6/S9 failures, but the repository already includes the controlled prompt/2 remediation (`docs/architecture/M5_4_PROMPT2_REMEDIATION.md`). I inspected the six committed prompt/1/prompt/2 JSON battery artifacts: prompt/1 was 10/12 PASS in each valid battery; prompt/2 was 12/12 PASS in each of three valid batteries, with S6/S9 passing 3/3 each. Fixture and context digests match across arms. This resolves the harness issue under the measured conditions, but does not validate the production persona prompt.
+- **Verdict: do not integrate Honcho now.** Its strongest differentiator is reasoning-oriented, portable memory across separate AI tools; no current workflow requirement or representative retrieval failure establishes a need for it. Do not send raw conversations to a new hosted store by default.
+- The assessment records hosted data-egress, retention, subprocessor, deletion, availability, licensing, latency/cost, and operational considerations; any future adoption requires a re-check of current terms and a measured benchmark against the existing path.
+- A concrete follow-up risk remains: Personal Mind and ConversationStore use local-file authoritative reads with best-effort Prisma mirrors. A unified retention/deletion contract and multi-instance persistence guarantees were not established in this audit.
+
+### Documentation
+- Added `docs/research/memory-and-honcho-assessment.md`.
+- Updated `docs/plan/jev-inspired-decision-layer.md` to mark Task 5 complete and record the evidence-based no-integration decision.
+- No test suites were rerun for this documentation/audit task. Existing M5 benchmark values are transcribed from committed evidence, not newly generated here.
+- No dependency, schema, provider configuration, runtime implementation, merge, or deployment changed.
+
+### Recommended next priority
+The controlled prompt-version experiment is already present and archived; do not duplicate it. A read-only trace of the production Sophia prompt and final-answer path is recorded in `docs/research/production-sophia-prompt-applicability-audit.md`. The production prompt classifies intent; the gateway builds informational replies deterministically, so a prompt A/B would not measure the original M5.4 factual-answer failure. The trace indicates that the gateway does not render the assembled dependency-path slice in its generic informational reply path. A separate persistence/deletion audit is still needed before production-scale or multi-instance claims.
+
+**Next single action:** Stop after this evidence reconciliation and await Founder direction; do not change the production prompt or gateway behavior without separate authorization.
+
+
+## Production Sophia Prompt Applicability Audit (2026-10-04)
+
+**Status:** COMPLETE — read-only source trace on `feat/decision-layer-architecture-baseline`.
+
+### Sources inspected
+- `src/app/api/sofia/ask/route.ts`
+- `src/lib/server/sophia/turn-executor.ts`
+- `src/lib/server/sophia/intent-classifier.ts` — production `systemInstruction`, JSON proposal schema, and `sanitizeProposal()`.
+- `src/lib/server/sophia/context-assembly.ts` — dependency-intent detection and bounded, provenance-bearing `CANONICAL_FACT` dependency-path slice.
+- `src/lib/server/sophia/server-gateway.ts` — deterministic `informational_query` reply branches.
+- `tests/sophia/m53_dependency_relations.test.ts`, `tests/sophia/m54_scenario_contracts.test.ts`, and M5.4 design/remediation documents.
+
+### Finding and decision
+- The production prompt is for intent/proposal classification, not the M5.4 harness's standalone natural-language factual answer generation. For `informational_query`, `sanitizeProposal()` reconstructs the proposal without preserving a model-written factual reply; the gateway then builds the final reply from stores/context.
+- The context assembler tests already prove S6/S9 dependency evidence and both direct/transitive edges are present in context. The gateway's generic informational path selects `COMPANY_KNOWLEDGE`, `HISTORICAL_PRECEDENT`, or `RECENT_ACTIVITY`, but not the `CANONICAL_FACT` dependency-path slice. The `epistemic_fact` branch summarizes a single fact/claim rather than answering the dependency-path question.
+- **Do not run a production-prompt A/B or change the prompt yet.** It would not directly test/fix the factual-answer failure. The more appropriate next task is an isolated production response-path regression for S6/S9, followed by a separately approved minimal gateway fix if the regression confirms the gap.
+
+### Scope and limits
+- This is a static source-path finding, not a newly executed runtime test.
+- No test suites, live model calls, or database operations were run.
+- No runtime code, prompt text, dependencies, schemas, or benchmark artifacts changed.
+- No merge, deployment, or branch promotion occurred.
+
+**Next single action:** Await Founder direction on the production response-path regression; no further changes in this task.

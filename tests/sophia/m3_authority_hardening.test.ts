@@ -194,10 +194,9 @@ async function main() {
   });
 
   // --------------------------------------------------------------------------
-  // S6 — Executor KNOWN ISSUE: same bogus id + same turnId re-forks and
-  //      re-executes (fork precedes the conversation-scoped idempotency gate)
+  // S6 — Executor: same bogus id + same turnId replays the original result
   // --------------------------------------------------------------------------
-  await runTest('S6: KNOWN ISSUE — retry with the same bogus id + turnId re-forks and re-executes (pinned as documented)', async () => {
+  await runTest('S6: retry with the same bogus id + turnId is idempotent and founder-scoped', async () => {
     const bogus = `conv-hr-retry-bogus-${randomUUID()}`;
     const turnId = `hr-s6-${randomUUID().slice(0, 8)}`;
 
@@ -212,20 +211,30 @@ async function main() {
     const second = await executeSophiaTurn({
       message: 'What is our runway?',
       founderId: founderA,
-      conversationId: bogus, // caller did NOT adopt the server-issued id
-      turnId, // same turn
+      conversationId: bogus, // caller still has not adopted the server-issued id
+      turnId, // same request identity
     });
-    assert.strictEqual(second.success, true, 'retry also completes');
-    assert.notStrictEqual(
-      second.conversationId,
-      first.conversationId,
-      'KNOWN ISSUE pinned: the retry forks a SECOND fresh conversation (idempotency is conversation-scoped and the fork happens first)'
-    );
-    assert.ok(second.idempotentReplay !== true, 'KNOWN ISSUE pinned: the retry is NOT recognized as an idempotent replay');
+    assert.strictEqual(second.success, true, 'retry completes from the original result');
+    assert.strictEqual(second.conversationId, first.conversationId, 'retry resolves the same canonical conversation');
+    assert.strictEqual(second.idempotentReplay, true, 'retry is recognized as an idempotent replay');
+    assert.strictEqual(second.reply, first.reply, 'replay returns the byte-identical cached reply');
 
-    const m1 = await convStore.getMessages(first.conversationId, founderA);
-    const m2 = await convStore.getMessages(second.conversationId, founderA);
-    assert.strictEqual(m1.length + m2.length, 4, 'the turn executed twice in two distinct forks');
+    const messages = await convStore.getMessages(first.conversationId, founderA);
+    assert.strictEqual(messages.length, 2, 'retry appends no duplicate founder or assistant records');
+
+    // The request identity is founder-scoped: another founder using the same
+    // supplied id and turnId gets a separate founder-bound conversation.
+    const otherFounderRetry = await executeSophiaTurn({
+      message: 'What is our runway?',
+      founderId: founderB,
+      conversationId: bogus,
+      turnId,
+    });
+    assert.strictEqual(otherFounderRetry.success, true);
+    assert.notStrictEqual(otherFounderRetry.conversationId, first.conversationId);
+    const otherFounderConversation = await convStore.getConversation(founderB, otherFounderRetry.conversationId);
+    assert.ok(otherFounderConversation, 'other founder receives a separate owned conversation');
+    assert.strictEqual(otherFounderConversation.founderId, founderB);
   });
 
   // --------------------------------------------------------------------------

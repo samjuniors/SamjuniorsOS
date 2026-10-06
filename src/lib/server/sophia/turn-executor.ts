@@ -1,9 +1,9 @@
-import { ConversationStore, ConversationSecurityError, ConversationNotFoundError, ChatMessageRecord } from '../conversation';
+import { createHash } from 'crypto';
+import { ConversationStore, ConversationSecurityError, ChatMessageRecord } from '../conversation';
 import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
 import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
-import { SERVER_AGENTS } from '../agents/definitions';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -138,25 +138,20 @@ async function cancelledTurnResult(
  * 2. Transcripts enter the EXACT same pipeline as text:
  *    ConversationStore -> ContextAssembler -> IntentClassifier -> ServerGateway
  * 3. ServerGateway strips any untrusted identity or credential claims.
- * 4. Idempotency guarantees: exactly-once execution per turnId.
+ * 4. Idempotency: completed turns replay from durable assistant records, and
+ *    same-process concurrent duplicates coalesce on the canonical turn key.
  *
- * KNOWN ISSUE (M3 hardening review — deliberate, pinned, DO NOT change
- * without a Founder decision; see tests/sophia/m3_authority_hardening.test.ts
+ * KNOWN LIMITATION (M3 hardening review; see tests/sophia/m3_authority_hardening.test.ts
  * and the ADR 0002 addendum):
  *   When a non-empty conversationId is supplied but the conversation does not
- *   exist, this executor provisions a FRESH conversation bound to the
- *   authenticated founder instead of surfacing the store's
- *   ConversationNotFoundError. Security ordering is safe — an ownership
- *   MISMATCH (existing conversation owned by another founder) fails closed
- *   with Forbidden BEFORE the provisioning fallback can run, and the fresh
- *   fork is always founder-bound — but the behavior (a) diverges from
- *   ADR 0002 §7's blanket "404 on nonexistent id" contract, which the
- *   /api/agent-chat route still honors, (b) silently loses continuity for a
- *   stale/typo'd id, and (c) re-executes a turn when a caller retries with the
- *   same bogus id + same turnId, because the fork happens before the
- *   conversation-scoped idempotency lookup. Required by the live-voice and
- *   SOFIA-surface UX (a hard 404 mid-voice-turn is a worse failure mode);
- *   aligning the surfaces is a broader behavioral decision.
+ *   exist, this executor still provisions a fresh founder-bound conversation
+ *   rather than surfacing ConversationNotFoundError (S4). This preserves the
+ *   existing voice/typed-surface behavior and remains divergent from ADR 0002
+ *   §7's blanket 404 contract. To prevent the prior S6 duplicate-execution
+ *   bug, a missing conversation plus a supplied turnId now maps to a stable,
+ *   founder- and request-scoped canonical conversation ID. Ownership mismatch
+ *   still fails closed before the provisioning fallback. This is a targeted
+ *   idempotency fix, not a change to the unknown-conversation policy.
  */
 export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise<SophiaTurnResult> {
   const { message, founderId, conversationId, turnId, executeDirective, signal } = opts;
@@ -175,7 +170,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   }
 
   const convStore = ConversationStore.getInstance();
-
+  const cleanConversationId =
+    typeof conversationId === 'string' && conversationId.trim().length > 0
+      ? conversationId.trim()
+      : undefined;
   const cleanTurnId = typeof turnId === 'string' && turnId.trim().length > 0 ? turnId.trim() : undefined;
 
   // Phase 3 cancellation checkpoint 0 — before any resolution or persistence.
@@ -192,7 +190,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   try {
     conversation = await convStore.getOrCreateConversation({
       founderId,
-      conversationId: typeof conversationId === 'string' && conversationId.trim() ? conversationId.trim() : undefined,
+      conversationId: cleanConversationId,
       agentId: 'sophia',
     });
   } catch (err: any) {
@@ -207,17 +205,51 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         error: `Forbidden: ${err.message}`,
       };
     }
-    // KNOWN ISSUE (pinned): a nonexistent conversationId provisions a fresh
-    // conversation here instead of surfacing the 404 — see the header note.
-    // ConversationSecurityError is deliberately re-thrown ABOVE this catch so
-    // an ownership mismatch can NEVER fall into the provisioning path.
+    // S4 remains intentional: an unknown supplied conversationId gets a
+    // fresh founder-bound canonical conversation instead of a 404. For a
+    // retryable turn, derive that canonical ID from the authenticated founder,
+    // the supplied (unknown) ID, and turnId. This makes sequential retries
+    // resolve the same durable conversation so the normal assistant
+    // idempotency lookup can replay the completed result. Hashing keeps the
+    // caller's raw ID out of the canonical ID and bounds its length.
     try {
-      conversation = await convStore.createConversation({
-        founderId,
-        agentId: 'sophia',
-        title: 'Voice Executive Dialogue',
-      });
+      const retryConversationId =
+        cleanConversationId && cleanTurnId
+          ? `conv-${createHash('sha256')
+              .update(JSON.stringify([founderId, cleanConversationId, cleanTurnId]))
+              .digest('hex')
+              .slice(0, 32)}`
+          : undefined;
+
+      if (retryConversationId) {
+        const existingRetryConversation = await convStore.getConversation(founderId, retryConversationId);
+        conversation =
+          existingRetryConversation ??
+          (await convStore.createConversation({
+            id: retryConversationId,
+            founderId,
+            agentId: 'sophia',
+            title: 'Voice Executive Dialogue',
+          }));
+      } else {
+        conversation = await convStore.createConversation({
+          founderId,
+          agentId: 'sophia',
+          title: 'Voice Executive Dialogue',
+        });
+      }
     } catch (createErr: any) {
+      if (createErr instanceof ConversationSecurityError || createErr.name === 'ConversationSecurityError') {
+        return {
+          success: false,
+          reply: 'Forbidden: Access denied to conversation',
+          conversationId: conversationId || '',
+          intent: 'conversation',
+          directiveExecuted: false,
+          liveAi: false,
+          error: `Forbidden: ${createErr.message}`,
+        };
+      }
       return {
         success: false,
         reply: 'Internal error creating conversation',
