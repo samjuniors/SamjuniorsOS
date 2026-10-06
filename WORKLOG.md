@@ -2537,3 +2537,14 @@ The controlled prompt-version experiment is already present and archived; do not
 - No merge, deployment, or branch promotion occurred.
 
 **Next single action:** Await Founder direction on the production response-path regression; no further changes in this task.
+---
+
+## 2026-10-06 — Full branch consolidation into main (Founder-authorized)
+
+**Status:** COMPLETE (local); remote push pending a fresh GitHub token.
+
+- Merged all content-bearing branches onto the voice lineage: `feat/decision-layer-architecture-baseline` @ 4f29110 (S6 turn-executor retry idempotency + decision-layer research docs), `audit/task6-reaudit-post-voice-integration` @ 28e9572, `audit/sofia-voice-desktop-capability-validation` @ 1ea565c — on top of `feat/sofiaui-voice-integration` @ 07799ad (SofiaUI voice runtime phases 2-5 + re-audit fixes), which already contains all of `development` (incl. PR #5's dependency response-path fix and the Jev reference merge).
+- turn-executor now carries BOTH the S6 canonical retry-conversation provisioning AND the Phase-3 cancellation machinery; m3_authority 10/0 confirms the combination.
+- Repo cleaned: sandbox/harness artifacts untracked (tool-results, upload/download runtime dirs, .agents/.codex/.zscripts, examples, mini-services, Caddyfile, 15.2MB screenshot); .gitignore extended; CI workflow retargeted to main; obsolete t6 defect-pin suite removed (superseded per the Task-6 re-audit).
+- Verification: 40+ suites green at exact baseline numbers; eslint 0; tsc 150 vs 152 baseline (zero new); production build 30/30 pages with dynamic root.
+- Remote: origin/main fast-forwardable to the consolidated tip; all other remote branches strictly contained. Push + remote branch deletion await a fresh token.
