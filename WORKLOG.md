@@ -1,5 +1,22 @@
 # WORKLOG.md - Canonical Operational History
 
+## Task 6 — SOFIA Voice & Desktop Capability Validation (2026-10-04)
+
+**Status:** COMPLETE on `audit/sofia-voice-desktop-capability-validation` (branched from `development` @ `a020cab`). Founder directive: source-grounded, evidence-driven validation of SOFIA's actual voice, desktop, and tool-execution capabilities; docs + focused tests only; no merge, no deploy, no production-code changes. Full report: `docs/audit/TASK-6-SOFIA-VOICE-DESKTOP-CAPABILITY-VALIDATION.md`.
+
+**What was established (source + tests, not comments):**
+- The root route's **default tab is the SOFIA voice assistant** (`src/sofia/App.tsx` via dynamic import in `src/os/App.tsx`): wake-word loop (server STT chain Deepgram→ElevenLabs Scribe→z-ai ASR→local, or browser SpeechRecognition with mid-session auto-degrade), barge-in via VAD guard, turn assembly (pause-tolerant), SSE ask over `executeSophiaTurn`, client TTS ladder. Second voice surface = OS ribbon via companion WS `:3001` + `DeepgramFluxProvider` (requires `bun run dev:ws`; text-out only). Third surface (`/api/realtime/turn` "Realtime Lab") is **orphaned** — zero UI callers.
+- **Interruption never cancels downstream work** on any surface (no cancellation token into `executeSophiaTurn`; WS INTERRUPT is state-only; SOFIA abort stops rendering only). Pinned by new test A1 (response still delivered exactly-once, session recovers IDLE).
+- **Post-interrupt late-final race**: a provider final arriving after INTERRUPT still executes the turn (server-side window open). Pinned by new test A2.
+- **Production defect (R2)**: OS ribbon interim captions can never display — `liveCompanionBridge.startPtt(turnId)` passes an id that `SophiaLiveClient.startPtt()` ignores (baseline tsc TS2554 @ `liveCompanionBridge.ts:138`), so the store's turn-id guard drops every interim. Pinned by new tests A3+A4 (defect documentation; fix awaits Founder direction).
+- **No desktop control of any real machine exists** (no robotjs/nut.js/xdotool/computer-use; "desktop" = browser-rendered OS shell; camera/hands/clap are client-side `getUserMedia` + MediaPipe). ARCHITECTURE.md's TARGET/NOT-IMPLEMENTED lists are honest.
+- **Tool truth**: `web_research` real (z-ai search, URL-grounded claims, injection quarantine); GitHub reads via Composio with honest `not_executed` degradation when unconfigured; `finance_transfer`/`github_issue_create` declared-not-wired (selector skips); image "generation" is a Pollinations URL builder consumed only by the orphaned route.
+- **Authorization clean**: every voice/text ingress Founder-session-gated server-side; tickets single-use; production rejects dev headers; transcripts/tool output untrusted end-to-end. No bypass found (11/11 adversarial + 81/0 route-auth suites re-run green in this audit's environment).
+
+**Verification:** new suite `tests/sophia/t6_voice_capability_audit.test.ts` 15/0 (deterministic, injection-classified messages only — zero live provider calls, isolated db `.data/audit-t6-test.db`); phase4a/4b/4c/4c_c, realtime_governance_audit 11/11, realtime_lab_provider 5/5, r0_realtime_gate 6/6, m3_convergence, m0 7/7, production_response_path_regression 4/4 — all exit 0. `tsc --noEmit` = 153 errors, byte-identical to the `development` baseline (new file contributes zero). Tests are outside eslint's lint scope (repo ignore pattern), consistent with all existing suites.
+
+**Deliverables:** report (above) + audit test suite + this entry. Branch NOT merged; awaits Founder review.
+
 ## Branch Consolidation — Review Fixes, Single-Branch Model (2026-10-04)
 
 **Status:** COMPLETE on `development`. Founder directive: fix every issue from the Phase 1 review, commit and push everything, merge everything into ONE new branch, and delete all other stale branches (local + remote) leaving exactly `main` + `development`.
