@@ -74,3 +74,15 @@ artifacts/
 # R0 secrets hygiene (sandbox union, D5): local env explicit entry.
 # (.env is already covered by `.env*` above; listed for clarity.)
 /.env
+
+# ---------------------------------------------------------------------------
+# Sandbox / harness infrastructure — environment scaffolding, not product code
+# (untracked from the repo in the 2026-10-06 consolidation; kept on disk locally)
+/.agents/
+/.codex/
+/.zscripts/
+/examples/
+/mini-services/
+/download/
+/Caddyfile
+/workflow_fullpage_screenshot.png
