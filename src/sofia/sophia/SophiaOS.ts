@@ -918,6 +918,15 @@ export class SophiaOS extends EventTarget {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         await new Promise<void>((resolve) => {
           const u = new SpeechSynthesisUtterance(trimmed);
+          try {
+            const voices = window.speechSynthesis.getVoices();
+            const chosen =
+              voices.find((v) => v.lang.includes('AU') || /australia|catherine|karen|susan|zira|female/i.test(v.name)) ||
+              voices.find((v) => /female/i.test(v.name));
+            if (chosen) u.voice = chosen;
+          } catch {
+            /* ignore voice lookup failure */
+          }
           u.onend = () => resolve();
           u.onerror = () => resolve();
           window.speechSynthesis.speak(u);

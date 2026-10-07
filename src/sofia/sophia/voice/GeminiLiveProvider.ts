@@ -165,8 +165,7 @@ export class GeminiLiveProvider extends VoiceProvider {
     await new Promise<void>((resolve, reject) => {
       const isAuthToken =
         ticket.token.startsWith('auth_tokens/') ||
-        ticket.token.startsWith('ya29.') ||
-        ticket.token.startsWith('AQ.');
+        ticket.token.startsWith('ya29.');
       const param = isAuthToken ? 'access_token' : 'key';
       const cleanToken = ticket.token.replace(/^auth_tokens\//, '');
       const wsUrl = `${ticket.wsUrl}?${param}=${encodeURIComponent(cleanToken)}`;

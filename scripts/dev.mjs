@@ -1,11 +1,16 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 
-const logStream = fs.createWriteStream('dev.log', { flags: 'a' });
-const isWin = process.platform === 'win32';
-const nextCmd = isWin ? 'npx.cmd' : 'npx';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const child = spawn(nextCmd, ['next', 'dev', '-p', '3000'], {
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, '..');
+const nextBin = path.resolve(rootDir, 'node_modules/next/dist/bin/next');
+const logStream = fs.createWriteStream(path.resolve(rootDir, 'dev.log'), { flags: 'a' });
+
+const child = spawn(process.execPath, [nextBin, 'dev', '-p', '3000'], {
+  cwd: rootDir,
   stdio: ['inherit', 'pipe', 'pipe'],
   shell: false,
 });

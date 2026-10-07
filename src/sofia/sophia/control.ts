@@ -94,7 +94,7 @@ export class ControlLayer extends EventTarget {
   }
   
   /** Pure Gemini Live All-in-One mode toggle */
-  pureGeminiLive = false;
+  pureGeminiLive = true;
 
   /** Automatic Speech Recognition (ASR) Barge-in Interruption toggle */
   asrInterruption = true;

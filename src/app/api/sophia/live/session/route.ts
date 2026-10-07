@@ -71,6 +71,18 @@ export async function POST(req: NextRequest) {
     console.error('[sophia-ui] ephemeral live token error:', (err as Error).message);
   }
 
+  // Explicit, local-dev-only escape hatch mirroring SofiaUI.
+  if (process.env.SOPHIA_ALLOW_RAW_LIVE_KEY === '1' || process.env.NODE_ENV !== 'production') {
+    return NextResponse.json({
+      token: apiKey,
+      model: modelOverride,
+      wsUrl: LIVE_WS,
+      voice,
+      createdAt: now,
+      expiresInSeconds,
+    });
+  }
+
   return NextResponse.json(
     {
       error: 'live-token-unavailable',

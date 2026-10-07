@@ -76,7 +76,7 @@ export function sophiaStatusPayload() {
     xai: false,
     anthropic: false,
     openai: false,
-    activeMouthEngine: elevenlabs ? 'elevenlabs' : hasGemini ? 'gemini' : deepgram ? 'deepgram' : 'browser',
+    activeMouthEngine: hasGemini ? 'gemini' : elevenlabs ? 'elevenlabs' : deepgram ? 'deepgram' : 'browser',
     ollama: {
       configured: Boolean(process.env.OLLAMA_BASE_URL?.trim()),
       baseUrl: process.env.OLLAMA_BASE_URL?.trim() || 'http://localhost:11434',
@@ -204,9 +204,106 @@ function mapGeminiVoiceToZai(voiceName?: string): string | undefined {
   return undefined;
 }
 
+function wrapPcmWithWavHeader(pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16): Buffer {
+  if (pcmBuffer.length >= 12 && pcmBuffer.subarray(0, 4).toString('utf8') === 'RIFF') {
+    return pcmBuffer;
+  }
+  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+  const blockAlign = (channels * bitsPerSample) / 8;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcmBuffer.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(pcmBuffer.length, 40);
+  return Buffer.concat([header, pcmBuffer]);
+}
+
+async function speakWithGemini(text: string, voice = 'Aoede'): Promise<Response> {
+  const apiKey = geminiKey();
+  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+
+  const validVoices = ['Aoede', 'Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+  const voiceName = validVoices.includes(voice) ? voice : 'Aoede';
+
+  const modelsToTry = [
+    process.env.GEMINI_TTS_MODEL?.trim(),
+    'gemini-3.8-flash-tts',
+    'gemini-2.5-flash-preview-tts',
+  ].filter(Boolean) as string[];
+
+  let lastErr = '';
+  for (const model of Array.from(new Set(modelsToTry))) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName },
+              },
+            },
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        lastErr = await res.text().catch(() => '');
+        console.warn(`[sophia-ui] Gemini TTS (${model}) HTTP ${res.status}:`, lastErr);
+        continue;
+      }
+
+      const data = (await res.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{
+              inlineData?: {
+                mimeType?: string;
+                data?: string;
+              };
+            }>;
+          };
+        }>;
+      };
+
+      const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+      if (!inlineData?.data) continue;
+
+      const rawBuffer = Buffer.from(inlineData.data, 'base64');
+      const wavBuffer = wrapPcmWithWavHeader(rawBuffer, 24000);
+      return new Response(new Uint8Array(wavBuffer), {
+        headers: {
+          'content-type': 'audio/wav',
+          'content-length': String(wavBuffer.length),
+          'x-tts-engine': 'gemini',
+          'x-tts-voice': voiceName,
+        },
+      });
+    } catch (err) {
+      lastErr = (err as Error).message || String(err);
+      console.warn(`[sophia-ui] Gemini TTS (${model}) error:`, lastErr);
+    }
+  }
+
+  throw new Error(`gemini-tts-failed: ${lastErr}`);
+}
+
 async function speakWithElevenLabs(text: string, voiceId: string, modelId: string): Promise<Response> {
   const apiKey = elevenKey();
-  if (!apiKey) return json({ error: 'ELEVENLABS_API_KEY not configured' }, { status: 503 });
+  if (!apiKey) throw new Error('ELEVENLABS_API_KEY not configured');
   const endpoint = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=mp3_44100_128`;
   const res = await fetch(endpoint, {
     method: 'POST',
@@ -219,7 +316,7 @@ async function speakWithElevenLabs(text: string, voiceId: string, modelId: strin
   });
   if (!res.ok || !res.body) {
     const errText = await res.text().catch(() => '');
-    return json({ error: `elevenlabs-speak:${res.status}`, details: errText }, { status: 502 });
+    throw new Error(`elevenlabs-speak:${res.status} ${errText}`);
   }
   return new Response(res.body, {
     headers: { 'content-type': res.headers.get('content-type') ?? 'audio/mpeg', 'transfer-encoding': 'chunked' },
@@ -228,13 +325,13 @@ async function speakWithElevenLabs(text: string, voiceId: string, modelId: strin
 
 async function speakWithDeepgram(text: string, voice: string): Promise<Response> {
   const apiKey = key('DEEPGRAM_API_KEY');
-  if (!apiKey) return json({ error: 'DEEPGRAM_API_KEY not configured' }, { status: 503 });
+  if (!apiKey) throw new Error('DEEPGRAM_API_KEY not configured');
   const res = await fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice)}`, {
     method: 'POST',
     headers: { authorization: `Token ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ text }),
   });
-  if (!res.ok || !res.body) return json({ error: `speak:${res.status}` }, { status: 502 });
+  if (!res.ok || !res.body) throw new Error(`deepgram-speak:${res.status}`);
   return new Response(res.body, {
     headers: { 'content-type': res.headers.get('content-type') ?? 'audio/mpeg' },
   });
@@ -243,7 +340,7 @@ async function speakWithDeepgram(text: string, voice: string): Promise<Response>
 /**
  * SofiaUI's unified mouth: honor an explicit cloud provider when its key
  * exists, else fall through to the destination's canonical TTS ladder
- * (ElevenLabs → z-ai neural → local), which answers keyless here.
+ * (Gemini Aoede → ElevenLabs → z-ai neural → local).
  * Audio response (audio/mpeg or audio/wav) — never throws.
  */
 export async function sophiaSpeak(body: SophiaSpeakBody): Promise<Response> {
@@ -255,28 +352,45 @@ export async function sophiaSpeak(body: SophiaSpeakBody): Promise<Response> {
   const pin = ttsPinId();
 
   try {
-    // SofiaUI's explicit provider preferences, when the key backs them.
+    // 1. Explicit provider preferences when keys back them
     if (provider === 'elevenlabs' && elevenKey()) {
-      return await speakWithElevenLabs(
-        text,
-        body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'bMxLr8fP6hzNRRi9nJxU',
-        body.modelId || 'eleven_turbo_v2_5',
-      );
+      try {
+        return await speakWithElevenLabs(
+          text,
+          body.voiceId || process.env.ELEVENLABS_VOICE_ID || 'bMxLr8fP6hzNRRi9nJxU',
+          body.modelId || 'eleven_turbo_v2_5',
+        );
+      } catch (err) {
+        console.warn('[sophia-ui] explicit elevenlabs failed, falling back:', (err as Error).message);
+      }
     }
     if (provider === 'deepgram' && key('DEEPGRAM_API_KEY')) {
-      return await speakWithDeepgram(text, body.voice || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-thalia-en');
+      try {
+        return await speakWithDeepgram(text, body.voice || process.env.DEEPGRAM_VOICE_MODEL || 'aura-2-thalia-en');
+      } catch (err) {
+        console.warn('[sophia-ui] explicit deepgram failed, falling back:', (err as Error).message);
+      }
     }
 
-    // Destination ladder tier 1: ElevenLabs when a key exists (unpinned).
+    // 2. Primary / Default: Gemini TTS with Australian Female (Aoede)
+    if ((provider === 'gemini' || provider === 'auto') && geminiKey()) {
+      try {
+        return await speakWithGemini(text, body.voice || 'Aoede');
+      } catch (err) {
+        console.warn('[sophia-ui] gemini speak failed, falling to ladder:', (err as Error).message);
+      }
+    }
+
+    // 3. Destination ladder tier 1: ElevenLabs when a valid key exists (unpinned)
     if (elevenKey() && pin !== 'zai' && pin !== 'local') {
       try {
         return await speakWithElevenLabs(text, ELEVEN_VOICE_ID, 'eleven_flash_v2_5');
       } catch (err) {
-        console.error('[sophia-ui] elevenlabs speak failed, falling to neural:', (err as Error).message);
+        console.warn('[sophia-ui] elevenlabs speak failed, falling to neural:', (err as Error).message);
       }
     }
 
-    // Destination ladder tier 2: the pinned local speech server.
+    // 4. Destination ladder tier 2: the pinned local speech server
     if (pin === 'local' && localTtsAvailable()) {
       try {
         const audio = await synthesizeLocalTts(text);
@@ -284,11 +398,20 @@ export async function sophiaSpeak(body: SophiaSpeakBody): Promise<Response> {
           headers: { 'content-type': 'audio/mpeg', 'cache-control': 'no-cache', 'x-tts-engine': 'local' },
         });
       } catch (err) {
-        console.error('[sophia-ui] local speak failed, falling to neural:', (err as Error).message);
+        console.warn('[sophia-ui] local speak failed, falling to neural:', (err as Error).message);
       }
     }
 
-    // Destination ladder tier 3: the z-ai neural engine (keyless default).
+    // 5. Retry Gemini if not tried yet
+    if (geminiKey()) {
+      try {
+        return await speakWithGemini(text, body.voice || 'Aoede');
+      } catch {
+        /* proceed to z-ai */
+      }
+    }
+
+    // 6. Destination ladder tier 3: the z-ai neural engine (keyless default)
     const voiceId =
       (body.voiceId && ZAI_VOICE_IDS.has(body.voiceId) ? body.voiceId : undefined) ??
       mapGeminiVoiceToZai(body.voice) ??

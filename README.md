@@ -1,89 +1,168 @@
 # SamJuniorsOS + SOFIA
 
-One app, one port. The SamJuniorsOS operating system now carries **SOFIA** —
-the voice-driven holographic assistant — as a first surface, in place of the
-old Jarvis Lab.
+> **AI-Native Company Operating System**  
+> One app, one port. Autonomous executive workflows, persistent institutional memory, deterministic governance, and real-time multimodal intelligence.
 
-```bash
-bun install
-bun run db:push        # once — SQLite for the OS's durable records
-bun run dev            # http://localhost:3000
+---
+
+## Overview
+
+SamJuniorsOS is the authoritative control surface and nervous system of SamJuniors. It combines company-wide multi-agent orchestration with **SOFIA** — the ambient holographic assistant — mounted as an always-available perceptual and voice interface.
+
+```
+                           FOUNDER
+                              ↓
+                            SOPHIA
+                 (Persistent Company Intelligence)
+                              ↓
+              Plan / Understand / Reason / Propose
+                              ↓
+                             WORK
+                              ↓
+                           WORKFLOW
+                     (Execution Structure)
+                              ↓
+            AI Employee / Tool / Integration Worker
+                              ↓
+                    Deterministic Verification
+                              ↓
+              Founder Approval (on side effects)
+                              ↓
+                   Durable Audit / Ledger
+                              ↓
+             Authoritative Company State / Outcome
 ```
 
-## The three surfaces
+---
 
-| Surface | What it is |
+## The Three Surfaces
+
+| Surface | Description |
 |---|---|
-| **SOFIA** | The assistant. Talk to her — "hey sofia" (or type; the command line covers mic-blocked environments). She answers out loud and drives the interface as she speaks: cards, articles, galleries, orbits, her own colours — and the shell itself (see below). |
-| **Sophia** | The executive neural canvas — the OS's founder-facing surface. |
-| **SamJuniorsOS** | The company desktop: agents, workstreams, decisions, spotlight. |
+| **SOFIA / SofiaUI** | **Ambient Companion & Voice Interface.** Talk to her via "Hey Sofia" or conversational text. Features holographic particle rendering, zero-latency speech pipelines, and direct OS steering. Survives tab navigation. |
+| **Sophia Canvas** | **Executive Intelligence & COO.** The spatial neural canvas visualizing company context, active workstreams, epistemic claims, and company memory. |
+| **SamJuniorsOS Desktop** | **Company Control Center.** Cockpit overview, Workflows DAG execution, AI Employees (Researcher, PM, Finance), Approvals gate queue, Decision logs, and Spotlight (`⌘K` / `Ctrl+K`). |
 
-## How SOFIA relates to the OS
+---
 
-- She **stays mounted for the whole session**, hidden (not torn down) behind
-  the other surfaces — her microphone and her voice survive tab switches.
-  She is the assistant of the OS, not of one pane.
-- **When she speaks, she takes the interface.** Wherever you were working,
-  the moment a reply starts her display becomes the visible surface again.
-- Her `ui_os` tool lets her **switch surfaces in plain words**: "show me the
-  desktop", "go to Sophia". The change arrives as a DOM event the shell
-  listens for — inside this app it switches the surface; standalone
-  (the [sofia-next](https://github.com/samjuniors/sofia-next) repo) it lands
-  nowhere.
-- While hidden, her WebGL render loop parks (mic and voice stay live), so
-  the OS surfaces get the whole machine.
+## Quickstart
 
-## The engines — chains where chains are real
+SamJuniorsOS runs out of the box with zero required external keys using built-in SQLite persistence and fallback browser speech synthesis.
 
-The speech services are chains walked automatically when a link fails,
-per phrase for STT (Deepgram → ElevenLabs → z-ai → local → the browser's own
-recogniser), per sentence for TTS (ElevenLabs → z-ai neural → local → the
-system voice).
+### 1. Prerequisites
+- **Node.js** v20+ or **Bun** v1.1+
+- Windows, macOS, or Linux
 
-The **LLM is deliberately not a chain**. R1 (honesty/consolidation) removed
-the z-ai → Gemini → local ladder: it was only ever walked by a dead tool
-loop (`src/lib/server/brain.ts`, zero importers — now deleted), while the
-real conversation path talks to the pre-provisioned z-ai SDK directly. One
-link, honestly reported — `/api/sofia/health` says exactly that.
+### 2. Installation & Database Sync
 
-**Zero-key start:** she runs with nothing configured — z-ai brain, z-ai
-neural voices, browser speech recognition. Add keys to move up the speech
-chains: copy `.env.example` to `.env.local` and fill what you want. Blank =
-that link is off, honestly reported in the settings ENGINES fold and
-`/api/sofia/health`.
+```bash
+# Clone the repository
+git clone https://github.com/samjuniors/SamjuniorsOS.git
+cd SamjuniorsOS
 
-## Governance (what every surface shares)
+# Install dependencies
+npm install
+# (or: bun install)
 
-- **One execution authority** — tool calls that change anything run through
-  the `SideEffectAuthorizationGate`: default-deny, payload-bound,
-  occurrence-bound approval, canonical idempotency, forced audit. The two
-  directive engines — the multi-agent orchestrator (immediate directives)
-  and the workflow runtime (scheduled directives) — share one authority
-  stack: the same agent executor (one server-side provider), the same gate,
-  the same run store and audit trail. The realtime surface's direct tools
-  (image generation, live web search) go through the same gate (R0/R2).
-- **One founder identity** — server-validated sessions
-  (`POST /api/auth/founder-session`, HttpOnly cookies; header pairs for API
-  clients). Production fails closed when the secret is unset (R0/R0.1).
-- **Honest degraded paths** — when the model is unavailable, surfaces say
-  so; nothing fabricates figures, approvals, inspections, or search
-  results (R1).
+# Initialize local SQLite database
+npm run db:push
+# (or: bun run db:push)
+```
 
-## Setup
+### 3. Environment Configuration
 
-See **[docs/SETUP.md](docs/SETUP.md)** — zero-key quick start, speech
-provider keys, verification workflow and a troubleshooting table.
+Copy the example environment file:
 
-## Merging the speech resilience layer into another project
+```bash
+cp .env.example .env.local
+```
 
-See **[docs/MERGE_PROMPT.md](docs/MERGE_PROMPT.md)** — a self-contained
-paste-ready prompt that specifies the speech resilience layer (chains,
-breakers, status surface, acceptance tests) for any agent working in any
-stack. (Its LLM-chain sections predate R1; this repo's brain is a single
-z-ai link — see above.)
+Configure any desired API keys in `.env.local` (see [Environment Variables](#environment-variables) below).
 
-## Credits
+### 4. Running the Development Server
 
-Built on [adewaskar/jarvis](https://github.com/adewaskar/jarvis). Voice
- genders measured by FFT, not guessed. The plasma orb was retired in favour
- of the hologram with thanks for its service.
+```bash
+# Start Next.js development server
+npm run dev
+# (or: bun run dev)
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### 5. Running the Live Companion WebSocket Gateway (Optional)
+
+For real-time low-latency bidirectional voice and companion streaming:
+
+```bash
+npm run dev:ws
+# (or: bun run dev:ws)
+```
+Default gateway port: `3001` (configurable via `LIVE_WS_PORT`).
+
+---
+
+## Environment Variables
+
+See [`.env.example`](.env.example) for the complete annotated configuration. Key options include:
+
+### Core & Database
+- `DATABASE_URL`: Database connection string (`file:./db/custom.db` for SQLite).
+- `APP_URL`: Base application URL (`http://localhost:3000`).
+
+### Authentication & Governance
+- `SAMJUNIORS_DEV_SECRET`: Server-side secret for Founder session validation.
+- `CRON_TRIGGER_SECRET`: Machine credential for automated scheduler heartbeat ticks.
+
+### Multimodal Brain & Speech Chains
+- `GEMINI_API_KEY`: Google Gemini API key for multimodal reasoning, live vision, and audio turns.
+- `DEEPGRAM_API_KEY`: High-fidelity real-time transcription (Nova-3).
+- `ELEVENLABS_API_KEY`: Neural speech synthesis and Scribe transcription.
+- `SOFIA_VOICE_ID`: Custom voice ID for ElevenLabs synthesis.
+- `SOPHIA_BRAIN_MODE`: Brain selection (`auto` | `gemini` | `ollama` | `lmstudio`).
+- `OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL`: Local self-hosted LLM endpoints.
+
+### Integrations
+- `COMPOSIO_API_KEY`: Multi-agent SaaS and developer tool integration.
+- `GITHUB_REPOSITORY`: Target GitHub repository for repo tools.
+- `RESEND_API_KEY`: Transactional founder notifications and email drafts.
+
+---
+
+## Core Architectural Invariants
+
+1. **Deterministic vs. LLM Ownership:**  
+   Security authorizations, cryptographic SHA-256 approval binding, idempotency, state transitions, and database mutations are strictly deterministic. Probabilistic models draft and reason, but never bypass policy gates.
+2. **SideEffectAuthorizationGate:**  
+   All external side effects (tool execution, financial mutations, external communications) require immutable audit logging and explicit Founder approval where policy dictates.
+3. **Fail-Closed Security:**  
+   In production, all executive and orchestration routes fail closed (401) if secrets are unprovisioned or untrusted headers are supplied.
+4. **Single Brain, Multiple Surfaces:**  
+   SOFIA voice, Sophia Canvas, and SamJuniorsOS Desktop all interact with the exact same authoritative company database, memory stores, and workflow engine.
+
+---
+
+## Available Scripts
+
+| Script | Command | Purpose |
+|---|---|---|
+| `dev` | `npm run dev` | Runs the full Next.js development server on port 3000. |
+| `dev:ws` | `npm run dev:ws` | Runs the live companion WebSocket server on port 3001. |
+| `build` | `npm run build` | Generates Prisma client, builds Next.js production bundle, and copies standalone assets. |
+| `start` | `npm run start` | Boots standalone production server. |
+| `db:push` | `npm run db:push` | Pushes Prisma schema changes directly to SQLite database. |
+| `db:generate`| `npm run db:generate` | Regenerates Prisma TypeScript client. |
+| `lint` | `npm run lint` | Runs ESLint verification across the repository. |
+
+---
+
+## Documentation
+
+- **[`AGENTS.md`](AGENTS.md)** — Canonical engineering guardrails, architecture rules, and source of truth.
+- **[`docs/SETUP.md`](docs/SETUP.md)** — In-depth setup guide, speech provider configuration, and troubleshooting.
+- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records (ADRs) and subsystem specs.
+
+---
+
+## License
+
+Private & Confidential — © SamJuniors. All rights reserved.

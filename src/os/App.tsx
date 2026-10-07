@@ -8,7 +8,6 @@ import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
 import VoicePresence from "./components/voice/VoicePresence";
-import { BootScreen } from "./components/os/BootScreen";
 import { os } from "./lib/osStore";
 import { syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
@@ -36,7 +35,6 @@ export default function App() {
   // contract: she is the interface); the SamJuniorsOS desktop is one
   // switch away and stays fully functional.
   const [tab, setTab] = useState<Tab>("sophia");
-  const [isBooting, setIsBooting] = useState(true);
   const router = useRouter();
 
   // Apply persisted OS state after mount (hydration-safe: SSR and the first
@@ -47,10 +45,6 @@ export default function App() {
     os.rehydrate();
     syncFromServer().catch(() => { /* runtime logs the honest failure */ });
   }, []);
-
-  if (isBooting) {
-    return <BootScreen onComplete={() => setIsBooting(false)} />;
-  }
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">

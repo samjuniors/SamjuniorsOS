@@ -37,7 +37,7 @@ export const ZAI_VOICE_IDS = new Set(ZAI_VOICES.map((v) => v.id))
 export const DEFAULT_ZAI_VOICE = 'tongtong'
 
 /** The ElevenLabs voice the tts route uses when a key exists. */
-export const ELEVEN_VOICE_ID = process.env.SOFIA_VOICE_ID ?? process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
+export const ELEVEN_VOICE_ID = process.env.SOFIA_VOICE_ID ?? process.env.JARVIS_VOICE_ID ?? 'bMxLr8fP6hzNRRi9nJxU'
 
 /** Which engine the health route should advertise first. */
 export function ttsEngineChoice(): 'elevenlabs' | 'zai' | 'local' {
