@@ -1,17 +1,20 @@
 /*
- * Sophia surface styles — ported from SofiaUI @ commit 9e88dee:
+ * SofiaUI surface styles — one-way reference port @ commit 9e88dee:
  *   src/styles.css (the live stylesheet; src/sophia.css in SofiaUI is legacy
- *   and was never ported).
- * The SofiaUI repository remains independent; one-way reference port.
+ *   and unreferenced — not ported, exactly as in the source repo).
+ * The SofiaUI repository remains independent.
  *
- * Adaptations for the SamJuniorsOS home:
- *   - SofiaUI's Tailwind @theme tokens are NOT global here (this app has its
- *     own theme); instead the surface scope carries the font and the ported
- *     component classes are namespaced under `.sofia-scope` so they cannot
- *     collide with the OS chrome.
+ * This is the FULL stylesheet, scoped for the SamJuniorsOS home:
+ *   - SofiaUI's `@import "tailwindcss"` and page-level body rules are not
+ *     duplicated (this app has its own Tailwind entry); every component
+ *     class is namespaced under `.sofia-scope` so it cannot collide with
+ *     the OS chrome. Rule bodies are byte-identical to the source.
+ *   - SofiaUI's Tailwind `@theme` tokens are not consumed as utilities by
+ *     the ported components (verified: only `font-sophia`, covered by the
+ *     scope font below), so they are not redeclared globally.
  *   - `.sofia-scope` / `.sofia-scope-hidden` keep the shell's mount-hidden
- *     contract from the previous SOFIA surface (always mounted, display:none
- *     behind other tabs, so her microphone and voice survive tab switches).
+ *     contract (always mounted, display:none behind other tabs, so her
+ *     microphone and voice survive tab switches).
  *   - Inter loads from Google Fonts exactly as SofiaUI's __root does.
  */
 
@@ -28,13 +31,38 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
 }
 .sofia-scope-hidden {
   display: none;
 }
+/* SofiaUI's --font-sophia token + body font rules, carried by the scope */
+.sofia-scope,
+.sofia-scope .font-sophia {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
 .sofia-scope ::selection {
   background: rgba(56, 189, 248, 0.28);
   color: #ffffff;
+}
+
+/* SofiaUI @layer base, scoped */
+.sofia-scope button:not(:disabled),
+.sofia-scope [role='button']:not(:disabled) {
+  cursor: pointer;
+}
+.sofia-scope h1,
+.sofia-scope h2,
+.sofia-scope h3,
+.sofia-scope h4 {
+  text-wrap: balance;
+}
+.sofia-scope p {
+  text-wrap: pretty;
+}
+
+.sofia-scope .tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Glass panel with hairline specular highlight and deep optical shadow */
@@ -77,7 +105,7 @@
 }
 .sofia-scope .dock-btn:focus-visible {
   outline: 2px solid rgba(125, 211, 252, 0.7);
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
 
 /* the small luminous rule above "I'm Sophia." */
@@ -96,7 +124,73 @@
   40% { transform: scaleX(1.35); opacity: 1; }
   100% { transform: scaleX(1); opacity: 1; }
 }
+.sofia-scope .dock-btn:hover {
+  border: none;
+  color: rgba(255, 255, 255, 0.98);
+  background: transparent;
+  filter: drop-shadow(0 0 8px rgba(125, 211, 252, 0.65));
+}
+.sofia-scope .dock-btn:focus-visible {
+  outline: 2px solid rgba(125, 211, 252, 0.7);
+  outline-offset: 4px;
+}
 
+/* mic: pure icon, luminous on active/hover — no circular frame or ring outline */
+.sofia-scope .mic-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  transition: color 0.3s, filter 0.3s, transform 0.2s;
+}
+.sofia-scope .mic-ring:hover {
+  color: #ffffff;
+  filter: drop-shadow(0 0 10px rgba(56, 182, 255, 0.75));
+}
+.sofia-scope .mic-ring.mic-on {
+  color: #93c5fd;
+  filter: drop-shadow(0 0 10px rgba(56, 182, 255, 0.9)) drop-shadow(0 0 20px rgba(148, 102, 255, 0.6));
+}
+.sofia-scope .mic-ring.mic-off {
+  color: rgba(255, 255, 255, 0.72);
+}
+.sofia-scope .mic-ring.mic-off:hover {
+  color: #fff;
+  filter: drop-shadow(0 0 10px rgba(56, 182, 255, 0.7));
+}
+.sofia-scope .mic-ring.mic-paused {
+  color: #fbbf24;
+  filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.45));
+}
+.sofia-scope .mic-glyph {
+  display: grid;
+  place-items: center;
+  transition: opacity 300ms cubic-bezier(0.2, 0, 0, 1), transform 300ms cubic-bezier(0.2, 0, 0, 1), filter 300ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sofia-scope .mic-pulse {
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  animation: micpulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes micpulse {
+  0% { transform: scale(0.72); opacity: 0.7; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+@keyframes micglowpulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(56, 182, 255, 0.7)) drop-shadow(0 0 14px rgba(148, 102, 255, 0.4));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(56, 182, 255, 1)) drop-shadow(0 0 24px rgba(148, 102, 255, 0.75));
+    transform: scale(1.06);
+  }
+}
 /* ------------------------ paused desaturation ------------------------ */
 .sofia-scope .sophia-paused .identity-hud,
 .sofia-scope .sophia-paused .status-cluster,
@@ -124,7 +218,107 @@
   }
 }
 
-/* ---------------------------- panels in ------------------------------ */
+/* health dot: urgent but not seizure-y (~1.1Hz, well under 3Hz) */
+.sofia-scope .status-alert {
+  animation: statusalert 0.9s ease-in-out infinite;
+}
+@keyframes statusalert {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+/* mic disabled while paused */
+.sofia-scope .mic-ring.mic-disabled {
+  cursor: not-allowed;
+  color: rgba(255, 255, 255, 0.32);
+}
+.sofia-scope .mic-ring.mic-disabled::before {
+  opacity: 0.15;
+  animation: none;
+}
+.sofia-scope .mic-ring.mic-disabled::after {
+  opacity: 0.1;
+  animation: none;
+}
+
+/* mic error: missing key or backend down */
+.sofia-scope .mic-ring.mic-error {
+  border-color: rgba(244, 63, 94, 0.45);
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.28);
+}
+.sofia-scope .mic-ring.mic-error::before {
+  background: conic-gradient(
+    from 180deg,
+    rgba(244, 63, 94, 0.15) 0%,
+    rgba(244, 63, 94, 0.85) 50%,
+    rgba(244, 63, 94, 0.15) 100%
+  );
+  opacity: 0.7;
+}
+.sofia-scope .mic-ring.mic-error::after {
+  background: radial-gradient(closest-side, rgba(244, 63, 94, 0.25), transparent 75%);
+  opacity: 0.7;
+}
+
+/* ------------------------- bottom-centre orb dock ------------------------- */
+
+.sofia-scope .orb-dock {
+  width: 168px;
+  height: 118px;
+}
+.sofia-scope .orb-dock-glow {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  width: 120px;
+  height: 34px;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(56, 140, 255, 0.28), rgba(80, 80, 255, 0.10) 55%, transparent 78%);
+  filter: blur(6px);
+  animation: dockglow 4.2s ease-in-out infinite;
+}
+@keyframes dockglow {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: translateX(-50%) scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1.08);
+  }
+}
+.sofia-scope .orb-dock-base {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  width: 96px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(120, 190, 255, 0.55) 30%, rgba(190, 230, 255, 0.8) 50%, rgba(120, 190, 255, 0.55) 70%, transparent);
+  box-shadow: 0 0 12px rgba(80, 170, 255, 0.55);
+}
+.sofia-scope .orb-dock-label {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  margin: 0;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 8px;
+  font-weight: 300;
+  letter-spacing: 0.32em;
+  color: rgba(160, 190, 255, 0.45);
+  white-space: nowrap;
+}
 
 .sofia-scope .panel-in {
   animation: panelin 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -141,6 +335,7 @@
 .sofia-scope .panel-in-center {
   transform-origin: center bottom;
 }
+
 @keyframes panelin {
   from {
     opacity: 0;
@@ -152,12 +347,65 @@
   }
 }
 
-.sofia-scope .chat-scroll::-webkit-scrollbar {
+.sofia-scope .chat-scroll::-webkit-scrollbar,
+.sofia-scope .terminal-scroll::-webkit-scrollbar {
   width: 4px;
 }
-.sofia-scope .chat-scroll::-webkit-scrollbar-thumb {
+.sofia-scope .chat-scroll::-webkit-scrollbar-thumb,
+.sofia-scope .terminal-scroll::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 4px;
+}
+.sofia-scope .terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ------------------------- precision hardware fader sliders ------------------------- */
+
+.sofia-scope .sophia-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sofia-scope .sophia-range:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.sofia-scope .sophia-range:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.7);
+  outline-offset: 3px;
+}
+.sofia-scope .sophia-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #f0f7ff;
+  border: 1.5px solid #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.65), 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.15s ease;
+}
+.sofia-scope .sophia-range::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
+}
+.sofia-scope .sophia-range::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #f0f7ff;
+  border: 1.5px solid #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.65), 0 1px 3px rgba(0, 0, 0, 0.6);
+  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.15s ease;
+}
+.sofia-scope .sophia-range::-moz-range-thumb:hover {
+  transform: scale(1.18);
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.9), 0 2px 6px rgba(0, 0, 0, 0.8);
 }
 
 /* insurance: only used if WebGL2 is unavailable — a still, luminous sphere */
@@ -208,16 +456,20 @@
   50% { opacity: 1; transform: scaleX(1.2); }
   100% { opacity: 0.2; transform: scaleX(0.4); }
 }
-
-/* --------------------------- reduced motion -------------------------- */
+.sofia-scope .boot-hint {
+  min-height: 1.6em;
+}
 
 @media (prefers-reduced-motion: reduce) {
+  .sofia-scope .mic-ring::before,
+  .sofia-scope .mic-ring::after,
   .sofia-scope .sophia-fallback,
   .sofia-scope .status-breathe,
   .sofia-scope .panel-in,
   .sofia-scope .identity-rule-done,
   .sofia-scope .boot-mark,
-  .sofia-scope .boot-scan {
+  .sofia-scope .boot-scan,
+  .sofia-scope .mic-pulse {
     animation: none !important;
   }
 }

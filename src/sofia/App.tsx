@@ -1,59 +1,50 @@
 'use client';
 
 /**
- * Sophia — the SofiaUI surface for SamJuniorsOS.
+ * SamJuniors OS — Sophia.
+ * An operating environment, not a page: the substance is the interface.
  *
- * Ported/adapted from SofiaUI @ commit 9e88dee: src/App.tsx
- * The SofiaUI repository remains independent; one-way reference port.
- *
- * The surface composition is SofiaUI's: full-screen WebGL2 particle Sophia,
- * the Brand/Identity chrome, the bottom-right Dock (chat + session mic),
- * the bottom-left SofiaStatusPill, the BootScreen entry overlay and the
- * mic-permission modal — mounted inside the shell's `.sofia-scope` wrapper
- * (always mounted, hidden behind other tabs so her microphone and voice
- * survive tab switches).
- *
- * The FLOW is the destination's, unchanged (this is the "merge with the
- * current flow" contract):
- *   - voice: liveBridge.toggleVoice / startPtt / stopPtt + voiceRuntime
- *     (ws-ticket → gateway :3001 → STT → executeSophiaTurn → /api/sofia/tts
- *     playback) — the same seams the OS tray, ribbon and widget use;
- *   - interruption: voiceRuntime.interrupt() (playback cut + server
- *     cancel), Escape or the orb;
- *   - text turns: the canonical /api/sofia/ask SSE path (client-minted
- *     turnId, server-threaded conversationId, server-side directive
- *     execution), with the OS fast path (os.localCommand) first;
- *   - visual state: the shared SofiaState machine (src/sofia/engine)
- *     driven by the transport status — the exact mapping the
- *     voice-presence widget uses — plus text-turn events.
- *
- * Not ported from SofiaUI (documented deltas): the screen-vision and
- * browser dock buttons and their tools, SettingsSheet/Terminal/
- * DiagnosticsModal/BrowserPanel/DynamicContentModal (SofiaUI's own
- * surfaces with server dependencies this flow does not carry), wake-word
- * spotting, SofiaUI's provider stack, the ScoreEngine music kit, and
- * spoken replies for TYPED turns (text replies arrive as text + visuals;
- * only voice turns speak — the destination's runtime owns spoken output).
+ * SofiaUI one-way reference port @ commit 9e88dee: src/App.tsx — kept
+ * byte-identical to the source repo except for the three documented
+ * SamJuniorsOS tab-integration seams below (the SofiaUI repository
+ * remains independent):
+ *   1. 'use client' — Next.js client-component directive (this App is
+ *      mounted inside the OS shell via next/dynamic ssr:false).
+ *   2. `active` prop — the shell keeps the surface mounted-but-hidden
+ *      behind other tabs so her microphone and voice survive; when the
+ *      surface is hidden, the window-level keyboard map stands down so
+ *      it never steals keys from the OS desktop.
+ *   3. Server seams: every /api/sophia/* endpoint the client calls is
+ *      served by this repo's adapter routes, which delegate to the
+ *      canonical flow (executeSophiaTurn brain, the z-ai/ElevenLabs TTS
+ *      ladder, the destination's image/search/browse services).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic } from 'lucide-react';
-import { stageLayout, STAGE_CY_SOFIAUI, type StageLayout } from '@/sofia/engine/layout';
-import type { SophiaStateName } from '@/sofia/engine/types';
-import { Brand, Dock, Identity } from '@/sofia/ui/Hud';
-import { SofiaStatusPill } from '@/sofia/ui/SofiaStatusPill';
-import { ChatPanel } from '@/sofia/ui/ChatPanel';
-import { BootScreen } from '@/sofia/ui/BootScreen';
-import { ask } from '@/sofia/lib/ask';
-import type { SurfaceTurn } from '@/sofia/types';
-import { useVoicePresence } from '@/os/components/voice/useVoicePresence';
-import { VoicePermissionModal, probeMicPermission, type MicProbeResult } from '@/os/components/voice/VoicePermissionModal';
-import { os } from '@/os/lib/osStore';
-import { liveBridge } from '@/os/lib/liveCompanionBridge';
-import { osSound } from '@/os/lib/osAudio';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { dockLayout, stageLayout, type StageLayout } from './sophia/layout';
+import { getSophiaOS, type OSStatus } from './sophia/SophiaOS';
+import type { SophiaStateName } from './sophia/types';
+import { ChatPanel } from './ui/ChatPanel';
+import { Brand, Dock, Identity, OrbDock, SofiaStatusPill, StatusCluster } from './ui/Hud';
+import { BootScreen } from './ui/BootScreen';
+import { BrowserPanel } from './ui/BrowserPanel';
+import { DiagnosticsModal } from './ui/DiagnosticsModal';
+import { MicPermissionModal } from './ui/MicPermissionModal';
+import { SettingsSheet } from './ui/SettingsSheet';
+import { Terminal } from './ui/Terminal';
+import { controlLayer } from './sophia/control';
+import { navigateBrowserTo } from './lib/browser-bridge';
+import { ToolStatusBadge } from './ui/ToolStatusBadge';
+import { scoreEngine } from './sophia/audio/ScoreEngine';
+import { DynamicContentModal, type InfoPanelType } from './ui/DynamicContentModal';
+import { backgroundKeepAlive } from './core/BackgroundKeepAlive';
 
-/** Screen-reader announcements per state (SofiaUI App.tsx strings). */
-const SURFACE_ANNOUNCE: Record<SophiaStateName, string> = {
+function isTyping(): boolean {
+  const el = document.activeElement;
+  return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+}
+
+const STATE_ANNOUNCE: Record<SophiaStateName, string> = {
   idle: 'Sophia is here. Calm and stable presence.',
   listening: 'Sophia is listening. Receiving your voice.',
   thinking: 'Sophia is thinking. Reorganizing information.',
@@ -69,390 +60,415 @@ const SURFACE_ANNOUNCE: Record<SophiaStateName, string> = {
   transforming: 'Sophia is transforming.',
 };
 
-function isTyping(): boolean {
-  const el = document.activeElement;
-  return (
-    el instanceof HTMLInputElement ||
-    el instanceof HTMLTextAreaElement ||
-    (el instanceof HTMLElement && el.isContentEditable)
-  );
-}
-
-export default function SofiaSurface({ active = true }: { active?: boolean }) {
+export default function App({ active = true }: { active?: boolean }) {
+  const os = useMemo(() => getSophiaOS(), []);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
-
-  const v = useVoicePresence(canvasRef, {
-    stageCyRatio: STAGE_CY_SOFIAUI,
-    parkWhenHidden: true,
-    announce: SURFACE_ANNOUNCE,
-  });
-
-  const [booted, setBooted] = useState(false);
+  const [state, setState] = useState<SophiaStateName>(os.state.current);
+  const [status, setStatus] = useState<OSStatus>(os.status);
   const [chatOpen, setChatOpen] = useState(false);
-  const [permModalOpen, setPermModalOpen] = useState(false);
-  const [layout, setLayout] = useState<StageLayout>(() => stageLayout(1280, 800));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [infoCardOpen, setInfoCardOpen] = useState(false);
+  const [infoCardData, setInfoCardData] = useState<{ title: string; content: string; type: InfoPanelType }>({
+    title: 'Information Review',
+    content: '',
+    type: 'info',
+  });
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [micModalOpen, setMicModalOpen] = useState(false);
+  const [glFailed, setGlFailed] = useState(false);
+  const [booted, setBooted] = useState(false);
+  const [layout, setLayout] = useState<StageLayout>(() => stageLayout(window.innerWidth, window.innerHeight));
 
-  /* ------------------------------------------------------- conversation */
-  const [turns, setTurns] = useState<SurfaceTurn[]>([]);
-  const [busy, setBusy] = useState(false);
-  const idRef = useRef(0);
-  const nextId = () => `t${++idRef.current}`;
-  const streamIdRef = useRef<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const cadenceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const prevLiveTurnRef = useRef<{ finalText: string; lastReply: string } | null>(null);
+  const docked = browserOpen || infoCardOpen;
+  const paused = state === 'paused';
 
-  const pushTurn = useCallback((turn: SurfaceTurn) => {
-    setTurns((list) => [...list, turn]);
-  }, []);
-
-  const patchTurn = useCallback((id: string, patch: Partial<SurfaceTurn>) => {
-    setTurns((list) => list.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  }, []);
-
-  /** The visual machine's post-turn cadence (SofiaOS: completed → calm). */
-  const settleCadence = useCallback(() => {
-    if (cadenceRef.current) clearTimeout(cadenceRef.current);
-    cadenceRef.current = setTimeout(() => {
-      if (v.isVisualState('completed')) v.standDownVisual('post-turn-quiet');
-    }, 1700);
-  }, [v]);
-
-  /** Submit one text turn through the canonical flow. */
-  const submit = useCallback(
-    async (text: string) => {
-      const clean = text.trim();
-      if (!clean || busy) return;
-
-      pushTurn({ id: nextId(), role: 'user', text: clean, final: true, ts: Date.now() });
-
-      // OS fast path — local founder records (decisions, focus, notes).
-      const local = os.localCommand(clean);
-      if (local !== null) {
-        pushTurn({ id: nextId(), role: 'sophia', text: local, final: true, ts: Date.now() });
-        os.setLastSaid(local);
-        return;
-      }
-
-      const id = nextId();
-      streamIdRef.current = id;
-      pushTurn({ id, role: 'sophia', text: '', final: false, ts: Date.now() });
-      setBusy(true);
-      os.setSophia('thinking');
-      v.driveEvent('thinking');
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        const res = await ask(
-          clean,
-          {
-            onText: (delta) => {
-              setTurns((list) =>
-                list.map((t) => (t.id === streamIdRef.current ? { ...t, text: t.text + delta } : t)),
-              );
-            },
-          },
-          controller.signal,
-        );
-        const text2 = res.text || '(no reply)';
-        patchTurn(id, { text: text2, final: true });
-        os.setLastSaid(text2);
-        v.driveEvent('response_finished');
-        settleCadence();
-      } catch (err) {
-        const aborted = err instanceof DOMException && err.name === 'AbortError';
-        if (aborted) {
-          setTurns((list) =>
-            list.map((t) => (t.id === id ? { ...t, text: t.text ? `${t.text} (interrupted)` : '(interrupted)', final: true } : t)),
-          );
-        } else {
-          const msg = err instanceof Error ? err.message : String(err);
-          os.log(`Execution failed: ${msg}`);
-          patchTurn(id, {
-            text: `That failed on the server — nothing was simulated locally. ${msg}`,
-            final: true,
-          });
-        }
-        v.standDownVisual('text-turn-ended');
-      } finally {
-        os.setSophia('idle');
-        setBusy(false);
-        abortRef.current = null;
-        streamIdRef.current = null;
-      }
-    },
-    [busy, patchTurn, pushTurn, settleCadence, v],
-  );
-
-  /* Voice turns land in the same conversation view (SofiaUI parity: one
-     history). The transport owns the audio; the surface only mirrors the
-     committed transcript and reply as chat turns. */
   useEffect(() => {
-    const live = v.live;
-    const prev = prevLiveTurnRef.current;
-    prevLiveTurnRef.current = { finalText: live.finalText, lastReply: live.lastReply };
-    if (!prev) return; // first run after mount — no replay
-    if (live.finalText && live.finalText !== prev.finalText) {
-      pushTurn({ id: nextId(), role: 'user', text: live.finalText, final: true, ts: Date.now() });
-    }
-    if (live.lastReply && live.lastReply !== prev.lastReply) {
-      pushTurn({ id: nextId(), role: 'sophia', text: live.lastReply, final: true, ts: Date.now() });
-    }
-  }, [v.live, pushTurn]);
+    backgroundKeepAlive.start();
+    return () => backgroundKeepAlive.stop();
+  }, []);
 
-  /* ------------------------------------------------------------ layout */
+  useEffect(() => {
+    os.setDocked(docked);
+  }, [docked, os]);
+
+  useEffect(() => {
+    const onBrowserCmd = (e: Event) => {
+      const open = Boolean((e as CustomEvent).detail?.open);
+      setBrowserOpen(open);
+    };
+    controlLayer.addEventListener('command:browser', onBrowserCmd);
+
+    const onInfoCardCmd = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        open?: boolean;
+        title?: string;
+        content?: string;
+        type?: InfoPanelType;
+      };
+      if (detail.open !== false) {
+        setInfoCardData({
+          title: detail.title || 'Information Review',
+          content: detail.content || '',
+          type: detail.type || 'info',
+        });
+        setInfoCardOpen(true);
+      } else {
+        setInfoCardOpen(false);
+      }
+    };
+    controlLayer.addEventListener('command:info_card', onInfoCardCmd);
+
+    // Voice-driven panel control (control_ui tool)
+    const onUiCmd = (e: Event) => {
+      const { target, action } = (e as CustomEvent).detail as { target: string; action: string };
+      const open = action === 'open';
+      const close = action === 'close';
+      const toggle = action === 'toggle' || action === 'minimize';
+
+      const apply = (setter: Dispatch<SetStateAction<boolean>>) => {
+        if (toggle) setter((v) => !v);
+        else if (open) setter(true);
+        else if (close) setter(false);
+      };
+
+      if (target === 'browser') apply(setBrowserOpen);
+      else if (target === 'chat') apply(setChatOpen);
+      else if (target === 'settings') apply(setSettingsOpen);
+      else if (target === 'diagnostics') apply(setDiagnosticsOpen);
+      else if (target === 'terminal') apply(setTerminalOpen);
+      else if (target === 'info_card') apply(setInfoCardOpen);
+      else if (target === 'all' && (close || toggle)) {
+        setBrowserOpen(false);
+        setChatOpen(false);
+        setSettingsOpen(false);
+        setDiagnosticsOpen(false);
+        setTerminalOpen(false);
+        setInfoCardOpen(false);
+      }
+    };
+    controlLayer.addEventListener('command:ui', onUiCmd);
+
+    // Music commands
+    const onMusicCmd = (e: Event) => {
+      const { action } = (e as CustomEvent).detail as { action: string };
+      if (action === 'play' || action === 'resume') {
+        os.audio.unlockAudio().then(() => {
+          // scoreEngine is available via os internally
+          os.dispatchEvent(new CustomEvent('music:play'));
+        }).catch(() => undefined);
+      } else if (action === 'stop' || action === 'pause') {
+        os.dispatchEvent(new CustomEvent('music:stop'));
+      }
+    };
+    controlLayer.addEventListener('command:music', onMusicCmd);
+
+    // Rendering state when image generation starts (from GeminiLiveProvider tool_call)
+    const onImageGen = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.url) {
+        // Image complete — show in chat
+        setChatOpen(true);
+      }
+    };
+    controlLayer.addEventListener('image:generated', onImageGen);
+
+    // Web navigation commands (web_search, open_url, play_music)
+    const onNavCmd = (e: Event) => {
+      const { url, query, title } = (e as CustomEvent).detail as { url?: string; query?: string; title?: string };
+      const target = url || (query ? `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}` : '');
+      if (target) {
+        setBrowserOpen(true);
+        navigateBrowserTo(target, title);
+      }
+    };
+    controlLayer.addEventListener('command:navigate', onNavCmd);
+
+    // Volume control command
+    const onVolCmd = (e: Event) => {
+      const { level } = (e as CustomEvent).detail as { level?: number };
+      if (typeof level === 'number') {
+        scoreEngine.setMasterVolume(level / 100);
+      }
+    };
+    controlLayer.addEventListener('command:volume', onVolCmd);
+
+    return () => {
+      controlLayer.removeEventListener('command:browser', onBrowserCmd);
+      controlLayer.removeEventListener('command:info_card', onInfoCardCmd);
+      controlLayer.removeEventListener('command:ui', onUiCmd);
+      controlLayer.removeEventListener('command:music', onMusicCmd);
+      controlLayer.removeEventListener('image:generated', onImageGen);
+      controlLayer.removeEventListener('command:navigate', onNavCmd);
+      controlLayer.removeEventListener('command:volume', onVolCmd);
+    };
+  }, [os]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (canvas) os.attach(canvas);
+    const onState = (e: Event) => setState((e as CustomEvent).detail.state);
+    const onStatus = (e: Event) => setStatus((e as CustomEvent).detail);
+    const onMicStatus = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.status === 'denied') {
+        setMicModalOpen(true);
+      }
+    };
+    const onFail = () => setGlFailed(true);
+    const onEntered = () => setBooted(true);
+
+    os.addEventListener('state', onState);
+    os.addEventListener('status', onStatus);
+    os.addEventListener('mic-status', onMicStatus);
+    os.addEventListener('renderer-failed', onFail);
+    os.addEventListener('entered', onEntered);
+
     const measure = () => {
       const w = canvas?.clientWidth || window.innerWidth;
       const h = canvas?.clientHeight || window.innerHeight;
       setLayout(stageLayout(w, h));
+      const r = micRef.current?.getBoundingClientRect();
+      os.setFocusPoint(r ? r.left + r.width / 2 : w * 0.92, r ? r.top + r.height / 2 : h * 0.92, w, h);
     };
     measure();
     const ro = canvas ? new ResizeObserver(measure) : null;
-    if (canvas && ro) ro.observe(canvas);
+    if (canvas) ro!.observe(canvas);
     window.addEventListener('resize', measure);
     return () => {
       ro?.disconnect();
       window.removeEventListener('resize', measure);
+      os.removeEventListener('state', onState);
+      os.removeEventListener('status', onStatus);
+      os.removeEventListener('mic-status', onMicStatus);
+      os.removeEventListener('renderer-failed', onFail);
+      os.removeEventListener('entered', onEntered);
+      os.detach();
     };
-  }, []);
+  }, [os]);
 
-  useEffect(() => () => {
-    if (cadenceRef.current) clearTimeout(cadenceRef.current);
-    abortRef.current?.abort();
-  }, []);
-
-  /* ------------------------------------------------------- interactions */
-
-  /** Session mic: same seam as the OS tray, the ribbon and the widget.
-   *  Permission gating mirrors the widget: a denied mic opens the
-   *  destination's permission modal instead of toggling. */
-  const handleMic = useCallback(() => {
-    if (v.micDenied) {
-      setPermModalOpen(true);
-      return;
-    }
-    void v.onMicToggle();
-  }, [v]);
-
-  const handleMicFromBoot = useCallback(() => {
-    setBooted(true);
-    if (v.micDenied) {
-      setPermModalOpen(true);
-      return;
-    }
-    void v.onMicToggle(true);
-  }, [v]);
-
-  const handleEnterText = useCallback(() => {
-    setBooted(true);
-    setChatOpen(true);
-  }, []);
-
-  const handlePermGranted = useCallback(() => {
-    setPermModalOpen(false);
-    void v.onMicToggle(true);
-  }, [v]);
-
-  const handlePermRetry = useCallback(async (): Promise<MicProbeResult> => probeMicPermission(), []);
-
-  /* Keyboard (SofiaUI's map, merged with the destination's PTT contract):
-   *   Space — session OFF: start the live-voice session; session ON:
-   *           hold-to-talk (the destination's PTT seam).
-   *   M     — toggle the live-voice session.
-   *   T / /  — toggle the chat panel.
-   *   Esc    — close the permission modal → the chat → abort a text turn →
-   *           interrupt the spoken turn (the widget's Escape contract). */
   useEffect(() => {
-    if (!active) return;
-    const pttHeld = { current: false };
+    const unlock = () => {
+      void os.audio.unlockAudio();
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    window.addEventListener('touchstart', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+  }, [os]);
 
-    const onKeyDown = (e: KeyboardEvent) => {
+  const onMic = useCallback(() => {
+    void os.audio.unlockAudio();
+    if (os.rendererFailed) return;
+    if (os.audio.micStatus === 'denied') {
+      setMicModalOpen(true);
+      return;
+    }
+    if (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed')) {
+      if (os.isPaused || paused) os.resume();
+      void os.enterSession('mic-button');
+    } else {
+      os.pause();
+    }
+  }, [os, paused]);
+
+  const toggleShapePause = useCallback(() => {
+    void os.audio.unlockAudio();
+    if (os.rendererFailed) return;
+    if (os.audio.micStatus === 'denied' || os.isMicDisabledError) {
+      setMicModalOpen(true);
+      return;
+    }
+    if (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed')) {
+      if (os.isPaused || paused) os.resume();
+      void os.enterSession('mic-button');
+    } else {
+      os.pause();
+    }
+  }, [os, paused]);
+
+  useEffect(() => {
+    // Tab-integration seam: the shell keeps this surface mounted-but-hidden
+    // behind other tabs; while hidden, the keyboard map stands down so the
+    // OS desktop owns the keys. (SofiaUI itself is the whole page.)
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (permModalOpen) setPermModalOpen(false);
+        if (diagnosticsOpen) setDiagnosticsOpen(false);
+        else if (browserOpen) setBrowserOpen(false);
+        else if (settingsOpen) setSettingsOpen(false);
+        else if (terminalOpen) setTerminalOpen(false);
         else if (chatOpen) setChatOpen(false);
-        else if (busy) abortRef.current?.abort();
-        else if (v.interruptible) v.onInterrupt();
+        else if (os.state.current !== 'ambient') os.deactivate('escape');
         return;
       }
       if (isTyping()) return;
-      if (e.key === 'm' || e.key === 'M') {
+      if (e.key === 'm' || e.key === 'M' || e.key === ' ') {
         e.preventDefault();
-        handleMic();
+        onMic();
       }
-      if (e.key === ' ' || e.code === 'Space') {
+      if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
-        if (!v.live.enabled) {
-          handleMic();
-          return;
-        }
-        if (!e.repeat && !pttHeld.current) {
-          pttHeld.current = true;
-          osSound.click();
-          liveBridge.startPtt();
-        }
+        if (os.isPaused) os.resume();
+        else os.pause();
       }
       if (e.key === 't' || e.key === 'T' || e.key === '/') {
         e.preventDefault();
-        setChatOpen((o) => !o);
+        setChatOpen((v) => !v);
+      }
+      if (e.key === 'd' || e.key === 'D') {
+        e.preventDefault();
+        setDiagnosticsOpen((v) => !v);
+      }
+      if (e.key === '`' || e.key === '~') {
+        e.preventDefault();
+        setTerminalOpen((v) => !v);
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.key === ' ' || e.code === 'Space') {
-        if (pttHeld.current) {
-          e.preventDefault();
-          pttHeld.current = false;
-          osSound.click();
-          liveBridge.stopPtt();
-        }
-      }
-    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, onMic, browserOpen, chatOpen, settingsOpen, terminalOpen, diagnosticsOpen, os]);
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [active, busy, chatOpen, handleMic, permModalOpen, v]);
+  const health = glFailed ? 'error' : os.health;
 
-  /* Pointer hold-to-talk (touch parity with the ribbon). */
-  const handlePttDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    osSound.click();
-    liveBridge.startPtt();
-  };
-  const handlePttUp = (e: React.PointerEvent) => {
-    e.preventDefault();
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-    osSound.click();
-    liveBridge.stopPtt();
-  };
-
-  /* ------------------------------------------------------------ derived */
-
-  const state = v.state;
   const stageStyle = {
     left: layout.cx - layout.R,
     top: layout.cy - layout.R,
     width: layout.R * 2,
     height: layout.R * 2,
   } as const;
-
-  const listening = v.live.enabled && v.live.status === 'listening';
-
-  /* The Identity line — SofiaUI's "latest turn" for this flow: the live
-     interim transcript while listening, else the streaming text reply,
-     else the last spoken reply, else the latest chat line. */
-  const streamingText = turns.length ? turns[turns.length - 1] : null;
-  const identityLine = listening
-    ? v.live.interimText || '…'
-    : busy && streamingText?.text
-      ? streamingText.text
-      : v.live.lastReply || streamingText?.text || '';
-
-  const transport = v.live.enabled ? v.live.status : 'off';
+  const hitLayout = docked ? dockLayout(window.innerWidth, window.innerHeight) : layout;
+  const hitRadius = docked ? 40 : hitLayout.R * 1.08;
+  const shapeHitStyle = {
+    left: hitLayout.cx - hitRadius,
+    top: hitLayout.cy - hitRadius,
+    width: hitRadius * 2,
+    height: hitRadius * 2,
+  } as const;
 
   return (
     <div
-      className={`relative h-full w-full select-none overflow-hidden bg-[#04060f] text-white antialiased transition-all duration-700 ease-out`}
+      className={`font-sophia fixed inset-0 select-none overflow-hidden bg-[#04060f] text-white antialiased transition-all duration-700 ease-out ${
+        paused ? 'sophia-paused' : ''
+      }`}
     >
       <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" aria-hidden="true" />
-      {v.glFailed && <div className="sophia-fallback" style={stageStyle} aria-hidden="true" />}
+      {glFailed && <div className="sophia-fallback" style={stageStyle} aria-hidden="true" />}
 
-      {/* The substance itself is a control: interrupt while she speaks or
-          thinks (the widget's orb contract). */}
-      {!v.glFailed && (
+      {/* The substance itself is a control: click to pause, click again to resume. */}
+      {!glFailed && (
         <button
           type="button"
-          aria-label={v.interruptible ? 'Interrupt Sophia' : 'Voice presence'}
-          title={v.interruptible ? 'Interrupt Sophia (Escape)' : 'Voice presence'}
-          disabled={!v.interruptible}
-          onClick={v.onInterrupt}
-          className="absolute z-[4] rounded-full bg-transparent outline-none transition-opacity focus-visible:ring-1 focus-visible:ring-sky-300/40 disabled:cursor-default"
-          style={stageStyle}
+          aria-label={paused ? 'Resume Sophia' : 'Pause Sophia'}
+          title={paused ? 'Resume Sophia' : 'Pause Sophia'}
+          onClick={toggleShapePause}
+          className="absolute z-[4] rounded-full bg-transparent outline-none focus-visible:ring-1 focus-visible:ring-sky-300/40"
+          style={shapeHitStyle}
         />
       )}
 
       <Brand />
-      <Identity layout={layout} state={state} line={identityLine} />
+      <StatusCluster
+        health={health}
+        active={state !== 'ambient' || status === 'live'}
+        settingsOpen={settingsOpen}
+        onSettings={() => setSettingsOpen((v) => !v)}
+        onDiagnostics={() => setDiagnosticsOpen(true)}
+        os={os}
+      />
+      <Identity layout={layout} state={state} docked={docked} />
+      <OrbDock visible={docked && !glFailed} state={state} />
 
       {chatOpen && (
-        <ChatPanel
-          sessionOn={v.live.enabled}
-          liveStatus={v.live.status}
-          turns={turns}
-          busy={busy}
-          onClose={() => setChatOpen(false)}
-          onSend={(t) => void submit(t)}
+        <ChatPanel status={status} onClose={() => setChatOpen(false)} onSend={(t) => os.sendText(t)} />
+      )}
+      {!booted && (
+        <div className="absolute inset-0 z-50">
+          <BootScreen os={os} onEnter={() => setBooted(true)} />
+        </div>
+      )}
+      {booted && settingsOpen && <SettingsSheet os={os} status={status} onClose={() => setSettingsOpen(false)} />}
+      {booted && <Terminal os={os} open={terminalOpen} onToggle={() => setTerminalOpen((v) => !v)} hideButton />}
+      {browserOpen && <BrowserPanel onClose={() => setBrowserOpen(false)} />}
+      {infoCardOpen && (
+        <DynamicContentModal
+          onClose={() => setInfoCardOpen(false)}
+          initialTitle={infoCardData.title}
+          initialContent={infoCardData.content}
+          initialType={infoCardData.type}
+        />
+      )}
+      {diagnosticsOpen && <DiagnosticsModal os={os} onClose={() => setDiagnosticsOpen(false)} />}
+      {micModalOpen && (
+        <MicPermissionModal
+          os={os}
+          onClose={() => setMicModalOpen(false)}
+          onOpenChat={() => setChatOpen(true)}
         />
       )}
 
-      {!booted && (
-        <div className="absolute inset-0 z-50">
-          <BootScreen
-            onEnterVoice={handleMicFromBoot}
-            onEnterText={handleEnterText}
-            onMicHelp={() => setPermModalOpen(true)}
-          />
-        </div>
-      )}
-
-      <VoicePermissionModal
-        open={permModalOpen}
-        onRetry={handlePermRetry}
-        onGranted={handlePermGranted}
-        onClose={() => setPermModalOpen(false)}
-      />
-
-      {/* Bottom-left corner: Sofia real-time Status Pill + hold-to-talk */}
+      {/* Bottom-left corner: Sofia real-time Status Pill + Terminal console */}
       <div className="fixed bottom-[44px] left-7 z-10 flex items-center gap-2.5 transition-all duration-500 sm:bottom-[52px] sm:left-11">
         <SofiaStatusPill
           state={state}
-          micDenied={v.micDenied}
-          onClick={v.micDenied ? () => setPermModalOpen(true) : handleMic}
+          paused={paused}
+          onClick={toggleShapePause}
+          os={os}
+          onDiagnostics={() => setDiagnosticsOpen(true)}
         />
 
-        {v.live.enabled && (
+        {booted && (
           <button
             type="button"
-            onPointerDown={handlePttDown}
-            onPointerUp={handlePttUp}
-            onPointerCancel={handlePttUp}
-            title="Hold to Speak (Push-to-Talk)"
-            aria-label={listening ? 'Release to send' : 'Hold to talk'}
+            aria-label={terminalOpen ? 'Close terminal' : 'Open terminal'}
+            aria-pressed={terminalOpen}
+            onClick={() => setTerminalOpen((v) => !v)}
+            title="Terminal"
             className={`dock-btn ${
-              listening
-                ? 'border-cyan-300 bg-cyan-400 text-slate-950 shadow-[0_0_16px_rgba(34,211,238,0.7)]'
-                : ''
+              terminalOpen ? 'text-sky-300 drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]' : ''
             }`}
           >
-            <Mic size={18} strokeWidth={1.8} className={listening ? 'animate-pulse' : ''} />
+            <svg
+              width="19"
+              height="19"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="4" width="18" height="16" rx="2.5" />
+              <path d="m7 9 3 3-3 3" />
+              <path d="M13 15h4" />
+            </svg>
           </button>
         )}
       </div>
 
+      {/* Voice-first subtle Tool status badge & notification HUD */}
+      <ToolStatusBadge />
+
       <Dock
         state={state}
         micRef={micRef}
-        onMic={handleMic}
-        onChat={() => setChatOpen((o) => !o)}
+        onMic={onMic}
+        onChat={() => setChatOpen((v) => !v)}
         chatOpen={chatOpen}
-        sessionOn={v.live.enabled}
-        micDenied={v.micDenied}
-        streaming={busy}
+        paused={paused}
+        browserOpen={browserOpen}
+        onToggleBrowser={() => setBrowserOpen((v) => !v)}
       />
 
       <p className="sr-only" role="status" aria-live="polite">
-        {v.announce} Voice transport {transport}.
-        {v.live.error ? ` ${v.live.error}` : ''}
+        {STATE_ANNOUNCE[state]} Voice transport {status}. System health {health}.
       </p>
     </div>
   );

@@ -1,30 +1,8 @@
-/**
- * BootScreen — the Sophia surface entry: audio-unlock gesture + mic state.
- * Ported/adapted from SofiaUI @ commit 9e88dee: src/ui/BootScreen.tsx
- * The SofiaUI repository remains independent; one-way reference port.
- *
- * Adaptations for the SamJuniorsOS flow:
- *   - Entering voice calls the destination's live-voice session toggle
- *     (the same seam as the OS tray, the ribbon and the widget) instead of
- *     SofiaUI's own provider stack; entering text opens the chat panel.
- *   - The mic-permission badge reads the permission API here; a denied
- *     badge routes to the destination's permission modal (onMicHelp).
- *   - The footer names the destination's voice path honestly (the SofiaUI
- *     original says "Powered by Gemini Live & Neural Audio").
- */
-
 import { useEffect, useState } from 'react';
 import { Mic, MessageSquare, Sparkles, Lock } from 'lucide-react';
+import type { SophiaOS } from '../sophia/SophiaOS';
 
-export function BootScreen({
-  onEnterVoice,
-  onEnterText,
-  onMicHelp,
-}: {
-  onEnterVoice: () => void;
-  onEnterText: () => void;
-  onMicHelp: () => void;
-}) {
+export function BootScreen({ os, onEnter }: { os: SophiaOS; onEnter: () => void }) {
   const [micState, setMicState] = useState<'granted' | 'prompt' | 'denied' | 'checking'>('checking');
   const [booting, setBooting] = useState(false);
 
@@ -48,22 +26,33 @@ export function BootScreen({
       setMicState('prompt');
     }
 
+    const onEntered = () => {
+      if (!unmounted) onEnter();
+    };
+    os.addEventListener('entered', onEntered);
+
     return () => {
       unmounted = true;
+      os.removeEventListener('entered', onEntered);
     };
-  }, []);
+  }, [os, onEnter]);
 
-  const handleStartWithMic = () => {
+  const handleStartWithMic = async () => {
     setBooting(true);
+    await os.audio.unlockAudio();
     try {
-      onEnterVoice();
+      await os.enterSession('boot');
+    } catch (err) {
+      console.warn('[BootScreen] Start session note:', err);
     } finally {
-      setBooting(false);
+      onEnter();
     }
   };
 
-  const handleStartTextOnly = () => {
-    onEnterText();
+  const handleStartTextOnly = async () => {
+    await os.audio.unlockAudio();
+    void os.enterSession('chat');
+    onEnter();
   };
 
   return (
@@ -83,7 +72,7 @@ export function BootScreen({
         <p className="text-[10px] font-medium uppercase tracking-[0.42em] text-sky-300/80">
           SamJuniors OS
         </p>
-
+        
         <h1 className="mt-2 text-[clamp(32px,5vw,48px)] font-extralight tracking-[0.12em] text-white/95">
           Sophia
         </h1>
@@ -116,20 +105,20 @@ export function BootScreen({
         <div className="mt-7 w-full space-y-3">
           {micState === 'denied' ? (
             <>
-              {/* Primary option when mic is blocked in settings: Text mode */}
+              {/* Primary option when mic is blocked in settings: Text & AI Voice Mode */}
               <button
                 type="button"
                 onClick={handleStartTextOnly}
                 className="flex w-full items-center justify-center gap-2.5 rounded-2xl border border-emerald-400/50 bg-emerald-500/20 py-3.5 px-6 text-[12px] font-semibold tracking-wider text-emerald-100 shadow-[0_0_25px_rgba(52,211,153,0.25)] hover:bg-emerald-500/30 hover:text-white transition-all active:scale-[0.98]"
               >
                 <MessageSquare size={18} className="text-emerald-300" />
-                <span>Start Text Mode</span>
+                <span>Start Text & AI Voice Mode</span>
                 <Sparkles size={14} className="text-emerald-300/80" />
               </button>
 
               <button
                 type="button"
-                onClick={onMicHelp}
+                onClick={handleStartWithMic}
                 className="flex w-full items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 py-2.5 px-4 text-[10.5px] font-normal tracking-wide text-amber-200/90 hover:bg-amber-500/20 transition-all"
               >
                 <Lock size={14} className="text-amber-300" />
@@ -168,7 +157,7 @@ export function BootScreen({
         </div>
 
         <p className="mt-7 text-[9px] font-mono text-white/30">
-          Live Voice · Neural Speech · SamJuniors OS
+          Powered by Gemini Live & Neural Audio
         </p>
 
       </div>

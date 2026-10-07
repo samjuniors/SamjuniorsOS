@@ -4,23 +4,24 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Sparkles, LayoutGrid, Palette } from "lucide-react";
-import SophiaPanel from "./components/SophiaPanel";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
 import VoicePresence from "./components/voice/VoicePresence";
 import { BootScreen } from "./components/os/BootScreen";
-import { defaultSettings, type Settings } from "./lib/field";
 import { os } from "./lib/osStore";
 import { syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
 import "@/sofia/sofia.css";
 
-/** The SOFIA display — the SofiaUI surface port (src/sofia). Client-only
- *  like the whole scene stack it carries (WebGL, WebAudio, speech); inside
- *  the shell it stays mounted for the session, hidden behind the OS
- *  surface, so her microphone and her voice keep running wherever the
- *  founder is working. */
+/** The SOFIA display — the verbatim SofiaUI surface (src/sofia): the
+ *  full-screen particle Sophia with her own HUD, chat, settings sheet,
+ *  terminal, diagnostics, browser panel and boot entry. Client-only like
+ *  the whole scene stack it carries (WebGL, WebAudio, speech); inside the
+ *  shell it stays mounted for the session, hidden behind the OS surface,
+ *  so her microphone and her voice keep running wherever the founder is
+ *  working. Server seams are this repo's /api/sophia/* adapter routes,
+ *  which delegate to the canonical flow. */
 const SofiaSurface = dynamic(() => import("@/sofia/App"), {
   ssr: false,
   loading: () => <div className="sofia-scope" aria-hidden="true" />,
@@ -36,7 +37,6 @@ export default function App() {
   // switch away and stays fully functional.
   const [tab, setTab] = useState<Tab>("sophia");
   const [isBooting, setIsBooting] = useState(true);
-  const [panelSettings, setPanelSettings] = useState<Settings>(() => ({ ...defaultSettings, voice: false }));
   const router = useRouter();
 
   // Apply persisted OS state after mount (hydration-safe: SSR and the first
@@ -96,26 +96,15 @@ export default function App() {
 
       {/* SOFIA's display: mounted for the whole session, hidden (not torn
           down) behind the OS surface so her ears and her voice survive
-          tab switches — she is the assistant of the OS, not of one pane. */}
+          tab switches — she is the assistant of the OS, not of one pane.
+          Inside the scope, the surface is verbatim SofiaUI — nothing from
+          the destination renders inside her tab. */}
       <div
         className={`sofia-scope${tab === "sophia" ? "" : " sofia-scope-hidden"}`}
         aria-hidden={tab !== "sophia"}
       >
         <SofiaSurface active={tab === "sophia"} />
       </div>
-
-      {/* Sophia's contextual briefing panel (decisions, needs-you, memory
-          review) rides beside her surface — collapsed to a pill by default. */}
-      {tab === "sophia" && (
-        <div className="absolute right-3 top-16 z-20 sm:right-6 sm:top-20">
-          <SophiaPanel
-            settings={panelSettings}
-            onChange={setPanelSettings}
-            onReset={() => setPanelSettings({ ...defaultSettings, voice: panelSettings.voice })}
-            onSpeak={(text) => os.setLastSaid(text)}
-          />
-        </div>
-      )}
 
       {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
 
