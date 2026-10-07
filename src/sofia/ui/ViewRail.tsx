@@ -7,9 +7,9 @@
  * or Theatre (World Monitor). One click flips the view.
  */
 
-import { Orbit, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Orbit, Sparkles } from 'lucide-react';
 
-export type AppView = 'sofia' | 'theatre';
+export type AppView = 'sofia' | 'theatre' | 'dashboard';
 
 export function ViewRail({ view, onChange }: { view: AppView; onChange: (v: AppView) => void }) {
   const btn = (active: boolean) =>
@@ -33,6 +33,16 @@ export function ViewRail({ view, onChange }: { view: AppView; onChange: (v: AppV
         className={btn(view === 'sofia')}
       >
         <Orbit size={18} />
+      </button>
+      <button
+        type="button"
+        aria-label="Dashboard view"
+        title="Dashboard view"
+        aria-pressed={view === 'dashboard'}
+        onClick={() => onChange('dashboard')}
+        className={btn(view === 'dashboard')}
+      >
+        <LayoutDashboard size={18} />
       </button>
       <button
         type="button"

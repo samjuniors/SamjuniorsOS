@@ -41,6 +41,7 @@ import { backgroundKeepAlive } from './core/BackgroundKeepAlive';
 import { ViewRail, type AppView } from './ui/ViewRail';
 import { VisionGlow } from './ui/VisionGlow';
 import { TheatrePanel } from './ui/TheatrePanel';
+import { SofiaDashboard } from './ui/SofiaDashboard';
 
 function isTyping(): boolean {
   const el = document.activeElement;
@@ -308,6 +309,8 @@ export default function App({ active = true }: { active?: boolean }) {
         if (theatreOpen) {
           setTheatreOpen(false);
           setView('sofia');
+        } else if (view === 'dashboard') {
+          setView('sofia');
         } else if (diagnosticsOpen) setDiagnosticsOpen(false);
         else if (browserOpen) setBrowserOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
@@ -349,7 +352,7 @@ export default function App({ active = true }: { active?: boolean }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, onMic, browserOpen, chatOpen, settingsOpen, terminalOpen, diagnosticsOpen, theatreOpen, os]);
+  }, [active, onMic, browserOpen, chatOpen, settingsOpen, terminalOpen, diagnosticsOpen, theatreOpen, view, os]);
 
   const health = glFailed ? 'error' : os.health;
 
@@ -435,6 +438,19 @@ export default function App({ active = true }: { active?: boolean }) {
             setTheatreOpen(false);
             setView('sofia');
           }}
+        />
+      )}
+      {view === 'dashboard' && (
+        <SofiaDashboard
+          state={state}
+          status={status}
+          health={health}
+          onMic={onMic}
+          onOpenChat={() => setChatOpen((v) => !v)}
+          onOpenTerminal={() => setTerminalOpen((v) => !v)}
+          onOpenDiagnostics={() => setDiagnosticsOpen(true)}
+          onOpenSettings={() => setSettingsOpen((v) => !v)}
+          onBackToSofia={() => setView('sofia')}
         />
       )}
       {booted && (
