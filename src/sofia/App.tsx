@@ -38,6 +38,9 @@ import { ToolStatusBadge } from './ui/ToolStatusBadge';
 import { scoreEngine } from './sophia/audio/ScoreEngine';
 import { DynamicContentModal, type InfoPanelType } from './ui/DynamicContentModal';
 import { backgroundKeepAlive } from './core/BackgroundKeepAlive';
+import { ViewRail, type AppView } from './ui/ViewRail';
+import { VisionGlow } from './ui/VisionGlow';
+import { TheatrePanel } from './ui/TheatrePanel';
 
 function isTyping(): boolean {
   const el = document.activeElement;
@@ -80,6 +83,8 @@ export default function App({ active = true }: { active?: boolean }) {
   const [micModalOpen, setMicModalOpen] = useState(false);
   const [glFailed, setGlFailed] = useState(false);
   const [booted, setBooted] = useState(false);
+  const [view, setView] = useState<AppView>('sofia');
+  const [theatreOpen, setTheatreOpen] = useState(false);
   const [layout, setLayout] = useState<StageLayout>(() => stageLayout(window.innerWidth, window.innerHeight));
 
   const docked = browserOpen || infoCardOpen;
@@ -300,7 +305,10 @@ export default function App({ active = true }: { active?: boolean }) {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (diagnosticsOpen) setDiagnosticsOpen(false);
+        if (theatreOpen) {
+          setTheatreOpen(false);
+          setView('sofia');
+        } else if (diagnosticsOpen) setDiagnosticsOpen(false);
         else if (browserOpen) setBrowserOpen(false);
         else if (settingsOpen) setSettingsOpen(false);
         else if (terminalOpen) setTerminalOpen(false);
@@ -309,6 +317,14 @@ export default function App({ active = true }: { active?: boolean }) {
         return;
       }
       if (isTyping()) return;
+      if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        setTheatreOpen((v) => {
+          const next = !v;
+          setView(next ? 'theatre' : 'sofia');
+          return next;
+        });
+      }
       if (e.key === 'm' || e.key === 'M' || e.key === ' ') {
         e.preventDefault();
         onMic();
@@ -333,7 +349,7 @@ export default function App({ active = true }: { active?: boolean }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, onMic, browserOpen, chatOpen, settingsOpen, terminalOpen, diagnosticsOpen, os]);
+  }, [active, onMic, browserOpen, chatOpen, settingsOpen, terminalOpen, diagnosticsOpen, theatreOpen, os]);
 
   const health = glFailed ? 'error' : os.health;
 
@@ -374,6 +390,7 @@ export default function App({ active = true }: { active?: boolean }) {
       )}
 
       <Brand />
+      <VisionGlow />
       <StatusCluster
         health={health}
         active={state !== 'ambient' || status === 'live'}
@@ -410,6 +427,23 @@ export default function App({ active = true }: { active?: boolean }) {
           os={os}
           onClose={() => setMicModalOpen(false)}
           onOpenChat={() => setChatOpen(true)}
+        />
+      )}
+      {theatreOpen && (
+        <TheatrePanel
+          onClose={() => {
+            setTheatreOpen(false);
+            setView('sofia');
+          }}
+        />
+      )}
+      {booted && (
+        <ViewRail
+          view={view}
+          onChange={(v) => {
+            setView(v);
+            setTheatreOpen(v === 'theatre');
+          }}
         />
       )}
 

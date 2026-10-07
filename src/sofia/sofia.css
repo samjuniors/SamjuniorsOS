@@ -22,6 +22,12 @@
 
 /* ------------------------------ scope ------------------------------ */
 
+:root,
+.sofia-scope {
+  --th-glow: 56, 189, 248;
+  --th-glow-soft: 125, 211, 252;
+}
+
 .sofia-scope {
   position: fixed;
   inset: 0;
