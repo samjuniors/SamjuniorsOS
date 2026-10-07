@@ -2123,3 +2123,19 @@ Stage Summary:
 - The sofia tab is now the SofiaUI repo, unchanged: every UI component (12/12), the SophiaOS runtime with its full provider chain, wake words, ScoreEngine, tools, and the complete stylesheet — verbatim one-way port with only the three documented mount seams. Nothing from the destination renders inside her tab.
 - The merge with the current flow happens entirely at the server seams: 16 /api/sophia/* adapter routes over one shared bridge (src/lib/server/sophia/sofiaui.ts) delegating to executeSophiaTurn, the TTS ladder, generateAiImage, searchLiveWeb, and the browse proxy — the same canonical services the rest of the OS uses, founder-gated fail-closed.
 - All batteries green at baseline; browser-verified end-to-end (text turn through the canonical executor with spoken reply, all panels, proxy browsing, tab preservation, mobile). Committed to main locally (not pushed — Founder decides).
+
+---
+Task ID: sofiaui-push-2026-10-07
+Agent: Z.ai Code (principal, direct execution)
+Task: Founder directive — push the SofiaUI integration work to remote (git push).
+
+Work Log:
+- Pre-push audit: working tree showed 345 modified files; verified via `git diff --stat` = "345 files changed, 0 insertions(+), 0 deletions(-)" — pure sandbox mode-noise (644→755 permission churn), zero content drift.
+- Restored git-recorded modes on all 345 files (chmod back per `git diff --summary` directions); working tree clean afterwards, nothing unstaged left behind.
+- Confirmed unpushed commits on main: 8988d58 (SofiaUI port) and 61a7234 (SofiaUI verbatim restore — full client tree + 16 /api/sophia/* server-seam routes over the canonical flow).
+- Remote state check: origin = https://github.com/samjuniors/SamjuniorsOS.git, branch main, no divergence (origin/main at 87c4348, strictly behind by 2).
+- Committed this worklog record and pushed the stack to origin/main (fast-forward push).
+
+Stage Summary:
+- origin/main now carries the SofiaUI integration: the sofia tab is the SofiaUI repo verbatim (12/12 UI components, SophiaOS runtime, full stylesheet) with integration only at server seams (/api/sophia/* adapters over executeSophiaTurn, TTS ladder, image-gen, web-search, browse-proxy — founder-gated fail-closed).
+- Working tree clean and in sync with remote. Documented residues unchanged: real-hardware voice (mic STT / audible TTS / wake words / PTT barge-in) still needs on-device verification.
