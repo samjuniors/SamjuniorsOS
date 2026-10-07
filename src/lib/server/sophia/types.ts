@@ -225,14 +225,17 @@ export interface TurnMetrics {
 
 export interface SophiaExecutionResult {
   success: boolean;
-  agentId: string;
-  name: string;
-  role: string;
-  intent: string;
+  validatedCommand: ValidatedSophiaCommand;
   proposal: CandidateIntentProposal;
   reply: string;
-  liveAi: boolean;
-  directiveExecuted?: boolean;
+  metrics?: TurnMetrics;
+  directiveExecuted: boolean;
   orchestrationRun?: OrchestrationRun;
-  metrics: TurnMetrics;
+  authoritativeData?: any;
+  liveAi: boolean;
+  error?: string;
+  agentId?: string;
+  name?: string;
+  role?: string;
+  intent?: string;
 }

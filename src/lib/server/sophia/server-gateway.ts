@@ -6,7 +6,7 @@ import { AgentRunStore } from '../agents/run-store';
 import { SERVER_AGENTS } from '../agents/definitions';
 import { SophiaEntityResolver } from './entity-resolver';
 import { detectDependencyIntent } from '../retrieval/dependency-relations';
-import { CandidateIntentProposal, SophiaAssembledContext, ValidatedSophiaCommand, TurnMetrics } from './types';
+import { CandidateIntentProposal, SophiaAssembledContext, ValidatedSophiaCommand, TurnMetrics, SophiaExecutionResult } from './types';
 import { OrchestrationRun } from '@/types/os';
 
 export interface GatewayProcessOptions {
@@ -16,19 +16,6 @@ export interface GatewayProcessOptions {
   context: SophiaAssembledContext;
   metrics?: TurnMetrics;
   executeDirective?: boolean;
-}
-
-export interface SophiaExecutionResult {
-  success: boolean;
-  validatedCommand: ValidatedSophiaCommand;
-  proposal: CandidateIntentProposal;
-  reply: string;
-  metrics?: TurnMetrics;
-  directiveExecuted: boolean;
-  orchestrationRun?: OrchestrationRun;
-  authoritativeData?: any;
-  liveAi: boolean;
-  error?: string;
 }
 
 /**

@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   // would wave that straight through.
   let real: string | null = null
   try {
-    if (isAbsolute(asked)) real = await realpath(asked)
+    if (isAbsolute(asked)) real = await realpath(/*turbopackIgnore: true*/ asked)
   } catch {
     real = null
   }
@@ -80,11 +80,11 @@ export async function GET(req: NextRequest) {
     return new Response('images only', { status: 400 })
   }
   try {
-    const info = await stat(real)
+    const info = await stat(/*turbopackIgnore: true*/ real)
     if (!info.isFile() || info.size > MAX_FILE_BYTES) {
       return new Response('too large', { status: 413 })
     }
-    const body = await readFile(real)
+    const body = await readFile(/*turbopackIgnore: true*/ real)
     return new Response(new Uint8Array(body), {
       headers: {
         'content-type': IMAGE_TYPES[ext],

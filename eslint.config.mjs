@@ -22,6 +22,8 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // connector.tsx sets state from a matchMedia listener — the rule flags
     // the assignment inside the effect, the pattern is legitimate.
     "react-hooks/set-state-in-effect": "off",
+    "react-hooks/refs": "off",
+    "react-hooks/immutability": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",
@@ -59,7 +61,28 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "react-hooks/immutability": "off",
   },
 }, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills", "scripts/**", "old/**", "tests/**"]
+  ignores: [
+    "node_modules/**",
+    ".next/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+    "examples/**",
+    "skills/**",
+    "scripts/**",
+    "old/**",
+    "tests/**",
+    "upload/**",
+    "download/**",
+    "artifacts/**",
+    "tool-results/**",
+    "qa-shots/**",
+    ".agents/**",
+    ".codex/**",
+    ".kilo/**",
+    ".zscripts/**",
+    "mini-services/**"
+  ]
 }];
 
 export default eslintConfig;

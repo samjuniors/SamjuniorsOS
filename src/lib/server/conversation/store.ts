@@ -395,6 +395,7 @@ export class ConversationStore {
       sender: m.sender === 'founder' || m.role === 'user' ? 'founder' : 'assistant',
       text: m.content,
       messageId: m.id,
+      id: m.id,
       createdAt: m.createdAt,
     }));
   }

@@ -1134,7 +1134,7 @@ export class SophiaContextAssembler {
             const historicalTag = retired
               ? ' [HISTORICAL — retired/superseded document; verify against current policy]'
               : '';
-            return `[${k.documentId}] "${k.title}" (Category: ${k.category})${historicalTag}:\n${k.summary || k.snippet || k.content}`;
+            return `[${k.documentId}] "${k.title}" (Category: ${k.category})${historicalTag}:\n${k.summary || k.contentSnippet || k.fullContent}`;
           });
           const content = clamp(kLines.join('\n\n'), PARTITION_LIMITS.companyKnowledge);
           tokenBreakdown.companyKnowledge = estimateTokens(content);

@@ -416,7 +416,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
             content: executionResult.reply,
             idempotencyKey: assistantIdempotencyKey,
             intent: executionResult.proposal.kind,
-            confidence: classificationResult.confidence,
+            confidence: classificationResult.proposal.confidence,
             metadata: {
               liveAi: executionResult.liveAi,
               directiveExecuted: executionResult.directiveExecuted,

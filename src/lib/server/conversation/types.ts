@@ -60,5 +60,6 @@ export interface ConversationHistoryItem {
   sender: 'founder' | 'assistant';
   text: string;
   messageId?: string;
+  id?: string;
   createdAt?: string;
 }

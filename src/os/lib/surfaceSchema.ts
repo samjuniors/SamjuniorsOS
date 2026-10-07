@@ -68,19 +68,7 @@ export interface ActivityEvent {
    *  local ambient log entries (logToActivity), which are a browser-session
    *  supplement and are NEVER presented as company history. */
   category?: string;
-  status?:
-    | "completed"
-    | "failed"
-    | "awaiting_approval"
-    | "in_flight"
-    | "approved"
-    | "rejected"
-    | "pending"
-    | "allowed"
-    | "denied"
-    | "paused"
-    | "resumed"
-    | "cancelled";
+  status?: import("@/types/activity").ActivityEventStatus;
   /** Traceability pointers to the authoritative source records. */
   provenance?: {
     workstreamId?: string;

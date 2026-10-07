@@ -295,7 +295,7 @@ export class SophiaLiveClient {
   }
 
   private pushPreRollFrame(arrayBuffer: ArrayBuffer | SharedArrayBuffer): void {
-    const copy = arrayBuffer.slice(0);
+    const copy = arrayBuffer.slice(0) as ArrayBuffer;
     this.preRollBuffer.push(copy);
     while (this.preRollBuffer.length > this.maxPreRollFrames) {
       this.preRollBuffer.shift();

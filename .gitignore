@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules
+package-lock.json
 /.pnp
 .pnp.*
 .yarn/*
@@ -80,6 +81,7 @@ artifacts/
 # (untracked from the repo in the 2026-10-06 consolidation; kept on disk locally)
 /.agents/
 /.codex/
+/.kilo/
 /.zscripts/
 /examples/
 /mini-services/
