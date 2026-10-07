@@ -2139,3 +2139,17 @@ Work Log:
 Stage Summary:
 - origin/main now carries the SofiaUI integration: the sofia tab is the SofiaUI repo verbatim (12/12 UI components, SophiaOS runtime, full stylesheet) with integration only at server seams (/api/sophia/* adapters over executeSophiaTurn, TTS ladder, image-gen, web-search, browse-proxy — founder-gated fail-closed).
 - Working tree clean and in sync with remote. Documented residues unchanged: real-hardware voice (mic STT / audible TTS / wake words / PTT barge-in) still needs on-device verification.
+
+---
+Task ID: sofiaui-push-2026-10-07 (addendum)
+Agent: Z.ai Code (principal, direct execution)
+Task: Addendum to the push session record — remote divergence discovered mid-push, integrated via rebase.
+
+Work Log:
+- Initial push rejected: origin/main had advanced beyond 87c4348 with one founder commit, 6aab8e6 "fix(build): resolve typescript errors, cross-platform build/dev scripts, and eslint ignores" (TS fixes in canonical server files — turn-executor/context-assembly/types dedupe/live-client cast/surfaceSchema request_revision; new scripts/dev.mjs + copy-standalone.mjs; eslint/.gitignore additions). 6aab8e6 sits on 8988d58, so the first SofiaUI port had already reached the remote before this session.
+- Verified ZERO file overlap between 6aab8e6 and the verbatim-restore commit; rebased the local stack (61a7234, 1f7b075) onto 6aab8e6 — conflict-free. Restored SofiaUI files byte-identical across the rebase (App.tsx, sofia.css verified by direct diff of 61a7234 vs 7c11728; the only delta between them is exactly the founder's 14-file build fix).
+- Pushed: 6aab8e6..9187bfb main -> main. origin/main tracking ref synced.
+
+Stage Summary:
+- Commit IDs after rebase (supersede the prior record): verbatim restore = 7c11728 (was 61a7234), worklog = 9187bfb (was 1f7b075). Remote main tip: 9187bfb.
+- Combined tree = founder's build fix + the SofiaUI verbatim surface, both intact and disjoint. Local == remote, branch main only, working tree clean.
