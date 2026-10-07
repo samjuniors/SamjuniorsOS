@@ -1,21 +1,14 @@
-import SamjuniorsOS from '../os/App';
+import SamJuniorsOS from '../os/App';
 
 /**
- * The root route serves the ONE canonical SamJuniorsOS application
- * (relocated from Uploaded/Design1/src to src/os in Phase 4.3C-B.3).
- * Historical UI generations live in /old as inert reference material and
- * are never imported from an active route.
- *
- * Phase 5 (parity-gated retirement, see docs/audit/PHASE5-PARITY-CHECKLIST.md):
- * the legacy SOFIA voice tab is retired from the default experience and is
- * re-enabled at runtime with SAMJUNIORS_VOICE_LEGACY=1. The flag is read
- * server-side per request (force-dynamic) so it stays a runtime decision,
- * not a build-time constant.
+ * The root route serves the ONE canonical SamJuniorsOS application.
+ * The Sophia tab carries the SofiaUI surface port (src/sofia): the
+ * full-screen particle Sophia with her own chat, voice UI and boot
+ * entry, wired to the canonical live-voice flow. The old flag-gated
+ * legacy SOFIA tab (SAMJUNIORS_VOICE_LEGACY) was fully retired when the
+ * SofiaUI surface replaced it; the env flag now only governs the legacy
+ * SERVER routes (src/lib/server/voice-legacy.ts), never this UI.
  */
-export const dynamic = 'force-dynamic';
-
 export default function SamJuniorsOSPage() {
-  return (
-    <SamjuniorsOS legacyVoicePath={process.env.SAMJUNIORS_VOICE_LEGACY === '1'} />
-  );
+  return <SamJuniorsOS />;
 }

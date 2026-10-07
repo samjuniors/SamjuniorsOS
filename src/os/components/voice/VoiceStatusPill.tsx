@@ -16,7 +16,7 @@
  *     emerald-default scheme.
  */
 
-import type { SophiaStateName } from "./orb/types";
+import type { SophiaStateName } from "@/sofia/engine/types";
 
 /** Per-state human text. Keyed by the ported state machine's vocabulary. */
 const STATE_MESSAGES: Record<SophiaStateName, string> = {

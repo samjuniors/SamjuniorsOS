@@ -40,10 +40,11 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { useOS, liveVoiceState, type LiveVoiceState } from "../../lib/osStore";
 import { liveBridge } from "../../lib/liveCompanionBridge";
 import { voiceRuntime } from "../../lib/voiceRuntime";
-import { SophiaState } from "./orb/SophiaState";
-import { VisualDirector } from "./orb/VisualDirector";
-import { ParticleRenderer } from "./orb/ParticleRenderer";
-import type { SophiaStateName } from "./orb/types";
+import { SophiaState } from "@/sofia/engine/SophiaState";
+import { VisualDirector } from "@/sofia/engine/VisualDirector";
+import { ParticleRenderer } from "@/sofia/engine/ParticleRenderer";
+import { STAGE_CY_CENTERED } from "@/sofia/engine/layout";
+import type { SophiaEventType, SophiaStateName } from "@/sofia/engine/types";
 
 /** Screen-reader announcements per state (ported from SofiaUI App.tsx). */
 const STATE_ANNOUNCE: Record<SophiaStateName, string> = {
@@ -64,12 +65,27 @@ const STATE_ANNOUNCE: Record<SophiaStateName, string> = {
 
 const MIC_ERROR_RE = /microphone/i;
 
+export interface UseVoicePresenceOptions {
+  /** Stage geometry: the circular widget passes 0.5 (canvas centre); the
+   * full-screen Sophia surface uses SofiaUI's original 0.44 default. */
+  stageCyRatio?: number;
+  /** Screen-reader announcement strings (defaults = the widget's). */
+  announce?: Record<SophiaStateName, string>;
+  /** Park the render loop while the canvas is display:none (the always-mounted
+   * full-screen surface behind other tabs). The FSM keeps tracking; only
+   * frame work stops. */
+  parkWhenHidden?: boolean;
+}
+
 /** One-shot timers owned by this hook (post-turn cadence, wake choreography).
  *
- *  The canvas ref is owned by the CALLER and passed in: the hook must not
- *  return a ref (a returned object containing a ref taints every property
- *  of the return value for the React-Compiler lint rules). */
-export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>) {
+ *  * The canvas ref is owned by the CALLER and passed in: the hook must not
+ *  * return a ref (a returned object containing a ref taints every property
+ *  * of the return value for the React-Compiler lint rules). */
+export function useVoicePresence(
+  canvasRef: RefObject<HTMLCanvasElement | null>,
+  opts: UseVoicePresenceOptions = {},
+) {
   const fsmRef = useRef<SophiaState | null>(null);
   const directorRef = useRef<VisualDirector | null>(null);
   const rendererRef = useRef<ParticleRenderer | null>(null);
@@ -78,9 +94,13 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const prevLiveRef = useRef<LiveVoiceState | null>(null);
   const firstRunRef = useRef(true);
+  const optsRef = useRef(opts);
+  useEffect(() => {
+    optsRef.current = opts;
+  }, [opts]);
 
   const [displayState, setDisplayState] = useState<SophiaStateName>("ambient");
-  const [announce, setAnnounce] = useState<string>(STATE_ANNOUNCE.ambient);
+  const [announce, setAnnounce] = useState<string>(() => (opts.announce ?? STATE_ANNOUNCE).ambient);
   const [flash, setFlash] = useState(false);
   const [glFailed, setGlFailed] = useState(false);
   const [permDenied, setPermDenied] = useState(false);
@@ -112,7 +132,7 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
         const t = setTimeout(() => setFlash(false), 700);
         timersRef.current.add(t);
       } else {
-        setAnnounce(STATE_ANNOUNCE[s]);
+        setAnnounce((optsRef.current.announce ?? STATE_ANNOUNCE)[s]);
       }
     };
     const unsub = fsm.subscribe((s, _prev, meta) => announceTransition(s, meta));
@@ -123,11 +143,20 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
     tPrevRef.current = performance.now();
     const loop = (now: number) => {
       rafRef.current = requestAnimationFrame(loop);
+      const dt = Math.min(0.05, Math.max(0.0005, (now - tPrevRef.current) / 1000));
+      tPrevRef.current = now;
+      // Parking: when the caller opts in (always-mounted full-screen surface
+      // hidden behind other tabs), skip all frame work while display:none.
+      // dt above is already consumed so no time-jump accumulates for the
+      // director when the surface becomes visible again.
+      if (optsRef.current.parkWhenHidden && canvasRef.current?.offsetParent == null) return;
       if (!rendererRef.current) {
         const canvas = canvasRef.current;
         if (!canvas) return;
         try {
-          rendererRef.current = new ParticleRenderer(canvas);
+          rendererRef.current = new ParticleRenderer(canvas, {
+            stageCyRatio: optsRef.current.stageCyRatio ?? STAGE_CY_CENTERED,
+          });
         } catch (err) {
           console.warn("[voice-presence] WebGL2 renderer unavailable:", err);
           setGlFailed(true);
@@ -135,8 +164,6 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
           return;
         }
       }
-      const dt = Math.min(0.05, Math.max(0.0005, (now - tPrevRef.current) / 1000));
-      tPrevRef.current = now;
       director.state = fsm.current;
       // Phase 3: REAL amplitude — mic RMS (capture worklet) while listening,
       // playback RMS while speaking; procedural envelopes when absent.
@@ -312,7 +339,32 @@ export function useVoicePresence(canvasRef: RefObject<HTMLCanvasElement | null>)
     voiceRuntime.interrupt();
   }, []);
 
+  /* ------------------------------------- surface-only FSM primitives ------
+   * The full-screen Sophia surface drives the SAME machine for its text
+   * turns (the transport status mapping above only covers voice turns).
+   * The widget never calls these; they exist so both consumers share one
+   * machine implementation instead of forking the choreography. */
+
+  /** Feed a normalized provider event to the visual machine (e.g. 'thinking'
+   *  when a text turn starts, 'response_finished' when its reply lands). */
+  const driveEvent = useCallback((ev: SophiaEventType) => {
+    fsmRef.current?.handleVoiceEvent(ev);
+  }, []);
+
+  /** Stand the visual machine down to ambient (text-turn post cadence). */
+  const standDownVisual = useCallback((reason: string) => {
+    fsmRef.current?.standDown(reason);
+  }, []);
+
+  /** Test the current visual state (guards the post-turn cadence timer). */
+  const isVisualState = useCallback((...names: SophiaStateName[]) => {
+    return fsmRef.current?.is(...names) ?? false;
+  }, []);
+
   return {
+    driveEvent,
+    standDownVisual,
+    isVisualState,
     state: displayState,
     live,
     micDenied,

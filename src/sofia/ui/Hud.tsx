@@ -1,456 +1,172 @@
-import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { useStore, accentFor, type Phase } from '../store'
-import { personaById } from '../lib/personas'
-import { Suggestions } from './Suggestions'
-import { BladeSweep, Blades } from './Blades'
-import { Effects } from './Effects'
-import { Pointer } from './Pointer'
-import { GestureGuide } from './GestureGuide'
-import { Settings } from './Settings'
-
-/** The status line, one per phase. The standby hint is persona-driven — it
- *  names the wake word the recogniser is actually hunting for, and only adds
- *  the clap alternative when the clap detector is actually armed. */
-function statusText(phase: Phase, wake: string, voiceLive: boolean, clapLive: boolean): string {
-  switch (phase) {
-    case 'offline':
-      return 'OFFLINE'
-    case 'boot':
-      return 'INITIALISING'
-    case 'dormant':
-      // If the microphone never opened, telling someone to say the wake word
-      // is a lie — the honest instruction is the command line.
-      if (!voiceLive) return 'STANDBY — TYPE A COMMAND'
-      return clapLive
-        ? `STANDBY — SAY “${wake.toUpperCase()}” OR CLAP`
-        : `STANDBY — SAY “${wake.toUpperCase()}”`
-    case 'waking':
-      return 'ONLINE'
-    case 'listening':
-      return 'LISTENING'
-    case 'thinking':
-      return 'THINKING'
-    case 'tooling':
-      return 'WORKING'
-    case 'speaking':
-      return 'SPEAKING'
-  }
-}
-
 /**
- * The status pill's icon, one per state. The state should be legible at a
- * glance, before the text is read: bars while the machine hears you, an arc
- * while it works, a slower waveform while it talks.
- */
-function StateIcon({ phase }: { phase: Phase }) {
-  const cls = 'state-ico'
-  switch (phase) {
-    case 'offline':
-      return (
-        <span className={cls} aria-hidden>
-          <i className="s-dot hollow" />
-        </span>
-      )
-    case 'boot':
-    case 'thinking':
-      return (
-        <span className={cls} aria-hidden>
-          <i className="s-arc" />
-        </span>
-      )
-    case 'tooling':
-      return (
-        <span className={cls} style={{ alignItems: 'center', gap: 2 }} aria-hidden>
-          <i className="s-arc" style={{ width: 8, height: 8 }} />
-          <i className="s-tick" style={{ width: 8, height: 2 }} />
-        </span>
-      )
-    case 'listening':
-      return (
-        <span className={`${cls} hearing`} aria-hidden>
-          <i className="s-bar" />
-          <i className="s-bar" />
-          <i className="s-bar" />
-        </span>
-      )
-    case 'speaking':
-      return (
-        <span className={`${cls} talking`} aria-hidden>
-          <i className="s-bar" />
-          <i className="s-bar" />
-          <i className="s-bar" />
-        </span>
-      )
-    case 'waking':
-      return (
-        <span className={cls} aria-hidden>
-          <i className="s-dot fast" />
-        </span>
-      )
-    default:
-      return (
-        <span className={cls} aria-hidden>
-          <i className="s-dot" />
-        </span>
-      )
-  }
-}
-
-function Corner({ at }: { at: 'tl' | 'tr' | 'bl' | 'br' }) {
-  return <div className={`corner corner-${at}`} />
-}
-
-/* ------------------------------------------------------------------ decode */
-
-/**
- * The glyphs the ghost is drawn from. Uppercase, digits and rules only: the
- * point is that the unresolved text reads as *machine*, so lowercase letters
- * and anything with a descender are left out — they look like badly rendered
- * words rather than an unfinished decode.
- */
-const GLYPHS = '/\\|<>[]{}=+*#%&$0123456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-
-/** Characters of noise shown ahead of the resolved text. */
-const GHOST = 22
-/** Repaint interval for the scramble. ~24fps is plenty for glyph noise. */
-const FRAME_MS = 42
-/** Floor on the resolve rate, characters per second. */
-const MIN_RATE = 110
-/** The frontier is never allowed to trail the streamed text by longer. */
-const MAX_LAG_MS = 420
-
-function scramble(s: string, seed: number) {
-  let out = ''
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i]
-    // Whitespace is left alone so word shapes and line breaks hold still while
-    // the glyphs underneath churn.
-    if (c === ' ' || c === '\n' || c === '\t') {
-      out += c
-      continue
-    }
-    out += GLYPHS[(seed * 7919 + i * 104729 + c.charCodeAt(0)) % GLYPHS.length]
-  }
-  return out
-}
-
-/**
- * JARVIS's lines, arriving the way a computer would produce them.
+ * HUD — the little chrome that frames the substance.
+ * Ported/adapted from SofiaUI @ commit 9e88dee: src/ui/Hud.tsx
+ * The SofiaUI repository remains independent; one-way reference port.
  *
- * The hard part is not the effect, it is that the text underneath is *live*.
- * The store appends a token at a time, so this component re-renders dozens of
- * times a second with a slightly longer string, and the naive implementation —
- * scramble the whole thing, resolve it over N milliseconds — restarts the
- * animation on every token and never finishes decoding anything.
- *
- * So the frontier is a ref and only ever moves forward. Everything behind it
- * has settled and is plain text that will never animate again; a short window
- * ahead of it is noise; the rest is present in the DOM but invisible, which
- * keeps the line wrapping identical to the finished paragraph and means the
- * accessibility tree always holds the real sentence. The rate scales with how
- * far behind the frontier has fallen, so a single token drips and a 300
- * character burst clears inside MAX_LAG_MS — the decode must never be the
- * reason the transcript trails the voice.
- *
- * The rAF loop repaints on a 42ms gate rather than every frame, and stops dead
- * the moment the frontier catches up.
+ * Adaptations for the SamJuniorsOS flow:
+ *   - Identity's "latest line" arrives as a PROP (the surface computes it
+ *     from live transcripts + chat turns) instead of subscribing to
+ *     SofiaUI's controlLayer turn events (not ported).
+ *   - The Dock carries the chat launcher and the session mic toggle only.
+ *     SofiaUI's screen-vision and browser buttons are omitted: their tools
+ *     (getDisplayMedia bridge, /api/sophia/browse proxy) are not part of
+ *     this port's surface.
+ *   - The mic button's labels/aria follow the destination's live-voice
+ *     session semantics (toggleVoice + Hold-Space PTT), matching the
+ *     voice-presence widget's exact strings for continuity.
  */
-function DecodeText({ text }: { text: string }) {
-  const reduced = useReducedMotion()
-  const settled = useRef(0)
-  const raf = useRef(0)
-  const latest = useRef(text)
-  const [tick, bump] = useState(0)
 
-  useEffect(() => {
-    // The running loop reads the length through this ref rather than through
-    // its own closure, so a token landing mid-sweep simply extends the target
-    // instead of leaving the loop chasing a length that is already stale.
-    latest.current = text
+import { Mic, MicOff, MessageSquare } from 'lucide-react';
+import type { RefObject } from 'react';
+import type { StageLayout } from '@/sofia/engine/layout';
+import type { SophiaStateName } from '@/sofia/engine/types';
 
-    if (reduced) {
-      settled.current = text.length
-      return
-    }
-    if (raf.current || settled.current >= text.length) return
-
-    let prev = performance.now()
-    let painted = 0
-
-    const step = (now: number) => {
-      // Clamped so a backgrounded tab does not resolve the whole answer in one
-      // enormous frame the moment it comes back.
-      const dt = Math.min(now - prev, 120) / 1000
-      prev = now
-
-      const target = latest.current.length
-      const rate = Math.max(MIN_RATE, (target - settled.current) / (MAX_LAG_MS / 1000))
-      settled.current = Math.min(target, settled.current + rate * dt)
-
-      if (now - painted >= FRAME_MS) {
-        painted = now
-        bump((n) => n + 1)
-      }
-
-      if (settled.current < latest.current.length) {
-        raf.current = requestAnimationFrame(step)
-      } else {
-        raf.current = 0
-        bump((n) => n + 1)
-      }
-    }
-    raf.current = requestAnimationFrame(step)
-  }, [text, reduced])
-
-  useEffect(
-    () => () => {
-      if (raf.current) cancelAnimationFrame(raf.current)
-      raf.current = 0
-    },
-    [],
-  )
-
-  const n = Math.floor(settled.current)
-  if (reduced || n >= text.length) return <>{text}</>
-
+export function Brand() {
   return (
-    <>
-      {text.slice(0, n)}
-      <span className="decode-ghost">{scramble(text.slice(n, n + GHOST), tick)}</span>
-      <span className="decode-veil">{text.slice(n + GHOST)}</span>
-    </>
-  )
+    <header className="pointer-events-none absolute left-7 top-7 z-10 select-none sm:left-11 sm:top-9">
+      <div className="flex items-center gap-2">
+        <span className="block size-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.7)]" />
+        <p className="text-[11px] font-normal tracking-[0.32em] text-white/90">SAMJUNIORS OS</p>
+      </div>
+      <p className="mt-[5px] pl-3.5 text-[9px] font-light tracking-[0.42em] text-sky-200/60">SOPHIA</p>
+    </header>
+  );
 }
 
-/* --------------------------------------------------------------------- hud */
+const STATE_WORD: Record<SophiaStateName, string> = {
+  ambient: '',
+  idle: 'IDLE',
+  wakeup: 'WAKING',
+  focusing: 'FOCUSING',
+  listening: 'LISTENING',
+  thinking: 'THINKING',
+  speaking: 'SPEAKING',
+  rendering: 'RENDERING',
+  transforming: 'TRANSFORMING',
+  pause: 'PAUSE',
+  paused: 'PAUSE',
+  completed: 'COMPLETED',
+  blocked: 'BLOCKED',
+};
 
-export function Hud() {
-  const phase = useStore((s) => s.phase)
-  const caption = useStore((s) => s.caption)
-  const turns = useStore((s) => s.turns)
-  const activeTool = useStore((s) => s.activeTool)
-  const connected = useStore((s) => s.connected)
-  const brain = useStore((s) => s.brain)
-  const error = useStore((s) => s.error)
-  const level = useStore((s) => s.level)
-  const voice = useStore((s) => s.voice)
-  const bootNote = useStore((s) => s.bootNote)
-  const gestures = useStore((s) => s.gestures)
-  const looking = useStore((s) => s.looking)
-  const ui = useStore((s) => s.ui)
-  const persona = useStore((s) => s.persona)
-  const voiceLive = useStore((s) => s.voiceLive)
-  const clapLive = useStore((s) => s.clapLive)
-  const p = personaById(persona)
-
-  // accentFor folds JARVIS's overrides in over the phase colour, so one
-  // variable on the root carries a theme change into every .hud-* rule without
-  // a single component knowing a theme exists.
-  const colour = accentFor(phase, ui)
-
-  useEffect(() => {
-    // The ground has to be set on the document, not painted here: the HUD sits
-    // above the 3D scene, so a background drawn inside it would cover the
-    // reactor rather than sit behind it. --bg is what html, body, #root and the
-    // boot screen all pin themselves to.
-    const root = document.documentElement
-    if (ui.background) root.style.setProperty('--bg', ui.background)
-    else root.style.removeProperty('--bg')
-  }, [ui.background])
-
+export function Identity({
+  layout,
+  state,
+  line,
+}: {
+  layout: StageLayout;
+  state: SophiaStateName;
+  line: string;
+}) {
+  const active = state !== 'ambient';
+  const top = layout.cy + layout.ringR + Math.max(10, Math.min(16, layout.R * 0.08));
   return (
-    <div className="hud" style={{ ['--accent' as string]: colour }}>
-      {/* First in the tree on purpose. Everything after it is positioned with
-          `z-index: auto`, so paint order is document order and the sweep stays
-          behind the transcript and the panels without a z-index war. */}
-      <BladeSweep />
+    <section
+      aria-label="Sophia"
+      className="identity-hud pointer-events-none absolute left-0 right-0 z-10 select-none px-6 text-center transition-all duration-500 ease-out"
+      style={{ top }}
+    >
+      <span className={`identity-rule mx-auto block h-px w-[32px] ${state === 'completed' ? 'identity-rule-done' : ''}`} />
+      <h1 className="mt-[18px] text-[clamp(24px,2.2vw,33px)] font-extralight tracking-[0.08em] text-white/95">
+        I’m Sophia.
+      </h1>
+      <p className="mt-[12px] text-[clamp(9.5px,0.8vw,11.5px)] font-light tracking-[0.38em] text-[#9cb5ff]/70">
+        [ ALWAYS WITH YOU ]
+      </p>
+      <p
+        aria-live="polite"
+        className={`mx-auto mt-[18px] max-w-[min(60ch,80vw)] truncate text-[11px] font-normal tracking-[0.16em] transition-opacity duration-300 ${
+          active ? 'opacity-100' : 'opacity-0'
+        } ${state === 'completed' ? 'text-emerald-300' : 'text-white/45'}`}
+      >
+        {line || STATE_WORD[state]}
+      </p>
+    </section>
+  );
+}
 
-      <Corner at="tl" />
-      <Corner at="tr" />
-      <Corner at="bl" />
-      <Corner at="br" />
+export function Dock({
+  state,
+  micRef,
+  onMic,
+  onChat,
+  chatOpen,
+  sessionOn,
+  micDenied,
+  streaming,
+}: {
+  state: SophiaStateName;
+  micRef: RefObject<HTMLButtonElement | null>;
+  onMic: () => void;
+  onChat: () => void;
+  chatOpen: boolean;
+  sessionOn: boolean;
+  micDenied: boolean;
+  streaming: boolean;
+}) {
+  const on = state !== 'ambient' && state !== 'paused' && state !== 'idle' && state !== 'completed';
+  const micLabel = micDenied
+    ? 'Microphone blocked — click for help'
+    : sessionOn
+      ? 'Voice session active — hold Space to speak, click to turn off'
+      : 'Start live voice session';
+  return (
+    <div className="dock-cluster absolute bottom-[44px] right-7 z-10 flex items-center gap-[18px] transition-all duration-500 sm:bottom-[52px] sm:right-11">
+      {/* Text Chat Launcher — Available anytime */}
+      <button
+        type="button"
+        aria-label="Type message to Sophia"
+        title="Type message to Sophia (Chat Panel)"
+        aria-expanded={chatOpen}
+        onClick={onChat}
+        className={`dock-btn ${chatOpen ? 'text-sky-300 drop-shadow-[0_0_10px_rgba(56,189,248,0.5)]' : ''}`}
+      >
+        <MessageSquare size={18} strokeWidth={1.6} />
+      </button>
 
-      <header className="hud-top">
-        {ui.chrome.brand && (
-          <div className="brand">
-            <span className="brand-mark">{p.mark}</span>
-            <span className="brand-sub">{p.sub}</span>
-          </div>
+      {/* Session Microphone Button — the live-voice toggle (Hold Space PTT) */}
+      <button
+        ref={micRef}
+        type="button"
+        aria-label={micLabel}
+        aria-pressed={sessionOn}
+        title={micLabel}
+        onClick={onMic}
+        className={`group relative grid size-[48px] place-items-center rounded-2xl border transition-all duration-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 active:scale-95 ${
+          micDenied
+            ? 'border-rose-400/40 bg-rose-500/[0.12] text-rose-200 shadow-[0_0_18px_rgba(244,63,94,0.25)] hover:border-rose-400/60 hover:bg-rose-500/[0.2] hover:text-white'
+            : sessionOn
+              ? 'border-sky-400/40 bg-sky-500/[0.16] text-sky-100 shadow-[0_0_20px_rgba(56,189,248,0.38),inset_0_1px_0_rgba(255,255,255,0.22)] hover:border-sky-400/70 hover:bg-sky-500/[0.26] hover:text-white'
+              : 'border-white/[0.12] bg-white/[0.04] text-white/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] hover:border-sky-400/40 hover:bg-white/[0.10] hover:text-white'
+        }`}
+      >
+        {/* Live speaking/listening indicator halo dot when active and running */}
+        {sessionOn && (on || streaming) && (
+          <span className="absolute -right-0.5 -top-0.5 block size-[8px] rounded-full bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.9)]" />
         )}
 
-        <div className="status">
-          <StateIcon phase={phase} />
-          <span className="status-text">
-            {/* bootNote is the voice-model download readout. It is only ever
-                the right thing to show during boot — as a general fallback a
-                note that never got cleared (a stuck 'voice 97%') sits over
-                LISTENING and PROCESSING for the rest of the session. */}
-            {phase === 'boot' && bootNote
-              ? bootNote
-              : statusText(phase, p.wake, voiceLive, clapLive)}
-          </span>
-        </div>
-      </header>
-
-      {/* The settings corner — persona, voice. Kept out of the header flex
-          so it keeps its own anchor when the brand is hidden by ui_chrome. */}
-      <Settings />
-
-      {/* Left rail: which integrations are live */}
-      {ui.chrome.systems && (
-        <aside className="rail rail-left">
-          <div className="rail-title">SYSTEMS</div>
-          {/* Which brain is answering — the chain (z-ai → Gemini → local)
-              announces every failover, and the rail says so the moment it
-              happens. The fallback marker is the honesty: a rail that still
-              said Z-AI while Gemini spoke would be a lie. */}
-          <div
-            className={`rail-item${brain.id !== 'zai' ? ' brain-fallback' : ''}`}
-            title={
-              brain.id !== 'zai'
-                ? 'The primary engine is unreachable — this one took over.'
-                : undefined
-            }
-          >
-            <span className="tick" />
-            BRAIN · {brain.label}
-            {brain.id !== 'zai' && <span className="brain-note">FALLBACK</span>}
-          </div>
-          {connected.length === 0 && <div className="rail-item dim">none linked</div>}
-          {connected.map((c) => (
-            <div key={c} className="rail-item">
-              <span className="tick" />
-              {c}
-            </div>
-          ))}
-          <div className="rail-item">
-            <span className="tick" />
-            Web
-          </div>
-        </aside>
-      )}
-
-      {/* Right rail: live telemetry, mostly for flavour */}
-      <aside className="rail rail-right">
-        <div className="rail-title">SIGNAL</div>
-        <div className="meter">
-          <div className="meter-fill" style={{ height: `${level * 100}%` }} />
-        </div>
-        <div className="rail-item mono">{(level * 100).toFixed(0).padStart(3, '0')}%</div>
-      </aside>
-
-      <AnimatePresence>
-        {activeTool && ui.chrome.toolBadge && (
-          <motion.div
-            className="tool-badge"
-            // Anchored to the TOP of the frame, not the middle. The old home was
-            // viewport-centre plus a fixed drop, which on a tall or square
-            // window landed the headline straight on top of the bottom
-            // transcript — two elements pinned to different edges of the screen
-            // were always going to meet somewhere. Up here it sits in its own
-            // band with the rest of the status chrome and can never collide with
-            // the log. Framer owns `transform` on an animated element, so the
-            // centring (x: -50%) lives in these props, not the stylesheet.
-            initial={{ opacity: 0, x: '-50%', y: -8, filter: 'blur(6px)' }}
-            animate={{ opacity: 1, x: '-50%', y: 0, filter: 'blur(0px)' }}
-            exit={{ opacity: 0, x: '-50%', y: -8, filter: 'blur(6px)' }}
-            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
-          >
-            <span className="tool-kicker">
-              <span className="spinner" />
-              accessing
-            </span>
-            <span className="tool-name">{activeTool.replace(/[_-]/g, ' ')}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Conversation log — last few turns, fading upward */}
-      {ui.chrome.transcript && (
-        <div className="log">
-          <AnimatePresence initial={false}>
-            {turns.slice(-4).map((t) => (
-              <motion.div
-                key={t.id}
-                className={`log-line log-${t.role}`}
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 320, damping: 32 }}
-              >
-                <span className="log-who">{t.role === 'user' ? 'YOU' : p.short}</span>
-                {/* Only his half decodes. What the user said was never
-                    transmitted from anywhere — dressing it up as machine
-                    output would be a lie about where the words came from. */}
-                <span className="log-text">
-                  {t.role === 'jarvis' ? <DecodeText text={t.text} /> : t.text}
-                </span>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {caption && (
-          <motion.div
-            className="caption"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            {caption}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* The one surface. Panels used to sit alongside this as a second place
-          for things to appear, which meant two places to look and a decision
-          the model had to make on grounds it could not know. Everything renders
-          here now; Panels.tsx is unmounted rather than deleted so the design
-          system it documents stays findable. */}
-      <Blades />
-
-      {ui.chrome.suggestions && <Suggestions />}
-
-      {error && <div className="error">{error}</div>}
-
-      <footer className="hud-bottom">
-        <span className="hint">
-          {voiceLive ? (
-            <>
-              say <b>“{p.wake}”</b> · <kbd>Space</kbd> to talk
-            </>
+        <div className="relative z-10 transition-transform duration-300 group-hover:scale-110">
+          {micDenied ? (
+            <MicOff
+              size={22}
+              strokeWidth={2.2}
+              className="text-rose-200 transition-all duration-200 group-hover:scale-105 group-hover:text-white"
+              aria-hidden="true"
+            />
           ) : (
-            <>
-              voice off in this pane — open in a new tab · type below
-            </>
-          )}{' '}
-          · <kbd>G</kbd> hands
-          {voice && (
-            <>
-              {' · '}
-              <kbd>V</kbd> voice: {voice.replace(/\(.*?\)/g, '').trim()}
-            </>
+            <Mic
+              size={22}
+              strokeWidth={2.2}
+              className={
+                sessionOn
+                  ? 'text-sky-200 transition-all duration-200 group-hover:scale-105 group-hover:text-white'
+                  : 'text-white/70 transition-all duration-200 group-hover:scale-105 group-hover:text-white'
+              }
+              aria-hidden="true"
+            />
           )}
-        </span>
-      </footer>
-
-      {/* Last, so a flash or a tear reads as being on the glass rather than
-          underneath the chrome. It is pointer-events: none and unmounts the
-          instant it finishes. */}
-      <Effects />
-
-      {/* Above even the effects: the reticle shows where a press will land, and
-          a press that lands under a flourish is a press you cannot aim. */}
-      <Pointer />
-      {(gestures || looking) && (
-        <div className="hands-live">
-          {looking ? `LOOKING — ${looking.toUpperCase()}` : 'CAMERA ON · G TO STOP'}
         </div>
-      )}
-      <GestureGuide live={gestures} />
+      </button>
     </div>
-  )
+  );
 }

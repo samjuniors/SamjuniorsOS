@@ -526,7 +526,7 @@ async function runTests() {
     assert.ok(!routeSource.includes('saveMessage'), 'Route must not persist messages itself — only the canonical executor persists');
     assert.ok(routeSource.includes('getAuthenticatedFounder'), 'Route must authenticate through the shared session contract');
 
-    const clientSource = readFileSync('src/sofia/lib/api.ts', 'utf-8');
+    const clientSource = readFileSync('src/sofia/lib/ask.ts', 'utf-8');
     assert.ok(!clientSource.includes('history.slice(-40)'), 'Browser client must not upload its transcript any more');
     assert.ok(clientSource.includes('conversationId'), 'Browser client threads the server-issued conversationId');
     console.log('  [PASS] 13. No second conversation persistence path (source-level delegation proof)');

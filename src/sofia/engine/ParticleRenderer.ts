@@ -17,7 +17,7 @@
  */
 
 import { BLUR_FS, BODY_FS, COMPOSITE_FS, PARTICLE_FS, PARTICLE_VS, SCREEN_VS } from './gl/shaders';
-import { dockLayout, stageLayout } from './layout';
+import { dockLayout, stageLayout, STAGE_CY_SOFIAUI } from './layout';
 
 export interface FrameParams {
   time: number;
@@ -123,9 +123,13 @@ export class ParticleRenderer {
   private quarterB: Target | null = null;
   private floatOK = false;
   private dpr = Math.min(2, window.devicePixelRatio || 1);
+  /** Vertical placement of the sphere on the stage (SofiaUI 0.44 default;
+   * square widget stages pass 0.5 — see engine/layout.ts). */
+  private stageCyRatio: number;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, opts?: { stageCyRatio?: number }) {
     this.canvas = canvas;
+    this.stageCyRatio = opts?.stageCyRatio ?? STAGE_CY_SOFIAUI;
     const gl = canvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
@@ -330,7 +334,7 @@ export class ParticleRenderer {
     const rawVis = half ? 1 - dockT * 2 : (dockT - 0.5) * 2;
     const vis = rawVis * rawVis * (3 - 2 * rawVis); // smoothstep the fade
     const lay = half
-      ? stageLayout(this.canvas.clientWidth, this.canvas.clientHeight)
+      ? stageLayout(this.canvas.clientWidth, this.canvas.clientHeight, this.stageCyRatio)
       : dockLayout(this.canvas.clientWidth, this.canvas.clientHeight);
     const cx = lay.cx * this.dpr;
     const cy = (this.canvas.clientHeight - lay.cy) * this.dpr; // GL y-up
