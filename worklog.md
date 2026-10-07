@@ -2059,3 +2059,24 @@ Stage Summary:
 - Consolidation branch consolidation/20261006 @ <tip> = origin/main lineage (fast-forwardable: origin/main 5881216 is an ancestor) + development + decision-layer + voice + audits + cleanup. All four content-bearing branches merged; every other local/remote branch is strictly contained.
 - Full battery green (exact baseline numbers); lint 0; tsc −2 net; production build green; the two pre-existing scheduler restart flakes documented with pre-merge reproduction evidence.
 - Remote operations (push main to origin + delete remote branches) are prepared as a guarded script but require a fresh GitHub token — the sandbox has no persisted credentials by design (previous session tokens were inline-only and rotated). Local branch deletion done after archive-tagging; local main reset to the consolidated tip.
+
+---
+Task ID: consolidation-2026-10-06-remote-ops
+Agent: Z.ai Code (principal, direct execution)
+Task: Complete the remote half of the Founder-authorized consolidation: push consolidated main to origin, delete the contained remote branches, verify final state. (Founder supplied a fresh GitHub token in-session; used inline-only, never persisted to .git/config or any repo file.)
+
+Work Log:
+- Pre-flight: working tree showed 311 "modified" files — all pure mode flips 100644→100755 (sandbox filesystem artifact, zero content diff). Restored on-disk modes to git-recorded values → `git status` clean. No commit needed; local main tip c19f130 (consolidated) untouched.
+- Fetch with new token (+prune): remote had 6 branches (main + development, feat/decision-layer-architecture-baseline, fix/sophia-dependency-response-path, fix/sophia-dependency-response-path-dev, test/sophia-production-response-path-regression). Ancestry verified: origin/main 5881216 is an ancestor of local main c19f130 (167 ahead / 0 behind → pure fast-forward).
+- Containment safety check before deletion: all 5 non-main remote tips (development a020cab4, decision-layer 4f29110, fix-response-path a3214db, fix-response-path-dev 72e2dd5, test-regression 7a38a19) confirmed strictly contained in local main (`git branch -r --merged main` = all; per-tip merge-base checks all CONTAINED). Deletion loses zero commits; local archive tags additionally preserve every tip.
+- Push: origin/main fast-forwarded 5881216 → c19f130 (exit 0, no force).
+- Remote branch deletion: all 5 deleted on origin (exit 0).
+- Post-state verified via ls-remote (ground truth): remote now has exactly ONE branch, refs/heads/main @ c19f13058eace4c611e329c44ae75ed0672322fa, identical to local main. Remaining remote refs: refs/pull/1..5 (GitHub's automatic PR archives, not branches, not deletable) and 2 pre-existing tags (legacy/pre-reconciliation, pre-memory-merge-main). 21 archive/* tags kept local-only per the prepared plan (remote stays minimal; merged content all reachable from main; the sandbox-backup lineage af1aab4 is already remotely preserved via the legacy/pre-reconciliation tag).
+- Archive-tag reachability audit for the record: 12 archive tags point to tips not reachable from main (M3–M5 memory lineages, m4a/m4b1/m51–m54 experiment branches, docs-m5 evaluation, sandbox backup) — these are pre-reconciliation lineages whose merged outcomes live in main via PR merges; retained locally as historical record only.
+- Local state: single branch (main), single worktree (/home/z/my-project), tree clean, no stashes. Dev server :3000 healthy throughout (GET / 200, zero errors in dev.log); pure git-metadata work, zero application files touched.
+- This worklog record committed and pushed to keep local == remote and the tree clean (repo convention, cf. c19f130).
+
+Stage Summary:
+- Consolidation COMPLETE end-to-end: origin/main = consolidated tip c19f130 (voice + decision-layer + development + audits + cleanup + post-merge fixes); remote reduced to a single branch (main); every deleted branch tip was strictly contained in main and is additionally preserved by local archive tags.
+- Remote truth: 1 branch, 5 automatic PR refs, 2 legacy tags. No force-push used anywhere; everything fast-forward.
+- Token handling: inline-only in fetch/push/ls-remote commands; not written to any file; recommend Founder rotate it at convenience since it transited chat.
