@@ -233,6 +233,7 @@ export class DeepgramVoiceProvider extends VoiceProvider {
     this.speaking = false;
     this.busy = false;
     this.emit('response_finished', { source: this.id });
+    this.emit('playback_finished', { source: this.id });
     this.emit('listening', { source: this.id });
   }
 

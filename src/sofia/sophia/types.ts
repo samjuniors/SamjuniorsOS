@@ -27,12 +27,36 @@ export type SophiaEventType =
   | 'transcript'
   | 'thinking'
   | 'rendering'
+  | 'tool_started'
+  | 'tool_finished'
   | 'response_started'
   | 'audio_started'
   | 'audio_chunk'
   | 'interrupted'
   | 'response_finished'
+  | 'playback_finished'
   | 'error';
+
+export type TransportState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'error';
+
+export type CognitiveState =
+  | 'idle'
+  | 'listening'
+  | 'thinking'
+  | 'tool_executing'
+  | 'done'
+  | 'error';
+
+export type AudioPlaybackState =
+  | 'silent'
+  | 'playing'
+  | 'draining'
+  | 'interrupted';
 
 export interface SophiaEventDetail {
   /** transcript payloads */
@@ -45,6 +69,10 @@ export interface SophiaEventDetail {
   code?: string;
   message?: string;
   source?: string;
+  /** tool execution metadata */
+  tool?: string;
+  callId?: string;
+  latencyMs?: number;
 }
 
 export type VoiceProviderId = 'gemini-live' | 'deepgram' | 'elevenlabs' | 'local';

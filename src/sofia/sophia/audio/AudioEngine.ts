@@ -82,6 +82,7 @@ export class AudioEngine {
   private levelHandlers = new Set<LevelHandler>();
   private playbackLevelHandlers = new Set<LevelHandler>();
   private playbackHandlers = new Set<() => void>();
+  private playbackStartHandlers = new Set<() => void>();
   private clapHandlers = new Set<() => void>();
   private micStatusHandlers = new Set<MicStatusHandler>();
   private bargeInHandlers = new Set<() => void>();
@@ -92,7 +93,9 @@ export class AudioEngine {
   private output = new AudioOutput(
     (isPlaying) => {
       scoreEngine.setDucked(isPlaying);
-      if (!isPlaying) {
+      if (isPlaying) {
+        this.playbackStartHandlers.forEach((fn) => fn());
+      } else {
         this.playRms = 0;
         this.speechStreakMs = 0;
         this.playbackHandlers.forEach((fn) => fn());
@@ -124,6 +127,11 @@ export class AudioEngine {
   onPlaybackEnd(fn: () => void): () => void {
     this.playbackHandlers.add(fn);
     return () => this.playbackHandlers.delete(fn);
+  }
+  /** fires when audio playback begins on the output device */
+  onPlaybackStart(fn: () => void): () => void {
+    this.playbackStartHandlers.add(fn);
+    return () => this.playbackStartHandlers.delete(fn);
   }
   onClap(fn: () => void): () => void {
     this.clapHandlers.add(fn);

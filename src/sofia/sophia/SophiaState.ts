@@ -8,7 +8,14 @@
  * Consumes normalized VoiceProvider events, user commands, and tool calls.
  */
 
-import type { SophiaEventDetail, SophiaEventType, SophiaStateName } from './types';
+import type {
+  AudioPlaybackState,
+  CognitiveState,
+  SophiaEventDetail,
+  SophiaEventType,
+  SophiaStateName,
+  TransportState,
+} from './types';
 
 type Listener = (state: SophiaStateName, prev: SophiaStateName, meta: Record<string, unknown>) => void;
 
@@ -60,8 +67,24 @@ export class SophiaState {
   private listeners = new Set<Listener>();
   private timers = new Set<ReturnType<typeof setTimeout>>();
 
+  private _cognitiveState: CognitiveState = 'idle';
+  private _audioState: AudioPlaybackState = 'silent';
+  private _transportState: TransportState = 'disconnected';
+
   get current(): SophiaStateName {
     return this._state;
+  }
+
+  get cognitiveState(): CognitiveState {
+    return this._cognitiveState;
+  }
+
+  get audioState(): AudioPlaybackState {
+    return this._audioState;
+  }
+
+  get transportState(): TransportState {
+    return this._transportState;
   }
 
   get resumeState(): SophiaStateName {
@@ -144,29 +167,88 @@ export class SophiaState {
     if (this._state === 'paused') return;
     switch (type) {
       case 'listening':
-        if (this.is('focusing', 'rendering', 'wakeup')) this.transition('listening', { source: detail.source });
+        this._cognitiveState = 'listening';
+        if (this._audioState === 'silent') {
+          if (this.is('focusing', 'rendering', 'wakeup', 'completed', 'ambient', 'idle')) {
+            this.transition('listening', { source: detail.source });
+          }
+        }
         break;
       case 'speech_started':
+        this._cognitiveState = 'listening';
+        this._audioState = 'silent';
         if (this.is('speaking', 'thinking', 'rendering', 'wakeup', 'completed', 'focusing')) {
           this.transition('listening', { reason: 'barge-in' });
         }
         break;
       case 'thinking':
-        if (this.is('listening', 'ambient', 'idle', 'wakeup', 'completed', 'focusing')) this.transition('thinking');
+        this._cognitiveState = 'thinking';
+        if (this._audioState === 'silent') {
+          if (this.is('listening', 'ambient', 'idle', 'wakeup', 'completed', 'focusing')) {
+            this.transition('thinking');
+          }
+        }
+        break;
+      case 'tool_started':
+        this._cognitiveState = 'tool_executing';
+        if (this._audioState === 'silent') {
+          if (this.is('listening', 'ambient', 'idle', 'wakeup', 'completed', 'focusing', 'thinking')) {
+            this.transition('thinking', { tool: detail.tool });
+          }
+        }
+        break;
+      case 'tool_finished':
+        if (this._cognitiveState === 'tool_executing') {
+          this._cognitiveState = 'thinking';
+        }
         break;
       case 'response_started':
+        // Model generation has started. Audio has not begun audible playback yet.
+        this._cognitiveState = 'thinking';
+        break;
       case 'audio_started':
       case 'audio_chunk':
-        if (this.is('thinking', 'listening', 'rendering', 'wakeup', 'completed', 'focusing')) this.transition('speaking');
+        this._audioState = 'playing';
+        if (this.is('thinking', 'listening', 'rendering', 'wakeup', 'completed', 'focusing')) {
+          this.transition('speaking');
+        }
         break;
       case 'interrupted':
-        if (this.is('speaking', 'thinking', 'rendering', 'completed')) this.transition('listening', { reason: 'interrupted' });
+        this._cognitiveState = 'listening';
+        this._audioState = 'silent';
+        if (this.is('speaking', 'thinking', 'rendering', 'completed')) {
+          this.transition('listening', { reason: 'interrupted' });
+        }
         break;
       case 'response_finished':
-        if (this.is('speaking', 'thinking', 'rendering')) this.transition('completed', { reason: 'turn-complete' });
+        this._cognitiveState = 'done';
+        // CRITICAL INVARIANT: response_finished != playback_finished.
+        // If audio playback is still active or draining, remain SPEAKING until playback drains!
+        if (this._audioState === 'silent') {
+          if (this.is('speaking', 'thinking', 'rendering')) {
+            this.transition('completed', { reason: 'turn-complete' });
+          }
+        }
+        break;
+      case 'playback_finished':
+        this._audioState = 'silent';
+        // Natural end of utterance playback: now that audio has fully drained, settle state.
+        if (this._cognitiveState === 'done') {
+          if (this.is('speaking', 'thinking', 'rendering')) {
+            this.transition('completed', { reason: 'playback-drained' });
+          }
+        } else if (this._cognitiveState === 'listening') {
+          if (this.is('speaking')) {
+            this.transition('listening', { reason: 'playback-drained' });
+          }
+        }
         break;
       case 'error':
-        if (!this.is('ambient', 'idle')) this.transition('ambient', { reason: 'error', code: detail.code });
+        this._cognitiveState = 'error';
+        this._audioState = 'silent';
+        if (!this.is('ambient', 'idle')) {
+          this.transition('ambient', { reason: 'error', code: detail.code });
+        }
         break;
       default:
         break;

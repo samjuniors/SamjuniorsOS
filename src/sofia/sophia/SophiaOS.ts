@@ -110,11 +110,14 @@ const VOICE_EVENTS: SophiaEventType[] = [
   'transcript',
   'thinking',
   'rendering',
+  'tool_started',
+  'tool_finished',
   'response_started',
   'audio_started',
   'audio_chunk',
   'interrupted',
   'response_finished',
+  'playback_finished',
   'error',
 ];
 
@@ -1103,6 +1106,9 @@ export class SophiaOS extends EventTarget {
             break;
           case 'response_finished':
             this.state.handleVoiceEvent(type, detail);
+            break;
+          case 'playback_finished':
+            this.state.handleVoiceEvent(type, detail);
             this.armPostTurn();
             break;
           case 'error':
@@ -1146,14 +1152,23 @@ export class SophiaOS extends EventTarget {
         this.pushLog('event', `${id}: rendering image…`);
         return;
       case 'audio_started':
-      case 'response_started':
         this.pushLog('event', `${id}: speaking`);
+        return;
+      case 'response_started':
         return;
       case 'interrupted':
         this.pushLog('event', `${id}: interrupted — listening`);
         return;
       case 'response_finished':
-        this.pushLog('event', `${id}: turn complete`);
+        this.pushLog('event', `${id}: model generation complete`);
+        return;
+      case 'playback_finished':
+        this.pushLog('event', `${id}: playback complete`);
+        return;
+      case 'tool_started':
+        this.pushLog('event', `${id}: tool executing${detail.tool ? ` (${detail.tool})` : ''}…`);
+        return;
+      case 'tool_finished':
         return;
       case 'error':
         this.pushLog('error', `${id}: ${detail.code ?? 'error'}${detail.message ? ' · ' + detail.message : ''}`);
