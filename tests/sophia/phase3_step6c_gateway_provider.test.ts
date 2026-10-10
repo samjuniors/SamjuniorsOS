@@ -142,10 +142,35 @@ async function runTests() {
     assert.strictEqual(p.id, 'live-gateway');
   });
 
-  test('Custom allowedHosts allowlist option is honored', () => {
+  test('Custom allowedHosts allowlist option is strictly restrictive and replaces default host policy', () => {
     const audio = new MockAudioEngine() as any;
+    // When allowedHosts is supplied, even samjuniors.com is rejected if not in allowedHosts
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'wss://os.samjuniors.com/live', {
+        allowedHosts: ['gateway.internal.net'],
+      });
+    }, /is not in the restrictive allowedHosts list/);
+
+    // Permitted host in allowedHosts is accepted
     const p = new LiveGatewayVoiceProvider(audio, 'wss://gateway.internal.net/ws', {
       allowedHosts: ['gateway.internal.net'],
+    });
+    assert.strictEqual(p.id, 'live-gateway');
+  });
+
+  test('Current browser hostname is untrusted by default unless trustCurrentOrigin is true', () => {
+    const audio = new MockAudioEngine() as any;
+    // Untrusted by default
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'wss://custom.browser-origin.io/ws', {
+        currentHostname: 'custom.browser-origin.io',
+      });
+    }, /is not in the trusted allowlist/);
+
+    // Explicitly trusted via trustCurrentOrigin
+    const p = new LiveGatewayVoiceProvider(audio, 'wss://custom.browser-origin.io/ws', {
+      currentHostname: 'custom.browser-origin.io',
+      trustCurrentOrigin: true,
     });
     assert.strictEqual(p.id, 'live-gateway');
   });
@@ -190,6 +215,19 @@ async function runTests() {
     assert.throws(() => {
       new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', { isProduction: true });
     }, /Insecure ws:\/\/ protocol is forbidden in production/);
+  });
+
+  test('Production mode cannot be weakened or downgraded by isProduction: false', () => {
+    const audio = new MockAudioEngine() as any;
+    const originalEnv = process.env.NODE_ENV;
+    try {
+      (process.env as any).NODE_ENV = 'production';
+      assert.throws(() => {
+        new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', { isProduction: false });
+      }, /Insecure ws:\/\/ protocol is forbidden in production/);
+    } finally {
+      (process.env as any).NODE_ENV = originalEnv;
+    }
   });
 
   test('Production mode accepts trusted wss:// scheme', () => {

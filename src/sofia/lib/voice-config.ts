@@ -25,6 +25,7 @@ export type VoiceConfigResolution =
 
 export interface GatewayValidationOptions {
   allowedHosts?: string[];
+  trustCurrentOrigin?: boolean;
   currentHostname?: string;
   allowedPorts?: number[];
   allowedPaths?: string[];
@@ -33,11 +34,12 @@ export interface GatewayValidationOptions {
 
 /**
  * Validates that a WebSocket gateway URL conforms to strict security policies:
- * 1. Protocol: ws:// or wss:// only.
- * 2. Strict production policy: wss:// required in production; ws:// only allowed for local loopback in dev.
- * 3. Query strings and URL fragments strictly forbidden.
- * 4. Embedded credentials (username/password) strictly forbidden.
- * 5. Host allowlist: localhost, 127.0.0.1, [::1], current origin hostname, *.samjuniors.com / *.samjuniors.local, or allowedHosts.
+ * 1. Protocol: ws: or wss: only (parsed directly via WHATWG URL).
+ * 2. Authoritative production detection: test options cannot weaken a production environment.
+ * 3. Query strings, fragments, and credentials strictly forbidden.
+ * 4. Restrictive host policy: a supplied allowedHosts strictly replaces defaults.
+ * 5. Default host policy: local loopback and *.samjuniors.com / *.samjuniors.local.
+ *    Current origin hostname is trusted ONLY if trustCurrentOrigin is explicitly authorized.
  * 6. Port allowlist: default ports or explicitly allowed gateway ports (3001, 80, 443, 8443).
  * 7. Path allowlist: valid gateway paths (/, /ws, /api/live/ws, /live) with no path traversal.
  */
@@ -61,28 +63,32 @@ export function validateGatewayHost(
     return { valid: false, error: 'Path traversal in gateway URL is forbidden' };
   }
 
-  // Protocol check
-  if (!trimmed.startsWith('ws://') && !trimmed.startsWith('wss://')) {
-    return { valid: false, error: `Invalid protocol in "${url}". Expected ws:// or wss://.` };
+  // Parse directly using WHATWG URL without artificial HTTP conversion
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch (err: any) {
+    return { valid: false, error: `Malformed WebSocket URL: ${err.message}` };
   }
 
-  const isProd =
-    options?.isProduction ??
-    (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production');
+  // Validate actual protocol
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+    return {
+      valid: false,
+      error: `Invalid protocol in "${url}". Expected ws:// or wss://.`,
+    };
+  }
 
-  if (isProd && !trimmed.startsWith('wss://')) {
+  // Authoritative production detection: options cannot weaken process.env.NODE_ENV === 'production'
+  const envIsProd =
+    typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
+  const isProd = envIsProd || options?.isProduction === true;
+
+  if (isProd && parsed.protocol !== 'wss:') {
     return {
       valid: false,
       error: 'Insecure ws:// protocol is forbidden in production; wss:// is required',
     };
-  }
-
-  let parsed: URL;
-  try {
-    const httpScheme = trimmed.startsWith('wss://') ? 'https://' : 'http://';
-    parsed = new URL(httpScheme + trimmed.replace(/^wss?:\/\//, ''));
-  } catch (err: any) {
-    return { valid: false, error: `Malformed WebSocket URL: ${err.message}` };
   }
 
   // Reject query string, hash, or credentials parsed from URL
@@ -97,46 +103,59 @@ export function validateGatewayHost(
   }
 
   const hostname = parsed.hostname.toLowerCase();
+  if (!hostname) {
+    return { valid: false, error: 'Empty or missing hostname in WebSocket URL' };
+  }
+
   const isLocalHost =
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
     hostname === '::1' ||
     hostname === '[::1]';
 
-  // Explicit dev policy: ws:// is permitted ONLY for local loopback
-  if (trimmed.startsWith('ws://') && !isLocalHost) {
+  // Explicit dev policy: ws: is permitted ONLY for local loopback
+  if (parsed.protocol === 'ws:' && !isLocalHost) {
     return {
       valid: false,
       error: `Insecure ws:// protocol is only permitted for local loopback addresses in development. Remote host "${hostname}" requires wss://.`,
     };
   }
 
-  const currentHostname =
-    options?.currentHostname ||
-    (typeof window !== 'undefined' && window.location ? window.location.hostname.toLowerCase() : 'localhost');
+  // Host allowlist policy:
+  // If allowedHosts is supplied, it strictly REPLACES the default policy.
+  if (options?.allowedHosts) {
+    const explicitAllowlist = new Set(options.allowedHosts.map((h) => h.toLowerCase()));
+    if (!explicitAllowlist.has(hostname)) {
+      return {
+        valid: false,
+        error: `Gateway host "${hostname}" is not in the restrictive allowedHosts list`,
+      };
+    }
+  } else {
+    // Default host policy: local loopback, company domains, or authorized origin
+    const isSamJuniorsDomain =
+      hostname === 'samjuniors.com' ||
+      hostname.endsWith('.samjuniors.com') ||
+      hostname === 'samjuniors.local' ||
+      hostname.endsWith('.samjuniors.local');
 
-  const trustedHosts = new Set(
-    (options?.allowedHosts || [
-      'localhost',
-      '127.0.0.1',
-      '::1',
-      '[::1]',
-      currentHostname,
-    ]).map((h) => h.toLowerCase())
-  );
+    let isAuthorizedOrigin = false;
+    if (options?.trustCurrentOrigin) {
+      const current = (
+        options?.currentHostname ||
+        (typeof window !== 'undefined' && window.location ? window.location.hostname : '')
+      )?.toLowerCase();
+      if (current && hostname === current) {
+        isAuthorizedOrigin = true;
+      }
+    }
 
-  const isExplicitlyAllowed = trustedHosts.has(hostname);
-  const isSamJuniorsDomain =
-    hostname === 'samjuniors.com' ||
-    hostname.endsWith('.samjuniors.com') ||
-    hostname === 'samjuniors.local' ||
-    hostname.endsWith('.samjuniors.local');
-
-  if (!isExplicitlyAllowed && !isSamJuniorsDomain) {
-    return {
-      valid: false,
-      error: `Gateway host "${hostname}" is not in the trusted allowlist`,
-    };
+    if (!isLocalHost && !isSamJuniorsDomain && !isAuthorizedOrigin) {
+      return {
+        valid: false,
+        error: `Gateway host "${hostname}" is not in the trusted allowlist`,
+      };
+    }
   }
 
   // Port validation

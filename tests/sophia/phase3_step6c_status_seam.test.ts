@@ -299,6 +299,40 @@ async function runTests() {
       }
     });
 
+    test('Production mode cannot be downgraded by isProduction: false when NODE_ENV is production', () => {
+      const original = process.env.NODE_ENV;
+      try {
+        (process.env as any).NODE_ENV = 'production';
+        const r = resolveVoiceConfig(
+          {
+            voiceGateway: true,
+            liveWsUrl: 'ws://localhost:3001',
+          },
+          { isProduction: false }
+        );
+        assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+        if (r.mode === 'CONFIG_UNAVAILABLE') {
+          assert.ok(r.error.includes('Insecure ws:// protocol is forbidden in production'));
+        }
+      } finally {
+        (process.env as any).NODE_ENV = original;
+      }
+    });
+
+    test('Custom allowedHosts is strictly restrictive and replaces defaults in resolveVoiceConfig', () => {
+      const r = resolveVoiceConfig(
+        {
+          voiceGateway: true,
+          liveWsUrl: 'wss://os.samjuniors.com/live',
+        },
+        { allowedHosts: ['gateway.internal.net'] }
+      );
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('not in the restrictive allowedHosts list'));
+      }
+    });
+
     test('Disallowed port in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
       const r = resolveVoiceConfig({
         voiceGateway: true,
