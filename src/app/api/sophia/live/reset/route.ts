@@ -12,9 +12,6 @@ import { getAuthenticatedFounder } from '@/lib/server/auth/session';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const LIVE_WS =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
-
 export async function POST(req: NextRequest) {
   // Fail-closed authentication precedes retirement: unauthorized callers
   // must never receive information about internal endpoint existence or status.

@@ -199,11 +199,13 @@ async function run() {
     delete ENV.GEMINI_API_KEY;
     delete ENV.GOOGLE_API_KEY;
 
-    await test('live/session: missing GEMINI_API_KEY fails closed with 503', async () => {
+    await test('live/session: missing GEMINI_API_KEY fails closed with 503 and deprecation headers', async () => {
       const res = await liveSessionRoute(makeReq('/api/sophia/live/session'));
       assert.strictEqual(res.status, 503, `expected 503, got ${res.status}`);
       const data = await res.json();
       assert.strictEqual(data.error, 'GEMINI_API_KEY not configured');
+      assert.strictEqual(res.headers.get('deprecation'), '@deprecated');
+      assert.strictEqual(res.headers.get('x-samjuniors-canonical-route'), '/api/auth/ws-ticket');
     });
 
     // 3C. CRITICAL SECURITY TEST: Raw API key is NEVER leaked in development

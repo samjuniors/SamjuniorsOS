@@ -25,9 +25,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error: 'GEMINI_API_KEY not configured',
-        message: 'Gemini API key is required to initiate Gemini Live sessions.',
+        message: 'Gemini API key is required to initiate Gemini Live sessions. Canonical gateway is /api/auth/ws-ticket.',
       },
-      { status: 503 },
+      {
+        status: 503,
+        headers: {
+          Deprecation: '@deprecated',
+          Warning:
+            '299 - "The /api/sophia/live/session endpoint is a deprecated prototype seam. The canonical gateway is /api/auth/ws-ticket."',
+          'X-SamJuniors-Canonical-Route': '/api/auth/ws-ticket',
+        },
+      },
     );
   }
 
