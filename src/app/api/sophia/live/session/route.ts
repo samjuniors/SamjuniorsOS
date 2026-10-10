@@ -55,15 +55,25 @@ export async function POST(req: NextRequest) {
     });
     if (res.ok) {
       const token = (await res.json()) as { name?: string };
-      if (token?.name) {
-        return NextResponse.json({
-          token: token.name,
-          model: modelOverride,
-          wsUrl: LIVE_WS,
-          voice,
-          createdAt: now,
-          expiresInSeconds,
-        });
+      if (token?.name && token.name !== apiKey) {
+        return NextResponse.json(
+          {
+            token: token.name,
+            model: modelOverride,
+            wsUrl: LIVE_WS,
+            voice,
+            createdAt: now,
+            expiresInSeconds,
+          },
+          {
+            headers: {
+              Deprecation: '@deprecated',
+              Warning:
+                '299 - "The /api/sophia/live/session endpoint is a deprecated prototype seam. The canonical gateway is /api/auth/ws-ticket."',
+              'X-SamJuniors-Canonical-Route': '/api/auth/ws-ticket',
+            },
+          },
+        );
       }
     }
     console.error('[sophia-ui] ephemeral live token failed:', res.status);
@@ -71,23 +81,22 @@ export async function POST(req: NextRequest) {
     console.error('[sophia-ui] ephemeral live token error:', (err as Error).message);
   }
 
-  // Explicit, local-dev-only escape hatch mirroring SofiaUI.
-  if (process.env.SOPHIA_ALLOW_RAW_LIVE_KEY === '1' || process.env.NODE_ENV !== 'production') {
-    return NextResponse.json({
-      token: apiKey,
-      model: modelOverride,
-      wsUrl: LIVE_WS,
-      voice,
-      createdAt: now,
-      expiresInSeconds,
-    });
-  }
-
+  // AGENTS.md §11.6 Zero Client Secrets & Phase 3 Step 6B security hardening:
+  // The raw API key must NEVER be returned to the browser under any circumstance,
+  // in development or production. When ephemeral token minting fails, fail closed.
   return NextResponse.json(
     {
       error: 'live-token-unavailable',
-      message: 'Could not mint an ephemeral Gemini Live token on this deployment.',
+      message: 'Could not mint an ephemeral Gemini Live token on this deployment. Canonical gateway is /api/auth/ws-ticket.',
     },
-    { status: 503 },
+    {
+      status: 503,
+      headers: {
+        Deprecation: '@deprecated',
+        Warning:
+          '299 - "The /api/sophia/live/session endpoint is a deprecated prototype seam. The canonical gateway is /api/auth/ws-ticket."',
+        'X-SamJuniors-Canonical-Route': '/api/auth/ws-ticket',
+      },
+    },
   );
 }
