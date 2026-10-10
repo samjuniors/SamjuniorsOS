@@ -23,22 +23,58 @@ export type VoiceConfigResolution =
       error: string;
     };
 
+export interface GatewayValidationOptions {
+  allowedHosts?: string[];
+  currentHostname?: string;
+  allowedPorts?: number[];
+  allowedPaths?: string[];
+  isProduction?: boolean;
+}
+
 /**
- * Validates that a WebSocket gateway URL conforms to trusted host policies:
- * - Protocols: ws:// or wss:// only
- * - No credentials embedded in URL
- * - Hosts: localhost, 127.0.0.1, [::1], current origin hostname, or *.samjuniors.com / *.samjuniors.local
+ * Validates that a WebSocket gateway URL conforms to strict security policies:
+ * 1. Protocol: ws:// or wss:// only.
+ * 2. Strict production policy: wss:// required in production; ws:// only allowed for local loopback in dev.
+ * 3. Query strings and URL fragments strictly forbidden.
+ * 4. Embedded credentials (username/password) strictly forbidden.
+ * 5. Host allowlist: localhost, 127.0.0.1, [::1], current origin hostname, *.samjuniors.com / *.samjuniors.local, or allowedHosts.
+ * 6. Port allowlist: default ports or explicitly allowed gateway ports (3001, 80, 443, 8443).
+ * 7. Path allowlist: valid gateway paths (/, /ws, /api/live/ws, /live) with no path traversal.
  */
 export function validateGatewayHost(
   url: string,
-  options?: { allowedHosts?: string[]; currentHostname?: string }
+  options?: GatewayValidationOptions
 ): { valid: boolean; error?: string } {
   if (!url || typeof url !== 'string') {
     return { valid: false, error: 'liveWsUrl must be a non-empty string' };
   }
   const trimmed = url.trim();
+
+  // Reject query strings, fragments, and path traversal upfront
+  if (trimmed.includes('?')) {
+    return { valid: false, error: 'Query parameters in gateway URL are forbidden' };
+  }
+  if (trimmed.includes('#')) {
+    return { valid: false, error: 'URL fragments in gateway URL are forbidden' };
+  }
+  if (trimmed.includes('..')) {
+    return { valid: false, error: 'Path traversal in gateway URL is forbidden' };
+  }
+
+  // Protocol check
   if (!trimmed.startsWith('ws://') && !trimmed.startsWith('wss://')) {
     return { valid: false, error: `Invalid protocol in "${url}". Expected ws:// or wss://.` };
+  }
+
+  const isProd =
+    options?.isProduction ??
+    (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production');
+
+  if (isProd && !trimmed.startsWith('wss://')) {
+    return {
+      valid: false,
+      error: 'Insecure ws:// protocol is forbidden in production; wss:// is required',
+    };
   }
 
   let parsed: URL;
@@ -49,11 +85,32 @@ export function validateGatewayHost(
     return { valid: false, error: `Malformed WebSocket URL: ${err.message}` };
   }
 
+  // Reject query string, hash, or credentials parsed from URL
+  if (parsed.search) {
+    return { valid: false, error: 'Query parameters in gateway URL are forbidden' };
+  }
+  if (parsed.hash) {
+    return { valid: false, error: 'URL fragments in gateway URL are forbidden' };
+  }
   if (parsed.username || parsed.password) {
     return { valid: false, error: 'Credentials embedded in WebSocket URL are forbidden' };
   }
 
   const hostname = parsed.hostname.toLowerCase();
+  const isLocalHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]';
+
+  // Explicit dev policy: ws:// is permitted ONLY for local loopback
+  if (trimmed.startsWith('ws://') && !isLocalHost) {
+    return {
+      valid: false,
+      error: `Insecure ws:// protocol is only permitted for local loopback addresses in development. Remote host "${hostname}" requires wss://.`,
+    };
+  }
+
   const currentHostname =
     options?.currentHostname ||
     (typeof window !== 'undefined' && window.location ? window.location.hostname.toLowerCase() : 'localhost');
@@ -82,6 +139,29 @@ export function validateGatewayHost(
     };
   }
 
+  // Port validation
+  if (parsed.port) {
+    const portNum = parseInt(parsed.port, 10);
+    if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      return { valid: false, error: `Invalid port "${parsed.port}" in gateway URL` };
+    }
+    const allowedPorts = options?.allowedPorts ?? [3001, 80, 443, 8443];
+    if (!allowedPorts.includes(portNum)) {
+      return { valid: false, error: `Port ${portNum} is not in the allowed gateway ports list` };
+    }
+  }
+
+  // Path validation
+  const normalizedPath = parsed.pathname.replace(/\/+$/, '') || '/';
+  if (normalizedPath.includes('..')) {
+    return { valid: false, error: 'Path traversal in gateway URL is forbidden' };
+  }
+  const defaultAllowedPaths = ['/', '/ws', '/api/live/ws', '/live'];
+  const allowedPaths = options?.allowedPaths ?? defaultAllowedPaths;
+  if (!allowedPaths.includes(normalizedPath)) {
+    return { valid: false, error: `Path "${normalizedPath}" is not in the allowed gateway path list` };
+  }
+
   return { valid: true };
 }
 
@@ -92,7 +172,7 @@ export function validateGatewayHost(
  */
 export function resolveVoiceConfig(
   statusPayload: unknown,
-  options?: { allowedHosts?: string[]; currentHostname?: string }
+  options?: GatewayValidationOptions
 ): VoiceConfigResolution {
   if (!statusPayload || typeof statusPayload !== 'object') {
     return {
@@ -149,7 +229,8 @@ export function resolveVoiceConfig(
  * Network errors and non-200 responses fail closed to CONFIG_UNAVAILABLE.
  */
 export async function fetchVoiceConfig(
-  fetchFn: typeof fetch = fetch
+  fetchFn: typeof fetch = fetch,
+  options?: GatewayValidationOptions
 ): Promise<VoiceConfigResolution> {
   try {
     const res = await fetchFn('/api/sophia/status', {
@@ -165,7 +246,7 @@ export async function fetchVoiceConfig(
       };
     }
     const data = await res.json();
-    return resolveVoiceConfig(data);
+    return resolveVoiceConfig(data, options);
   } catch (err: any) {
     return {
       mode: 'CONFIG_UNAVAILABLE',

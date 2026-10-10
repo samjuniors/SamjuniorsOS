@@ -20,12 +20,10 @@
 import { AudioEngine } from '../audio/AudioEngine';
 import type { SophiaEventDetail, SophiaEventType, VoiceProviderId } from '../types';
 import { VoiceProvider } from './VoiceProvider';
-import { validateGatewayHost } from '../../lib/voice-config';
+import { validateGatewayHost, GatewayValidationOptions } from '../../lib/voice-config';
 
-export interface LiveGatewayOptions {
+export interface LiveGatewayOptions extends GatewayValidationOptions {
   wsUrl?: string;
-  allowedHosts?: string[];
-  currentHostname?: string;
   fetchFn?: typeof fetch;
   WebSocketClass?: typeof WebSocket;
 }
@@ -34,10 +32,12 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   readonly id: VoiceProviderId = 'live-gateway';
 
   private wsUrl: string;
+  private options: LiveGatewayOptions;
   private ws: WebSocket | null = null;
   private fetchFn: typeof fetch;
   private WebSocketClass: typeof WebSocket;
 
+  private startPromise: Promise<void> | null = null;
   private detachPCM: (() => void) | null = null;
   private ttsAbortController: AbortController | null = null;
 
@@ -54,6 +54,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     options: LiveGatewayOptions = {}
   ) {
     super();
+    this.options = options;
     this.wsUrl = this.validateWsUrl(wsUrl, options);
     this.fetchFn = options.fetchFn || (typeof window !== 'undefined' ? window.fetch.bind(window) : fetch);
     this.WebSocketClass = options.WebSocketClass || (typeof window !== 'undefined' ? window.WebSocket : (globalThis as any).WebSocket);
@@ -64,7 +65,9 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * 1. Protocol: ws:// or wss:// only.
    * 2. Host validation: host must be localhost, 127.0.0.1, [::1], current origin hostname,
    *    or in the trusted gateway host allowlist (*.samjuniors.com / *.samjuniors.local).
-   * 3. No embedded credentials (username/password).
+   * 3. No query strings or fragments.
+   * 4. No embedded credentials (username/password).
+   * 5. Port and path allowlisting.
    * Acceptance criterion: fails closed on untrusted hosts or malformed strings.
    */
   private validateWsUrl(url: string, options: LiveGatewayOptions = {}): string {
@@ -77,11 +80,25 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
   /**
    * Acquires single-use ticket from /api/auth/ws-ticket and connects WebSocket.
+   * Concurrent invocations are idempotent and share the in-flight start Promise.
    */
   async start(): Promise<void> {
     if (this.active) return;
+    if (this.startPromise) return this.startPromise;
 
-    // 1. Fetch single-use ticket from canonical Next.js auth endpoint
+    this.startPromise = this.internalStart();
+    try {
+      await this.startPromise;
+    } finally {
+      this.startPromise = null;
+    }
+  }
+
+  private async internalStart(): Promise<void> {
+    // 1. Re-validate URL, port, path, scheme before ticket acquisition
+    this.wsUrl = this.validateWsUrl(this.wsUrl, this.options);
+
+    // 2. Fetch single-use ticket from canonical Next.js auth endpoint
     let ticket: string;
     try {
       const ticketRes = await this.fetchFn('/api/auth/ws-ticket', {
@@ -104,19 +121,40 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       throw err;
     }
 
-    // 2. Connect to companion WebSocket server
-    const targetUrl = `${this.wsUrl}${this.wsUrl.includes('?') ? '&' : '?'}ticket=${encodeURIComponent(ticket)}`;
+    // 3. Connect to companion WebSocket server
+    // Since wsUrl is validated to have no query string, append ticket directly
+    const targetUrl = `${this.wsUrl}?ticket=${encodeURIComponent(ticket)}`;
 
     await new Promise<void>((resolve, reject) => {
-      try {
-        const ws = new this.WebSocketClass(targetUrl);
-        this.ws = ws;
+      let ws: WebSocket;
+      let hasOpened = false;
+      let settled = false;
 
+      const cleanupHandshakeSocket = () => {
+        if (ws) {
+          ws.onopen = null;
+          ws.onmessage = null;
+          ws.onerror = null;
+          ws.onclose = null;
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          if (this.ws === ws) {
+            this.ws = null;
+          }
+        }
+      };
+
+      try {
+        ws = new this.WebSocketClass(targetUrl);
+        this.ws = ws;
         ws.binaryType = 'arraybuffer';
 
-        let hasOpened = false;
-
         ws.onopen = () => {
+          if (settled) return;
+          settled = true;
           hasOpened = true;
           this.active = true;
 
@@ -135,7 +173,16 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
         ws.onerror = (err) => {
           if (!hasOpened) {
-            reject(new Error(`WebSocket connection failed to ${this.wsUrl}`));
+            if (!settled) {
+              settled = true;
+              cleanupHandshakeSocket();
+              const error = new Error(`WebSocket connection failed to ${this.wsUrl}`);
+              this.emit('error', {
+                code: 'WEBSOCKET_HANDSHAKE_FAILED',
+                message: error.message,
+              });
+              reject(error);
+            }
           } else {
             this.emit('error', {
               code: 'WEBSOCKET_ERROR',
@@ -146,13 +193,28 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
         ws.onclose = (event) => {
           if (!hasOpened) {
-            reject(new Error(`WebSocket closed before handshake completed (code: ${event.code})`));
+            if (!settled) {
+              settled = true;
+              cleanupHandshakeSocket();
+              const error = new Error(
+                `WebSocket closed before handshake completed (code: ${event.code})`
+              );
+              this.emit('error', {
+                code: 'WEBSOCKET_HANDSHAKE_FAILED',
+                message: error.message,
+              });
+              reject(error);
+            }
           } else {
             this.handleClosed(event.code, event.reason);
           }
         };
-      } catch (err) {
-        reject(err);
+      } catch (err: any) {
+        if (!settled) {
+          settled = true;
+          cleanupHandshakeSocket();
+          reject(err);
+        }
       }
     });
   }
@@ -192,11 +254,15 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   }
 
   /**
-   * Text input fallback (sends text turn to canonical brain).
+   * Text input fallback.
+   * LiveInteractionServer is an audio stream gateway that does not support
+   * raw TEXT_MESSAGE frames. Text turns route through the canonical
+   * /api/sophia/chat endpoint server-side, with spoken playback synthesized
+   * via AudioEngine, without invoking client-side tools.
    */
   sendText(text: string): void {
     const cleanText = text.trim();
-    if (!cleanText || !this.ws || this.ws.readyState !== this.WebSocketClass.OPEN) return;
+    if (!cleanText) return;
 
     const turnId = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.activeTurnId = turnId;
@@ -205,15 +271,31 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     this.emit('transcript', { role: 'user', text: cleanText, final: true });
     this.emit('thinking');
 
-    // LiveInteractionServer processes TEXT_MESSAGE through executeSophiaTurn
-    this.ws.send(
-      JSON.stringify({
-        type: 'TEXT_MESSAGE',
-        turnId,
-        text: cleanText,
-        timestamp: Date.now(),
-      })
-    );
+    void (async () => {
+      try {
+        const chatRes = await this.fetchFn('/api/sophia/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: cleanText, turnId }),
+        });
+        if (!chatRes.ok) {
+          throw new Error(`Chat turn failed: HTTP ${chatRes.status}`);
+        }
+        const data = (await chatRes.json()) as { text?: string; reply?: string };
+        const reply = (data.reply || data.text || '').trim();
+        if (reply && !this.interruptedTurnIds.has(turnId)) {
+          await this.handleSophiaResponse({ turnId, reply });
+        } else {
+          this.emit('response_finished');
+          this.emit('playback_finished');
+        }
+      } catch (err: any) {
+        this.emit('error', {
+          code: 'TEXT_TURN_FAILED',
+          message: err?.message || 'Text turn failed',
+        });
+      }
+    })();
   }
 
   /**
@@ -455,8 +537,37 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   }
 
   private handleClosed(code: number, reason: string): void {
-    if (!this.active) return;
+    if (!this.active && !this.ws) return;
     this.active = false;
+
+    // Clean up all resources
+    if (this.detachPCM) {
+      this.detachPCM();
+      this.detachPCM = null;
+    }
+    if (this.ttsAbortController) {
+      this.ttsAbortController.abort();
+      this.ttsAbortController = null;
+    }
+    this.audio.stop();
+
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
+      this.ws.onclose = null;
+      try {
+        this.ws.close();
+      } catch {
+        /* ignore */
+      }
+      this.ws = null;
+    }
+
+    this.isTransmitting = false;
+    this.isSpeaking = false;
+    this.activeTurnId = null;
+
     this.emit('error', {
       code: 'GATEWAY_DISCONNECTED',
       message: `Live gateway WebSocket closed (code: ${code}, reason: ${reason || 'normal'})`,

@@ -244,7 +244,7 @@ async function runTests() {
     test('Untrusted gateway host in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
       const r = resolveVoiceConfig({
         voiceGateway: true,
-        liveWsUrl: 'ws://evil-attacker.com:3001/ws',
+        liveWsUrl: 'wss://evil-attacker.com:3001/ws',
       });
       assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
       if (r.mode === 'CONFIG_UNAVAILABLE') {
@@ -260,6 +260,64 @@ async function runTests() {
       assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
       if (r.mode === 'CONFIG_UNAVAILABLE') {
         assert.ok(r.error.includes('Credentials embedded'));
+      }
+    });
+
+    test('Query strings in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://localhost:3001?foo=bar',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('Query parameters in gateway URL are forbidden'));
+      }
+    });
+
+    test('URL fragments in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://localhost:3001#fragment',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('URL fragments in gateway URL are forbidden'));
+      }
+    });
+
+    test('Production mode requires wss:// in liveWsUrl', () => {
+      const r = resolveVoiceConfig(
+        {
+          voiceGateway: true,
+          liveWsUrl: 'ws://localhost:3001',
+        },
+        { isProduction: true }
+      );
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('Insecure ws:// protocol is forbidden in production'));
+      }
+    });
+
+    test('Disallowed port in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://localhost:9999',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('not in the allowed gateway ports list'));
+      }
+    });
+
+    test('Path traversal in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://localhost:3001/../admin',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('Path traversal in gateway URL is forbidden'));
       }
     });
 

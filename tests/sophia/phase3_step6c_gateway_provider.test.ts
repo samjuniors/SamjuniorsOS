@@ -56,13 +56,15 @@ class MockWebSocket extends EventEmitter {
   public onerror: ((err: any) => void) | null = null;
   public onclose: ((e: { code: number; reason: string }) => void) | null = null;
 
-  constructor(url: string) {
+  constructor(url: string, autoOpen = true) {
     super();
     this.url = url;
-    setTimeout(() => {
-      this.onopen?.();
-      this.emit('open');
-    }, 10);
+    if (autoOpen) {
+      setTimeout(() => {
+        this.onopen?.();
+        this.emit('open');
+      }, 10);
+    }
   }
 
   send(data: any): void {
@@ -148,17 +150,17 @@ async function runTests() {
     assert.strictEqual(p.id, 'live-gateway');
   });
 
-  test('Untrusted third-party host (ws://evil.com) fails closed synchronously', () => {
+  test('Untrusted third-party host (wss://evil.com) fails closed synchronously', () => {
     const audio = new MockAudioEngine() as any;
     assert.throws(() => {
-      new LiveGatewayVoiceProvider(audio, 'ws://evil.com/ws');
+      new LiveGatewayVoiceProvider(audio, 'wss://evil.com/ws');
     }, /is not in the trusted allowlist/);
   });
 
-  test('Untrusted IP host (ws://169.254.169.254:3001) fails closed synchronously', () => {
+  test('Untrusted IP host (wss://169.254.169.254:3001) fails closed synchronously', () => {
     const audio = new MockAudioEngine() as any;
     assert.throws(() => {
-      new LiveGatewayVoiceProvider(audio, 'ws://169.254.169.254:3001/ws');
+      new LiveGatewayVoiceProvider(audio, 'wss://169.254.169.254:3001/ws');
     }, /is not in the trusted allowlist/);
   });
 
@@ -167,6 +169,61 @@ async function runTests() {
     assert.throws(() => {
       new LiveGatewayVoiceProvider(audio, 'ws://attacker:secret@localhost:3001');
     }, /Credentials embedded in WebSocket URL are forbidden/);
+  });
+
+  test('Query strings (ws://localhost:3001?foo=bar) fail closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001?foo=bar');
+    }, /Query parameters in gateway URL are forbidden/);
+  });
+
+  test('URL fragments (ws://localhost:3001#fragment) fail closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001#fragment');
+    }, /URL fragments in gateway URL are forbidden/);
+  });
+
+  test('Production mode strictly requires wss:// scheme', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', { isProduction: true });
+    }, /Insecure ws:\/\/ protocol is forbidden in production/);
+  });
+
+  test('Production mode accepts trusted wss:// scheme', () => {
+    const audio = new MockAudioEngine() as any;
+    const p = new LiveGatewayVoiceProvider(audio, 'wss://os.samjuniors.com/live', { isProduction: true });
+    assert.strictEqual(p.id, 'live-gateway');
+  });
+
+  test('Development mode strictly rejects insecure ws:// for non-local remote hosts', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://os.samjuniors.com/live', { isProduction: false });
+    }, /Insecure ws:\/\/ protocol is only permitted for local loopback addresses in development/);
+  });
+
+  test('Disallowed port (ws://localhost:9999) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:9999');
+    }, /Port 9999 is not in the allowed gateway ports list/);
+  });
+
+  test('Path traversal (ws://localhost:3001/../admin) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001/../admin');
+    }, /Path traversal in gateway URL is forbidden/);
+  });
+
+  test('Disallowed path (ws://localhost:3001/unauthorized/custom) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001/unauthorized/custom');
+    }, /is not in the allowed gateway path list/);
   });
 
   test('Invalid http:// URL fails closed synchronously', () => {
@@ -240,6 +297,78 @@ async function runTests() {
     }
     assert.strictEqual(caught, true);
     assert.strictEqual(p.isActive(), false);
+  });
+
+  await test('Concurrent start() calls are idempotent and share single in-flight ticket acquisition', async () => {
+    const audio = new MockAudioEngine() as any;
+    let ticketFetches = 0;
+
+    const mockFetch = (async (url: string) => {
+      if (url === '/api/auth/ws-ticket') {
+        ticketFetches++;
+        // Small delay to simulate in-flight concurrency
+        await new Promise((r) => setTimeout(r, 20));
+        return {
+          ok: true,
+          json: async () => ({ ticket: `ws_live_ticket_${ticketFetches}` }),
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    // Launch 3 start calls concurrently
+    await Promise.all([p.start(), p.start(), p.start()]);
+
+    assert.strictEqual(ticketFetches, 1, 'Ticket was fetched exactly once across concurrent start() calls');
+    assert.strictEqual(p.isActive(), true);
+
+    await p.stop();
+  });
+
+  await test('Handshake failure cleans up socket resources and emits WEBSOCKET_HANDSHAKE_FAILED', async () => {
+    const audio = new MockAudioEngine() as any;
+
+    class FailingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url, false);
+        // Fail connection immediately before open
+        setTimeout(() => {
+          this.onerror?.(new Error('Connection refused'));
+        }, 5);
+      }
+    }
+
+    const mockFetch = (async () => ({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_abc' }),
+    })) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: FailingWs as any,
+    });
+
+    let handshakeError: any = null;
+    p.addEventListener('error', (e: any) => {
+      handshakeError = e.detail;
+    });
+
+    let caught = false;
+    try {
+      await p.start();
+    } catch (err: any) {
+      caught = true;
+    }
+
+    assert.strictEqual(caught, true);
+    assert.strictEqual(p.isActive(), false);
+    assert.ok(handshakeError !== null);
+    assert.strictEqual(handshakeError.code, 'WEBSOCKET_HANDSHAKE_FAILED');
   });
 
   await test('Successful ticket acquisition connects WebSocket with ticket query param', async () => {
@@ -447,6 +576,76 @@ async function runTests() {
     await p.stop();
   });
 
+  await test('sendText does NOT send raw TEXT_MESSAGE frames to gateway WebSocket, routes via /api/sophia/chat without client tools', async () => {
+    const audio = new MockAudioEngine() as any;
+    let lastWs: MockWebSocket | null = null;
+    let chatEndpointHit = false;
+    let ttsEndpointHit = false;
+
+    class CapturingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        lastWs = this;
+      }
+    }
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url === '/api/auth/ws-ticket') {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_123' }) };
+      }
+      if (url === '/api/sophia/chat') {
+        chatEndpointHit = true;
+        const body = JSON.parse(opts.body);
+        assert.strictEqual(body.message, 'Status report please');
+        return {
+          ok: true,
+          json: async () => ({
+            reply: 'All systems operating within normal parameters.',
+            toolCalls: [{ name: 'danger_tool', args: {} }], // Attempted client tool call
+          }),
+        };
+      }
+      if (url === '/api/sophia/mouth/speak') {
+        ttsEndpointHit = true;
+        return {
+          ok: true,
+          arrayBuffer: async () => new Uint8Array([10, 20]).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: CapturingWs as any,
+    });
+
+    await p.start();
+
+    // Verify WebSocket exists and has sent 0 messages so far
+    assert.ok(lastWs !== null);
+    const initialSentCount = lastWs!.sentMessages.length;
+
+    p.sendText('Status report please');
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    // LiveInteractionServer protocol verification:
+    // Ensure NO raw TEXT_MESSAGE frame was sent across the companion gateway socket
+    for (const msg of lastWs!.sentMessages) {
+      if (typeof msg === 'string') {
+        const parsed = JSON.parse(msg);
+        assert.notStrictEqual(parsed.type, 'TEXT_MESSAGE', 'TEXT_MESSAGE frame must not be sent to LiveInteractionServer');
+      }
+    }
+
+    assert.strictEqual(chatEndpointHit, true, 'Text turn routed through canonical /api/sophia/chat');
+    assert.strictEqual(ttsEndpointHit, true, 'Reply audio synthesized via canonical mouth/speak');
+    assert.strictEqual(audio.playedEncodedBuffers.length, 1, 'Audio played through AudioEngine');
+
+    await p.stop();
+  });
+
   // ------------------------------------------------------------------------
   // SECTION 5: Barge-In Interruption & Late-Packet Suppression
   // ------------------------------------------------------------------------
@@ -517,11 +716,11 @@ async function runTests() {
   });
 
   // ------------------------------------------------------------------------
-  // SECTION 6: Graceful Disconnect & Resource Teardown
+  // SECTION 6: Graceful Disconnect, Teardown & Fail-Closed Boundaries
   // ------------------------------------------------------------------------
   console.log('\nSECTION 6: Disconnect Handling & Teardown\n');
 
-  await test('Gracefully handles unexpected server WebSocket close', async () => {
+  await test('Gracefully handles unexpected server WebSocket close and cleans up all resources', async () => {
     const audio = new MockAudioEngine() as any;
     let lastWs: MockWebSocket | null = null;
 
@@ -543,17 +742,56 @@ async function runTests() {
     });
 
     await p.start();
+    assert.strictEqual(p.isActive(), true);
+    assert.ok(audio.pcmCallback !== null);
 
     let disconnectError: any = null;
     p.addEventListener('error', (e: any) => {
       disconnectError = e.detail;
     });
 
+    audio.stopped = false;
     lastWs!.close(1006, 'Abnormal closure');
 
     assert.strictEqual(p.isActive(), false);
+    assert.strictEqual(audio.pcmCallback, null, 'PCM capture callback detached upon disconnect');
+    assert.strictEqual(audio.stopped, true, 'Audio hardware stopped upon disconnect');
     assert.ok(disconnectError !== null);
     assert.strictEqual(disconnectError.code, 'GATEWAY_DISCONNECTED');
+  });
+
+  await test('Gateway failures fail closed and NEVER trigger ungoverned provider fallback', async () => {
+    const audio = new MockAudioEngine() as any;
+
+    // Simulate complete gateway outage
+    const failingFetch = (async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'Live interaction service unavailable' }),
+    })) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: failingFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    let errorEvent: any = null;
+    p.addEventListener('error', (e: any) => {
+      errorEvent = e.detail;
+    });
+
+    let caught = false;
+    try {
+      await p.start();
+    } catch {
+      caught = true;
+    }
+
+    assert.strictEqual(caught, true, 'Fails closed on outage');
+    assert.strictEqual(p.isActive(), false);
+    assert.strictEqual(errorEvent.code, 'TICKET_ACQUISITION_FAILED');
+    // Verify provider identity remains live-gateway; no alternate provider instantiated
+    assert.strictEqual(p.id, 'live-gateway');
   });
 
   console.log('\n======================================================');
