@@ -75,7 +75,7 @@ export interface SophiaEventDetail {
   latencyMs?: number;
 }
 
-export type VoiceProviderId = 'gemini-live' | 'deepgram' | 'elevenlabs' | 'local';
+export type VoiceProviderId = 'gemini-live' | 'deepgram' | 'elevenlabs' | 'local' | 'live-gateway';
 
 /** Geometry the substance can become. Generated, never hand-animated. */
 export type SophiaShape =
