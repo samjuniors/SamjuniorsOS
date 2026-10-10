@@ -29,7 +29,11 @@ export type LiveBridgeEvent =
   | { type: 'response'; turnId: string; reply: string }
   | { type: 'client-error'; error: LiveClientError }
   | { type: 'disconnect'; code: number }
-  | { type: 'mic-level'; rms: number; peak: number };
+  | { type: 'mic-level'; rms: number; peak: number }
+  | { type: 'playback-started'; turnId: string }
+  | { type: 'playback-finished'; turnId: string }
+  | { type: 'state-change'; state: string; previousState?: string }
+  | { type: 'interrupted'; turnId?: string };
 
 class LiveCompanionBridge {
   private static instance: LiveCompanionBridge | null = null;
@@ -121,7 +125,7 @@ class LiveCompanionBridge {
       const client = new SophiaLiveClient({
         wsUrl,
         ticket: ticketRes.ticket,
-        onStateChange: (state) => {
+        onStateChange: (state, prevState) => {
           const statusMap: Record<string, any> = {
             IDLE: 'idle',
             LISTENING: 'listening',
@@ -132,6 +136,9 @@ class LiveCompanionBridge {
             ERROR: 'error',
           };
           const status = statusMap[state] || 'idle';
+          const previousStatus = prevState ? statusMap[prevState] || 'idle' : undefined;
+          this.emit({ type: 'state-change', state: status, previousState: previousStatus });
+
           // Phase 3: while the voice runtime is playing Sophia's spoken reply,
           // hold the client-owned 'speaking' overlay — the server's trailing
           // IDLE STATE_CHANGE after SOPHIA_RESPONSE must not flicker the orb
@@ -202,9 +209,24 @@ class LiveCompanionBridge {
     }
   }
 
+  public notifyPlaybackStarted(turnId: string): void {
+    this.emit({ type: 'playback-started', turnId });
+  }
+
+  public notifyPlaybackFinished(turnId: string): void {
+    this.emit({ type: 'playback-finished', turnId });
+  }
+
   public startPtt(): string | null {
     if (!this.client) return null;
+    const wasSpeaking = getOS().liveVoice.status === 'speaking';
+    const prevTurnId = getOS().liveVoice.activeTurnId;
     const turnId = `voice_turn_${Date.now()}_${this.activeTurnCounter++}`;
+
+    if (wasSpeaking) {
+      this.emit({ type: 'interrupted', turnId: prevTurnId || undefined });
+    }
+
     this.client.startPtt(turnId);
     os.setLiveVoice({
       status: 'listening',
@@ -224,8 +246,10 @@ class LiveCompanionBridge {
 
   public interrupt(): void {
     if (!this.client) return;
+    const turnId = this.client.getActiveTurnId() || getOS().liveVoice.activeTurnId || undefined;
     this.client.interrupt();
     os.setLiveVoice({ status: 'interrupted' });
+    this.emit({ type: 'interrupted', turnId });
   }
 
   /**

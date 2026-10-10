@@ -46,15 +46,23 @@ export interface VadFrameResult {
   timestamp: number;
 }
 
+export type LiveClientErrorCode =
+  | 'MIC_PERMISSION_DENIED'
+  | 'MIC_NOT_FOUND'
+  | 'AUDIO_WORKLET_UNSUPPORTED'
+  | 'AUDIO_WORKLET_FAILED'
+  | 'WEBSOCKET_ERROR'
+  | 'WEBSOCKET_DISCONNECTED'
+  | 'BUFFER_OVERFLOW'
+  | 'SERVER_ERROR'
+  | 'UNAUTHORIZED'
+  | 'SESSION_EXPIRED'
+  | 'RATE_LIMITED'
+  | 'TURN_CANCELLED'
+  | (string & {});
+
 export interface LiveClientError {
-  code:
-    | 'MIC_PERMISSION_DENIED'
-    | 'MIC_NOT_FOUND'
-    | 'AUDIO_WORKLET_UNSUPPORTED'
-    | 'AUDIO_WORKLET_FAILED'
-    | 'WEBSOCKET_ERROR'
-    | 'WEBSOCKET_DISCONNECTED'
-    | 'BUFFER_OVERFLOW';
+  code: LiveClientErrorCode;
   message: string;
   fatal?: boolean;
   originalError?: any;

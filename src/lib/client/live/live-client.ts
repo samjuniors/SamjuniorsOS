@@ -419,6 +419,11 @@ export class SophiaLiveClient {
             break;
           case 'ERROR':
             console.error('[SophiaLiveClient] Server error:', msg.code, msg.message);
+            this.emitError({
+              code: (msg.code as any) || 'SERVER_ERROR',
+              message: msg.message,
+              fatal: msg.fatal ?? false,
+            });
             break;
         }
       } catch {
@@ -440,6 +445,10 @@ export class SophiaLiveClient {
     if (this.options.onError) {
       this.options.onError(error);
     }
+  }
+
+  public getActiveTurnId(): string | null {
+    return this.activeTurnId;
   }
 
   public getState(): LiveModalityState {

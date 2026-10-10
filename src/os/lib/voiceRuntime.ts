@@ -105,7 +105,8 @@ class VoiceRuntime {
   private playLevelOverride: number | null = null;
 
   private speaking = false;
-  private speakAbort: AbortController | null = null;
+  private currentSpokenTurnId: string | null = null;
+  private speakAbort = null as AbortController | null;
   private speakPending = 0;
   private spokenTurnIds: Set<string> = new Set();
 
@@ -276,6 +277,7 @@ class VoiceRuntime {
     this.speakAbort = invocation;
     const signal = invocation.signal;
     this.speaking = true;
+    this.currentSpokenTurnId = turnId;
     liveBridge.setSpeakingGate(() => this.speaking);
 
     const sentences = splitSentences(reply);
@@ -294,6 +296,9 @@ class VoiceRuntime {
           const scheduled = await this.engine.playEncoded(audio);
           if (signal.aborted) return;
           if (scheduled > 0) {
+            if (!scheduledAny) {
+              liveBridge.notifyPlaybackStarted(turnId);
+            }
             scheduledAny = true;
             totalFailure = false;
             handled = true;
@@ -306,6 +311,9 @@ class VoiceRuntime {
           const spoke = await this.speakSystemFallback(sentence, signal);
           if (signal.aborted) return;
           if (spoke) {
+            if (!scheduledAny) {
+              liveBridge.notifyPlaybackStarted(turnId);
+            }
             scheduledAny = true;
             totalFailure = false;
           }
@@ -414,8 +422,13 @@ class VoiceRuntime {
   private settleSpeaking(withError: boolean): void {
     if (!this.speaking) return;
     this.speaking = false;
+    const turnId = this.currentSpokenTurnId;
+    this.currentSpokenTurnId = null;
     liveBridge.setSpeakingGate(null);
     this.playLevelOverride = null;
+    if (turnId) {
+      liveBridge.notifyPlaybackFinished(turnId);
+    }
     // Re-audit F4: settle only the status this overlay owns. A newer
     // interaction state that already replaced 'speaking' (e.g. a PTT hold
     // that started during the final drain window) must not be stomped back
@@ -438,9 +451,14 @@ class VoiceRuntime {
     this.speakAbort = null;
     this.speakPending = 0;
     this.playLevelOverride = null;
+    const turnId = this.currentSpokenTurnId;
+    this.currentSpokenTurnId = null;
     if (this.speaking) {
       this.speaking = false;
       liveBridge.setSpeakingGate(null);
+      if (turnId) {
+        liveBridge.notifyPlaybackFinished(turnId);
+      }
     }
     this.engine?.stopImmediately();
   }
