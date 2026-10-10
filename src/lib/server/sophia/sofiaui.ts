@@ -98,6 +98,14 @@ export function sophiaStatusPayload() {
     // about the cloud keys themselves.
     voice: true,
     ok: true,
+    // Phase 3 Step 6C — Canonical Voice Gateway discovery seam:
+    // Strictly evaluates SAMJUNIORS_VOICE_GATEWAY ('1' or 'true').
+    // Exposes verified companion WebSocket URL and enforces legacy voice prohibition by default.
+    voiceGateway:
+      process.env.SAMJUNIORS_VOICE_GATEWAY === '1' ||
+      process.env.SAMJUNIORS_VOICE_GATEWAY === 'true',
+    liveWsUrl: process.env.LIVE_WS_URL?.trim() || 'ws://localhost:3001',
+    legacyVoiceAllowed: process.env.SAMJUNIORS_LEGACY_VOICE_ALLOWED === 'true',
     searchProviders: {
       tavily: Boolean(key('TAVILY_API_KEY')),
       brave: Boolean(key('BRAVE_SEARCH_API_KEY')),

@@ -296,11 +296,15 @@ async function runStep4Tests() {
       getAudioTracks: () => [mockTrack],
     };
 
-    (globalThis as any).navigator = {
-      mediaDevices: {
-        getUserMedia: async () => mockStream,
+    Object.defineProperty(globalThis, 'navigator', {
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => mockStream,
+        },
       },
-    };
+      configurable: true,
+      writable: true,
+    });
 
     class MockAudioContext {
       state = 'running';
