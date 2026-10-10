@@ -36,7 +36,8 @@ import type { VoiceProvider } from './voice/VoiceProvider';
 import { WakeWordSpotter } from './voice/wake';
 import { VisualDirector } from './VisualDirector';
 import { EmotionEngine } from '../core/EmotionEngine';
-import { WakeWordDetection, loadWakePrefs, saveWakePrefs, DEFAULT_WAKE_WORDS } from '../core/WakeWordDetection';
+import { loadWakePrefs, saveWakePrefs, DEFAULT_WAKE_WORDS } from '../core/WakeWordDetection';
+import { MicrophoneCoordinator, type MicOwner } from './audio/MicrophoneCoordinator';
 import { scoreEngine } from './audio/ScoreEngine';
 import { userVoiceProfile } from '../core/UserVoiceProfile';
 
@@ -125,6 +126,7 @@ export class SophiaOS extends EventTarget {
   readonly state = new SophiaState();
   readonly director = new VisualDirector();
   readonly audio = new AudioEngine();
+  readonly micCoordinator = new MicrophoneCoordinator();
   readonly emotionEngine = new EmotionEngine();
   readonly prefs: Prefs;
 
@@ -132,7 +134,6 @@ export class SophiaOS extends EventTarget {
   private providers: Record<VoiceProviderId, VoiceProvider>;
   private activeProvider: VoiceProvider | null = null;
   private spotter: WakeWordSpotter | null = null;
-  private wakeDetector: WakeWordDetection | null = null;
   private raf = 0;
   private tPrev = 0;
   
@@ -509,7 +510,8 @@ export class SophiaOS extends EventTarget {
 
   detach() {
     cancelAnimationFrame(this.raf);
-    this.spotter?.stop();
+    this.spotter?.destroy();
+    this.micCoordinator.reset();
     this.batteryUnsub?.();
     this.batteryUnsub = null;
     this.renderer?.dispose();
@@ -658,8 +660,9 @@ export class SophiaOS extends EventTarget {
       this.state.transition('focusing', { source }, true);
       return;
     }
+    const owner: MicOwner = source === 'ptt' ? 'ptt' : 'conversation';
+    this.micCoordinator.requestOwnership(owner, source);
     this.spotter?.suspend();
-    this.wakeDetector?.stopWakeWordRecognizer();
     this.pushLog('info', `waking sophia (${source})`);
     this.director.playWake();
     this.state.transition('wakeup', { source }, true);
@@ -882,6 +885,7 @@ export class SophiaOS extends EventTarget {
     this.audio.interruptPlayback();
     this.audio.stopCapture();
     this.setStatus('idle');
+    this.micCoordinator.releaseOwnership(this.micCoordinator.currentOwner, reason);
     this.state.standDown(reason);
     this.maybeArmWake();
   }
@@ -891,6 +895,40 @@ export class SophiaOS extends EventTarget {
     this.audio.interruptPlayback();
     this.state.handleVoiceEvent('interrupted', { source: 'ui' });
     if (this.state.is('listening')) this.armPostTurn();
+  }
+
+  async startPtt(): Promise<boolean> {
+    const granted = this.micCoordinator.requestOwnership('ptt', 'manual-ptt-press');
+    if (!granted) return false;
+    this.spotter?.suspend();
+    if (this.state.is('speaking')) {
+      this.interrupt();
+    }
+    await this.audio.unlockAudio();
+    try {
+      await this.audio.startCapture();
+      this.state.transition('listening', { source: 'ptt' }, true);
+      this.pushLog('event', 'PTT active — listening');
+      return true;
+    } catch (err: any) {
+      this.micCoordinator.releaseOwnership('ptt', 'capture-failed');
+      this.pushLog('error', `PTT mic capture failed: ${err.message}`);
+      return false;
+    }
+  }
+
+  stopPtt(): void {
+    if (this.micCoordinator.currentOwner !== 'ptt') return;
+    this.micCoordinator.releaseOwnership('ptt', 'manual-ptt-release');
+    this.pushLog('event', 'PTT released');
+    if (this.state.is('listening')) {
+      this.state.transition('thinking', { source: 'ptt' }, true);
+    }
+    if (!this.activeProvider?.isActive()) {
+      this.audio.stopCapture();
+      this.state.transition('idle', { source: 'ptt' }, true);
+      this.maybeArmWake();
+    }
   }
 
   async speakText(text: string): Promise<void> {
@@ -1052,9 +1090,13 @@ export class SophiaOS extends EventTarget {
     if (!this.prefs.wake) return;
     if (this.status === 'live' && !this.state.is('ambient', 'idle', 'paused')) return;
     if (!this.spotter) {
-      this.spotter = new WakeWordSpotter(() => {
-        void this.enterSession('wake-word');
-      });
+      this.spotter = new WakeWordSpotter(
+        () => {
+          void this.enterSession('wake-word');
+        },
+        undefined,
+        this.micCoordinator,
+      );
     }
     this.spotter.unblock();
     this.spotter.start();

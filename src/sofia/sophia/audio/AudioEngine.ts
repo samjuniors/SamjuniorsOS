@@ -223,6 +223,13 @@ export class AudioEngine {
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
+      this.stream.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          this.setMicStatus('error', 'Microphone device was disconnected');
+          this.stopCapture();
+        };
+      });
+
       this.ctx = new AudioContext();
       if (this.ctx.state === 'suspended') {
         await this.ctx.resume();

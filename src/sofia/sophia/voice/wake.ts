@@ -5,11 +5,14 @@
  * Recovers reliably from Chromium idle timeouts and audio endpoint transitions,
  * ensuring Sofia is always ready to wake when in standby or ambient mode.
  *
- * The phrase list is configurable + persisted (shared with WakeWordDetection
- * via loadWakePrefs/saveWakePrefs), and matching goes through the pure,
- * unit-tested `matchesWakeWord`.
+ * Coordinated via MicrophoneCoordinator to guarantee:
+ * - Deterministic single-owner microphone exclusivity.
+ * - Automatic suspension during active conversations and push-to-talk.
+ * - Bounded error recovery (preventing infinite restart loops on device contention).
+ * - Full manual push-to-talk operation when wake detection is unavailable.
  */
 import { matchesWakeWord, DEFAULT_WAKE_WORDS, loadWakePrefs } from '../../core/WakeWordDetection';
+import { MicrophoneCoordinator } from '../audio/MicrophoneCoordinator';
 
 type AnySpeech = {
   new (): SpeechRecognitionLike;
@@ -28,18 +31,42 @@ interface SpeechRecognitionLike {
   abort(): void;
 }
 
+export type SpotterStatus = 'idle' | 'listening' | 'paused' | 'blocked' | 'error';
+
 export class WakeWordSpotter {
   private rec: SpeechRecognitionLike | null = null;
   private wantOn = false;
   private lastFire = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private wakeWords: string[];
+  private unsubscribePreempt: (() => void) | null = null;
+  private unsubscribeChange: (() => void) | null = null;
+
   available = false;
   blocked = false;
-  private wakeWords: string[];
+  status: SpotterStatus = 'idle';
+  consecutiveErrors = 0;
+  readonly maxConsecutiveErrors = 5;
 
-  constructor(private onWake: () => void, wakeWords?: string[]) {
+  constructor(
+    private onWake: () => void,
+    wakeWords?: string[],
+    private coordinator?: MicrophoneCoordinator,
+  ) {
     const persisted = loadWakePrefs().wakeWords;
     this.wakeWords = wakeWords?.length ? wakeWords : persisted?.length ? persisted : DEFAULT_WAKE_WORDS;
+
+    if (this.coordinator) {
+      this.unsubscribePreempt = this.coordinator.registerPreemptHook('wake_word', (preemptedBy) => {
+        console.info(`[WakeWordSpotter] Preempted by ${preemptedBy}; suspending recognizer`);
+        this.suspendInternal();
+      });
+      this.unsubscribeChange = this.coordinator.onOwnershipChange(({ owner }) => {
+        if (owner === 'idle' && this.wantOn && !this.blocked && this.status !== 'error') {
+          this.scheduleRestart(150);
+        }
+      });
+    }
   }
 
   /** Replace the wake phrases at runtime (e.g. from Settings). */
@@ -66,28 +93,63 @@ export class WakeWordSpotter {
       rec.onresult = (e) => this.hear(e);
       rec.onerror = (e) => {
         const err = (e as { error?: string }).error;
-        if (err !== 'no-speech' && err !== 'aborted') {
-          console.warn('[WakeWordSpotter] Recognizer status:', err);
-        }
+
         if (err === 'not-allowed' || err === 'service-not-allowed') {
           this.blocked = true;
           this.wantOn = false;
-        } else if (err === 'audio-capture' || err === 'network') {
-          // Temporary hardware or network contention: discard instance and retry
+          this.status = 'blocked';
+          this.coordinator?.releaseOwnership('wake_word', 'permission-denied');
+          console.warn('[WakeWordSpotter] Microphone permission denied. Wake spotter blocked.');
+          return;
+        }
+
+        if (err === 'aborted') {
+          // Normal cancellation/preemption
+          return;
+        }
+
+        if (err === 'no-speech') {
+          // Normal Chromium idle silence window timeout (resets error count)
+          this.consecutiveErrors = 0;
+          return;
+        }
+
+        // Hardware contention, network loss, or audio-capture failure
+        this.consecutiveErrors++;
+        console.warn(`[WakeWordSpotter] Recognizer status: ${err} (${this.consecutiveErrors}/${this.maxConsecutiveErrors})`);
+
+        if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+          this.status = 'error';
+          this.coordinator?.releaseOwnership('wake_word', 'max-consecutive-errors');
+          console.error('[WakeWordSpotter] Max consecutive errors reached. Pausing automatic restarts.');
           try {
             rec.abort();
           } catch {
             /* noop */
           }
           this.rec = null;
+          return;
         }
-      };
-      rec.onend = () => {
-        // Chromium ends recognition after silence intervals; recreate fresh instance
+
+        try {
+          rec.abort();
+        } catch {
+          /* noop */
+        }
         this.rec = null;
-        if (this.wantOn && !this.blocked) {
-          if (this.restartTimer) clearTimeout(this.restartTimer);
-          this.restartTimer = setTimeout(() => this.safeStart(), 200);
+      };
+
+      rec.onend = () => {
+        this.rec = null;
+        if (this.status === 'listening') {
+          this.status = 'idle';
+        }
+        // Chromium ends recognition after silence intervals; restart with bounded backoff only if not paused
+        if (this.wantOn && !this.blocked && this.status !== 'error' && this.status !== 'paused') {
+          const delay = this.consecutiveErrors > 0
+            ? Math.min(6000, 300 * Math.pow(1.5, this.consecutiveErrors))
+            : 200;
+          this.scheduleRestart(delay);
         }
       };
       return rec;
@@ -97,27 +159,39 @@ export class WakeWordSpotter {
     }
   }
 
+  private scheduleRestart(delayMs: number) {
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.restartTimer = setTimeout(() => this.safeStart(), delayMs);
+  }
+
   private hear(e: unknown) {
     const ev = e as {
       resultIndex: number;
       results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
     };
+
+    // Valid speech frame received: reset error count
+    this.consecutiveErrors = 0;
+
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const result = ev.results[i];
       for (let j = 0; j < result.length; j++) {
         const text = (result[j]?.transcript ?? '').toLowerCase().trim();
         if (!text) continue;
 
-        // Configurable phrase list + the classic attention calls.
         const matched =
           matchesWakeWord(text, this.wakeWords) !== null ||
           /^(wake\s*up|wake|hey\s*there)$/i.test(text);
 
         if (matched) {
           const now = performance.now();
-          if (now - this.lastFire > 1800) {
+          if (this.lastFire === 0 || now - this.lastFire > 1800) {
             this.lastFire = now;
             console.log('[WakeWordSpotter] Triggered wake on speech:', text);
+
+            // Yield ownership to allow conversation to immediately acquire mic
+            this.coordinator?.releaseOwnership('wake_word', 'wake-phrase-detected');
+            this.suspendInternal();
             this.onWake();
           }
           return;
@@ -127,56 +201,109 @@ export class WakeWordSpotter {
   }
 
   private safeStart() {
-    if (!this.wantOn || this.blocked) return;
+    if (!this.wantOn || this.blocked || this.status === 'error') return;
+
+    // Check with coordinator whether wake_word can own the microphone
+    if (this.coordinator && !this.coordinator.requestOwnership('wake_word', 'passive-spotting')) {
+      this.status = 'paused';
+      return;
+    }
 
     if (!this.rec) {
       this.rec = this.create();
       this.available = Boolean(this.rec);
     }
-    if (!this.rec) return;
+    if (!this.rec) {
+      this.coordinator?.releaseOwnership('wake_word', 'no-recognizer-available');
+      return;
+    }
 
     try {
       this.rec.start();
+      this.status = 'listening';
     } catch {
-      // Instance could be stale or already aborted in browser; recreate fresh next attempt
+      // Instance could be stale or already in progress; discard and retry with backoff
       try {
         this.rec.abort();
       } catch {
         /* noop */
       }
       this.rec = null;
-      if (this.wantOn && !this.blocked) {
-        if (this.restartTimer) clearTimeout(this.restartTimer);
-        this.restartTimer = setTimeout(() => this.safeStart(), 350);
+      this.consecutiveErrors++;
+
+      if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
+        this.status = 'error';
+        this.coordinator?.releaseOwnership('wake_word', 'max-start-failures');
+        return;
       }
+
+      if (this.wantOn && !this.blocked) {
+        const delay = Math.min(6000, 350 * Math.pow(1.5, this.consecutiveErrors));
+        this.scheduleRestart(delay);
+      }
+    }
+  }
+
+  private suspendInternal() {
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    if (this.status === 'listening') {
+      this.status = 'paused';
+    }
+    const rec = this.rec;
+    this.rec = null;
+    try {
+      rec?.abort();
+    } catch {
+      /* noop */
     }
   }
 
   unblock() {
     this.blocked = false;
-    if (this.wantOn) {
-      this.start();
+    this.wantOn = true;
+    this.consecutiveErrors = 0;
+    this.status = 'idle';
+    this.start();
+  }
+
+  resetRecovery() {
+    this.consecutiveErrors = 0;
+    if (this.status === 'error') {
+      this.status = 'idle';
+    }
+    if (this.wantOn && !this.blocked) {
+      this.safeStart();
     }
   }
 
   start() {
     this.blocked = false;
     this.wantOn = true;
+    if (this.status === 'error') {
+      this.consecutiveErrors = 0;
+      this.status = 'idle';
+    }
     this.safeStart();
   }
 
   suspend() {
     this.wantOn = false;
-    if (this.restartTimer) clearTimeout(this.restartTimer);
-    try {
-      this.rec?.abort();
-    } catch {
-      /* noop */
+    this.suspendInternal();
+    this.coordinator?.releaseOwnership('wake_word', 'explicit-suspend');
+    if (this.status !== 'blocked' && this.status !== 'error') {
+      this.status = 'idle';
     }
-    this.rec = null;
   }
 
   stop() {
     this.suspend();
+  }
+
+  destroy() {
+    this.stop();
+    this.unsubscribePreempt?.();
+    this.unsubscribeChange?.();
+    this.unsubscribePreempt = null;
+    this.unsubscribeChange = null;
   }
 }
