@@ -24,11 +24,76 @@ export type VoiceConfigResolution =
     };
 
 /**
+ * Validates that a WebSocket gateway URL conforms to trusted host policies:
+ * - Protocols: ws:// or wss:// only
+ * - No credentials embedded in URL
+ * - Hosts: localhost, 127.0.0.1, [::1], current origin hostname, or *.samjuniors.com / *.samjuniors.local
+ */
+export function validateGatewayHost(
+  url: string,
+  options?: { allowedHosts?: string[]; currentHostname?: string }
+): { valid: boolean; error?: string } {
+  if (!url || typeof url !== 'string') {
+    return { valid: false, error: 'liveWsUrl must be a non-empty string' };
+  }
+  const trimmed = url.trim();
+  if (!trimmed.startsWith('ws://') && !trimmed.startsWith('wss://')) {
+    return { valid: false, error: `Invalid protocol in "${url}". Expected ws:// or wss://.` };
+  }
+
+  let parsed: URL;
+  try {
+    const httpScheme = trimmed.startsWith('wss://') ? 'https://' : 'http://';
+    parsed = new URL(httpScheme + trimmed.replace(/^wss?:\/\//, ''));
+  } catch (err: any) {
+    return { valid: false, error: `Malformed WebSocket URL: ${err.message}` };
+  }
+
+  if (parsed.username || parsed.password) {
+    return { valid: false, error: 'Credentials embedded in WebSocket URL are forbidden' };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const currentHostname =
+    options?.currentHostname ||
+    (typeof window !== 'undefined' && window.location ? window.location.hostname.toLowerCase() : 'localhost');
+
+  const trustedHosts = new Set(
+    (options?.allowedHosts || [
+      'localhost',
+      '127.0.0.1',
+      '::1',
+      '[::1]',
+      currentHostname,
+    ]).map((h) => h.toLowerCase())
+  );
+
+  const isExplicitlyAllowed = trustedHosts.has(hostname);
+  const isSamJuniorsDomain =
+    hostname === 'samjuniors.com' ||
+    hostname.endsWith('.samjuniors.com') ||
+    hostname === 'samjuniors.local' ||
+    hostname.endsWith('.samjuniors.local');
+
+  if (!isExplicitlyAllowed && !isSamJuniorsDomain) {
+    return {
+      valid: false,
+      error: `Gateway host "${hostname}" is not in the trusted allowlist`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Pure evaluator for the server's status payload.
  * Validates fields deterministically; any missing, errored, or malformed
  * configuration fails closed to CONFIG_UNAVAILABLE or VOICE_DISABLED.
  */
-export function resolveVoiceConfig(statusPayload: unknown): VoiceConfigResolution {
+export function resolveVoiceConfig(
+  statusPayload: unknown,
+  options?: { allowedHosts?: string[]; currentHostname?: string }
+): VoiceConfigResolution {
   if (!statusPayload || typeof statusPayload !== 'object') {
     return {
       mode: 'CONFIG_UNAVAILABLE',
@@ -52,10 +117,11 @@ export function resolveVoiceConfig(statusPayload: unknown): VoiceConfigResolutio
 
   if (voiceGateway) {
     const liveWsUrl = typeof s.liveWsUrl === 'string' ? s.liveWsUrl.trim() : '';
-    if (!liveWsUrl.startsWith('ws://') && !liveWsUrl.startsWith('wss://')) {
+    const hostCheck = validateGatewayHost(liveWsUrl, options);
+    if (!hostCheck.valid) {
       return {
         mode: 'CONFIG_UNAVAILABLE',
-        error: `Invalid liveWsUrl provided by server: "${liveWsUrl}". Expected ws:// or wss:// URL.`,
+        error: hostCheck.error || `Invalid liveWsUrl provided by server: "${liveWsUrl}".`,
       };
     }
     return {

@@ -118,41 +118,76 @@ async function runTests() {
   }
 
   // ------------------------------------------------------------------------
-  // SECTION 1: Strict URL Validation Acceptance Criteria
+  // SECTION 1: Strict URL & Gateway Host Validation Acceptance Criteria
   // ------------------------------------------------------------------------
-  console.log('SECTION 1: Strict URL Validation\n');
+  console.log('SECTION 1: Strict URL & Gateway Host Validation\n');
 
-  test('Valid ws:// URL is accepted', () => {
+  test('Valid ws://localhost:3001 URL is accepted', () => {
     const audio = new MockAudioEngine() as any;
     const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001');
     assert.strictEqual(p.id, 'live-gateway');
   });
 
-  test('Valid wss:// URL is accepted', () => {
+  test('Valid ws://127.0.0.1:3001 URL is accepted', () => {
+    const audio = new MockAudioEngine() as any;
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://127.0.0.1:3001');
+    assert.strictEqual(p.id, 'live-gateway');
+  });
+
+  test('Valid wss://samjuniors.com trusted domain URL is accepted', () => {
     const audio = new MockAudioEngine() as any;
     const p = new LiveGatewayVoiceProvider(audio, 'wss://os.samjuniors.com/live');
     assert.strictEqual(p.id, 'live-gateway');
+  });
+
+  test('Custom allowedHosts allowlist option is honored', () => {
+    const audio = new MockAudioEngine() as any;
+    const p = new LiveGatewayVoiceProvider(audio, 'wss://gateway.internal.net/ws', {
+      allowedHosts: ['gateway.internal.net'],
+    });
+    assert.strictEqual(p.id, 'live-gateway');
+  });
+
+  test('Untrusted third-party host (ws://evil.com) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://evil.com/ws');
+    }, /is not in the trusted allowlist/);
+  });
+
+  test('Untrusted IP host (ws://169.254.169.254:3001) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://169.254.169.254:3001/ws');
+    }, /is not in the trusted allowlist/);
+  });
+
+  test('Embedded credentials (ws://user:pass@localhost:3001) fails closed synchronously', () => {
+    const audio = new MockAudioEngine() as any;
+    assert.throws(() => {
+      new LiveGatewayVoiceProvider(audio, 'ws://attacker:secret@localhost:3001');
+    }, /Credentials embedded in WebSocket URL are forbidden/);
   });
 
   test('Invalid http:// URL fails closed synchronously', () => {
     const audio = new MockAudioEngine() as any;
     assert.throws(() => {
       new LiveGatewayVoiceProvider(audio, 'http://localhost:3001/api/live/ws');
-    }, /Invalid WebSocket protocol/);
+    }, /Invalid protocol/);
   });
 
   test('Invalid https:// URL fails closed synchronously', () => {
     const audio = new MockAudioEngine() as any;
     assert.throws(() => {
       new LiveGatewayVoiceProvider(audio, 'https://os.samjuniors.com/live');
-    }, /Invalid WebSocket protocol/);
+    }, /Invalid protocol/);
   });
 
   test('Empty or non-string URL fails closed synchronously', () => {
     const audio = new MockAudioEngine() as any;
     assert.throws(() => {
       new LiveGatewayVoiceProvider(audio, '');
-    }, /wsUrl must be a non-empty string/);
+    }, /must be a non-empty string/);
   });
 
   // ------------------------------------------------------------------------

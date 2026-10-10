@@ -20,9 +20,12 @@
 import { AudioEngine } from '../audio/AudioEngine';
 import type { SophiaEventDetail, SophiaEventType, VoiceProviderId } from '../types';
 import { VoiceProvider } from './VoiceProvider';
+import { validateGatewayHost } from '../../lib/voice-config';
 
 export interface LiveGatewayOptions {
   wsUrl?: string;
+  allowedHosts?: string[];
+  currentHostname?: string;
   fetchFn?: typeof fetch;
   WebSocketClass?: typeof WebSocket;
 }
@@ -51,26 +54,25 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     options: LiveGatewayOptions = {}
   ) {
     super();
-    this.wsUrl = this.validateWsUrl(wsUrl);
+    this.wsUrl = this.validateWsUrl(wsUrl, options);
     this.fetchFn = options.fetchFn || (typeof window !== 'undefined' ? window.fetch.bind(window) : fetch);
     this.WebSocketClass = options.WebSocketClass || (typeof window !== 'undefined' ? window.WebSocket : (globalThis as any).WebSocket);
   }
 
   /**
-   * Validates that the provided WebSocket URL strictly conforms to ws:// or wss://.
-   * Acceptance criterion: fails closed on invalid protocols or malformed strings.
+   * Validates that the provided WebSocket URL strictly conforms to:
+   * 1. Protocol: ws:// or wss:// only.
+   * 2. Host validation: host must be localhost, 127.0.0.1, [::1], current origin hostname,
+   *    or in the trusted gateway host allowlist (*.samjuniors.com / *.samjuniors.local).
+   * 3. No embedded credentials (username/password).
+   * Acceptance criterion: fails closed on untrusted hosts or malformed strings.
    */
-  private validateWsUrl(url: string): string {
-    if (!url || typeof url !== 'string') {
-      throw new Error('LiveGatewayVoiceProvider: wsUrl must be a non-empty string');
+  private validateWsUrl(url: string, options: LiveGatewayOptions = {}): string {
+    const hostCheck = validateGatewayHost(url, options);
+    if (!hostCheck.valid) {
+      throw new Error(`LiveGatewayVoiceProvider: ${hostCheck.error}`);
     }
-    const trimmed = url.trim();
-    if (!trimmed.startsWith('ws://') && !trimmed.startsWith('wss://')) {
-      throw new Error(
-        `LiveGatewayVoiceProvider: Invalid WebSocket protocol in "${url}". Expected ws:// or wss://.`
-      );
-    }
-    return trimmed;
+    return url.trim();
   }
 
   /**

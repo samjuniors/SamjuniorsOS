@@ -216,12 +216,12 @@ async function runTests() {
     test('Valid secure wss:// URL resolves to CANONICAL_GATEWAY', () => {
       const r = resolveVoiceConfig({
         voiceGateway: true,
-        liveWsUrl: 'wss://gateway.internal.net/ws',
+        liveWsUrl: 'wss://gateway.samjuniors.com/ws',
         legacyVoiceAllowed: false,
       });
       assert.strictEqual(r.mode, 'CANONICAL_GATEWAY');
       if (r.mode === 'CANONICAL_GATEWAY') {
-        assert.strictEqual(r.liveWsUrl, 'wss://gateway.internal.net/ws');
+        assert.strictEqual(r.liveWsUrl, 'wss://gateway.samjuniors.com/ws');
       }
     });
 
@@ -239,6 +239,28 @@ async function runTests() {
         liveWsUrl: '',
       });
       assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+    });
+
+    test('Untrusted gateway host in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://evil-attacker.com:3001/ws',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('not in the trusted allowlist'));
+      }
+    });
+
+    test('Embedded credentials in liveWsUrl fails closed to CONFIG_UNAVAILABLE', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://admin:secret@localhost:3001',
+      });
+      assert.strictEqual(r.mode, 'CONFIG_UNAVAILABLE');
+      if (r.mode === 'CONFIG_UNAVAILABLE') {
+        assert.ok(r.error.includes('Credentials embedded'));
+      }
     });
 
     test('voiceGateway=false and legacyVoiceAllowed=false resolves to VOICE_DISABLED (no ungoverned actions)', () => {
