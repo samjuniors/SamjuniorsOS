@@ -62,6 +62,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * current generation has advanced (meaning stop() was called).
    */
   private generation = 0;
+  private startGeneration = 0;
 
   /**
    * Fix 2: Per-text-turn AbortController that is aborted in interrupt()/stop().
@@ -104,19 +105,27 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * Acquires single-use ticket from /api/auth/ws-ticket and connects WebSocket.
    * Concurrent invocations are idempotent and share the in-flight start Promise.
    */
-  async start(): Promise<void> {
-    if (this.active) return;
+  start(): Promise<void> {
+    if (this.active) return Promise.resolve();
     if (this.startPromise) return this.startPromise;
 
-    // Fix 1: Capture generation at start of internalStart so a concurrent
-    // stop() can invalidate this startup attempt.
     const myGeneration = ++this.generation;
-    this.startPromise = this.internalStart(myGeneration);
-    try {
-      await this.startPromise;
-    } finally {
-      this.startPromise = null;
-    }
+    this.startGeneration = myGeneration;
+
+    const promise = (async () => {
+      try {
+        await this.internalStart(myGeneration);
+      } finally {
+        // Identity-safe cleanup: an older unwinding startup cannot clear or overwrite
+        // a newer in-flight startup's promise.
+        if (this.startGeneration === myGeneration) {
+          this.startPromise = null;
+        }
+      }
+    })();
+
+    this.startPromise = promise;
+    return promise;
   }
 
   private async internalStart(myGeneration: number): Promise<void> {
@@ -329,6 +338,9 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     // or sendText() async closure that checks this.generation !== myGeneration
     // will abort without constructing a WebSocket or proceeding to TTS.
     this.generation++;
+    // Invalidate pending startPromise so immediate start() initiates a fresh startup.
+    this.startPromise = null;
+    this.startGeneration = 0;
 
     this.active = false;
 

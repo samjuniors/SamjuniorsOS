@@ -540,7 +540,7 @@ async function runTests() {
 
   await test('stop() after WebSocket construction but before open leaves provider inactive and ignores late onopen (Finding 1)', async () => {
     const audio = new MockAudioEngine() as any;
-    let lateWs: MockWebSocket | null = null;
+    let lateWs: any = null;
 
     class DelayedOpenWs extends MockWebSocket {
       constructor(url: string) {
@@ -624,6 +624,312 @@ async function runTests() {
 
     assert.strictEqual(p.isActive(), false);
     assert.strictEqual(emittedErrors.length, 0, 'No errors emitted for late events on cancelled socket');
+  });
+
+  // ------------------------------------------------------------------------
+  // SECTION 2B: Restart After Cancellation & Lifecycle Races
+  // ------------------------------------------------------------------------
+
+  function createDeferred<T>() {
+    let resolve!: (val: T) => void;
+    let reject!: (err?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  await test('stop() during ticket acquisition followed immediately by start() activates replacement connection and ignores stale ticket (old resolves first)', async () => {
+    const audio = new MockAudioEngine() as any;
+    const constructedSockets: MockWebSocket[] = [];
+
+    class TrackingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        constructedSockets.push(this);
+      }
+    }
+
+    const ticketDeferred1 = createDeferred<any>();
+    const ticketDeferred2 = createDeferred<any>();
+    let ticketCallCount = 0;
+
+    const mockFetch = (async (url: string) => {
+      if (url === '/api/auth/ws-ticket') {
+        ticketCallCount++;
+        if (ticketCallCount === 1) {
+          return ticketDeferred1.promise;
+        }
+        if (ticketCallCount === 2) {
+          return ticketDeferred2.promise;
+        }
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: TrackingWs as any,
+    });
+
+    // 1. Initial start() triggers ticket acquisition 1
+    const p1 = p.start();
+    assert.strictEqual(ticketCallCount, 1, 'First ticket acquisition initiated');
+
+    // 2. Stop during ticket acquisition
+    await p.stop();
+    assert.strictEqual(p.isActive(), false);
+
+    // 3. Immediately start again: initiates fresh startup without waiting for p1 to settle
+    const p2 = p.start();
+    assert.strictEqual(ticketCallCount, 2, 'Second ticket acquisition initiated immediately after restart');
+
+    // 4. Resolve old ticket response FIRST in controlled order
+    ticketDeferred1.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_stale_ticket' }),
+    });
+
+    // Await old start promise — it must unwind cleanly without constructing a socket
+    await p1;
+    assert.strictEqual(constructedSockets.length, 0, 'Cancelled startup must not construct a socket even after ticket resolves');
+
+    // 5. Resolve new ticket response SECOND in controlled order
+    ticketDeferred2.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_replacement_ticket' }),
+    });
+
+    // Await replacement start promise
+    await p2;
+
+    // 6. Assert replacement startup becomes active and only the valid current socket exists
+    assert.strictEqual(p.isActive(), true, 'Replacement startup must become active');
+    assert.strictEqual(constructedSockets.length, 1, 'Only one WebSocket must be constructed');
+    assert.ok(
+      constructedSockets[0].url.includes('ticket=ws_live_replacement_ticket'),
+      'Connected socket must use the replacement ticket'
+    );
+    assert.ok(audio.pcmCallback !== null, 'Microphone capture attached to replacement connection');
+
+    await p.stop();
+    assert.strictEqual(p.isActive(), false);
+  });
+
+  await test('stop() during ticket acquisition followed by start() when replacement ticket resolves before old ticket', async () => {
+    const audio = new MockAudioEngine() as any;
+    const constructedSockets: MockWebSocket[] = [];
+
+    class TrackingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        constructedSockets.push(this);
+      }
+    }
+
+    const ticketDeferred1 = createDeferred<any>();
+    const ticketDeferred2 = createDeferred<any>();
+    let ticketCallCount = 0;
+
+    const mockFetch = (async (url: string) => {
+      if (url === '/api/auth/ws-ticket') {
+        ticketCallCount++;
+        if (ticketCallCount === 1) {
+          return ticketDeferred1.promise;
+        }
+        if (ticketCallCount === 2) {
+          return ticketDeferred2.promise;
+        }
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: TrackingWs as any,
+    });
+
+    const p1 = p.start();
+    await p.stop();
+    const p2 = p.start();
+
+    // Resolve replacement ticket FIRST
+    ticketDeferred2.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_replacement_ticket_fast' }),
+    });
+    await p2;
+
+    assert.strictEqual(p.isActive(), true, 'Replacement startup becomes active');
+    assert.strictEqual(constructedSockets.length, 1);
+
+    // Resolve old ticket SECOND
+    ticketDeferred1.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_stale_ticket_late' }),
+    });
+    await p1;
+
+    // Replacement remains active; no second socket was created
+    assert.strictEqual(p.isActive(), true, 'Provider remains active after stale ticket settles');
+    assert.strictEqual(constructedSockets.length, 1, 'No ghost socket created from late stale ticket');
+
+    await p.stop();
+  });
+
+  await test('stop() during pending handshake followed by restart keeps replacement active despite late events from old socket', async () => {
+    const audio = new MockAudioEngine() as any;
+    const sockets: MockWebSocket[] = [];
+    const socketConstructedDeferreds = [createDeferred<MockWebSocket>(), createDeferred<MockWebSocket>()];
+    let constructedCount = 0;
+
+    class ControllableWs extends MockWebSocket {
+      constructor(url: string) {
+        // autoOpen = false: keep handshake pending until manually opened
+        super(url, false);
+        const idx = constructedCount++;
+        sockets.push(this);
+        if (idx < socketConstructedDeferreds.length) {
+          socketConstructedDeferreds[idx].resolve(this);
+        }
+      }
+    }
+
+    let ticketCount = 0;
+    const mockFetch = (async (url: string) => {
+      if (url === '/api/auth/ws-ticket') {
+        ticketCount++;
+        return {
+          ok: true,
+          json: async () => ({ ticket: `ws_live_ticket_handshake_${ticketCount}` }),
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: ControllableWs as any,
+    });
+
+    const emittedErrors: any[] = [];
+    p.addEventListener('error', (e: any) => {
+      emittedErrors.push(e.detail);
+    });
+
+    const receivedTranscripts: any[] = [];
+    p.addEventListener('transcript', (e: any) => {
+      receivedTranscripts.push(e.detail);
+    });
+
+    // 1. Initial start(): acquires ticket 1 and constructs socket 1
+    const p1 = p.start();
+    const ws1 = await socketConstructedDeferreds[0].promise;
+    assert.strictEqual(ws1.url.includes('ticket=ws_live_ticket_handshake_1'), true);
+
+    // 2. Stop during socket 1 pending handshake
+    await p.stop();
+    assert.strictEqual(p.isActive(), false);
+
+    // 3. Immediately start again: acquires ticket 2 and constructs socket 2
+    const p2 = p.start();
+    const ws2 = await socketConstructedDeferreds[1].promise;
+    assert.strictEqual(ws2.url.includes('ticket=ws_live_ticket_handshake_2'), true);
+
+    // 4. Complete handshake for replacement socket 2
+    ws2.onopen?.();
+    await p2;
+    await p1; // Old startup unwinds cleanly
+
+    assert.strictEqual(p.isActive(), true, 'Replacement connection is active');
+
+    // 5. Simulate late events from old socket 1
+    ws1.onopen?.();
+    ws1.simulateServerMessage({
+      type: 'TRANSCRIPT_FINAL',
+      text: 'Stale text from old socket',
+    });
+    ws1.simulateError(new Error('Stale socket network error'));
+    ws1.close(1006, 'Stale socket closed');
+
+    // 6. Assert replacement connection remains active and unaffected
+    assert.strictEqual(p.isActive(), true, 'Replacement connection remains active after old socket events');
+    assert.strictEqual(emittedErrors.length, 0, 'No errors emitted for late events on old cancelled socket');
+    assert.strictEqual(receivedTranscripts.length, 0, 'No transcript events emitted from stale socket messages');
+
+    // Verify replacement socket is still functional
+    ws2.simulateServerMessage({
+      type: 'TRANSCRIPT_FINAL',
+      text: 'Valid text on replacement socket',
+    });
+    assert.strictEqual(receivedTranscripts.length, 1);
+    assert.strictEqual(receivedTranscripts[0].text, 'Valid text on replacement socket');
+
+    await p.stop();
+    assert.strictEqual(p.isActive(), false);
+  });
+
+  await test('Older startup finally block cannot clear the in-flight replacement startup promise', async () => {
+    const audio = new MockAudioEngine() as any;
+    const ticket1Deferred = createDeferred<any>();
+    const ticket2Deferred = createDeferred<any>();
+    let ticketFetches = 0;
+
+    const mockFetch = (async (url: string) => {
+      if (url === '/api/auth/ws-ticket') {
+        ticketFetches++;
+        if (ticketFetches === 1) {
+          return ticket1Deferred.promise;
+        }
+        if (ticketFetches === 2) {
+          return ticket2Deferred.promise;
+        }
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    // 1. Start old startup (ticket 1 fetch is pending)
+    const p1 = p.start();
+    assert.strictEqual(ticketFetches, 1);
+
+    // 2. Stop old startup
+    await p.stop();
+
+    // 3. Start replacement startup (ticket 2 fetch is now pending)
+    const p2 = p.start();
+    assert.strictEqual(ticketFetches, 2);
+
+    // 4. Old startup 1 unwinds when ticket 1 resolves and enters its finally block
+    ticket1Deferred.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_stale' }),
+    });
+    await p1;
+
+    // 5. Call start() concurrently while replacement startup p2 is still in-flight
+    // If old startup's finally block had cleared startPromise, this would launch a 3rd ticket fetch!
+    const p3 = p.start();
+
+    // Assert that p3 reuses the in-flight replacement promise and did NOT initiate a 3rd ticket fetch
+    assert.strictEqual(p3, p2, 'Concurrent start() must return the existing in-flight replacement promise');
+    assert.strictEqual(ticketFetches, 2, 'No third ticket fetch was initiated; replacement startPromise remained intact');
+
+    // 6. Settle replacement startup
+    ticket2Deferred.resolve({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_replacement' }),
+    });
+
+    await Promise.all([p2, p3]);
+    assert.strictEqual(p.isActive(), true, 'Replacement startup completed and is active');
+
+    await p.stop();
   });
 
   // ------------------------------------------------------------------------
@@ -1187,7 +1493,7 @@ async function runTests() {
   });
 
   await test('Newer sendText() arriving while older audio playback is pending halts audio hardware and suppresses stale completion (Finding 2)', async () => {
-    let playEncodedResolve: (() => void) | null = null;
+    let playEncodedResolve: any = null;
     let audioStoppedWhilePlaying = false;
 
     class PlaybackControllableAudio extends MockAudioEngine {
