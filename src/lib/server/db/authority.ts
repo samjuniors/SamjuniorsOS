@@ -18,6 +18,7 @@ export class DatabaseAuthorityError extends Error {
  * 
  * Rules:
  * 1. Explicit DATABASE_MODE environment variable takes top precedence ('authoritative' | 'test' | 'local').
+ *    ('sqlite' is accepted as an alias for 'local').
  * 2. In NODE_ENV === 'production', DATABASE_MODE defaults strictly to 'authoritative'.
  * 3. In NODE_ENV === 'test', DATABASE_MODE defaults to 'test'.
  * 4. Otherwise, defaults to 'local'.
@@ -26,6 +27,9 @@ export function getDatabaseMode(): DatabaseMode {
   const envMode = process.env.DATABASE_MODE?.toLowerCase();
   if (envMode === 'authoritative' || envMode === 'test' || envMode === 'local') {
     return envMode;
+  }
+  if (envMode === 'sqlite') {
+    return 'local';
   }
 
   if (process.env.NODE_ENV === 'production') {

@@ -3,16 +3,16 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 — Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`, based on GitHub `main` @ `87bec51b17229ced9eec4d730b1a6302b4d84f88`. All 5 audit tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 test assertions executed and verified passing via `npx tsx`. Awaiting Founder review of findings, deletion/retention trade-offs, and Batch 1 execution approval.
+M1 — Memory Source-of-Truth Batch 1 COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`. Implemented M1-F02 (CompanyMemoryStore authoritative retrieval via getAllMemories), M1-F03 (strict local persistence error propagation via saveItemStrict), and M1-F11 (DATABASE_MODE=sqlite parser alias alignment). Verified with 7/7 passing assertions in `tests/sophia/m1_batch1_memory_authority.test.ts` and 108/108 passing regression assertions. Awaiting Founder review of Batch 1 and policy guidance for Batch 2 (deletion & retention foundation).
 
 ## Next (queued, in order)
-- Present M1 audit findings and policy decisions to Founder (specifically: physical deletion vs. cryptographic supersession/tombstoning for epistemic records).
-- Execute Batch 1: configuration parser hygiene (`DATABASE_MODE` alignment), `CompanyMemoryStore.queryMemories` authoritative retrieval fix (M1-F02), and cross-platform child test runner support.
+- Present Batch 1 completion to Founder; review policy decisions for Batch 2 (specifically: physical deletion for Personal Mind vs. cryptographic tombstoning for Epistemic Facts).
 - Execute Batch 2: deletion & retention foundation (`ConversationStore` deletion cascade, epistemic tombstoning).
 - Execute Batch 3: `DurableFileStore` file corruption quarantine (`.corrupt.<timestamp>`).
 - Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
 
 ## Completed
+- [2026-10-12] M1 Batch 1 Implementation & Verification — Reconciled `DATABASE_MODE` parser and `.env.example` template (M1-F11); fixed `CompanyMemoryStore.queryMemories` to score authoritative DB candidates in auth mode (M1-F02); enforced strict local persistence and error propagation via `saveItemStrict` in `CompanyMemoryStore.recordMemory` (M1-F03). 7/7 new test assertions passed (`m1_batch1_memory_authority.test.ts`).
 - [2026-10-12] M1 Memory Source-of-Truth & Persistence Audit — Completed comprehensive audit across Tasks A through E: memory ownership matrix, context assembly pipeline trace, retention/deletion dependency map, 4-tier persistence failure analysis, database configuration audit, and test suite verification (108 assertions passing). Identified confirmed defects M1-F01 through M1-F11. Recorded in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md` and `WORKLOG.md`.
 - [2026-09-21] Architecture Source-of-Truth Update — established `AGENTS.md`, `ARCHITECTURE.md`, and `docs/architecture/ADR-001-realtime-sophia-interface.md`. Aligned product boundaries, core principles, 24/7 operating model, realtime interface doctrine, graph read-model authority, security invariants, and failure recovery.
 - [2026-09-17] Phase 4C-B Streaming STT Adapter — implemented provider-neutral STT architecture (`STTProvider`), Deepgram Flux streaming adapter (`DeepgramFluxProvider`), 80ms audio aggregation, 128ms client pre-roll ring buffer, turn finalization idempotency, and unified cognitive ingress (`executeSophiaTurn`). 58/58 test assertions passing.

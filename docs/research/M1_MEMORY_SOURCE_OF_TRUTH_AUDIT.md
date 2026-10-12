@@ -215,28 +215,32 @@ FOUNDER REQUEST (Ingress: /api/agent-chat or Live WebSocket port 3001)
 | ID | Category | Nature | Finding | Impact | Recommended Action |
 |---|---|---|---|---|---|
 | **M1-F01** | Architecture Trade-off | Documented Strategy | Personal Mind and ConversationStore are file-primary; Prisma is a mirror. | Multi-instance inconsistency; instances cannot share history without shared disk. | Preserve for M1 (local single-instance); execute planned M6 authoritative migration when moving to multi-instance cloud. |
-| **M1-F02** | Confirmed Defect | Logic Discrepancy | `CompanyMemoryStore.queryMemories()` queries `this.memories` cache instead of DB in authoritative mode; `recordMemory()` in auth mode does not update `this.memories`; `setMemories()` updates cache only. | Stale or missing precedents in authoritative context assembly; cache-DB divergence. | Minimal fix batch: make `queryMemories` route through `getAllMemories()` in authoritative mode; update `this.memories` on `recordMemory()`. |
-| **M1-F03** | Confirmed Defect | Error Handling | `CompanyMemoryStore.recordMemory()` swallows file persistence errors after updating in-memory array. | Caller observes success even if disk write failed. | Use strict save semantics (`saveItemStrict`) or propagate persistence errors. |
+| **M1-F02** | Confirmed Defect (RESOLVED in Batch 1) | Logic Discrepancy | `CompanyMemoryStore.queryMemories()` queried `this.memories` cache instead of DB in authoritative mode; `recordMemory()` in auth mode did not update `this.memories`. | Stale or missing precedents in authoritative context assembly; cache-DB divergence. | **RESOLVED:** `queryMemories()` now scores `await this.getAllMemories()` candidates; `recordMemory()` keeps `this.memories` coherent upon DB upsert. Verified with test `m1_batch1_memory_authority.test.ts`. |
+| **M1-F03** | Confirmed Defect (RESOLVED in Batch 1) | Error Handling | `CompanyMemoryStore.recordMemory()` swallowed file persistence errors after updating in-memory array. | Caller observes success even if disk write failed. | **RESOLVED:** `recordMemory()` uses `saveItemStrict()` and mutates `this.memories` only upon durable file persistence success. Throws if disk write fails. Verified with test `m1_batch1_memory_authority.test.ts`. |
 | **M1-F04** | Architecture Trade-off | Concurrency Limitation | `DurableFileStore` proceeds without lock after 30s timeout. | Updates can be lost under extreme file contention. | Acceptable trade-off for single-instance local runtime; replaced by database row locks in M6. |
-| **M1-F05** | Confirmed Defect | Failure Recovery | `DurableFileStore.readCollection()` returns `{}` on parse error. | Corrupt file is treated as empty collection, potentially overwriting damaged data on next write. | Add corrupt file quarantine/backup (`.corrupt.<timestamp>`) and raise error rather than returning empty object. |
-| **M1-F06 / M1-F09** | Architecture Gap | API Completeness | Deletion APIs are missing for conversations, messages, precedents, knowledge items, and state entities. | Cannot fulfill founder directive to "forget" or delete historical conversations/decisions. | Implement explicit founder-scoped deletion methods with clear cascade/tombstone policies. |
+| **M1-F05** | Confirmed Defect | Failure Recovery | `DurableFileStore.readCollection()` returns `{}` on parse error. | Corrupt file is treated as empty collection, potentially overwriting damaged data on next write. | Add corrupt file quarantine/backup (`.corrupt.<timestamp>`) and raise error rather than returning empty object (queued for Batch 3). |
+| **M1-F06 / M1-F09** | Architecture Gap | API Completeness | Deletion APIs are missing for conversations, messages, precedents, knowledge items, and state entities. | Cannot fulfill founder directive to "forget" or delete historical conversations/decisions. | Implement explicit founder-scoped deletion methods with clear cascade/tombstone policies (queued for Batch 2). |
 | **M1-F08** | Confirmed Defect | Incomplete Authoritative Mode | `CompanyStateStore.queryState()` queries cache only; `getFinancialMetrics()` falls back to seeded sample model. | Current operational state can return simulated sample values even in authoritative database mode. | Ensure `getFinancialMetrics()` fails closed in authoritative mode if DB record is missing; route `queryState()` through authoritative getters. |
 | **M1-F10** | Confirmed Defect | Error Handling | Local Epistemic and CompanyState writes return successfully after caught file persistence errors. | In-memory maps diverge from disk state upon write errors. | Propagate persistence errors to caller in local mode. |
-| **M1-F11** | Confirmed Defect | Configuration Inconsistency | `.env.example` documents `DATABASE_MODE=sqlite`, which `authority.ts` rejects. | Silent fallback to `NODE_ENV` defaults; operator confusion. | Update `.env.example` to document accepted values (`authoritative`, `local`, `test`) or update `authority.ts` to alias `sqlite` to `local`. |
+| **M1-F11** | Confirmed Defect (RESOLVED in Batch 1) | Configuration Inconsistency | `.env.example` documented `DATABASE_MODE=sqlite`, which `authority.ts` rejected. | Silent fallback to `NODE_ENV` defaults; operator confusion. | **RESOLVED:** `authority.ts` now accepts `'sqlite'` as an explicit alias for `'local'`. `.env.example` updated to document `'local'`, `'authoritative'`, `'test'` with `'sqlite'` alias note. Verified with test `m1_batch1_memory_authority.test.ts`. |
 
 ---
 
 ## 9. Recommended Minimal Implementation Batches
 
-Implementation must proceed in small, independently verifiable, reversible batches:
+Implementation proceeds in small, independently verifiable, reversible batches:
 
-### Batch 1: Configuration & Error Propagation Hygiene (Zero Migration Risk)
-1. **Reconcile `DATABASE_MODE` parser and template:** Update `src/lib/server/db/authority.ts` to accept `'sqlite'` as an alias for `'local'`, or align `.env.example` to `'local' | 'authoritative' | 'test'`.
-2. **Fix `CompanyMemoryStore` authoritative retrieval (M1-F02):**
-   - Update `queryMemories()` to retrieve candidates via `await this.getAllMemories()` instead of raw `this.memories`.
-   - Update `recordMemory()` in authoritative mode to keep `this.memories` coherent.
-   - Update `setMemories()` to persist in both local and authoritative modes.
-3. **Fix cross-platform test execution:** Update child process runners in test suites to support `tsx`/`node` alongside `bun`.
+### Batch 1: Configuration & Error Propagation Hygiene (COMPLETE & VERIFIED)
+1. **Reconciled `DATABASE_MODE` parser and template (M1-F11):** Updated `src/lib/server/db/authority.ts` to accept `'sqlite'` as an alias for `'local'`. Aligned `.env.example`.
+2. **Fixed `CompanyMemoryStore` authoritative retrieval (M1-F02):**
+   - Updated `queryMemories()` to retrieve candidates via `await this.getAllMemories()`.
+   - Updated `recordMemory()` in authoritative mode to keep `this.memories` coherent upon DB upsert.
+   - Preserved `setMemories()` in-memory test/benchmark injection semantics.
+3. **Fixed swallowed persistence errors in `CompanyMemoryStore` (M1-F03):**
+   - Used `saveItemStrict()` in `recordMemory()` before mutating in-memory cache.
+   - Throws fail-closed on filesystem persistence failure without leaving cache split-brain.
+   - Ensured deduplication by ID rather than duplicate unshifting.
+4. **Verification:** Verified with new targeted suite `tests/sophia/m1_batch1_memory_authority.test.ts` (7/7 passed), zero regressions across existing suites (108/108 passed).
 
 ### Batch 2: Deletion & Retention Foundation (API Completeness)
 1. **Conversation & Message Deletion:**

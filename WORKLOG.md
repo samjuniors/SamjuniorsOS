@@ -2662,3 +2662,40 @@ Source inspection only. No tests, database connection, runtime, deployment setti
 ### Next Action
 Present completed M1 Audit Report to Founder. Do not begin deletion/retention implementation (Batch 2) until founder confirms policy. Await approval to implement Batch 1 (hygiene, `DATABASE_MODE` parser alignment, `CompanyMemoryStore` cache fix, and cross-platform test runner support).
 
+
+## 2026-10-12 — M1 Batch 1 Implementation & Verification
+
+**Status:** COMPLETE on `audit/m1-memory-source-of-truth`. Implemented approved Batch 1 scope: M1-F02, M1-F03, and M1-F11.
+
+### What changed
+1. **M1-F11 — Configuration Parser Alignment (`src/lib/server/db/authority.ts`, `.env.example`)**:
+   - `getDatabaseMode()` now explicitly parses `'sqlite'` as an alias for `'local'`.
+   - Updated `.env.example` to document `'local'`, `'authoritative'`, `'test'` with explanation of `'sqlite'` alias.
+   - Prevents silent fallback to production authoritative mode when setting `DATABASE_MODE=sqlite`.
+
+2. **M1-F02 — CompanyMemoryStore Authoritative Retrieval (`src/lib/server/memory/memory-store.ts`)**:
+   - `queryMemories()` now retrieves candidates via `await this.getAllMemories()` instead of scoring the private `this.memories` array.
+   - In authoritative mode, candidates are queried from the authoritative database fail-closed.
+   - `recordMemory()` in authoritative mode keeps `this.memories` coherent upon DB upsert.
+   - `setMemories()` in-memory test/benchmark injection semantics are preserved.
+
+3. **M1-F03 — Strict Local Persistence Error Propagation (`src/lib/server/memory/memory-store.ts`)**:
+   - `recordMemory()` in local mode now uses `DurableFileStore.getInstance().saveItemStrict('company_memories', ...)` before mutating `this.memories`.
+   - Disk persistence failures are no longer silently swallowed: errors fail-closed, and `this.memories` is not modified with unpersisted records.
+   - Replaces existing record by ID instead of unshifting duplicates.
+
+### Tests executed & verified
+- **New targeted suite**: `tests/sophia/m1_batch1_memory_authority.test.ts` (7 passed, 0 failed via `npx tsx`).
+  - M1-F11.1: DATABASE_MODE=sqlite parsed as local mode.
+  - M1-F11.2: Standard DATABASE_MODE values take top precedence.
+  - M1-F11.3: Unset DATABASE_MODE falls back to NODE_ENV correctly.
+  - M1-F02.1: queryMemories routes through getAllMemories(), not private cache.
+  - M1-F03.1: recordMemory propagates failure when file persistence fails.
+  - M1-F03.2: recordMemory successfully persists and updates in-memory cache.
+  - M1-F03.3: recordMemory updates existing memory by ID without duplicate unshifting.
+- **Regression verification**: 108 existing assertions passing cleanly across `m1_canonical_state_authority.test.ts`, `m52_retrieval_hygiene.test.ts`, `m4b1_lifecycle.test.ts`, and `m53_asof_read.test.ts`.
+
+### Next Action
+Founder review of Batch 1 results and decision on Batch 2 (deletion & retention foundation: conversation cascade deletion, epistemic cryptographic tombstoning).
+
+
