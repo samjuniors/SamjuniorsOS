@@ -45,3 +45,11 @@ Architecture source-of-truth reconciliation complete: `AGENTS.md`, `ARCHITECTURE
 - `.env.local` exists with Gemini API keys (922 bytes, same as `.env.example`).
 - 6 subagents exist in `.claude/agents/`: architecture-reviewer, design-critic, production-hardening-reviewer, progress-auditor, qa-reviewer, security-reviewer.
 - Browser automation (Playwright) failed to launch — visual verification must be done manually by the founder.
+
+
+## 2026-10-12 — M1 kickoff
+- Created `audit/m1-memory-source-of-truth` from current `main`.
+- Added `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md` with initial taxonomy, persistence matrix, source findings, risks and remaining checklist.
+- Confirmed Personal Mind and ConversationStore remain file-primary; CompanyMemory authoritative retrieval has a cache-path discrepancy; DurableFileStore lock timeout and corrupt-read semantics need explicit treatment.
+- Source inspection only. No runtime changes; tests/build/database behavior NOT VERIFIED.
+- Next: finish EpistemicClaimStore and CompanyStateStore method-level audit, then trace deletion/retention paths.
