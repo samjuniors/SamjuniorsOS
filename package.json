@@ -12,7 +12,8 @@
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "db:reconcile-tombstones": "tsx scripts/reconcile-tombstones.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",

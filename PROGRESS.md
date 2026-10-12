@@ -3,10 +3,16 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 2: Retention, Deletion and Forget Governance COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`. Implemented founder-controlled physical conversation & message deletion with write-ahead anti-resurrection tombstones (`conversation_tombstones.json`), partial-failure cascade reconciliation (`reconcileAllTombstones`), anti-recreation barriers, zero information leakage (strict 404 for unknown/cross-founder), audit record preservation (`AgentRun`, `ApprovalRecord`, `SideEffectAudit` untouched), REST endpoints (`/api/conversation`, `/api/conversation/message`, `/api/agent-chat` DELETE alias), and 24-assertion isolated test suite (`tests/sophia/m1_batch2_conversation_deletion.test.ts`) including persistence and reconciliation failure injection. Zero regressions across existing test suites.
+M1 Batch 2.1: Conversation Deletion Hardening & Concurrency Protection COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+- Addressed 4 confirmed defects: (1) `saveMessage`/`deleteConversation` race serialized on collection lock with critical section tombstone and presence rechecks; (2) Prisma reconciliation fixed to record success only on confirmed delete or P2025 absent record, keeping outages/timeouts pending; (3) Fail-closed locking guarantee via `withCollectionLockStrict` and `LockTimeoutError`; (4) Individual message replay prevented via write-ahead durable deletion markers (`message_tombstones.json`) rejecting deleted IDs and idempotency keys with `MessageTombstonedError`.
+- Operational runbook script delivered (`scripts/reconcile-tombstones.ts`, `npm run db:reconcile-tombstones`) confirming store-wide reconciliation is operator-triggered.
+- Batch 3 dependency recorded: critical collection corruption fail-closed policy (`conversation_tombstones`).
+- 34/34 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`), plus zero regressions on Batch 1 (7/7), Canonical State (7/7), and M3 Authority (7/7).
+- Awaiting Founder review before beginning Batch 3.
 
 ## Next (queued, in order)
-- Execute Batch 3: `DurableFileStore` file corruption quarantine (`.corrupt.<timestamp>`).
+- Founder Review of Batch 2.1 hardening pass.
+- Execute Batch 3: `DurableFileStore` critical collection corruption fail-closed policy & quarantine (`.corrupt.<timestamp>`).
 - Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
 - Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
 

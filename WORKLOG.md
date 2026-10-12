@@ -2823,9 +2823,60 @@ Implement founder-controlled physical deletion of conversations and messages wit
 - `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**
 - `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**
 
+## 2026-10-12 — M1 Batch 2.1: Conversation Deletion Hardening & Concurrency Protection
+
+**Status:** COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+
+### Objective
+Complete a narrowly scoped Batch 2.1 hardening pass addressing four confirmed source-level defects identified in founder review:
+1. `saveMessage`/`deleteConversation` race serialization on collection lock.
+2. Prisma reconciliation falsely recording success on errors.
+3. Lock timeout fail-closed guarantee (`LockTimeoutError`).
+4. Individual message replay prevention via durable deletion markers.
+5. Verification of tombstone reconciliation operational invocation and Batch 3 corruption findings.
+
+### What was completed
+
+1. **`saveMessage` / `deleteConversation` Race Fix (`src/lib/server/conversation/store.ts`)**:
+   - Serialized message writes in `saveMessage` on `CHAT_MESSAGES_COLLECTION` lock using `withCollectionLockStrict`.
+   - Recheck conversation tombstone synchronously inside the critical section immediately before writing.
+   - Recheck parent conversation existence on disk and message tombstones inside the critical section.
+   - Zero synchronous locks held across awaits (all async I/O occurs outside the lock).
+   - Safe ordering guaranteed: saves winning the lock before deletion are swept by the delete cascade; saves arriving after tombstone fail closed with `ConversationSecurityError`. Zero orphaned messages.
+
+2. **Prisma Reconciliation Defect Fix (`src/lib/server/conversation/store.ts`)**:
+   - Implemented `isPrismaRecordNotFoundError(err)` to inspect Prisma error codes.
+   - Confirmed deletions and confirmed already-absent records (`P2025`) are treated as reconciled (`prismaReconciled = true`).
+   - Genuine connection errors, timeouts, and network outages (`P1001`, `P1002`) remain NOT reconciled (`prismaReconciled = false`), keeping the tombstone pending for future retry passes.
+   - Persisted reconciliation status using `saveItemStrict`.
+
+3. **Fail-Closed Locking Guarantee (`src/lib/server/persistence/durable-file-store.ts`)**:
+   - Introduced `LockTimeoutError` and `withCollectionLockStrict(collection, fn, timeoutMs)` primitive.
+   - When `failClosed` is true, throws `LockTimeoutError` if lock cannot be acquired within `timeoutMs`.
+   - Preserves legacy best-effort behavior for unrelated callers.
+   - Wired critical deletion and message write operations into `withCollectionLockStrict`.
+
+4. **Individual Message Replay Prevention (`src/lib/server/conversation/store.ts`)**:
+   - Added `MESSAGE_TOMBSTONES_COLLECTION = 'message_tombstones'` and `MessageTombstonedError`.
+   - In `deleteMessage`, writes a durable founder-scoped deletion marker (`message_tombstones.json`) with `saveItemStrict` BEFORE purging the message from `chat_messages`.
+   - If marker write fails, deletion fails closed and the message is not deleted from disk.
+   - Replays of deleted message IDs or deleted idempotency keys fail closed with `MessageTombstonedError`.
+   - Cross-founder attempts on message tombstones fail closed with `ConversationSecurityError`.
+   - Repeated message deletion returns `alreadyDeleted: true, deleted: false, success: true`.
+
+5. **Reconciliation Invocation & Operational Runbook (`scripts/reconcile-tombstones.ts`, `package.json`)**:
+   - Created operational runbook script `scripts/reconcile-tombstones.ts` (invocable via `npx tsx scripts/reconcile-tombstones.ts` or `npm run db:reconcile-tombstones`).
+   - Documented that per-conversation idempotent retry automatically sweeps lingering local files and mirrors on `deleteConversation`, while store-wide sweeps are operator-triggered during maintenance windows.
+   - Confirmed no automated background scheduler is claimed without a verified production caller.
+
+6. **Batch 3 Dependency Recorded**:
+   - Recorded finding in `M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`: `readCollection()` returns `{}` on JSON parse error. For critical collections (specifically `conversation_tombstones`), unreadable files must fail closed (`CriticalCollectionCorruptionError`) and quarantine to prevent resurrecting deleted conversations via Prisma fallback.
+
+### Tests Executed & Verified
+- `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **34 PASSED, 0 FAILED** (added 10 new tests across Groups 12–15: barriers, failure injection, lock timeout, replay prevention).
+- `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**.
+- `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**.
+- `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**.
+
 ### Next Action
-Execute Batch 3: `DurableFileStore` file corruption quarantine (`.corrupt.<timestamp>`).
-
-
-
-
+Submit Batch 2.1 report for Founder review. Stop and wait for Founder review before starting Batch 3.

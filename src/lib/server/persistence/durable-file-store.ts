@@ -30,6 +30,13 @@ import path from 'path';
  * within a process (a depth counter per collection), so a locked section
  * may call saveItem()/deleteItem()/writeCollection() freely.
  */
+export class LockTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LockTimeoutError';
+  }
+}
+
 export class DurableFileStore {
   private static instance: DurableFileStore;
   private dataDir: string;
@@ -121,10 +128,16 @@ export class DurableFileStore {
 
   /**
    * Acquires the per-collection cross-process lock (re-entrant in-process).
-   * Best-effort by design: after LOCK_TIMEOUT_MS of contention the caller
-   * proceeds WITHOUT the lock (loudly logged) so persistence never wedges.
+   * When `failClosed` is true, throws LockTimeoutError if the lock cannot be
+   * acquired within `timeoutMs`, guaranteeing that critical operations never proceed
+   * without serialization. When `failClosed` is false (legacy default), proceeds
+   * without the lock after timeout and logs loudly.
    */
-  private acquireLock(collection: string): void {
+  private acquireLock(
+    collection: string,
+    failClosed: boolean = false,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): void {
     const depth = this.lockDepth.get(collection) ?? 0;
     if (depth > 0) {
       this.lockDepth.set(collection, depth + 1);
@@ -132,7 +145,7 @@ export class DurableFileStore {
     }
 
     const lockPath = this.getLockPath(collection);
-    const deadline = Date.now() + DurableFileStore.LOCK_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
     let warned = false;
 
     for (;;) {
@@ -142,10 +155,15 @@ export class DurableFileStore {
       }
       this.breakStaleLock(lockPath);
       if (Date.now() > deadline) {
+        if (failClosed) {
+          throw new LockTimeoutError(
+            `[DurableFileStore] Failed to acquire lock for "${collection}" within ${timeoutMs}ms (fail-closed)`
+          );
+        }
         if (!warned) {
           console.error(
             `[DurableFileStore] Could not acquire lock for "${collection}" within ` +
-              `${DurableFileStore.LOCK_TIMEOUT_MS}ms — proceeding WITHOUT the lock ` +
+              `${timeoutMs}ms — proceeding WITHOUT the lock ` +
               `(concurrent read-modify-write protection is degraded for this write).`
           );
           warned = true;
@@ -180,7 +198,26 @@ export class DurableFileStore {
    * the serialization guarantee.
    */
   public withCollectionLock<T>(collection: string, fn: () => T): T {
-    this.acquireLock(collection);
+    this.acquireLock(collection, false);
+    try {
+      return fn();
+    } finally {
+      this.releaseLock(collection);
+    }
+  }
+
+  /**
+   * FAIL-CLOSED variant of withCollectionLock:
+   * Throws LockTimeoutError if the collection lock cannot be acquired within
+   * timeoutMs. Used for critical deletion and message-write serialization where
+   * proceeding without a lock is unsafe and prohibited.
+   */
+  public withCollectionLockStrict<T>(
+    collection: string,
+    fn: () => T,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): T {
+    this.acquireLock(collection, true, timeoutMs);
     try {
       return fn();
     } finally {

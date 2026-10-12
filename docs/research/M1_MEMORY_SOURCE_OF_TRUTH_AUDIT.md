@@ -466,8 +466,48 @@ Engineering must not implement runtime deletion endpoints or alter store persist
 
 ---
 
-## 11. Exact Next Action for Engineering
+## 12. Batch 2.1 Hardening & Production Operational Model
 
-1. **Review and Confirm:** Present this completed M1 audit report to the Founder.
-2. **Do Not Begin Batch 2/3 Implementation** until Founder reviews the deletion/retention trade-offs (specifically: physical deletion vs. cryptographic tombstoning for epistemic records).
-3. **Immediate Safe Next Step:** Implement **Batch 1** (correcting `DATABASE_MODE` configuration parser alignment and fixing the `CompanyMemoryStore.queryMemories` authoritative read discrepancy), accompanied by isolated regression tests.
+### 12.1 Source-Level Hardening Delivered
+
+| Defect / Risk | Root Cause | Batch 2.1 Hardening Solution | Invariant Preserved |
+|---|---|---|---|
+| **`saveMessage` / `deleteConversation` race** | `deleteMessage` and `deleteConversation` locked `chat_messages`, but `saveMessage` wrote without collection lock. | `saveMessage` is now serialized under `withCollectionLockStrict(CHAT_MESSAGES_COLLECTION)`. Synchronous rechecks inside the critical section verify conversation tombstone, parent conversation record existence, and message tombstones. | Safe ordering guaranteed: a save winning the lock before deletion is cleanly swept by the purge; a save arriving after tombstone fails closed (`ConversationSecurityError`). Zero locks held across awaits. |
+| **Prisma reconciliation false success** | Prisma deletion errors were swallowed by `catch(() => {})`, after which `prismaReconciled` was unconditionally marked `true`. | `isPrismaRecordNotFoundError(err)` inspects Prisma error codes: only confirmed deletions and verified absent records (`P2025`) set `prismaReconciled = true`. Connection outages, network timeouts (`P1001`, `P1002`) keep `prismaReconciled = false`. Updated tombstones persist via `saveItemStrict`. | Failed mirror deletions remain pending for retry and never report false success. |
+| **Lock timeout best-effort degradation** | `DurableFileStore.acquireLock()` proceeded without a lock after `LOCK_TIMEOUT_MS`. | Added fail-closed option: `withCollectionLockStrict(collection, fn, timeoutMs)` throws `LockTimeoutError` if lock cannot be acquired within timeout (default 30s). Critical deletion and message-write paths use this strict primitive. Legacy callers preserve non-throwing behavior. | Critical deletion and message write operations never execute unprotected. |
+| **Individual message replay** | Physically removing a message allowed later saves with the same message ID or replaying deleted idempotency keys to recreate content. | Implemented durable, founder-scoped deletion markers (`message_tombstones.json`) written write-ahead via `saveItemStrict`. Re-saving a deleted message ID or replaying a deleted idempotency key fails closed (`MessageTombstonedError`). | Permanently deleted messages cannot be recreated by replay attacks or retries. |
+
+---
+
+### 12.2 Reconciliation Invocation & Operational Runbook
+
+Store-wide tombstone reconciliation is **operator-triggered**, not executed by an unverified background timer:
+
+1. **Per-Conversation Idempotent Auto-Retry:**
+   - When `deleteConversation(founderId, conversationId)` is called on an already-tombstoned conversation, it automatically sweeps any lingering local files and re-attempts Prisma mirror deletion if `prismaReconciled === false`.
+2. **Store-Wide Operator Runbook:**
+   - **Command:** `npx tsx scripts/reconcile-tombstones.ts` (or `npm run db:reconcile-tombstones`).
+   - **Behavior:**
+     1. Sweeps all durable tombstones in `.data/conversation_tombstones.json`.
+     2. Purges any orphaned records in `conversations.json` and `chat_messages.json`.
+     3. Checks database availability and issues Prisma deletions for all pending tombstones (`prismaReconciled === false`).
+     4. Updates tombstones strictly with `prismaReconciled: true` upon successful delete or confirmed absence (`P2025`).
+     5. Leaves tombstones pending if database is offline or unreachable.
+   - **Runbook Policy:** Run this script during scheduled database maintenance windows, after resolving database outages, or as part of disaster recovery validation.
+
+---
+
+### 12.3 Batch 3 Dependency — Critical Collection Corruption Finding
+
+> [!CAUTION]
+> **Batch 3 Required Finding: Critical Collection Corruption Policy**
+> `DurableFileStore.readCollection()` currently returns `{}` upon JSON parse errors or corrupted files.
+> For ordinary collections (e.g. scratch caches), a quarantine/reset policy may be tolerable.
+> However, for **critical governance collections** — specifically `conversation_tombstones` — an unreadable or corrupt file must **NEVER** be interpreted as an empty ledger. Treating a corrupt tombstone file as empty would bypass the anti-resurrection barrier and allow deleted conversations to be resurrected via Prisma fallback!
+>
+> **Batch 3 Scope Requirement:**
+> Define an explicit fail-closed corruption policy for critical collections:
+> 1. Any read failure on `conversation_tombstones` must throw `CriticalCollectionCorruptionError` and halt reads rather than returning `{}`.
+> 2. Implement quarantine archiving (`<collection>.json.corrupt.<timestamp>`) with deterministic operator recovery tools.
+> 3. Add tests proving that corrupt tombstone files cannot make deleted conversations visible through Prisma fallback.
+

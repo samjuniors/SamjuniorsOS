@@ -1,12 +1,16 @@
 import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
 import { NextRequest } from 'next/server';
 import {
   ConversationStore,
   ConversationSecurityError,
   ConversationNotFoundError,
   ChatMessageRecord,
+  MessageTombstonedError,
 } from '../../src/lib/server/conversation';
-import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
+import { DurableFileStore, LockTimeoutError } from '../../src/lib/server/persistence/durable-file-store';
+import { prisma } from '../../src/lib/server/db/prisma';
 import { GET as conversationGet, DELETE as conversationDelete } from '../../src/app/api/conversation/route';
 import { DELETE as messageDelete } from '../../src/app/api/conversation/message/route';
 import { DELETE as agentChatDelete } from '../../src/app/api/agent-chat/route';
@@ -236,9 +240,11 @@ async function main() {
       const refreshedConv = await convStore.getConversation(FOUNDER_A, conv.id);
       assert(new Date(refreshedConv!.updatedAt).getTime() >= new Date(initialUpdatedAt).getTime());
 
-      // Repeated delete on m2 returns notFound
+      // Repeated delete on m2 returns alreadyDeleted (Batch 2.1 tombstone)
       const repeatDel = await convStore.deleteMessage(FOUNDER_A, conv.id, m2.id);
-      assert.strictEqual(repeatDel.notFound, true);
+      assert.strictEqual(repeatDel.alreadyDeleted, true);
+      assert.strictEqual(repeatDel.deleted, false);
+      assert.strictEqual(repeatDel.success, true);
     });
 
     await runTest('5.2: deleteMessage fails closed on cross-founder attempt', async () => {
@@ -814,7 +820,6 @@ async function main() {
       // Delete conversation
       await convStore.deleteConversation(FOUNDER_A, conv.id);
 
-      // GET deleted conversation -> 404
       const req2 = new NextRequest(`http://localhost:3000/api/conversation?id=${conv.id}`, {
         method: 'GET',
         headers: {
@@ -825,6 +830,405 @@ async function main() {
 
       const res2 = await conversationGet(req2);
       assert.strictEqual(res2.status, 404);
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 12: BATCH 2.1 HARDENING — CONCURRENCY BARRIERS & DETERMINISTIC RACES
+    // ------------------------------------------------------------------------
+    await runTest('12.1: Controlled barrier — saveMessage after deletion tombstone fails closed via critical section recheck', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Barrier Race Test 1',
+      });
+
+      // Controlled barrier:
+      // We simulate saveMessage having completed initial checks, but while waiting for the
+      // collection lock, deleteConversation executes and tombstones the conversation.
+      const originalGetConv = convStore.getConversation.bind(convStore);
+      let deletionTriggered = false;
+
+      (convStore as any).getConversation = async (fId: string, cId: string) => {
+        const result = await originalGetConv(fId, cId);
+        if (cId === conv.id && !deletionTriggered) {
+          deletionTriggered = true;
+          // Deletion runs and writes tombstone
+          await convStore.deleteConversation(FOUNDER_A, conv.id);
+        }
+        return result;
+      };
+
+      try {
+        await assert.rejects(
+          async () => {
+            await convStore.saveMessage({
+              conversationId: conv.id,
+              sender: 'founder',
+              content: 'Should never be saved',
+            }, FOUNDER_A);
+          },
+          (err: any) => {
+            assert(
+              err instanceof ConversationSecurityError ||
+              err.name === 'ConversationSecurityError'
+            );
+            return true;
+          }
+        );
+      } finally {
+        (convStore as any).getConversation = originalGetConv;
+      }
+
+      // Verify no message was written
+      const allMsgs = fileStore.readCollection<ChatMessageRecord>('chat_messages');
+      const orphan = Object.values(allMsgs).find((m) => m && m.conversationId === conv.id);
+      assert.strictEqual(orphan, undefined, 'Zero messages must exist for tombstoned conversation');
+    });
+
+    await runTest('12.2: Controlled barrier — saveMessage wins lock before deletion and is swept by subsequent delete', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Barrier Race Test 2',
+      });
+
+      // Save message wins the lock first
+      const savedMsg = await convStore.saveMessage({
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Saved before deletion',
+      }, FOUNDER_A);
+
+      assert.strictEqual(savedMsg.content, 'Saved before deletion');
+
+      // Then deleteConversation executes
+      const delResult = await convStore.deleteConversation(FOUNDER_A, conv.id);
+      assert.strictEqual(delResult.success, true);
+      assert.strictEqual(delResult.purgedMessageCount, 1);
+
+      // Verify message was swept
+      const allMsgs = fileStore.readCollection<ChatMessageRecord>('chat_messages');
+      const orphan = Object.values(allMsgs).find((m) => m && m.conversationId === conv.id);
+      assert.strictEqual(orphan, undefined, 'Message saved before delete must be swept');
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 13: BATCH 2.1 HARDENING — PRISMA RECONCILIATION FAILURE INJECTION
+    // ------------------------------------------------------------------------
+    await runTest('13.1: DB connection outage leaves tombstone prismaReconciled = false and survives retry until restored', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Prisma Outage Test',
+      });
+
+      const originalDelete = (prisma as any).conversation?.delete;
+
+      // Mock database availability active for tests
+      convStore.setDatabaseAvailableForTests(true);
+
+      // Inject failure: simulate database connection outage on delete
+      (prisma as any).conversation.delete = async () => {
+        const connErr = new Error("P1001: Can't reach database server at localhost:5432");
+        (connErr as any).code = 'P1001';
+        throw connErr;
+      };
+
+      try {
+        // Execute delete under outage
+        const delResult = await convStore.deleteConversation(FOUNDER_A, conv.id);
+        assert.strictEqual(delResult.success, true);
+        assert.strictEqual(delResult.deleted, true);
+
+        // Verify tombstone is saved with prismaReconciled: false
+        const tombstoneAfterDel = convStore.getTombstone(conv.id);
+        assert(tombstoneAfterDel !== null);
+        assert.strictEqual(tombstoneAfterDel.prismaReconciled, false);
+
+        // Run store-wide reconciliation while outage persists
+        const reconPass1 = await convStore.reconcileAllTombstones();
+        assert.strictEqual(reconPass1.reconciledPrismaCount, 0);
+
+        // Verify tombstone is STILL false (never falsely recorded as reconciled)
+        const tombstoneAfterPass1 = convStore.getTombstone(conv.id);
+        assert.strictEqual(tombstoneAfterPass1?.prismaReconciled, false);
+
+        // Now restore database: simulate success
+        (prisma as any).conversation.delete = async () => {
+          return { id: conv.id };
+        };
+
+        // Run reconciliation now
+        const reconPass2 = await convStore.reconcileAllTombstones();
+        assert(reconPass2.reconciledPrismaCount >= 1);
+
+        // Verify tombstone is now updated to true
+        const tombstoneAfterPass2 = convStore.getTombstone(conv.id);
+        assert.strictEqual(tombstoneAfterPass2?.prismaReconciled, true);
+      } finally {
+        convStore.setDatabaseAvailableForTests(null);
+        if (originalDelete) {
+          (prisma as any).conversation.delete = originalDelete;
+        }
+      }
+    });
+
+    await runTest('13.2: Confirmed already-absent Prisma record (P2025) is treated as reconciled', async () => {
+      const convId = 'conv-absent-p2025';
+      const tombstone = {
+        id: convId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: false,
+      };
+      fileStore.saveItemStrict('conversation_tombstones', convId, tombstone);
+
+      const originalDelete = (prisma as any).conversation?.delete;
+
+      // Mock database availability active for tests
+      convStore.setDatabaseAvailableForTests(true);
+
+      (prisma as any).conversation.delete = async () => {
+        const notFoundErr = new Error('Record to delete does not exist.');
+        (notFoundErr as any).code = 'P2025';
+        throw notFoundErr;
+      };
+
+      try {
+        const reconPass = await convStore.reconcileAllTombstones();
+        assert.strictEqual(reconPass.reconciledPrismaCount, 1);
+
+        const tombstoneAfter = convStore.getTombstone(convId);
+        assert.strictEqual(tombstoneAfter?.prismaReconciled, true);
+      } finally {
+        convStore.setDatabaseAvailableForTests(null);
+        if (originalDelete) {
+          (prisma as any).conversation.delete = originalDelete;
+        }
+        fileStore.deleteItemStrict('conversation_tombstones', convId);
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 14: BATCH 2.1 HARDENING — FAIL-CLOSED LOCK TIMEOUT
+    // ------------------------------------------------------------------------
+    await runTest('14.1: Lock timeout fails closed without mutating collections', async () => {
+      const lockPath = path.join(fileStore.getDataDir(), 'chat_messages.json.lock');
+      // Create external lock file simulating an unyielding process
+      fs.writeFileSync(lockPath, `${process.pid}\n`, 'utf-8');
+
+      try {
+        let threw = false;
+        try {
+          fileStore.withCollectionLockStrict(
+            'chat_messages',
+            () => {
+              fileStore.saveItem('chat_messages', 'should-not-exist', { test: true });
+            },
+            50 // 50ms short timeout
+          );
+        } catch (err: any) {
+          threw = true;
+          assert(err instanceof LockTimeoutError || err.name === 'LockTimeoutError');
+        }
+
+        assert.strictEqual(threw, true, 'Strict lock must throw LockTimeoutError on timeout');
+
+        // Verify zero mutation occurred
+        const allMsgs = fileStore.readCollection('chat_messages');
+        assert.strictEqual(allMsgs['should-not-exist'], undefined);
+      } finally {
+        try {
+          if (fs.existsSync(lockPath)) {
+            fs.unlinkSync(lockPath);
+          }
+        } catch {}
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 15: BATCH 2.1 HARDENING — INDIVIDUAL MESSAGE REPLAY PREVENTION
+    // ------------------------------------------------------------------------
+    await runTest('15.1: Re-saving the same deleted message ID fails closed (MessageTombstonedError)', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Replay Msg ID Test',
+      });
+
+      const msgId = 'msg-replay-test-1';
+      await convStore.saveMessage({
+        id: msgId,
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Original secret message',
+      }, FOUNDER_A);
+
+      // Delete the message
+      const delRes = await convStore.deleteMessage(FOUNDER_A, conv.id, msgId);
+      assert.strictEqual(delRes.deleted, true);
+
+      // Attempt to re-save with the exact same message ID
+      await assert.rejects(
+        async () => {
+          await convStore.saveMessage({
+            id: msgId,
+            conversationId: conv.id,
+            sender: 'founder',
+            content: 'Recreated message attempt',
+          }, FOUNDER_A);
+        },
+        (err: any) => {
+          assert(
+            err instanceof MessageTombstonedError ||
+            err.name === 'MessageTombstonedError'
+          );
+          return true;
+        }
+      );
+
+      // Verify message is not present
+      const messages = await convStore.getMessages(conv.id, FOUNDER_A);
+      assert.strictEqual(messages.length, 0);
+    });
+
+    await runTest('15.2: Replaying deleted idempotency key with a different message ID fails closed', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Replay Idempotency Key Test',
+      });
+
+      const idempotencyKey = 'idem-unique-key-abc';
+      const m1 = await convStore.saveMessage({
+        id: 'msg-first-instance',
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'First attempt with idempotency key',
+        idempotencyKey,
+      }, FOUNDER_A);
+
+      // Delete m1
+      const delRes = await convStore.deleteMessage(FOUNDER_A, conv.id, m1.id);
+      assert.strictEqual(delRes.deleted, true);
+
+      // Attempt to replay the SAME idempotency key under a NEW message ID
+      await assert.rejects(
+        async () => {
+          await convStore.saveMessage({
+            id: 'msg-second-different-instance',
+            conversationId: conv.id,
+            sender: 'founder',
+            content: 'Sneaky replay with same key',
+            idempotencyKey,
+          }, FOUNDER_A);
+        },
+        (err: any) => {
+          assert(
+            err instanceof MessageTombstonedError ||
+            err.name === 'MessageTombstonedError'
+          );
+          return true;
+        }
+      );
+
+      // Verify conversation has no messages
+      const messages = await convStore.getMessages(conv.id, FOUNDER_A);
+      assert.strictEqual(messages.length, 0);
+    });
+
+    await runTest('15.3: Cross-founder attempts on message tombstones fail closed', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Cross Founder Tombstone Test',
+      });
+
+      const m = await convStore.saveMessage({
+        id: 'msg-founder-a-only',
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Alpha secret data',
+      }, FOUNDER_A);
+
+      await convStore.deleteMessage(FOUNDER_A, conv.id, m.id);
+
+      // Founder B attempts to re-save Founder A's tombstoned message ID
+      await assert.rejects(
+        async () => {
+          await convStore.saveMessage({
+            id: 'msg-founder-a-only',
+            conversationId: conv.id,
+            sender: 'founder',
+            content: 'Beta unauthorized inject',
+          }, FOUNDER_B);
+        },
+        (err: any) => {
+          assert(
+            err instanceof ConversationSecurityError ||
+            err.name === 'ConversationSecurityError' ||
+            err instanceof ConversationNotFoundError ||
+            err.name === 'ConversationNotFoundError'
+          );
+          return true;
+        }
+      );
+    });
+
+    await runTest('15.4: Repeated deletion of deleted message is idempotent (alreadyDeleted: true)', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Repeated Msg Delete Test',
+      });
+
+      const m = await convStore.saveMessage({
+        id: 'msg-repeat-target',
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'To be deleted twice',
+      }, FOUNDER_A);
+
+      const del1 = await convStore.deleteMessage(FOUNDER_A, conv.id, m.id);
+      assert.strictEqual(del1.success, true);
+      assert.strictEqual(del1.deleted, true);
+
+      const del2 = await convStore.deleteMessage(FOUNDER_A, conv.id, m.id);
+      assert.strictEqual(del2.success, true);
+      assert.strictEqual(del2.deleted, false);
+      assert.strictEqual(del2.alreadyDeleted, true);
+    });
+
+    await runTest('15.5: Persistence failure while writing message deletion marker fails closed', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Marker Failure Test',
+      });
+
+      const m = await convStore.saveMessage({
+        id: 'msg-marker-fail-target',
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Must remain intact if marker fails',
+      }, FOUNDER_A);
+
+      // Intercept fileStore.saveItemStrict to inject a disk write error on message_tombstones
+      const origSaveItemStrict = fileStore.saveItemStrict.bind(fileStore);
+      (fileStore as any).saveItemStrict = (collection: string, id: string, item: any) => {
+        if (collection === 'message_tombstones') {
+          throw new Error('EIO: i/o disk failure writing message deletion marker');
+        }
+        return origSaveItemStrict(collection, id, item);
+      };
+
+      try {
+        await assert.rejects(
+          async () => {
+            await convStore.deleteMessage(FOUNDER_A, conv.id, m.id);
+          },
+          /EIO: i\/o disk failure writing message deletion marker/
+        );
+
+        // Verify message is STILL intact in chat_messages!
+        const allMsgs = fileStore.readCollection<ChatMessageRecord>('chat_messages');
+        assert(allMsgs[m.id] !== undefined, 'Message must not be deleted if marker write fails');
+      } finally {
+        (fileStore as any).saveItemStrict = origSaveItemStrict;
+      }
     });
 
   } finally {
