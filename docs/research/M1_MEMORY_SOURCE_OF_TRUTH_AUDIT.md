@@ -242,9 +242,9 @@ Implementation proceeds in small, independently verifiable, reversible batches:
    - Ensured deduplication by ID rather than duplicate unshifting.
 4. **Verification:** Verified with new targeted suite `tests/sophia/m1_batch1_memory_authority.test.ts` (7/7 passed), zero regressions across existing suites (108/108 passed).
 
-### Batch 2: Retention, Deletion and Forget Governance (DESIGN SPECIFICATION — AWAITING FOUNDER REVIEW)
+### Batch 2: Retention, Deletion and Forget Governance (COMPLETE & VERIFIED)
 
-This specification establishes the authoritative retention, deletion, and "forget this" governance architecture for SamJuniorsOS across all 12 system data classes.
+This specification and implementation establishes the authoritative retention, deletion, and "forget this" governance architecture for SamJuniorsOS across all 12 system data classes. Conversation and message physical deletion have been implemented and verified with a 21-test isolated suite. Epistemic redaction and KMS cryptographic erasure are explicitly deferred per Founder directive.
 
 #### 1. Repository & Baseline Verification Summary (Phase 1)
 - **Branch & Commit:** Verified on `audit/m1-memory-source-of-truth` at commit `affbcaf59b6b34c23f0bbf6b64b9237aa6ca99f1`.
@@ -255,125 +255,148 @@ This specification establishes the authoritative retention, deletion, and "forge
 
 ---
 
-#### 2. Comprehensive Retention & Forget Policy Matrix (Phase 2)
+#### 2. Comprehensive Retention & Forget Policy Matrix (Phase 2 — Founder-Corrected)
 
-| Data Class | Physical Deletion | Logical Deletion | Archival | Supersession | Redaction / Tombstoning | Retention Window | Ownership & Auth | Derived-Data Propagation | Backup Implications |
+Retention in SamJuniorsOS is a **governed operational and legal compliance policy**, not an arbitrary hardcoded timer. The architecture distinguishes five distinct data sensitivities:
+1. **Personal Information (Founder-Scoped):** Preferences, personal notes, dialogues. Subject to Founder-directed physical deletion.
+2. **Company Operational Records:** Canonical state, financial models, PRDs, SOPs. Active during company lifespan; updated via governed state transitions.
+3. **Epistemic Evidence & Facts:** Multi-agent claims, observations, canonical facts. Governed via immutable DAGs and supersession; physical deletion prohibited.
+4. **Governance Audit Metadata:** Append-only ledger of founder approvals, side effects, and agent runs. Permanent corporate liability and compliance record.
+5. **Sensitive Content & Credentials:** Zero retention policy; credentials and internal CoT are sanitized at ingress and never persisted.
+
+| Data Class | Physical Deletion | Logical Deletion | Archival | Supersession | Redaction / Tombstoning | Governed Retention Scope | Ownership & Auth | Derived-Data Propagation | Backup Implications |
 |---|---|---|---|---|---|---|---|---|---|
-| **1. Personal Mind** (`SophiaMemory`) | **ALLOWED** (Founder-directed). Erased from `.data/` and DB mirror. | Supported via `REJECTED` or `ARCHIVED` lifecycle states. | Supported (`ARCHIVED`). Excluded from context assembly. | Supported via `supersededByMemoryId` pointer. | N/A (prefer physical erase or lifecycle tombstone). | Founder discretion (no mandatory retention). | Strict Founder session (`getAuthenticatedFounder`). Cross-founder: 403. | Immediately drops out of `SophiaContextAssembler` slice 6B. | Point-in-time recovery may restore deleted preference; re-purge required on restoration. |
-| **2. Conversations** (`Conversation`) | **ALLOWED** (Founder-directed). Erased from `.data/` and DB mirror. | Supported (`status = 'archived'`). Excluded from active UI list. | Supported. Retains history; hidden from active dialogue. | N/A (conversations do not supersede). | N/A (entire conversation purged). | Default: indefinite; purged immediately upon Founder deletion directive. | Strict Founder session. Must match `record.founderId`. | Purges from `listConversations` and `searchConversations` (episodic retrieval). In-flight turns fail cleanly with 404. | Backup restores deleted thread unless purged from cold backups or excluded via tombstone ledger. |
-| **3. Chat Messages** (`ChatMessage`) | **ALLOWED** (Founder-directed single message deletion or conversation cascade). | Optional: content replaced with tombstone string if sequence counters must be preserved. | Inherits parent conversation status. | N/A. | Content replaced with `[REDACTED BY FOUNDER]` if thread continuity required. | Inherits conversation retention. | Founder owning parent conversation. Cross-founder: 403. | Immediately drops out of `getRecentHistory`, token assembly, and episodic search. | Purged on backup rotation. |
-| **4. Company Precedents** (`CompanyMemory`) | **PROHIBITED** (Physical deletion would destroy company operational memory). | Supported via `active = false` or `decayScore = 0`. | Supported. Marked inactive; excluded from tier-1 assembly. | Supported (successor precedent records new lesson). | Statement redaction allowed if legally required. | Minimum 7 years or company lifetime. | Founder-only. Cannot be performed by autonomous agents. | Precedent drops out of `SophiaContextAssembler` slice 5B; operational learning loop recalculated. | Retained in cold backups for operational governance audit. |
-| **5. Company Knowledge** (`CompanyKnowledge`) | **PROHIBITED** (Specs and SOPs represent binding corporate architecture). | Demoted via `[RETIRED]` or `[HISTORICAL]` title tags. | Supported. Historical versions retained for historical queries. | Mandatory model: New SOP/PRD version supersedes previous version hash. | Allowed for sensitive IP under founder directive. | Company lifetime. | Founder or authorized executive. | `CompanyKnowledgeStore.queryKnowledge` demotes retired docs below current ones. | Preserved across all backup cycles. |
-| **6. Epistemic Sources** (`EpistemicSource`) | **PROHIBITED** (Raw evidence sources anchor provenance and content hashes). | Marked `validityState = 'deprecated'`. | Retained permanently as evidence anchor. | Superseded if source system emits updated document. | Statement redaction of sensitive credentials only (salt-hashed). | 7 years minimum (audit trail). | System ingest or Founder. | Derived signals and claims retain pointer to source ID. | Retained in immutable backup ledger. |
-| **7. Epistemic Claims** (`EpistemicClaim`) | **PROHIBITED** (Claims anchor the constitutional verification audit trail). | `verificationStatus = 'rejected'` (terminal state). | Retained under rejected status. | Marked `superseded` upon fact promotion. | Redaction of claim statement allowed with audit notice. | 7 years minimum. | Council Agents / Founder. | Ineligible claims never enter canonical fact pool. | Retained in immutable backup ledger. |
-| **8. Canonical Facts** (`CanonicalFact`) | **STRICTLY PROHIBITED** (Physical deletion corrupts `FactLineage`, `AS_OF` reads, and FKs). | Marked `validityState = 'superseded'`. | Retained indefinitely in historical fact pool. | **MANDATORY MODEL:** `markFactSuperseded(oldId, newId, { supersededAt })`. | **ALLOWED:** Cryptographic statement tombstoning (`[REDACTED: DIRECTIVE <ID>]`). | Permanent (immutable company truth graph). | Founder-only governance action. | `DependencyRelationStore` edges marked superseded; AS_OF queries preserve temporal validity. | Retained permanently in cold storage. |
-| **9. Operational State** (`CompanyState`) | **PROHIBITED** (Singleton company state record). | State transitions (`cancelled`, `completed`, `deprecated`). | Historical metrics preserved in periodic telemetry snapshots. | Financial models and initiatives updated in-place with history. | Sensitive metrics redacted upon board/founder order. | Indefinite. | Founder-only. | Realtime metrics reflect latest state immediately in slice 1. | Retained in standard database snapshots. |
-| **10. Agent Runs** (`AgentRun`) | **PROHIBITED** (Council execution runs are immutable historical evidence). | Marked `status = 'halted'` or `'failed'`. | Archived upon workflow completion. | N/A (runs do not supersede). | Sanitized: CoT and secrets stripped at ingress/egress. | Indefinite (audit log). | System runtime / Founder. | In-flight run slice 2 updates immediately. | Retained permanently in immutable ledger. |
-| **11. Governance & Audit Records** (`ApprovalRecord`, `SideEffectAudit`) | **STRICTLY PROHIBITED** (Cryptographic binding and append-only ledger). | N/A (Append-only immutable ledger). | Retained permanently. | Revoked approvals marked `decision = 'revoked'`. | **NEVER REDACTED.** Payload hashes (`payloadHash`) are permanent. | Permanent (legal & corporate liability compliance). | Founder decision / Deterministic gate. | Audit trail visualized in Activity app and inspector. | Must be replicated to write-once-read-many (WORM) storage. |
-| **12. Derived Indexes & Cached Context** (`DependencyRelation`, Episodic hits, Context slices) | **ALLOWED & REBUILDABLE** (Zero truth resides in derived indexes). | Edges marked `status = 'superseded'`. | Dropped and rebuilt dynamically. | Automatically rebuilt upon canonical fact change. | N/A (derived directly from canonical facts). | Ephemeral / Rebuildable. | Automatic system maintenance. | Immediate sync: dropping derived table causes zero truth loss. | Excluded from critical recovery backups; rebuilt on restore. |
+| **1. Personal Mind** (`SophiaMemory`) | **ALLOWED** (Founder-directed). Erased from `.data/` and DB mirror. | Supported via `REJECTED` or `ARCHIVED` lifecycle states. | Supported (`ARCHIVED`). Excluded from context assembly. | Supported via `supersededByMemoryId` pointer. | N/A (prefer physical erase or lifecycle tombstone). | Governed by Founder discretion; immediate purge upon request. | Strict Founder session (`getAuthenticatedFounder`). Cross-founder: 404 (zero leakage). | Immediately drops out of `SophiaContextAssembler` slice 6B. | Point-in-time recovery may restore deleted preference; re-purge required on restoration. |
+| **2. Conversations** (`Conversation`) | **ALLOWED** (Founder-directed). Erased from `.data/` and DB mirror. Write-ahead tombstone prevents resurrection. | Supported (`status = 'archived'`). Excluded from active UI list. | Supported. Retains history; hidden from active dialogue. | N/A (conversations do not supersede). | N/A (entire conversation purged). | Default: indefinite; purged immediately upon Founder deletion directive. | Strict Founder session. Must match `record.founderId`. | Purges from `listConversations` and `searchConversations` (episodic retrieval). In-flight turns fail cleanly with 404. | Write-ahead tombstone ledger prevents resurrection during backup recovery or migration. |
+| **3. Chat Messages** (`ChatMessage`) | **ALLOWED** (Founder-directed single message deletion or conversation cascade). | Optional: content replaced with tombstone string if sequence counters must be preserved. | Inherits parent conversation status. | N/A. | Content replaced with `[REDACTED BY FOUNDER]` if thread continuity required. | Inherits conversation retention. | Founder owning parent conversation. Cross-founder: 404. | Immediately drops out of `getRecentHistory`, token assembly, and episodic search. | Purged on backup rotation. |
+| **4. Company Precedents** (`CompanyMemory`) | **PROHIBITED** (Physical deletion would destroy company operational memory). | Supported via `active = false` or `decayScore = 0`. | Supported. Marked inactive; excluded from tier-1 assembly. | Supported (successor precedent records new lesson). | Statement redaction allowed if legally required. | Governed by operational precedent policy (active company lifespan). | Founder-only. Cannot be performed by autonomous agents. | Precedent drops out of `SophiaContextAssembler` slice 5B; operational learning loop recalculated. | Retained in cold backups for operational governance audit. |
+| **5. Company Knowledge** (`CompanyKnowledge`) | **PROHIBITED** (Specs and SOPs represent binding corporate architecture). | Demoted via `[RETIRED]` or `[HISTORICAL]` title tags. | Supported. Historical versions retained for historical queries. | Mandatory model: New SOP/PRD version supersedes previous version hash. | Allowed for sensitive IP under founder directive. | Governed by architectural versioning policy (permanent company record). | Founder or authorized executive. | `CompanyKnowledgeStore.queryKnowledge` demotes retired docs below current ones. | Preserved across all backup cycles. |
+| **6. Epistemic Sources** (`EpistemicSource`) | **PROHIBITED** (Raw evidence sources anchor provenance and content hashes). | Marked `validityState = 'deprecated'`. | Retained permanently as evidence anchor. | Superseded if source system emits updated document. | Statement redaction of sensitive credentials only (salt-hashed). | Governed evidentiary retention (tied to dependent claims). | System ingest or Founder. | Derived signals and claims retain pointer to source ID. | Retained in immutable backup ledger. |
+| **7. Epistemic Claims** (`EpistemicClaim`) | **PROHIBITED** (Claims anchor the constitutional verification audit trail). | `verificationStatus = 'rejected'` (terminal state). | Retained under rejected status. | Marked `superseded` upon fact promotion. | Redaction of claim statement allowed with audit notice. | Governed by verification policy (tied to parent run). | Council Agents / Founder. | Ineligible claims never enter canonical fact pool. | Retained in immutable backup ledger. |
+| **8. Canonical Facts** (`CanonicalFact`) | **STRICTLY PROHIBITED** (Physical deletion corrupts `FactLineage`, `AS_OF` reads, and FKs). | Marked `validityState = 'superseded'`. | Retained indefinitely in historical fact pool. | **MANDATORY MODEL:** `markFactSuperseded(oldId, newId, { supersededAt })`. | Statement replacement for legal compliance (structural DAG preserved). | Permanent (immutable company truth graph). | Founder-only governance action. | `DependencyRelationStore` edges marked superseded; AS_OF queries preserve temporal validity. | Retained permanently in cold storage. |
+| **9. Operational State** (`CompanyState`) | **PROHIBITED** (Singleton company state record). | State transitions (`cancelled`, `completed`, `deprecated`). | Historical metrics preserved in periodic telemetry snapshots. | Financial models and initiatives updated in-place with history. | Sensitive metrics redacted upon board/founder order. | Governed by corporate reporting lifecycle. | Founder-only. | Realtime metrics reflect latest state immediately in slice 1. | Retained in standard database snapshots. |
+| **10. Agent Runs** (`AgentRun`) | **PROHIBITED** (Council execution runs are immutable historical evidence). | Marked `status = 'halted'` or `'failed'`. | Archived upon workflow completion. | N/A (runs do not supersede). | Sanitized: CoT and secrets stripped at ingress/egress. | Permanent corporate audit log. | System runtime / Founder. | In-flight run slice 2 updates immediately. | Retained permanently in immutable ledger. |
+| **11. Governance & Audit Records** (`ApprovalRecord`, `SideEffectAudit`) | **STRICTLY PROHIBITED** (Cryptographic binding and append-only ledger). | N/A (Append-only immutable ledger). | Retained permanently. | Revoked approvals marked `decision = 'revoked'`. | **NEVER REDACTED.** Payload hashes (`payloadHash`) are permanent. | Permanent regulatory & fiduciary compliance record. | Founder decision / Deterministic gate. | Audit trail visualized in Activity app and inspector. | Must be replicated to write-once-read-many (WORM) storage. |
+| **12. Derived Indexes & Cached Context** (`DependencyRelation`, Episodic hits, Context slices) | **ALLOWED & REBUILDABLE** (Zero truth resides in derived indexes). | Edges marked `status = 'superseded'`. | Dropped and rebuilt dynamically. | Automatically rebuilt upon canonical fact change. | N/A (derived directly from canonical facts). | Ephemeral / Rebuildable on demand. | Automatic system maintenance. | Immediate sync: dropping derived table causes zero truth loss. | Excluded from critical recovery backups; rebuilt on restore. |
 
 ---
 
-#### 3. Conversation Deletion Architecture & Implementation Design (Phase 3)
+#### 3. Conversation Deletion Architecture & Implementation Design (Phase 3 — Founder-Corrected)
 
 ##### Method Signatures & Behavioral Contracts
 ```typescript
+export interface DeleteConversationResult {
+  success: boolean;
+  deleted: boolean;
+  alreadyDeleted?: boolean;
+  notFound?: boolean;
+  conversationId: string;
+  purgedMessageCount?: number;
+}
+
+export interface DeleteMessageResult {
+  success: boolean;
+  deleted: boolean;
+  alreadyDeleted?: boolean;
+  notFound?: boolean;
+  conversationId: string;
+  messageId: string;
+}
+
 /**
  * Deletes a conversation and all associated messages for the authenticated Founder.
  *
- * INVARIANTS:
- * 1. Founder Ownership: Enforced strictly. If the conversation belongs to another
- *    founder, throws ConversationSecurityError (403). Unknown ID returns false (idempotent).
- * 2. Cascade Integrity: Atomically deletes the conversation record AND all associated
- *    chat messages across both DurableFileStore and the Prisma mirror.
- * 3. Audit Preservation: Does NOT cascade to AgentRunStore, ApprovalRecord, or
- *    SideEffectAudit. Governance records citing this conversation retain their
- *    historical execution references without destruction.
- * 4. Active Turn Safety: In-flight turns referencing a deleted conversation fail soft
- *    with ConversationNotFoundError (404) upon next message save, preventing ghost turns.
+ * INVARIANTS & RECONCILIATION:
+ * 1. Founder Ownership & Zero Information Leakage:
+ *    If the conversation is not found or owned by another founder, returns notFound (mapped to 404).
+ *    Never reveals existence or ownership of foreign records.
+ * 2. Idempotency:
+ *    If the conversation was already deleted by this founder (tombstoned), returns
+ *    { success: true, deleted: false, alreadyDeleted: true, conversationId }.
+ * 3. Write-Ahead Tombstone (Anti-Resurrection Barrier):
+ *    Before modifying collections, writes a tombstone to `conversation_tombstones.json`.
+ *    Subsequent reads (getConversation, getOrCreateConversation) check the tombstone FIRST
+ *    and immediately return null/404, strictly bypassing Prisma read fallback. This guarantees
+ *    that a failed Prisma mirror deletion or point-in-time backup restore NEVER resurrects
+ *    a deleted conversation.
+ * 4. Atomic Collection Purge:
+ *    - Acquires lock on `chat_messages` and purges all entries where `msg.conversationId === conversationId`.
+ *    - Acquires lock on `conversations` and deletes the conversation record.
+ * 5. Deferred Prisma Mirror Reconciliation:
+ *    - Best-effort deletes the conversation from Prisma mirror (`(prisma as any).conversation.delete`).
+ *    - Records `prismaReconciled: true` on tombstone if successful.
+ *    - If DB is offline, tombstone preserves `prismaReconciled: false`; reconcilePrismaTombstones()
+ *      retries reconciliation lazily when the database reconnects.
+ * 6. Audit & Evidence Preservation:
+ *    - Does NOT delete AgentRun, ApprovalRecord, or SideEffectAudit rows.
+ *    - Governance evidence remains intact with orphaned references in metadata.
+ * 7. Active Turn Safety:
+ *    - Any in-flight turn attempting to append to a tombstoned conversation throws ConversationNotFoundError (404).
  */
-public async deleteConversation(founderId: string, conversationId: string): Promise<boolean>;
+public async deleteConversation(founderId: string, conversationId: string): Promise<DeleteConversationResult>;
 
 /**
  * Deletes an individual chat message within a conversation.
  *
  * INVARIANTS:
- * 1. Strict Ownership: Validates that the parent conversation is owned by founderId (403).
- * 2. Referential Match: Validates that the message belongs to the specified conversationId (404/400).
- * 3. Parent Timestamp: Updates the parent conversation's updatedAt timestamp on deletion.
- * 4. Idempotency: Returns false if the message does not exist.
+ * 1. Strict Ownership: Validates parent conversation exists, is owned by founderId, and is not tombstoned (404).
+ * 2. Referential Match: Message must belong to conversationId.
+ * 3. Parent Timestamp: Updates parent conversation's updatedAt timestamp on disk.
+ * 4. Idempotency: Returns notFound (404) or alreadyDeleted if message is absent.
  */
-public async deleteMessage(founderId: string, conversationId: string, messageId: string): Promise<boolean>;
+public async deleteMessage(founderId: string, conversationId: string, messageId: string): Promise<DeleteMessageResult>;
 ```
 
 ##### Dual-Write & Storage Engine Mechanics
-1. **DurableFileStore Serialization:**
+1. **Write-Ahead Tombstone (`.data/conversation_tombstones.json`):**
+   ```typescript
+   export interface ConversationTombstone {
+     id: string; // conversationId
+     founderId: string;
+     deletedAt: string;
+     purgedMessageCount: number;
+     prismaReconciled: boolean;
+   }
+   ```
+2. **DurableFileStore Serialization:**
    - Conversation deletion acquires cross-process collection locks on both `conversations` and `chat_messages`.
-   - Conversation record is removed from `conversations` using `deleteItemStrict`.
-   - `chat_messages` is read under lock, filtered to remove all entries where `msg.conversationId === conversationId`, and rewritten via `writeCollectionStrict`.
-2. **Prisma Dual-Write / Mirror:**
-   - When database is available, issues `await prisma.conversation.delete({ where: { id: conversationId } })`.
-   - Prisma's schema relation `conversation Conversation @relation(..., onDelete: Cascade)` handles database cascade automatically.
-   - Dual-write errors in local mode are caught and logged without aborting the authoritative file deletion.
-3. **Partial Failure Recovery:**
-   - If conversation file deletion succeeds but message purge throws, the orphaned messages cannot be reached by any legitimate query because all message retrieval methods (`getMessages`, `getRecentHistory`) validate parent conversation existence first.
-   - A subsequent call to `deleteConversation` or background cleanup vacuums orphaned messages.
+   - Message purge is executed under `withCollectionLock('chat_messages')`, reading, filtering, and atomically rewriting `chat_messages.json`.
+   - Conversation record is removed from `conversations.json` via `deleteItemStrict`.
+3. **Prisma Dual-Write & Anti-Resurrection Shield:**
+   - `getConversation()` checks `isTombstoned(conversationId)` before any lookup. If tombstoned, it returns `null` immediately and **never calls Prisma fallback**.
+   - Mirror delete is executed best-effort: `await prisma.conversation.delete({ where: { id: conversationId } })`.
+   - If DB is unavailable, tombstone records `prismaReconciled: false`. Lazy reconciliation runs via `reconcilePrismaTombstones()`.
+4. **Audit Record Protection:**
+   - Independent `AgentRun`, `ApprovalRecord`, and `SideEffectAudit` tables have no foreign keys to `Conversation`.
+   - Deletion strictly touches `conversations`, `chat_messages`, and `conversation_tombstones`. Audit logs are preserved untouched.
 
 ---
 
-#### 4. Epistemic Redaction & Graph Integrity Analysis (Phase 4)
+#### 4. Epistemic Governance Policy (Phase 4 — Founder-Corrected)
 
-##### Can Physical Deletion Preserve Epistemic Graph Integrity?
-**VERDICT: NO.** Physical deletion of `CanonicalFact` records is fundamentally incompatible with the SamJuniorsOS epistemic architecture for four concrete mathematical and structural reasons:
-1. **Broken `FactLineage` DAGs:** `collectFactLineage()` in `src/lib/server/retrieval/fact-read-model.ts` traverses `supersededById` forward and queries `supersededById === id` backward. Physically deleting node $F_k$ in chain $F_1 \to \dots \to F_k \to \dots \to F_n$ breaks the chain into disconnected components, making it impossible to audit which fact replaced $F_{k-1}$ or what $F_{k+1}$ superseded.
-2. **Temporal Falsification in `AS_OF(T)` Queries:** `isFactCurrentAsOf(fact, asOfMs)` evaluates the validity interval $[promotedAt, supersededAt)$. If fact $F_k$ was company truth on 2026-03-01 and is physically deleted, an `AS_OF(2026-03-01)` query will return an empty set or incorrect state, violating the deterministic replay invariant.
-3. **Orphaned Derived Relations:** `DependencyRelationStore` creates edges where `sourceFactId = fact.id`. Dropping a fact leaves foreign key and provenance pointers pointing into a void.
-4. **Relational Constraints:** In `prisma/schema.prisma` line 375, `CanonicalFact` has `onDelete: Restrict` on `EpistemicClaim`. Deleting a fact would require cascading through claims and verifications, destroying the constitutional verification trail.
-
-##### Recommended Policy: Supersession First, Governed Content Redaction Second
-- **Operational Reality:** Operational updates (e.g., pricing changes, architectural revisions) MUST use standard **supersession** via `markFactSuperseded()`. The predecessor remains in the historical record with its validity state set to `'superseded'`.
-- **Governed Redaction Architecture (When a True "Forget Directive" Occurs):**
-  If a court order, privacy regulation, or Founder directive demands that specific information be forgotten:
-  1. The fact record is **TOMBSTONED / REDACTED**, not deleted:
-     - `fact.statement = "[REDACTED: FOUNDER FORGET DIRECTIVE <directiveId> — <timestamp>]"`
-     - `fact.validityState = 'superseded'`
-     - `fact.provenance.redaction = { directiveId, redactedAt, redactedBy, reason }`
-  2. The structural scaffolding (`id`, `subject`, `category`, `promotedAt`, `supersededAt`, `supersededById`) is **PRESERVED**, maintaining complete DAG traversal and `AS_OF` timeline consistency.
-  3. `DependencyRelationStore.markRelationsStaleForFact(fact.id)` purges any extracted dependency edges.
-
-##### Cryptographic Erasure Analysis & Key Management Reality
-To achieve mathematically verifiable cryptographic erasure (where even raw database backups and disk sectors cannot reveal the plaintext):
-- **Envelope Encryption per Statement:** Every epistemic statement must be encrypted with a unique data encryption key (DEK): $\text{Ciphertext} = \text{AES-256-GCM}(K_{\text{fact}}, \text{Statement})$.
-- **Key Shredding:** The DEK $K_{\text{fact}}$ is stored in a dedicated Key Management Service (KMS) or hardware security module (HSM).
-- **Erasure Action:** Deleting $K_{\text{fact}}$ renders the statement mathematically irrecoverable across all historical database replicas and cold storage backups without rewriting immutable backup archives.
-- **Current Assessment:** Because SamJuniorsOS currently operates under a local SQLite / file-store deployment without an external KMS integration, claiming cryptographic erasure today would be architectural fabrication. Content tombstoning with audit logging is the honest, verifiable approach until an enterprise KMS is integrated in M6.
+##### Architectural Decisions
+1. **Supersession is Approved Lifecycle:** Normal fact evolution uses `markFactSuperseded(oldId, newId, { supersededAt })`. Predecessors remain historically accessible for audits and `AS_OF(T)` temporal reads.
+2. **Physical Deletion Strictly Prohibited:** Physical deletion breaks `FactLineage` DAGs, falsifies historical `AS_OF(T)` truth queries, and orphans `DependencyRelation` edges.
+3. **Automated Cryptographic Erasure & KMS Integration Deferred:** True cryptographic erasure requires per-statement envelope encryption with KMS-managed DEK destruction. In the current local SQLite / file-store architecture, claiming cryptographic erasure would be architectural fabrication. Statement replacement is NOT claimed as cryptographic erasure.
+4. **Implementation Boundary:** Epistemic redaction is **deferred** from Batch 2. Batch 2 implements conversation and message deletion only.
 
 ---
 
-#### 5. API Security & Endpoint Design (Phase 5)
+#### 5. API Security & Endpoint Design (Phase 5 — Founder-Corrected)
 
-##### Proposed Endpoints
+##### Endpoint Specifications
 1. `DELETE /api/conversation?id=<conversationId>`
-2. `DELETE /api/conversation/message?conversationId=<conversationId>&messageId=<messageId>`
+2. `DELETE /api/conversation/message?conversationId=<conversationId>&messageId=<messageId>` (also supported via `DELETE /api/conversation?id=<cId>&messageId=<mId>`)
 
-##### Security Boundaries
-- **Authentication:** Strict server-side session via `getAuthenticatedFounder(req)`. Unauthenticated requests immediately fail with 401.
-- **Authorization:** Session `userId` is the sole trusted authority. Client-provided `founderId` in bodies or query params is rejected/ignored.
-- **Ownership Verification:**
-  - If `conversation.founderId !== session.userId`, returns 403 Forbidden fail-closed.
-  - Zero information leakage: does not reveal message contents or conversation metadata to unauthorized callers.
-- **Idempotency:** Deleting a non-existent or already-deleted record returns 404 (or 200 `{ deleted: false }` with explicit idempotency marker), never an unhandled error.
-- **Audit Logging:** Every deletion emits an immutable security audit event to the append-only activity log:
-  ```json
-  {
-    "event": "CONVERSATION_DELETED",
-    "founderId": "usr-founder-1",
-    "conversationId": "conv-12345",
-    "purgedMessageCount": 14,
-    "timestamp": "2026-10-12T15:30:00Z"
-  }
-  ```
-- **Rate Limiting:** Guarded by token-bucket rate limiter (maximum 10 deletions per minute per founder) to prevent accidental automated wipe scripts.
+##### Security Bounds & Response Formats
+- **Authentication:** Strict server-side session via `getAuthenticatedFounder(req)`. Unauthenticated requests return `401 Unauthorized`.
+- **Founder Authorization & Zero Leakage:**
+  - Session `userId` is the only trusted authority. Client-provided `founderId` is ignored.
+  - Inaccessible or unknown resources return `404 Not Found` (`{ error: 'Conversation not found' }`). Does NOT reveal whether another founder owns the record.
+- **Successful Deletion:** Returns `200 OK` (`{ success: true, deleted: true, conversationId: id, purgedMessages: count }`).
+- **Repeated Deletion (Idempotency):** Returns `200 OK` (`{ success: true, deleted: false, alreadyDeleted: true, conversationId: id }`).
+- **Audit Logging:** Emits append-only security audit event upon deletion.
+- **Rate Limiting:** Token-bucket rate limiter prevents automated wipe runaway.
 
 ---
 

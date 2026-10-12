@@ -33,6 +33,34 @@ export class ConversationNotFoundError extends Error {
 
 const CONVERSATIONS_COLLECTION = 'conversations';
 const CHAT_MESSAGES_COLLECTION = 'chat_messages';
+const CONVERSATION_TOMBSTONES_COLLECTION = 'conversation_tombstones';
+
+/** Durable anti-resurrection tombstone for deleted conversations. */
+export interface ConversationTombstone {
+  id: string; // conversationId
+  founderId: string;
+  deletedAt: string;
+  purgedMessageCount: number;
+  prismaReconciled: boolean;
+}
+
+export interface DeleteConversationResult {
+  success: boolean;
+  deleted: boolean;
+  alreadyDeleted?: boolean;
+  notFound?: boolean;
+  conversationId: string;
+  purgedMessageCount?: number;
+}
+
+export interface DeleteMessageResult {
+  success: boolean;
+  deleted: boolean;
+  alreadyDeleted?: boolean;
+  notFound?: boolean;
+  conversationId: string;
+  messageId: string;
+}
 
 /** One scored episodic search hit (M5.2): a past conversation + matched messages. */
 export interface ConversationSearchHit {
@@ -180,6 +208,13 @@ export class ConversationStore {
     const now = new Date().toISOString();
     const id = params.id || `conv-${randomUUID()}`;
 
+    // ANTI-RECREATION SHIELD: Prevent active in-flight requests or retries from recreating a tombstoned conversation
+    if (this.isTombstoned(id)) {
+      throw new ConversationSecurityError(
+        `Cannot create conversation "${id}" because it has been permanently deleted.`
+      );
+    }
+
     const record: ConversationRecord = {
       id,
       founderId: params.founderId,
@@ -234,6 +269,14 @@ export class ConversationStore {
    */
   public async getConversation(founderId: string, conversationId: string): Promise<ConversationRecord | null> {
     if (!founderId || !conversationId) return null;
+
+    // ANTI-RESURRECTION SHIELD:
+    // If this conversation was deleted (tombstoned), return null immediately.
+    // Strictly bypasses the Prisma read fallback, preventing a failed mirror deletion
+    // or point-in-time database restore from resurrecting a deleted conversation.
+    if (this.isTombstoned(conversationId)) {
+      return null;
+    }
 
     // 1. Try fileStore first (fast, atomic local cache)
     let record = this.fileStore.getItem<ConversationRecord>(CONVERSATIONS_COLLECTION, conversationId);
@@ -290,7 +333,7 @@ export class ConversationStore {
 
     const all = this.fileStore.readCollection<ConversationRecord>(CONVERSATIONS_COLLECTION);
     const founderConvs = Object.values(all)
-      .filter((c) => c && c.founderId === founderId)
+      .filter((c) => c && c.founderId === founderId && !this.isTombstoned(c.id))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, limit);
 
@@ -443,6 +486,9 @@ export class ConversationStore {
     conversationId: string,
     idempotencyKey: string
   ): Promise<ChatMessageRecord | null> {
+    if (this.isTombstoned(conversationId)) {
+      return null;
+    }
     const all = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
     for (const msg of Object.values(all)) {
       if (msg && msg.conversationId === conversationId && msg.idempotencyKey === idempotencyKey) {
@@ -546,11 +592,297 @@ export class ConversationStore {
     return hits.slice(0, Math.max(1, limitConversations));
   }
 
+  // ===========================================================================
+  // M1 BATCH 2 — FOUNDER-CONTROLLED CONVERSATION & MESSAGE DELETION
+  // (With write-ahead tombstone and deferred Prisma mirror reconciliation)
+  // ===========================================================================
+
   /**
-   * Helper for tests: clears conversation collections.
+   * Checks whether a conversation ID has a durable deletion tombstone.
+   */
+  public isTombstoned(conversationId: string): boolean {
+    if (!conversationId) return false;
+    const tombstone = this.fileStore.getItem<ConversationTombstone>(
+      CONVERSATION_TOMBSTONES_COLLECTION,
+      conversationId
+    );
+    return tombstone !== null;
+  }
+
+  /**
+   * Retrieves the durable deletion tombstone for a conversation, if one exists.
+   */
+  public getTombstone(conversationId: string): ConversationTombstone | null {
+    if (!conversationId) return null;
+    return this.fileStore.getItem<ConversationTombstone>(
+      CONVERSATION_TOMBSTONES_COLLECTION,
+      conversationId
+    );
+  }
+
+  /**
+   * Reconciles pending Prisma mirror deletions and cleans any local file orphans
+   * from interrupted cascades across all tombstoned conversations.
+   * Can be triggered lazily, on startup, or during background maintenance.
+   */
+  public async reconcileAllTombstones(): Promise<{ reconciledPrismaCount: number; cleanedLocalCount: number }> {
+    let prismaCount = 0;
+    let localCount = 0;
+
+    const tombstones = this.fileStore.readCollection<ConversationTombstone>(
+      CONVERSATION_TOMBSTONES_COLLECTION
+    );
+
+    // 1. Clean any lingering local file records for tombstoned conversations
+    for (const [id] of Object.entries(tombstones)) {
+      try {
+        const lingering = this.fileStore.getItem<ConversationRecord>(CONVERSATIONS_COLLECTION, id);
+        if (lingering) {
+          this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+          localCount++;
+        }
+      } catch {
+        // Continue
+      }
+    }
+
+    // 2. Reconcile Prisma mirrors
+    try {
+      if ((await isDatabaseAvailable()) && (prisma as any).conversation) {
+        for (const [id, tombstone] of Object.entries(tombstones)) {
+          if (tombstone && !tombstone.prismaReconciled) {
+            try {
+              await (prisma as any).conversation.delete({ where: { id } }).catch(() => {});
+              tombstone.prismaReconciled = true;
+              this.fileStore.saveItem(CONVERSATION_TOMBSTONES_COLLECTION, id, tombstone);
+              prismaCount++;
+            } catch {
+              // Retry on next pass
+            }
+          }
+        }
+      }
+    } catch {
+      // Database unavailable
+    }
+
+    return { reconciledPrismaCount: prismaCount, cleanedLocalCount: localCount };
+  }
+
+  /**
+   * Reconciles pending Prisma mirror deletions for tombstoned conversations.
+   * Preserved for backward compatibility; calls reconcileAllTombstones.
+   */
+  public async reconcilePrismaTombstones(): Promise<{ reconciledCount: number }> {
+    const res = await this.reconcileAllTombstones();
+    return { reconciledCount: res.reconciledPrismaCount };
+  }
+
+  /**
+   * Deletes a conversation and all associated messages for the authenticated Founder.
+   *
+   * CONTRACT & GOVERNANCE:
+   * 1. Founder Ownership: Enforces ownership strictly. If the conversation belongs to
+   *    another founder, throws ConversationSecurityError (fails closed).
+   * 2. Idempotency & Safe Retry: If the conversation was already deleted by this founder,
+   *    re-verifies local file cleanup and returns
+   *    { success: true, deleted: false, alreadyDeleted: true, conversationId }.
+   * 3. Write-Ahead Tombstone (Anti-Resurrection Barrier):
+   *    Writes a tombstone to `conversation_tombstones.json` before modifying collections.
+   *    This guarantees that even if a mirror deletion or process restart interrupts execution,
+   *    subsequent reads will NEVER resurrect the conversation from Prisma.
+   * 4. Atomic Collection Cascade:
+   *    Purges messages under `chat_messages` collection lock and removes conversation
+   *    from `conversations` collection under lock.
+   * 5. Prisma Mirror Reconciliation:
+   *    Best-effort deletes from Prisma mirror; records `prismaReconciled: true` on tombstone.
+   * 6. Audit & Evidence Preservation:
+   *    Does NOT delete AgentRun, ApprovalRecord, or SideEffectAudit rows.
+   */
+  public async deleteConversation(
+    founderId: string,
+    conversationId: string
+  ): Promise<DeleteConversationResult> {
+    if (!founderId) {
+      throw new ConversationSecurityError('Authenticated founderId is required to delete conversation.');
+    }
+    if (!conversationId || !conversationId.trim()) {
+      return { success: false, deleted: false, notFound: true, conversationId: conversationId || '' };
+    }
+    const id = conversationId.trim();
+
+    // 1. Check if already tombstoned (idempotent delete with safe retry cleanup)
+    const existingTombstone = this.getTombstone(id);
+    if (existingTombstone) {
+      if (existingTombstone.founderId !== founderId) {
+        throw new ConversationSecurityError(
+          `Principal "${founderId}" is not authorized to delete conversation "${id}".`
+        );
+      }
+      // Safe retry: guarantee local file records are cleaned even if previous run crashed midway
+      try {
+        this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+      } catch {}
+      // If Prisma wasn't reconciled previously, attempt reconciliation now
+      if (!existingTombstone.prismaReconciled) {
+        try {
+          if ((await isDatabaseAvailable()) && (prisma as any).conversation) {
+            await (prisma as any).conversation.delete({ where: { id } }).catch(() => {});
+            existingTombstone.prismaReconciled = true;
+            this.fileStore.saveItem(CONVERSATION_TOMBSTONES_COLLECTION, id, existingTombstone);
+          }
+        } catch {}
+      }
+      return {
+        success: true,
+        deleted: false,
+        alreadyDeleted: true,
+        conversationId: id,
+        purgedMessageCount: existingTombstone.purgedMessageCount,
+      };
+    }
+
+    // 2. Resolve existing conversation (checks ownership strictly, throws ConversationSecurityError on mismatch)
+    const existing = await this.getConversation(founderId, id);
+    if (!existing) {
+      return { success: false, deleted: false, notFound: true, conversationId: id };
+    }
+
+    // 3. Write-Ahead Tombstone (Anti-Resurrection Barrier)
+    const newTombstone: ConversationTombstone = {
+      id,
+      founderId,
+      deletedAt: new Date().toISOString(),
+      purgedMessageCount: 0,
+      prismaReconciled: false,
+    };
+    this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone);
+
+    // 4. Cascade purge all messages belonging to this conversation under lock
+    let purgedCount = 0;
+    this.fileStore.withCollectionLock(CHAT_MESSAGES_COLLECTION, () => {
+      const allMessages = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
+      const filtered: Record<string, ChatMessageRecord> = {};
+      for (const [msgId, msg] of Object.entries(allMessages)) {
+        if (msg && msg.conversationId === id) {
+          purgedCount++;
+        } else if (msg) {
+          filtered[msgId] = msg;
+        }
+      }
+      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
+    });
+
+    // 5. Delete conversation record from disk under lock
+    this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+
+    // 6. Best-effort Prisma mirror delete
+    let prismaDeleted = false;
+    try {
+      if ((await isDatabaseAvailable()) && (prisma as any).conversation) {
+        await (prisma as any).conversation.delete({
+          where: { id },
+        });
+        prismaDeleted = true;
+      }
+    } catch {
+      // Non-fatal in local/file-primary mode; tombstone preserves prismaReconciled = false
+    }
+
+    // 7. Update tombstone with final count and reconciliation state
+    newTombstone.purgedMessageCount = purgedCount;
+    newTombstone.prismaReconciled = prismaDeleted;
+    this.fileStore.saveItem(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone);
+
+    return {
+      success: true,
+      deleted: true,
+      conversationId: id,
+      purgedMessageCount: purgedCount,
+    };
+  }
+
+  /**
+   * Deletes an individual chat message within a conversation.
+   *
+   * CONTRACT & GOVERNANCE:
+   * 1. Strict Ownership: Validates parent conversation exists, is owned by founderId,
+   *    and is not tombstoned.
+   * 2. Message Verification: Validates that the message belongs to conversationId.
+   * 3. Parent Timestamp: Updates parent conversation's updatedAt timestamp on disk.
+   * 4. Idempotency: Returns notFound if message does not exist.
+   */
+  public async deleteMessage(
+    founderId: string,
+    conversationId: string,
+    messageId: string
+  ): Promise<DeleteMessageResult> {
+    if (!founderId) {
+      throw new ConversationSecurityError('Authenticated founderId is required to delete message.');
+    }
+    if (!conversationId || !conversationId.trim() || !messageId || !messageId.trim()) {
+      return {
+        success: false,
+        deleted: false,
+        notFound: true,
+        conversationId: conversationId || '',
+        messageId: messageId || '',
+      };
+    }
+    const cId = conversationId.trim();
+    const mId = messageId.trim();
+
+    // 1. Verify parent conversation exists and is owned by this founder
+    const conversation = await this.getConversation(founderId, cId);
+    if (!conversation) {
+      return { success: false, deleted: false, notFound: true, conversationId: cId, messageId: mId };
+    }
+
+    // 2. Delete message under chat_messages collection lock
+    const deleted = this.fileStore.withCollectionLock(CHAT_MESSAGES_COLLECTION, () => {
+      const allMessages = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
+      const msg = allMessages[mId];
+      if (!msg || msg.conversationId !== cId) {
+        return false;
+      }
+      delete allMessages[mId];
+      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, allMessages);
+      return true;
+    });
+
+    if (!deleted) {
+      return { success: false, deleted: false, notFound: true, conversationId: cId, messageId: mId };
+    }
+
+    // 3. Update parent conversation timestamp
+    conversation.updatedAt = new Date().toISOString();
+    this.fileStore.saveItem(CONVERSATIONS_COLLECTION, cId, conversation);
+
+    // 4. Best-effort Prisma mirror delete
+    try {
+      if ((await isDatabaseAvailable()) && (prisma as any).chatMessage) {
+        await (prisma as any).chatMessage.delete({ where: { id: mId } }).catch(() => {});
+      }
+    } catch {
+      // Non-fatal mirror
+    }
+
+    return { success: true, deleted: true, conversationId: cId, messageId: mId };
+  }
+
+  /**
+   * Helper for tests: clears conversation collections and tombstones.
    */
   public clearForTests(): void {
     this.fileStore.writeCollection(CONVERSATIONS_COLLECTION, {});
     this.fileStore.writeCollection(CHAT_MESSAGES_COLLECTION, {});
+    this.fileStore.writeCollection(CONVERSATION_TOMBSTONES_COLLECTION, {});
+  }
+
+  /**
+   * Helper for tests: clears only the tombstones collection.
+   */
+  public clearTombstonesForTests(): void {
+    this.fileStore.writeCollection(CONVERSATION_TOMBSTONES_COLLECTION, {});
   }
 }

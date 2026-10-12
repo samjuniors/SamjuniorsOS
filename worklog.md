@@ -1,23 +1,23 @@
-# WORKLOG.md - Canonical Operational History
+﻿# WORKLOG.md - Canonical Operational History
 
-## Task 6 — SOFIA Voice & Desktop Capability Validation (2026-10-04)
+## Task 6 ΓÇö SOFIA Voice & Desktop Capability Validation (2026-10-04)
 
 **Status:** COMPLETE on `audit/sofia-voice-desktop-capability-validation` (branched from `development` @ `a020cab`). Founder directive: source-grounded, evidence-driven validation of SOFIA's actual voice, desktop, and tool-execution capabilities; docs + focused tests only; no merge, no deploy, no production-code changes. Full report: `docs/audit/TASK-6-SOFIA-VOICE-DESKTOP-CAPABILITY-VALIDATION.md`.
 
 **What was established (source + tests, not comments):**
-- The root route's **default tab is the SOFIA voice assistant** (`src/sofia/App.tsx` via dynamic import in `src/os/App.tsx`): wake-word loop (server STT chain Deepgram→ElevenLabs Scribe→z-ai ASR→local, or browser SpeechRecognition with mid-session auto-degrade), barge-in via VAD guard, turn assembly (pause-tolerant), SSE ask over `executeSophiaTurn`, client TTS ladder. Second voice surface = OS ribbon via companion WS `:3001` + `DeepgramFluxProvider` (requires `bun run dev:ws`; text-out only). Third surface (`/api/realtime/turn` "Realtime Lab") is **orphaned** — zero UI callers.
+- The root route's **default tab is the SOFIA voice assistant** (`src/sofia/App.tsx` via dynamic import in `src/os/App.tsx`): wake-word loop (server STT chain DeepgramΓåÆElevenLabs ScribeΓåÆz-ai ASRΓåÆlocal, or browser SpeechRecognition with mid-session auto-degrade), barge-in via VAD guard, turn assembly (pause-tolerant), SSE ask over `executeSophiaTurn`, client TTS ladder. Second voice surface = OS ribbon via companion WS `:3001` + `DeepgramFluxProvider` (requires `bun run dev:ws`; text-out only). Third surface (`/api/realtime/turn` "Realtime Lab") is **orphaned** ΓÇö zero UI callers.
 - **Interruption never cancels downstream work** on any surface (no cancellation token into `executeSophiaTurn`; WS INTERRUPT is state-only; SOFIA abort stops rendering only). Pinned by new test A1 (response still delivered exactly-once, session recovers IDLE).
 - **Post-interrupt late-final race**: a provider final arriving after INTERRUPT still executes the turn (server-side window open). Pinned by new test A2.
-- **Production defect (R2)**: OS ribbon interim captions can never display — `liveCompanionBridge.startPtt(turnId)` passes an id that `SophiaLiveClient.startPtt()` ignores (baseline tsc TS2554 @ `liveCompanionBridge.ts:138`), so the store's turn-id guard drops every interim. Pinned by new tests A3+A4 (defect documentation; fix awaits Founder direction).
+- **Production defect (R2)**: OS ribbon interim captions can never display ΓÇö `liveCompanionBridge.startPtt(turnId)` passes an id that `SophiaLiveClient.startPtt()` ignores (baseline tsc TS2554 @ `liveCompanionBridge.ts:138`), so the store's turn-id guard drops every interim. Pinned by new tests A3+A4 (defect documentation; fix awaits Founder direction).
 - **No desktop control of any real machine exists** (no robotjs/nut.js/xdotool/computer-use; "desktop" = browser-rendered OS shell; camera/hands/clap are client-side `getUserMedia` + MediaPipe). ARCHITECTURE.md's TARGET/NOT-IMPLEMENTED lists are honest.
 - **Tool truth**: `web_research` real (z-ai search, URL-grounded claims, injection quarantine); GitHub reads via Composio with honest `not_executed` degradation when unconfigured; `finance_transfer`/`github_issue_create` declared-not-wired (selector skips); image "generation" is a Pollinations URL builder consumed only by the orphaned route.
 - **Authorization clean**: every voice/text ingress Founder-session-gated server-side; tickets single-use; production rejects dev headers; transcripts/tool output untrusted end-to-end. No bypass found (11/11 adversarial + 81/0 route-auth suites re-run green in this audit's environment).
 
-**Verification:** new suite `tests/sophia/t6_voice_capability_audit.test.ts` 15/0 (deterministic, injection-classified messages only — zero live provider calls, isolated db `.data/audit-t6-test.db`); phase4a/4b/4c/4c_c, realtime_governance_audit 11/11, realtime_lab_provider 5/5, r0_realtime_gate 6/6, m3_convergence, m0 7/7, production_response_path_regression 4/4 — all exit 0. `tsc --noEmit` = 153 errors, byte-identical to the `development` baseline (new file contributes zero). Tests are outside eslint's lint scope (repo ignore pattern), consistent with all existing suites.
+**Verification:** new suite `tests/sophia/t6_voice_capability_audit.test.ts` 15/0 (deterministic, injection-classified messages only ΓÇö zero live provider calls, isolated db `.data/audit-t6-test.db`); phase4a/4b/4c/4c_c, realtime_governance_audit 11/11, realtime_lab_provider 5/5, r0_realtime_gate 6/6, m3_convergence, m0 7/7, production_response_path_regression 4/4 ΓÇö all exit 0. `tsc --noEmit` = 153 errors, byte-identical to the `development` baseline (new file contributes zero). Tests are outside eslint's lint scope (repo ignore pattern), consistent with all existing suites.
 
 **Deliverables:** report (above) + audit test suite + this entry. Branch NOT merged; awaits Founder review.
 
-## Branch Consolidation — Review Fixes, Single-Branch Model (2026-10-04)
+## Branch Consolidation ΓÇö Review Fixes, Single-Branch Model (2026-10-04)
 
 **Status:** COMPLETE on `development`. Founder directive: fix every issue from the Phase 1 review, commit and push everything, merge everything into ONE new branch, and delete all other stale branches (local + remote) leaving exactly `main` + `development`.
 
@@ -25,51 +25,51 @@
 
 Every review finding fixed, plus two latent governance bugs discovered during the work:
 
-1. **request_revision fidelity** — the gateway's two-way branch folded a well-formed `request_revision` into `rejected`. All three decisions are now recorded verbatim (`ApprovalStatus`, `IApprovalStore`, both store implementations widened); `request_revision` authorizes nothing (every execution gate still authorizes on `'approved'` only); surfaced honestly in the activity projection status and the route's `approvalAction`.
-2. **Untrusted-ID corroboration** (new bug, found while verifying #1 — reproduced by phase2 test 6) — a live model that sees pending approval IDs in its `PENDING_GOVERNANCE_STATE` context could emit one as `approvalId`, and the gateway honored it as if the founder had cited it: silent ratification of ONE of several pending approvals (zero-guessing violation). A model-emitted `approvalId` is now honored ONLY when the founder's own message cites that ID verbatim; uncited IDs fall through to the resolver's deterministic paths (strict ambiguity → clarification, zero mutation). Pinned by contract test F4.
-3. **Pending-list filter no-op** (pre-existing tsc-baseline error) — gateway + context-assembly passed `{ decision: 'pending' }` where `ApprovalFilter` filters on `status`: the no-op surfaced decided records as pending candidates. Fixed in both src sites + the phase2/k2 test helpers.
-4. **Enum-mirror drift** — `KNOWN_PROPOSAL_KINDS` / `APPROVAL_DECISIONS` are now compiler-checked exhaustive `Record` mirrors of the `CandidateIntentProposal` contract unions (drift cannot compile).
-5. **Echo-ack reflection** — `sanitizeProposal`'s fabricated conversation ack is now static text (never echoes the raw user message; untrusted-input reflection stays out of assistant replies). Pinned by B6.
+1. **request_revision fidelity** ΓÇö the gateway's two-way branch folded a well-formed `request_revision` into `rejected`. All three decisions are now recorded verbatim (`ApprovalStatus`, `IApprovalStore`, both store implementations widened); `request_revision` authorizes nothing (every execution gate still authorizes on `'approved'` only); surfaced honestly in the activity projection status and the route's `approvalAction`.
+2. **Untrusted-ID corroboration** (new bug, found while verifying #1 ΓÇö reproduced by phase2 test 6) ΓÇö a live model that sees pending approval IDs in its `PENDING_GOVERNANCE_STATE` context could emit one as `approvalId`, and the gateway honored it as if the founder had cited it: silent ratification of ONE of several pending approvals (zero-guessing violation). A model-emitted `approvalId` is now honored ONLY when the founder's own message cites that ID verbatim; uncited IDs fall through to the resolver's deterministic paths (strict ambiguity ΓåÆ clarification, zero mutation). Pinned by contract test F4.
+3. **Pending-list filter no-op** (pre-existing tsc-baseline error) ΓÇö gateway + context-assembly passed `{ decision: 'pending' }` where `ApprovalFilter` filters on `status`: the no-op surfaced decided records as pending candidates. Fixed in both src sites + the phase2/k2 test helpers.
+4. **Enum-mirror drift** ΓÇö `KNOWN_PROPOSAL_KINDS` / `APPROVAL_DECISIONS` are now compiler-checked exhaustive `Record` mirrors of the `CandidateIntentProposal` contract unions (drift cannot compile).
+5. **Echo-ack reflection** ΓÇö `sanitizeProposal`'s fabricated conversation ack is now static text (never echoes the raw user message; untrusted-input reflection stays out of assistant replies). Pinned by B6.
 6. **Dead `hasPendingApproval`** removed, with a comment pinning the DELIBERATE behavior (offline approvals surface as honest gateway resolutions, not silent conversation).
-7. **Injection-pattern scope + liveAi semantics** documented (ASCII-literal patterns are deliberate — fall-through is not a bypass; `liveAi:false` means "answered deterministically", not provider-down).
+7. **Injection-pattern scope + liveAi semantics** documented (ASCII-literal patterns are deliberate ΓÇö fall-through is not a bypass; `liveAi:false` means "answered deterministically", not provider-down).
 
-Contract suite extended to **22 assertions** (B6 static-ack, C5 approval-flavored ambiguous body pinned to clarification, F1–F4 gateway decision fidelity incl. the uncited-ID zero-guessing pin). Full battery green: contract 22/0 ×2 (deterministic across durable-store leftovers), phase2 12/12 ×2 (test 6 fixed by #2), phase1 live 12/12, k2 20/0, r3 7/0, r0_route_auth 81/0, r01 21/0, r1 17/0, r2 15/0, realtime 6/0, cron 24/0, m4b1 20/0, m0 7/0, m3 10/0, scheduler heartbeat 11/0; lint exit 0; tsc 155 (pre-existing baseline minus the 4 filter-bug errors this change removes).
+Contract suite extended to **22 assertions** (B6 static-ack, C5 approval-flavored ambiguous body pinned to clarification, F1ΓÇôF4 gateway decision fidelity incl. the uncited-ID zero-guessing pin). Full battery green: contract 22/0 ├ù2 (deterministic across durable-store leftovers), phase2 12/12 ├ù2 (test 6 fixed by #2), phase1 live 12/12, k2 20/0, r3 7/0, r0_route_auth 81/0, r01 21/0, r1 17/0, r2 15/0, realtime 6/0, cron 24/0, m4b1 20/0, m0 7/0, m3 10/0, scheduler heartbeat 11/0; lint exit 0; tsc 155 (pre-existing baseline minus the 4 filter-bug errors this change removes).
 
 ### Consolidation (commits 88a34c8, e0eaffd)
 
 - `development` created at the Phase 1 tip (4eca348), fixes committed on it.
-- **88a34c8**: merged `origin/main` (founder docs — Jev decision-layer research + Windows-first plan; clean merge).
-- **e0eaffd**: merged sandbox `main` (unrelated histories — the sandbox lineage predates the canonical fork root). All 281 add/add conflicts resolved as OURS (development = the reviewed 47d58f7 port + r0-r3 + Phase 1 + governance fixes; main's only post-port changes were tool-results receipts and the lowercase `worklog.md`, which arrive as additions). `WORKLOG.md` resolved as ours (strict superset). The merged `src/`+`tests/` tree is byte-identical to the pre-merge fixed state (git-verified 0-line diff); delta = exactly main's 181 main-only environment files (tool-results/, upload/, worklog.md). Smoke-verified in the merge worktree: contract 22/0, lint exit 0.
+- **88a34c8**: merged `origin/main` (founder docs ΓÇö Jev decision-layer research + Windows-first plan; clean merge).
+- **e0eaffd**: merged sandbox `main` (unrelated histories ΓÇö the sandbox lineage predates the canonical fork root). All 281 add/add conflicts resolved as OURS (development = the reviewed 47d58f7 port + r0-r3 + Phase 1 + governance fixes; main's only post-port changes were tool-results receipts and the lowercase `worklog.md`, which arrive as additions). `WORKLOG.md` resolved as ours (strict superset). The merged `src/`+`tests/` tree is byte-identical to the pre-merge fixed state (git-verified 0-line diff); delta = exactly main's 181 main-only environment files (tool-results/, upload/, worklog.md). Smoke-verified in the merge worktree: contract 22/0, lint exit 0.
 - **Repos end-state**: exactly two branches, `main` (canonical, = origin/main) and `development` (everything merged). All other local + remote branches deleted; branches carrying unmerged commits were preserved as local `archive/*` tags (tags, not branches) before deletion. `origin/main` untouched (no force, no push to main).
 
-## Phase 1 (Jev-inspired plan) — Sophia Intent Classification Reliability (2026-10-04)
+## Phase 1 (Jev-inspired plan) ΓÇö Sophia Intent Classification Reliability (2026-10-04)
 
-**Status:** COMPLETE on `feat/phase1-intent-reliability` (branched from `integration/sandbox-r3` @ `449a342`), awaiting founder review. Founder directive: improve Sophia's existing intent classification reliability without introducing a new subsystem — baseline first, identify real failure categories, then the smallest evidence-supported change. No TypeSafe integration, no new provider, no UI/memory-gate/approval-queue changes, no architecture rewrite; classifier output still cannot authorize or execute anything (the SophiaServerGateway boundary is unchanged).
+**Status:** COMPLETE on `feat/phase1-intent-reliability` (branched from `integration/sandbox-r3` @ `449a342`), awaiting founder review. Founder directive: improve Sophia's existing intent classification reliability without introducing a new subsystem ΓÇö baseline first, identify real failure categories, then the smallest evidence-supported change. No TypeSafe integration, no new provider, no UI/memory-gate/approval-queue changes, no architecture rewrite; classifier output still cannot authorize or execute anything (the SophiaServerGateway boundary is unchanged).
 
 ### Baseline (reproducible, fixtures at the z-ai SDK network boundary)
 
-Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: mock ONLY the SDK chat completion before any src import, run the REAL classifier with real context assembly) and recorded current behavior over the eight representative categories (conversation, factual, ambiguous, directive, approval, steering, compound, injection) plus twelve model-output fixtures. Confirmed failure categories: (1) **fail-open approval coercion** — `decision: "yes-sure-go-ahead"` on a greeting silently became `approval_proposal`/`approved` live; (2) **unknown kinds silently accepted** — `kind: "urgent_maintenance_mode"` became a live conversation with a fabricated ack echoing the full user message; (3) **fabricated confidence** — missing/non-numeric confidence silently became 0.85 and was persisted as if measured; (4) **live-model variance on ambiguous requests** (the historically flaky phase1 #4 assertion, reproduced deterministically with a wrong-kind fixture) and on **injection attempts** (model variance could emit a directive_proposal carrying the payload into the gateway framing reply). Fallback analyzer verified correct on all 8 categories; compound requests remain single-kind (steering only) — documented limitation, unchanged.
+Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: mock ONLY the SDK chat completion before any src import, run the REAL classifier with real context assembly) and recorded current behavior over the eight representative categories (conversation, factual, ambiguous, directive, approval, steering, compound, injection) plus twelve model-output fixtures. Confirmed failure categories: (1) **fail-open approval coercion** ΓÇö `decision: "yes-sure-go-ahead"` on a greeting silently became `approval_proposal`/`approved` live; (2) **unknown kinds silently accepted** ΓÇö `kind: "urgent_maintenance_mode"` became a live conversation with a fabricated ack echoing the full user message; (3) **fabricated confidence** ΓÇö missing/non-numeric confidence silently became 0.85 and was persisted as if measured; (4) **live-model variance on ambiguous requests** (the historically flaky phase1 #4 assertion, reproduced deterministically with a wrong-kind fixture) and on **injection attempts** (model variance could emit a directive_proposal carrying the payload into the gateway framing reply). Fallback analyzer verified correct on all 8 categories; compound requests remain single-kind (steering only) ΓÇö documented limitation, unchanged.
 
 ### What Changed
 
-- **`src/lib/server/sophia/intent-classifier.ts`** (only production file touched, +124/−23):
+- **`src/lib/server/sophia/intent-classifier.ts`** (only production file touched, +124/ΓêÆ23):
   - **Deterministic pre-classification**: prompt-injection attempts and narrow ambiguous "look into X"-style requests are decided by the existing deterministic patterns BEFORE the model call (`deterministicPreClassification`); the model is never consulted (verified `modelCalls === 0`), so live variance cannot flip them. Root-cause fix for the flaky phase1 #4 test.
   - **Fail-closed shape gate** (`isValidProposalShape`): a live model output must carry a known kind, an explicit approval-decision enum value, and a numeric confidence in [0,1] before `sanitizeProposal` may coerce it; anything else is a failed generation answered by the deterministic fallback (warn-logged), never silently repaired. Closes all three baseline defects. `sanitizeProposal` itself is unchanged; the gateway, policies, approvals, and idempotency protections are untouched.
-  - Shared pattern constants (`INJECTION_PATTERN`, `AMBIGUOUS_PATTERNS`) and proposal factories (`injectionNeutralizedReply`, `ambiguousClarification`) extracted so the pre-model gate and `fallbackSemanticAnalysis` branches 0/3 share ONE definition — no drift between the paths.
-- **`tests/sophia/phase1-intent-fixture-child.ts`** (new): deterministic fixture child (12 model behaviors × 8 category messages), SDK-level mock, one-JSON-line output contract.
-- **`tests/sophia/phase1_intent_contract.test.ts`** (new): 16-assertion suite — valid shapes live (A), malformed rejected fail-closed (B), pre-classification variance-immunity (C), the 8-category fallback baseline (D), forged-field sanitization preserved (E). Live-LLM quality evaluation stays separate in the existing phase1 suite.
+  - Shared pattern constants (`INJECTION_PATTERN`, `AMBIGUOUS_PATTERNS`) and proposal factories (`injectionNeutralizedReply`, `ambiguousClarification`) extracted so the pre-model gate and `fallbackSemanticAnalysis` branches 0/3 share ONE definition ΓÇö no drift between the paths.
+- **`tests/sophia/phase1-intent-fixture-child.ts`** (new): deterministic fixture child (12 model behaviors ├ù 8 category messages), SDK-level mock, one-JSON-line output contract.
+- **`tests/sophia/phase1_intent_contract.test.ts`** (new): 16-assertion suite ΓÇö valid shapes live (A), malformed rejected fail-closed (B), pre-classification variance-immunity (C), the 8-category fallback baseline (D), forged-field sanitization preserved (E). Live-LLM quality evaluation stays separate in the existing phase1 suite.
 
 ### Verification (exact commands, all in the worktree)
 
-- `bun tests/sophia/phase1_intent_contract.test.ts` → **16 passed, 0 failed**
-- `bun tests/sophia/phase1_conversational_executive.test.ts` → **12 passed, 0 failed**, three consecutive runs (the previously flaky #4 is now deterministic — the ambiguous message never reaches the model; one run also absorbed a live 429 on test 12 via the fallback)
-- `bun tests/sophia/phase2_grounding_context.test.ts` → 12/0; `bun tests/sophia/r3_honest_metrics.test.ts` → 7/0 (under live 429s)
-- `bun tests/sophia/r0_route_auth.test.ts` → 81/0; `r01_auth_design` → 21/0; `r1_honesty_consolidation` → 17/0; `r2_engine_convergence` → 15/0; `r0_realtime_gate` → 6/0; `r0_cron_machine_auth` → 24/0; `bun test tests/scheduler/phase4_4a_heartbeat.test.ts` → 11 pass/0 fail; `m4b1_lifecycle` 20/0; `k2_personal_memory` 20/0; `m0_idempotency_expiry` 7/0; `m3_authority_hardening` 10/0
-- `bunx tsc --noEmit` → 157 errors = EXACTLY the pre-existing baseline (zero in the changed/new files); `bun run lint` → exit 0
-- NOT VERIFIED: production build (sandbox policy); no UI changes so no browser-surface delta — the dev server continues to serve the unchanged sandbox `main` tree.
+- `bun tests/sophia/phase1_intent_contract.test.ts` ΓåÆ **16 passed, 0 failed**
+- `bun tests/sophia/phase1_conversational_executive.test.ts` ΓåÆ **12 passed, 0 failed**, three consecutive runs (the previously flaky #4 is now deterministic ΓÇö the ambiguous message never reaches the model; one run also absorbed a live 429 on test 12 via the fallback)
+- `bun tests/sophia/phase2_grounding_context.test.ts` ΓåÆ 12/0; `bun tests/sophia/r3_honest_metrics.test.ts` ΓåÆ 7/0 (under live 429s)
+- `bun tests/sophia/r0_route_auth.test.ts` ΓåÆ 81/0; `r01_auth_design` ΓåÆ 21/0; `r1_honesty_consolidation` ΓåÆ 17/0; `r2_engine_convergence` ΓåÆ 15/0; `r0_realtime_gate` ΓåÆ 6/0; `r0_cron_machine_auth` ΓåÆ 24/0; `bun test tests/scheduler/phase4_4a_heartbeat.test.ts` ΓåÆ 11 pass/0 fail; `m4b1_lifecycle` 20/0; `k2_personal_memory` 20/0; `m0_idempotency_expiry` 7/0; `m3_authority_hardening` 10/0
+- `bunx tsc --noEmit` ΓåÆ 157 errors = EXACTLY the pre-existing baseline (zero in the changed/new files); `bun run lint` ΓåÆ exit 0
+- NOT VERIFIED: production build (sandbox policy); no UI changes so no browser-surface delta ΓÇö the dev server continues to serve the unchanged sandbox `main` tree.
 
 
-## Phase 4C-B — Streaming STT Adapter Implementation (2026-09-17)
+## Phase 4C-B ΓÇö Streaming STT Adapter Implementation (2026-09-17)
 
 **Status:** COMPLETE & SEALED. Implemented the provider-neutral streaming Speech-to-Text (STT) architecture and the first production adapter for Deepgram Flux STT behind the existing Phase 4 companion WebSocket server (`port 3001`). Integrated client-side 128ms pre-roll ring buffering to prevent first-phoneme clipping, server-side frame aggregation to 80ms chunks (2560 bytes), turn finalization semantics via `ForceEndTurn`, transcript broadcast to client (`TRANSCRIPT_INTERIM` and `TRANSCRIPT_FINAL`), and canonical cognitive ingress through `ConversationStore`, `SophiaIntentClassifier`, and `SophiaServerGateway`. Enforced strict security: STT transcripts are untrusted founder messages, credentials never leak to client code, and prompt injections cannot bypass authorization gates. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`, with zero regressions across Phase 4A, Phase 4B, Phase 3, Phase 2, and Phase 1 test suites.
 
@@ -129,14 +129,14 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-**Status:** COMPLETE & SEALED (Research & Architecture Decision). Determined the architectural approach for streaming Speech-to-Text (STT) for Sophia Live Interaction. Established a provider-agnostic architecture (`STTProvider`) to prevent vendor lock-in while maintaining a viable self-hosted path. Selected Deepgram Flux STT (`flux-general-en`/`multi` via `wss://api.deepgram.com/v2/listen`) as the initial production cloud provider ($0.39/hr, ~$6–$15/mo for founder usage) and designated Qwen3-ASR (0.6B) as the open-weight self-hosted target (~2 GB VRAM, Apache 2.0). Resolved the turn-taking/endpointing open question by adopting a hybrid 128ms pre-roll ring buffer (preventing first-phoneme clipping) + dual endpointing (PTT `ForceEndTurn` / provider `EndOfTurn`). Formally deferred/rejected Pipecat and LiveKit Agents to avoid competing orchestrator and WebRTC overhead. Preserved fail-closed security: audio never invokes tools directly, transcript is untrusted data, and all mutations pass through `SophiaServerGateway` and `SideEffectAuthorizationGate`. Strict boundary enforced: ZERO runtime STT code added.
+**Status:** COMPLETE & SEALED (Research & Architecture Decision). Determined the architectural approach for streaming Speech-to-Text (STT) for Sophia Live Interaction. Established a provider-agnostic architecture (`STTProvider`) to prevent vendor lock-in while maintaining a viable self-hosted path. Selected Deepgram Flux STT (`flux-general-en`/`multi` via `wss://api.deepgram.com/v2/listen`) as the initial production cloud provider ($0.39/hr, ~$6ΓÇô$15/mo for founder usage) and designated Qwen3-ASR (0.6B) as the open-weight self-hosted target (~2 GB VRAM, Apache 2.0). Resolved the turn-taking/endpointing open question by adopting a hybrid 128ms pre-roll ring buffer (preventing first-phoneme clipping) + dual endpointing (PTT `ForceEndTurn` / provider `EndOfTurn`). Formally deferred/rejected Pipecat and LiveKit Agents to avoid competing orchestrator and WebRTC overhead. Preserved fail-closed security: audio never invokes tools directly, transcript is untrusted data, and all mutations pass through `SophiaServerGateway` and `SideEffectAuthorizationGate`. Strict boundary enforced: ZERO runtime STT code added.
 
 ### What Changed
 
 - **`doc/research/phase4c_stt_benchmark_and_architecture.md`**:
   - Comprehensive research and benchmark report evaluating Deepgram Flux STT, Qwen3-ASR (0.6B/1.7B), Faster-Whisper, Pipecat, and LiveKit Agents across category, license, streaming design, turn-taking, compute/hosting costs, and operational complexity.
-  - Detailed latency budget from microphone to Sophia cognitive ingress (350–550ms design target).
-  - Economic analysis demonstrating Deepgram Flux usage cost (~$6–$15/mo) is drastically cheaper than 24/7 cloud GPU hosting ($216–$350/mo) for a solo founder.
+  - Detailed latency budget from microphone to Sophia cognitive ingress (350ΓÇô550ms design target).
+  - Economic analysis demonstrating Deepgram Flux usage cost (~$6ΓÇô$15/mo) is drastically cheaper than 24/7 cloud GPU hosting ($216ΓÇô$350/mo) for a solo founder.
   - Security analysis detailing credential confinement, session binding, and untrusted transcript handling.
   - SamJuniors-specific test dataset design and evaluation metrics (WER, EER, command accuracy, latency).
 - **`doc/adr/0004-provider-agnostic-streaming-stt-architecture.md`**:
@@ -160,7 +160,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4B — Client Silero VAD & Audio Streaming Ingress (2026-09-16)
+## Phase 4B ΓÇö Client Silero VAD & Audio Streaming Ingress (2026-09-16)
 
 **Status:** COMPLETE & SEALED. Implemented and verified the client-side Voice Activity Detection (VAD) and audio streaming ingress pipeline for Sophia Live Interaction. Integrated browser AudioWorklet resampling (to 16 kHz mono 16-bit signed integer PCM), client-side Silero VAD, Push-to-Talk (PTT) audio gating, immediate assistant-audio mute/flush hook on speech start, binary WebSocket frame ingress on companion server, backpressure protection against buffer saturation, and server frame validation/telemetry. Preserved fail-closed security: zero raw audio persistence, zero STT/TTS/Deepgram code added, zero tool execution from audio. Verified with 42/42 automated assertions passing across 9 test suites.
 
@@ -235,7 +235,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4A — Sophia Live Session & Companion Gateway Foundation (2026-09-16)
+## Phase 4A ΓÇö Sophia Live Session & Companion Gateway Foundation (2026-09-16)
 
 **Status:** COMPLETE & SEALED. Built and verified the authenticated companion WebSocket/live-session foundation for Sophia Live Interaction. Zero audio/STT/TTS/VAD/mic/UI code added. Implemented companion server architecture, ephemeral ticket authentication (`/api/auth/ws-ticket`), single-tenant connection locking (close code `4409`), PTT state transitions, barge-in `INTERRUPT` framing, and 60-second reconnection resumption. Verified with 27/27 automated assertions passing across 10 test scenarios.
 
@@ -288,7 +288,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4 — Sophia Live Interaction (Architecture Reconciled & Approved with Corrections) (2026-09-16)
+## Phase 4 ΓÇö Sophia Live Interaction (Architecture Reconciled & Approved with Corrections) (2026-09-16)
 
 **Status:** ARCHITECTURE APPROVED WITH CORRECTIONS (ADR 0003). Phase 4A coding: NOT YET. GitHub HEAD and Phase 3.1 verified on remote `main` (`git push origin main` completed). Zero production code modified, zero packages installed. Implementation remains gated until Founder commands start of Phase 4A.
 
@@ -302,7 +302,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 3. **Native Flux Interruption Reconciliation**:
    - Replaced server-side character timing estimation with Deepgram Flux's native `SpeechInterrupted` event protocol. When client detects speech, it immediately mutes output and emits an `Interrupt` frame; Flux TTS halts audio generation and authoritatively returns `text_spoken` and `text_remaining` offsets to synchronize `ConversationStore`.
 4. **Latency Budget Clarification**:
-   - 780ms is reclassified as a **theoretical design target**, NOT an expected result. Realistic conversational latency is budgeted at **800ms – 1,250ms** accounting for real-world network jitter, audio buffer sizes, and variable LLM first-token generation. Status: **NOT VERIFIED** until Phase 4 benchmark suites run.
+   - 780ms is reclassified as a **theoretical design target**, NOT an expected result. Realistic conversational latency is budgeted at **800ms ΓÇô 1,250ms** accounting for real-world network jitter, audio buffer sizes, and variable LLM first-token generation. Status: **NOT VERIFIED** until Phase 4 benchmark suites run.
 5. **PTT-Only Initial Scope**:
    - Continuous listening and wake-words are excluded from Phase 4. Initial release is strictly **Push-to-Talk (PTT)** (holding `Spacebar` or mic button) to eliminate room acoustic leakage, false triggers, and acoustic echo loops.
 6. **Next.js WebSocket Hosting Reality**:
@@ -328,7 +328,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 3.1 — Conversation Persistence Closure + Architecture Reconciliation (2026-09-16)
+## Phase 3.1 ΓÇö Conversation Persistence Closure + Architecture Reconciliation (2026-09-16)
 
 **Status:** SEALED. Completed rigorous Phase 3 closure audit and architectural reconciliation. Verified authoritative persistence mechanism, fixed idempotency caching defects and in-flight concurrency race condition, enforced server-authoritative history boundaries, resolved React Compiler linter errors in `ChatPanel`, reconciled ADR 0002 and `doc/ROADMAP.md` with real runtime facts, and verified 100% test pass rate across Phase 1, 2, and 3 test suites.
 
@@ -367,7 +367,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 3 — Sophia Durable Conversation Persistence (2026-09-16)
+## Phase 3 ΓÇö Sophia Durable Conversation Persistence (2026-09-16)
 
 **Status:** COMPLETE. Delivered durable server-authoritative conversation session persistence for Sophia in SamJuniorsOS. Zero duplication of company memory, operational state, or epistemic claims. Distinguishes ephemeral interactive dialogue (`CONVERSATIONAL_RECORD`) from historical precedent (`HISTORICAL_PRECEDENT`), epistemic facts (`EPISTEMIC_FACT`), and operational ground truth (`AUTHORITATIVE_OPERATIONAL_STATE`). Established dual-mode persistence (`ConversationStore` with atomic `DurableFileStore` plus Prisma relational sync), strict authenticated Founder ownership binding (403 fail-closed), nonexistent conversation rejection (404 fail-closed), turn deduplication via `idempotencyKey`, deterministic recent-history context budgeting (~1,000 char clamp), and seamless browser reload recovery.
 
@@ -428,7 +428,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4.3A — Authoritative Graph Read Model (2026-09-12)
+## Phase 4.3A ΓÇö Authoritative Graph Read Model (2026-09-12)
 
 **Status:** COMPLETE (READ-MODEL ONLY). Delivered the typed authoritative graph read model and projection engine for SamJuniorsOS. Zero UI alterations, zero database migrations, zero graph persistence or secondary sources of truth. Strictly projects authoritative server state (`AgentRunStore`, `SideEffectAuthorizationGate`, `getWorkflowStore()`, `EpistemicClaimStore`, `CompanyContextProvider`) into the Meaningful Company Topology via an authenticated, fail-closed read endpoint.
 
@@ -483,13 +483,13 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4.3B — Authoritative Graph Visual Integration (2026-09-12)
+## Phase 4.3B ΓÇö Authoritative Graph Visual Integration (2026-09-12)
 
 **Status:** COMPLETE. Successfully integrated the server-authoritative GraphDTO (`GET /api/graph`) into the canonical `FlowDesktop` renderer using certified Phase 4.1 visual primitives (`Node`, `NodeGeometry`, `NodeContent`, `NodePort`, `Connector`, `Effects`, `tokens`). Real company topology is projected without simulated state, fake entities, optimistic state mutation, or duplicate rendering engines.
 
 ### What was implemented & integrated
 
-1. **Authoritative Graph Projection Pipeline (`GET /api/graph` → `FlowDesktop`)**:
+1. **Authoritative Graph Projection Pipeline (`GET /api/graph` ΓåÆ `FlowDesktop`)**:
    - `Uploaded/Design1/src/lib/runtime.ts`: Added typed `fetchGraphOverview()` targeting `GET /api/graph` with dev session authentication headers, and `decideApproval(approvalId, action, reason)`.
    - `Uploaded/Design1/src/lib/flow.ts`: Added `mapGraphDTOToFlowModel(dto: GraphDTO): GraphModel` mapping authoritative nodes, computed curve points, and spatial cards. Extended `GraphRelationship` with `'depends-on'`, and bound `dtoNode` and `dtoEdge` to `FlowNode` and `FlowEdge`.
    - `Uploaded/Design1/src/components/FlowDesktop.tsx`: Extended existing `FlowDesktop` to poll `fetchGraphOverview()` conservatively every 8s (paused when document visibility is hidden), syncing server topology into state.
@@ -515,12 +515,12 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 4. **Contextual Progressive Disclosure & Inspector**:
    - Selecting a node opens a 420px contextual inspector surface.
    - Structured 2x2 grid explicitly communicating the 4 orthogonal state domains.
-   - **Relationship Following (10.C)**: Lists all connected conduits (incoming `←` and outgoing `→`). Clicking any connected conduit navigates and focuses that related entity.
+   - **Relationship Following (10.C)**: Lists all connected conduits (incoming `ΓåÉ` and outgoing `ΓåÆ`). Clicking any connected conduit navigates and focuses that related entity.
    - **Founder Decision Boundary (10.E)**: Clear authorization boundary badge with live approval details and genuine `Approve & Ratify` / `Reject` buttons that dispatch to `POST /api/workflow/approvals` and immediately refresh the server graph (zero optimistic simulation).
    - **Lineage & Provenance**: Deep inspection reveals `runId`, `protocolStep`, `durationMs`, `error`, and epistemic fact counts.
 
 5. **Honest Degraded, Fail-Closed, Loading, and Sync States**:
-   - **HUD Sync Badge**: Displays live connection status with SHA-256 hash (`SYNCED · [hash]` with green dot), `FAIL-CLOSED (503)` (amber dot), or `SYNCING...` with a manual refresh button (`RefreshCw`).
+   - **HUD Sync Badge**: Displays live connection status with SHA-256 hash (`SYNCED ┬╖ [hash]` with green dot), `FAIL-CLOSED (503)` (amber dot), or `SYNCING...` with a manual refresh button (`RefreshCw`).
    - **Fail-Closed 503 Banner**: If database is unreachable, clearly surfaces 503 fail-closed condition with a Retry button, refusing to fabricate optimistic nodes.
    - **Quick Action**: Added `FOCUS ACTIVE` button in HUD to instantly frame active work or pending founder approvals.
 
@@ -542,13 +542,13 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 - `node ./node_modules/tsx/dist/cli.mjs tests/phase3_3_authoritative_reads.test.ts`: 17/17 tests PASSED.
 - **Browser Verification (`browser_subagent`)**:
   - Verified initial calm operating graph with Phase 4.1 nodes (`Sophia` in squircle, `Founder / Inputs`, `Dr. Aris Thorne`, `Constitutional Verifier`, `Governed Vault`) and SVG connectors with colored conduits and arrows.
-  - Verified HUD displays `SYNCED · c81052b` with green dot.
+  - Verified HUD displays `SYNCED ┬╖ c81052b` with green dot.
   - Verified clicking `Sophia` opens contextual inspector with 4 orthogonal state domains (`Runtime: IDLE`, `Governance: NONE`, `Epistemic: NOT APPLICABLE`, `Presentation: DEFAULT`).
-  - Verified relationship following: Clicking connected conduit `→ Dr. Aris Thorne (delegates)` immediately navigated and selected `Dr. Aris Thorne`.
+  - Verified relationship following: Clicking connected conduit `ΓåÆ Dr. Aris Thorne (delegates)` immediately navigated and selected `Dr. Aris Thorne`.
   - Verified `FOCUS ACTIVE` button functionality.
   - Verified browser console: 0 unhandled errors, 0 hydration mismatches.
 
-### Visual Refinement — Workflow Node Language & Spatial Graph (2026-09-12)
+### Visual Refinement ΓÇö Workflow Node Language & Spatial Graph (2026-09-12)
 
 1. **Icon-First Node Language**:
    - Nodes communicate primarily via their ICON. All cards refactored to use Phase 4.1 `IconOnlyContent` centered in compact geometry (`squircle` for Sophia, `square` for Approval Gate & services, `circle` for agents/specialists).
@@ -562,7 +562,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
    - Eliminated text rows and mini dashboards from node cards. The card surface strictly contains: icon, glowing state dot indicator, and connection ports.
 
 4. **Spatial Canvas Distribution (Full Viewport Utilization)**:
-   - Replaced rigid single-column/linear arrangement with spatial hierarchy across the 1600×900 canvas:
+   - Replaced rigid single-column/linear arrangement with spatial hierarchy across the 1600├ù900 canvas:
      - Founder authority boundary: `(280, 240)`
      - Sophia COO / Orchestration: `(760, 240)`
      - Approval Gate: `(380, 600)`
@@ -587,7 +587,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4.4 — 3D Canvas Interactivity & Zero-Lag Pan/Zoom (2026-09-12)
+## Phase 4.4 ΓÇö 3D Canvas Interactivity & Zero-Lag Pan/Zoom (2026-09-12)
 
 **Status:** COMPLETE. Upgraded both the 3D Sophia Neural Canvas (`NeuralCanvas.tsx`, `field.ts`) and the SamJuniorsOS Workspace Graph Canvas (`FlowDesktop.tsx`) to deliver lag-free, high-fidelity 3D spatial pan, zoom, and orbit interactions.
 
@@ -621,7 +621,7 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ---
 
-## Phase 4.3 — SamJuniorsOS + Workflow Design System Polish (2026-09-12)
+## Phase 4.3 ΓÇö SamJuniorsOS + Workflow Design System Polish (2026-09-12)
 
 **Status:** COMPLETE. Focused production polish for the dark ambient OS shell and FLOWGRID workflow specimen.
 
@@ -635,11 +635,11 @@ Built `tests/sophia/phase1-intent-fixture-child.ts` (the M4-A child pattern: moc
 
 ### Verification actually run
 
-- `npm run lint` — passed.
-- `npx tsc --noEmit` — passed.
-- `npm run build` — passed; `/design-system/workflow` statically prerendered.
-- Browser verification at `http://localhost:3000/` — SamJuniorsOS rendered successfully at 1350×851; screenshot saved to `/tmp/agent-browser/samjuniors-os-shell-final.png`.
-- Browser verification at `http://localhost:3000/design-system/workflow` — styled FLOWGRID specimen rendered successfully; screenshot saved to `/tmp/agent-browser/workflow-polished-restarted.png`.
+- `npm run lint` ΓÇö passed.
+- `npx tsc --noEmit` ΓÇö passed.
+- `npm run build` ΓÇö passed; `/design-system/workflow` statically prerendered.
+- Browser verification at `http://localhost:3000/` ΓÇö SamJuniorsOS rendered successfully at 1350├ù851; screenshot saved to `/tmp/agent-browser/samjuniors-os-shell-final.png`.
+- Browser verification at `http://localhost:3000/design-system/workflow` ΓÇö styled FLOWGRID specimen rendered successfully; screenshot saved to `/tmp/agent-browser/workflow-polished-restarted.png`.
 
 ### Remaining risks
 
@@ -654,7 +654,7 @@ repository state it describes.
 
 ---
 
-## Phase 4.1 — SamJuniorsOS Workflow Design System & Specimen Sheet (2026-09-12)
+## Phase 4.1 ΓÇö SamJuniorsOS Workflow Design System & Specimen Sheet (2026-09-12)
 
 **Status:** COMPLETE. Delivered a production-grade, presentation-only, portable visual component library and 13-section interactive specimen page for node-based graphs inspired by FLOWGRID aesthetics. Built strictly as visual presentation primitives with zero dependencies on APIs, database/Prisma, auth, OS state, or runtime stores. Seamlessly portable to both Next.js and standalone Vite (`Uploaded/Design1`).
 
@@ -683,7 +683,7 @@ repository state it describes.
 - **`components/workflow/index.ts`**:
   - Clean barrel export for all workflow primitives.
 - **`app/design-system/workflow/page.tsx`**:
-  - Comprehensive 13-section interactive specimen page matching the FLOWGRID reference layout. Includes interactive Effects Budget toggle (`full`, `balanced`, `minimal`), live state selector, and generic non-operational illustrative compositions (`Telegram Trigger → AI Agent → Conversation Memory`, etc.).
+  - Comprehensive 13-section interactive specimen page matching the FLOWGRID reference layout. Includes interactive Effects Budget toggle (`full`, `balanced`, `minimal`), live state selector, and generic non-operational illustrative compositions (`Telegram Trigger ΓåÆ AI Agent ΓåÆ Conversation Memory`, etc.).
 - **`DESIGN.md`**:
   - Added Section 14 documenting the Phase 4.1 Workflow Design System specification.
 
@@ -715,7 +715,7 @@ repository state it describes.
 
 - **Uploaded/Design1/src/lib/flow.ts**:
   - **Operating Graph Truth**: Aligned workforce roles (`coo`, `researcher`, `pm`, `finance`) and 9-step DAG protocol semantics (`discovery`, `build`, `review`, `ship`, `done`).
-  - **Contextual Step Revelation**: Removed static/permanent protocol step display. Protocol steps are generated dynamically from genuine active/blocked workstreams (`discovery` ➜ `step-research`, `build` ➜ `step-finance`/`step-pm-prd`, `review` ➜ `step-review`, `ship` ➜ `step-report`, `done` ➜ Vault). Idle states remain clean and calm.
+  - **Contextual Step Revelation**: Removed static/permanent protocol step display. Protocol steps are generated dynamically from genuine active/blocked workstreams (`discovery` Γ₧£ `step-research`, `build` Γ₧£ `step-finance`/`step-pm-prd`, `review` Γ₧£ `step-review`, `ship` Γ₧£ `step-report`, `done` Γ₧£ Vault). Idle states remain clean and calm.
   - **Dynamic Workforce Integration**: Julian Cruz (`finance`) and Maya Lin (`pm`) appear in the active specialists column dynamically only when assigned work, keeping standby specialists quiet.
   - **Consequential Escalation Gate**: Founder Approval Gate appears dynamically only when decisions are open, with bidirectional links to Sophia and Verifier.
   - **Collision-Aware Positioning**: Implemented vertical relaxation engine (`layoutColumn`) with boundary guards, guaranteeing zero card overlaps regardless of task count.
@@ -746,9 +746,9 @@ repository state it describes.
 
 ---
 
-## Phase 3 — Living SamJuniorsOS Operating Graph & Semantic Motion (2026-09-11)
+## Phase 3 ΓÇö Living SamJuniorsOS Operating Graph & Semantic Motion (2026-09-11)
 
-**Status:** COMPLETE. Transformed the static V2 Desktop canvas into an authentic, scalable, living SamJuniorsOS operating graph without changing outer desktop shell layout, menus, docks, or side rails. Built strictly around the genuine operating pipeline: Founder / Inputs → Sophia / Orchestrator → Dr. Aris Thorne / Research & Intelligence → Workflow Steps → Constitutional Verifier → Founder Approval Gate (when required) → Governed Outcome / Vault. Implemented REF.mp4-inspired particle kinetics (orthogonal conduits, laser comets, spark emitters, radial arrival shockwaves, and quiet completion dimming), dynamic spatial contextual cards, and codified Rule 6 (Semantic Motion) in DESIGN.md. Zero backend, database, auth, or API changes.
+**Status:** COMPLETE. Transformed the static V2 Desktop canvas into an authentic, scalable, living SamJuniorsOS operating graph without changing outer desktop shell layout, menus, docks, or side rails. Built strictly around the genuine operating pipeline: Founder / Inputs ΓåÆ Sophia / Orchestrator ΓåÆ Dr. Aris Thorne / Research & Intelligence ΓåÆ Workflow Steps ΓåÆ Constitutional Verifier ΓåÆ Founder Approval Gate (when required) ΓåÆ Governed Outcome / Vault. Implemented REF.mp4-inspired particle kinetics (orthogonal conduits, laser comets, spark emitters, radial arrival shockwaves, and quiet completion dimming), dynamic spatial contextual cards, and codified Rule 6 (Semantic Motion) in DESIGN.md. Zero backend, database, auth, or API changes.
 
 ### What changed
 
@@ -763,7 +763,7 @@ repository state it describes.
 - **Uploaded/Design1/src/components/FlowDesktop.tsx**:
   - Wired canvas directly to live `deriveGraph(osState)` to consume reactive work, decisions, and agents.
   - Added dynamic node cards reflecting state changes (`active`, `blocked`, `complete`, `waiting`, `idle`) with perimeter glows and stage indicators.
-  - Added floating spatial contextual cards adjacent to active nodes (e.g., `Sophia: Delegating research ➜ Dr. Thorne`, `Dr. Thorne: <Active Work>`, `Verification: Checking gross margin invariant ≥ 80%`, `Waiting: Founder decision required`).
+  - Added floating spatial contextual cards adjacent to active nodes (e.g., `Sophia: Delegating research Γ₧£ Dr. Thorne`, `Dr. Thorne: <Active Work>`, `Verification: Checking gross margin invariant ΓëÑ 80%`, `Waiting: Founder decision required`).
   - Updated Minimap and Inspector to dynamically represent active workstreams with direct stage advancement and decision ratification actions.
 
 ### Verification actually run
@@ -814,7 +814,7 @@ machine-specific path.
 
 ---
 
-## Phase 2 — V2 Content Integration (UI/UX only, 2026-09-11)
+## Phase 2 ΓÇö V2 Content Integration (UI/UX only, 2026-09-11)
 
 **Status:** COMPLETE. The production Next.js root route now renders only the
 V2 Design1 shell. No backend, API, database, auth, security, layout, visual
@@ -832,20 +832,20 @@ design, animation, navigation, or UX-pattern changes were made.
   simulated messages, empty UI-session work/decision/attention state, and
   explicit unconfigured labels for non-server-backed session values.
 - The V2 operating graph retains its existing canvas and interaction model but
-  now renders only the Sophia → Thorne implemented worker path; prototype
+  now renders only the Sophia ΓåÆ Thorne implemented worker path; prototype
   Research and Finance nodes are removed from the active graph. Its static
   integration inputs are now explicitly marked TARGET-STATE or NOT CONNECTED.
 - V2 milestones preserve target-state content only with an explicit
-  `TARGET-STATE — not implemented` label (Company Brain/Role Brains and market
+  `TARGET-STATE ΓÇö not implemented` label (Company Brain/Role Brains and market
   intelligence). No target-state feature is represented as live.
 
 ### Verification actually run
 
-- `npx tsc --noEmit` — passed with 0 errors.
-- `npm run build` — compiled successfully, completed type validation, generated
+- `npx tsc --noEmit` ΓÇö passed with 0 errors.
+- `npm run build` ΓÇö compiled successfully, completed type validation, generated
   all 25 static pages, finalized page optimization, and collected build traces.
-- `npm run dev` — started successfully at `http://localhost:3000/`.
-- Manual browser verification at `http://localhost:3000/` — V2 Sophia and V2
+- `npm run dev` ΓÇö started successfully at `http://localhost:3000/`.
+- Manual browser verification at `http://localhost:3000/` ΓÇö V2 Sophia and V2
   operating-graph surfaces rendered; no cockpit/classic selector or route was
   present. The graph showed only Sophia and Thorne, empty work state, explicitly
   unconfigured UI-session values, and visibly labeled target-state milestones.
@@ -855,7 +855,7 @@ design, animation, navigation, or UX-pattern changes were made.
 `DESIGN.md` had already declared V2 Design1 the exclusive root interface, but
 the actual `app/page.tsx` still rendered the cockpit/classic switcher. This
 slice makes the implementation match that design contract. `PRODUCT.md` was
-used as the content authority for the implemented Sophia–Thorne v1 primitive.
+used as the content authority for the implemented SophiaΓÇôThorne v1 primitive.
 
 ### Remaining risk
 
@@ -867,7 +867,7 @@ of implying dispatch or live telemetry; wiring is outside this UI-only phase.
 
 ## Current Phase
 
-**Phase 3 — Command Center** (began at `478b3e7`).
+**Phase 3 ΓÇö Command Center** (began at `478b3e7`).
 Phase 2 foundation/durability work is certified complete through Phase 2.6.1
 (`305add8`): all Phase 2 regression suites green, real-PostgreSQL concurrency
 certified, tsc clean, CI created. Do NOT redo Phase 2 unless repository
@@ -875,7 +875,7 @@ evidence shows a regression.
 
 ---
 
-## V2.1 Scalable UX — Standardized Surfaces, Decoupled Content Schemas & Progressive Disclosure
+## V2.1 Scalable UX ΓÇö Standardized Surfaces, Decoupled Content Schemas & Progressive Disclosure
 
 **Status:** COMPLETE (Standardized 10 reusable UI surfaces across Entity, Attention, Work, Decision, Activity, Metric, Timeline, Relationship, List, and Inspector; decoupled domain content schemas via pure adapters in `src/lib/surfaceSchema.ts`; integrated surfaces into TodoDrawer, SophiaPanel, PersonaModal, and FlowDesktop; implemented loading, empty, and error states; documented scalable content-to-surface rules in `DESIGN.md`; zero backend or API changes; TypeScript type checks passing cleanly; production singlefile bundle verified).
 **Scope:** `Uploaded/Design1/` (`src/lib/surfaceSchema.ts`, `src/components/surfaces/StandardSurfaces.tsx`, `src/components/SophiaPanel.tsx`, `src/components/os/TodoDrawer.tsx`, `src/components/os/PersonaModal.tsx`, `src/components/FlowDesktop.tsx`), `DESIGN.md`.
@@ -891,7 +891,7 @@ evidence shows a regression.
 2. **The 10 Standardized Reusable Surfaces (`src/components/surfaces/StandardSurfaces.tsx`)**:
    - `EntitySurface`: Agent/person identity card with avatar glow, status pill, role tags, and collapsible remit & scope disclosure.
    - `AttentionSurface`: Notice/alert/review triage card with tone borders (rose/amber/cyan), timestamp, and mark-handled affordance.
-   - `WorkSurface`: Workstream task card with owner badge, 5-stage progression track (`discovery`→`build`→`review`→`ship`→`done`), pause/resume toggle, and advance stage trigger.
+   - `WorkSurface`: Workstream task card with owner badge, 5-stage progression track (`discovery`ΓåÆ`build`ΓåÆ`review`ΓåÆ`ship`ΓåÆ`done`), pause/resume toggle, and advance stage trigger.
    - `DecisionSurface`: Governance decision card with context, choice buttons, and resolved state indicator.
    - `ActivitySurface`: Audit trail row with tabular timestamp, actor tag, and event description.
    - `MetricSurface`: Operational KPI card with tabular numbers (`.tnum`), status pill, epistemic confidence badge (`verified`/`inferred`), and source footnote.
@@ -909,7 +909,7 @@ evidence shows a regression.
    - **`TodoDrawer.tsx`**: Replaced manual filtering and card markup with `ListSurface` and `WorkSurface`; added live search filter, filter pill counts (`open`, `blocked`, `done`), stage track, and honest empty states.
    - **`SophiaPanel.tsx`**: Integrated `DecisionSurface` for executive founder decisions, `AttentionSurface` for triage notices, and `EmptyState` when all governance checks are clear.
    - **`PersonaModal.tsx`**: Added `RelationshipSurface` displaying operational dependencies, delegations, and escalations.
-   - **`FlowDesktop.tsx`**: Integrated `MetricSurface` in an "Invariants" side card (Gross Margin Floor ≥ 80%, Open Decisions, Active Workstreams, Workforce Coverage) and `TimelineSurface` in a "Milestones" side card, both defaulting to collapsed for calm focus.
+   - **`FlowDesktop.tsx`**: Integrated `MetricSurface` in an "Invariants" side card (Gross Margin Floor ΓëÑ 80%, Open Decisions, Active Workstreams, Workforce Coverage) and `TimelineSurface` in a "Milestones" side card, both defaulting to collapsed for calm focus.
 
 5. **Documentation & Verification**:
    - Added Section 12 to `DESIGN.md` detailing the 10 surfaces, state standards, container mappings, and scalable content-to-surface rules.
@@ -920,7 +920,7 @@ evidence shows a regression.
 
 ---
 
-## V2.1 UX Refinement — Calm Operating Center & Progressive Disclosure
+## V2.1 UX Refinement ΓÇö Calm Operating Center & Progressive Disclosure
 
 **Status:** COMPLETE (Progressive disclosure doctrine implemented across Neural and Desktop modes; Sophia/Core made the serene dominant center; permanent secondary telemetry, session clocks, keyboard legends, and tag clutter removed from Neural mode; briefing panel converted to contextual floating trigger pill with attention alerts; redundant System telemetry card and percentage bars eliminated; FlowDesktop bottom dock and side rails default to collapsed; full TypeScript and Vite singlefile production builds passing cleanly).
 **Scope:** `Uploaded/Design1/` (`src/App.tsx`, `src/components/SophiaPanel.tsx`, `src/components/FlowDesktop.tsx`, `src/components/os/TodoDrawer.tsx`), `DESIGN.md`.
@@ -930,7 +930,7 @@ evidence shows a regression.
 
 1. **Neural Mode (Sophia / Core Dominance)**:
    - **Calm by Default**: Removed the permanent bottom state telemetry strip (`STATE`, `NEEDS YOU`, `VOICE`, `SESSION`), the bottom-left keyboard hint block, and the repetitive quick-action tag pills under the ask bar.
-   - **Contextual Briefing Trigger**: Replaced the permanent open 292px right panel with an unobtrusive floating trigger chip. When quiet, it displays `[ ✦ Briefing ]`; when decisions or attention items exist, it signals notice with an alert tone and count (`[ ⚖️ 2 Decisions waiting ]`).
+   - **Contextual Briefing Trigger**: Replaced the permanent open 292px right panel with an unobtrusive floating trigger chip. When quiet, it displays `[ Γ£ª Briefing ]`; when decisions or attention items exist, it signals notice with an alert tone and count (`[ ΓÜû∩╕Å 2 Decisions waiting ]`).
    - **Focused Actionable Briefing**: Clicking the trigger reveals immediate decision action cards (Approve / Defer / Decline) and triage items without distracting physics tuning sliders or redundant percentage bars.
    - **Conversational Input**: Ask bar centered at bottom with voice toggle, keyboard focus (`/`), and clean executive styling.
 
@@ -941,7 +941,7 @@ evidence shows a regression.
 
 3. **Zero-Collision Spatial Architecture & Layout Audit**:
    - **`TodoDrawer` Handle Repositioning & Dynamic Translation**: Offset drawer toggle from `top-1/2` to `top: 36%` (transform `-50%`) with dynamic right anchoring (`right: open ? min(290px, 85vw) : 0px`). The handle moves synchronously with drawer expansion/collapse, never covers inner drawer tasks or close buttons, and leaves `top: 50%` completely free for `FlowDesktop`'s canvas right rail chevron.
-   - **Canvas / Dock Deconfliction**: Eliminated the redundant bottom canvas button (`Work · {work.length}`) and inline dock from `FlowDesktop` that previously collided directly with `AgentQuickDock` (`bottom: 10px`). Connected `FlowDesktop`'s header Work button directly to `TodoDrawer` via `onToggleWork`.
+   - **Canvas / Dock Deconfliction**: Eliminated the redundant bottom canvas button (`Work ┬╖ {work.length}`) and inline dock from `FlowDesktop` that previously collided directly with `AgentQuickDock` (`bottom: 10px`). Connected `FlowDesktop`'s header Work button directly to `TodoDrawer` via `onToggleWork`.
    - **Vertical Viewport Safeguards**: Capped `SophiaPanel` to `max-h-[calc(100vh-13.5rem)]` with responsive margin (`right-3 top-16 sm:right-6 sm:top-20`), ensuring full clearance above the bottom ask bar on both mobile and desktop screens.
    - **Responsive Backdrop Dimmer**: Added a one-touch backdrop dismissal for mobile drawers.
 
@@ -953,7 +953,7 @@ evidence shows a regression.
 5. **Floating Agent Chat Launcher & Small Handy Chat Panel (`ChatPanel.tsx`)**:
    - **Floating Chat Trigger Icon**: Positioned at `fixed bottom-5 right-5 z-40` with live pulsing unread badge counter.
    - **Handy Chat Box**: Anchored at `bottom-20 right-5 z-50` (`w-[360px] h-[510px]`) featuring:
-     - **Contacts/Senders Bar**: Easy switching between Sophia (✦ Orchestrator), Operations (⚙️ Ops), Research (🔍 Research), Finance (💳 Finance), and Comms (💬 Comms).
+     - **Contacts/Senders Bar**: Easy switching between Sophia (Γ£ª Orchestrator), Operations (ΓÜÖ∩╕Å Ops), Research (≡ƒöì Research), Finance (≡ƒÆ│ Finance), and Comms (≡ƒÆ¼ Comms).
      - **Live & Preloaded Message History**: Realistic initial messages from agents with timestamps, agent avatars, and user reply styling.
      - **Interactive Messaging**: User can type directives or questions; agents respond in role with realistic epistemic grounding and typing indicator.
      - **Quick Prompts**: Contextual prompt suggestion chips for rapid founder inquiries.
@@ -961,7 +961,7 @@ evidence shows a regression.
    - **Canvas Minimap Alignment**: Adjusted `Minimap` in `FlowDesktop` to `bottom-3 right-20` to prevent any overlap with the chat launcher.
 
 6. **Design System Synchronized (`DESIGN.md`)**:
-   - Documented the V2.1 progressive disclosure doctrine: **calm → notice → understand → act → inspect**.
+   - Documented the V2.1 progressive disclosure doctrine: **calm ΓåÆ notice ΓåÆ understand ΓåÆ act ΓåÆ inspect**.
    - Documented Spatial Hierarchy & Zero-Collision Layout Invariants.
    - Documented Unified Mode Switcher and Agent Messages & Handy Chat Panel.
 
@@ -1023,7 +1023,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.14 & 3.14.1 — Production Core Shell Migration & Browser Certification
+## Phase 3.14 & 3.14.1 ΓÇö Production Core Shell Migration & Browser Certification
 
 **Status:** COMPLETE (Calm Core shell, 3D particle canvas, Sophia conversational bar, Work Queue 9-step DAG drawer, contextual surfaces, Dark Solar / Dark Luna themes, and Classic Desktop switch migrated into production Next.js ExecutiveCockpit; certified in browser with zero hydration errors, clean typecheck, and successful production build).
 **Scope:** `components/cockpit/` (`ExecutiveCockpit.tsx`, `SamJuniorsCoreCanvas.tsx`, `SophiaConversationalBar.tsx`, `WorkQueueDrawer.tsx`), `app/globals.css`.
@@ -1038,10 +1038,10 @@ evidence shows a regression.
    - Canvas dynamically resizes with ResizeObserver, preserving camera aspect ratio and preventing distortion or clipping.
 
 2. **Sophia Conversational Bar (`components/cockpit/SophiaConversationalBar.tsx`)**:
-   - Anchored directly beneath the Core canvas with executive status line (`Sophia Vance · Chief Operating Officer · Operational Foundation V1`).
-   - Keyboard shortcut `/` to focus input prompt (`founder › ...`).
+   - Anchored directly beneath the Core canvas with executive status line (`Sophia Vance ┬╖ Chief Operating Officer ┬╖ Operational Foundation V1`).
+   - Keyboard shortcut `/` to focus input prompt (`founder ΓÇ║ ...`).
    - Strict operational honesty: dispatches show explicit notice toast (`UI Mode: Directive received in safe shell. Live /api/orchestrate wiring deferred to Phase 3.15 per integration contract`). Zero premature mutation calls.
-   - Quick contextual trigger chips: `[ 📋 Work Queue ]`, `[ ⚖️ Invariants ]`, `[ 📊 Telemetry ]`, and `[ 👥 Specialist Roster ]`.
+   - Quick contextual trigger chips: `[ ≡ƒôï Work Queue ]`, `[ ΓÜû∩╕Å Invariants ]`, `[ ≡ƒôè Telemetry ]`, and `[ ≡ƒæÑ Specialist Roster ]`.
 
 3. **Work Queue Drawer (`components/cockpit/WorkQueueDrawer.tsx`)**:
    - Slide-in side drawer from right (`transform: translateX(0)`) preserving Core in the background.
@@ -1088,7 +1088,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.12 (Extension) — OS Work Queue Side Drawer & Dark Luna (Astra) Theme
+## Phase 3.12 (Extension) ΓÇö OS Work Queue Side Drawer & Dark Luna (Astra) Theme
 
 **Status:** COMPLETE (OS Work Queue side drawer implemented, DAG sequence categories built, specialist/decision-gate routing linked, Dark Luna Astra theme implemented with 3D canvas color reactivity, built, typechecked, and browser-verified).
 **Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
@@ -1099,8 +1099,8 @@ evidence shows a regression.
    - Designed a non-intrusive, calm side drawer that slides into view from the right (`transform: translateX(0)`) without permanently occupying the workspace or turning into a generic productivity to-do list (Linear/Trello/Jira).
    - Core remains visible and active in the background; closing the drawer immediately returns to the calm Core default.
    - Drawer toggle triggers:
-     - New dock icon button `[ 📋 Work Queue (Q) ]`
-     - Quick action chip in Sophia Conversational Bar: `[ 📋 Work Queue (4) ]`
+     - New dock icon button `[ ≡ƒôï Work Queue (Q) ]`
+     - Quick action chip in Sophia Conversational Bar: `[ ≡ƒôï Work Queue (4) ]`
      - Command center launcher navigation: `OS Work Queue & Tasks`
      - Console command: `queue`, `todo`, `tasks`
      - Global keyboard shortcut: `Q` / `q`
@@ -1115,7 +1115,7 @@ evidence shows a regression.
      - Step flow indicators (`NOW`, `NEXT`, `THEN`, `WAITING`, `DONE`).
      - Expandable details on task card click (`expandedTaskId`).
      - Specialist owner pill click routes directly to specialist detail modal (`openAgent(task.ownerCode)`).
-     - Prominent operational honesty banner: `CALM OPERATIONAL QUEUE — Structured agent execution pipeline in safe sandbox. Real execution is founder-gated.`
+     - Prominent operational honesty banner: `CALM OPERATIONAL QUEUE ΓÇö Structured agent execution pipeline in safe sandbox. Real execution is founder-gated.`
 
 2. **Second Theme: Dark Luna (Astra Cyan & Deep Space)**:
    - Studied color scheme and visual details from the attached `Uploaded/astra.html` reference (`--cyan: #7cd6ff`, `--teal: #5fe8c8`, `--bg: #04070d`).
@@ -1149,7 +1149,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.12 — Progressive Disclosure / Calm Core
+## Phase 3.12 ΓÇö Progressive Disclosure / Calm Core
 
 **Status:** COMPLETE (calm default state implemented, progressive disclosure surfaces verified, honest metrics enforced, built, typechecked, and browser-verified).
 **Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
@@ -1159,24 +1159,24 @@ evidence shows a regression.
 1. **Natural Calm Default (Ambient Core Dominance)**:
    - Eliminated dashboard density by making the calm ambient state the natural default rather than an optional toggle mode.
    - The central SamJuniors Core 3D particle knot and orbital specialists dominate the screen with expansive canvas breathing room.
-   - Anchored the **Sophia Conversational Bar** directly beneath the Core visualization with founder prompt input (`founder › ...`, keyboard shortcut `/`), executive status subline, and quick contextual triggers.
-   - Collapsed peripheral panels into discrete edge affordances (`ACTIVE PROTOCOL · STEP 4` on the left, `SYSTEM & INVARIANTS` on the right).
-   - Collapsed the bottom 6-card specialist roster into a single-line summary strip (`AI WORKFORCE 06 · 2 ACTIVE (V1) · 4 GOVERNED STANDBY · Show Specialist Roster ▾`).
+   - Anchored the **Sophia Conversational Bar** directly beneath the Core visualization with founder prompt input (`founder ΓÇ║ ...`, keyboard shortcut `/`), executive status subline, and quick contextual triggers.
+   - Collapsed peripheral panels into discrete edge affordances (`ACTIVE PROTOCOL ┬╖ STEP 4` on the left, `SYSTEM & INVARIANTS` on the right).
+   - Collapsed the bottom 6-card specialist roster into a single-line summary strip (`AI WORKFORCE 06 ┬╖ 2 ACTIVE (V1) ┬╖ 4 GOVERNED STANDBY ┬╖ Show Specialist Roster Γû╛`).
 
 2. **Contextual Progressive Disclosure**:
    - Implemented state-driven contextual surfaces (`activeContext: 'idle' | 'work' | 'approval' | 'audit' | 'telemetry'`).
    - **Founder Decision Gate**: Surfaced when consequential external or resource-allocating actions await founder ratification. Presents clear evidence, constitutional margin invariant check, and explicit choices: `[Ratify & Sign Artifact]` or `[Reject (Fail-Closed)]`.
    - **Active Directive Orchestration**: Surfaced when directives are dispatched. Shows Sophia coordinating, 9-Step DAG protocol progress (Step 4: Plan), and recent audit log.
-   - **Deterministic Invariant Audit**: Surfaced during diagnostic verification. Verifies gross margin floor (≥ 80.0%), safe mock sandbox isolation, and single-use signature binding.
-   - Every contextual surface provides a prominent `[Return to Calm (Esc) ×]` button, and pressing `Escape` immediately returns the workspace to the calm default Core state.
+   - **Deterministic Invariant Audit**: Surfaced during diagnostic verification. Verifies gross margin floor (ΓëÑ 80.0%), safe mock sandbox isolation, and single-use signature binding.
+   - Every contextual surface provides a prominent `[Return to Calm (Esc) ├ù]` button, and pressing `Escape` immediately returns the workspace to the calm default Core state.
 
 3. **Strict Operational Honesty**:
    - Eliminated synthetic numbers (`1,248 signals`, `25 deliverables`).
-   - Epistemic signals now explicitly shows `—` (`Not connected · Authoritative claims require Phase 3.3 Company Brain integration`).
-   - Governed deliverables now explicitly shows `—` (`Safe Mock · Prototype artifacts only · 0 authoritative store records`).
-   - Workforce roster marked truthfully as `2 / 2` (`2 V1 ACTIVE · 4 STANDBY`).
+   - Epistemic signals now explicitly shows `ΓÇö` (`Not connected ┬╖ Authoritative claims require Phase 3.3 Company Brain integration`).
+   - Governed deliverables now explicitly shows `ΓÇö` (`Safe Mock ┬╖ Prototype artifacts only ┬╖ 0 authoritative store records`).
+   - Workforce roster marked truthfully as `2 / 2` (`2 V1 ACTIVE ┬╖ 4 STANDBY`).
    - Invariant compliance marked as `Enforced` (`Deterministic safety floor active`).
-   - Specialist detail modals and roster cards show `— (Prototype Mock Sandbox)` rather than fabricated historical output counts.
+   - Specialist detail modals and roster cards show `ΓÇö (Prototype Mock Sandbox)` rather than fabricated historical output counts.
 
 4. **Preserved Architecture & Distinction**:
    - Preserved SamJuniors Core as the OS control, intelligence, and governance substrate.
@@ -1203,7 +1203,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.11 — SamJuniorsOS Core UX / Visual Review & Targeted Refinements
+## Phase 3.11 ΓÇö SamJuniorsOS Core UX / Visual Review & Targeted Refinements
 
 **Status:** COMPLETE (reviewed, targeted refinements implemented, built, typechecked, and browser-verified).
 **Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
@@ -1211,13 +1211,13 @@ evidence shows a regression.
 ### What was evaluated & refined
 
 1. **Operational Honesty & Deceptive Trope Removal**:
-   - Eliminated the inherited generic Knot Core artifact "42 relays" / "42 governed relays". Replaced with authentic OS terminology: `6 Specialists · Governed Protocol Mesh`.
+   - Eliminated the inherited generic Knot Core artifact "42 relays" / "42 governed relays". Replaced with authentic OS terminology: `6 Specialists ┬╖ Governed Protocol Mesh`.
    - Eliminated perpetual ticking random numbers (`Math.random() > 0.5 ? 2 : 1`) and rapid cyclic progress loops. Metrics and event streams are calm and stable, updating only upon explicit founder directives or invariant audit events.
-   - Replaced generic synthetic CPU load bars with authentic governance parameters: `Safe Mock Sandbox`, `Founder Gated (Fail-Closed)`, `Gross margin floor ≥ 80.0% Enforced`, and `Cryptographic SHA-256 binding`.
+   - Replaced generic synthetic CPU load bars with authentic governance parameters: `Safe Mock Sandbox`, `Founder Gated (Fail-Closed)`, `Gross margin floor ΓëÑ 80.0% Enforced`, and `Cryptographic SHA-256 binding`.
 2. **Workforce Semantics (Strict 3-Tier Separation)**:
-   - **Active (v1)**: Sophia Vance (COO) & Dr. Aris Thorne (Research) — the only operational specialists in the v1 foundation loop.
-   - **Deferred (v1)**: Maya Lin (Product) & Julian Cruz (Finance) — implemented in code, but deferred outside the v1 critical path per PRODUCT.md §5.
-   - **Planned (Target-State / v2+)**: Elena Rostova (Governance) & Marcus Vance (Systems) — documented target architecture per PRODUCT.md §6.
+   - **Active (v1)**: Sophia Vance (COO) & Dr. Aris Thorne (Research) ΓÇö the only operational specialists in the v1 foundation loop.
+   - **Deferred (v1)**: Maya Lin (Product) & Julian Cruz (Finance) ΓÇö implemented in code, but deferred outside the v1 critical path per PRODUCT.md ┬º5.
+   - **Planned (Target-State / v2+)**: Elena Rostova (Governance) & Marcus Vance (Systems) ΓÇö documented target architecture per PRODUCT.md ┬º6.
    - Replaced misleading "Wake all" behavior: now `Verify v1 workforce` activates only v1 operational foundation specialists, holding deferred/planned roles strictly in governed standby.
    - Disabled "Run task" on deferred/planned specialist modals; replaced with explicit architectural status badges (`Architecture Deferred (v1)` / `Planned Target-State (v2+)`) to prevent implying false operational capability.
 3. **Sophia Founder Interface & Conversational Readiness**:
@@ -1230,7 +1230,7 @@ evidence shows a regression.
 - `bun run build` in `Uploaded/samjuniors-os-web-interface` -> built single-file bundle (`dist/index.html`, 275.64 kB) in 822ms with 0 errors.
 - `bun x tsc --noEmit` -> 0 errors.
 - Browser subagent verified live on `http://127.0.0.1:5173/`:
-  - Verified calm state: no rapidly incrementing tickers, steady 1,248 epistemic signals, honest `2 / 2 Active (v1) · 4 Standby`.
+  - Verified calm state: no rapidly incrementing tickers, steady 1,248 epistemic signals, honest `2 / 2 Active (v1) ┬╖ 4 Standby`.
   - Verified `Direct Sophia` console integration and conversational replies.
   - Verified disabled task triggers for Maya Lin (Deferred v1) and Elena Rostova (Planned Target-State).
   - Verified `Verify invariants` and `Issue directive` execution.
@@ -1239,7 +1239,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.10 — Knot Core UI Prototype Content Transplant (SamJuniors Core & Sophia Operational Mesh)
+## Phase 3.10 ΓÇö Knot Core UI Prototype Content Transplant (SamJuniors Core & Sophia Operational Mesh)
 
 **Status:** COMPLETE (transplanted, front-perspective adjusted, built with Vite/Bun, typechecked with tsc, and browser-verified).
 **Scope:** `Uploaded/samjuniors-os-web-interface/` (prototype only; zero production backend/persistence mutations).
@@ -1262,7 +1262,7 @@ evidence shows a regression.
    - Interactive Console (`/` shortcut) connected to Sophia and SamJuniors Core.
    - "Verify invariants" action triggering real-time constitutional compliance audit.
    - "Issue directive" action initiating simulated 9-Step Agent Work Protocol.
-   - Explicit disclaimers throughout (`PROTOTYPE SIMULATION · SAFE MOCK SANDBOX · ZERO LIVE PERSISTENCE CONNECTED`), preserving `AGENTS.md` and repository truthfulness rules.
+   - Explicit disclaimers throughout (`PROTOTYPE SIMULATION ┬╖ SAFE MOCK SANDBOX ┬╖ ZERO LIVE PERSISTENCE CONNECTED`), preserving `AGENTS.md` and repository truthfulness rules.
 
 ### What was verified
 
@@ -1281,7 +1281,7 @@ evidence shows a regression.
 
 ---
 
-## Phase 3.9 — Core V5 Prototype (Conversational Operating Center — Dark Room + Single Light)
+## Phase 3.9 ΓÇö Core V5 Prototype (Conversational Operating Center ΓÇö Dark Room + Single Light)
 
 **Status:** COMPLETE (Core V5 prototype created in `public/prototype/v5/`, verified, screenshots captured in artifact directory).
 **Base HEAD:** `9cd8773`
@@ -1300,16 +1300,16 @@ A complete paradigm shift away from dashboard and card-based interfaces into an 
 3. **Progressive Disclosure (Event Expansion Surface)**:
    - The screen remains uncluttered; no cards or dashboards are visible by default.
    - The interface expands naturally only around specific operational events:
-     - **Active Work**: Compact step ribbon (*Context* → *Sources* → *Synthesis* → *Proposal*), real-time status line, and steering controls (`[Steer]`, `[Pause]`, `[Halt]`).
+     - **Active Work**: Compact step ribbon (*Context* ΓåÆ *Sources* ΓåÆ *Synthesis* ΓåÆ *Proposal*), real-time status line, and steering controls (`[Steer]`, `[Pause]`, `[Halt]`).
      - **Authority Boundary (Founder Decision)**: Warm amber spotlight where Core presents its recommendation, brand/security impact, and 4 clean choices: `[Authorize Directive]`, `[Steer & Re-evaluate]`, `[Decline]`, `[Inspect Evidence]`.
      - **Outcome**: Concrete result summary with links to inspect evidence, view the 5-stage epistemic provenance chain, or continue dialogue.
      - **Blocked State**: Epistemic invariant halt diagnostic with founder acknowledgment.
 4. **Edge Navigation & OS Slide-Over Drawer**:
    - Tiny edge triggers in header and footer keep peripheral information quiet.
-   - Switching to Manual Mode or pressing `⌘ OS` smoothly slides out the obsidian OS drawer from the right, exposing all 7 governed modules (`Company State`, `Workforce`, `Decisions`, `Research`, `Activity`, `Audit`, `Messenger`) while keeping Core alive in the background.
+   - Switching to Manual Mode or pressing `Γîÿ OS` smoothly slides out the obsidian OS drawer from the right, exposing all 7 governed modules (`Company State`, `Workforce`, `Decisions`, `Research`, `Activity`, `Audit`, `Messenger`) while keeping Core alive in the background.
    - Honest credit semantics: credit depletion halts natural language Jarvis synthesis while all 7 OS modules remain fully functional in Manual mode.
 5. **Demo Safety**:
-   - Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark.
+   - Persistent `DEMO STATE ┬╖ NO LIVE COMPANY DATA CONNECTED` watermark.
    - Zero fabricated metrics, fake revenue, or fictitious employees. Roster strictly reflects v1 reality (Sophia & Thorne).
 
 ### Files Created (isolated strictly in `public/prototype/v5/` and verification scripts)
@@ -1323,12 +1323,12 @@ A complete paradigm shift away from dashboard and card-based interfaces into an 
 
 ### What was verified
 
-- `node scripts/verify-prototype-v5.js` → **ALL CHECKS PASSED** (72 required DOM IDs, 7 internal Core states, all 7 governed OS modules in drawer, 4 decision actions, zero backend network calls, zero fabricated metrics).
-- `node --check public/prototype/v5/prototype.js` → 0 syntax errors.
-- `node scripts/verify-prototype-v4.js` → **All 17 checks PASSED** (zero regressions to prior prototype).
+- `node scripts/verify-prototype-v5.js` ΓåÆ **ALL CHECKS PASSED** (72 required DOM IDs, 7 internal Core states, all 7 governed OS modules in drawer, 4 decision actions, zero backend network calls, zero fabricated metrics).
+- `node --check public/prototype/v5/prototype.js` ΓåÆ 0 syntax errors.
+- `node scripts/verify-prototype-v4.js` ΓåÆ **All 17 checks PASSED** (zero regressions to prior prototype).
 - Regression test suites:
-  - `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASSED**.
-  - `tests/governance_security_foundation.test.ts` → **41/41 PASSED**.
+  - `tests/phase3_4_legacy_read_routes.test.ts` ΓåÆ **21/21 PASSED**.
+  - `tests/governance_security_foundation.test.ts` ΓåÆ **41/41 PASSED**.
 - 7 high-resolution screenshots rendered via Chrome CDP and inspected:
   - `v5_state_a_ready.png` (Dark Room / Single Light / Ready)
   - `v5_state_b_active_work.png` (Active Directive / Step Progression Ribbon)
@@ -1336,18 +1336,18 @@ A complete paradigm shift away from dashboard and card-based interfaces into an 
   - `v5_state_d_outcome.png` (Emerald Bloom / Outcome Recorded)
   - `v5_state_e_os_drawer.png` (OS Slide-Over Drawer / Manual Mode)
   - `v5_state_f_provenance.png` (Epistemic Provenance Chain Modal)
-  - `v5_state_g_mobile.png` (Mobile Layout 390×844)
+  - `v5_state_g_mobile.png` (Mobile Layout 390├ù844)
 
 ---
 
-## Phase 3.8 — Core V4.1 Visual Hierarchy Refinement (Calm Operating Center)
+## Phase 3.8 ΓÇö Core V4.1 Visual Hierarchy Refinement (Calm Operating Center)
 
 **Status:** COMPLETE (Core V4.1 prototype refined, verified, screenshots captured in artifact directory, ready for founder review).
 **Base HEAD:** `9cd8773`
 
 ### What was implemented
 
-A PROTOTYPE/UI-DESIGN refinement only — zero modifications to production backend, APIs, database/Prisma schemas, authentication, authorization, workflow runtime, deployment, or production Command Center code.
+A PROTOTYPE/UI-DESIGN refinement only ΓÇö zero modifications to production backend, APIs, database/Prisma schemas, authentication, authorization, workflow runtime, deployment, or production Command Center code.
 
 Core V4.1 refines the V4 prototype into a calm, focused operating center rather than a sci-fi HUD dashboard, executing the required visual hierarchy:
 1. **CORE** (Dominant living operating presence)
@@ -1359,7 +1359,7 @@ Core V4.1 refines the V4 prototype into a calm, focused operating center rather 
 Key visual and interaction hierarchy refinements:
 - **Idle / READY State Flow**:
   - Eliminated expanded work surface when idle.
-  - Reordered the visual flow: `BRAND` (`SamJuniors OS`) → `CORE` (calm breathing orb) → `Ready for your intent.` → `[ What do you need? ]` → `WHAT MATTERS NOW: CLEAR · Nothing currently requires your attention.`
+  - Reordered the visual flow: `BRAND` (`SamJuniors OS`) ΓåÆ `CORE` (calm breathing orb) ΓåÆ `Ready for your intent.` ΓåÆ `[ What do you need? ]` ΓåÆ `WHAT MATTERS NOW: CLEAR ┬╖ Nothing currently requires your attention.`
   - Generous spatial breathing room, feeling deliberate and calm rather than empty.
 - **WHAT MATTERS NOW**:
   - Re-anchored directly beneath command input as the primary status indicator.
@@ -1368,7 +1368,7 @@ Key visual and interaction hierarchy refinements:
 - **Compact Persistent Active Work Surface**:
   - Eliminated the large, overwhelming default milestone list from the central surface.
   - Replaced with a compact, focused work card:
-    - Clear title (`POSITIONING REVIEW`) + live metadata (`Researching · 4 sources evaluated · 0 pending`).
+    - Clear title (`POSITIONING REVIEW`) + live metadata (`Researching ┬╖ 4 sources evaluated ┬╖ 0 pending`).
     - Immediate steering action group (`[Pause / Continue]`, `[Steer]`, `[Stop]`).
     - Focused two-line status: `Current: Evaluating available evidence` and `Next: Prepare recommendation`.
     - Progressive disclosure via `<details class="work-details-disclosure">` titled `Detailed Milestones & Rationale` containing the checklist and why-line, accessible on-demand without visual clutter.
@@ -1382,7 +1382,7 @@ Key visual and interaction hierarchy refinements:
   - Kept existing deep functionality (Company State, Workforce Presence, Decisions Approval Boundary, Activity Stream, Audit Log, Research Context, Messenger Drawer, Provenance Inspector) without permanent onscreen clutter.
   - Surfaces open contextually as drawers, sheets, modals, or expandable panels.
 - **Strict Demo Safety Maintained**:
-  - Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark preserved.
+  - Persistent `DEMO STATE ┬╖ NO LIVE COMPANY DATA CONNECTED` watermark preserved.
   - No fake metrics, fictional employees, or fabricated company facts introduced.
 
 ### Files Changed (isolated to prototype)
@@ -1393,11 +1393,11 @@ Key visual and interaction hierarchy refinements:
 
 ### What was verified
 
-- `node scripts/verify-prototype-v4.js` → **All 17 structural/safety checks PASSED** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, zero fake data patterns, zero network calls).
-- `node --check public/prototype/v4/prototype.js` → 0 syntax errors.
+- `node scripts/verify-prototype-v4.js` ΓåÆ **All 17 structural/safety checks PASSED** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, zero fake data patterns, zero network calls).
+- `node --check public/prototype/v4/prototype.js` ΓåÆ 0 syntax errors.
 - Unit regression suites:
-  - `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASSED**
-  - `tests/governance_security_foundation.test.ts` → **41/41 PASSED**
+  - `tests/phase3_4_legacy_read_routes.test.ts` ΓåÆ **21/21 PASSED**
+  - `tests/governance_security_foundation.test.ts` ΓåÆ **41/41 PASSED**
 - 13 high-resolution rendered browser screenshots captured via Chrome CDP into artifact directory:
   - `v4_1_state_a_ready.png` (READY / IDLE)
   - `v4_1_state_b_understanding.png` (UNDERSTANDING)
@@ -1416,27 +1416,27 @@ Key visual and interaction hierarchy refinements:
 
 ---
 
-## Phase 3.7 — Core V4 Prototype (Founder Operating Experience)
+## Phase 3.7 ΓÇö Core V4 Prototype (Founder Operating Experience)
 
 **Status:** COMPLETE (Core V4 prototype implemented, browser-verified, isolated in `public/prototype/v4/`).
 **Base HEAD:** `9cd8773`
 
 ### What was implemented
 
-A PROTOTYPE/UI-DESIGN iteration only — zero production/backend/API/database/auth/workflow/deployment changes. Core V4 evolves the V3 visual language (cinematic obsidian, central glowing Core, canvas starfield/earth/particles/wave carried forward) from a "state-machine demo" into a founder operating experience organized around five visible layers:
+A PROTOTYPE/UI-DESIGN iteration only ΓÇö zero production/backend/API/database/auth/workflow/deployment changes. Core V4 evolves the V3 visual language (cinematic obsidian, central glowing Core, canvas starfield/earth/particles/wave carried forward) from a "state-machine demo" into a founder operating experience organized around five visible layers:
 
-1. **FOUNDER INTENT** — Core opens with "What do you need?"; command entry renders YOU ASKED / CORE UNDERSTANDS (interpreted intent + description) + context chips.
-2. **ACTIVE WORK** — persistent work identity: WHAT (title), WHY, CURRENT STEP, EVIDENCE counts, NEXT, and a milestone checklist with operational progress only (no chain-of-thought); Pause / Steer / Stop controls.
-3. **ATTENTION MODEL** — "WHAT MATTERS NOW" strip + contextual header (COMPANY · WORKING ON · ATTENTION · CLEAR): ATTENTION REQUIRED (n decisions) / WORK IN PROGRESS / WATCH (unresolved findings) / CLEAR, derived from the simulated state; "Show me what needs my attention." routes to the relevant surface.
-4. **AUTHORITY BOUNDARY** — FOUNDER DECISION REQUIRED pane (Core has prepared / Reason / Evidence / Core recommendation) with APPROVE / REDIRECT / REJECT / INSPECT; explicit authority note that Core can analyze, prepare and recommend but is not authorized to perform consequential actions; honest consequence semantics — non-consequential work (Company Review, Priorities) completes without a gate, REJECT records "no action was taken".
-5. **OUTCOME** — COMPLETED pane with outcome, evidence row and REVIEW RESULT / INSPECT EVIDENCE / VIEW PROVENANCE / CONTINUE WORK; provenance inspector scoped per thread (SOURCE → SIGNAL → CLAIM → FACT → DECISION → OUTCOME with honest statuses); learning explicitly NOT claimed as persisted.
+1. **FOUNDER INTENT** ΓÇö Core opens with "What do you need?"; command entry renders YOU ASKED / CORE UNDERSTANDS (interpreted intent + description) + context chips.
+2. **ACTIVE WORK** ΓÇö persistent work identity: WHAT (title), WHY, CURRENT STEP, EVIDENCE counts, NEXT, and a milestone checklist with operational progress only (no chain-of-thought); Pause / Steer / Stop controls.
+3. **ATTENTION MODEL** ΓÇö "WHAT MATTERS NOW" strip + contextual header (COMPANY ┬╖ WORKING ON ┬╖ ATTENTION ┬╖ CLEAR): ATTENTION REQUIRED (n decisions) / WORK IN PROGRESS / WATCH (unresolved findings) / CLEAR, derived from the simulated state; "Show me what needs my attention." routes to the relevant surface.
+4. **AUTHORITY BOUNDARY** ΓÇö FOUNDER DECISION REQUIRED pane (Core has prepared / Reason / Evidence / Core recommendation) with APPROVE / REDIRECT / REJECT / INSPECT; explicit authority note that Core can analyze, prepare and recommend but is not authorized to perform consequential actions; honest consequence semantics ΓÇö non-consequential work (Company Review, Priorities) completes without a gate, REJECT records "no action was taken".
+5. **OUTCOME** ΓÇö COMPLETED pane with outcome, evidence row and REVIEW RESULT / INSPECT EVIDENCE / VIEW PROVENANCE / CONTINUE WORK; provenance inspector scoped per thread (SOURCE ΓåÆ SIGNAL ΓåÆ CLAIM ΓåÆ FACT ΓåÆ DECISION ΓåÆ OUTCOME with honest statuses); learning explicitly NOT claimed as persisted.
 
 V4 interaction model additions:
 
 - **Persistent WORK IDENTITY**: work threads survive every Core state change; WORK THREADS dock (labeled SIMULATION) with Continue/Pause/Steer/Stop/Inspect; "Continue the positioning review." resumes matching threads; decisions persist in a Decisions sheet (approval boundary records) with full APPROVED/REJECTED/REDIRECTED history.
-- **Conversational steering**: free-text steering composer (with the four spec example chips) that visibly modifies work — WHY line updates, "Adjusting to founder steering" milestone, thread flagged steered, activity recorded; steering at the decision gate sends Core back to work and re-prepares the recommendation.
-- **Founder interruption**: a new command during active work renders WORK UPDATED (previous direction → new founder direction → Redirecting…), marks the old thread Redirected, and starts the new work; "Stop."-prefixed commands halt without creating work.
-- **Jarvis/Manual as one OS**: JARVIS is an AI interaction mode (not the OS); MANUAL exposes all 8 modules (Company, Work, Decisions, Research, Workforce, Activity, Audit, Messenger) fully without Jarvis; AI credits gate AI capability only — when depleted Jarvis honestly refuses while Manual remains usable.
+- **Conversational steering**: free-text steering composer (with the four spec example chips) that visibly modifies work ΓÇö WHY line updates, "Adjusting to founder steering" milestone, thread flagged steered, activity recorded; steering at the decision gate sends Core back to work and re-prepares the recommendation.
+- **Founder interruption**: a new command during active work renders WORK UPDATED (previous direction ΓåÆ new founder direction ΓåÆ RedirectingΓÇª), marks the old thread Redirected, and starts the new work; "Stop."-prefixed commands halt without creating work.
+- **Jarvis/Manual as one OS**: JARVIS is an AI interaction mode (not the OS); MANUAL exposes all 8 modules (Company, Work, Decisions, Research, Workforce, Activity, Audit, Messenger) fully without Jarvis; AI credits gate AI capability only ΓÇö when depleted Jarvis honestly refuses while Manual remains usable.
 - **Messenger** as a corner-launched contextual drawer (communication layer, explicitly simulated; Core/Sophia contextual messages on decision/completion).
 - **Company State sheet** answers the four founder questions (What is happening? What changed? What needs attention? What is being worked on?) from the simulated state, with DEMO STATE notices.
 - The 7 V3 states remain INTERNAL (they drive the Core orb's presence only); the founder-facing model is the operating loop above.
@@ -1444,40 +1444,40 @@ V4 interaction model additions:
 ### Files (all isolated from production code)
 
 - `public/prototype/v4/index.html` (new)
-- `public/prototype/v4/prototype.css` (new — extends the V3 design tokens)
-- `public/prototype/v4/prototype.js` (new — work engine, attention model, steering, interruption, provenance)
+- `public/prototype/v4/prototype.css` (new ΓÇö extends the V3 design tokens)
+- `public/prototype/v4/prototype.js` (new ΓÇö work engine, attention model, steering, interruption, provenance)
 - `public/prototype/v4/README.md` (new)
 - `scripts/verify-prototype-v4.js` (new)
 - V3 remains untouched at `public/prototype/` for comparison.
 
 ### What was verified (all actually run)
 
-- `node scripts/verify-prototype-v4.js` → **All 17 structural/safety checks PASS** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, demo-safety absence checks: no fabricated facts/model names/counts/claims, no fetch/XHR/WebSocket).
-- `node --check prototype.js` → 0 syntax errors.
-- Browser E2E via agent-browser against the live prototype (desktop 1600×1000 and mobile 420×900): all 15 required interactions verified — command → understanding; persistent thread appears; milestones progress with evidence ticking; steering (composer + example chips, visibly modifies work); interruption (WORK UPDATED + redirect); decision gate reached; APPROVE → executing → completed outcome; REJECT → honest no-action outcome; REDIRECT → steering at gate → re-prepared recommendation; outcome exposes evidence; provenance modal scoped to thread; return to work threads (focus + CONTINUE WORK + "Continue the positioning review."); messenger drawer with simulated exchange; Manual mode — all 8 modules functional without Jarvis; credits depletion honestly pauses Jarvis while Manual stays usable; attention surface updates across every state change (including the Company Review → WATCH flow). Zero browser console errors; responsive checks (context strip hidden on mobile, core scales to 270px, no overflow).
-- Visual verification of rendered screenshots (ready, decision-gate, outcome, provenance states) via vision model — layout coherent, high contrast, no glitches/overlaps, premium/restrained (not game-like).
+- `node scripts/verify-prototype-v4.js` ΓåÆ **All 17 structural/safety checks PASS** (77 required IDs, 7 internal states, V4 pane mapping, conversational composer, 4 decision verbs, 8 manual modules, 6 provenance stages, demo-safety absence checks: no fabricated facts/model names/counts/claims, no fetch/XHR/WebSocket).
+- `node --check prototype.js` ΓåÆ 0 syntax errors.
+- Browser E2E via agent-browser against the live prototype (desktop 1600├ù1000 and mobile 420├ù900): all 15 required interactions verified ΓÇö command ΓåÆ understanding; persistent thread appears; milestones progress with evidence ticking; steering (composer + example chips, visibly modifies work); interruption (WORK UPDATED + redirect); decision gate reached; APPROVE ΓåÆ executing ΓåÆ completed outcome; REJECT ΓåÆ honest no-action outcome; REDIRECT ΓåÆ steering at gate ΓåÆ re-prepared recommendation; outcome exposes evidence; provenance modal scoped to thread; return to work threads (focus + CONTINUE WORK + "Continue the positioning review."); messenger drawer with simulated exchange; Manual mode ΓÇö all 8 modules functional without Jarvis; credits depletion honestly pauses Jarvis while Manual stays usable; attention surface updates across every state change (including the Company Review ΓåÆ WATCH flow). Zero browser console errors; responsive checks (context strip hidden on mobile, core scales to 270px, no overflow).
+- Visual verification of rendered screenshots (ready, decision-gate, outcome, provenance states) via vision model ΓÇö layout coherent, high contrast, no glitches/overlaps, premium/restrained (not game-like).
 - No production files modified: `git status` shows only `public/prototype/v4/` and `scripts/verify-prototype-v4.js` (+ this documentation).
 
 ### Demo-data safety (explicit)
 
-Persistent `DEMO STATE · NO LIVE COMPANY DATA CONNECTED` watermark; SIMULATION badges on the threads dock, work sheet and activity; DEMO notices on Company State, Workforce and Provenance surfaces; messenger labeled simulated; learning-not-persisted note on outcomes; workforce limited to the repository-confirmed v1 roster (Sophia/Thorne) with generic governed-worker semantics and target-state standby labels; no employees/revenue/customers/metrics/model names/versions/security claims anywhere.
+Persistent `DEMO STATE ┬╖ NO LIVE COMPANY DATA CONNECTED` watermark; SIMULATION badges on the threads dock, work sheet and activity; DEMO notices on Company State, Workforce and Provenance surfaces; messenger labeled simulated; learning-not-persisted note on outcomes; workforce limited to the repository-confirmed v1 roster (Sophia/Thorne) with generic governed-worker semantics and target-state standby labels; no employees/revenue/customers/metrics/model names/versions/security claims anywhere.
 
 ### Known limitations
 
-- All state is client-side simulation — command interpretation is keyword-template based, not an LLM; nothing is persisted (refresh resets the demo; Reset Demo restores initial state).
+- All state is client-side simulation ΓÇö command interpretation is keyword-template based, not an LLM; nothing is persisted (refresh resets the demo; Reset Demo restores initial state).
 - The decision boundary is demonstrated with generic illustrative language ("external consequences"); no real approval rules are claimed.
-- Founder interruption creates a new thread rather than mutating the old one in place (the old thread is kept, marked Redirected) — a deliberate persistent-identity choice.
+- Founder interruption creates a new thread rather than mutating the old one in place (the old thread is kept, marked Redirected) ΓÇö a deliberate persistent-identity choice.
 - Voice, autonomous assistant behavior, persistent conversation memory, Role Brains and market intelligence remain out of scope (per product boundaries).
 
 ### Next recommended actions
 
 1. Founder design review of V4 vs V3 (`/prototype/v4/` vs `/prototype/`).
-2. If V4 direction is approved: map the five layers onto the REAL authoritative read layer built in Phase 3.3 (work threads ← workflow instances; attention ← real aggregation; decisions ← real approval inbox; provenance ← real audit/epistemic reads) and the real orchestration entry point from Phase 3.2 — the production connection points already exist.
+2. If V4 direction is approved: map the five layers onto the REAL authoritative read layer built in Phase 3.3 (work threads ΓåÉ workflow instances; attention ΓåÉ real aggregation; decisions ΓåÉ real approval inbox; provenance ΓåÉ real audit/epistemic reads) and the real orchestration entry point from Phase 3.2 ΓÇö the production connection points already exist.
 3. Keep Jarvis/Manual and the credit semantics decision (AI capability vs OS access) as a durable product decision if confirmed by the founder.
 
 ---
 
-## Phase 3.6 — Core V3 / Astra-Inspired Interaction Redesign
+## Phase 3.6 ΓÇö Core V3 / Astra-Inspired Interaction Redesign
 
 **Status:** COMPLETE (Core V3 prototype implemented, verified, isolated in `public/prototype/`).
 **Base HEAD:** `32a6f38`
@@ -1497,25 +1497,25 @@ A comprehensive redesign of the central operating interface inspired by OpenAI A
 
 2. **Core Work Surface & Founder Steering:**
    - Contextual surface positioned directly below the Core that appears during active states and recedes when idle.
-   - Real-time steering controls: `[ ⟳ Redirect ]` (allowing the Founder to steer into product context, market research, or inspect findings) and `[ ⏹ Stop ]` (gracefully halting ongoing work).
+   - Real-time steering controls: `[ Γƒ│ Redirect ]` (allowing the Founder to steer into product context, market research, or inspect findings) and `[ ΓÅ╣ Stop ]` (gracefully halting ongoing work).
    - Operational transparency without exposing raw model reasoning or chain-of-thought.
 
 3. **Dynamic Context & Operating Governance:**
-   - Dynamic header badge displaying active operational domain (`FOUNDER COMMAND`, `COMPANY OPERATIONS`, `LUMORA · PRODUCT CONTEXT`, `GOVERNED SYSTEMS`).
-   - Conceptual AI Credits simulation (`⚡ Credits: 850`): demonstrates graceful fallback to `JARVIS UNAVAILABLE` when credits are depleted, while Manual operation remains 100% accessible.
+   - Dynamic header badge displaying active operational domain (`FOUNDER COMMAND`, `COMPANY OPERATIONS`, `LUMORA ┬╖ PRODUCT CONTEXT`, `GOVERNED SYSTEMS`).
+   - Conceptual AI Credits simulation (`ΓÜí Credits: 850`): demonstrates graceful fallback to `JARVIS UNAVAILABLE` when credits are depleted, while Manual operation remains 100% accessible.
    - Manual Mode direct navigation overlay exposing all 7 governed modules (`Company`, `Work`, `Decisions`, `Research`, `Workforce`, `Activity`, `Audit`).
-   - Persistent watermark: `DEMO STATE · NO LIVE COMPANY DATA CONNECTED`.
+   - Persistent watermark: `DEMO STATE ┬╖ NO LIVE COMPANY DATA CONNECTED`.
 
 ### What was verified
 
-- `npx tsc --noEmit` → **0 errors** (zero production regressions).
-- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**.
-- `npx tsx tests/governance_security_foundation.test.ts` → **41/41 PASS**.
-- `node scripts/verify-prototype.js` → **All 33 Core V3 IDs, 0 JS syntax errors, 7 core states, and absence of fabricated company facts verified**.
+- `npx tsc --noEmit` ΓåÆ **0 errors** (zero production regressions).
+- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` ΓåÆ **21/21 PASS**.
+- `npx tsx tests/governance_security_foundation.test.ts` ΓåÆ **41/41 PASS**.
+- `node scripts/verify-prototype.js` ΓåÆ **All 33 Core V3 IDs, 0 JS syntax errors, 7 core states, and absence of fabricated company facts verified**.
 
 ---
 
-## Phase 3.5 — Jarvis Command Center HTML Prototype (Spatial IA Redesign & Epistemic Realignment)
+## Phase 3.5 ΓÇö Jarvis Command Center HTML Prototype (Spatial IA Redesign & Epistemic Realignment)
 
 **Status:** COMPLETE (prototype redesigned, verified, isolated in `public/prototype/`).
 **Base HEAD:** `32a6f38`
@@ -1527,13 +1527,13 @@ A standalone, high-fidelity visual and interaction prototype exploring the futur
 1. **Information Architecture Redesign (Spatial & Contextual):**
    - **Removed Pinned Dashboard Cards:** Eliminated permanently docked 3-column sidecards (`COMPANY STATUS` and `RECENT ACTIVITY`) that made the interface resemble a standard enterprise dashboard.
    - **Central Core as Epicenter:** The Celestial Core and Command Bar now command the primary spatial canvas.
-   - **Orbital Contextual Satellites:** Replaced static cards with minimalist ambient satellite beacons (`[● Governed State]`, `[☵ Active Agents]`, `[▲ Ratification Gate]`, `[◷ Activity Stream]`) that expand into spatial sliding sheets on demand or in response to command context.
+   - **Orbital Contextual Satellites:** Replaced static cards with minimalist ambient satellite beacons (`[ΓùÅ Governed State]`, `[Γÿ╡ Active Agents]`, `[Γû▓ Ratification Gate]`, `[Γù╖ Activity Stream]`) that expand into spatial sliding sheets on demand or in response to command context.
    - **Spatial Glass Sheets (Level 2):** Slide-out contextual surfaces for Company State (left), Activity & Provenance (right), and Workforce Presence (bottom), dismissible via `Escape` or keyboard shortcuts (`C`, `W`, `A`, `M`).
 
 2. **Purging Unsupported / Fabricated Facts (`PRODUCT.md` Realignment):**
    - **Zero Fabricated Metrics:** Removed all placeholder numbers ("12 employees active", "12 workflows running", "Sync: 99.4%", "Customer insights updated", "Finance forecast ready", "Product launch focus").
-   - **Strict v1 Workforce:** Roster is strictly limited to **Sophia (COO / Planner)** and **Thorne (Principal Systems Worker)**. Explicit notice that other roles (Maya, Julian, Elena, Marcus) remain target-state non-v1 architectures per `PRODUCT.md §5–§6`.
-   - **Evidence-Grounded States:** Reflects genuine qualitative states (`Healthy · Governed`, `Single Container Locked`, `Separation of Powers Active`, `Gross Margin Floor: 80% Enforced`).
+   - **Strict v1 Workforce:** Roster is strictly limited to **Sophia (COO / Planner)** and **Thorne (Principal Systems Worker)**. Explicit notice that other roles (Maya, Julian, Elena, Marcus) remain target-state non-v1 architectures per `PRODUCT.md ┬º5ΓÇô┬º6`.
+   - **Evidence-Grounded States:** Reflects genuine qualitative states (`Healthy ┬╖ Governed`, `Single Container Locked`, `Separation of Powers Active`, `Gross Margin Floor: 80% Enforced`).
    - **Milestone Activity Stream:** Populated exclusively with genuine architectural milestones (`ConstitutionalVerifier passed margin check`, `Sophia validated epistemic claim`, `Thorne completed deterministic build`, `Durable audit record committed`).
    - **Cryptographic Ratification Gate:** Consequential action modal demonstrating canonical SHA-256 payload hash binding (`{ actionName, target, payload }`).
 
@@ -1546,21 +1546,21 @@ A standalone, high-fidelity visual and interaction prototype exploring the futur
 
 ### What was verified
 
-- `npx tsc --noEmit` → **0 errors** (zero production regressions).
-- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**.
-- `npx tsx tests/governance_security_foundation.test.ts` → **41/41 PASS**.
-- `node scripts/verify-prototype.js` → **All 21 HTML IDs, 0 JS syntax errors, 8 core states, and absence of fabricated phrases verified**.
+- `npx tsc --noEmit` ΓåÆ **0 errors** (zero production regressions).
+- `npx tsx tests/phase3_4_legacy_read_routes.test.ts` ΓåÆ **21/21 PASS**.
+- `npx tsx tests/governance_security_foundation.test.ts` ΓåÆ **41/41 PASS**.
+- `node scripts/verify-prototype.js` ΓåÆ **All 21 HTML IDs, 0 JS syntax errors, 8 core states, and absence of fabricated phrases verified**.
 
 ---
 
-## Phase 3.4 — Founder-Guard Legacy Read Routes (security hardening slice)
+## Phase 3.4 ΓÇö Founder-Guard Legacy Read Routes (security hardening slice)
 
 **Status:** COMPLETE (implemented, tested, regression-verified).
-**Base HEAD:** `6b03925` · **Commit:** see git log for the Phase 3.4 entry.
+**Base HEAD:** `6b03925` ┬╖ **Commit:** see git log for the Phase 3.4 entry.
 
 ### What was implemented
 
-The security-hardening slice identified during Phase 3.3 — all three previously unguarded legacy read routes are now strictly protected behind the canonical SamJuniorsOS server-side founder authentication model:
+The security-hardening slice identified during Phase 3.3 ΓÇö all three previously unguarded legacy read routes are now strictly protected behind the canonical SamJuniorsOS server-side founder authentication model:
 
 1. `GET /api/workflow/scheduling` (`app/api/workflow/scheduling/route.ts`)
 2. `GET /api/agents/runs` (`app/api/agents/runs/route.ts`)
@@ -1584,13 +1584,13 @@ Additionally, `middleware.ts` was updated to include `"/api/agents/(.*)"` in `is
 
 ### What was verified (all actually run)
 
-- `npx tsc --noEmit` → 0 errors.
-- `npx eslint` across all modified files → clean (0 errors, 0 warnings).
-- Dedicated test suite `tests/phase3_4_legacy_read_routes.test.ts` → **21/21 PASS**:
+- `npx tsc --noEmit` ΓåÆ 0 errors.
+- `npx eslint` across all modified files ΓåÆ clean (0 errors, 0 warnings).
+- Dedicated test suite `tests/phase3_4_legacy_read_routes.test.ts` ΓåÆ **21/21 PASS**:
   - Route 1 (`GET /api/workflow/scheduling`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read with enriched workflow metadata 200, read-only guarantee verified.
   - Route 2 (`GET /api/agents/runs`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read 200, read-only guarantee verified.
   - Route 3 (`GET /api/workflow/definitions`): unauthenticated 401, spoofed role 401, wrong secret 401, production bypass rejection 401, query param bypass rejection 401, valid founder read 200, read-only guarantee verified.
-- `tests/governance_security_foundation.test.ts` → **41/41 PASS** (added Test 7.5, 7.6, 7.7 for the newly guarded routes).
+- `tests/governance_security_foundation.test.ts` ΓåÆ **41/41 PASS** (added Test 7.5, 7.6, 7.7 for the newly guarded routes).
 - Full regression verification:
   - Phase 3.3 Authoritative Reads (`tests/phase3_3_authoritative_reads.test.ts`): **17/17 PASS**.
   - Phase 3.2 Command Terminal (`tests/phase3_2_command_terminal.test.ts`): **22/22 PASS**.
@@ -1624,19 +1624,19 @@ Additionally, `middleware.ts` was updated to include `"/api/agents/(.*)"` in `is
 
 ---
 
-## Phase 3.3 — Authoritative Command Center Reads (third vertical slice)
+## Phase 3.3 ΓÇö Authoritative Command Center Reads (third vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).
-**Base HEAD:** `e6c320c` · **Commit:** see git log for the Phase 3.3 entry.
+**Base HEAD:** `e6c320c` ┬╖ **Commit:** see git log for the Phase 3.3 entry.
 
 ### What was implemented
 
-The Phase 3.3 vertical slice — the cockpit's remaining fabricated/static
+The Phase 3.3 vertical slice ΓÇö the cockpit's remaining fabricated/static
 surfaces now read authoritative persisted state:
 
 ```
-AUTHORITATIVE PERSISTED STATE → READ/QUERY LAYER (lib/server/cockpit)
-→ GET /api/cockpit/overview → EXECUTIVE COCKPIT → UI REFLECTS REAL STATE
+AUTHORITATIVE PERSISTED STATE ΓåÆ READ/QUERY LAYER (lib/server/cockpit)
+ΓåÆ GET /api/cockpit/overview ΓåÆ EXECUTIVE COCKPIT ΓåÆ UI REFLECTS REAL STATE
 ```
 
 At `e6c320c` the cockpit's Vitals Wall + Executive Stream + header vitals were
@@ -1649,7 +1649,7 @@ rendered "All Side-Effects Clear" (a dangerous false statement).
 
 Changes:
 
-- `lib/server/cockpit/overview.ts` (new) — READ-ONLY server-side aggregation
+- `lib/server/cockpit/overview.ts` (new) ΓÇö READ-ONLY server-side aggregation
   over the EXISTING repositories only: workflow instance store (status
   counts + recent instances), approval store behind the gate (pending count),
   scheduled work store (count + earliest due), agent run store (24h
@@ -1657,18 +1657,18 @@ Changes:
   behind the gate (execution events), epistemic claim store
   (claims-pending-verification count). Every metric carries an explicit
   deterministic definition; fail-closed per source (CockpitReadError names
-  the source — a database failure is NEVER zeros); bounded slices
-  (recentWorkflows ≤ 8, stream ≤ 30, run window 100); discloses `asOf` +
+  the source ΓÇö a database failure is NEVER zeros); bounded slices
+  (recentWorkflows Γëñ 8, stream Γëñ 30, run window 100); discloses `asOf` +
   `persistenceMode`. No new persistence, no second data model.
-- `app/api/cockpit/overview/route.ts` (new) — the smallest typed read
+- `app/api/cockpit/overview/route.ts` (new) ΓÇö the smallest typed read
   endpoint: founder-session guard (401), aggregation, 503 fail-closed
   mapping for unavailable authoritative persistence (`reads_unavailable`),
-  500 otherwise. Reads only — no write path exists in this route.
-- `lib/cockpit/overview-state.ts` (new, pure client-safe) — display
+  500 otherwise. Reads only ΓÇö no write path exists in this route.
+- `lib/cockpit/overview-state.ts` (new, pure client-safe) ΓÇö display
   derivations from the authoritative response: error-kind mapping
   (401/503/500/network), vitals tiles, relative-time formatting,
   persistence-mode label, empty-state predicates. No data of its own.
-- `components/cockpit/ExecutiveCockpit.tsx` — ALL fabricated surfaces
+- `components/cockpit/ExecutiveCockpit.tsx` ΓÇö ALL fabricated surfaces
   removed (os-data demo imports gone, seeded stream events gone, financial
   chips replaced by REAL header chips: pending approvals + active workflows,
   fake fleet "active" dot removed) and replaced with: bounded polling of the
@@ -1683,7 +1683,7 @@ Changes:
   no longer renders "All Side-Effects Clear").
 - Metrics with NO authoritative source (financial runway/margin/burn,
   static strategy initiatives) are REMOVED, not replaced with other fake
-  values — the cockpit renders only what persistence actually holds.
+  values ΓÇö the cockpit renders only what persistence actually holds.
 
 ### Authoritative source map (implemented)
 
@@ -1700,9 +1700,9 @@ Changes:
 
 ### What was verified (all actually run)
 
-- `npx tsc --noEmit` → 0 errors.
-- `npx eslint` on all 5 touched/new files → clean.
-- New suite `tests/phase3_3_authoritative_reads.test.ts` → **17/17 PASS**
+- `npx tsc --noEmit` ΓåÆ 0 errors.
+- `npx eslint` on all 5 touched/new files ΓåÆ clean.
+- New suite `tests/phase3_3_authoritative_reads.test.ts` ΓåÆ **17/17 PASS**
   (offline DurableFileStore mode). Covers: unauthenticated / non-founder /
   wrong-secret rejection (401); honest empty state (real zeros, fleet with
   null lastRuns, empty stream); no fabricated/demo values in the response
@@ -1716,14 +1716,14 @@ Changes:
   instances/approvals/audits/runs/scheduled/claims before+after); refresh
   reflecting changed durable state; fail-closed 503 with the source named
   when authoritative persistence is unavailable (real authority machinery,
-  no mocks — DATABASE_MODE=authoritative without PostgreSQL); honest
+  no mocks ΓÇö DATABASE_MODE=authoritative without PostgreSQL); honest
   display error derivations; and a static source guard that the cockpit
   component no longer references any demo-data constant.
 - Full offline regression (all actually run, all exit 0): Phase 3.1 decision
   loop 11/11; Phase 3.2 command terminal 22/22; governance & security
   foundation 38/38; Phase 12.3 authorization gate 38/38; Phase 2.1 25/25;
   Phase 2.2 24/24; Phase 2.3 22/22; Phase 2.4 idempotency 14/14; Phase 2.5
-  12/12 in-memory (real-PG tests skip by design when no local PostgreSQL —
+  12/12 in-memory (real-PG tests skip by design when no local PostgreSQL ΓÇö
   none is running in this environment, unchanged posture); Phase 12.4 and
   12.5 all pass.
 - Browser E2E (agent-browser against a live `next dev` server on a spare
@@ -1731,18 +1731,18 @@ Changes:
   - Cockpit renders REAL persisted state: vitals tiles (109 claims pending
     verification, 36 ok / 6 failed runs in 24h, etc.), workflow-instance
     counts, fleet verified run activity, and a stream of real
-    workflow/approval/agent-run/audit events — zero fabricated strings on
+    workflow/approval/agent-run/audit events ΓÇö zero fabricated strings on
     the page (verified by DOM scan).
-  - Source label honest: "Durable file store (local) · as of <time>".
-  - Terminal dispatch → live POST /api/orchestrate → honest ENGINE NOT
+  - Source label honest: "Durable file store (local) ┬╖ as of <time>".
+  - Terminal dispatch ΓåÆ live POST /api/orchestrate ΓåÆ honest ENGINE NOT
     CONFIGURED result (no workflow, no fabrication).
-  - Seeded awaiting-approval instance → vitals "1 pending / 1 awaiting
-    approval" + inbox card; **Approve click → durable execution + audit**;
-    refresh → "4 completed" + stream shows the real approval/audit/workflow
+  - Seeded awaiting-approval instance ΓåÆ vitals "1 pending / 1 awaiting
+    approval" + inbox card; **Approve click ΓåÆ durable execution + audit**;
+    refresh ΓåÆ "4 completed" + stream shows the real approval/audit/workflow
     events.
-  - Unauthenticated state: vitals error panel ("Vital signs unavailable …
-    No values are shown as zeros") + approvals error state — verified by
-    clearing cookies; direct HTTP GET without cookies → 401.
+  - Unauthenticated state: vitals error panel ("Vital signs unavailable ΓÇª
+    No values are shown as zeros") + approvals error state ΓÇö verified by
+    clearing cookies; direct HTTP GET without cookies ΓåÆ 401.
   - Mobile (390px) and desktop layouts verified; zero page/console errors
     across all flows.
   - Runtime `.data` state was restored to HEAD after verification (test/E2E
@@ -1752,7 +1752,7 @@ Changes:
 
 - `GET /api/workflow/scheduling`, `GET /api/agents/runs`, and
   `GET /api/workflow/definitions` remain UNGUARDED read routes (pre-existing
-  Phase 13 routes, NOT used by the cockpit — the overview endpoint calls the
+  Phase 13 routes, NOT used by the cockpit ΓÇö the overview endpoint calls the
   stores directly behind its own founder guard). Flagged as a follow-up
   security hardening item, deliberately not expanded into this slice.
 - `listAudits()` has no server-side limit; the overview takes the top 10 of
@@ -1760,10 +1760,10 @@ Changes:
   founder scale), but a bounded/limit-aware audit listing is a follow-up if
   audit volume grows.
 - Stream "events" for workflows are derived from persisted instance state
-  (status + updatedAt), not a persisted transition log — honest state
+  (status + updatedAt), not a persisted transition log ΓÇö honest state
   snapshots, not an event-sourced history. Approval/agent-run/audit events
   ARE individual persisted records.
-- Optional fixes from the Phase 3.3 spec §12 were deliberately NOT taken
+- Optional fixes from the Phase 3.3 spec ┬º12 were deliberately NOT taken
   (neither is in the touched read path, per the spec's own scope rule):
   (a) `synthesizeOrchestrationRunFromWorkflow` still maps BLOCKED instances
   to run status 'running' (orchestrate response path; the overview/terminal
@@ -1777,11 +1777,11 @@ Changes:
 ### Unresolved risks / next recommended actions
 
 1. **Next slice candidate:** founder-guard the three unguarded read routes
-   (scheduling/agent-runs/definitions GET) — small, security-positive, and
+   (scheduling/agent-runs/definitions GET) ΓÇö small, security-positive, and
    now clearly flagged; or begin Jarvis prototype review (the production
    read layer is now trustworthy, which the prototype integration was
    waiting on).
-2. Fix the blocked→running synthesis quirk in
+2. Fix the blockedΓåÆrunning synthesis quirk in
    `synthesizeOrchestrationRunFromWorkflow` (small API-facing honesty fix).
 3. CAS guard for `evaluateReadiness`'s instance write (Phase 3.1 limitation,
    still open).
@@ -1790,56 +1790,56 @@ Changes:
 
 ---
 
-## Phase 3.2 — Command Terminal → Real Orchestration (second vertical slice)
+## Phase 3.2 ΓÇö Command Terminal ΓåÆ Real Orchestration (second vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).
-**Base HEAD:** `3cf92f3` · **Commit:** see git log for the Phase 3.2 entry.
+**Base HEAD:** `3cf92f3` ┬╖ **Commit:** see git log for the Phase 3.2 entry.
 
 ### What was implemented
 
-The Phase 3.2 vertical slice — the founder can now create REAL work from the
+The Phase 3.2 vertical slice ΓÇö the founder can now create REAL work from the
 Command Center through the existing orchestration path:
 
 ```
-FOUNDER COMMAND → COMMAND TERMINAL → POST /api/orchestrate (EXISTING)
-→ EXISTING RUNTIME → WORKFLOW → APPROVAL WHEN REQUIRED (Phase 3.1 loop)
-→ DURABLE RESULT → AUDIT → TERMINAL REFLECTS ACTUAL SERVER STATE
+FOUNDER COMMAND ΓåÆ COMMAND TERMINAL ΓåÆ POST /api/orchestrate (EXISTING)
+ΓåÆ EXISTING RUNTIME ΓåÆ WORKFLOW ΓåÆ APPROVAL WHEN REQUIRED (Phase 3.1 loop)
+ΓåÆ DURABLE RESULT ΓåÆ AUDIT ΓåÆ TERMINAL REFLECTS ACTUAL SERVER STATE
 ```
 
 At `3cf92f3` the cockpit's bottom terminal was a local-only fake: it appended
 a "Directive Issued" stream event and routed the founder to the classic-desktop
-Workforce app (`onDispatchDirective` → `openApp('workforce')`); no request ever
+Workforce app (`onDispatchDirective` ΓåÆ `openApp('workforce')`); no request ever
 reached `/api/orchestrate` (WORKLOG 3.1 "next slice candidate").
 
 Changes:
 
-- `lib/cockpit/command-terminal-state.ts` (new, pure client-safe module) —
-  the terminal's display-derivation layer: authoritative run status → outcome,
-  HTTP status → error kind, durable instance state (re-read) → outcome,
+- `lib/cockpit/command-terminal-state.ts` (new, pure client-safe module) ΓÇö
+  the terminal's display-derivation layer: authoritative run status ΓåÆ outcome,
+  HTTP status ΓåÆ error kind, durable instance state (re-read) ΓåÆ outcome,
   client idempotency-key generation, and a sessionStorage POINTER for the
   refresh re-read. Contains no authorization, orchestration, or company-state
   logic. Pins the rule the tests enforce: HTTP 200 / `success: true` NEVER
   maps to `completed`; only `data.status` (the durable run status) can.
   Maps the unconfigured-engine response (status failed + liveAi false +
   executionMode 'unconfigured') to an honest UNCONFIGURED state.
-- `components/cockpit/CommandTerminal.tsx` (new) — the input surface: input +
+- `components/cockpit/CommandTerminal.tsx` (new) ΓÇö the input surface: input +
   dispatch, submitting state, result panel (status chip, server-provided
   detail, instance id, execution mode, replay/reread badges), distinct
   error rendering (401/403/400/409/422/500/network with the server's safe
   actionable messages), retry-with-SAME-key on network failure (real
   idempotency, not client-side fake), refresh re-read that re-fetches the
   authoritative instance state via the existing GET /api/workflow/instances
-  contract (pointer only — state always comes from the server; missing
-  record → pointer discarded honestly). No approval UI: when the server
+  contract (pointer only ΓÇö state always comes from the server; missing
+  record ΓåÆ pointer discarded honestly). No approval UI: when the server
   reports `requires_approval`, it fires `onApprovalRequested` so the EXISTING
   Phase 3.1 inbox refreshes immediately and points the founder there.
-- `components/cockpit/ExecutiveCockpit.tsx` — the fake dispatch path removed
+- `components/cockpit/ExecutiveCockpit.tsx` ΓÇö the fake dispatch path removed
   (form, local-stream event, `onDispatchDirective` prop); footer now mounts
   the CommandTerminal; executive-stream events are pushed only AFTER the
   server returns the real outcome (never fabricated pre-dispatch).
-- `app/page.tsx` — removed the now-unused `onDispatchDirective` cockpit wiring
+- `app/page.tsx` ΓÇö removed the now-unused `onDispatchDirective` cockpit wiring
   (classic-desktop paths unchanged).
-- `app/api/orchestrate/route.ts` — smallest necessary, backward-compatible
+- `app/api/orchestrate/route.ts` ΓÇö smallest necessary, backward-compatible
   fix: the idempotency claim's thrown `OperationInProgressError` /
   `UnknownExternalResultError` / `IdempotencyConflictError` states now return
   structured 409 responses (`code: idempotency_in_progress|idempotency_unknown|
@@ -1850,24 +1850,24 @@ Changes:
 
 ### What was verified (all actually run)
 
-- `npx tsc --noEmit` → 0 errors.
-- `npx eslint` on all 6 touched/new files → clean.
-- New suite `tests/phase3_2_command_terminal.test.ts` → **22/22 PASS**
+- `npx tsc --noEmit` ΓåÆ 0 errors.
+- `npx eslint` on all 6 touched/new files ΓåÆ clean.
+- New suite `tests/phase3_2_command_terminal.test.ts` ΓåÆ **22/22 PASS**
   (offline DurableFileStore mode). Covers: real route-handler invocations for
   unauthenticated / non-founder / wrong-secret (401), malformed command
-  (missing/empty/non-string directive → 400), founder submission reaching the
+  (missing/empty/non-string directive ΓåÆ 400), founder submission reaching the
   real path (honest unconfigured result, idempotency key claimed in the
   existing store, no workflow created, no fabricated metrics), duplicate
   submission replay (200 + X-Idempotent-Replay + deep-equal body), altered
   payload (422), in-progress duplicate (409 in_progress), coordination-loss
   unknown (409 unknown), failed-prior (409 prior_failure), successful
-  orchestration through the exact route code path (runtime → completed run +
+  orchestration through the exact route code path (runtime ΓåÆ completed run +
   instance id), approval-required command entering the EXISTING Phase 3.1
-  approval loop (pending record → founder decides → gate-mediated execution →
-  durable completed + audit; reject → blocked, zero executions), durable
+  approval loop (pending record ΓåÆ founder decides ΓåÆ gate-mediated execution ΓåÆ
+  durable completed + audit; reject ΓåÆ blocked, zero executions), durable
   re-read (store + durable file layer + terminal re-derivation after
   approval and while awaiting), and the pure terminal display logic
-  (200/success:true + failed → UNCONFIGURED never success; requires_approval →
+  (200/success:true + failed ΓåÆ UNCONFIGURED never success; requires_approval ΓåÆ
   AWAITING; error-kind mapping for every class; blocked/cancelled/missing
   re-read honesty; unique idempotency keys).
 - Full offline regression (all actually run, all exit 0): Phase 3.1 decision
@@ -1879,21 +1879,21 @@ Changes:
   dev-cookie founder session, seeded through the exact /api/orchestrate code
   path):
   - Cockpit renders the terminal; approvals inbox renders pending approvals.
-  - **Dispatch a directive → live POST /api/orchestrate (200 observed in the
-    network trace) → terminal displays the honest ENGINE NOT CONFIGURED
+  - **Dispatch a directive ΓåÆ live POST /api/orchestrate (200 observed in the
+    network trace) ΓåÆ terminal displays the honest ENGINE NOT CONFIGURED
     state** ("GEMINI_API_KEY environment variable is not configured", mode
     unconfigured, liveAi false, "No workflow was created and no results were
-    fabricated") — not success.
-  - **Refresh → DURABLE RE-READ → "AWAITING FOUNDER APPROVAL"** verified from
+    fabricated") ΓÇö not success.
+  - **Refresh ΓåÆ DURABLE RE-READ ΓåÆ "AWAITING FOUNDER APPROVAL"** verified from
     durable state with the pointer to the inbox.
-  - **Approve click in the existing inbox → live response:** "Approved —
+  - **Approve click in the existing inbox ΓåÆ live response:** "Approved ΓÇö
     durable result: step 'step-side-effect' is completed, workflow completed
     (1 audit record)."
-  - **Refresh again → DURABLE RE-READ → "COMPLETED"** verified from durable
+  - **Refresh again ΓåÆ DURABLE RE-READ ΓåÆ "COMPLETED"** verified from durable
     state.
   - Zero page errors / console errors across all flows.
   - Direct HTTP boundary checks: GET approvals & POST orchestrate without
-    cookies → 401.
+    cookies ΓåÆ 401.
 - Runtime `.data` state was restored to HEAD after verification (test/E2E
   residue is not product state).
 
@@ -1907,12 +1907,12 @@ Changes:
   unchanged): long DAGs hold the POST open.
 - `synthesizeOrchestrationRunFromWorkflow` maps a BLOCKED instance to run
   status 'running' (pre-existing synthesis quirk, deliberately not changed in
-  this slice — documented; the terminal's refresh re-read path DOES display
+  this slice ΓÇö documented; the terminal's refresh re-read path DOES display
   blocked correctly from raw instance state).
 - The 409 structured codes are additive to the existing contract; the
   terminal also sniffs legacy 500 messages for backward compatibility.
 - The refresh re-read fetches GET /api/workflow/instances (all instances,
-  client-side filter by pointer id) — fine at current single-founder scale.
+  client-side filter by pointer id) ΓÇö fine at current single-founder scale.
 - Vitals Wall / Executive Stream still render static demo data (Phase 3.1
   known limitation; explicitly out of scope here).
 
@@ -1920,10 +1920,10 @@ Changes:
 
 1. **Next slice candidate:** replace the Vitals Wall / Executive Stream demo
    data with authoritative reads (workflow instances, scheduled work, agent
-   runs, epistemic claims) — the two remaining fabricated-data surfaces.
+   runs, epistemic claims) ΓÇö the two remaining fabricated-data surfaces.
 2. Consider a CAS guard for `evaluateReadiness`'s instance write (Phase 3.1
    known limitation, still open).
-3. Consider fixing the blocked→running synthesis quirk in
+3. Consider fixing the blockedΓåÆrunning synthesis quirk in
    `synthesizeOrchestrationRunFromWorkflow` (small, but it is an API-facing
    honesty issue for any future consumer).
 4. Consider a background/scheduler-driven orchestration resume so long DAGs
@@ -1931,39 +1931,39 @@ Changes:
 
 ---
 
-## Phase 3.1 — Founder Decision Loop Closure (first vertical slice)
+## Phase 3.1 ΓÇö Founder Decision Loop Closure (first vertical slice)
 
 **Status:** COMPLETE (implemented, tested, browser-verified).
-**Base HEAD:** `478b3e7` · **Commit:** see git log for `feat(command-center)` entry.
+**Base HEAD:** `478b3e7` ┬╖ **Commit:** see git log for `feat(command-center)` entry.
 
 ### What was implemented
 
-The Phase 3 first vertical slice — the complete, production-oriented founder
+The Phase 3 first vertical slice ΓÇö the complete, production-oriented founder
 decision path:
 
 ```
-READ AUTHORITATIVE STATE → PRESENT → FOUNDER DECIDES → GATE (authority)
-→ RUNTIME RESUME → DURABLE RESULT → AUDIT → UI REFLECTS RESULT
+READ AUTHORITATIVE STATE ΓåÆ PRESENT ΓåÆ FOUNDER DECIDES ΓåÆ GATE (authority)
+ΓåÆ RUNTIME RESUME ΓåÆ DURABLE RESULT ΓåÆ AUDIT ΓåÆ UI REFLECTS RESULT
 ```
 
 Repository evidence at `478b3e7` showed the loop was broken in the middle:
 `POST /api/workflow/approvals` recorded the Founder's decision in the approval
-store, but nothing propagated it to the bound workflow instance — side-effect
+store, but nothing propagated it to the bound workflow instance ΓÇö side-effect
 steps stayed `awaiting_approval` forever (`runtime.approveStep` /
 `runtime.resumeWorkflow` had zero production callers), and rejected approvals
 never failed the step closed. Additionally, the route passed the session email
 (`founder@samjuniors.com`) as `decidedBy`, which the gate's founder allowlist
-does not recognize — every cockpit Approve click failed with
+does not recognize ΓÇö every cockpit Approve click failed with
 "Permission denied" (latent production bug, verified live before the fix).
 
 Changes:
 
-- `lib/server/workflow/runtime.ts` — `evaluateReadiness`: an `allowed` decision
+- `lib/server/workflow/runtime.ts` ΓÇö `evaluateReadiness`: an `allowed` decision
   carrying `APPROVED_BY_FOUNDER` (authoritative, Founder-decided approval
   record matched by the policy evaluator) now advances the step to `ready` /
   `approvalState: approved`. The record is the authority; the step field is a
   derived cache and must not veto the record.
-- `lib/server/workflow/decision-reconciler.ts` (new) — the command/action
+- `lib/server/workflow/decision-reconciler.ts` (new) ΓÇö the command/action
   layer: after the gate durably records a decision, reconciles it into the
   bound workflow via `runtime.resumeWorkflow`. Approvals resume execution
   THROUGH the SideEffectAuthorizationGate (payload binding, single-use
@@ -1972,42 +1972,42 @@ Changes:
   authorization logic of its own. Honest no-op for standalone approvals,
   missing instances, and already-decided steps; reconciliation failure is
   reported, never silently shown as success.
-- `app/api/workflow/approvals/route.ts` — POST now passes the server-verified
+- `app/api/workflow/approvals/route.ts` ΓÇö POST now passes the server-verified
   session role through the gate's existing `userContext` contract (fixes the
   founder-identity mismatch above; no second allowlist created) and returns the
   reconciliation result alongside the decided record.
-- `components/cockpit/ExecutiveCockpit.tsx` — decision feedback now reports the
+- `components/cockpit/ExecutiveCockpit.tsx` ΓÇö decision feedback now reports the
   DURABLE outcome (step status, workflow status, audit-record count, or
   reconciliation failure) instead of a UI-assumed "success"; per-decision
   in-flight disabling; approval cards show the bound directive.
 
 ### What was verified (all actually run)
 
-- `npx tsc --noEmit` → 0 errors.
-- `npx eslint` on all 5 touched files → clean.
-- New suite `tests/phase3_1_decision_loop.test.ts` → **11/11 PASS** in BOTH
+- `npx tsc --noEmit` ΓåÆ 0 errors.
+- `npx eslint` on all 5 touched files ΓåÆ clean.
+- New suite `tests/phase3_1_decision_loop.test.ts` ΓåÆ **11/11 PASS** in BOTH
   persistence modes: offline (DurableFileStore) and online (authoritative
   PostgreSQL 16.4, `DATABASE_URL` pointed at the Phase 2.6 certification
-  instance). Covers: approve→execute→durable-complete with audit + single-use
-  consumption; reject→blocked fail-closed (zero executions); revoke→blocked;
-  duplicate decision → no re-execution; concurrent reconciliation → exactly
+  instance). Covers: approveΓåÆexecuteΓåÆdurable-complete with audit + single-use
+  consumption; rejectΓåÆblocked fail-closed (zero executions); revokeΓåÆblocked;
+  duplicate decision ΓåÆ no re-execution; concurrent reconciliation ΓåÆ exactly
   one execution (atomic claim); non-Founder cannot decide; expired approval
   cannot execute through the reconciliation path; verified-session
   `userContext` contract; standalone/missing-instance honest no-ops.
 - Full offline regression (no DATABASE_URL): governance 38/38, 12.3 38/38,
   12.4 all pass, 12.5 all pass, 2.1 25/25, 2.2 24/24, 2.3 22/22, 2.4 14/14,
-  2.5 12/12 — all exit 0, zero failures.
+  2.5 12/12 ΓÇö all exit 0, zero failures.
 - Online regression (real PG): phase2_6 15/15 exit 0, phase2_6_1 12/12,
-  phase2_2 18/18, phase2_5 including real-PG lease race — all exit 0.
+  phase2_2 18/18, phase2_5 including real-PG lease race ΓÇö all exit 0.
 - Browser E2E (agent-browser against a live dev server, seeded via the exact
-  `/api/orchestrate` code path — `createExecutiveWorkflowDefinition` →
-  `executeWorkflow` → `awaiting_approval`):
+  `/api/orchestrate` code path ΓÇö `createExecutiveWorkflowDefinition` ΓåÆ
+  `executeWorkflow` ΓåÆ `awaiting_approval`):
   - Cockpit inbox renders pending approvals with directive context.
-  - **Approve click → live response:** "Approved — durable result: step
+  - **Approve click ΓåÆ live response:** "Approved ΓÇö durable result: step
     'step-side-effect' is completed, workflow completed (1 audit record)."
     Instance/step verified durably complete via API; approval consumed;
     zero browser console errors.
-  - **Reject click → live response:** "Rejected — durable result: step
+  - **Reject click ΓåÆ live response:** "Rejected ΓÇö durable result: step
     'step-side-effect' is blocked, workflow blocked (0 audit records)."
     Durable blocked reason: "Founder rejected approval request"; zero
     executed audits (fail-closed verified over HTTP).
@@ -2025,7 +2025,7 @@ Changes:
   in this slice; documented rather than rewritten (Phase 2 certified the
   runtime as-is; a CAS guard for `evaluateReadiness` is a candidate follow-up).
 - The Executive Cockpit's Vitals Wall and Executive Stream still render static
-  demo data (`lib/os-data.ts`) — flagged as a known fabricated-data surface;
+  demo data (`lib/os-data.ts`) ΓÇö flagged as a known fabricated-data surface;
   replacing it with authoritative reads is deliberately NOT part of this slice.
 - Dev-mode (sandbox) authentication uses the `SAMJUNIORS_DEV_SECRET` cookie
   contract; production remains Clerk-verified. Unchanged.
@@ -2034,7 +2034,7 @@ Changes:
 
 1. **Next slice candidate:** wire the cockpit directive terminal to
    `/api/orchestrate` (currently appends to a local stream only) so the
-   founder can create real work from the Command Center — the read side of
+   founder can create real work from the Command Center ΓÇö the read side of
    the loop is now trustworthy, the create side still routes through the
    classic-desktop Workforce app.
 2. Replace the Vitals Wall / Executive Stream demo data with authoritative
@@ -2043,70 +2043,70 @@ Changes:
    limitations).
 4. PROGRESS.md/ROADMAP.md history below Phase 3 is reconciled only at the
    status level; PRODUCT.md's "Current Repository State" section is dated
-   `32a6f38` and does not yet describe Phase 2.5–2.6.1 durability machinery.
+   `32a6f38` and does not yet describe Phase 2.5ΓÇô2.6.1 durability machinery.
 
 ---
 
-## Phase 2 — Foundation & Durability (summary, verified from git history)
+## Phase 2 ΓÇö Foundation & Durability (summary, verified from git history)
 
 All Phase 2 claims below are corroborated by repository commits and the
-passing suites listed above (re-run at Phase 3.1 time — no regression):
+passing suites listed above (re-run at Phase 3.1 time ΓÇö no regression):
 
-- `02fc943` / `5e8ba9f` / `73af411` — security foundation: side-effect
+- `02fc943` / `5e8ba9f` / `73af411` ΓÇö security foundation: side-effect
   authorization gate, audit trails, deterministic verification, fail-closed
   payload binding, founder-only promotion/allowlists.
-- `32a6f38` — orchestration + epistemic pipeline + governance state.
-- `553dc96` — communication runtime behind the gate, persistent
+- `32a6f38` ΓÇö orchestration + epistemic pipeline + governance state.
+- `553dc96` ΓÇö communication runtime behind the gate, persistent
   contacts/conversations/drafts.
-- `b12cc5b` — Phase 2.5 distributed scheduling + lease manager.
-- `4a272d9` — distributed scheduling test data.
-- `8e21335` — Phase 2.6 real-PostgreSQL concurrency certification fixes
+- `b12cc5b` ΓÇö Phase 2.5 distributed scheduling + lease manager.
+- `4a272d9` ΓÇö distributed scheduling test data.
+- `8e21335` ΓÇö Phase 2.6 real-PostgreSQL concurrency certification fixes
   (atomic lease acquire/claim/consume, genuine CAS transitions, scheduler
   fresh re-read, crash recovery `ready` clears stale claims, migration BOM).
-- `305add8` — Phase 2.6.1: all 39 pre-existing tsc errors fixed (tsc exit 0),
+- `305add8` ΓÇö Phase 2.6.1: all 39 pre-existing tsc errors fixed (tsc exit 0),
   lease renewal wired into long-running execution with 12/12 renewal tests,
   phase 2.2 test redesign (online/fail-closed modes, FK-valid fixtures),
-  real-PG CI (`.github/workflows/ci.yml`, fails — never skips — when PG is
+  real-PG CI (`.github/workflows/ci.yml`, fails ΓÇö never skips ΓÇö when PG is
   unavailable), full regression green.
-- `478b3e7` — AGENTS.md universal agent contract added (documentation).
+- `478b3e7` ΓÇö AGENTS.md universal agent contract added (documentation).
 
 Deployment posture unchanged: single instance (min=1, max=1) +
 `.data/instance.lock` `STRICT_SINGLE_INSTANCE` semantics intact.
 
 ---
 
-## Phase 3.14 — Production Core Shell Migration
+## Phase 3.14 ΓÇö Production Core Shell Migration
 
-**Status:** COMPLETE — built (Next.js exit 0), typechecked (tsc --noEmit exit 0), Phase 3.2 (22/22) and Phase 3.3 (17/17) test suites green. Browser verification deferred due to quota limit — operator should verify manually per steps below.
+**Status:** COMPLETE ΓÇö built (Next.js exit 0), typechecked (tsc --noEmit exit 0), Phase 3.2 (22/22) and Phase 3.3 (17/17) test suites green. Browser verification deferred due to quota limit ΓÇö operator should verify manually per steps below.
 
-**Scope:** Production `SamjuniorsOS` Next.js repository — UI/component layer only. Zero backend, auth, schema, or runtime changes.
+**Scope:** Production `SamjuniorsOS` Next.js repository ΓÇö UI/component layer only. Zero backend, auth, schema, or runtime changes.
 
 ### What was implemented
 
-1. **`components/cockpit/SamJuniorsCoreCanvas.tsx`** — Phase 3.12 Knot Core particle canvas transplanted into production. Exports:
+1. **`components/cockpit/SamJuniorsCoreCanvas.tsx`** ΓÇö Phase 3.12 Knot Core particle canvas transplanted into production. Exports:
    - `SpecialistId` type (`AgentRole | 'systems' | 'advisor'`)
    - `SamJuniorsCoreCanvasProps` interface (with `selectedAgent`, `onSelectSpecialist`, `onSelectAgent`)
    - `SPECIALIST_NODES` array (6 orbital agents: SOPHIA/coo, THORNE/researcher, REZA/pm, MIRANDA/finance, ELENA/advisor, MARCUS/systems)
    - 2D canvas orbital projection with drag-to-orbit, wheel-to-zoom, starfield, particles, solar/luna theme reactivity
 
-2. **`components/cockpit/SophiaConversationalBar.tsx`** — Sophia founder-facing input bar. Phase 3.14 UI mode only: no `POST /api/orchestrate` wiring. Action chips: Issue Directive, Work Queue, Founder Approval Gate, Invariant Audit, Telemetry, Specialists. Keyboard `/` focuses input. Notice callback instead of server dispatch.
+2. **`components/cockpit/SophiaConversationalBar.tsx`** ΓÇö Sophia founder-facing input bar. Phase 3.14 UI mode only: no `POST /api/orchestrate` wiring. Action chips: Issue Directive, Work Queue, Founder Approval Gate, Invariant Audit, Telemetry, Specialists. Keyboard `/` focuses input. Notice callback instead of server dispatch.
 
-3. **`components/cockpit/WorkQueueDrawer.tsx`** — Right-side sliding drawer displaying the 9-Step DAG topology from `lib/server/workflow/dynamic-dag.ts`. Shows pending approvals count with CTA to open Decision Gate. Shows server-persisted workflows from `overview.recentWorkflows`. Displays honest "Awaiting Live DAG Integration (Phase 3.15)" banner.
+3. **`components/cockpit/WorkQueueDrawer.tsx`** ΓÇö Right-side sliding drawer displaying the 9-Step DAG topology from `lib/server/workflow/dynamic-dag.ts`. Shows pending approvals count with CTA to open Decision Gate. Shows server-persisted workflows from `overview.recentWorkflows`. Displays honest "Awaiting Live DAG Integration (Phase 3.15)" banner.
 
-4. **`components/cockpit/ExecutiveCockpit.tsx`** — Fully rebuilt as Phase 3.12/3.14 Calm Core shell:
+4. **`components/cockpit/ExecutiveCockpit.tsx`** ΓÇö Fully rebuilt as Phase 3.12/3.14 Calm Core shell:
    - **Top bar**: brand (`SAMJUNIORS OS v1 Core`), live approval/workflow eyebrow, theme toggle (Dark Solar / Dark Luna), refresh, Classic Desktop toggle
    - **Central viewport**: `SamJuniorsCoreCanvas` occupies the full canvas; edge affordance pills trigger left (Active Workflow) and right (System & Invariants) contextual surfaces
-   - **Progressive disclosure contextual panels**: `approval` (Founder Decision Gate — real approvals from `loadApprovals()` wired to `handleDecision()`), `work` (recent workflows from `overview.recentWorkflows`), `audit` (4 constitutional invariants), `telemetry` (real `deriveVitalsTiles(overview)` tiles + fleet run activity)
+   - **Progressive disclosure contextual panels**: `approval` (Founder Decision Gate ΓÇö real approvals from `loadApprovals()` wired to `handleDecision()`), `work` (recent workflows from `overview.recentWorkflows`), `audit` (4 constitutional invariants), `telemetry` (real `deriveVitalsTiles(overview)` tiles + fleet run activity)
    - **Sophia Conversational Bar**: anchored above dock, keyboard `/` shortcut, `approvalPendingCount` from real server data
-   - **Specialist Roster tray**: progressive, toggled via Sophia chip — shows all 6 nodes with tier/active status
-   - **Bottom Cockpit Dock**: Sophia · Work Queue (Q) · Telemetry · Invariants · Theme · Classic Desktop
+   - **Specialist Roster tray**: progressive, toggled via Sophia chip ΓÇö shows all 6 nodes with tier/active status
+   - **Bottom Cockpit Dock**: Sophia ┬╖ Work Queue (Q) ┬╖ Telemetry ┬╖ Invariants ┬╖ Theme ┬╖ Classic Desktop
    - **Work Queue Drawer**: `isOpen` toggled by Q key, dock button, or Sophia chip
    - **Toast notifications**: ephemeral 7s dismissible notice surface
    - **Theme persistence**: `localStorage` + `document.documentElement.setAttribute('data-theme', ...)` for CSS `[data-theme="luna"]` selectors
-   - **Keyboard**: `q` → queue, `/` → Sophia focus, `Escape` → close queue or reset to idle
+   - **Keyboard**: `q` ΓåÆ queue, `/` ΓåÆ Sophia focus, `Escape` ΓåÆ close queue or reset to idle
    - **All test invariants preserved**: `/api/cockpit/overview` fetch present, `deriveVitalsTiles` present, no banned strings
 
-5. **`app/globals.css`** — Fixed unclosed `@media (prefers-reduced-motion: reduce)` block that was causing a CSS parse error in the Next.js webpack build.
+5. **`app/globals.css`** ΓÇö Fixed unclosed `@media (prefers-reduced-motion: reduce)` block that was causing a CSS parse error in the Next.js webpack build.
 
 ### What is NOT wired (explicitly deferred to Phase 3.15)
 
@@ -2120,94 +2120,94 @@ Deployment posture unchanged: single instance (min=1, max=1) +
 
 | Check | Result |
 |---|---|
-| `bun x tsc --noEmit` | �� exit 0 |
-| `bun test phase3_2_command_terminal.test.ts` | ✅ 22/22 pass |
-| `bun test phase3_3_authoritative_reads.test.ts` | ✅ 17/17 pass (Group G: fabricated-data removal + authoritative read wired in) |
-| `bun run build` (Next.js prod) | ✅ exit 0 · Compiled in 18.4s · 25 static pages |
-| Browser visual verification | ⏳ Deferred (browser quota limit) — operator should run `bun run dev` and verify steps below |
+| `bun x tsc --noEmit` | ∩┐╜∩┐╜ exit 0 |
+| `bun test phase3_2_command_terminal.test.ts` | Γ£à 22/22 pass |
+| `bun test phase3_3_authoritative_reads.test.ts` | Γ£à 17/17 pass (Group G: fabricated-data removal + authoritative read wired in) |
+| `bun run build` (Next.js prod) | Γ£à exit 0 ┬╖ Compiled in 18.4s ┬╖ 25 static pages |
+| Browser visual verification | ΓÅ│ Deferred (browser quota limit) ΓÇö operator should run `bun run dev` and verify steps below |
 
 ### Manual verification steps (operator)
 
-1. `bun run dev` → open http://localhost:3000
+1. `bun run dev` ΓåÆ open http://localhost:3000
 2. Verify Calm Core canvas loads with particle knot and 6 orbital nodes
 3. Verify Sophia Conversational Bar is visible at bottom
-4. Press `/` — verify input gains focus
-5. Press `q` — verify Work Queue Drawer slides in from right
-6. Press `Escape` — verify drawer closes
-7. Click `Invariants` dock button — verify contextual panel from right
-8. Click `Telemetry` dock button — verify vitals tiles from real server data (or honest error state)
-9. Click `Founder Approval Gate` chip in Sophia bar — verify Decision Gate panel from left
-10. Click `Theme` dock button — verify canvas, CSS variables, and localStorage switch between Dark Solar / Dark Luna
-11. Click `Classic Desktop` — verify `onSwitchToClassic` fires and page returns to classic view
+4. Press `/` ΓÇö verify input gains focus
+5. Press `q` ΓÇö verify Work Queue Drawer slides in from right
+6. Press `Escape` ΓÇö verify drawer closes
+7. Click `Invariants` dock button ΓÇö verify contextual panel from right
+8. Click `Telemetry` dock button ΓÇö verify vitals tiles from real server data (or honest error state)
+9. Click `Founder Approval Gate` chip in Sophia bar ΓÇö verify Decision Gate panel from left
+10. Click `Theme` dock button ΓÇö verify canvas, CSS variables, and localStorage switch between Dark Solar / Dark Luna
+11. Click `Classic Desktop` ΓÇö verify `onSwitchToClassic` fires and page returns to classic view
 
 ### Risks / next steps
 
 - Phase 3.15: wire `SophiaConversationalBar` to `POST /api/orchestrate` under Phase 3.2 command-terminal semantics
 - Phase 3.15: wire `WorkQueueDrawer` to live 9-Step DAG execution state (not just topology)
-- Phase 3.15: wire `onApprovalRequested` callback back from Sophia → approval inbox refresh
+- Phase 3.15: wire `onApprovalRequested` callback back from Sophia ΓåÆ approval inbox refresh
 
 ---
 
-## Phase 3.3 — Repository Cleanup & Dead-Code Audit
+## Phase 3.3 ΓÇö Repository Cleanup & Dead-Code Audit
 
-**Date:** 2026-09-12 · **Scope:** audit + cleanup only — graph visual implementation accepted and untouched; no backend/API/database/auth changes.
+**Date:** 2026-09-12 ┬╖ **Scope:** audit + cleanup only ΓÇö graph visual implementation accepted and untouched; no backend/API/database/auth changes.
 
 ### Audit method
-Every candidate was traced by imports/references before classification (no name-based assumptions). Root route verified as V2 Design1 shell (self-contained; zero imports from sandbox `src/components`); API routes verified to depend only on `src/lib/server/**` + `src/types/**`; `src/proxy.ts` confirmed as the active Next 16 middleware. Upstream `app/page.tsx` documents that cockpit/classic-desktop code is deliberately retained as inactive reference material — honored.
+Every candidate was traced by imports/references before classification (no name-based assumptions). Root route verified as V2 Design1 shell (self-contained; zero imports from sandbox `src/components`); API routes verified to depend only on `src/lib/server/**` + `src/types/**`; `src/proxy.ts` confirmed as the active Next 16 middleware. Upstream `app/page.tsx` documents that cockpit/classic-desktop code is deliberately retained as inactive reference material ΓÇö honored.
 
 ### Deleted (confirmed dead/obsolete)
-- `upload/` — 9 PNGs byte-identical to `Uploaded/` (md5-verified duplicate)
-- `qa-shots/` — Phase 3.2 QA screenshots/videos (preserved in git history)
-- `tool-results/` — transient tool output junk
-- `scripts/capture-v4-1-screenshots.js`, `scripts/capture-v5-screenshots.js` — one-time capture tools bound to the original author's Windows paths; not executable here
+- `upload/` ΓÇö 9 PNGs byte-identical to `Uploaded/` (md5-verified duplicate)
+- `qa-shots/` ΓÇö Phase 3.2 QA screenshots/videos (preserved in git history)
+- `tool-results/` ΓÇö transient tool output junk
+- `scripts/capture-v4-1-screenshots.js`, `scripts/capture-v5-screenshots.js` ΓÇö one-time capture tools bound to the original author's Windows paths; not executable here
 
 ### Untracked from git (kept on disk, now gitignored)
-`db/custom.db`, `.data/*.json`, `.zscripts/dev.pid` — runtime artifacts previously captured by auto-commits.
+`db/custom.db`, `.data/*.json`, `.zscripts/dev.pid` ΓÇö runtime artifacts previously captured by auto-commits.
 
-### Archived in place (reference material — founder approval required to delete)
+### Archived in place (reference material ΓÇö founder approval required to delete)
 Classic cockpit/desktop UI (`src/components/{apps,cockpit,hq,os,ui}`, hooks, client stores, `globals.css`), `Uploaded/Design2`, `Uploaded/interactive-3d-particle-lattice`, `Uploaded/samjuniors-os-web-interface`, `Uploaded/astra.html`, `Uploaded/REF.mp4`, `Uploaded/Screenshot_*` reference frames, `public/prototype/v4` + `v5`.
 
 ### Docs fixed
 `next.config.ts` stale iframe comment; `PROGRESS.md` "Now" section; this entry.
 
 ### Bonus fix surfaced by mandated verification (pre-existing, proven via stash A/B)
-Hydration failure on every load for returning users: `osStore` used a `typeof window` server/client branch at module init. Fixed hydration-safe: both sides start from `SEED`, persisted localStorage state now applied post-mount via `os.rehydrate()` (called from App root effect); greeting `<h1>` got `suppressHydrationWarning` for the time-dependent text. Zero visual/graph changes — `flow.ts`/`FlowDesktop.tsx` untouched.
+Hydration failure on every load for returning users: `osStore` used a `typeof window` server/client branch at module init. Fixed hydration-safe: both sides start from `SEED`, persisted localStorage state now applied post-mount via `os.rehydrate()` (called from App root effect); greeting `<h1>` got `suppressHydrationWarning` for the time-dependent text. Zero visual/graph changes ΓÇö `flow.ts`/`FlowDesktop.tsx` untouched.
 
 ### Verification
 - Broken-reference search: clean (only historical log mentions)
 - `tsc --noEmit`: 0 errors in `src/` + `Uploaded/` (pre-existing `examples/`+`skills/` env noise unchanged)
 - `bun run lint`: 0 errors (same 2 pre-existing warnings in inactive legacy components)
-- `verify-prototype-v4.js`: ALL PASS · `verify-prototype-v5.js`: ALL PASS
-- Browser E2E: root renders fully (VLM clean); OS graph shows all 7 nodes + edges, calm idle; node selection → inspector + de-emphasis verified; hydration errors 0 for both fresh and returning users; 0 console errors
+- `verify-prototype-v4.js`: ALL PASS ┬╖ `verify-prototype-v5.js`: ALL PASS
+- Browser E2E: root renders fully (VLM clean); OS graph shows all 7 nodes + edges, calm idle; node selection ΓåÆ inspector + de-emphasis verified; hydration errors 0 for both fresh and returning users; 0 console errors
 
 ---
 Task ID: wiring-1 (Phase 3.4)
 Agent: main (Z.ai Code)
-Task: PHASE 3.4 — Real runtime wiring audit (graph/visuals frozen; UI must run on the real SamJuniorsOS backend)
+Task: PHASE 3.4 ΓÇö Real runtime wiring audit (graph/visuals frozen; UI must run on the real SamJuniorsOS backend)
 
 Work Log:
-- Full-path audit first: App.tsx → osStore → Sophia/Chat → deriveGraph → zero fetch() in the entire active UI (Uploaded/Design1); backend path verified live (/api/orchestrate → MultiAgentOrchestrator 9-step council → executor saveRun per step → AgentRunStore durable .data/agent_runs.json → SideEffectAuthorizationGate approvals → ConstitutionalVerifier)
-- Audit table produced (12 rows): ask-bar directive NOT WIRED (os.ask regex → localStorage addWork = fake progress), ChatPanel simulated replies (550ms canned), roster DUPLICATED (SEED copies definitions.ts), agent runtime/workstreams/decisions/approvals NOT WIRED, reload persistence localStorage-only, PRODUCT.md conflicts (v1 = "Sophia+Thorne only" + Cockpit UI vs implemented 4-agent council + V2 shell)
-- NEW src/app/api/agents/route.ts: GET /api/agents — authoritative roster read model from SERVER_AGENTS (additive; session-gated; no DB/auth/architecture change)
-- NEW Uploaded/Design1/src/lib/runtime.ts: client adapter/read model — id mapping (sophia↔coo, thorne↔researcher, maya↔pm, julian↔finance), fetchRoster/fetchRuns/fetchApprovals/decideApproval/agentChat/orchestrate/dispatchDirective (3s run-poll during execution), workstreamsFromRuns (groups durable agent runs by directive → stage from furthest protocol step, owner from latest specialist, state from real recency: active<150s/paused/done), agentStatesFromRuns, syncFromServer, summarizeRun, looksLikeDirective (mirrors backend directive heuristics)
-- osStore.ts: types gained origin/directive (Workstream), approvalId (Decision), server (AttentionItem), dismissed[] (OSState); os.applyServerState (server-origin work/decisions/attention REPLACE local projections; preserves founder-owned records + offline choices); os.localCommand replaces os.ask (fake work branch REMOVED — decide/focus/status/note only); resolveDecision routes approvalId decisions to POST /api/workflow/approvals via dynamic import (stays open until SERVER confirms; honest failure log); removeWork dismisses server work durably; presentationFor exported (UI presentation constants)
-- App.tsx: submit() async — localCommand → directive? dispatchDirective (real orchestration + live run-poll) : agentChat (real coo persona); honest failure bubble; mount: rehydrate + syncFromServer
-- ChatPanel.tsx: getAgentReply + setTimeout REMOVED → real POST /api/agent-chat with mapped agentId + 10-message history; typing indicator until real reply; catch → honest error message
-- TodoDrawer/DesktopOS/PersonaModal: all work-creation surfaces now dispatch REAL directives (owner selector transmits requested council via real `agents` API field — backend currently runs full council regardless, reported as backend nuance); server work renders read-only (no local Advance/Pause — WorkSurface conditional controls)
+- Full-path audit first: App.tsx ΓåÆ osStore ΓåÆ Sophia/Chat ΓåÆ deriveGraph ΓåÆ zero fetch() in the entire active UI (Uploaded/Design1); backend path verified live (/api/orchestrate ΓåÆ MultiAgentOrchestrator 9-step council ΓåÆ executor saveRun per step ΓåÆ AgentRunStore durable .data/agent_runs.json ΓåÆ SideEffectAuthorizationGate approvals ΓåÆ ConstitutionalVerifier)
+- Audit table produced (12 rows): ask-bar directive NOT WIRED (os.ask regex ΓåÆ localStorage addWork = fake progress), ChatPanel simulated replies (550ms canned), roster DUPLICATED (SEED copies definitions.ts), agent runtime/workstreams/decisions/approvals NOT WIRED, reload persistence localStorage-only, PRODUCT.md conflicts (v1 = "Sophia+Thorne only" + Cockpit UI vs implemented 4-agent council + V2 shell)
+- NEW src/app/api/agents/route.ts: GET /api/agents ΓÇö authoritative roster read model from SERVER_AGENTS (additive; session-gated; no DB/auth/architecture change)
+- NEW Uploaded/Design1/src/lib/runtime.ts: client adapter/read model ΓÇö id mapping (sophiaΓåöcoo, thorneΓåöresearcher, mayaΓåöpm, julianΓåöfinance), fetchRoster/fetchRuns/fetchApprovals/decideApproval/agentChat/orchestrate/dispatchDirective (3s run-poll during execution), workstreamsFromRuns (groups durable agent runs by directive ΓåÆ stage from furthest protocol step, owner from latest specialist, state from real recency: active<150s/paused/done), agentStatesFromRuns, syncFromServer, summarizeRun, looksLikeDirective (mirrors backend directive heuristics)
+- osStore.ts: types gained origin/directive (Workstream), approvalId (Decision), server (AttentionItem), dismissed[] (OSState); os.applyServerState (server-origin work/decisions/attention REPLACE local projections; preserves founder-owned records + offline choices); os.localCommand replaces os.ask (fake work branch REMOVED ΓÇö decide/focus/status/note only); resolveDecision routes approvalId decisions to POST /api/workflow/approvals via dynamic import (stays open until SERVER confirms; honest failure log); removeWork dismisses server work durably; presentationFor exported (UI presentation constants)
+- App.tsx: submit() async ΓÇö localCommand ΓåÆ directive? dispatchDirective (real orchestration + live run-poll) : agentChat (real coo persona); honest failure bubble; mount: rehydrate + syncFromServer
+- ChatPanel.tsx: getAgentReply + setTimeout REMOVED ΓåÆ real POST /api/agent-chat with mapped agentId + 10-message history; typing indicator until real reply; catch ΓåÆ honest error message
+- TodoDrawer/DesktopOS/PersonaModal: all work-creation surfaces now dispatch REAL directives (owner selector transmits requested council via real `agents` API field ΓÇö backend currently runs full council regardless, reported as backend nuance); server work renders read-only (no local Advance/Pause ΓÇö WorkSurface conditional controls)
 - FlowDesktop.tsx inspector: server-origin work hides local stage-mutation controls, shows "Server-authoritative execution" provenance line (visual design untouched; conditional render only)
 - SophiaPanel: pending-gate decision speaks honest "sent to governance gate" message; surfaceSchema metrics/milestones updated to truthful sources (council primitive, server read model, /api/agents)
-- PRODUCT.md reconciled with conflict reported first: §4 execution primitive now documents the implemented council path with evidence; §5 v1 = four roles + V2 Design1 shell (Cockpit archived reference); §10 success criteria updated to wired state; Current Repository State refreshed (runtime wiring IMPLEMENTED + WIRED; dev founder session documented as sandbox adaptation)
-- flow.ts / FlowDesktop render layer: ZERO changes (visuals preserved exactly — graph derives from the same osStore shapes now fed by server state)
+- PRODUCT.md reconciled with conflict reported first: ┬º4 execution primitive now documents the implemented council path with evidence; ┬º5 v1 = four roles + V2 Design1 shell (Cockpit archived reference); ┬º10 success criteria updated to wired state; Current Repository State refreshed (runtime wiring IMPLEMENTED + WIRED; dev founder session documented as sandbox adaptation)
+- flow.ts / FlowDesktop render layer: ZERO changes (visuals preserved exactly ΓÇö graph derives from the same osStore shapes now fed by server state)
 
-Verification (browser E2E, agent-browser 1600×1000 + 420×900, zero page errors throughout):
+Verification (browser E2E, agent-browser 1600├ù1000 + 420├ù900, zero page errors throughout):
 - Fresh user: mount sync populates server roster + persisted workstream from durable store; log clean
-- Conversational ask bar → REAL Sophia LLM reply (liveAi, persona + company context)
-- DIRECTIVE E2E: "Research the EU AI Act compliance landscape..." dispatched → POST /api/orchestrate 200 in 108s; runs grew 5→10 (coo understand → researcher research → pm build_execute → finance test → coo report, all completed); workstream transitioned discovery/active → done/done live; VLM verified REAL execution energy mid-run (orange comet on Sophia→Maya edge, pulsing borders, WORK 1) and calm settled state after (all four agents visible, Vault complete with checkmark, zero glitches)
+- Conversational ask bar ΓåÆ REAL Sophia LLM reply (liveAi, persona + company context)
+- DIRECTIVE E2E: "Research the EU AI Act compliance landscape..." dispatched ΓåÆ POST /api/orchestrate 200 in 108s; runs grew 5ΓåÆ10 (coo understand ΓåÆ researcher research ΓåÆ pm build_execute ΓåÆ finance test ΓåÆ coo report, all completed); workstream transitioned discovery/active ΓåÆ done/done live; VLM verified REAL execution energy mid-run (orange comet on SophiaΓåÆMaya edge, pulsing borders, WORK 1) and calm settled state after (all four agents visible, Vault complete with checkmark, zero glitches)
 - founderDecision from run surfaced as real attention ("1 Item need you" pill; status command briefs from real state)
 - Reload persistence: both server workstreams + attention restored FROM SERVER (not localStorage); zero errors
 - ChatPanel Thorne: real researcher persona reply referencing the actual completed EU AI Act research
 - Work drawer: Done(2) filter shows both server workstreams read-only with full stage tracks; no fake Advance/Pause on server work
-- Mobile 420×900: base layout clean (no overflow, ask bar correct); open chat panel with long content shows narrow-screen text overflow (pre-existing tradeoff, not a wiring regression)
+- Mobile 420├ù900: base layout clean (no overflow, ask bar correct); open chat panel with long content shows narrow-screen text overflow (pre-existing tradeoff, not a wiring regression)
 - bunx tsc root: 0 errors; bunx tsc Design1: 0 errors; bun run lint: 0 errors (2 pre-existing warnings in inactive legacy components); verify-prototype-v4 ALL PASS; verify-prototype-v5 ALL PASS; dev.log clean apart from pre-existing Composio-stub notice + old EADDRINUSE noise
 
 Stage Summary:
@@ -2217,9 +2217,9 @@ Stage Summary:
 
 ---
 
-## Phase 3.4.1 — Founder-Authenticate GET /api/agents/runs
+## Phase 3.4.1 ΓÇö Founder-Authenticate GET /api/agents/runs
 
-**Date:** 2026-09-12 · **Scope:** Security fix — founder-authenticate the agent-runs read model.
+**Date:** 2026-09-12 ┬╖ **Scope:** Security fix ΓÇö founder-authenticate the agent-runs read model.
 
 ### What changed
 - `app/api/agents/runs/route.ts`: Added canonical `getAuthenticatedFounder(req)` gate (same primitive as `/api/orchestrate` and other protected executive APIs); fail-closed 401 for unauthenticated/non-founder principals. Response contract (`success`, `count`, `runs` + filters) unchanged for authorized callers.
@@ -2234,9 +2234,9 @@ Stage Summary:
 
 ---
 
-## Phase 4.1 — SamJuniorsOS Workflow Design System & Specimen Page
+## Phase 4.1 ΓÇö SamJuniorsOS Workflow Design System & Specimen Page
 
-**Date:** 2026-09-12 · **Scope:** Visual component system & specimen sheet only (zero backend, API, database, auth, orchestration, or runtime state dependencies).
+**Date:** 2026-09-12 ┬╖ **Scope:** Visual component system & specimen sheet only (zero backend, API, database, auth, orchestration, or runtime state dependencies).
 
 ### What was completed
 - Built the presentation-only workflow component library in `components/workflow/`:
@@ -2249,7 +2249,7 @@ Stage Summary:
   - `Connector.tsx`: SVG bezier and stepped signal conduits (`straight`, `curved`, `dashed`, `branch`, `animated`) with budget-aware signal particles.
   - `Effects.tsx`: Kinetic feedback primitives (`PulseEffect`, `ProcessingEffect`, `SuccessBurst`, `ErrorPulse`, `LoadingRing`, `AmbientParticles`).
 - Built the 13-section specimen page at `app/design-system/workflow/page.tsx` displaying all components, layouts, geometries, states, connectors, tokens, and compositions with live performance budget toggle.
-- Applied Astra Refinements R1–R5:
+- Applied Astra Refinements R1ΓÇôR5:
   - R1: Refined node anatomy leader lines into dedicated left/right columns (`min-w-[640px]`) with no label collisions.
   - R2: Added SVG noise texture layer to Section 01 & 02 canvas previews.
   - R3: Displayed all 8 node states in Section 06 & 07.
@@ -2263,14 +2263,14 @@ Stage Summary:
 - `npm run build`: 27/27 static & dynamic routes compiled cleanly.
 - `scripts/test-advisor.ts`: 25 passed, 0 failed.
 - `tests/governance_security_foundation.test.ts`: 41 passed, 0 failed.
-- Browser verification via subagent: Full page scrolling verified from top header to bottom footer ("FLOWGRID · DESIGN SYSTEM v1.0"); all 13 sections visually inspected; budget toggles verified.
+- Browser verification via subagent: Full page scrolling verified from top header to bottom footer ("FLOWGRID ┬╖ DESIGN SYSTEM v1.0"); all 13 sections visually inspected; budget toggles verified.
 - Component isolation: Zero forbidden imports in `components/workflow/`.
 
 ---
 
-## Phase Audit — Sophia Phase 1 & Phase 2 + Jarvis Architecture Audit
+## Phase Audit ΓÇö Sophia Phase 1 & Phase 2 + Jarvis Architecture Audit
 
-**Date:** 2026-09-16 · **Scope:** Architectural audit across SamJuniorsOS, OpenJarvis repository, and Live Interaction research; durable capability mapping across 12 cognitive layers; build vs buy assessment.
+**Date:** 2026-09-16 ┬╖ **Scope:** Architectural audit across SamJuniorsOS, OpenJarvis repository, and Live Interaction research; durable capability mapping across 12 cognitive layers; build vs buy assessment.
 
 STATUS:
 COMPLETED
@@ -2279,7 +2279,7 @@ COMPLETED:
 - Comprehensive audit of SamJuniorsOS codebase across 12 architectural layers (Cognitive ingress, Grounding/context assembly, Conversation continuity, Executive reasoning, Decision support, Planning/decomposition, Execution, Verification, Persistent company understanding, Operational learning, Governance/authorization, Live interaction).
 - Deep inspection of local `upload/OpenJarvis` repository: confirmed crate scaffolding stubs with only `SystemPromptBuilder` implemented; zero audio/VAD/streaming code in OpenJarvis.
 - Evaluation of Live Interaction research (`doc/RESEARCH_REPORT.md`): cascaded pipeline vs S2S, VAD, STT, TTS, turn detection, barge-in reconciliation, transport.
-- Formulated the Sophia Live Modality Adapter architecture: strictly a streaming modality adapter over the existing Sophia cognitive pipeline (`SophiaIntentClassifier` → `SophiaServerGateway` → `MultiAgentOrchestrator`), preserving deterministic governance and authorization gates (`SideEffectAuthorizationGate`).
+- Formulated the Sophia Live Modality Adapter architecture: strictly a streaming modality adapter over the existing Sophia cognitive pipeline (`SophiaIntentClassifier` ΓåÆ `SophiaServerGateway` ΓåÆ `MultiAgentOrchestrator`), preserving deterministic governance and authorization gates (`SideEffectAuthorizationGate`).
 - Created durable audit document: `doc/SOPHIA_JARVIS_AUDIT.md`.
 
 VERIFIED:
@@ -2292,7 +2292,7 @@ NOT VERIFIED:
 - Deepgram API live WebSocket connection (no API key provisioned in environment).
 
 DECISIONS MADE:
-1. Sophia Live Interaction is a stateless modality adapter (VAD → STT → Sophia → TTS); DO NOT create an end-to-end S2S model or a second Sophia brain.
+1. Sophia Live Interaction is a stateless modality adapter (VAD ΓåÆ STT ΓåÆ Sophia ΓåÆ TTS); DO NOT create an end-to-end S2S model or a second Sophia brain.
 2. Spoken approvals ("I approve Julian's migration") MUST pass through `SophiaServerGateway` and `SideEffectAuthorizationGate` with cryptographic payload binding; speech cannot auto-execute mutations.
 3. Adopt the Jarvis 7-state interaction model and animated orb visual language from prototypes for voice UI feedback.
 4. Adopt Deepgram's `text_spoken` / `text_remaining` pattern to synchronize LLM context on barge-in.
@@ -2319,7 +2319,7 @@ NEXT ACTION:
 
 
 
-## Agent Identity, Memory Boundaries, and Decision Layer — Architecture Baseline (2026-10-04)
+## Agent Identity, Memory Boundaries, and Decision Layer ΓÇö Architecture Baseline (2026-10-04)
 
 **Status:** Task 1 documentation baseline recorded on `feat/decision-layer-architecture-baseline`. No runtime implementation was changed in this task.
 
@@ -2365,14 +2365,14 @@ NEXT ACTION:
 **Execution rule:** One task at a time. After each task, report branch, commit, changed files, verification, limitations, and the next single task; then wait for Founder direction.
 
 
-## Runtime Identity, Tool, and Execution Inventory — Task 2 Complete (2026-10-04)
+## Runtime Identity, Tool, and Execution Inventory ΓÇö Task 2 Complete (2026-10-04)
 
 **Evidence document:** `docs/research/runtime-capability-inventory.md`  
 **Status:** Source-level inventory completed on `feat/decision-layer-architecture-baseline`. No runtime code changed and no tests were executed in this task.
 
 ### Verified source path
 
-`/api/sofia/ask` (authenticated Founder) → `executeSophiaTurn` (conversation ownership, idempotency, in-flight duplicate coalescing, persistence) → `SophiaContextAssembler` → `SophiaIntentClassifier` → `SophiaServerGateway` (strips untrusted identity/authorization fields) → `MultiAgentOrchestrator` for authorized Founder directive proposals → existing specialist-agent protocol → deterministic tool selection → gated web/GitHub research paths where selected → evidence/epistemic lineage → assistant persistence and SSE response.
+`/api/sofia/ask` (authenticated Founder) ΓåÆ `executeSophiaTurn` (conversation ownership, idempotency, in-flight duplicate coalescing, persistence) ΓåÆ `SophiaContextAssembler` ΓåÆ `SophiaIntentClassifier` ΓåÆ `SophiaServerGateway` (strips untrusted identity/authorization fields) ΓåÆ `MultiAgentOrchestrator` for authorized Founder directive proposals ΓåÆ existing specialist-agent protocol ΓåÆ deterministic tool selection ΓåÆ gated web/GitHub research paths where selected ΓåÆ evidence/epistemic lineage ΓåÆ assistant persistence and SSE response.
 
 ### Inventory findings
 
@@ -2384,12 +2384,12 @@ NEXT ACTION:
 - Follow-up risk: the GitHub research branch passes a hard-coded `founder-001` label into Composio `sessionScope.userId`; trace its expected meaning and test coverage before changing it.
 - Relevant test files were located in the repository tree, but their presence is not a passing result. Provider credentials, connected accounts, real device behavior, and failure recovery were not verified.
 
-**Next roadmap task:** Task 3 — define canonical contracts for agent identity/persona, memory boundaries, decision proposals, and tool capabilities, reusing current abstractions and documenting only evidenced gaps.
+**Next roadmap task:** Task 3 ΓÇö define canonical contracts for agent identity/persona, memory boundaries, decision proposals, and tool capabilities, reusing current abstractions and documenting only evidenced gaps.
 
 
-## Task 3 — Canonical Identity, Memory, Decision, and Capability Contracts (2026-10-04)
+## Task 3 ΓÇö Canonical Identity, Memory, Decision, and Capability Contracts (2026-10-04)
 
-**Status:** COMPLETE — documentation only on `feat/decision-layer-architecture-baseline`. No runtime code, data model, dependency, or provider configuration changed.
+**Status:** COMPLETE ΓÇö documentation only on `feat/decision-layer-architecture-baseline`. No runtime code, data model, dependency, or provider configuration changed.
 
 ### What was recorded
 - Added `docs/architecture/agent-memory-decision-capability-contracts.md`.
@@ -2404,12 +2404,12 @@ NEXT ACTION:
 - The contract tables describe required behavior; they do not establish that every existing runtime path currently satisfies every requirement.
 - No merge, deployment, or main-branch change.
 
-**Next single task:** Task 4 — build a small versioned decision-reliability evaluation set and measure the existing classifier/gateway behavior before changing implementation.
+**Next single task:** Task 4 ΓÇö build a small versioned decision-reliability evaluation set and measure the existing classifier/gateway behavior before changing implementation.
 
 
-## Task 4 — Decision Reliability Evaluation (2026-10-04)
+## Task 4 ΓÇö Decision Reliability Evaluation (2026-10-04)
 
-**Status:** IN PROGRESS — versioned evaluation catalog created; execution baseline pending.
+**Status:** IN PROGRESS ΓÇö versioned evaluation catalog created; execution baseline pending.
 
 - Added `docs/research/decision-reliability-evaluation-v1.md` (v1.0.0).
 - Mapped existing deterministic classifier, gateway, authority-hardening, and honesty tests to 26 evaluation scenarios; separated existing coverage from cases not yet directly covered.
@@ -2422,9 +2422,9 @@ NEXT ACTION:
 **Next single action:** Run the deterministic suites in the repository environment and record exact results before proposing runtime fixes.
 
 
-## Task 4 — Decision Reliability Baseline Executed (2026-10-04)
+## Task 4 ΓÇö Decision Reliability Baseline Executed (2026-10-04)
 
-**Status:** BASELINE RECORDED — documentation-only update on `feat/decision-layer-architecture-baseline`. Execution details below were supplied in the baseline report and were not independently re-run by this documentation update.
+**Status:** BASELINE RECORDED ΓÇö documentation-only update on `feat/decision-layer-architecture-baseline`. Execution details below were supplied in the baseline report and were not independently re-run by this documentation update.
 
 ### Environment and results
 - Tested commit: `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90`; isolated linked worktree at `/home/z/baseline-wt`; Bun 1.3.14.
@@ -2432,13 +2432,13 @@ NEXT ACTION:
 - `bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed**. Expected network-down stderr in test 3.4 is part of the honest zero-result fallback test.
 - `bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed**.
 - Reported total: **49 passed / 0 failed / 0 skipped**, all three commands exit 0. The intent suite fakes the provider SDK boundary; this is not a live-provider quality result.
-- Authority S8–S10 were conditional on `DATABASE_URL` and ran because the sandbox exported `DATABASE_URL=file:/home/z/my-project/db/custom.db`. That pointed at the shared development database, not an isolated worktree-local test DB. The report states post-run verification found zero test residue. Isolate this database for future runs.
+- Authority S8ΓÇôS10 were conditional on `DATABASE_URL` and ran because the sandbox exported `DATABASE_URL=file:/home/z/my-project/db/custom.db`. That pointed at the shared development database, not an isolated worktree-local test DB. The report states post-run verification found zero test residue. Isolate this database for future runs.
 
 ### Known issues and coverage gaps
-- **S4:** unknown `conversationId` provisions a new conversation, diverging from ADR 0002 §7's blanket 404 expectation.
+- **S4:** unknown `conversationId` provisions a new conversation, diverging from ADR 0002 ┬º7's blanket 404 expectation.
 - **S6:** the same bogus conversation ID + turn ID can re-fork and re-execute because fork occurs before conversation-scoped idempotency. Highest-priority reliability target identified by this baseline.
 - The single-kind intent contract can represent a compound halt-plus-commission request as `steering_proposal`, dropping the second objective.
-- EVAL-023…026 remain without dedicated deterministic regression coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
+- EVAL-023ΓÇª026 remain without dedicated deterministic regression coverage for provider timeout/partial execution, compound requests, conflicting current-vs-historical context, and clarification escalation.
 - No new failures were reported. The green S4/S6 assertions pin known limitations; they do not mark those behaviors as acceptable.
 
 ### Scope and next action
@@ -2447,7 +2447,7 @@ NEXT ACTION:
 - **Next proposed implementation target:** investigate and design a narrowly scoped S6 idempotency fix, with a dedicated isolated test database. Do not change runtime code until the Founder authorizes that implementation task.
 
 
-## Task 4 Follow-up — S6 Stale-Conversation Retry Idempotency (2026-10-04)
+## Task 4 Follow-up ΓÇö S6 Stale-Conversation Retry Idempotency (2026-10-04)
 
 **Status:** IMPLEMENTED AND VERIFIED ON FEATURE BRANCH; deterministic suites green, TypeScript check remains non-green with baseline-equivalent diagnostics.
 
@@ -2460,14 +2460,14 @@ NEXT ACTION:
 - It is narrower than introducing a global idempotency registry or changing the existing unknown-conversation behavior to 404.
 - The raw caller-supplied ID is not stored as the canonical conversation ID; the derived ID is bounded and includes founder and turn identity.
 - Requests without a turn ID preserve their existing random-fork behavior.
-- S4 remains an explicit policy decision; compound-request loss and EVAL-023…026 coverage gaps remain open.
+- S4 remains an explicit policy decision; compound-request loss and EVAL-023ΓÇª026 coverage gaps remain open.
 
 ### Verification results
 - Verified branch head: `de1a57985bf0b7ec6566a3064c065ae4be427820`; fresh detached worktree at `/home/z/s6-verify-wt`; Bun 1.3.14; `bun install --frozen-lockfile` exit 0 with 546 packages.
 - Dedicated DB: `/home/z/s6-verify-wt/.data/decision-reliability-test.db`, initialized via `bunx prisma db push --skip-generate` (exit 0). Ambient `DATABASE_URL` was explicitly overridden for every suite command. The reported shared development DB mtime was unchanged; the isolated DB had zero conversations/messages after test cleanup; worktree status was clean.
 - `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/phase1_intent_contract.test.ts`: exit 0, **22 passed / 0 failed / 0 skipped**.
 - `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/r1_honesty_consolidation.test.ts`: exit 0, **17 passed / 0 failed / 0 skipped**. Two expected stderr lines came from the deliberate fetch stub in test 3.4.
-- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed / 0 skipped**. S8–S10 executed against the isolated database.
+- `DATABASE_URL=file:/home/z/s6-verify-wt/.data/decision-reliability-test.db bun tests/sophia/m3_authority_hardening.test.ts`: exit 0, **10 passed / 0 failed / 0 skipped**. S8ΓÇôS10 executed against the isolated database.
 - Total: **49 passed / 0 failed / 0 skipped** across the three suites.
 - `bunx tsc --noEmit`: exit 1, **153 diagnostics**. Re-running at original baseline commit `7024a4925f2c6ad92e2738ce0b2aa4c9a9086e90` produced the same 153-error set; only two existing `turn-executor.ts` TS2339 diagnostics shifted line numbers due to the fix. No new TypeScript diagnostics were reported.
 - S6-specific assertions passed: same canonical conversation ID, `idempotentReplay === true`, identical reply, exactly two persisted messages, and founder-isolated canonical conversation/message ownership when another founder reuses the supplied unknown ID and turn ID. No memory-capture event was triggered on the replay.
@@ -2476,15 +2476,15 @@ NEXT ACTION:
 ### Interpretation and limits
 - The stale supplied-conversation-ID duplicate-execution defect is fixed for the covered retry path and pinned by the regression.
 - This verifies the sequential/same-process replay path; it does not prove cross-process atomic exactly-once execution.
-- S4 unknown-conversation provisioning policy remains unchanged; compound-request objective loss remains open; EVAL-023…026 remain without dedicated deterministic regression coverage.
+- S4 unknown-conversation provisioning policy remains unchanged; compound-request objective loss remains open; EVAL-023ΓÇª026 remain without dedicated deterministic regression coverage.
 - Live-provider quality and release readiness are not established. TypeScript remains non-green due to the baseline-equivalent 153 diagnostics.
 
 **Next single action:** Stop here and await Founder direction. No merge, deployment, or additional runtime changes without approval.
 
 
-## Task 5 — Memory and Honcho Assessment (2026-10-04)
+## Task 5 ΓÇö Memory and Honcho Assessment (2026-10-04)
 
-**Status:** COMPLETE — read-only source audit and external-product assessment on `feat/decision-layer-architecture-baseline`. No runtime code or data-store behavior changed.
+**Status:** COMPLETE ΓÇö read-only source audit and external-product assessment on `feat/decision-layer-architecture-baseline`. No runtime code or data-store behavior changed.
 
 ### Evidence inspected
 - Personal Mind: `src/lib/server/sophia/personal-memory-store.ts`, `memory-extractor.ts`, `memory-gate.ts`, `memory-capture-stage.ts`, `memory-lifecycle.ts`, and `src/app/api/sofia/memory/route.ts`.
@@ -2515,14 +2515,14 @@ The controlled prompt-version experiment is already present and archived; do not
 
 ## Production Sophia Prompt Applicability Audit (2026-10-04)
 
-**Status:** COMPLETE — read-only source trace on `feat/decision-layer-architecture-baseline`.
+**Status:** COMPLETE ΓÇö read-only source trace on `feat/decision-layer-architecture-baseline`.
 
 ### Sources inspected
 - `src/app/api/sofia/ask/route.ts`
 - `src/lib/server/sophia/turn-executor.ts`
-- `src/lib/server/sophia/intent-classifier.ts` — production `systemInstruction`, JSON proposal schema, and `sanitizeProposal()`.
-- `src/lib/server/sophia/context-assembly.ts` — dependency-intent detection and bounded, provenance-bearing `CANONICAL_FACT` dependency-path slice.
-- `src/lib/server/sophia/server-gateway.ts` — deterministic `informational_query` reply branches.
+- `src/lib/server/sophia/intent-classifier.ts` ΓÇö production `systemInstruction`, JSON proposal schema, and `sanitizeProposal()`.
+- `src/lib/server/sophia/context-assembly.ts` ΓÇö dependency-intent detection and bounded, provenance-bearing `CANONICAL_FACT` dependency-path slice.
+- `src/lib/server/sophia/server-gateway.ts` ΓÇö deterministic `informational_query` reply branches.
 - `tests/sophia/m53_dependency_relations.test.ts`, `tests/sophia/m54_scenario_contracts.test.ts`, and M5.4 design/remediation documents.
 
 ### Finding and decision
@@ -2539,20 +2539,20 @@ The controlled prompt-version experiment is already present and archived; do not
 **Next single action:** Await Founder direction on the production response-path regression; no further changes in this task.
 ---
 
-## 2026-10-06 — Full branch consolidation into main (Founder-authorized)
+## 2026-10-06 ΓÇö Full branch consolidation into main (Founder-authorized)
 
 **Status:** COMPLETE (local); remote push pending a fresh GitHub token.
 
-- Merged all content-bearing branches onto the voice lineage: `feat/decision-layer-architecture-baseline` @ 4f29110 (S6 turn-executor retry idempotency + decision-layer research docs), `audit/task6-reaudit-post-voice-integration` @ 28e9572, `audit/sofia-voice-desktop-capability-validation` @ 1ea565c — on top of `feat/sofiaui-voice-integration` @ 07799ad (SofiaUI voice runtime phases 2-5 + re-audit fixes), which already contains all of `development` (incl. PR #5's dependency response-path fix and the Jev reference merge).
+- Merged all content-bearing branches onto the voice lineage: `feat/decision-layer-architecture-baseline` @ 4f29110 (S6 turn-executor retry idempotency + decision-layer research docs), `audit/task6-reaudit-post-voice-integration` @ 28e9572, `audit/sofia-voice-desktop-capability-validation` @ 1ea565c ΓÇö on top of `feat/sofiaui-voice-integration` @ 07799ad (SofiaUI voice runtime phases 2-5 + re-audit fixes), which already contains all of `development` (incl. PR #5's dependency response-path fix and the Jev reference merge).
 - turn-executor now carries BOTH the S6 canonical retry-conversation provisioning AND the Phase-3 cancellation machinery; m3_authority 10/0 confirms the combination.
 - Repo cleaned: sandbox/harness artifacts untracked (tool-results, upload/download runtime dirs, .agents/.codex/.zscripts, examples, mini-services, Caddyfile, 15.2MB screenshot); .gitignore extended; CI workflow retargeted to main; obsolete t6 defect-pin suite removed (superseded per the Task-6 re-audit).
 - Verification: 40+ suites green at exact baseline numbers; eslint 0; tsc 150 vs 152 baseline (zero new); production build 30/30 pages with dynamic root.
 - Remote: origin/main fast-forwardable to the consolidated tip; all other remote branches strictly contained. Push + remote branch deletion await a fresh token.
 
 
-## 2026-10-12 — M1 Memory Source-of-Truth Audit (kickoff)
+## 2026-10-12 ΓÇö M1 Memory Source-of-Truth Audit (kickoff)
 
-**Status:** IN PROGRESS — initial source-level inventory recorded on `audit/m1-memory-source-of-truth`.  
+**Status:** IN PROGRESS ΓÇö initial source-level inventory recorded on `audit/m1-memory-source-of-truth`.  
 **Baseline:** `main` @ `87bec51b17229ced9eec4d730b1a6302b4d84f88`.
 
 ### Scope
@@ -2584,9 +2584,9 @@ The repository guardrails say the actual local working tree outranks GitHub. Thi
 Complete the method-level persistence matrix for `EpistemicClaimStore` and `CompanyStateStore`, then trace context-assembly read paths and retention/deletion propagation. Update the M1 research document and this worklog. Do not begin runtime fixes until the full M1 audit and local/remote reconciliation are complete.
 
 
-## 2026-10-12 — M1 source matrix expansion (Epistemic + CompanyState)
+## 2026-10-12 ΓÇö M1 source matrix expansion (Epistemic + CompanyState)
 
-**Status:** IN PROGRESS — second read-only source pass completed; no code changes.
+**Status:** IN PROGRESS ΓÇö second read-only source pass completed; no code changes.
 
 ### Additional evidence inspected
 - Full method paths in `src/lib/server/epistemic/claim-store.ts`: sources, signals, claims, verification, canonical facts, fact queries, temporal reads, lineage and supersession.
@@ -2609,34 +2609,34 @@ Build the deletion/retention dependency map and trace the full context-assembly 
 Source inspection only. No tests, database connection, runtime, deployment settings, production records or local working tree were inspected. No implementation or migration was performed.
 
 
-## 2026-10-12 — M1 Audit Completion (Tasks A–E)
+## 2026-10-12 ΓÇö M1 Audit Completion (Tasks AΓÇôE)
 
 **Status:** COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. Full report updated in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. No runtime code or database modifications made in this phase.
 
 ### What was investigated & verified
-1. **Task A — Context Assembly & Retrieval Flow**:
-   - Traced complete ingress-to-capture path: HTTP `/api/agent-chat` & WebSocket `:3001` → session authentication (`getAuthenticatedFounder`) → `ConversationStore.saveMessage` → `SophiaContextAssembler.assemble` (slices 1–7) → `SophiaIntentClassifier.classify` (deterministic pre-filters + LLM proposal + `isValidProposalShape` gate + `sanitizeProposal`) → `SophiaServerGateway.process` → assistant message persistence → async `scheduleSophiaMemoryCapture`.
+1. **Task A ΓÇö Context Assembly & Retrieval Flow**:
+   - Traced complete ingress-to-capture path: HTTP `/api/agent-chat` & WebSocket `:3001` ΓåÆ session authentication (`getAuthenticatedFounder`) ΓåÆ `ConversationStore.saveMessage` ΓåÆ `SophiaContextAssembler.assemble` (slices 1ΓÇô7) ΓåÆ `SophiaIntentClassifier.classify` (deterministic pre-filters + LLM proposal + `isValidProposalShape` gate + `sanitizeProposal`) ΓåÆ `SophiaServerGateway.process` ΓåÆ assistant message persistence ΓåÆ async `scheduleSophiaMemoryCapture`.
    - Verified that historical precedents (`CompanyMemoryStore`) carry explicit non-overriding labels and cannot override canonical facts.
    - Verified that personal memories are XML-escaped inside `<personal_memory_context>` to prevent prompt injection.
    - Verified store failure resilience: context slices fail soft with `[UNAVAILABLE / DEGRADED]` notices without crashing turns.
 
-2. **Task B — Retention & Deletion Dependency Mapping**:
+2. **Task B ΓÇö Retention & Deletion Dependency Mapping**:
    - Built comprehensive 8-class matrix across Personal Mind, Conversations, Messages, Precedents, Knowledge, Epistemic Claims, Operational State, and Agent Runs.
    - Confirmed only `SophiaMemoryStore` provides an item deletion API (`deleteMemory`).
    - Identified total absence of deletion methods in `ConversationStore`, `CompanyMemoryStore`, `EpistemicClaimStore`, and `CompanyStateStore`.
    - Established "forget this" policy: physical deletion for Personal Mind; cryptographic supersession/tombstoning for Epistemic Facts to preserve `FactLineage`, `DEPENDS_ON` relations, and `AS_OF` temporal queries.
 
-3. **Task C — Persistence & Failure Behavior**:
+3. **Task C ΓÇö Persistence & Failure Behavior**:
    - Formally differentiated 4 persistence tiers: In-Memory, `DurableFileStore`, Prisma transactional DB, and Opportunistic Mirror.
    - Evaluated multi-instance cloud hazard: file-primary stores (`SophiaMemoryStore`, `ConversationStore`) isolate memory to individual container instances, making current architecture unsafe for multi-instance scaling without shared DB authority.
    - Identified `DurableFileStore` degradation: 30s lock timeout results in proceeding without lock; JSON parse error returns `{}` (masks file corruption).
 
-4. **Task D — Database & Deployment Configuration**:
+4. **Task D ΓÇö Database & Deployment Configuration**:
    - Verified `prisma/schema.prisma` explicitly configures SQLite datasource (`file:./db/custom.db`).
    - Verified `authority.ts` parser rejects `DATABASE_MODE=sqlite` documented in `.env.example`, silently defaulting to `authoritative` in production or `local` in development.
    - Production PostgreSQL connection string and deployment topology are **NOT VERIFIED** (no secrets or cloud endpoints in repository).
 
-5. **Task E — Test Execution & Coverage Gaps**:
+5. **Task E ΓÇö Test Execution & Coverage Gaps**:
    - Executed 7 existing test suites using `npx tsx`: **108 passed assertions**, 0 failures.
      - `m52_retrieval_hygiene.test.ts` (25 pass)
      - `m1_canonical_state_authority.test.ts` (7 pass)
@@ -2663,23 +2663,23 @@ Source inspection only. No tests, database connection, runtime, deployment setti
 Present completed M1 Audit Report to Founder. Do not begin deletion/retention implementation (Batch 2) until founder confirms policy. Await approval to implement Batch 1 (hygiene, `DATABASE_MODE` parser alignment, `CompanyMemoryStore` cache fix, and cross-platform test runner support).
 
 
-## 2026-10-12 — M1 Batch 1 Implementation & Verification
+## 2026-10-12 ΓÇö M1 Batch 1 Implementation & Verification
 
 **Status:** COMPLETE on `audit/m1-memory-source-of-truth`. Implemented approved Batch 1 scope: M1-F02, M1-F03, and M1-F11.
 
 ### What changed
-1. **M1-F11 — Configuration Parser Alignment (`src/lib/server/db/authority.ts`, `.env.example`)**:
+1. **M1-F11 ΓÇö Configuration Parser Alignment (`src/lib/server/db/authority.ts`, `.env.example`)**:
    - `getDatabaseMode()` now explicitly parses `'sqlite'` as an alias for `'local'`.
    - Updated `.env.example` to document `'local'`, `'authoritative'`, `'test'` with explanation of `'sqlite'` alias.
    - Prevents silent fallback to production authoritative mode when setting `DATABASE_MODE=sqlite`.
 
-2. **M1-F02 — CompanyMemoryStore Authoritative Retrieval (`src/lib/server/memory/memory-store.ts`)**:
+2. **M1-F02 ΓÇö CompanyMemoryStore Authoritative Retrieval (`src/lib/server/memory/memory-store.ts`)**:
    - `queryMemories()` now retrieves candidates via `await this.getAllMemories()` instead of scoring the private `this.memories` array.
    - In authoritative mode, candidates are queried from the authoritative database fail-closed.
    - `recordMemory()` in authoritative mode keeps `this.memories` coherent upon DB upsert.
    - `setMemories()` in-memory test/benchmark injection semantics are preserved.
 
-3. **M1-F03 — Strict Local Persistence Error Propagation (`src/lib/server/memory/memory-store.ts`)**:
+3. **M1-F03 ΓÇö Strict Local Persistence Error Propagation (`src/lib/server/memory/memory-store.ts`)**:
    - `recordMemory()` in local mode now uses `DurableFileStore.getInstance().saveItemStrict('company_memories', ...)` before mutating `this.memories`.
    - Disk persistence failures are no longer silently swallowed: errors fail-closed, and `this.memories` is not modified with unpersisted records.
    - Replaces existing record by ID instead of unshifting duplicates.
@@ -2699,7 +2699,7 @@ Present completed M1 Audit Report to Founder. Do not begin deletion/retention im
 Founder review of Batch 1 results and decision on Batch 2 (deletion & retention foundation: conversation cascade deletion, epistemic cryptographic tombstoning).
 
 
-## 2026-10-12 — M1 Batch 2: Retention, Deletion and Forget Governance Design
+## 2026-10-12 ΓÇö M1 Batch 2: Retention, Deletion and Forget Governance Design
 
 **Status:** DESIGN COMPLETE (Awaiting Founder Review Checkpoint) on `audit/m1-memory-source-of-truth`.
 
@@ -2710,8 +2710,8 @@ Design a safe, founder-controlled retention, deletion, and "forget this" archite
 1. **Repository & Working Tree Verification (Phase 1)**:
    - Verified current commit `affbcaf` on branch `audit/m1-memory-source-of-truth`.
    - Verified Batch 1 changes and test suite reproducibility: 7/7 passed on `tests/sophia/m1_batch1_memory_authority.test.ts`; 108/108 passed on regression suites (115 total assertions).
-   - Inspected conversation and message schema models in `prisma/schema.prisma` (lines 492–525): `ChatMessage` has `onDelete: Cascade` to `Conversation` in Prisma, but in current local mode, `DurableFileStore` collections (`conversations` and `chat_messages`) are decoupled flat files requiring explicit locked collection filtering.
-   - Inspected epistemic schema models in `prisma/schema.prisma` (lines 372–403): `CanonicalFact` has `onDelete: Restrict` on `EpistemicClaim` and self-relates via `supersededById`.
+   - Inspected conversation and message schema models in `prisma/schema.prisma` (lines 492ΓÇô525): `ChatMessage` has `onDelete: Cascade` to `Conversation` in Prisma, but in current local mode, `DurableFileStore` collections (`conversations` and `chat_messages`) are decoupled flat files requiring explicit locked collection filtering.
+   - Inspected epistemic schema models in `prisma/schema.prisma` (lines 372ΓÇô403): `CanonicalFact` has `onDelete: Restrict` on `EpistemicClaim` and self-relates via `supersededById`.
 
 2. **12-Class Retention & Forget Policy Matrix (Phase 2)**:
    - Formulated detailed policy across: (1) Personal Mind, (2) Conversations, (3) Chat Messages, (4) Company Precedents, (5) Company Knowledge, (6) Epistemic Sources, (7) Epistemic Claims, (8) Canonical Facts, (9) Operational State, (10) Agent Runs, (11) Governance Audits, (12) Derived Indexes/Caches.
@@ -2752,7 +2752,76 @@ Design a safe, founder-controlled retention, deletion, and "forget this" archite
 - Zero runtime code modified; architecture preserved.
 
 ### Next Action
-Await Founder review and approval on the Batch 2 design specification before implementing `deleteConversation`, `deleteMessage`, and route handlers.
+Founder reviewed and approved Batch 2 design subject to corrections: Write-Ahead Tombstones for non-atomic anti-resurrection, zero information leakage (404 for unknown/cross-founder), governed retention policy, audit record preservation, epistemic cryptographic erasure deferred, and proceeding with conversation & message deletion only.
+
+
+## 2026-10-12 ΓÇö M1 Batch 2: Conversation Deletion & Anti-Resurrection Tombstones Implementation
+
+**Status:** COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+
+### Objective
+Implement founder-controlled physical deletion of conversations and messages with durable anti-resurrection tombstones, partial-failure cascade reconciliation, zero information leakage security, and audit record preservation, incorporating all Founder review corrections.
+
+### What was completed
+
+1. **Write-Ahead Tombstone & Store Hardening (`src/lib/server/conversation/store.ts`)**:
+   - Added `CONVERSATION_TOMBSTONES_COLLECTION = 'conversation_tombstones'` in `DurableFileStore`.
+   - Defined `ConversationTombstone`, `DeleteConversationResult`, and `DeleteMessageResult` contracts.
+   - Implemented `isTombstoned(conversationId)` and `getTombstone(conversationId)`.
+   - Hardened `getConversation`: if `this.isTombstoned(conversationId)`, returns `null` immediately and strictly bypasses the Prisma read fallback, preventing failed mirror deletions or restored backups from resurrecting deleted records.
+   - Hardened `findMessageByIdempotencyKey`: returns `null` if conversation is tombstoned.
+   - Hardened `listConversations`: filters out tombstoned conversations as defense-in-depth.
+   - Implemented Anti-Recreation Shield in `createConversation` and `createOrGetConversation`: throws fail-closed error if an active request or retry attempts to create or append to a tombstoned conversation ID.
+   - Implemented `deleteConversation(founderId, conversationId)`:
+     - Strict fail-closed ownership check.
+     - Idempotent: returns `alreadyDeleted: true` if already tombstoned by caller, re-verifying disk cleanup.
+     - Writes write-ahead tombstone to `conversation_tombstones.json` before modifying collections.
+     - Purges all matching messages from `chat_messages` under collection lock (`writeCollectionStrict`).
+     - Deletes conversation from `conversations` via `deleteItemStrict`.
+     - Best-effort deletes from Prisma mirror; records `prismaReconciled: true/false` on tombstone.
+   - Implemented `deleteMessage(founderId, conversationId, messageId)`:
+     - Strict fail-closed ownership check against parent conversation.
+     - Purges message from `chat_messages` under lock; updates parent conversation `updatedAt`.
+     - Best-effort deletes message from Prisma mirror.
+   - Implemented `reconcileAllTombstones()` and `reconcilePrismaTombstones()` for partial-failure and interrupted-cascade recovery.
+
+2. **REST API Endpoints (`src/app/api/conversation/route.ts`, `src/app/api/conversation/message/route.ts`, `src/app/api/agent-chat/route.ts`)**:
+   - Created `/api/conversation`:
+     - `GET`: Authenticated founder retrieval of conversation + messages, or conversation listing.
+     - `DELETE`: Authenticated founder deletion of entire conversation or individual message.
+     - Enforces strict founder session auth (401 on unauthenticated).
+     - Enforces Zero Information Leakage: Mismatched ownership or unknown IDs unconditionally return 404 (never 403), preventing enumeration or timing attacks.
+     - Idempotent repeated deletions return 200 with `{ success: true, deleted: false, alreadyDeleted: true }`.
+   - Created `/api/conversation/message`:
+     - `DELETE`: Authenticated founder deletion of individual messages. Returns 401 unauthenticated, 404 not found/cross-founder, 200 success.
+   - Updated `/api/agent-chat`:
+     - Added `DELETE` method alias supporting conversation and message deletion.
+     - Updated `GET` handler to return 404 on `ConversationSecurityError` for zero information leakage.
+
+3. **Isolated Test Suite (`tests/sophia/m1_batch2_conversation_deletion.test.ts`)**:
+   - Implemented comprehensive 21-test suite covering:
+     - Group 1: Basic deletion & message cascade purge (1.1).
+     - Group 2: Idempotency & repeated deletion (2.1).
+     - Group 3: Cross-founder isolation & zero information leakage (3.1, 3.2).
+     - Group 4: Unknown resource handling (4.1, 4.2).
+     - Group 5: Single message deletion with sibling preservation & timestamp updates (5.1, 5.2).
+     - Group 6: Concurrent deletions under collection locks & active-turn races (6.1, 6.2).
+     - Group 7: Write-Ahead Tombstone & anti-resurrection shield against Prisma mirrors (7.1).
+     - Group 8: Partial-failure recovery & reconciliation via `reconcileAllTombstones` (8.1).
+     - Group 9: Episodic search & list retrieval hygiene (9.1).
+     - Group 10: Complete preservation of independent `AgentRun`, `ApprovalRecord`, and audit ledger (10.1).
+     - Group 11: HTTP API endpoint contracts (11.1ΓÇô11.7).
+   - 21/21 tests passed cleanly.
+
+### Tests Executed & Verified
+- `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **21 PASSED, 0 FAILED**
+- `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**
+- `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**
+- `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**
+
+### Next Action
+Execute Batch 3: `DurableFileStore` file corruption quarantine (`.corrupt.<timestamp>`).
+
 
 
 
