@@ -67,21 +67,62 @@ export interface MessageTombstone {
 /**
  * Checks whether an error from Prisma represents a confirmed already-absent record
  * (P2025: Record to delete does not exist) versus a genuine connection error or timeout.
+ *
+ * GOVERNANCE RULES:
+ * 1. P2025 represents a confirmed absent record -> true.
+ * 2. Connection errors (P1001, P1002, ETIMEDOUT, ECONNREFUSED) must remain pending -> false.
+ * 3. Database configuration errors (P1003) must remain pending -> false.
+ * 4. Generic phrases like "does not exist" (e.g. table/database does not exist) must NOT
+ *    be treated as record absence -> false.
  */
 export function isPrismaRecordNotFoundError(err: any): boolean {
   if (!err) return false;
+
+  // Canonical Prisma error code for "Record to delete does not exist"
   if (err.code === 'P2025') return true;
+
+  // Connection errors, database initialization errors, and timeouts must NEVER be treated as record absence
+  if (
+    typeof err.code === 'string' &&
+    (err.code.startsWith('P1') ||
+      err.code === 'ETIMEDOUT' ||
+      err.code === 'ECONNREFUSED' ||
+      err.code === 'ENOTFOUND')
+  ) {
+    return false;
+  }
+
+  // If a mock or driver wraps the error without code, check for exact canonical P2025 phrases.
+  // Reject generic fragments like "table does not exist", "database does not exist", "host does not exist".
   if (typeof err.message === 'string') {
-    const msg = err.message.toLowerCase();
+    const msg = err.message;
     if (
-      msg.includes('record to delete does not exist') ||
-      msg.includes('record not found') ||
-      msg.includes('does not exist')
+      msg.includes('database does not exist') ||
+      msg.includes('table does not exist') ||
+      msg.includes('relation does not exist') ||
+      msg.includes('does not exist at') ||
+      msg.includes('host does not exist')
+    ) {
+      return false;
+    }
+    if (
+      msg.includes('Record to delete does not exist') ||
+      msg.includes('An operation failed because it depends on one or more records that were required but not found')
     ) {
       return true;
     }
   }
+
   return false;
+}
+
+export interface ReconcileResult {
+  reconciledPrismaCount: number;
+  cleanedLocalCount: number;
+  pendingPrismaCount: number;
+  failedLocalCount: number;
+  success: boolean;
+  errors?: string[];
 }
 
 export interface DeleteConversationResult {
@@ -395,7 +436,11 @@ export class ConversationStore {
    * Saves a chat message to the conversation, with deduplication / idempotency handling,
    * serialized on the CHAT_MESSAGES_COLLECTION lock (Fail-Closed, no race against deletion).
    */
-  public async saveMessage(msg: CreateChatMessageParams, founderId: string): Promise<ChatMessageRecord> {
+  public async saveMessage(
+    msg: CreateChatMessageParams,
+    founderId: string,
+    options?: { lockTimeoutMs?: number }
+  ): Promise<ChatMessageRecord> {
     const { conversationId, content, sender } = msg;
 
     if (!founderId) {
@@ -454,7 +499,9 @@ export class ConversationStore {
 
     // CRITICAL SECTION: Serialized on CHAT_MESSAGES_COLLECTION lock (Fail-Closed)
     // Synchronous execution: no await inside withCollectionLockStrict!
-    const writtenRecord = this.fileStore.withCollectionLockStrict(CHAT_MESSAGES_COLLECTION, () => {
+    const writtenRecord = this.fileStore.withCollectionLockStrict(
+      CHAT_MESSAGES_COLLECTION,
+      () => {
       // 1. Recheck conversation tombstone inside critical section immediately before writing
       if (this.isTombstoned(conversationId)) {
         throw new ConversationSecurityError(
@@ -520,7 +567,7 @@ export class ConversationStore {
       this.fileStore.saveItem(CONVERSATIONS_COLLECTION, conversationId, currentConv);
 
       return record;
-    });
+    }, options?.lockTimeoutMs);
 
     // 2. Dual-write to Prisma if database is available (opportunistic mirror, non-blocking)
     try {
@@ -802,9 +849,21 @@ export class ConversationStore {
    * as reconciled. Database outages, timeouts, and connection errors leave tombstones
    * pending (`prismaReconciled: false`) for retry on subsequent passes.
    */
-  public async reconcileAllTombstones(): Promise<{ reconciledPrismaCount: number; cleanedLocalCount: number }> {
+  /**
+   * Reconciles pending Prisma mirror deletions and cleans any local file orphans
+   * from interrupted cascades across all tombstoned conversations.
+   * Can be triggered by an operator script or during background maintenance.
+   *
+   * FAILURE & RECONCILIATION INTEGRITY:
+   * Only genuine deletions and confirmed already-absent records (P2025) are recorded
+   * as reconciled. Database outages, timeouts, and connection errors leave tombstones
+   * pending (`prismaReconciled: false`) for retry on subsequent passes.
+   */
+  public async reconcileAllTombstones(): Promise<ReconcileResult> {
     let prismaCount = 0;
     let localCount = 0;
+    let failedLocalCount = 0;
+    const errors: string[] = [];
 
     const tombstones = this.fileStore.readCollection<ConversationTombstone>(
       CONVERSATION_TOMBSTONES_COLLECTION
@@ -815,11 +874,14 @@ export class ConversationStore {
       try {
         const lingering = this.fileStore.getItem<ConversationRecord>(CONVERSATIONS_COLLECTION, id);
         if (lingering) {
-          this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
-          localCount++;
+          const deleted = this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id, { lockStrict: true });
+          if (deleted) {
+            localCount++;
+          }
         }
-      } catch {
-        // Continue
+      } catch (err: any) {
+        failedLocalCount++;
+        errors.push(`Failed to clean lingering conversation "${id}": ${err.message || String(err)}`);
       }
     }
 
@@ -838,42 +900,73 @@ export class ConversationStore {
           }
         }
         if (cleaned) {
-          this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
+          this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered, { lockStrict: true });
         }
       });
-    } catch {
-      // Continue
+    } catch (err: any) {
+      failedLocalCount++;
+      errors.push(`Failed to sweep lingering chat messages under lock: ${err.message || String(err)}`);
     }
 
     // 2. Reconcile Prisma mirrors
+    let dbAvailable = false;
     try {
-      if ((await this.isDbAvailable()) && (prisma as any).conversation) {
-        for (const [id, tombstone] of Object.entries(tombstones)) {
-          if (tombstone && !tombstone.prismaReconciled) {
-            let reconciled = false;
-            try {
-              await (prisma as any).conversation.delete({ where: { id } });
-              reconciled = true;
-            } catch (err: any) {
-              if (isPrismaRecordNotFoundError(err)) {
-                reconciled = true; // Confirmed already-absent
-              }
-              // Genuine failures (P1001, timeout, etc.) leave reconciled = false
-            }
+      dbAvailable = await this.isDbAvailable();
+    } catch (err: any) {
+      errors.push(`Failed to inspect database availability: ${err.message || String(err)}`);
+    }
 
-            if (reconciled) {
+    if (dbAvailable && (prisma as any).conversation) {
+      for (const [id, tombstone] of Object.entries(tombstones)) {
+        if (tombstone && !tombstone.prismaReconciled) {
+          let reconciled = false;
+          try {
+            await (prisma as any).conversation.delete({ where: { id } });
+            reconciled = true;
+          } catch (err: any) {
+            if (isPrismaRecordNotFoundError(err)) {
+              reconciled = true; // Confirmed already-absent
+            } else {
+              errors.push(`Prisma deletion for tombstone "${id}" failed: ${err.message || String(err)}`);
+            }
+          }
+
+          if (reconciled) {
+            try {
               tombstone.prismaReconciled = true;
-              this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, tombstone);
+              this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, tombstone, { lockStrict: true });
               prismaCount++;
+            } catch (err: any) {
+              tombstone.prismaReconciled = false;
+              errors.push(`Failed to persist reconciled tombstone "${id}": ${err.message || String(err)}`);
             }
           }
         }
       }
-    } catch {
-      // Database unavailable
+    } else {
+      const pendingCount = Object.values(tombstones).filter((t) => t && !t.prismaReconciled).length;
+      if (pendingCount > 0) {
+        errors.push(`Database unavailable; ${pendingCount} tombstone(s) remain pending Prisma reconciliation.`);
+      }
     }
 
-    return { reconciledPrismaCount: prismaCount, cleanedLocalCount: localCount };
+    const updatedTombstones = this.fileStore.readCollection<ConversationTombstone>(
+      CONVERSATION_TOMBSTONES_COLLECTION
+    );
+    const pendingPrismaCount = Object.values(updatedTombstones).filter(
+      (t) => t && !t.prismaReconciled
+    ).length;
+
+    const success = pendingPrismaCount === 0 && failedLocalCount === 0;
+
+    return {
+      reconciledPrismaCount: prismaCount,
+      cleanedLocalCount: localCount,
+      pendingPrismaCount,
+      failedLocalCount,
+      success,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
   /**
@@ -909,7 +1002,8 @@ export class ConversationStore {
    */
   public async deleteConversation(
     founderId: string,
-    conversationId: string
+    conversationId: string,
+    options?: { lockTimeoutMs?: number }
   ): Promise<DeleteConversationResult> {
     if (!founderId) {
       throw new ConversationSecurityError('Authenticated founderId is required to delete conversation.');
@@ -918,6 +1012,7 @@ export class ConversationStore {
       return { success: false, deleted: false, notFound: true, conversationId: conversationId || '' };
     }
     const id = conversationId.trim();
+    const lockTimeoutMs = options?.lockTimeoutMs;
 
     // 1. Check if already tombstoned (idempotent delete with safe retry cleanup)
     const existingTombstone = this.getTombstone(id);
@@ -929,7 +1024,7 @@ export class ConversationStore {
       }
       // Safe retry: guarantee local file records and messages are cleaned even if previous run crashed midway
       try {
-        this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+        this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id, { lockStrict: true, timeoutMs: lockTimeoutMs });
         this.fileStore.withCollectionLockStrict(CHAT_MESSAGES_COLLECTION, () => {
           const allMessages = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
           let modified = false;
@@ -942,9 +1037,9 @@ export class ConversationStore {
             }
           }
           if (modified) {
-            this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
+            this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered, { lockStrict: true, timeoutMs: lockTimeoutMs });
           }
-        });
+        }, lockTimeoutMs);
       } catch {}
 
       // If Prisma wasn't reconciled previously, attempt reconciliation now
@@ -962,7 +1057,7 @@ export class ConversationStore {
             }
             if (reconciled) {
               existingTombstone.prismaReconciled = true;
-              this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, existingTombstone);
+              this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, existingTombstone, { lockStrict: true, timeoutMs: lockTimeoutMs });
             }
           }
         } catch {}
@@ -983,7 +1078,7 @@ export class ConversationStore {
       return { success: false, deleted: false, notFound: true, conversationId: id };
     }
 
-    // 3. Write-Ahead Tombstone (Anti-Resurrection Barrier)
+    // 3. Write-Ahead Tombstone (Anti-Resurrection Barrier) - STRICT LOCKING
     const newTombstone: ConversationTombstone = {
       id,
       founderId,
@@ -991,7 +1086,7 @@ export class ConversationStore {
       purgedMessageCount: 0,
       prismaReconciled: false,
     };
-    this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone);
+    this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone, { lockStrict: true, timeoutMs: lockTimeoutMs });
 
     // 4. Cascade purge all messages belonging to this conversation under fail-closed lock
     let purgedCount = 0;
@@ -1005,11 +1100,11 @@ export class ConversationStore {
           filtered[msgId] = msg;
         }
       }
-      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
-    });
+      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered, { lockStrict: true, timeoutMs: lockTimeoutMs });
+    }, lockTimeoutMs);
 
-    // 5. Delete conversation record from disk under lock
-    this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+    // 5. Delete conversation record from disk under fail-closed lock
+    this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id, { lockStrict: true, timeoutMs: lockTimeoutMs });
 
     // 6. Best-effort Prisma mirror delete
     let prismaDeleted = false;
@@ -1030,10 +1125,10 @@ export class ConversationStore {
       // Non-fatal in local/file-primary mode; tombstone preserves prismaReconciled = false
     }
 
-    // 7. Update tombstone with final count and reconciliation state using strict write
+    // 7. Update tombstone with final count and reconciliation state using strict write & strict lock
     newTombstone.purgedMessageCount = purgedCount;
     newTombstone.prismaReconciled = prismaDeleted;
-    this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone);
+    this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone, { lockStrict: true, timeoutMs: lockTimeoutMs });
 
     return {
       success: true,
@@ -1061,7 +1156,8 @@ export class ConversationStore {
   public async deleteMessage(
     founderId: string,
     conversationId: string,
-    messageId: string
+    messageId: string,
+    options?: { lockTimeoutMs?: number }
   ): Promise<DeleteMessageResult> {
     if (!founderId) {
       throw new ConversationSecurityError('Authenticated founderId is required to delete message.');
@@ -1077,6 +1173,7 @@ export class ConversationStore {
     }
     const cId = conversationId.trim();
     const mId = messageId.trim();
+    const lockTimeoutMs = options?.lockTimeoutMs;
 
     // 1. Verify parent conversation exists and is owned by this founder
     const conversation = await this.getConversation(founderId, cId);
@@ -1111,7 +1208,7 @@ export class ConversationStore {
         return false;
       }
 
-      // Write durable deletion marker FIRST with strict write
+      // Write durable deletion marker FIRST with strict write & strict lock
       // If persistence of the marker fails, throws immediately; msg is NOT removed from collection!
       const tombstone: MessageTombstone = {
         id: mId,
@@ -1120,13 +1217,13 @@ export class ConversationStore {
         idempotencyKey: msg.idempotencyKey,
         deletedAt: new Date().toISOString(),
       };
-      this.fileStore.saveItemStrict(MESSAGE_TOMBSTONES_COLLECTION, mId, tombstone);
+      this.fileStore.saveItemStrict(MESSAGE_TOMBSTONES_COLLECTION, mId, tombstone, { lockStrict: true, timeoutMs: lockTimeoutMs });
 
       // Now remove from collection
       delete allMessages[mId];
-      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, allMessages);
+      this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, allMessages, { lockStrict: true, timeoutMs: lockTimeoutMs });
       return true;
-    });
+    }, lockTimeoutMs);
 
     if (!deleted) {
       return { success: false, deleted: false, notFound: true, conversationId: cId, messageId: mId };

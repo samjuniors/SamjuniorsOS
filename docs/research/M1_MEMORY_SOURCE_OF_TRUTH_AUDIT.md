@@ -511,3 +511,31 @@ Store-wide tombstone reconciliation is **operator-triggered**, not executed by a
 > 2. Implement quarantine archiving (`<collection>.json.corrupt.<timestamp>`) with deterministic operator recovery tools.
 > 3. Add tests proving that corrupt tombstone files cannot make deleted conversations visible through Prisma fallback.
 
+---
+
+## 13. Batch 2.2 Final Hardening: Runbook Integrity, Strict Lock Coverage, and Prisma Classification
+
+### 13.1 Reconciliation Runbook Integrity (`scripts/reconcile-tombstones.ts`)
+
+The operator runbook script was hardened to ensure zero false success and strict exit-status propagation:
+- **Non-Zero Exit Code on Pending Work:** If database is unreachable or any tombstones remain un-reconciled (`pendingPrismaCount > 0`), the script logs detailed diagnostic guidance and exits with status `1`.
+- **Local Cleanup Failure Propagation:** If local orphaned file deletion fails, `failedLocalCount` is tracked, error details are printed, and the script exits with status `1`.
+- **No False Success Messages:** The `[Success]` banner is logged if and only if `pendingPrismaCount === 0 && failedLocalCount === 0`.
+- **Durable Retryability Preserved:** Un-reconciled tombstones remain durable on disk with `prismaReconciled: false`, allowing clean idempotent retry upon database restoration.
+
+### 13.2 Strict Lock Coverage Across Conversation & Tombstone Collections
+
+- **`saveItemStrict` / `deleteItemStrict` Fail-Closed Option:**
+  `DurableFileStore` methods now accept `options?: { lockStrict?: boolean; timeoutMs?: number }`. When `lockStrict === true`, failure to acquire the collection lock within `timeoutMs` throws `LockTimeoutError` rather than proceeding degraded.
+- **Fail-Closed Conversation Tombstones:** Writing a conversation tombstone in `deleteConversation` requires the `conversation_tombstones` collection lock under fail-closed semantics. If contention times out, execution halts and no tombstone or conversation modification occurs.
+- **Fail-Closed Conversation Deletion:** Removing a conversation from disk requires the `conversations` collection lock under strict fail-closed semantics.
+- **Deadlock-Free Sequential Locking:** Collection locks are acquired sequentially and never nested across collections during `deleteConversation` (Tombstone -> Messages -> Conversation -> Tombstone). Zero synchronous locks are held across asynchronous awaits.
+
+### 13.3 Prisma Error Classification Tightening
+
+`isPrismaRecordNotFoundError()` was tightened to prevent false-positive reconciliation:
+- Confirmed `P2025` ("Record to delete does not exist") returns `true`.
+- Connection failures (`P1001`), timeouts (`P1002`, `ETIMEDOUT`), and database configuration errors (`P1003`) return `false` (leaving tombstones pending).
+- Generic messages containing fragments like "table does not exist" or "database does not exist" return `false`.
+
+

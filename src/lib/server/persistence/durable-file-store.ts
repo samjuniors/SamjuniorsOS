@@ -292,12 +292,17 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): identical locking and
    * atomicity to writeCollection, but a failed authoritative write THROWS so a
-   * caller can never mistake a lost write for a durable one. Used by the
-   * Sophia personal-memory store (the founder's Personal Mind must not
-   * report success for a write that never reached disk).
+   * caller can never mistake a lost write for a durable one.
+   * When options.lockStrict is true, throws LockTimeoutError on lock timeout (fail-closed).
    */
-  public writeCollectionStrict<T>(collection: string, data: Record<string, T>): void {
-    this.acquireLock(collection);
+  public writeCollectionStrict<T>(
+    collection: string,
+    data: Record<string, T>,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): void {
+    const lockStrict = options?.lockStrict ?? false;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       this.atomicWrite(collection, data, true);
     } finally {
@@ -325,9 +330,18 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): locked
    * read-modify-write that THROWS when the authoritative write fails.
+   * When options.lockStrict is true, throws LockTimeoutError if the collection
+   * lock cannot be acquired within timeoutMs (fail-closed locking).
    */
-  public saveItemStrict<T>(collection: string, id: string, item: T): void {
-    this.acquireLock(collection);
+  public saveItemStrict<T>(
+    collection: string,
+    id: string,
+    item: T,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): void {
+    const lockStrict = options?.lockStrict ?? false;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
       current[id] = JSON.parse(JSON.stringify(item));
@@ -365,9 +379,17 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): locked
    * read-check-delete that THROWS when the authoritative delete-write fails.
+   * When options.lockStrict is true, throws LockTimeoutError if the collection
+   * lock cannot be acquired within timeoutMs (fail-closed locking).
    */
-  public deleteItemStrict(collection: string, id: string): boolean {
-    this.acquireLock(collection);
+  public deleteItemStrict(
+    collection: string,
+    id: string,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): boolean {
+    const lockStrict = options?.lockStrict ?? false;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection(collection);
       if (current[id] === undefined) {

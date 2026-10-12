@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { NextRequest } from 'next/server';
 import {
   ConversationStore,
@@ -8,12 +9,14 @@ import {
   ConversationNotFoundError,
   ChatMessageRecord,
   MessageTombstonedError,
+  isPrismaRecordNotFoundError,
 } from '../../src/lib/server/conversation';
 import { DurableFileStore, LockTimeoutError } from '../../src/lib/server/persistence/durable-file-store';
 import { prisma } from '../../src/lib/server/db/prisma';
 import { GET as conversationGet, DELETE as conversationDelete } from '../../src/app/api/conversation/route';
 import { DELETE as messageDelete } from '../../src/app/api/conversation/message/route';
 import { DELETE as agentChatDelete } from '../../src/app/api/agent-chat/route';
+import { runReconcile } from '../../scripts/reconcile-tombstones';
 
 /**
  * ============================================================================
@@ -1229,6 +1232,309 @@ async function main() {
       } finally {
         (fileStore as any).saveItemStrict = origSaveItemStrict;
       }
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 16: BATCH 2.2 HARDENING — RECONCILIATION RUNBOOK CORRECTNESS & PROCESS EXIT STATUS
+    // ------------------------------------------------------------------------
+    await runTest('16.1: Runbook reports failure and returns exitCode = 1 under database outage', async () => {
+      const convId = 'conv-outage-runbook';
+      fileStore.saveItemStrict('conversation_tombstones', convId, {
+        id: convId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: false,
+      });
+
+      // Inject outage
+      convStore.setDatabaseAvailableForTests(false);
+
+      const logs: string[] = [];
+      const errors: string[] = [];
+      try {
+        const out = await runReconcile({
+          convStore,
+          fileStore,
+          log: (m) => logs.push(m),
+          error: (m) => errors.push(m),
+        });
+
+        assert.strictEqual(out.exitCode, 1, 'Runbook must return exitCode = 1 on database outage');
+        assert.strictEqual(out.result.success, false, 'Result.success must be false');
+        assert(out.result.pendingPrismaCount >= 1, 'Pending Prisma tombstones must be >= 1');
+        assert(
+          !logs.some((l) => l.includes('All conversation tombstones are fully reconciled')),
+          'Full-success message must NEVER be logged during outage'
+        );
+        assert(
+          errors.some((e) => e.includes('still pending Prisma reconciliation')),
+          'Warning/error about pending tombstones must be logged'
+        );
+      } finally {
+        convStore.setDatabaseAvailableForTests(null);
+        fileStore.deleteItemStrict('conversation_tombstones', convId);
+      }
+    });
+
+    await runTest('16.2: Runbook fails closed (exitCode = 1) when tombstones remain pending', async () => {
+      const convId = 'conv-pending-runbook';
+      fileStore.saveItemStrict('conversation_tombstones', convId, {
+        id: convId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: false,
+      });
+
+      // Database available but delete throws connection error
+      convStore.setDatabaseAvailableForTests(true);
+      const originalDelete = (prisma as any).conversation?.delete;
+      (prisma as any).conversation.delete = async () => {
+        const err = new Error('P1002: Server timed out');
+        (err as any).code = 'P1002';
+        throw err;
+      };
+
+      try {
+        const out = await runReconcile({
+          convStore,
+          fileStore,
+          log: () => {},
+          error: () => {},
+        });
+
+        assert.strictEqual(out.exitCode, 1, 'Must exit with code 1 when tombstones remain pending');
+        assert(out.result.pendingPrismaCount >= 1);
+        assert.strictEqual(out.result.success, false);
+
+        // Verify tombstone remains pending in file store (retryability preserved)
+        const t = convStore.getTombstone(convId);
+        assert.strictEqual(t?.prismaReconciled, false);
+      } finally {
+        convStore.setDatabaseAvailableForTests(null);
+        if (originalDelete) (prisma as any).conversation.delete = originalDelete;
+        fileStore.deleteItemStrict('conversation_tombstones', convId);
+      }
+    });
+
+    await runTest('16.3: Runbook fails closed (exitCode = 1) when local cleanup encounters errors', async () => {
+      const convId = 'conv-local-fail-runbook';
+      fileStore.saveItemStrict('conversation_tombstones', convId, {
+        id: convId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: true,
+      });
+
+      // Place lingering conversation file
+      fileStore.saveItemStrict('conversations', convId, {
+        id: convId,
+        founderId: FOUNDER_A,
+        title: 'Lingering Conv',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Inject error on deleteItemStrict for conversations
+      const origDeleteItemStrict = fileStore.deleteItemStrict.bind(fileStore);
+      (fileStore as any).deleteItemStrict = (collection: string, id: string, opts?: any) => {
+        if (collection === 'conversations' && id === convId) {
+          throw new Error('EACCES: permission denied deleting local conversation file');
+        }
+        return origDeleteItemStrict(collection, id, opts);
+      };
+
+      try {
+        const out = await runReconcile({
+          convStore,
+          fileStore,
+          log: () => {},
+          error: () => {},
+        });
+
+        assert.strictEqual(out.exitCode, 1, 'Must exit with code 1 when local cleanup fails');
+        assert(out.result.failedLocalCount >= 1, 'failedLocalCount must be >= 1');
+        assert.strictEqual(out.result.success, false, 'success must be false');
+      } finally {
+        (fileStore as any).deleteItemStrict = origDeleteItemStrict;
+        fileStore.deleteItemStrict('conversations', convId);
+        fileStore.deleteItemStrict('conversation_tombstones', convId);
+      }
+    });
+
+    await runTest('16.4: Runbook completes successfully (exitCode = 0, success = true) when all tombstones reconciled', async () => {
+      // Clear or reconcile any existing tombstones
+      const allTombstones = fileStore.readCollection<any>('conversation_tombstones');
+      for (const [id, t] of Object.entries(allTombstones)) {
+        if (t && !t.prismaReconciled) {
+          t.prismaReconciled = true;
+          fileStore.saveItemStrict('conversation_tombstones', id, t);
+        }
+      }
+
+      const convId = 'conv-clean-runbook';
+      fileStore.saveItemStrict('conversation_tombstones', convId, {
+        id: convId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: false,
+      });
+
+      // Successful Prisma delete
+      convStore.setDatabaseAvailableForTests(true);
+      const originalDelete = (prisma as any).conversation?.delete;
+      (prisma as any).conversation.delete = async () => ({ id: convId });
+
+      const logs: string[] = [];
+      try {
+        const out = await runReconcile({
+          convStore,
+          fileStore,
+          log: (m) => logs.push(m),
+          error: () => {},
+        });
+
+        assert.strictEqual(out.exitCode, 0, 'Exit code must be 0 on complete reconciliation');
+        assert.strictEqual(out.result.success, true, 'Result.success must be true');
+        assert.strictEqual(out.result.pendingPrismaCount, 0, 'Pending count must be 0');
+        assert(
+          logs.some((l) => l.includes('All conversation tombstones are fully reconciled')),
+          'Full-success message must be printed on complete success'
+        );
+      } finally {
+        convStore.setDatabaseAvailableForTests(null);
+        if (originalDelete) (prisma as any).conversation.delete = originalDelete;
+        fileStore.deleteItemStrict('conversation_tombstones', convId);
+      }
+    });
+
+    await runTest('16.5: Child process execution of scripts/reconcile-tombstones.ts exits 0 on success', async () => {
+      // Clean any pending tombstones first
+      const allTombstones = fileStore.readCollection<any>('conversation_tombstones');
+      for (const [id, t] of Object.entries(allTombstones)) {
+        if (t && !t.prismaReconciled) {
+          t.prismaReconciled = true;
+          fileStore.saveItemStrict('conversation_tombstones', id, t);
+        }
+      }
+
+      // Execute scripts/reconcile-tombstones.ts via child_process
+      const scriptPath = path.resolve(__dirname, '../../scripts/reconcile-tombstones.ts');
+      const output = execSync(`npx tsx "${scriptPath}"`, { encoding: 'utf-8' });
+      assert(output.includes('All conversation tombstones are fully reconciled'));
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 17: BATCH 2.2 HARDENING — STRICT LOCK TIMEOUT ON CONVERSATIONS & TOMBSTONES
+    // ------------------------------------------------------------------------
+    await runTest('17.1: Lock timeout on conversation_tombstones fails closed without creating tombstone or mutating collection', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Tombstone Lock Timeout Test',
+      });
+
+      const lockPath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json.lock');
+      // Hold lock on conversation_tombstones simulating another unyielding worker
+      fs.writeFileSync(lockPath, `${process.pid}\n`, 'utf-8');
+
+      try {
+        let threw = false;
+        try {
+          await convStore.deleteConversation(FOUNDER_A, conv.id, { lockTimeoutMs: 50 });
+        } catch (err: any) {
+          threw = true;
+          assert(err instanceof LockTimeoutError || err.name === 'LockTimeoutError');
+        }
+
+        assert.strictEqual(threw, true, 'deleteConversation must throw LockTimeoutError if tombstone lock cannot be acquired');
+
+        // Verify tombstone was NOT created!
+        const tombstone = convStore.getTombstone(conv.id);
+        assert.strictEqual(tombstone, null, 'Tombstone must NOT exist after lock timeout');
+
+        // Verify conversation was NOT deleted!
+        const convAfter = await convStore.getConversation(FOUNDER_A, conv.id);
+        assert(convAfter !== null, 'Conversation must remain intact after tombstone lock timeout');
+      } finally {
+        try {
+          if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+        } catch {}
+      }
+    });
+
+    await runTest('17.2: Lock timeout on conversations collection fails closed without deleting conversation', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Conversations Lock Timeout Test',
+      });
+
+      const lockPath = path.join(fileStore.getDataDir(), 'conversations.json.lock');
+      // Hold lock on conversations collection
+      fs.writeFileSync(lockPath, `${process.pid}\n`, 'utf-8');
+
+      try {
+        let threw = false;
+        try {
+          await convStore.deleteConversation(FOUNDER_A, conv.id, { lockTimeoutMs: 50 });
+        } catch (err: any) {
+          threw = true;
+          assert(err instanceof LockTimeoutError || err.name === 'LockTimeoutError');
+        }
+
+        assert.strictEqual(threw, true, 'deleteConversation must throw LockTimeoutError if conversations lock cannot be acquired');
+
+        // Verify conversation was NOT removed from disk!
+        const allConvs = fileStore.readCollection('conversations');
+        assert(allConvs[conv.id] !== undefined, 'Conversation record must not be deleted if lock times out');
+      } finally {
+        try {
+          if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+        } catch {}
+      }
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 18: BATCH 2.2 HARDENING — PRISMA ERROR CLASSIFICATION TIGHTENING
+    // ------------------------------------------------------------------------
+    await runTest('18.1: Confirmed P2025 is classified as already absent (returns true)', () => {
+      const errWithCode = { code: 'P2025', message: 'An operation failed because it depends on one or more records that were required but not found' };
+      assert.strictEqual(isPrismaRecordNotFoundError(errWithCode), true);
+
+      const errWithMessageOnly = new Error('Record to delete does not exist.');
+      assert.strictEqual(isPrismaRecordNotFoundError(errWithMessageOnly), true);
+    });
+
+    await runTest('18.2: Connection failures P1001, P1002 return false (remain pending)', () => {
+      const p1001 = { code: 'P1001', message: "Can't reach database server at localhost:5432" };
+      assert.strictEqual(isPrismaRecordNotFoundError(p1001), false);
+
+      const p1002 = { code: 'P1002', message: 'The database server timed out' };
+      assert.strictEqual(isPrismaRecordNotFoundError(p1002), false);
+
+      const timeoutErr = { code: 'ETIMEDOUT', message: 'Connection timed out' };
+      assert.strictEqual(isPrismaRecordNotFoundError(timeoutErr), false);
+    });
+
+    await runTest('18.3: Configuration error P1003 returns false (remain pending)', () => {
+      const p1003 = { code: 'P1003', message: 'Database dev.db does not exist at file:./dev.db' };
+      assert.strictEqual(isPrismaRecordNotFoundError(p1003), false);
+    });
+
+    await runTest('18.4: Unrelated generic errors and generic "does not exist" fragments return false', () => {
+      const genericErr = new Error('Something went wrong in postgres');
+      assert.strictEqual(isPrismaRecordNotFoundError(genericErr), false);
+
+      const tableNotExist = new Error('Table "conversations" does not exist in public schema');
+      assert.strictEqual(isPrismaRecordNotFoundError(tableNotExist), false);
+
+      const dbNotExist = new Error('Database does not exist on cluster');
+      assert.strictEqual(isPrismaRecordNotFoundError(dbNotExist), false);
+
+      const nullOrUndefined = null;
+      assert.strictEqual(isPrismaRecordNotFoundError(nullOrUndefined), false);
     });
 
   } finally {

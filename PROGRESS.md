@@ -3,20 +3,23 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 2.1: Conversation Deletion Hardening & Concurrency Protection COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
-- Addressed 4 confirmed defects: (1) `saveMessage`/`deleteConversation` race serialized on collection lock with critical section tombstone and presence rechecks; (2) Prisma reconciliation fixed to record success only on confirmed delete or P2025 absent record, keeping outages/timeouts pending; (3) Fail-closed locking guarantee via `withCollectionLockStrict` and `LockTimeoutError`; (4) Individual message replay prevented via write-ahead durable deletion markers (`message_tombstones.json`) rejecting deleted IDs and idempotency keys with `MessageTombstonedError`.
-- Operational runbook script delivered (`scripts/reconcile-tombstones.ts`, `npm run db:reconcile-tombstones`) confirming store-wide reconciliation is operator-triggered.
-- Batch 3 dependency recorded: critical collection corruption fail-closed policy (`conversation_tombstones`).
-- 34/34 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`), plus zero regressions on Batch 1 (7/7), Canonical State (7/7), and M3 Authority (7/7).
+M1 Batch 2.2: Final Hardening — Runbook Integrity, Strict Lock Coverage, and Prisma Classification COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+- Addressed 3 final hardening areas:
+  1. Reconciliation runbook failure semantics: `scripts/reconcile-tombstones.ts` exits with code 1 on pending Prisma tombstones or local file cleanup failure; suppresses success banner on partial/failed sweeps; returns typed `ReconcileResult`.
+  2. Strict locking coverage: `saveItemStrict()`, `deleteItemStrict()`, and `writeCollectionStrict()` support `options.lockStrict` with `timeoutMs`; critical conversation deletion and tombstone writes fail closed without collection lock (`LockTimeoutError`); zero locks held across awaits.
+  3. Prisma error classification: `isPrismaRecordNotFoundError()` strictly evaluates canonical `P2025` and rejects `P1001`, `P1002`, `P1003`, timeouts, and generic fragments like "table does not exist" or "database does not exist".
+- 45/45 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`), plus zero regressions on Batch 1 (7/7), Canonical State (7/7), and M3 Authority (7/7).
 - Awaiting Founder review before beginning Batch 3.
 
 ## Next (queued, in order)
-- Founder Review of Batch 2.1 hardening pass.
+- Founder Review of Batch 2.2 final hardening pass.
 - Execute Batch 3: `DurableFileStore` critical collection corruption fail-closed policy & quarantine (`.corrupt.<timestamp>`).
 - Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
 - Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
 
 ## Completed
+- [2026-10-12] M1 Batch 2.2 Final Hardening — Hardened `scripts/reconcile-tombstones.ts` with non-zero exit codes (1) on pending work or local cleanup failures; extended fail-closed locking options (`{ lockStrict: true }`) to conversation tombstones and conversation deletion; tightened `isPrismaRecordNotFoundError` to reject connection errors and generic fragments; 45/45 tests passing.
+- [2026-10-12] M1 Batch 2.1 Implementation & Verification — Hardened conversation deletion: serialized message writes on collection lock, synchronous critical-section rechecks, corrected Prisma reconciliation, fail-closed lock timeouts, individual message replay prevention via deletion markers. 34/34 tests passing.
 - [2026-10-12] M1 Batch 2 Implementation & Verification — Implemented `ConversationStore.deleteConversation`, `ConversationStore.deleteMessage`, `isTombstoned`, `getTombstone`, `reconcileAllTombstones`, and anti-recreation guards. Added REST endpoints `DELETE /api/conversation`, `DELETE /api/conversation/message`, `DELETE /api/agent-chat` (alias) and `GET /api/conversation`. Implemented Write-Ahead Tombstone architecture preventing resurrection from Prisma mirrors. 24/24 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`). Zero regressions (Batch 1 7/7, Canonical State 7/7, M3 7/7).
 - [2026-10-12] M1 Batch 2 Design & Architecture — Formulated comprehensive 12-class Retention and Forget Governance policy matrix, designed fail-closed conversation & message cascade deletion architecture, conducted graph integrity evaluation (proving physical deletion of CanonicalFacts breaks FactLineage DAGs and AS_OF reads; specifying content tombstoning and analyzing KMS envelope encryption), established API security contracts (`DELETE /api/conversation`, `DELETE /api/conversation/message`), and created isolated test plan. Updated `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
 - [2026-10-12] M1 Batch 1 Implementation & Verification — Reconciled `DATABASE_MODE` parser and `.env.example` template (M1-F11); fixed `CompanyMemoryStore.queryMemories` to score authoritative DB candidates in auth mode (M1-F02); enforced strict local persistence and error propagation via `saveItemStrict` in `CompanyMemoryStore.recordMemory` (M1-F03). 7/7 new test assertions passed (`m1_batch1_memory_authority.test.ts`). Total 115 passing assertions.

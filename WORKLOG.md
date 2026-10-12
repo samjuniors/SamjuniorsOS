@@ -2879,4 +2879,46 @@ Complete a narrowly scoped Batch 2.1 hardening pass addressing four confirmed so
 - `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**.
 
 ### Next Action
-Submit Batch 2.1 report for Founder review. Stop and wait for Founder review before starting Batch 3.
+Batch 2.2 hardening pass completed.
+
+## 2026-10-12 — M1 Batch 2.2: Final Hardening — Runbook Integrity, Strict Lock Coverage, and Prisma Classification
+
+**Status:** COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+
+### Objective
+Finalize hardening pass on branch `audit/m1-memory-source-of-truth`:
+1. Reconciliation runbook failure semantics: non-zero exit code on pending Prisma tombstones or local cleanup failure; never log success on partial/failed runs.
+2. Extend strict fail-closed locking options to conversation tombstone writes and conversation deletions; prevent lock timeout proceed-degraded behavior.
+3. Tighten `isPrismaRecordNotFoundError()` to reject connection errors, timeouts, and generic fragments like "table does not exist" or "database does not exist".
+4. Full regression verification.
+
+### What was completed
+
+1. **Reconciliation Runbook Correctness (`scripts/reconcile-tombstones.ts`, `package.json`)**:
+   - Updated `runReconcile()` to return non-zero exit code (`exitCode = 1`) whenever tombstones remain pending (`pendingPrismaCount > 0`) or local cleanup fails (`failedLocalCount > 0`).
+   - Suppressed full-success message unless all tombstones are confirmed reconciled with zero errors.
+   - Updated `package.json` to use `"npx tsx scripts/reconcile-tombstones.ts"` for platform independence.
+   - Enhanced `reconcileAllTombstones()` in `ConversationStore` to return typed `ReconcileResult` with `pendingPrismaCount`, `failedLocalCount`, `success`, and `errors`.
+
+2. **Strict Locking Coverage (`src/lib/server/persistence/durable-file-store.ts`, `src/lib/server/conversation/store.ts`)**:
+   - Added `StrictWriteOptions` (`{ lockStrict?: boolean; timeoutMs?: number }`) to `saveItemStrict()`, `deleteItemStrict()`, and `writeCollectionStrict()`.
+   - Wired fail-closed locking (`{ lockStrict: true }`) into conversation tombstone writes and conversation deletion on disk.
+   - Propagated `lockTimeoutMs` through `deleteConversation`, `deleteMessage`, and `saveMessage`.
+   - Guaranteed zero locks held across awaits and strictly sequential (non-overlapping) locking to prevent deadlocks.
+
+3. **Prisma Error Classification Tightening (`src/lib/server/conversation/store.ts`)**:
+   - `isPrismaRecordNotFoundError()` now strictly validates canonical Prisma error code `P2025`.
+   - Explicitly rejects `P1001` (cannot reach database), `P1002` (database timeout), `P1003` (database does not exist), and generic network timeouts.
+   - Rejects generic message fragments such as "table does not exist" or "database does not exist".
+
+### Tests Executed & Verified
+- `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **45 PASSED, 0 FAILED** (added 11 new tests across Groups 16–18 for runbook correctness, lock timeouts, and Prisma error classification).
+- `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**.
+- `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**.
+- `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**.
+- `npm run db:reconcile-tombstones`: **PASSED (exit code 0)**.
+- `npx next build`: **PASSED (Turbopack production build succeeded in 4.5s, exit code 0)**.
+
+### Next Action
+Submit Batch 2.2 report for Founder review. Stop and wait for Founder review before Batch 3.
+
