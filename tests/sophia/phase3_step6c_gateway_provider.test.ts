@@ -446,6 +446,96 @@ async function runTests() {
     assert.strictEqual(audio.pcmCallback, null, 'Microphone capture cleanly detached');
   });
 
+  await test('stop() called during async ticket acquisition aborts startup and prevents ghost WebSocket connection (Fix 1)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let wsConstructed = false;
+
+    class TrackingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        wsConstructed = true;
+      }
+    }
+
+    let resolveTicketFetch: (val: any) => void = () => {};
+    const delayedFetch = (async () => {
+      return new Promise((resolve) => {
+        resolveTicketFetch = () =>
+          resolve({
+            ok: true,
+            json: async () => ({ ticket: 'ws_live_ticket_delayed' }),
+          });
+      });
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: delayedFetch,
+      WebSocketClass: TrackingWs as any,
+    });
+
+    let errorEmitted: any = null;
+    p.addEventListener('error', (e: any) => {
+      errorEmitted = e.detail;
+    });
+
+    // 1. Initiate start (ticket fetch is now pending)
+    const startPromise = p.start();
+
+    // 2. Call stop() before ticket fetch resolves
+    await p.stop();
+
+    // 3. Resolve ticket fetch now
+    resolveTicketFetch(null);
+    await startPromise;
+
+    // 4. Verify no ghost WebSocket was constructed and provider is inactive
+    assert.strictEqual(wsConstructed, false, 'WebSocket must not be instantiated if stop() was called during ticket acquisition');
+    assert.strictEqual(p.isActive(), false, 'Provider remains inactive');
+    assert.strictEqual(errorEmitted, null, 'No error event emitted for intentionally cancelled startup');
+  });
+
+  await test('WebSocket handshake times out after handshakeTimeoutMs if socket never opens/errors and emits WEBSOCKET_HANDSHAKE_FAILED (Fix 3)', async () => {
+    const audio = new MockAudioEngine() as any;
+
+    class SilentHangingWs extends MockWebSocket {
+      constructor(url: string) {
+        // autoOpen = false: never calls onopen, onerror, or onclose
+        super(url, false);
+      }
+    }
+
+    const mockFetch = (async () => ({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_timeout' }),
+    })) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: SilentHangingWs as any,
+      handshakeTimeoutMs: 50,
+    });
+
+    let handshakeError: any = null;
+    p.addEventListener('error', (e: any) => {
+      handshakeError = e.detail;
+    });
+
+    let caught = false;
+    let thrownError: any = null;
+    try {
+      await p.start();
+    } catch (err: any) {
+      caught = true;
+      thrownError = err;
+    }
+
+    assert.strictEqual(caught, true, 'start() promise rejects on handshake timeout');
+    assert.ok(thrownError?.message.includes('WebSocket handshake timed out after 50ms'));
+    assert.strictEqual(p.isActive(), false, 'Provider is inactive after timeout');
+    assert.ok(handshakeError !== null, 'error event emitted');
+    assert.strictEqual(handshakeError.code, 'WEBSOCKET_HANDSHAKE_FAILED');
+  });
+
   // ------------------------------------------------------------------------
   // SECTION 3: PTT Framing & Microphone Streaming
   // ------------------------------------------------------------------------
@@ -453,7 +543,7 @@ async function runTests() {
 
   await test('startPtt sends START_PTT and stopPtt sends STOP_PTT', async () => {
     const audio = new MockAudioEngine() as any;
-    let lastWs: MockWebSocket | null = null;
+    let lastWs: any = null;
 
     class CapturingWs extends MockWebSocket {
       constructor(url: string) {
@@ -616,7 +706,7 @@ async function runTests() {
 
   await test('sendText does NOT send raw TEXT_MESSAGE frames to gateway WebSocket, routes via /api/sophia/chat without client tools', async () => {
     const audio = new MockAudioEngine() as any;
-    let lastWs: MockWebSocket | null = null;
+    let lastWs: any = null;
     let chatEndpointHit = false;
     let ttsEndpointHit = false;
 
@@ -753,6 +843,182 @@ async function runTests() {
     await p.stop();
   });
 
+  await test('sendText() response arriving after stop() is discarded and does not trigger TTS (Fix 2)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let resolveChat: (val: any) => void = () => {};
+    let ttsCalled = false;
+
+    const mockFetch = (async (url: string) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_text' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        return new Promise((resolve) => {
+          resolveChat = () =>
+            resolve({
+              ok: true,
+              json: async () => ({ reply: 'This late reply must never be spoken because stop() was called.' }),
+            });
+        });
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        ttsCalled = true;
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    await p.start();
+
+    let responseStarted = false;
+    p.addEventListener('response_started', () => {
+      responseStarted = true;
+    });
+
+    p.sendText('Tell me a story');
+
+    // Call stop() while chat response is in flight
+    await p.stop();
+
+    // Now resolve the late chat response
+    resolveChat(null);
+    await new Promise((r) => setTimeout(r, 40));
+
+    assert.strictEqual(ttsCalled, false, 'TTS endpoint must not be invoked after stop()');
+    assert.strictEqual(responseStarted, false, 'response_started event must not be emitted after stop()');
+  });
+
+  await test('sendText() response arriving after interrupt() is discarded and does not trigger TTS (Fix 2)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let resolveChat: (val: any) => void = () => {};
+    let ttsCalled = false;
+
+    const mockFetch = (async (url: string) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_text2' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        return new Promise((resolve) => {
+          resolveChat = () =>
+            resolve({
+              ok: true,
+              json: async () => ({ reply: 'Late reply after interrupt.' }),
+            });
+        });
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        ttsCalled = true;
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    await p.start();
+
+    let responseStarted = false;
+    p.addEventListener('response_started', () => {
+      responseStarted = true;
+    });
+
+    p.sendText('Explain quantum mechanics');
+
+    // Interrupt while chat response is pending
+    p.interrupt();
+
+    // Resolve late chat response
+    resolveChat(null);
+    await new Promise((r) => setTimeout(r, 40));
+
+    assert.strictEqual(ttsCalled, false, 'TTS endpoint must not be invoked after interrupt()');
+    assert.strictEqual(responseStarted, false, 'response_started event must not be emitted after interrupt()');
+
+    await p.stop();
+  });
+
+  await test('Newer sendText() turn supersedes older pending turn, discarding older response (Fix 2)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let resolveFirstChat: (val: any) => void = () => {};
+    let resolveSecondChat: (val: any) => void = () => {};
+    const spokenReplies: string[] = [];
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_supersede' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        const body = JSON.parse(opts?.body || '{}');
+        if (body.message === 'First prompt') {
+          return new Promise((resolve, reject) => {
+            if (opts?.signal) {
+              opts.signal.addEventListener('abort', () => {
+                const err = new Error('The operation was aborted');
+                err.name = 'AbortError';
+                reject(err);
+              });
+            }
+            resolveFirstChat = () =>
+              resolve({
+                ok: true,
+                json: async () => ({ reply: 'First reply (superseded)' }),
+              });
+          });
+        }
+        if (body.message === 'Second prompt') {
+          return new Promise((resolve) => {
+            resolveSecondChat = () =>
+              resolve({
+                ok: true,
+                json: async () => ({ reply: 'Second reply (active)' }),
+              });
+          });
+        }
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        const body = JSON.parse(opts?.body || '{}');
+        spokenReplies.push(body.text);
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2]).buffer };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    await p.start();
+
+    // 1. Send first prompt (turn 1 is now pending)
+    p.sendText('First prompt');
+
+    // 2. Send second prompt before first completes (supersedes turn 1)
+    p.sendText('Second prompt');
+
+    // 3. Resolve first chat response
+    resolveFirstChat(null);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // 4. Resolve second chat response
+    resolveSecondChat(null);
+    await new Promise((r) => setTimeout(r, 40));
+
+    // 5. Verify only second reply was synthesized and spoken
+    assert.strictEqual(spokenReplies.length, 1, 'Only one response must be spoken');
+    assert.strictEqual(spokenReplies[0], 'Second reply (active)', 'Second turn must supersede first turn');
+
+    await p.stop();
+  });
+
   // ------------------------------------------------------------------------
   // SECTION 6: Graceful Disconnect, Teardown & Fail-Closed Boundaries
   // ------------------------------------------------------------------------
@@ -760,7 +1026,7 @@ async function runTests() {
 
   await test('Gracefully handles unexpected server WebSocket close and cleans up all resources', async () => {
     const audio = new MockAudioEngine() as any;
-    let lastWs: MockWebSocket | null = null;
+    let lastWs: any = null;
 
     class CapturingWs extends MockWebSocket {
       constructor(url: string) {

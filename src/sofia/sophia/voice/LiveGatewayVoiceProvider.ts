@@ -26,6 +26,13 @@ export interface LiveGatewayOptions extends GatewayValidationOptions {
   wsUrl?: string;
   fetchFn?: typeof fetch;
   WebSocketClass?: typeof WebSocket;
+  /**
+   * Maximum milliseconds to wait for a WebSocket handshake (onopen) before
+   * rejecting startup and emitting WEBSOCKET_HANDSHAKE_FAILED.
+   * Fix 3: prevents indefinite hang when socket never emits open/error/close.
+   * @default 10000
+   */
+  handshakeTimeoutMs?: number;
 }
 
 export class LiveGatewayVoiceProvider extends VoiceProvider {
@@ -47,6 +54,21 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   private isTransmitting = false;
   private isSpeaking = false;
   private turnStartPerfMs = 0;
+
+  /**
+   * Fix 1 & 2: Monotonically increasing generation counter.
+   * Incremented on every internalStart() call and on stop().
+   * Any async closure captures its generation at call time and aborts if the
+   * current generation has advanced (meaning stop() was called).
+   */
+  private generation = 0;
+
+  /**
+   * Fix 2: Per-text-turn AbortController that is aborted in interrupt()/stop().
+   * Cancels in-flight /api/sophia/chat and /api/sophia/mouth/speak requests
+   * belonging to the current text turn.
+   */
+  private textTurnAbortController: AbortController | null = null;
 
   constructor(
     private audio: AudioEngine,
@@ -86,7 +108,10 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     if (this.active) return;
     if (this.startPromise) return this.startPromise;
 
-    this.startPromise = this.internalStart();
+    // Fix 1: Capture generation at start of internalStart so a concurrent
+    // stop() can invalidate this startup attempt.
+    const myGeneration = ++this.generation;
+    this.startPromise = this.internalStart(myGeneration);
     try {
       await this.startPromise;
     } finally {
@@ -94,7 +119,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     }
   }
 
-  private async internalStart(): Promise<void> {
+  private async internalStart(myGeneration: number): Promise<void> {
     // 1. Re-validate URL, port, path, scheme before ticket acquisition
     this.wsUrl = this.validateWsUrl(this.wsUrl, this.options);
 
@@ -114,6 +139,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       }
       ticket = ticketData.ticket;
     } catch (err: any) {
+      // Fix 1: If stop() was called while we were fetching the ticket, do not
+      // emit an error event for the cancelled startup — just abort silently.
+      if (this.generation !== myGeneration) {
+        return;
+      }
       this.emit('error', {
         code: 'TICKET_ACQUISITION_FAILED',
         message: err?.message || 'Could not obtain voice ticket',
@@ -121,16 +151,30 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       throw err;
     }
 
+    // Fix 1: Check generation after async ticket acquisition. If stop() was
+    // called while POST /api/auth/ws-ticket was in flight, abandon startup
+    // without constructing a WebSocket.
+    if (this.generation !== myGeneration) {
+      return;
+    }
+
     // 3. Connect to companion WebSocket server
     // Since wsUrl is validated to have no query string, append ticket directly
     const targetUrl = `${this.wsUrl}?ticket=${encodeURIComponent(ticket)}`;
+    const handshakeTimeoutMs = this.options.handshakeTimeoutMs ?? 10000;
 
     await new Promise<void>((resolve, reject) => {
       let ws: WebSocket;
       let hasOpened = false;
       let settled = false;
+      // Fix 3: Bounded handshake timeout handle.
+      let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
 
       const cleanupHandshakeSocket = () => {
+        if (handshakeTimer !== null) {
+          clearTimeout(handshakeTimer);
+          handshakeTimer = null;
+        }
         if (ws) {
           ws.onopen = null;
           ws.onmessage = null;
@@ -152,10 +196,32 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         this.ws = ws;
         ws.binaryType = 'arraybuffer';
 
+        // Fix 3: Arm the bounded handshake timeout immediately after socket
+        // construction. If the socket never emits open/error/close within the
+        // window, reject startup and emit WEBSOCKET_HANDSHAKE_FAILED.
+        handshakeTimer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanupHandshakeSocket();
+          const error = new Error(
+            `WebSocket handshake timed out after ${handshakeTimeoutMs}ms connecting to ${this.wsUrl}`
+          );
+          this.emit('error', {
+            code: 'WEBSOCKET_HANDSHAKE_FAILED',
+            message: error.message,
+          });
+          reject(error);
+        }, handshakeTimeoutMs);
+
         ws.onopen = () => {
           if (settled) return;
           settled = true;
           hasOpened = true;
+          // Clear the handshake timeout — we connected successfully.
+          if (handshakeTimer !== null) {
+            clearTimeout(handshakeTimer);
+            handshakeTimer = null;
+          }
           this.active = true;
 
           // Wire microphone PCM streaming from AudioEngine
@@ -223,7 +289,19 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * Gracefully shuts down connection and cleans all resources.
    */
   async stop(): Promise<void> {
+    // Fix 1 & 2: Advance the generation counter so any in-flight internalStart()
+    // or sendText() async closure that checks this.generation !== myGeneration
+    // will abort without constructing a WebSocket or proceeding to TTS.
+    this.generation++;
+
     this.active = false;
+
+    // Fix 2: Abort the in-flight text-turn chat/TTS request chain before
+    // calling interrupt(), so the AbortController abort races the fetch correctly.
+    if (this.textTurnAbortController) {
+      this.textTurnAbortController.abort();
+      this.textTurnAbortController = null;
+    }
 
     // Flush local audio playback immediately
     this.interrupt();
@@ -268,6 +346,17 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     this.activeTurnId = turnId;
     this.turnStartPerfMs = performance.now();
 
+    // Fix 2: Create a per-turn AbortController for this text turn's async
+    // chain (chat fetch + TTS fetch). Abort any prior text turn in flight.
+    if (this.textTurnAbortController) {
+      this.textTurnAbortController.abort();
+    }
+    const turnAbort = new AbortController();
+    this.textTurnAbortController = turnAbort;
+    // Fix 2: Capture the generation at turn start. If stop() or a later
+    // sendText() call advances the generation, this closure checks and aborts.
+    const myGeneration = this.generation;
+
     this.emit('transcript', { role: 'user', text: cleanText, final: true });
     this.emit('thinking');
 
@@ -277,23 +366,49 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: cleanText, turnId }),
+          signal: turnAbort.signal,
         });
         if (!chatRes.ok) {
           throw new Error(`Chat turn failed: HTTP ${chatRes.status}`);
         }
         const data = (await chatRes.json()) as { text?: string; reply?: string };
         const reply = (data.reply || data.text || '').trim();
-        if (reply && !this.interruptedTurnIds.has(turnId)) {
+
+        // Fix 2: After the async chat response returns, check whether this
+        // turn is still valid. It is not if:
+        //   (a) the turn was explicitly interrupted (interruptedTurnIds), OR
+        //   (b) stop() was called (generation advanced), OR
+        //   (c) a newer text turn has already started (generation advanced).
+        // This is safe even after stop() clears interruptedTurnIds because
+        // the generation check catches the stop() case independently.
+        if (
+          this.generation !== myGeneration ||
+          this.interruptedTurnIds.has(turnId) ||
+          turnAbort.signal.aborted
+        ) {
+          return;
+        }
+
+        if (reply) {
           await this.handleSophiaResponse({ turnId, reply });
         } else {
           this.emit('response_finished');
           this.emit('playback_finished');
         }
       } catch (err: any) {
+        // AbortError is expected when the turn is cancelled — not an error.
+        if ((err as Error).name === 'AbortError') return;
+        // Fix 2: Do not emit errors for a superseded or stopped turn.
+        if (this.generation !== myGeneration) return;
         this.emit('error', {
           code: 'TEXT_TURN_FAILED',
           message: err?.message || 'Text turn failed',
         });
+      } finally {
+        // Clean up this turn's AbortController only if it is still the current one.
+        if (this.textTurnAbortController === turnAbort) {
+          this.textTurnAbortController = null;
+        }
       }
     })();
   }
@@ -310,6 +425,14 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     if (this.ttsAbortController) {
       this.ttsAbortController.abort();
       this.ttsAbortController = null;
+    }
+
+    // Fix 2: Abort the in-flight text-turn AbortController on barge-in.
+    // This cancels any pending /api/sophia/chat or /api/sophia/mouth/speak
+    // fetch for the current text turn without waiting for stop().
+    if (this.textTurnAbortController) {
+      this.textTurnAbortController.abort();
+      this.textTurnAbortController = null;
     }
 
     // 3. Mark current turn as interrupted locally to drop late-arriving packets
