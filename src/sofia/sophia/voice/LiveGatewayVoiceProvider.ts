@@ -203,6 +203,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
           if (settled) return;
           settled = true;
           cleanupHandshakeSocket();
+          // Finding 1: If stop() was called during handshake, do NOT emit error
+          if (this.generation !== myGeneration) {
+            resolve();
+            return;
+          }
           const error = new Error(
             `WebSocket handshake timed out after ${handshakeTimeoutMs}ms connecting to ${this.wsUrl}`
           );
@@ -216,12 +221,22 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         ws.onopen = () => {
           if (settled) return;
           settled = true;
-          hasOpened = true;
-          // Clear the handshake timeout — we connected successfully.
+          // Clear the handshake timeout
           if (handshakeTimer !== null) {
             clearTimeout(handshakeTimer);
             handshakeTimer = null;
           }
+
+          // Finding 1: If stop() was called after WebSocket construction but before onopen,
+          // abort startup immediately: clean up socket, do NOT set active, do NOT wire audio,
+          // do NOT emit 'listening', and resolve cleanly.
+          if (this.generation !== myGeneration) {
+            cleanupHandshakeSocket();
+            resolve();
+            return;
+          }
+
+          hasOpened = true;
           this.active = true;
 
           // Wire microphone PCM streaming from AudioEngine
@@ -234,10 +249,19 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         };
 
         ws.onmessage = (event) => {
+          if (this.generation !== myGeneration || !this.active) return;
           this.handleServerMessage(event.data);
         };
 
         ws.onerror = (err) => {
+          if (this.generation !== myGeneration) {
+            if (!settled) {
+              settled = true;
+              cleanupHandshakeSocket();
+              resolve();
+            }
+            return;
+          }
           if (!hasOpened) {
             if (!settled) {
               settled = true;
@@ -258,6 +282,14 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         };
 
         ws.onclose = (event) => {
+          if (this.generation !== myGeneration) {
+            if (!settled) {
+              settled = true;
+              cleanupHandshakeSocket();
+              resolve();
+            }
+            return;
+          }
           if (!hasOpened) {
             if (!settled) {
               settled = true;
@@ -279,7 +311,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         if (!settled) {
           settled = true;
           cleanupHandshakeSocket();
-          reject(err);
+          if (this.generation !== myGeneration) {
+            resolve();
+          } else {
+            reject(err);
+          }
         }
       }
     });
@@ -296,11 +332,16 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
     this.active = false;
 
-    // Fix 2: Abort the in-flight text-turn chat/TTS request chain before
-    // calling interrupt(), so the AbortController abort races the fetch correctly.
+    // Abort in-flight text-turn chat request
     if (this.textTurnAbortController) {
       this.textTurnAbortController.abort();
       this.textTurnAbortController = null;
+    }
+
+    // Abort in-flight TTS synthesis
+    if (this.ttsAbortController) {
+      this.ttsAbortController.abort();
+      this.ttsAbortController = null;
     }
 
     // Flush local audio playback immediately
@@ -342,19 +383,29 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     const cleanText = text.trim();
     if (!cleanText) return;
 
+    // Finding 2: When a newer turn starts, immediately cancel any prior
+    // in-flight turn across its entire lifecycle: chat request, TTS request,
+    // audio download, and active hardware playback.
+    if (this.activeTurnId) {
+      this.interruptedTurnIds.add(this.activeTurnId);
+    }
+    if (this.textTurnAbortController) {
+      this.textTurnAbortController.abort();
+      this.textTurnAbortController = null;
+    }
+    if (this.ttsAbortController) {
+      this.ttsAbortController.abort();
+      this.ttsAbortController = null;
+    }
+    this.audio.stop();
+    this.isSpeaking = false;
+
     const turnId = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.activeTurnId = turnId;
     this.turnStartPerfMs = performance.now();
 
-    // Fix 2: Create a per-turn AbortController for this text turn's async
-    // chain (chat fetch + TTS fetch). Abort any prior text turn in flight.
-    if (this.textTurnAbortController) {
-      this.textTurnAbortController.abort();
-    }
     const turnAbort = new AbortController();
     this.textTurnAbortController = turnAbort;
-    // Fix 2: Capture the generation at turn start. If stop() or a later
-    // sendText() call advances the generation, this closure checks and aborts.
     const myGeneration = this.generation;
 
     this.emit('transcript', { role: 'user', text: cleanText, final: true });
@@ -374,38 +425,30 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         const data = (await chatRes.json()) as { text?: string; reply?: string };
         const reply = (data.reply || data.text || '').trim();
 
-        // Fix 2: After the async chat response returns, check whether this
-        // turn is still valid. It is not if:
-        //   (a) the turn was explicitly interrupted (interruptedTurnIds), OR
-        //   (b) stop() was called (generation advanced), OR
-        //   (c) a newer text turn has already started (generation advanced).
-        // This is safe even after stop() clears interruptedTurnIds because
-        // the generation check catches the stop() case independently.
+        // Check if turn was invalidated during chat fetch
         if (
           this.generation !== myGeneration ||
           this.interruptedTurnIds.has(turnId) ||
-          turnAbort.signal.aborted
+          turnAbort.signal.aborted ||
+          this.activeTurnId !== turnId
         ) {
           return;
         }
 
         if (reply) {
-          await this.handleSophiaResponse({ turnId, reply });
+          await this.handleSophiaResponse({ turnId, reply }, turnAbort.signal);
         } else {
           this.emit('response_finished');
           this.emit('playback_finished');
         }
       } catch (err: any) {
-        // AbortError is expected when the turn is cancelled — not an error.
         if ((err as Error).name === 'AbortError') return;
-        // Fix 2: Do not emit errors for a superseded or stopped turn.
-        if (this.generation !== myGeneration) return;
+        if (this.generation !== myGeneration || this.activeTurnId !== turnId) return;
         this.emit('error', {
           code: 'TEXT_TURN_FAILED',
           message: err?.message || 'Text turn failed',
         });
       } finally {
-        // Clean up this turn's AbortController only if it is still the current one.
         if (this.textTurnAbortController === turnAbort) {
           this.textTurnAbortController = null;
         }
@@ -582,16 +625,24 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   /**
    * Synthesize and sequentially play Sophia's spoken reply.
    */
-  private async handleSophiaResponse(msg: {
-    turnId: string;
-    reply: string;
-    directiveExecuted?: boolean;
-    error?: string;
-  }): Promise<void> {
+  private async handleSophiaResponse(
+    msg: {
+      turnId: string;
+      reply: string;
+      directiveExecuted?: boolean;
+      error?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
     const turnId = msg.turnId;
 
-    // Drop response if this turn was interrupted
-    if (this.interruptedTurnIds.has(turnId)) {
+    // Drop response if this turn was interrupted, cancelled, or superseded
+    if (
+      !this.active ||
+      this.interruptedTurnIds.has(turnId) ||
+      signal?.aborted ||
+      (this.activeTurnId && this.activeTurnId !== turnId)
+    ) {
       return;
     }
 
@@ -615,14 +666,24 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     const clientLatencyMs = this.turnStartPerfMs > 0 ? performance.now() - this.turnStartPerfMs : 0;
 
     // Synthesize spoken reply sequentially via canonical TTS endpoint
-    this.ttsAbortController = new AbortController();
+    const controller = new AbortController();
+    this.ttsAbortController = controller;
+
+    // Forward turn signal abort to TTS controller
+    if (signal) {
+      if (signal.aborted) {
+        controller.abort();
+        return;
+      }
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
 
     try {
       const ttsRes = await this.fetchFn('/api/sophia/mouth/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: replyText }),
-        signal: this.ttsAbortController.signal,
+        signal: controller.signal,
       });
 
       if (!ttsRes.ok) {
@@ -631,8 +692,15 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
       const audioBuffer = await ttsRes.arrayBuffer();
 
-      // Check if interrupted while downloading audio
-      if (this.interruptedTurnIds.has(turnId) || !this.isSpeaking) {
+      // Check if interrupted or superseded while fetching or downloading audio
+      if (
+        !this.active ||
+        this.interruptedTurnIds.has(turnId) ||
+        !this.isSpeaking ||
+        controller.signal.aborted ||
+        signal?.aborted ||
+        (this.activeTurnId && this.activeTurnId !== turnId)
+      ) {
         return;
       }
 
@@ -641,21 +709,40 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       // Play audio through AudioEngine
       await this.audio.playEncoded(audioBuffer);
 
-      if (!this.interruptedTurnIds.has(turnId)) {
+      // Verify turn is still current after playback finishes
+      if (
+        this.active &&
+        !this.interruptedTurnIds.has(turnId) &&
+        !controller.signal.aborted &&
+        !signal?.aborted &&
+        (!this.activeTurnId || this.activeTurnId === turnId)
+      ) {
         this.emit('response_finished');
         this.emit('playback_finished');
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        this.emit('error', {
-          code: 'TTS_PLAYBACK_FAILED',
-          message: err?.message || 'Failed to synthesize or play reply audio',
-        });
-        this.emit('playback_finished');
+        if (
+          this.active &&
+          !this.interruptedTurnIds.has(turnId) &&
+          !controller.signal.aborted &&
+          !signal?.aborted &&
+          (!this.activeTurnId || this.activeTurnId === turnId)
+        ) {
+          this.emit('error', {
+            code: 'TTS_PLAYBACK_FAILED',
+            message: err?.message || 'Failed to synthesize or play reply audio',
+          });
+          this.emit('playback_finished');
+        }
       }
     } finally {
-      this.isSpeaking = false;
-      this.ttsAbortController = null;
+      if (this.ttsAbortController === controller) {
+        this.ttsAbortController = null;
+      }
+      if (this.activeTurnId === turnId) {
+        this.isSpeaking = false;
+      }
     }
   }
 

@@ -85,7 +85,9 @@ class MockWebSocket extends EventEmitter {
 
   simulateError(err: any): void {
     this.onerror?.(err);
-    this.emit('error', err);
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', err);
+    }
   }
 }
 
@@ -534,6 +536,94 @@ async function runTests() {
     assert.strictEqual(p.isActive(), false, 'Provider is inactive after timeout');
     assert.ok(handshakeError !== null, 'error event emitted');
     assert.strictEqual(handshakeError.code, 'WEBSOCKET_HANDSHAKE_FAILED');
+  });
+
+  await test('stop() after WebSocket construction but before open leaves provider inactive and ignores late onopen (Finding 1)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let lateWs: MockWebSocket | null = null;
+
+    class DelayedOpenWs extends MockWebSocket {
+      constructor(url: string) {
+        // autoOpen = false so we control when onopen fires
+        super(url, false);
+        lateWs = this;
+      }
+    }
+
+    const mockFetch = (async () => ({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_late_open' }),
+    })) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: DelayedOpenWs as any,
+    });
+
+    let listeningEmitted = false;
+    p.addEventListener('listening', () => {
+      listeningEmitted = true;
+    });
+
+    // 1. Start provider (ticket resolves, WebSocket is constructed, awaiting open)
+    const startPromise = p.start();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(lateWs !== null, 'WebSocket instance must be constructed');
+
+    // 2. Call stop() before the socket opens
+    await p.stop();
+    assert.strictEqual(p.isActive(), false, 'Provider is inactive after stop()');
+
+    // 3. Late onopen fires on the socket
+    lateWs!.onopen?.();
+
+    // 4. Assert provider remains inactive, does not wire audio, does not emit 'listening'
+    await startPromise;
+    assert.strictEqual(p.isActive(), false, 'Provider remains inactive despite late onopen');
+    assert.strictEqual(listeningEmitted, false, 'listening event must not be emitted for cancelled handshake');
+    assert.strictEqual(audio.pcmCallback, null, 'Audio PCM listener must not be attached');
+  });
+
+  await test('Late socket error and close events after cancellation do not emit errors or reactivate provider (Finding 1)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let lateWs: MockWebSocket | null = null;
+
+    class ManualWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url, false);
+        lateWs = this;
+      }
+    }
+
+    const mockFetch = (async () => ({
+      ok: true,
+      json: async () => ({ ticket: 'ws_live_ticket_late_events' }),
+    })) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: ManualWs as any,
+    });
+
+    const emittedErrors: any[] = [];
+    p.addEventListener('error', (e: any) => {
+      emittedErrors.push(e.detail);
+    });
+
+    const startPromise = p.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Cancel startup
+    await p.stop();
+
+    // Late onerror and onclose fire on the stale socket
+    lateWs!.simulateError(new Error('Late network drop'));
+    lateWs!.close(1006, 'Abnormal late close');
+
+    await startPromise;
+
+    assert.strictEqual(p.isActive(), false);
+    assert.strictEqual(emittedErrors.length, 0, 'No errors emitted for late events on cancelled socket');
   });
 
   // ------------------------------------------------------------------------
@@ -1015,6 +1105,169 @@ async function runTests() {
     // 5. Verify only second reply was synthesized and spoken
     assert.strictEqual(spokenReplies.length, 1, 'Only one response must be spoken');
     assert.strictEqual(spokenReplies[0], 'Second reply (active)', 'Second turn must supersede first turn');
+
+    await p.stop();
+  });
+
+  await test('Newer sendText() supersedes older turn while older turn TTS is pending, aborting older TTS (Finding 2)', async () => {
+    const audio = new MockAudioEngine() as any;
+    let resolveFirstTTS: (val: any) => void = () => {};
+    let firstTTSAborted = false;
+    const spokenReplies: string[] = [];
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_tts_race' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        const body = JSON.parse(opts?.body || '{}');
+        return {
+          ok: true,
+          json: async () => ({ reply: `Reply for ${body.message}` }),
+        };
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        const body = JSON.parse(opts?.body || '{}');
+        if (body.text.includes('Turn 1')) {
+          return new Promise((resolve, reject) => {
+            if (opts?.signal) {
+              opts.signal.addEventListener('abort', () => {
+                firstTTSAborted = true;
+                const err = new Error('TTS aborted');
+                err.name = 'AbortError';
+                reject(err);
+              });
+            }
+            resolveFirstTTS = () => {
+              resolve({
+                ok: true,
+                arrayBuffer: async () => new Uint8Array([1, 1]).buffer,
+              });
+            };
+          });
+        }
+        if (body.text.includes('Turn 2')) {
+          spokenReplies.push(body.text);
+          return {
+            ok: true,
+            arrayBuffer: async () => new Uint8Array([2, 2]).buffer,
+          };
+        }
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    await p.start();
+
+    // 1. Send Turn 1 (completes chat, enters TTS and pauses there)
+    p.sendText('Turn 1');
+    await new Promise((r) => setTimeout(r, 20));
+
+    // 2. Send Turn 2 while Turn 1 TTS is still pending
+    p.sendText('Turn 2');
+    await new Promise((r) => setTimeout(r, 20));
+
+    // 3. Verify Turn 1's TTS was aborted by Turn 2
+    assert.strictEqual(firstTTSAborted, true, 'Turn 1 TTS must be aborted when Turn 2 starts');
+
+    // 4. Resolve Turn 1 TTS (even if late response arrived)
+    resolveFirstTTS(null);
+    await new Promise((r) => setTimeout(r, 30));
+
+    // 5. Verify only Turn 2 was spoken and played
+    assert.strictEqual(spokenReplies.length, 1);
+    assert.ok(spokenReplies[0].includes('Turn 2'));
+
+    await p.stop();
+  });
+
+  await test('Newer sendText() arriving while older audio playback is pending halts audio hardware and suppresses stale completion (Finding 2)', async () => {
+    let playEncodedResolve: (() => void) | null = null;
+    let audioStoppedWhilePlaying = false;
+
+    class PlaybackControllableAudio extends MockAudioEngine {
+      async playEncoded(buf: ArrayBuffer): Promise<void> {
+        this.playedEncodedBuffers.push(buf);
+        return new Promise<void>((resolve) => {
+          playEncodedResolve = resolve;
+        });
+      }
+
+      stop(): void {
+        super.stop();
+        if (playEncodedResolve) {
+          audioStoppedWhilePlaying = true;
+        }
+      }
+    }
+
+    const audio = new PlaybackControllableAudio() as any;
+    let playbackFinishedCount = 0;
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_playback_race' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        const body = JSON.parse(opts?.body || '{}');
+        return {
+          ok: true,
+          json: async () => ({ reply: `Reply for ${body.message}` }),
+        };
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        return {
+          ok: true,
+          arrayBuffer: async () => new Uint8Array([9, 9]).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    p.addEventListener('playback_finished', () => {
+      playbackFinishedCount++;
+    });
+
+    await p.start();
+
+    // 1. Send Turn 1 — proceeds into audio.playEncoded and hangs there
+    p.sendText('Turn 1');
+    await new Promise((r) => setTimeout(r, 40));
+    assert.strictEqual(audio.playedEncodedBuffers.length, 1, 'Turn 1 audio started playing');
+    assert.ok(playEncodedResolve !== null, 'Audio playback is currently in-flight');
+
+    // 2. Send Turn 2 while Turn 1 audio is still playing
+    p.sendText('Turn 2');
+    await new Promise((r) => setTimeout(r, 20));
+
+    // AudioEngine.stop() must be invoked to cut the hardware output
+    assert.strictEqual(audioStoppedWhilePlaying, true, 'AudioEngine.stop() must be called when superseded');
+
+    // 3. Turn 1's playEncoded now resolves late
+    playEncodedResolve!();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Turn 1 must NOT have emitted playback_finished
+    // Turn 2 is now in playEncoded
+    assert.strictEqual(audio.playedEncodedBuffers.length, 2, 'Turn 2 audio queued for playback');
+
+    // 4. Resolve Turn 2's playEncoded
+    if (playEncodedResolve) {
+      playEncodedResolve();
+    }
+    await new Promise((r) => setTimeout(r, 20));
+
+    assert.strictEqual(playbackFinishedCount, 1, 'Only Turn 2 emits playback_finished');
 
     await p.stop();
   });
