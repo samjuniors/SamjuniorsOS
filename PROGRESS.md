@@ -6,8 +6,8 @@
 M1 — Memory Source-of-Truth Audit IN PROGRESS on `audit/m1-memory-source-of-truth`, based on GitHub `main` @ `87bec51b17229ced9eec4d730b1a6302b4d84f88`. Initial inventory and persistence discrepancies are recorded in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. No runtime changes or test/build runs in this audit. Reconcile with the actual local working tree before implementation.
 
 ## Next (queued, in order)
-- Complete M1 method-level persistence matrix for EpistemicClaimStore and CompanyStateStore.
-- Trace context assembly, memory capture, reads/writes and deletion propagation.
+- Complete M1 deletion/retention dependency map and trace all context-assembly read/write paths.
+- Trace AgentRunStore and adjacent projections; inspect deployment mode/topology (SQLite schema vs DATABASE_MODE template/parser mismatch).
 - Reconcile local working tree with this remote branch.
 - Define M1 acceptance tests and finalize canonical ownership/source-of-truth decisions.
 - Only after M1 closure: scoped Memory fixes; then native JEV-inspired decision workflow; then tool runtime; then one or two end-to-end voice workflows.
@@ -54,3 +54,5 @@ M1 — Memory Source-of-Truth Audit IN PROGRESS on `audit/m1-memory-source-of-tr
 - Confirmed Personal Mind and ConversationStore remain file-primary; CompanyMemory authoritative retrieval has a cache-path discrepancy; DurableFileStore lock timeout and corrupt-read semantics need explicit treatment.
 - Source inspection only. No runtime changes; tests/build/database behavior NOT VERIFIED.
 - Next: finish EpistemicClaimStore and CompanyStateStore method-level audit, then trace deletion/retention paths.
+
+- [2026-10-12] M1 second source pass — completed source-level method matrix for EpistemicClaimStore and CompanyStateStore; added findings M1-F08 through M1-F11. Runtime behavior and deployed config remain NOT VERIFIED.
