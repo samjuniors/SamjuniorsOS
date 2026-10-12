@@ -2548,3 +2548,37 @@ The controlled prompt-version experiment is already present and archived; do not
 - Repo cleaned: sandbox/harness artifacts untracked (tool-results, upload/download runtime dirs, .agents/.codex/.zscripts, examples, mini-services, Caddyfile, 15.2MB screenshot); .gitignore extended; CI workflow retargeted to main; obsolete t6 defect-pin suite removed (superseded per the Task-6 re-audit).
 - Verification: 40+ suites green at exact baseline numbers; eslint 0; tsc 150 vs 152 baseline (zero new); production build 30/30 pages with dynamic root.
 - Remote: origin/main fast-forwardable to the consolidated tip; all other remote branches strictly contained. Push + remote branch deletion await a fresh token.
+
+
+## 2026-10-12 — M1 Memory Source-of-Truth Audit (kickoff)
+
+**Status:** IN PROGRESS — initial source-level inventory recorded on `audit/m1-memory-source-of-truth`.  
+**Baseline:** `main` @ `87bec51b17229ced9eec4d730b1a6302b4d84f88`.
+
+### Scope
+Founder direction: start M1 and ensure every research/implementation action is recorded in durable project documentation so a future AI/engineer can resume without relying on chat history.
+
+Created `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md` as the canonical M1 research record. Updated `PROGRESS.md` and `doc/ROADMAP.md` to point future sessions to this active workstream.
+
+### Initial source findings
+- Existing memory classes are distinct: Personal Mind, Episodic Memory/ConversationStore, Company historical precedent, Company reference knowledge, epistemic claims/facts, and adjacent operational state/run history.
+- Personal Mind and ConversationStore remain file-primary in every database mode; Prisma is an opportunistic mirror, with one documented ConversationStore single-record fallback.
+- CompanyKnowledgeStore has a distinct authoritative database path and routes retrieval through `getAllKnowledge()`.
+- **M1-F02:** CompanyMemoryStore's authoritative-mode `queryMemories()` still scores the in-process `this.memories` cache rather than authoritative `getAllMemories()`; `setMemories()` is cache-only.
+- **M1-F03:** local CompanyMemoryStore persistence errors are swallowed after mutating the in-process cache.
+- **M1-F04:** DurableFileStore proceeds without a collection lock after its 30-second lock timeout.
+- **M1-F05:** DurableFileStore read/parse errors return an empty collection.
+- **M1-F06:** no unified retention/deletion propagation contract has been established.
+
+### Work performed
+- Inspected the repository's binding engineering guardrails and current main source through GitHub.
+- Created branch `audit/m1-memory-source-of-truth` from current `main`.
+- Inspected Personal Mind, conversation, CompanyMemory, CompanyKnowledge, context assembly, DurableFileStore, database authority, epistemic, company state, agent run and Prisma schema source.
+- No runtime source, tests, schema, dependencies, environment settings or data were changed.
+- No tests/builds/database checks were run. Runtime and production behavior remain NOT VERIFIED.
+
+### Important limitation
+The repository guardrails say the actual local working tree outranks GitHub. This audit used the current remote `main` snapshot; before implementation, reconcile the branch with the founder's actual local checkout and preserve any local-only work.
+
+### Next single action
+Complete the method-level persistence matrix for `EpistemicClaimStore` and `CompanyStateStore`, then trace context-assembly read paths and retention/deletion propagation. Update the M1 research document and this worklog. Do not begin runtime fixes until the full M1 audit and local/remote reconciliation are complete.
