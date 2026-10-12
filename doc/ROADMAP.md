@@ -12,10 +12,10 @@
 - Phase 4C-B: Streaming STT Adapter Implementation IMPLEMENTED & VERIFIED (ADR 0004). Implemented provider-neutral `STTProvider` contract (`src/lib/server/live/stt/types.ts`), `DeepgramFluxProvider` streaming adapter with bounded 80ms chunk aggregation (`src/lib/server/live/stt/deepgram-flux.ts`), 128ms pre-roll ring buffer in `SophiaLiveClient`, canonical turn execution pipeline with `ConversationStore` persistence and `SophiaServerGateway` security boundary (`src/lib/server/sophia/turn-executor.ts`), and turn idempotency locks in `LiveInteractionServer`. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`.
 
 **NEXT PHASE:**
-Phase 4C-C: Self-Hosted STT Adapter Exploration (Qwen3-ASR) / Voice Response Playback Architecture (TTS).
+M1 — Memory Source-of-Truth and Persistence Audit. This founder-directed workstream takes priority over the previously listed Phase 4C-C / Phase 4D voice exploration. Voice expansion, Qwen runtime and TTS remain deferred until Memory, the native decision workflow and the tool runtime are complete to their acceptance criteria.
 
 **NEXT ACTION:**
-STOP condition active. Phase 4C-B streaming STT adapter implementation completed and sealed. Await Founder review of Phase 4C-B report before proceeding to Phase 4C-C / 4D planning or execution. (DO NOT implement TTS, audio response playback, or Qwen runtime until approved).
+Complete M1's method-level persistence matrix, context read/write trace, retention/deletion propagation map and local/remote branch reconciliation. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. Record each session's findings and next action in `WORKLOG.md` and `PROGRESS.md`. No runtime implementation until the M1 audit is complete and any material architecture decisions are reviewed.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 
