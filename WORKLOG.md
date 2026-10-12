@@ -1,4 +1,4 @@
-﻿# WORKLOG.md - Canonical Operational History
+# WORKLOG.md - Canonical Operational History
 
 ## Task 6 ΓÇö SOFIA Voice & Desktop Capability Validation (2026-10-04)
 
@@ -2799,7 +2799,7 @@ Implement founder-controlled physical deletion of conversations and messages wit
      - Updated `GET` handler to return 404 on `ConversationSecurityError` for zero information leakage.
 
 3. **Isolated Test Suite (`tests/sophia/m1_batch2_conversation_deletion.test.ts`)**:
-   - Implemented comprehensive 21-test suite covering:
+   - Implemented comprehensive 24-test suite covering:
      - Group 1: Basic deletion & message cascade purge (1.1).
      - Group 2: Idempotency & repeated deletion (2.1).
      - Group 3: Cross-founder isolation & zero information leakage (3.1, 3.2).
@@ -2807,14 +2807,18 @@ Implement founder-controlled physical deletion of conversations and messages wit
      - Group 5: Single message deletion with sibling preservation & timestamp updates (5.1, 5.2).
      - Group 6: Concurrent deletions under collection locks & active-turn races (6.1, 6.2).
      - Group 7: Write-Ahead Tombstone & anti-resurrection shield against Prisma mirrors (7.1).
-     - Group 8: Partial-failure recovery & reconciliation via `reconcileAllTombstones` (8.1).
+     - Group 8: Partial-failure recovery & reconciliation failure injection (8.1, 8.2, 8.3, 8.4):
+       - 8.1: Orphaned conversation records swept by `reconcileAllTombstones`.
+       - 8.2: Tombstone write I/O persistence failure fails closed without deleting collections.
+       - 8.3: Interrupted deletion with lingering messages is safely retried and swept.
+       - 8.4: Lingering messages across all tombstones are swept by `reconcileAllTombstones`.
      - Group 9: Episodic search & list retrieval hygiene (9.1).
      - Group 10: Complete preservation of independent `AgentRun`, `ApprovalRecord`, and audit ledger (10.1).
-     - Group 11: HTTP API endpoint contracts (11.1ΓÇô11.7).
-   - 21/21 tests passed cleanly.
+     - Group 11: HTTP API endpoint contracts (11.1–11.7).
+   - 24/24 tests passed cleanly.
 
 ### Tests Executed & Verified
-- `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **21 PASSED, 0 FAILED**
+- `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **24 PASSED, 0 FAILED**
 - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**
 - `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**
 - `tests/sophia/m3_authority_hardening.test.ts`: **7 PASSED, 0 FAILED**

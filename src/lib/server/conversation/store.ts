@@ -646,6 +646,28 @@ export class ConversationStore {
       }
     }
 
+    // 1b. Clean any lingering chat messages belonging to tombstoned conversations
+    try {
+      this.fileStore.withCollectionLock(CHAT_MESSAGES_COLLECTION, () => {
+        const allMessages = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
+        let cleaned = false;
+        const filtered: Record<string, ChatMessageRecord> = {};
+        for (const [msgId, msg] of Object.entries(allMessages)) {
+          if (msg && tombstones[msg.conversationId]) {
+            cleaned = true;
+            localCount++;
+          } else if (msg) {
+            filtered[msgId] = msg;
+          }
+        }
+        if (cleaned) {
+          this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
+        }
+      });
+    } catch {
+      // Continue
+    }
+
     // 2. Reconcile Prisma mirrors
     try {
       if ((await isDatabaseAvailable()) && (prisma as any).conversation) {
@@ -719,9 +741,24 @@ export class ConversationStore {
           `Principal "${founderId}" is not authorized to delete conversation "${id}".`
         );
       }
-      // Safe retry: guarantee local file records are cleaned even if previous run crashed midway
+      // Safe retry: guarantee local file records and messages are cleaned even if previous run crashed midway
       try {
         this.fileStore.deleteItemStrict(CONVERSATIONS_COLLECTION, id);
+        this.fileStore.withCollectionLock(CHAT_MESSAGES_COLLECTION, () => {
+          const allMessages = this.fileStore.readCollection<ChatMessageRecord>(CHAT_MESSAGES_COLLECTION);
+          let modified = false;
+          const filtered: Record<string, ChatMessageRecord> = {};
+          for (const [msgId, msg] of Object.entries(allMessages)) {
+            if (msg && msg.conversationId === id) {
+              modified = true;
+            } else if (msg) {
+              filtered[msgId] = msg;
+            }
+          }
+          if (modified) {
+            this.fileStore.writeCollectionStrict(CHAT_MESSAGES_COLLECTION, filtered);
+          }
+        });
       } catch {}
       // If Prisma wasn't reconciled previously, attempt reconciliation now
       if (!existingTombstone.prismaReconciled) {

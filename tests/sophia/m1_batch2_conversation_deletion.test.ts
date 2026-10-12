@@ -415,6 +415,108 @@ async function main() {
       assert.strictEqual(fileStore.getItem('conversations', orphanId), null);
     });
 
+    await runTest('8.2: Tombstone write failure fails closed without modifying collections', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Failure Injection Test Conv',
+      });
+      await convStore.saveMessage({
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Preserved test message',
+      }, FOUNDER_A);
+
+      // Monkey-patch saveItemStrict to simulate I/O failure when writing tombstone
+      const origSaveItemStrict = fileStore.saveItemStrict.bind(fileStore);
+      fileStore.saveItemStrict = (collection: string, id: string, item: any) => {
+        if (collection === 'conversation_tombstones') {
+          throw new Error('EIO: Disk write failure simulated');
+        }
+        return origSaveItemStrict(collection, id, item);
+      };
+
+      try {
+        await assert.rejects(
+          async () => {
+            await convStore.deleteConversation(FOUNDER_A, conv.id);
+          },
+          /Disk write failure simulated/
+        );
+
+        // Verify conversation and messages are COMPLETELY INTACT
+        const convStillExists = await convStore.getConversation(FOUNDER_A, conv.id);
+        assert.notStrictEqual(convStillExists, null);
+        const msgsStillExist = await convStore.getMessages(conv.id, FOUNDER_A);
+        assert.strictEqual(msgsStillExist.length, 1);
+        // Verify no tombstone exists
+        assert.strictEqual(convStore.isTombstoned(conv.id), false);
+      } finally {
+        fileStore.saveItemStrict = origSaveItemStrict;
+      }
+    });
+
+    await runTest('8.3: Interrupted deletion with lingering messages is safely cleaned up on retry', async () => {
+      const conv = await convStore.createConversation({
+        founderId: FOUNDER_A,
+        title: 'Interrupted Run Conv',
+      });
+      const msg = await convStore.saveMessage({
+        conversationId: conv.id,
+        sender: 'founder',
+        content: 'Lingering message before retry',
+      }, FOUNDER_A);
+
+      // Simulate a crashed run: tombstone was written, but neither conversation nor message collection was wiped
+      fileStore.saveItem('conversation_tombstones', conv.id, {
+        id: conv.id,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: false,
+      });
+
+      // Assert read is ALREADY shielded
+      assert.strictEqual(await convStore.getConversation(FOUNDER_A, conv.id), null);
+
+      // Now call deleteConversation retry
+      const retryResult = await convStore.deleteConversation(FOUNDER_A, conv.id);
+      assert.strictEqual(retryResult.alreadyDeleted, true);
+
+      // Verify conversation and message are purged from raw disk storage
+      assert.strictEqual(fileStore.getItem('conversations', conv.id), null);
+      const allMsgs = fileStore.readCollection<ChatMessageRecord>('chat_messages');
+      assert.strictEqual(allMsgs[msg.id], undefined);
+    });
+
+    await runTest('8.4: reconcileAllTombstones sweeps lingering messages across all tombstones', async () => {
+      const crashedConvId = 'conv-crash-sweep-test';
+      const crashedMsgId = 'msg-crash-sweep-test';
+
+      fileStore.saveItem('conversation_tombstones', crashedConvId, {
+        id: crashedConvId,
+        founderId: FOUNDER_A,
+        deletedAt: new Date().toISOString(),
+        purgedMessageCount: 0,
+        prismaReconciled: true,
+      });
+
+      fileStore.saveItem('chat_messages', crashedMsgId, {
+        id: crashedMsgId,
+        conversationId: crashedConvId,
+        sender: 'founder',
+        content: 'Ghost message from crash',
+        createdAt: new Date().toISOString(),
+      });
+
+      // Run reconciliation sweep
+      const rec = await convStore.reconcileAllTombstones();
+      assert(rec.cleanedLocalCount >= 1);
+
+      // Verify ghost message is wiped
+      const allMsgs = fileStore.readCollection<ChatMessageRecord>('chat_messages');
+      assert.strictEqual(allMsgs[crashedMsgId], undefined);
+    });
+
     // ------------------------------------------------------------------------
     // GROUP 9: EPISODIC SEARCH & LIST RETRIEVAL HYGIENE
     // ------------------------------------------------------------------------

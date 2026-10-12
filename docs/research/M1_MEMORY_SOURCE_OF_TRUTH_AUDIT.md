@@ -369,6 +369,14 @@ public async deleteMessage(founderId: string, conversationId: string, messageId:
 4. **Audit Record Protection:**
    - Independent `AgentRun`, `ApprovalRecord`, and `SideEffectAudit` tables have no foreign keys to `Conversation`.
    - Deletion strictly touches `conversations`, `chat_messages`, and `conversation_tombstones`. Audit logs are preserved untouched.
+5. **Filesystem Backup Restoration Procedure (Tombstone Preservation):**
+   When restoring the local state directory (`.data/`) from cold backups or older filesystem snapshots:
+   - **Step 1 (Quarantine Active Tombstones):** Before unpacking the backup archive over `.data/`, back up the active tombstone ledger:
+     `cp .data/conversation_tombstones.json /tmp/conversation_tombstones.backup.json`
+   - **Step 2 (Restore Volume):** Unpack/restore the historical snapshot into `.data/`.
+   - **Step 3 (Re-apply Tombstone Union):** Merge `/tmp/conversation_tombstones.backup.json` into `.data/conversation_tombstones.json`. Any conversation deleted between snapshot creation and restoration remains permanently tombstoned.
+   - **Step 4 (Pre-Traffic Sweep):** Execute `ConversationStore.getInstance().reconcileAllTombstones()` before serving public or API traffic. This sweeps and purges any restored conversations and messages that have active tombstones, and synchronizes the Prisma mirror.
+   - **Step 5 (Serve Traffic):** Route traffic to the application.
 
 ---
 
