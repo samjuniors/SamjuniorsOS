@@ -24,7 +24,7 @@ import { LiveSessionManager } from '../../src/lib/server/live/session-manager';
 import { LiveTicketStore } from '../../src/lib/server/live/ticket-store';
 import type { SophiaTurnResult } from '../../src/lib/server/sophia/turn-executor';
 import type { STTProvider, CanonicalTranscriptEvent } from '../../src/lib/server/live/stt/types';
-import type { AudioEngine } from '../../src/sofia/sophia/audio/AudioEngine';
+import { AudioEngine } from '../../src/sofia/sophia/audio/AudioEngine';
 
 // Mock AudioEngine: faithfully implements the AudioEngine methods used by LiveGatewayVoiceProvider
 class MockAudioEngine {
@@ -1588,23 +1588,16 @@ async function runTests() {
   });
 
   await test('sendText() does not throw before chat request when using strict AudioEngine interface without stop()', async () => {
-    class StrictAudioEngine {
-      public pcmHandler: ((pcm: ArrayBuffer) => void) | null = null;
+    class StrictAudioEngine extends AudioEngine {
       public playbackInterrupted = false;
       public playedEncodedBuffers: ArrayBuffer[] = [];
 
-      onPCM(fn: (pcm: ArrayBuffer) => void): () => void {
-        this.pcmHandler = fn;
-        return () => {
-          this.pcmHandler = null;
-        };
-      }
-
-      interruptPlayback(): void {
+      override interruptPlayback(): void {
+        super.interruptPlayback();
         this.playbackInterrupted = true;
       }
 
-      async playEncoded(buf: ArrayBuffer): Promise<void> {
+      override async playEncoded(buf: ArrayBuffer): Promise<void> {
         this.playedEncodedBuffers.push(buf);
       }
     }
@@ -1632,7 +1625,7 @@ async function runTests() {
       return { ok: true, json: async () => ({}) };
     }) as any;
 
-    const p = new LiveGatewayVoiceProvider(strictAudio as any, 'ws://localhost:3001', {
+    const p = new LiveGatewayVoiceProvider(strictAudio, 'ws://localhost:3001', {
       fetchFn: mockFetch,
       WebSocketClass: MockWebSocket as any,
     });
