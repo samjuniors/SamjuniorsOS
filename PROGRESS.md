@@ -3,13 +3,14 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-Architecture source-of-truth reconciliation complete: `AGENTS.md`, `ARCHITECTURE.md`, and `docs/architecture/ADR-001-realtime-sophia-interface.md` established as binding engineering guardrails. Working tree contains Phase 4C-B streaming STT implementation (58/58 test assertions passing, Deepgram Flux STT provider, `executeSophiaTurn` cognitive ingress).
+M1 — Memory Source-of-Truth Audit IN PROGRESS on `audit/m1-memory-source-of-truth`, based on GitHub `main` @ `87bec51b17229ced9eec4d730b1a6302b4d84f88`. Initial inventory and persistence discrepancies are recorded in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. No runtime changes or test/build runs in this audit. Reconcile with the actual local working tree before implementation.
 
 ## Next (queued, in order)
-- Founder review of Phase 4C-B streaming STT implementation report and working tree
-- Formal commit and working tree reconciliation for Phase 4C-B
-- Review of ADR-001 (Realtime Sophia Interface & LiveKit/Gemini Live direction)
-- Next architectural milestone planning: LiveKit/WebRTC prototype vs. Phase 4D (TTS response playback)
+- Complete M1 method-level persistence matrix for EpistemicClaimStore and CompanyStateStore.
+- Trace context assembly, memory capture, reads/writes and deletion propagation.
+- Reconcile local working tree with this remote branch.
+- Define M1 acceptance tests and finalize canonical ownership/source-of-truth decisions.
+- Only after M1 closure: scoped Memory fixes; then native JEV-inspired decision workflow; then tool runtime; then one or two end-to-end voice workflows.
 
 ## Completed
 - [2026-09-21] Architecture Source-of-Truth Update — established `AGENTS.md`, `ARCHITECTURE.md`, and `docs/architecture/ADR-001-realtime-sophia-interface.md`. Aligned product boundaries, core principles, 24/7 operating model, realtime interface doctrine, graph read-model authority, security invariants, and failure recovery.
