@@ -2607,3 +2607,58 @@ Build the deletion/retention dependency map and trace the full context-assembly 
 
 ### Verification boundary
 Source inspection only. No tests, database connection, runtime, deployment settings, production records or local working tree were inspected. No implementation or migration was performed.
+
+
+## 2026-10-12 — M1 Audit Completion (Tasks A–E)
+
+**Status:** COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. Full report updated in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. No runtime code or database modifications made in this phase.
+
+### What was investigated & verified
+1. **Task A — Context Assembly & Retrieval Flow**:
+   - Traced complete ingress-to-capture path: HTTP `/api/agent-chat` & WebSocket `:3001` → session authentication (`getAuthenticatedFounder`) → `ConversationStore.saveMessage` → `SophiaContextAssembler.assemble` (slices 1–7) → `SophiaIntentClassifier.classify` (deterministic pre-filters + LLM proposal + `isValidProposalShape` gate + `sanitizeProposal`) → `SophiaServerGateway.process` → assistant message persistence → async `scheduleSophiaMemoryCapture`.
+   - Verified that historical precedents (`CompanyMemoryStore`) carry explicit non-overriding labels and cannot override canonical facts.
+   - Verified that personal memories are XML-escaped inside `<personal_memory_context>` to prevent prompt injection.
+   - Verified store failure resilience: context slices fail soft with `[UNAVAILABLE / DEGRADED]` notices without crashing turns.
+
+2. **Task B — Retention & Deletion Dependency Mapping**:
+   - Built comprehensive 8-class matrix across Personal Mind, Conversations, Messages, Precedents, Knowledge, Epistemic Claims, Operational State, and Agent Runs.
+   - Confirmed only `SophiaMemoryStore` provides an item deletion API (`deleteMemory`).
+   - Identified total absence of deletion methods in `ConversationStore`, `CompanyMemoryStore`, `EpistemicClaimStore`, and `CompanyStateStore`.
+   - Established "forget this" policy: physical deletion for Personal Mind; cryptographic supersession/tombstoning for Epistemic Facts to preserve `FactLineage`, `DEPENDS_ON` relations, and `AS_OF` temporal queries.
+
+3. **Task C — Persistence & Failure Behavior**:
+   - Formally differentiated 4 persistence tiers: In-Memory, `DurableFileStore`, Prisma transactional DB, and Opportunistic Mirror.
+   - Evaluated multi-instance cloud hazard: file-primary stores (`SophiaMemoryStore`, `ConversationStore`) isolate memory to individual container instances, making current architecture unsafe for multi-instance scaling without shared DB authority.
+   - Identified `DurableFileStore` degradation: 30s lock timeout results in proceeding without lock; JSON parse error returns `{}` (masks file corruption).
+
+4. **Task D — Database & Deployment Configuration**:
+   - Verified `prisma/schema.prisma` explicitly configures SQLite datasource (`file:./db/custom.db`).
+   - Verified `authority.ts` parser rejects `DATABASE_MODE=sqlite` documented in `.env.example`, silently defaulting to `authoritative` in production or `local` in development.
+   - Production PostgreSQL connection string and deployment topology are **NOT VERIFIED** (no secrets or cloud endpoints in repository).
+
+5. **Task E — Test Execution & Coverage Gaps**:
+   - Executed 7 existing test suites using `npx tsx`: **108 passed assertions**, 0 failures.
+     - `m52_retrieval_hygiene.test.ts` (25 pass)
+     - `m1_canonical_state_authority.test.ts` (7 pass)
+     - `m4b1_lifecycle.test.ts` (19 pass, 1 skip)
+     - `m53_asof_read.test.ts` (18 pass)
+     - `m53_dependency_relations.test.ts` (25 pass)
+     - `m0_idempotency_expiry.test.ts` (7 pass)
+     - `m3_authority_hardening.test.ts` (7 pass, 3 skip)
+   - Discovered test runner defect: child-spawning suites hardcode `Bun.spawn` / `bunx`, failing on Windows when Bun is absent.
+   - Identified missing test coverage: persistence failures, file corruption, conversation deletion, authoritative DB synchronization, and multi-instance divergence.
+
+### Confirmed Findings & Defects
+- **M1-F01:** Personal Mind and ConversationStore are file-primary (architecture trade-off).
+- **M1-F02:** `CompanyMemoryStore.queryMemories` reads in-memory array rather than DB in authoritative mode (confirmed logic defect).
+- **M1-F03:** `CompanyMemoryStore.recordMemory` swallows file persistence errors (confirmed defect).
+- **M1-F04:** `DurableFileStore` drops lock after 30s timeout (architecture trade-off).
+- **M1-F05:** `DurableFileStore.readCollection` returns `{}` on parse failure (confirmed failure-recovery defect).
+- **M1-F06 / M1-F09:** Deletion APIs are completely missing for conversations, precedents, and claims (architecture gap).
+- **M1-F08:** `CompanyStateStore.queryState` reads cache only; `getFinancialMetrics` falls back to seeded sample model (confirmed defect).
+- **M1-F10:** Local epistemic and state writes return success despite caught file persistence errors (confirmed defect).
+- **M1-F11:** `DATABASE_MODE=sqlite` in `.env.example` rejected by `authority.ts` (confirmed configuration mismatch).
+
+### Next Action
+Present completed M1 Audit Report to Founder. Do not begin deletion/retention implementation (Batch 2) until founder confirms policy. Await approval to implement Batch 1 (hygiene, `DATABASE_MODE` parser alignment, `CompanyMemoryStore` cache fix, and cross-platform test runner support).
+
