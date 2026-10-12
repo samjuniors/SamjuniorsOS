@@ -398,8 +398,26 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     // Finding 2: When a newer turn starts, immediately cancel any prior
     // in-flight turn across its entire lifecycle: chat request, TTS request,
     // audio download, and active hardware playback.
-    if (this.activeTurnId) {
-      this.interruptedTurnIds.add(this.activeTurnId);
+    const previousTurnId = this.activeTurnId;
+    if (previousTurnId) {
+      this.interruptedTurnIds.add(previousTurnId);
+
+      // If superseding an active gateway/PTT turn, send the canonical INTERRUPT
+      // control frame to LiveInteractionServer with the previous turn ID while
+      // its identity is still available.
+      if (this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
+        try {
+          this.ws.send(
+            JSON.stringify({
+              type: 'INTERRUPT',
+              turnId: previousTurnId,
+              timestamp: Date.now(),
+            })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
     }
     if (this.textTurnAbortController) {
       this.textTurnAbortController.abort();
@@ -409,8 +427,9 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       this.ttsAbortController.abort();
       this.ttsAbortController = null;
     }
-    this.audio.stop();
+    this.audio.interruptPlayback();
     this.isSpeaking = false;
+    this.isTransmitting = false;
 
     const turnId = `text_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.activeTurnId = turnId;
@@ -474,7 +493,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    */
   interrupt(): void {
     // 1. Immediate local audio hardware cutoff (<5ms)
-    this.audio.stop();
+    this.audio.interruptPlayback();
 
     // 2. Abort any active TTS fetch requests
     if (this.ttsAbortController) {
@@ -771,7 +790,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       this.ttsAbortController.abort();
       this.ttsAbortController = null;
     }
-    this.audio.stop();
+    this.audio.interruptPlayback();
 
     if (this.ws) {
       this.ws.onopen = null;

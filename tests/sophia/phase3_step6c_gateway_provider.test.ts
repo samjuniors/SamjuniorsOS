@@ -17,12 +17,20 @@
 
 import assert from 'assert';
 import { EventEmitter } from 'events';
+import { WebSocket as WsWebSocket } from 'ws';
 import { LiveGatewayVoiceProvider } from '../../src/sofia/sophia/voice/LiveGatewayVoiceProvider';
+import { LiveInteractionServer, SophiaTurnExecutorFn } from '../../src/lib/server/live/server';
+import { LiveSessionManager } from '../../src/lib/server/live/session-manager';
+import { LiveTicketStore } from '../../src/lib/server/live/ticket-store';
+import type { SophiaTurnResult } from '../../src/lib/server/sophia/turn-executor';
+import type { STTProvider, CanonicalTranscriptEvent } from '../../src/lib/server/live/stt/types';
+import type { AudioEngine } from '../../src/sofia/sophia/audio/AudioEngine';
 
-// Mock AudioEngine
+// Mock AudioEngine: faithfully implements the AudioEngine methods used by LiveGatewayVoiceProvider
 class MockAudioEngine {
   public pcmCallback: ((pcm: ArrayBuffer) => void) | null = null;
   public stopped = false;
+  public playbackInterrupted = false;
   public playedEncodedBuffers: ArrayBuffer[] = [];
 
   onPCM(fn: (pcm: ArrayBuffer) => void): () => void {
@@ -32,7 +40,8 @@ class MockAudioEngine {
     };
   }
 
-  stop(): void {
+  interruptPlayback(): void {
+    this.playbackInterrupted = true;
     this.stopped = true;
   }
 
@@ -1504,8 +1513,8 @@ async function runTests() {
         });
       }
 
-      stop(): void {
-        super.stop();
+      interruptPlayback(): void {
+        super.interruptPlayback();
         if (playEncodedResolve) {
           audioStoppedWhilePlaying = true;
         }
@@ -1576,6 +1585,324 @@ async function runTests() {
     assert.strictEqual(playbackFinishedCount, 1, 'Only Turn 2 emits playback_finished');
 
     await p.stop();
+  });
+
+  await test('sendText() does not throw before chat request when using strict AudioEngine interface without stop()', async () => {
+    class StrictAudioEngine {
+      public pcmHandler: ((pcm: ArrayBuffer) => void) | null = null;
+      public playbackInterrupted = false;
+      public playedEncodedBuffers: ArrayBuffer[] = [];
+
+      onPCM(fn: (pcm: ArrayBuffer) => void): () => void {
+        this.pcmHandler = fn;
+        return () => {
+          this.pcmHandler = null;
+        };
+      }
+
+      interruptPlayback(): void {
+        this.playbackInterrupted = true;
+      }
+
+      async playEncoded(buf: ArrayBuffer): Promise<void> {
+        this.playedEncodedBuffers.push(buf);
+      }
+    }
+
+    const strictAudio = new StrictAudioEngine();
+    let chatEndpointHit = false;
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_strict_audio' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        chatEndpointHit = true;
+        return {
+          ok: true,
+          json: async () => ({ reply: 'Strict audio reply' }),
+        };
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        return {
+          ok: true,
+          arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(strictAudio as any, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: MockWebSocket as any,
+    });
+
+    await p.start();
+
+    // Verify sending text does not throw and issues chat request
+    assert.doesNotThrow(() => {
+      p.sendText('Testing audio contract');
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    assert.strictEqual(strictAudio.playbackInterrupted, true, 'interruptPlayback() invoked without calling stop()');
+    assert.strictEqual(chatEndpointHit, true, 'Chat endpoint reached successfully');
+    assert.strictEqual(strictAudio.playedEncodedBuffers.length, 1, 'Reply played via AudioEngine');
+
+    // Verify interrupt() also uses interruptPlayback()
+    strictAudio.playbackInterrupted = false;
+    p.interrupt();
+    assert.strictEqual(strictAudio.playbackInterrupted, true, 'interrupt() invokes interruptPlayback()');
+
+    await p.stop();
+  });
+
+  await test('Active PTT turn followed by sendText() immediately sends canonical INTERRUPT with previous PTT turn ID', async () => {
+    const audio = new MockAudioEngine() as any;
+    const capturedSockets: MockWebSocket[] = [];
+    let chatEndpointReceivedTurn: string | null = null;
+    let chatEndpointHit = false;
+
+    class CapturingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        capturedSockets.push(this);
+      }
+    }
+
+    const mockFetch = (async (url: string, opts?: any) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_ticket_ptt_text_switch' }) };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        chatEndpointHit = true;
+        const body = JSON.parse(opts?.body || '{}');
+        chatEndpointReceivedTurn = body.message;
+        return {
+          ok: true,
+          json: async () => ({ reply: `Reply to ${body.message}` }),
+        };
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        return {
+          ok: true,
+          arrayBuffer: async () => new Uint8Array([5, 5]).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: CapturingWs as any,
+    });
+
+    let interruptedEventEmitted = false;
+    p.addEventListener('interrupted', () => {
+      interruptedEventEmitted = true;
+    });
+
+    await p.start();
+    const activeSocket = capturedSockets[0];
+    assert.ok(activeSocket);
+
+    // 1. Start an active PTT turn
+    const pttTurnId = p.startPtt('turn_active_ptt_test_1');
+    assert.strictEqual(pttTurnId, 'turn_active_ptt_test_1');
+
+    const startPttMsg = JSON.parse(activeSocket.sentMessages[0]);
+    assert.strictEqual(startPttMsg.type, 'START_PTT');
+    assert.strictEqual(startPttMsg.turnId, 'turn_active_ptt_test_1');
+
+    // 2. While PTT turn is active, user sends text input
+    p.sendText('superseding text turn');
+
+    // 3. Verify outgoing WebSocket frame is the canonical INTERRUPT frame containing the PREVIOUS PTT turn ID
+    const interruptMsg = activeSocket.sentMessages
+      .map((m) => (typeof m === 'string' ? JSON.parse(m) : null))
+      .find((m) => m && m.type === 'INTERRUPT');
+
+    assert.ok(interruptMsg, 'INTERRUPT frame must be sent over WebSocket');
+    assert.strictEqual(
+      interruptMsg.turnId,
+      'turn_active_ptt_test_1',
+      'Outgoing INTERRUPT frame must contain the previous PTT turn ID'
+    );
+
+    // 4. Verify sendText does not emit duplicate "interrupted" event to voice listeners
+    assert.strictEqual(interruptedEventEmitted, false, 'sendText() must not emit extraneous interrupted event');
+
+    // 5. Simulate late server response for the interrupted PTT turn arriving over WebSocket
+    activeSocket.simulateServerMessage({
+      type: 'SOPHIA_RESPONSE',
+      turnId: 'turn_active_ptt_test_1',
+      reply: 'Stale speech response that must be dropped',
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 6. Verify new text turn reached /api/sophia/chat and was played, while old PTT response was dropped
+    assert.strictEqual(chatEndpointHit, true, 'New text turn reaches /api/sophia/chat');
+    assert.strictEqual(chatEndpointReceivedTurn, 'superseding text turn');
+    assert.strictEqual(audio.playedEncodedBuffers.length, 1, 'Only replacement text turn reply is played');
+
+    await p.stop();
+  });
+
+  await test('Server-side PTT execution is cancelled when client switches to text turn (server seam)', async () => {
+    const audio = new MockAudioEngine() as any;
+    const sessionManager = LiveSessionManager.getInstance();
+    const ticketStore = LiveTicketStore.getInstance();
+
+    class MockSTTForTest implements STTProvider {
+      public readonly providerId = 'mock-stt';
+      public readonly providerName = 'Mock STT';
+      public name = 'mock-stt';
+      public options: any = null;
+      public isStreaming = false;
+      public interruptCalled = false;
+      private eventListeners: Array<(event: CanonicalTranscriptEvent) => void> = [];
+
+      async startStream(opts: any): Promise<void> {
+        this.options = opts;
+        this.isStreaming = true;
+      }
+      sendAudio(): void {}
+      onEvent(fn: (event: CanonicalTranscriptEvent) => void): () => void {
+        this.eventListeners.push(fn);
+        return () => {
+          this.eventListeners = this.eventListeners.filter((l) => l !== fn);
+        };
+      }
+      onError(): () => void {
+        return () => {};
+      }
+      async endTurn(): Promise<void> {}
+      interrupt(): void {
+        this.interruptCalled = true;
+      }
+      async close(): Promise<void> {
+        this.isStreaming = false;
+      }
+      simulateEvent(event: CanonicalTranscriptEvent): void {
+        for (const listener of this.eventListeners) {
+          listener(event);
+        }
+      }
+    }
+
+    let mockStt = new MockSTTForTest();
+    const executorCalls: Array<{ turnId?: string; signal?: AbortSignal }> = [];
+    let resolveTurnExecution: ((r: SophiaTurnResult) => void) | null = null;
+
+    const slowExecutor: SophiaTurnExecutorFn = (opts) => {
+      executorCalls.push({ turnId: opts.turnId, signal: opts.signal });
+      return new Promise<SophiaTurnResult>((resolve) => {
+        resolveTurnExecution = resolve;
+      });
+    };
+
+    const server = new LiveInteractionServer({
+      port: 0,
+      sessionManager,
+      sttProviderFactory: () => {
+        mockStt = new MockSTTForTest();
+        return mockStt;
+      },
+      turnExecutor: slowExecutor,
+    });
+
+    const serverPort = await server.listen(0);
+    const testFounder = {
+      userId: 'founder-test-server-seam',
+      email: 'founder@samjuniors.com',
+      name: 'Test Founder',
+      role: 'FOUNDER' as const,
+      isVerified: true,
+    };
+
+    let chatEndpointHit = false;
+    const mockFetch = (async (url: string) => {
+      if (url.includes('/api/auth/ws-ticket')) {
+        const ticket = ticketStore.issueTicket(testFounder, 'conv_server_seam_1');
+        return {
+          ok: true,
+          json: async () => ({ ticket }),
+        };
+      }
+      if (url.includes('/api/sophia/chat')) {
+        chatEndpointHit = true;
+        return {
+          ok: true,
+          json: async () => ({ reply: 'Chat reply from Next.js endpoint' }),
+        };
+      }
+      if (url.includes('/api/sophia/mouth/speak')) {
+        return {
+          ok: true,
+          arrayBuffer: async () => new Uint8Array([8, 8]).buffer,
+        };
+      }
+      return { ok: true, json: async () => ({}) };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, `ws://localhost:${serverPort}`, {
+      fetchFn: mockFetch,
+      WebSocketClass: WsWebSocket as any,
+      allowedPorts: [serverPort],
+    });
+
+    await p.start();
+
+    // 1. Start a PTT turn
+    const pttTurnId = p.startPtt('turn_server_seam_active_1');
+    await new Promise((r) => setTimeout(r, 40));
+
+    // 2. Simulate final transcript from STT -> triggers server turnExecutor
+    mockStt.simulateEvent({
+      kind: 'final_transcript',
+      turnId: pttTurnId,
+      text: 'Analyze the revenue growth rate',
+      isFinal: true,
+      timestamp: Date.now(),
+    });
+
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(executorCalls.length, 1, 'Server turn executor invoked for PTT turn');
+    assert.strictEqual(executorCalls[0].turnId, pttTurnId);
+    assert.strictEqual(executorCalls[0].signal?.aborted, false, 'Server turn execution initially active');
+
+    // 3. User switches to text turn while server execution is in-flight
+    p.sendText('Hold on, show churn rate instead');
+
+    // Allow INTERRUPT frame to reach server and be processed
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 4. Verify server turn execution was aborted via AbortSignal
+    assert.strictEqual(executorCalls[0].signal?.aborted, true, 'Server turn execution aborted by INTERRUPT');
+    assert.strictEqual(mockStt.interruptCalled, true, 'Server STT session was interrupted');
+
+    // 5. Resolve the aborted server execution
+    if (resolveTurnExecution) {
+      (resolveTurnExecution as any)({
+        success: false,
+        cancelled: true,
+        reply: '',
+        conversationId: 'conv_server_seam_1',
+        intent: 'conversation',
+        directiveExecuted: false,
+        liveAi: false,
+      });
+    }
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // 6. Verify text turn succeeded through /api/sophia/chat
+    assert.strictEqual(chatEndpointHit, true, 'Text turn reached chat endpoint');
+
+    await p.stop();
+    await server.close();
   });
 
   // ------------------------------------------------------------------------
