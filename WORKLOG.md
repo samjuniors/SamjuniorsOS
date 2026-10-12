@@ -2582,3 +2582,28 @@ The repository guardrails say the actual local working tree outranks GitHub. Thi
 
 ### Next single action
 Complete the method-level persistence matrix for `EpistemicClaimStore` and `CompanyStateStore`, then trace context-assembly read paths and retention/deletion propagation. Update the M1 research document and this worklog. Do not begin runtime fixes until the full M1 audit and local/remote reconciliation are complete.
+
+
+## 2026-10-12 — M1 source matrix expansion (Epistemic + CompanyState)
+
+**Status:** IN PROGRESS — second read-only source pass completed; no code changes.
+
+### Additional evidence inspected
+- Full method paths in `src/lib/server/epistemic/claim-store.ts`: sources, signals, claims, verification, canonical facts, fact queries, temporal reads, lineage and supersession.
+- Full method paths in `src/lib/server/state/state-store.ts`: hydration, local persistence, getters, writes and query projection.
+- Context-assembly calls into CompanyKnowledgeStore, CompanyMemoryStore, ConversationStore and EpistemicClaimStore.
+- `src/lib/server/db/authority.ts`, `src/lib/server/db/prisma.ts`, `prisma/schema.prisma` and `.env.example`.
+
+### Additional findings
+- EpistemicClaimStore has a clear mode split: local maps + DurableFileStore collections; authoritative mode delegates reads/writes to database-backed PostgresEpistemicStore and fails closed through `requireAuthoritativeDatabase()`. Local file writes are best-effort after map mutation. The store interface has no delete operations. DependencyRelationStore is a rebuildable derived index; failures are logged and do not fail canonical fact writes.
+- **M1-F08:** CompanyStateStore's authoritative-mode behavior is partial. Some getters read the DB, but several getters and all of `queryState()` use in-memory state. Missing DB financial state can fall back to a seeded sample. A failed DB write can leave the in-memory decision changed.
+- **M1-F09:** deletion/retention APIs are fragmented: Personal Mind has explicit founder-scoped delete; conversation, CompanyMemory, epistemic records and most CompanyState entities have no focused delete/retention interface; CompanyKnowledge exposes whole-set replacement rather than focused delete.
+- **M1-F10:** local Epistemic and CompanyState writes can resolve despite caught file-persistence failures.
+- **M1-F11:** Prisma schema and runtime Prisma client are SQLite, while `.env.example` documents `DATABASE_MODE=sqlite`; the authority parser does not accept `sqlite` (it accepts authoritative/test/local). Actual deployed environment and database topology remain unknown.
+- Context assembly calls CompanyKnowledgeStore.queryKnowledge, CompanyMemoryStore.queryMemories, ConversationStore.searchConversations, and EpistemicClaimStore fact/claim reads. Personal Mind retrieval is separately founder-scoped. These are contextual projections; none may grant permissions.
+
+### Updated next action
+Build the deletion/retention dependency map and trace the full context-assembly and execution call graph. Then inspect actual deployment configuration and reconcile the branch with the local working tree. Do not implement fixes until the M1 evidence set is complete and the user-facing behavior/policy impact is understood.
+
+### Verification boundary
+Source inspection only. No tests, database connection, runtime, deployment settings, production records or local working tree were inspected. No implementation or migration was performed.
