@@ -173,6 +173,10 @@ export class DurableFileStore {
       return {};
     }
 
+    // A pre-existing file proves this ledger has been initialized. Persist the
+    // marker before parsing so quarantine cannot make it look like first-use.
+    this.markCriticalCollectionInitialized(collection);
+
     let content: string;
     try {
       content = fs.readFileSync(filePath, 'utf-8');
@@ -398,6 +402,9 @@ export class DurableFileStore {
    * Serialized on the per-collection cross-process lock (M4-A hardening).
    */
   public writeCollection<T>(collection: string, data: Record<string, T>): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires writeCollectionStrict().`);
+    }
     this.acquireLock(collection);
     try {
       this.markCriticalCollectionInitialized(collection);
@@ -418,7 +425,7 @@ export class DurableFileStore {
     data: Record<string, T>,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = options?.lockStrict ?? false;
+    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
@@ -436,6 +443,9 @@ export class DurableFileStore {
    * writer can no longer be silently erased by a last-writer-wins interleave.
    */
   public saveItem<T>(collection: string, id: string, item: T): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires saveItemStrict().`);
+    }
     this.acquireLock(collection);
     try {
       const current = this.readCollection<T>(collection);
@@ -459,7 +469,7 @@ export class DurableFileStore {
     item: T,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = options?.lockStrict ?? false;
+    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
@@ -485,6 +495,9 @@ export class DurableFileStore {
    * Cross-process serialized read-modify-write (M4-A hardening).
    */
   public deleteItem(collection: string, id: string): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires deleteItemStrict().`);
+    }
     this.acquireLock(collection);
     try {
       const current = this.readCollection(collection);
@@ -509,7 +522,7 @@ export class DurableFileStore {
     id: string,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): boolean {
-    const lockStrict = options?.lockStrict ?? false;
+    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
@@ -531,8 +544,7 @@ export class DurableFileStore {
    */
   public clearCollection(collection: string): void {
     if (this.isCriticalCollection(collection)) {
-      this.writeCollectionStrict(collection, {}, { lockStrict: true });
-      return;
+      throw new Error(`Critical collection "${collection}" cannot be cleared through clearCollection(). Use the explicit recovery procedure.`);
     }
     const filePath = this.getCollectionPath(collection);
     if (fs.existsSync(filePath)) {
