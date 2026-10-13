@@ -37,6 +37,20 @@ export class LockTimeoutError extends Error {
   }
 }
 
+export class CriticalCollectionCorruptionError extends Error {
+  public readonly collection: string;
+  public readonly filePath: string;
+  public readonly quarantinePath?: string;
+
+  constructor(args: { collection: string; filePath: string; message: string; quarantinePath?: string; cause?: unknown }) {
+    super(args.message, args.cause === undefined ? undefined : { cause: args.cause });
+    this.name = 'CriticalCollectionCorruptionError';
+    this.collection = args.collection;
+    this.filePath = args.filePath;
+    this.quarantinePath = args.quarantinePath;
+  }
+}
+
 export class DurableFileStore {
   private static instance: DurableFileStore;
   private dataDir: string;
@@ -83,6 +97,106 @@ export class DurableFileStore {
   private getLockPath(collection: string): string {
     const sanitized = collection.replace(/[^a-zA-Z0-9_-]/g, '_');
     return path.join(this.dataDir, `${sanitized}.json.lock`);
+  }
+
+  /**
+   * These ledgers are security/governance barriers. An unreadable ledger must
+   * never be interpreted as empty because doing so can resurrect deleted data.
+   */
+  private isCriticalCollection(collection: string): boolean {
+    return collection === 'conversation_tombstones' || collection === 'message_tombstones';
+  }
+
+  private getCriticalMarkerPath(collection: string): string {
+    return `${this.getCollectionPath(collection)}.initialized`;
+  }
+
+  private markCriticalCollectionInitialized(collection: string): void {
+    if (!this.isCriticalCollection(collection)) return;
+    const markerPath = this.getCriticalMarkerPath(collection);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(markerPath, 'wx', 0o600);
+      fs.writeSync(fd, `initialized ${new Date().toISOString()}\\n`);
+      fs.fsyncSync(fd);
+    } catch (err: any) {
+      if (err?.code !== 'EEXIST') {
+        throw new CriticalCollectionCorruptionError({
+          collection,
+          filePath: this.getCollectionPath(collection),
+          message: `Unable to persist initialization marker for critical collection "${collection}".`,
+          cause: err,
+        });
+      }
+    } finally {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* best-effort close after fsync */ }
+      }
+    }
+  }
+
+  private quarantineCriticalCollection(collection: string, filePath: string, reason: string, cause?: unknown): never {
+    const quarantinePath = `${filePath}.corrupt.${Date.now()}.${process.pid}`;
+    try {
+      fs.renameSync(filePath, quarantinePath);
+      throw new CriticalCollectionCorruptionError({
+        collection,
+        filePath,
+        quarantinePath,
+        message: `Critical collection "${collection}" is corrupt (${reason}); original file quarantined at "${quarantinePath}". Restore/reconcile it before serving traffic.`,
+        cause,
+      });
+    } catch (err: any) {
+      if (err instanceof CriticalCollectionCorruptionError) throw err;
+      throw new CriticalCollectionCorruptionError({
+        collection,
+        filePath,
+        message: `Critical collection "${collection}" is corrupt (${reason}) and quarantine failed. Refusing to continue.`,
+        cause: err ?? cause,
+      });
+    }
+  }
+
+  private readCriticalCollection<T>(collection: string): Record<string, T> {
+    const filePath = this.getCollectionPath(collection);
+    const markerPath = this.getCriticalMarkerPath(collection);
+
+    if (!fs.existsSync(filePath)) {
+      if (fs.existsSync(markerPath)) {
+        throw new CriticalCollectionCorruptionError({
+          collection,
+          filePath,
+          message: `Critical collection "${collection}" is missing although its initialization marker exists. Refusing to treat it as empty.`,
+        });
+      }
+      // First-use state only. The marker is created before the first durable write.
+      return {};
+    }
+
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      this.quarantineCriticalCollection(collection, filePath, 'file read failed', err);
+    }
+
+    if (!content!.trim()) {
+      this.quarantineCriticalCollection(collection, filePath, 'file is empty');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content!);
+    } catch (err) {
+      this.quarantineCriticalCollection(collection, filePath, 'invalid JSON', err);
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.quarantineCriticalCollection(collection, filePath, 'expected a JSON object');
+    }
+
+    this.markCriticalCollectionInitialized(collection);
+    return parsed as Record<string, T>;
   }
 
   /** Synchronous bounded sleep (Atomics.wait blocks the thread without spinning). */
@@ -229,6 +343,9 @@ export class DurableFileStore {
    * Reads all items from a collection on disk.
    */
   public readCollection<T>(collection: string): Record<string, T> {
+    if (this.isCriticalCollection(collection)) {
+      return this.readCriticalCollection<T>(collection);
+    }
     const filePath = this.getCollectionPath(collection);
     if (!fs.existsSync(filePath)) {
       return {};
@@ -281,6 +398,7 @@ export class DurableFileStore {
    * Serialized on the per-collection cross-process lock (M4-A hardening).
    */
   public writeCollection<T>(collection: string, data: Record<string, T>): void {
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
       this.atomicWrite(collection, data, false);
@@ -302,6 +420,7 @@ export class DurableFileStore {
   ): void {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       this.atomicWrite(collection, data, true);
@@ -317,6 +436,7 @@ export class DurableFileStore {
    * writer can no longer be silently erased by a last-writer-wins interleave.
    */
   public saveItem<T>(collection: string, id: string, item: T): void {
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
       const current = this.readCollection<T>(collection);
@@ -341,6 +461,7 @@ export class DurableFileStore {
   ): void {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
@@ -364,6 +485,7 @@ export class DurableFileStore {
    * Cross-process serialized read-modify-write (M4-A hardening).
    */
   public deleteItem(collection: string, id: string): void {
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
       const current = this.readCollection(collection);
@@ -389,6 +511,7 @@ export class DurableFileStore {
   ): boolean {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection(collection);
@@ -407,6 +530,10 @@ export class DurableFileStore {
    * Clears a collection on disk.
    */
   public clearCollection(collection: string): void {
+    if (this.isCriticalCollection(collection)) {
+      this.writeCollectionStrict(collection, {}, { lockStrict: true });
+      return;
+    }
     const filePath = this.getCollectionPath(collection);
     if (fs.existsSync(filePath)) {
       try {
