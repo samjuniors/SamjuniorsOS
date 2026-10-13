@@ -2911,7 +2911,7 @@ Finalize hardening pass on branch `audit/m1-memory-source-of-truth`:
    - Explicitly rejects `P1001` (cannot reach database), `P1002` (database timeout), `P1003` (database does not exist), and generic network timeouts.
    - Rejects generic message fragments such as "table does not exist" or "database does not exist".
 
-### Tests Executed & Verified
+### Agent-reported test results (not independently rerun in this review)
 - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **45 PASSED, 0 FAILED** (added 11 new tests across Groups 16–18 for runbook correctness, lock timeouts, and Prisma error classification).
 - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**.
 - `tests/sophia/m1_canonical_state_authority.test.ts`: **7 PASSED, 0 FAILED**.
