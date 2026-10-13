@@ -351,6 +351,176 @@ async function main() {
       assert(!fs.existsSync(recoveryPath), 'Recovery gate must be cleaned up after recovery completes');
     });
 
+    await runTest('1.9: Recovery Gate Case 1 & 2: Mutual exclusion between contenders and safe reclamation of crashed owner', async () => {
+      const collection = 'test_gate_case_1_2';
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Case 1: Contender 1 acquires gate
+      const gate1 = fileStore.acquireRecoveryGate(collection);
+      assert(gate1 !== null, 'Contender 1 must successfully acquire recovery gate');
+      assert(fs.existsSync(recoveryPath), 'Recovery gate file must exist on disk');
+
+      // Contender 2 attempts acquisition on same collection
+      const gate2 = fileStore.acquireRecoveryGate(collection);
+      assert.strictEqual(gate2, null, 'Contender 2 must receive null and yield');
+
+      // Release gate 1
+      fileStore.releaseRecoveryGate(gate1);
+      assert(!fs.existsSync(recoveryPath), 'Recovery gate must be removed after release');
+
+      // Case 2: Crashed gate owner (PID 999999 dead)
+      const deadPid = 999999;
+      const deadGateId = 'dead_gate_token_123';
+      fs.writeFileSync(
+        recoveryPath,
+        JSON.stringify({ pid: deadPid, createdAt: Date.now() - 5000, gateId: deadGateId }) + '\n',
+        { flag: 'wx' }
+      );
+
+      // New contender attempts acquisition: detects crashed owner, reclaims gate safely
+      assert(!DurableFileStore.isProcessAlive(deadPid), 'PID 999999 must be dead');
+      const reclaimed = fileStore.reclaimStaleRecoveryGate(recoveryPath);
+      assert.strictEqual(reclaimed, true, 'reclaimStaleRecoveryGate must safely reclaim dead owner gate');
+      assert(!fs.existsSync(recoveryPath), 'Dead recovery gate must be removed');
+
+      // Now a new live contender acquires cleanly
+      const liveGate = fileStore.acquireRecoveryGate(collection);
+      assert(liveGate !== null, 'Live contender must acquire recovered gate');
+      fileStore.releaseRecoveryGate(liveGate);
+    });
+
+    await runTest('1.10: Recovery Gate Case 3: Pause between gate creation and metadata writing (0 bytes / null PID)', async () => {
+      const collection = 'test_gate_case_3';
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Simulate a process pausing immediately after openSync('wx'), leaving empty file (0 bytes)
+      fs.writeFileSync(recoveryPath, '', { flag: 'wx' });
+
+      // Fresh unwritten gate (<10s) must NOT be reclaimed (treated as actively in-progress)
+      const freshReclaim = fileStore.reclaimStaleRecoveryGate(recoveryPath);
+      assert.strictEqual(freshReclaim, false, 'Fresh unwritten gate (<10s) must NOT be reclaimed');
+      assert(fs.existsSync(recoveryPath), 'Fresh unwritten gate must remain on disk');
+
+      // Contender acquisition must yield while fresh
+      const contenderGate = fileStore.acquireRecoveryGate(collection);
+      assert.strictEqual(contenderGate, null, 'Contender must yield while fresh unwritten gate is held');
+
+      // Now simulate gate having aged > LOCK_STALE_MS (abandoned unwritten gate from crashed process)
+      const pastTime = new Date(Date.now() - 15000);
+      fs.utimesSync(recoveryPath, pastTime, pastTime);
+
+      const staleReclaim = fileStore.reclaimStaleRecoveryGate(recoveryPath);
+      assert.strictEqual(staleReclaim, true, 'Stale unwritten gate (>10s) must be reclaimed');
+      assert(!fs.existsSync(recoveryPath), 'Stale unwritten gate must be removed');
+    });
+
+    await runTest('1.11: Recovery Gate Case 4, 5, 6: TOCTOU race safety during reclamation (reclamation must NEVER delete a replacement live gate)', async () => {
+      const collection = 'test_gate_case_4_5_6';
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Seed dead owner gate G_dead
+      const deadPid = 999999;
+      const deadGateId = 'dead_gate_token_456';
+      fs.writeFileSync(
+        recoveryPath,
+        JSON.stringify({ pid: deadPid, createdAt: Date.now() - 5000, gateId: deadGateId }) + '\n',
+        { flag: 'wx' }
+      );
+
+      // Process C inspects G_dead
+      const inspectedByC = fileStore.inspectRecoveryGate(recoveryPath);
+      assert(inspectedByC !== null, 'Process C must inspect dead gate');
+      assert.strictEqual(inspectedByC.gateId, deadGateId);
+
+      // Process C prepares to unlink G_dead, but Process B intervenes:
+      // Process B removes G_dead and acquires brand new live gate G_live (owned by live process)
+      const liveGateId = `live_gate_token_${process.pid}_abc`;
+      const unlinkedByC = fileStore.safeUnlinkRecoveryGate(recoveryPath, inspectedByC, () => {
+        // Interleaving action executed between Process C's validation and unlinking:
+        fs.unlinkSync(recoveryPath);
+        fs.writeFileSync(
+          recoveryPath,
+          JSON.stringify({ pid: process.pid, createdAt: Date.now(), gateId: liveGateId }) + '\n',
+          { flag: 'wx' }
+        );
+      });
+
+      // VERIFICATION:
+      // - Process C's safeUnlinkRecoveryGate MUST return false (refuse to unlink)
+      // - Process B's live recovery gate G_live MUST remain intact on disk
+      // - The gateId and PID on disk must remain Process B's
+      assert.strictEqual(unlinkedByC, false, 'safeUnlinkRecoveryGate must return false when gate was replaced post-validation');
+      assert(fs.existsSync(recoveryPath), 'Process B live gate must still exist on disk');
+
+      const onDisk = fileStore.inspectRecoveryGate(recoveryPath);
+      assert.strictEqual(onDisk?.gateId, liveGateId, 'Gate ID on disk must remain Process B live gate');
+      assert.strictEqual(onDisk?.pid, process.pid, 'Gate PID on disk must remain Process B');
+
+      // Cleanup
+      fs.unlinkSync(recoveryPath);
+    });
+
+    await runTest('1.12: Recovery Gate Case 7: Unexpected PID-check errors fail closed and never authorize gate reclamation', async () => {
+      const collection = 'test_gate_case_7';
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Seed gate with arbitrary PID
+      const testPid = 12345;
+      fs.writeFileSync(
+        recoveryPath,
+        JSON.stringify({ pid: testPid, createdAt: Date.now() - 5000, gateId: 'gate_err_test' }) + '\n',
+        { flag: 'wx' }
+      );
+
+      const origKill = process.kill;
+      try {
+        // Mock process.kill to throw an unexpected error (e.g. EIO)
+        (process as any).kill = () => {
+          const err: any = new Error('Unexpected OS error');
+          err.code = 'EIO';
+          throw err;
+        };
+
+        const reclaimed = fileStore.reclaimStaleRecoveryGate(recoveryPath);
+        assert.strictEqual(reclaimed, false, 'Unexpected error must fail closed and refuse to reclaim gate');
+        assert(fs.existsSync(recoveryPath), 'Gate must remain untouched on unexpected error');
+      } finally {
+        process.kill = origKill;
+        fs.unlinkSync(recoveryPath);
+      }
+    });
+
+    await runTest('1.13: Recovery Gate Case 8: releaseRecoveryGate strictly verifies gateId before unlinking', async () => {
+      const collection = 'test_gate_case_8';
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Process A holds gate A
+      const gateA = {
+        path: recoveryPath,
+        gateId: 'gate_token_A_original',
+      };
+
+      // Meanwhile, the file on disk is replaced by Process B with gate B
+      const gateIdB = 'gate_token_B_replacement';
+      fs.writeFileSync(
+        recoveryPath,
+        JSON.stringify({ pid: process.pid, createdAt: Date.now(), gateId: gateIdB }) + '\n',
+        { flag: 'wx' }
+      );
+
+      // Process A calls releaseRecoveryGate with its old gateA token
+      fileStore.releaseRecoveryGate(gateA);
+
+      // Verification: Gate B must NOT have been unlinked!
+      assert(fs.existsSync(recoveryPath), 'Gate B must remain intact on disk after mismatched release');
+      const current = fileStore.inspectRecoveryGate(recoveryPath);
+      assert.strictEqual(current?.gateId, gateIdB, 'Gate B on disk must remain intact');
+
+      // Now Process B calls releaseRecoveryGate with matching gateId
+      fileStore.releaseRecoveryGate({ path: recoveryPath, gateId: gateIdB });
+      assert(!fs.existsSync(recoveryPath), 'Gate B is cleanly removed when gateId matches');
+    });
+
     // =========================================================================
     // SECTION 2: RE-ENTRANCY & ASYNC CONTEXT ISOLATION
     // =========================================================================

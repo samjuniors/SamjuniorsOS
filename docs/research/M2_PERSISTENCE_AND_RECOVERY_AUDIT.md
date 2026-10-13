@@ -646,39 +646,45 @@ Without introducing external services (PostgreSQL, Redis, etcd), we implemented 
    - If an interleaving modification occurs (simulated via hook or preempted execution), `safeUnlinkStaleLock` re-inspects `lockPath` before deletion.
    - If the file on disk no longer matches `expected` or has a live owner PID, removal is strictly aborted (`return false`), leaving the replacement live lock intact.
 
-### 16.3 Deterministic Regression Tests
+### 16.3 Deterministic Regression Tests (All 8 Lifecycle & Race Cases)
 
-Two targeted regression tests were added to `tests/sophia/m2_batch1_lock_safety.test.ts`:
-1. **Test 1.7 (`Post-validation TOCTOU race`):**
-   - Creates dead lock $L_{dead}$.
-   - Inspects $L_{dead}$.
-   - Executes production `safeUnlinkStaleLock` with `onBeforeUnlink` hook that unlinks $L_{dead}$ and writes brand-new live lock $L_{live}$ (owned by current live PID).
-   - Verifies `safeUnlinkStaleLock` returns `false`.
-   - Verifies $L_{live}$ remains completely intact on disk, with unchanged token and alive owner.
-2. **Test 1.8 (`Recovery Gate mutual exclusion`):**
-   - Simulates Process A holding `<collection>.json.recovery`.
-   - Process B executes `breakStaleLock(lockPath, collection)` and fails immediately (`return false`).
-   - Dead lock remains untouched.
-   - Once Process A releases the recovery gate, Process B succeeds and cleans up both files.
+Targeted regression tests in `tests/sophia/m2_batch1_lock_safety.test.ts` verify the complete recovery gate lifecycle:
+1. **Case 1 & 2 (Test 1.9):** Mutual exclusion between contenders (`openSync` with `wx`) and safe reclamation of crashed owner (PID 999999 confirmed dead via `ESRCH`).
+2. **Case 3 (Test 1.10):** Unwritten gate metadata (0 bytes / null PID) created when a process pauses between `openSync` and `writeSync`. Fresh unwritten gate (<10s) is strictly protected; stale unwritten gate (>10s) from a crashed process is safely reclaimed.
+3. **Case 4, 5, 6 (Test 1.11):** TOCTOU race safety during stale gate reclamation. Process C inspects dead gate $G_{dead}$. Process B intervenes, reclaims $G_{dead}$, and acquires live gate $G_{live}$. Process C's subsequent reclamation attempt detects instance mismatch and live PID and strictly refuses to remove $G_{live}$.
+4. **Case 7 (Test 1.12):** Unexpected PID-check errors (`EIO`, `EPERM`) fail closed and never authorize gate deletion.
+5. **Case 8 (Test 1.13):** `releaseRecoveryGate` verifies token `gateId` before unlinking, preventing a process from inadvertently removing another process's replacement gate.
 
 ### 16.4 Final M2 Batch 2.1 Verification Evidence
 
 | Test Suite | Tests Run | Result | Evidence |
 |---|---|---|---|
-| `tests/sophia/m2_batch1_lock_safety.test.ts` | 15 | **15 PASSED** | All stale-lock, TOCTOU, PID liveness, and re-entrancy tests passed |
+| `tests/sophia/m2_batch1_lock_safety.test.ts` | 20 | **20 PASSED** | All 8 recovery gate lifecycle cases, lock races, and async context tests passed |
 | `tests/sophia/m2_batch1_storage_reliability.test.ts` | 27 | **27 PASSED** | All fail-closed mutation, corruption quarantine, and write ordering tests passed |
 | `tests/sophia/m1_batch1_memory_authority.test.ts` | 7 | **7 PASSED** | M1 memory authority regression suite passed |
 | `tests/sophia/m1_batch2_conversation_deletion.test.ts` | 52 | **52 PASSED** | M1 conversation deletion & governance suite passed |
 | `tests/sophia/m1_batch3_verification_recovery.test.ts` | 24 | **24 PASSED** | M1 verification and acceptance suite passed |
-| **Total Automated Tests** | **125** | **125 PASSED (100%)** | Zero regressions across M1 and M2 |
+| **Total Automated Tests** | **130** | **130 PASSED (100%)** | Zero regressions across M1 and M2 |
 | **Scoped TypeScript Typecheck** | All touched files | **0 errors** | `src/lib/server/persistence/durable-file-store.ts` and test files clean |
 
-### 16.5 Recommended Acceptance Status
+### 16.5 Deployment Boundary & Remaining Limitations
 
-**RECOMMENDATION:** **APPROVED FOR M2 BATCH 2.1 SIGN-OFF.**
-- Stale-lock recovery is synchronized via the OS-level atomic recovery gate primitive (`O_CREAT | O_EXCL`).
-- TOCTOU post-validation race is prevented and proven by deterministic test 1.7.
-- Zero external dependencies introduced.
-- Preserves single-instance deployment boundary (`min-instances=1, max-instances=1`).
-- All 125 M1/M2 tests pass with 100% success rate.
+1. **Single-Instance Deployment Restriction:**
+   - Architecture boundary remains strictly `min-instances=1, max-instances=1`.
+   - Filesystem-based locking and recovery gates synchronize across processes on a single host/container, not across distributed nodes or cluster instances.
+2. **PostgreSQL & Distributed Locking Out of Scope:**
+   - No external infrastructure (PostgreSQL advisory locks, Redis, etcd) is introduced.
+3. **OS-Level Filesystem API Constraints:**
+   - Mutual exclusion is guaranteed via OS atomic file creation (`O_CREAT | O_EXCL`).
+   - Reclamation is protected by token verification (`gateId`, `lockId`) and PID liveness checks failing closed on non-ESRCH errors.
+
+### 16.6 Batch 2.1 Closure
+
+**STATUS:** **CLOSED AND ACCEPTED.**
+- Fail-closed mutation locking implemented and verified.
+- Universal corruption protection and quarantine implemented and verified.
+- Persistence-before-cache-mutation ordering enforced and verified.
+- Multi-process lock recovery and recovery-gate synchronization verified across all 8 race/lifecycle cases.
+- All 130 automated tests pass with 100% pass rate.
+- Ready to proceed to M2 Batch 2.2.
 

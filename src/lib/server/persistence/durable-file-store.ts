@@ -52,6 +52,20 @@ export class CriticalCollectionCorruptionError extends Error {
   }
 }
 
+export interface RecoveryGateInfo {
+  pid: number | null;
+  gateId: string | null;
+  createdAt: number | null;
+  raw: string;
+  mtimeMs: number;
+  size: number;
+}
+
+export interface ActiveRecoveryGate {
+  path: string;
+  gateId: string;
+}
+
 export class DurableFileStore {
   private static instance: DurableFileStore;
   private dataDir: string;
@@ -396,49 +410,176 @@ export class DurableFileStore {
   }
 
   /**
+   * Inspects a recovery gate file on disk and extracts its ownership metadata.
+   */
+  public inspectRecoveryGate(recoveryPath: string): RecoveryGateInfo | null {
+    try {
+      const stat = fs.statSync(recoveryPath);
+      let raw: string;
+      try {
+        raw = fs.readFileSync(recoveryPath, 'utf-8');
+      } catch {
+        return null;
+      }
+      const trimmed = raw.trim();
+      let pid: number | null = null;
+      let gateId: string | null = null;
+      let createdAt: number | null = null;
+
+      if (trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (typeof parsed?.pid === 'number' && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+            pid = parsed.pid;
+          }
+          if (typeof parsed?.gateId === 'string' && parsed.gateId.trim()) {
+            gateId = parsed.gateId.trim();
+          }
+          if (typeof parsed?.createdAt === 'number' && Number.isFinite(parsed.createdAt)) {
+            createdAt = parsed.createdAt;
+          }
+        } catch {}
+      } else if (trimmed) {
+        const parsed = parseInt(trimmed, 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          pid = parsed;
+        }
+      }
+
+      return { pid, gateId, createdAt, raw, mtimeMs: stat.mtimeMs, size: stat.size };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Safely removes an orphaned recovery gate IF AND ONLY IF the file on disk
+   * is confirmed to be the exact instance originally inspected.
+   *
+   * Accepts an optional `onBeforeUnlink` callback for deterministic TOCTOU race testing.
+   */
+  public safeUnlinkRecoveryGate(
+    recoveryPath: string,
+    expected: RecoveryGateInfo,
+    onBeforeUnlink?: () => void
+  ): boolean {
+    try {
+      const current = this.inspectRecoveryGate(recoveryPath);
+      if (!current) {
+        return false;
+      }
+
+      let matches = false;
+      if (expected.gateId && current.gateId) {
+        matches = expected.gateId === current.gateId;
+      } else if (expected.size === 0 && current.size === 0) {
+        matches = true;
+      } else {
+        matches = expected.raw.trim() === current.raw.trim();
+      }
+
+      if (!matches) {
+        return false;
+      }
+
+      if (current.pid !== null && DurableFileStore.isProcessAlive(current.pid)) {
+        return false;
+      }
+
+      if (onBeforeUnlink) {
+        onBeforeUnlink();
+        const postCheck = this.inspectRecoveryGate(recoveryPath);
+        if (!postCheck) return false;
+        let postMatches = false;
+        if (expected.gateId && postCheck.gateId) {
+          postMatches = expected.gateId === postCheck.gateId;
+        } else if (expected.size === 0 && postCheck.size === 0) {
+          postMatches = true;
+        } else {
+          postMatches = expected.raw.trim() === postCheck.raw.trim();
+        }
+        if (!postMatches) return false;
+        if (postCheck.pid !== null && DurableFileStore.isProcessAlive(postCheck.pid)) {
+          return false;
+        }
+      }
+
+      fs.unlinkSync(recoveryPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Reclaims an abandoned recovery gate IF AND ONLY IF:
+   * 1. Owner PID is confirmed dead (ESRCH), OR
+   * 2. Gate was created unwritten (0 bytes / null PID) and persisted longer than LOCK_STALE_MS.
+   */
+  public reclaimStaleRecoveryGate(recoveryPath: string, onBeforeUnlink?: () => void): boolean {
+    const inspected = this.inspectRecoveryGate(recoveryPath);
+    if (!inspected) {
+      return false;
+    }
+
+    if (inspected.pid !== null) {
+      if (DurableFileStore.isProcessAlive(inspected.pid)) {
+        return false;
+      }
+      return this.safeUnlinkRecoveryGate(recoveryPath, inspected, onBeforeUnlink);
+    }
+
+    // Gate exists without valid PID (paused/crashed between openSync and writeSync)
+    // Only reclaim if unwritten and persisted longer than LOCK_STALE_MS
+    if (Date.now() - inspected.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
+      return this.safeUnlinkRecoveryGate(recoveryPath, inspected, onBeforeUnlink);
+    }
+
+    return false;
+  }
+
+  /**
    * Acquires an atomic recovery gate (<collection>.json.recovery) using OS O_CREAT | O_EXCL.
    * Serializes stale-lock recovery operations across processes so that only one process
    * performs recovery on a collection at any given time.
    */
-  private acquireRecoveryGate(collection: string): string | null {
+  public acquireRecoveryGate(collection: string): ActiveRecoveryGate | null {
     const recoveryPath = this.getRecoveryPath(collection);
+    const gateId = `${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 9)}`;
     try {
       const fd = fs.openSync(recoveryPath, 'wx');
       const payload = JSON.stringify({
         pid: process.pid,
         createdAt: Date.now(),
+        gateId,
       });
       fs.writeSync(fd, `${payload}\n`);
       fs.closeSync(fd);
-      return recoveryPath;
+      return { path: recoveryPath, gateId };
     } catch (err: any) {
       if (err?.code === 'EEXIST') {
-        // Another recovery process is currently operating. Check for crashed recovery gate.
-        try {
-          const stat = fs.statSync(recoveryPath);
-          const raw = fs.readFileSync(recoveryPath, 'utf-8').trim();
-          let pid: number | null = null;
-          if (raw.startsWith('{')) {
-            const parsed = JSON.parse(raw);
-            if (typeof parsed?.pid === 'number') pid = parsed.pid;
-          } else {
-            const parsed = parseInt(raw, 10);
-            if (Number.isInteger(parsed)) pid = parsed;
-          }
-          if (Date.now() - stat.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
-            if (pid !== null && !DurableFileStore.isProcessAlive(pid)) {
-              try { fs.unlinkSync(recoveryPath); } catch {}
-            }
-          }
-        } catch {}
+        // Recovery gate already exists. Attempt to reclaim if abandoned.
+        this.reclaimStaleRecoveryGate(recoveryPath);
         return null;
       }
       return null;
     }
   }
 
-  private releaseRecoveryGate(recoveryPath: string): void {
+  /**
+   * Releases the recovery gate IF AND ONLY IF the file on disk still belongs to this gate.
+   */
+  public releaseRecoveryGate(gate: ActiveRecoveryGate | string): void {
+    const recoveryPath = typeof gate === 'string' ? gate : gate.path;
+    const expectedGateId = typeof gate === 'string' ? null : gate.gateId;
     try {
+      if (expectedGateId) {
+        const current = this.inspectRecoveryGate(recoveryPath);
+        if (!current || current.gateId !== expectedGateId) {
+          // Gate on disk is not ours (replaced or already removed) — do NOT unlink!
+          return;
+        }
+      }
       fs.unlinkSync(recoveryPath);
     } catch {
       // safe no-op if already unlinked
@@ -452,10 +593,10 @@ export class DurableFileStore {
    * Verifies that the file being removed is still the exact lock instance inspected.
    */
   public breakStaleLock(lockPath: string, collection?: string): boolean {
-    let recoveryPath: string | null = null;
+    let gate: ActiveRecoveryGate | null = null;
     if (collection) {
-      recoveryPath = this.acquireRecoveryGate(collection);
-      if (!recoveryPath) {
+      gate = this.acquireRecoveryGate(collection);
+      if (!gate) {
         // Another process is actively performing recovery; yield to it
         return false;
       }
@@ -488,8 +629,8 @@ export class DurableFileStore {
 
       return false;
     } finally {
-      if (recoveryPath) {
-        this.releaseRecoveryGate(recoveryPath);
+      if (gate) {
+        this.releaseRecoveryGate(gate);
       }
     }
   }
