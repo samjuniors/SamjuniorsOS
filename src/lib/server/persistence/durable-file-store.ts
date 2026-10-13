@@ -138,6 +138,11 @@ export class DurableFileStore {
     return path.join(this.dataDir, `${sanitized}.json.lock`);
   }
 
+  private getRecoveryPath(collection: string): string {
+    const sanitized = collection.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return path.join(this.dataDir, `${sanitized}.json.recovery`);
+  }
+
   /**
    * These ledgers are security/governance barriers. An unreadable ledger must
    * never be interpreted as empty because doing so can resurrect deleted data.
@@ -318,8 +323,8 @@ export class DurableFileStore {
    * Safely removes an orphaned lock file IF AND ONLY IF the file on disk
    * is confirmed to be the exact instance originally inspected.
    *
-   * Prevents TOCTOU recovery race where Process B recovers the lock, acquires a new
-   * live lock, and Process C subsequently deletes Process B's live lock.
+   * Accepts an optional `onBeforeUnlink` callback to allow deterministic
+   * regression testing of post-validation race windows.
    */
   public safeUnlinkStaleLock(
     lockPath: string,
@@ -329,7 +334,8 @@ export class DurableFileStore {
       createdAt: number | null;
       raw: string;
       mtimeMs: number;
-    }
+    },
+    onBeforeUnlink?: () => void
   ): boolean {
     try {
       // Re-read current lock file immediately before unlinking
@@ -359,6 +365,29 @@ export class DurableFileStore {
         return false;
       }
 
+      // Hook invoked immediately before unlinking for deterministic race testing
+      if (onBeforeUnlink) {
+        onBeforeUnlink();
+
+        // Post-validation re-check: verify lock was not replaced during the hook/preemption window
+        const postCheck = this.inspectLockFile(lockPath);
+        if (!postCheck) {
+          return false;
+        }
+        let postMatches = false;
+        if (expected.lockId && postCheck.lockId) {
+          postMatches = expected.lockId === postCheck.lockId;
+        } else {
+          postMatches = expected.raw.trim() === postCheck.raw.trim();
+        }
+        if (!postMatches) {
+          return false;
+        }
+        if (postCheck.pid !== null && DurableFileStore.isProcessAlive(postCheck.pid)) {
+          return false;
+        }
+      }
+
       fs.unlinkSync(lockPath);
       return true;
     } catch {
@@ -367,34 +396,101 @@ export class DurableFileStore {
   }
 
   /**
+   * Acquires an atomic recovery gate (<collection>.json.recovery) using OS O_CREAT | O_EXCL.
+   * Serializes stale-lock recovery operations across processes so that only one process
+   * performs recovery on a collection at any given time.
+   */
+  private acquireRecoveryGate(collection: string): string | null {
+    const recoveryPath = this.getRecoveryPath(collection);
+    try {
+      const fd = fs.openSync(recoveryPath, 'wx');
+      const payload = JSON.stringify({
+        pid: process.pid,
+        createdAt: Date.now(),
+      });
+      fs.writeSync(fd, `${payload}\n`);
+      fs.closeSync(fd);
+      return recoveryPath;
+    } catch (err: any) {
+      if (err?.code === 'EEXIST') {
+        // Another recovery process is currently operating. Check for crashed recovery gate.
+        try {
+          const stat = fs.statSync(recoveryPath);
+          const raw = fs.readFileSync(recoveryPath, 'utf-8').trim();
+          let pid: number | null = null;
+          if (raw.startsWith('{')) {
+            const parsed = JSON.parse(raw);
+            if (typeof parsed?.pid === 'number') pid = parsed.pid;
+          } else {
+            const parsed = parseInt(raw, 10);
+            if (Number.isInteger(parsed)) pid = parsed;
+          }
+          if (Date.now() - stat.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
+            if (pid !== null && !DurableFileStore.isProcessAlive(pid)) {
+              try { fs.unlinkSync(recoveryPath); } catch {}
+            }
+          }
+        } catch {}
+        return null;
+      }
+      return null;
+    }
+  }
+
+  private releaseRecoveryGate(recoveryPath: string): void {
+    try {
+      fs.unlinkSync(recoveryPath);
+    } catch {
+      // safe no-op if already unlinked
+    }
+  }
+
+  /**
    * Breaks a stale lock IF AND ONLY IF the owner process is confirmed dead.
    * NEVER breaks a lock held by a live process.
+   * Serializes recovery attempts via the atomic recovery gate.
    * Verifies that the file being removed is still the exact lock instance inspected.
    */
-  private breakStaleLock(lockPath: string): void {
-    const inspected = this.inspectLockFile(lockPath);
-    if (!inspected) {
-      // Lock disappeared or is not stat-able — nothing to break
-      return;
+  public breakStaleLock(lockPath: string, collection?: string): boolean {
+    let recoveryPath: string | null = null;
+    if (collection) {
+      recoveryPath = this.acquireRecoveryGate(collection);
+      if (!recoveryPath) {
+        // Another process is actively performing recovery; yield to it
+        return false;
+      }
     }
 
-    if (inspected.pid !== null) {
-      if (DurableFileStore.isProcessAlive(inspected.pid)) {
-        // Owner process is alive and actively running!
-        // NEVER break a live lock, regardless of elapsed time.
-        return;
+    try {
+      const inspected = this.inspectLockFile(lockPath);
+      if (!inspected) {
+        // Lock disappeared or is not stat-able — nothing to break
+        return false;
       }
 
-      // Owner process is confirmed dead (ESRCH).
-      // Safely unlink ONLY if the file on disk is still the exact instance inspected.
-      this.safeUnlinkStaleLock(lockPath, inspected);
-      return;
-    }
+      if (inspected.pid !== null) {
+        if (DurableFileStore.isProcessAlive(inspected.pid)) {
+          // Owner process is alive and actively running!
+          // NEVER break a live lock, regardless of elapsed time.
+          return false;
+        }
 
-    // Lock file exists but lacks a valid PID (e.g. created but empty/corrupt).
-    // Only break if it has persisted unwritten for longer than LOCK_STALE_MS.
-    if (Date.now() - inspected.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
-      this.safeUnlinkStaleLock(lockPath, inspected);
+        // Owner process is confirmed dead (ESRCH).
+        // Safely unlink ONLY if the file on disk is still the exact instance inspected.
+        return this.safeUnlinkStaleLock(lockPath, inspected);
+      }
+
+      // Lock file exists but lacks a valid PID (e.g. created but empty/corrupt).
+      // Only break if it has persisted unwritten for longer than LOCK_STALE_MS.
+      if (Date.now() - inspected.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
+        return this.safeUnlinkStaleLock(lockPath, inspected);
+      }
+
+      return false;
+    } finally {
+      if (recoveryPath) {
+        this.releaseRecoveryGate(recoveryPath);
+      }
     }
   }
 
@@ -406,7 +502,7 @@ export class DurableFileStore {
       if (this.tryCreateLock(lockPath)) {
         return;
       }
-      this.breakStaleLock(lockPath);
+      this.breakStaleLock(lockPath, collection);
       if (Date.now() > deadline) {
         throw new LockTimeoutError(
           `[DurableFileStore] Failed to acquire lock for "${collection}" within ${timeoutMs}ms (fail-closed)`

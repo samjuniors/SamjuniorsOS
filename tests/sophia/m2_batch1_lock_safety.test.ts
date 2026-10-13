@@ -273,6 +273,84 @@ async function main() {
       fs.unlinkSync(tempLock);
     });
 
+    await runTest('1.7: Post-validation TOCTOU race: replacement of inspected dead lock after validation but before deletion cannot remove live lock', async () => {
+      const collection = 'test_toctou_post_validation_race';
+      const lockPath = path.join(dataDir, `${collection}.json.lock`);
+
+      // Step 1: Create a dead-owner lock instance L_dead
+      const deadPid = 999999;
+      const deadLockId = 'dead_token_999999_toctou';
+      const deadPayload = JSON.stringify({
+        pid: deadPid,
+        createdAt: Date.now() - 5000,
+        lockId: deadLockId,
+      });
+      fs.writeFileSync(lockPath, `${deadPayload}\n`, { flag: 'wx' });
+
+      // Step 2: Inspect L_dead to obtain the baseline expected reference
+      const inspected = fileStore.inspectLockFile(lockPath);
+      assert(inspected !== null, 'Must inspect dead lock');
+
+      // Step 3: Exercise production safeUnlinkStaleLock with a hook that executes
+      // AFTER initial validation but BEFORE unlinking, simulating an interleaving process
+      // that removes L_dead and creates a brand-new live lock L_live
+      const liveLockId = `live_token_${process.pid}_toctou_replacement`;
+      const livePayload = JSON.stringify({
+        pid: process.pid,
+        createdAt: Date.now(),
+        lockId: liveLockId,
+      });
+
+      const unlinked = fileStore.safeUnlinkStaleLock(lockPath, inspected, () => {
+        // Interleaving action executed between validation and unlinking:
+        fs.unlinkSync(lockPath);
+        fs.writeFileSync(lockPath, `${livePayload}\n`, { flag: 'wx' });
+      });
+
+      // Step 4: Verification
+      // - safeUnlinkStaleLock must return false (refused to delete)
+      // - The replacement live lock must remain intact on disk
+      // - The content and ownership must match L_live
+      assert.strictEqual(unlinked, false, 'safeUnlinkStaleLock must return false when lock is replaced post-validation');
+      assert(fs.existsSync(lockPath), 'Replacement live lock must remain on disk');
+
+      const onDisk = fileStore.inspectLockFile(lockPath);
+      assert.strictEqual(onDisk?.lockId, liveLockId, 'Lock ID on disk must remain L_live');
+      assert.strictEqual(onDisk?.pid, process.pid, 'Lock owner on disk must remain current process');
+
+      // Cleanup
+      fs.unlinkSync(lockPath);
+    });
+
+    await runTest('1.8: Recovery Gate mutual exclusion: concurrent recovery attempts on same collection are serialized via atomic creation', async () => {
+      const collection = 'test_recovery_gate_mutual_exclusion';
+      const lockPath = path.join(dataDir, `${collection}.json.lock`);
+      const recoveryPath = path.join(dataDir, `${collection}.json.recovery`);
+
+      // Seed dead lock
+      const deadPid = 999999;
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: deadPid, createdAt: Date.now() - 5000, lockId: 'dead_1' }) + '\n', { flag: 'wx' });
+
+      // Simulate Process A already holding the recovery gate
+      fs.writeFileSync(recoveryPath, JSON.stringify({ pid: process.pid, createdAt: Date.now() }) + '\n', { flag: 'wx' });
+
+      // Process B attempts breakStaleLock while recovery gate is held
+      const broke = fileStore.breakStaleLock(lockPath, collection);
+      assert.strictEqual(broke, false, 'breakStaleLock must yield and return false when recovery gate is held by another process');
+
+      // The dead lock file was not removed because Process B respected the recovery gate
+      assert(fs.existsSync(lockPath), 'Dead lock file must remain untouched when recovery gate was occupied');
+
+      // Release simulated Process A's recovery gate
+      fs.unlinkSync(recoveryPath);
+
+      // Now Process B can acquire recovery gate and break the stale lock cleanly
+      const brokeAfterRelease = fileStore.breakStaleLock(lockPath, collection);
+      assert.strictEqual(brokeAfterRelease, true, 'breakStaleLock must succeed once recovery gate is free');
+      assert(!fs.existsSync(lockPath), 'Dead lock file must be removed after successful recovery');
+      assert(!fs.existsSync(recoveryPath), 'Recovery gate must be cleaned up after recovery completes');
+    });
+
     // =========================================================================
     // SECTION 2: RE-ENTRANCY & ASYNC CONTEXT ISOLATION
     // =========================================================================
