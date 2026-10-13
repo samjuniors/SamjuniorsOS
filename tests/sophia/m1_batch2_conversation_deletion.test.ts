@@ -1544,8 +1544,10 @@ async function main() {
       const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
       const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : null;
       const markerPath = `${filePath}.initialized`;
+      const markerOriginal = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf-8') : null;
       const quarantineBefore = new Set(fs.readdirSync(fileStore.getDataDir()).filter((n) => n.startsWith('conversation_tombstones.json.corrupt.')));
       try {
+        if (fs.existsSync(markerPath)) fs.unlinkSync(markerPath);
         fs.writeFileSync(filePath, '{"broken":', 'utf-8');
         assert.throws(
           () => fileStore.readCollection('conversation_tombstones'),
@@ -1564,6 +1566,8 @@ async function main() {
       } finally {
         if (original !== null) fs.writeFileSync(filePath, original, 'utf-8');
         else if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (markerOriginal !== null) fs.writeFileSync(markerPath, markerOriginal, 'utf-8');
+        else if (fs.existsSync(markerPath)) fs.unlinkSync(markerPath);
         for (const name of fs.readdirSync(fileStore.getDataDir())) {
           if (name.startsWith('conversation_tombstones.json.corrupt.') && !quarantineBefore.has(name)) {
             fs.unlinkSync(path.join(fileStore.getDataDir(), name));
@@ -1638,6 +1642,28 @@ async function main() {
         if (originalFindUnique && (prisma as any).conversation) {
           (prisma as any).conversation.findUnique = originalFindUnique;
         }
+      }
+    });
+
+    await runTest('19.5: Quarantine failure preserves the corrupt source and fails closed', () => {
+      const filePath = path.join(fileStore.getDataDir(), 'message_tombstones.json');
+      const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '{}';
+      const markerPath = `${filePath}.initialized`;
+      const markerOriginal = fs.existsSync(markerPath) ? fs.readFileSync(markerPath, 'utf-8') : null;
+      const originalRename = fs.renameSync;
+      try {
+        fileStore.writeCollectionStrict('message_tombstones', {}, { lockStrict: true });
+        fs.writeFileSync(filePath, '{corrupt', 'utf-8');
+        (fs as any).renameSync = () => { const err: any = new Error('EACCES: quarantine denied'); err.code = 'EACCES'; throw err; };
+        assert.throws(
+          () => fileStore.readCollection('message_tombstones'),
+          (err: any) => err instanceof CriticalCollectionCorruptionError && /quarantine failed/.test(err.message)
+        );
+        assert.strictEqual(fs.readFileSync(filePath, 'utf-8'), '{corrupt', 'Original corrupt bytes must be preserved when quarantine fails');
+      } finally {
+        (fs as any).renameSync = originalRename;
+        fs.writeFileSync(filePath, original, 'utf-8');
+        if (markerOriginal !== null) fs.writeFileSync(markerPath, markerOriginal, 'utf-8');
       }
     });
 
