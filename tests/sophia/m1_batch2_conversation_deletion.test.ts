@@ -1661,6 +1661,23 @@ async function main() {
       assert.throws(() => fileStore.clearCollection('conversation_tombstones'), /cannot be cleared/);
     });
 
+    await runTest('19.7: Critical ledger locks cannot be downgraded by explicit false options or generic lock wrapper', () => {
+      const lockPath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json.lock');
+      fs.writeFileSync(lockPath, `${process.pid}\\n`, 'utf-8');
+      try {
+        assert.throws(
+          () => fileStore.saveItemStrict('conversation_tombstones', 'lock-downgrade', { id: 'lock-downgrade' }, { lockStrict: false, timeoutMs: 25 }),
+          (err: any) => err instanceof LockTimeoutError
+        );
+        assert.throws(
+          () => fileStore.withCollectionLock('conversation_tombstones', () => undefined),
+          /requires withCollectionLockStrict/
+        );
+      } finally {
+        if (fs.existsSync(lockPath)) fs.unlinkSync(lockPath);
+      }
+    });
+
     await runTest('19.5: Quarantine failure preserves the corrupt source and fails closed', () => {
       const filePath = path.join(fileStore.getDataDir(), 'message_tombstones.json');
       const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '{}';
