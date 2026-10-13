@@ -1504,7 +1504,7 @@ async function main() {
       assert.strictEqual(isPrismaRecordNotFoundError(errWithCode), true);
 
       const errWithMessageOnly = new Error('Record to delete does not exist.');
-      assert.strictEqual(isPrismaRecordNotFoundError(errWithMessageOnly), true);
+      assert.strictEqual(isPrismaRecordNotFoundError(errWithMessageOnly), false);
     });
 
     await runTest('18.2: Connection failures P1001, P1002 return false (remain pending)', () => {
