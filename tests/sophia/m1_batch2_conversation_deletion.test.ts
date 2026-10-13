@@ -11,7 +11,7 @@ import {
   MessageTombstonedError,
   isPrismaRecordNotFoundError,
 } from '../../src/lib/server/conversation';
-import { DurableFileStore, LockTimeoutError } from '../../src/lib/server/persistence/durable-file-store';
+import { DurableFileStore, LockTimeoutError, CriticalCollectionCorruptionError } from '../../src/lib/server/persistence/durable-file-store';
 import { prisma } from '../../src/lib/server/db/prisma';
 import { GET as conversationGet, DELETE as conversationDelete } from '../../src/app/api/conversation/route';
 import { DELETE as messageDelete } from '../../src/app/api/conversation/message/route';
@@ -1535,6 +1535,110 @@ async function main() {
 
       const nullOrUndefined = null;
       assert.strictEqual(isPrismaRecordNotFoundError(nullOrUndefined), false);
+    });
+
+    // ------------------------------------------------------------------------
+    // GROUP 19: BATCH 3 — CRITICAL COLLECTION CORRUPTION & RECOVERY
+    // ------------------------------------------------------------------------
+    await runTest('19.1: Malformed conversation tombstone JSON is quarantined and fails closed', () => {
+      const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
+      const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : null;
+      const markerPath = `${filePath}.initialized`;
+      const quarantineBefore = new Set(fs.readdirSync(fileStore.getDataDir()).filter((n) => n.startsWith('conversation_tombstones.json.corrupt.')));
+      try {
+        fs.writeFileSync(filePath, '{"broken":', 'utf-8');
+        assert.throws(
+          () => fileStore.readCollection('conversation_tombstones'),
+          (err: any) => err instanceof CriticalCollectionCorruptionError && Boolean(err.quarantinePath)
+        );
+        const quarantined = fs.readdirSync(fileStore.getDataDir()).filter((n) =>
+          n.startsWith('conversation_tombstones.json.corrupt.') && !quarantineBefore.has(n)
+        );
+        assert.strictEqual(quarantined.length, 1, 'Malformed ledger must be preserved in quarantine');
+        assert.strictEqual(fs.existsSync(filePath), false, 'Corrupt live ledger must not remain readable');
+        assert.strictEqual(fs.existsSync(markerPath), true, 'Initialization marker must survive quarantine');
+        assert.throws(
+          () => fileStore.readCollection('conversation_tombstones'),
+          (err: any) => err instanceof CriticalCollectionCorruptionError && /missing/.test(err.message)
+        );
+      } finally {
+        if (original !== null) fs.writeFileSync(filePath, original, 'utf-8');
+        else if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        for (const name of fs.readdirSync(fileStore.getDataDir())) {
+          if (name.startsWith('conversation_tombstones.json.corrupt.') && !quarantineBefore.has(name)) {
+            fs.unlinkSync(path.join(fileStore.getDataDir(), name));
+          }
+        }
+      }
+    });
+
+    await runTest('19.2: Empty critical tombstone file is quarantined rather than treated as empty', () => {
+      const filePath = path.join(fileStore.getDataDir(), 'message_tombstones.json');
+      const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : null;
+      const before = new Set(fs.readdirSync(fileStore.getDataDir()).filter((n) => n.startsWith('message_tombstones.json.corrupt.')));
+      try {
+        // Ensure the ledger has been initialized before simulating truncation.
+        fileStore.writeCollectionStrict('message_tombstones', {}, { lockStrict: true });
+        fs.writeFileSync(filePath, '', 'utf-8');
+        assert.throws(
+          () => fileStore.readCollection('message_tombstones'),
+          (err: any) => err instanceof CriticalCollectionCorruptionError && Boolean(err.quarantinePath)
+        );
+        const quarantined = fs.readdirSync(fileStore.getDataDir()).filter((n) =>
+          n.startsWith('message_tombstones.json.corrupt.') && !before.has(n)
+        );
+        assert.strictEqual(quarantined.length, 1);
+      } finally {
+        if (original !== null) fs.writeFileSync(filePath, original, 'utf-8');
+        else fs.writeFileSync(filePath, '{}', 'utf-8');
+        for (const name of fs.readdirSync(fileStore.getDataDir())) {
+          if (name.startsWith('message_tombstones.json.corrupt.') && !before.has(name)) {
+            fs.unlinkSync(path.join(fileStore.getDataDir(), name));
+          }
+        }
+      }
+    });
+
+    await runTest('19.3: Missing initialized conversation tombstone ledger fails closed', () => {
+      const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
+      const markerPath = `${filePath}.initialized`;
+      const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : null;
+      const markerExisted = fs.existsSync(markerPath);
+      try {
+        fileStore.writeCollectionStrict('conversation_tombstones', {}, { lockStrict: true });
+        fs.unlinkSync(filePath);
+        assert.throws(
+          () => fileStore.readCollection('conversation_tombstones'),
+          (err: any) => err instanceof CriticalCollectionCorruptionError && /missing/.test(err.message)
+        );
+      } finally {
+        fs.writeFileSync(filePath, original ?? '{}', 'utf-8');
+        if (!markerExisted && fs.existsSync(markerPath)) fs.unlinkSync(markerPath);
+      }
+    });
+
+    await runTest('19.4: Corrupt tombstone ledger blocks Prisma fallback in getConversation', async () => {
+      const conv = await convStore.createConversation({ founderId: FOUNDER_A, title: 'Corruption Fallback Guard' });
+      const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
+      const original = fs.readFileSync(filePath, 'utf-8');
+      const originalFindUnique = (prisma as any).conversation?.findUnique;
+      let prismaReadCount = 0;
+      if ((prisma as any).conversation) {
+        (prisma as any).conversation.findUnique = async () => { prismaReadCount++; return null; };
+      }
+      try {
+        fs.writeFileSync(filePath, '{invalid', 'utf-8');
+        await assert.rejects(
+          () => convStore.getConversation(FOUNDER_A, conv.id),
+          (err: any) => err instanceof CriticalCollectionCorruptionError
+        );
+        assert.strictEqual(prismaReadCount, 0, 'Prisma fallback must not run when tombstone state is unknown');
+      } finally {
+        fs.writeFileSync(filePath, original, 'utf-8');
+        if (originalFindUnique && (prisma as any).conversation) {
+          (prisma as any).conversation.findUnique = originalFindUnique;
+        }
+      }
     });
 
   } finally {
