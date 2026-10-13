@@ -725,8 +725,11 @@ Added dedicated child-process restart verification suite covering 11 critical re
 7. **Anti-Wipe Barrier Across Restarts (5.2):** Proves that a missing data file with an existing `.initialized` marker fails closed rather than silently resurrecting deleted data or treating the collection as empty.
 8. **Unavailable Directory (5.3):** Proves fail-closed behavior when persistence paths cannot be accessed.
 
-### 17.3 Verification Evidence
+### 17.3 Verification Evidence & Test-Count Reconciliation
 
+We executed all test suites across the active working tree. The test execution breakdown is reconciled across both the core persistence scope and the extended memory regression scope:
+
+#### Core Persistence & Process-Boundary Suite (9 Suites)
 | Test Suite | Tests Run | Result | Evidence |
 |---|---|---|---|
 | `tests/sophia/m2_batch2_cross_platform_restart.test.ts` | 11 | **11 PASSED** | All cold boot restart, tombstone, interrupted write, and cleanup tests passed |
@@ -735,18 +738,55 @@ Added dedicated child-process restart verification suite covering 11 critical re
 | `tests/sophia/m1_batch1_memory_authority.test.ts` | 7 | **7 PASSED** | M1 memory authority regression suite passed |
 | `tests/sophia/m1_batch2_conversation_deletion.test.ts` | 52 | **52 PASSED** | M1 conversation deletion & governance suite passed |
 | `tests/sophia/m1_batch3_verification_recovery.test.ts` | 24 | **24 PASSED** | M1 verification and acceptance suite passed |
-| `tests/sophia/m3_conversation_convergence.test.ts` | 14 | **14 PASSED** | Legacy conversation convergence suite now passing 100% under Node.js |
-| `tests/sophia/k2_personal_memory.test.ts` | 20 | **19 PASSED, 1 SKIPPED** | Legacy personal memory suite now passing 100% under Node.js (1 skipped for DB) |
-| `tests/sophia/m2_knowledge_persistence.test.ts` | 8 | **8 PASSED** | Legacy knowledge persistence suite now passing 100% under Node.js |
-| **Total Automated Tests** | **183** | **182 PASSED, 1 SKIPPED, 0 FAILED** | Zero regressions across M1 and M2 |
-| **Scoped TypeScript Typecheck** | All touched files | **0 errors** | Zero type errors across modified source and test files |
+| `tests/sophia/m3_conversation_convergence.test.ts` | 14 | **14 PASSED** | Legacy conversation convergence suite now passing 100% under Node.js & Bun |
+| `tests/sophia/k2_personal_memory.test.ts` | 20 | **19 PASSED, 1 SKIPPED** | Legacy personal memory suite now passing 100% under Node.js & Bun (1 skipped for DB) |
+| `tests/sophia/m2_knowledge_persistence.test.ts` | 8 | **8 PASSED** | Legacy knowledge persistence suite now passing 100% under Node.js & Bun |
+| **Core Persistence Subtotal** | **183** | **182 PASSED, 1 SKIPPED, 0 FAILED** | 100% pass rate across core persistence suites |
 
-### 17.4 Explicit Boundaries Maintained
+#### Extended Adjacent Memory & Governance Regressions (4 Additional Suites)
+| Test Suite | Tests Run | Result | Evidence |
+|---|---|---|---|
+| `tests/sophia/m1_canonical_state_authority.test.ts` | 7 | **7 PASSED** | Canonical state baseline and context slice integration passed |
+| `tests/sophia/m0_idempotency_expiry.test.ts` | 7 | **7 PASSED** | Historical replay and idempotency claim expiry tests passed |
+| `tests/sophia/m3_authority_hardening.test.ts` | 8 | **7 PASSED, 1 SKIPPED** | K-1 conversation authority hardening passed (1 skipped group for DB) |
+| `tests/sophia/m52_retrieval_hygiene.test.ts` | 25 | **25 PASSED** | Temporal intent, episodic ranking, and context assembly passed |
+| **Comprehensive Total (13 Suites)** | **230** | **228 PASSED, 2 SKIPPED, 0 FAILED** | Zero regressions across SamJuniorsOS memory architecture |
+
+### 17.4 Platform Verification Evidence
+
+- **Primary Host Platform (VERIFIED):**
+  - OS: `Microsoft Windows NT 10.0.26200.0` (`win32 x64`).
+  - Runtime A: Node.js `v24.16.0` with `tsx v4.23.15` via `child_process.fork()` inheriting `execArgv`.
+  - Runtime B: Bun `v1.4.0` (`bun` executable).
+  - All migrated suites (`m2_batch2_cross_platform_restart`, `m3_conversation_convergence`, `k2_personal_memory`, `m2_knowledge_persistence`) executed and passed cleanly under **both** Node.js `npx tsx` and `bun` on Windows.
+- **Unverified Compatibility Claims:**
+  - Automated CI on Linux/macOS is not active in this local environment; Linux/macOS execution remains UNVERIFIED by active test run, but is architecturally supported by standard Node.js `child_process.fork()` and `os.tmpdir()` primitives.
+
+### 17.5 Production Build Verification
+
+- **Command:** `npm run build` (`prisma generate && next build && node scripts/copy-standalone.mjs`)
+- **Result:** **Exit Code 0 (SUCCESS)**
+- **Evidence:**
+  - Prisma Client (v6.11.1) generated to `node_modules/@prisma/client` in 726ms.
+  - Next.js 16.3.5 (Turbopack) compiled cleanly in 24.1s.
+  - 31 routes compiled (static and dynamic API routes).
+  - Standalone server bundle copied via `scripts/copy-standalone.mjs`.
+
+### 17.6 Explicit Boundaries Maintained
 
 - No PostgreSQL migration.
 - No Redis, etcd, or distributed locking added.
 - Single-instance deployment boundary (`min-instances=1, max-instances=1`) preserved.
 - Unrelated memory architecture unchanged.
 - Batch 2.3 and 2.4 untouched; stopped for founder review.
+
+### 17.7 Batch 2.2 Final Acceptance
+
+**STATUS:** **ACCEPTED AND CLOSED.**
+- Cross-platform child process runner helper implemented and validated.
+- All hardcoded `Bun.spawn` calls eliminated from legacy suites.
+- Cold-boot continuity, tombstone persistence, anti-resurrection barrier, and quarantine barriers proven across genuine OS process boundaries.
+- Reconciled test evidence: 182 passed, 1 skipped, 0 failed (Core) / 228 passed, 2 skipped, 0 failed (Comprehensive).
+- Production build verified passing cleanly.
 
 

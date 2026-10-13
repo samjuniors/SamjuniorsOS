@@ -3,7 +3,7 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery COMPLETE on `audit/m2-persistence-and-recovery`.
+M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery ACCEPTED AND CLOSED on `audit/m2-persistence-and-recovery`.
 - **M2 Batch 2.1 Closure Verified (commit `ed0dbf5`):**
   - Stale-lock and recovery-gate safety verified against 8 exact lifecycle and TOCTOU concurrency scenarios.
   - Added deterministic regression tests (Tests 1.1–1.13 in `tests/sophia/m2_batch1_lock_safety.test.ts` passing 20/20).
@@ -13,13 +13,18 @@ M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery COMPLETE on `a
   - **Cross-Platform Test Helper (`tests/helpers/child-runner.ts`):** Implemented `spawnTestChild` using Node.js `child_process.fork` inheriting `execArgv` (preserving `tsx` loader across sub-processes) and `createIsolatedTestDir` using `os.tmpdir()`. Eliminates platform-dependent `Bun.spawn` calls while maintaining full Bun/Node cross-runtime compatibility.
   - **Windows DataDir Path Normalization:** Fixed hardcoded `/tmp/samjuniors-os-data` fallback in `src/lib/server/persistence/durable-file-store.ts` to use `path.resolve(os.tmpdir(), 'samjuniors-os-data')`.
   - **Legacy Test Suite Migration:**
-    - `tests/sophia/m3_conversation_convergence.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 14/14 tests PASSED under `npx tsx` on Windows.
-    - `tests/sophia/k2_personal_memory.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 19/19 tests PASSED (1 skipped test preserved) under `npx tsx` on Windows.
-    - `tests/sophia/m2_knowledge_persistence.test.ts`: Fixed simulated virgin-state cleanup by unlinking both file and `.initialized` marker. 8/8 tests PASSED under `npx tsx` on Windows.
+    - `tests/sophia/m3_conversation_convergence.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 14/14 tests PASSED under both Node.js (`npx tsx`) and Bun (`bun`) on Windows.
+    - `tests/sophia/k2_personal_memory.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 19/19 tests PASSED (1 skipped test preserved) under both Node.js and Bun on Windows.
+    - `tests/sophia/m2_knowledge_persistence.test.ts`: Fixed simulated virgin-state cleanup by unlinking both file and `.initialized` marker. 8/8 tests PASSED under both Node.js and Bun on Windows.
   - **Process-Boundary Restart Test Suite (`tests/sophia/m2_batch2_cross_platform_restart.test.ts`):** 11/11 tests PASSED across genuine OS process boundaries via `tests/sophia/m2_restart_child_worker.ts`.
     - Tested write continuity across process exits, tombstone persistence and anti-resurrection barrier across restarts, interrupted write rollbacks, orphaned `.tmp` and stale lock reclamation, corrupt authoritative data quarantine and fail-closed defense, and unavailable persistence directory handling.
-- **Verification Evidence:**
-  - 182 total tests passing across M2.2, M2.1, M1, and legacy suites. 0 failed, 1 skipped (pre-existing optional provider test).
+- **Reconciled Verification Evidence:**
+  - **Core Persistence & Process-Boundary Suite (9 suites):** Exactly **182 PASSED, 1 SKIPPED, 0 FAILED** (183 total tests).
+  - **Comprehensive Extended Regression (13 suites):** Exactly **228 PASSED, 2 SKIPPED, 0 FAILED** (230 total tests).
+- **Platform Verification:**
+  - Verified on `Microsoft Windows NT 10.0.26200.0` (`win32 x64`) under both Node.js `v24.16.0` (`tsx v4.23.15`) and Bun `v1.4.0`.
+- **Production Build Verification:**
+  - Executed `npm run build`: Prisma generation, Turbopack compile, and standalone copy succeeded with exit code 0.
 - **Scope & Boundaries Maintained:**
   - Single-instance deployment invariant preserved.
   - No database migration or distributed locking introduced.
