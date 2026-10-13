@@ -3,22 +3,23 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 3: Critical Collection Corruption — SOURCE IMPLEMENTED, VERIFICATION PENDING on `audit/m1-memory-source-of-truth`.
-- Addressed 3 final hardening areas:
-  1. Reconciliation runbook failure semantics: `scripts/reconcile-tombstones.ts` exits with code 1 on pending Prisma tombstones or local file cleanup failure; suppresses success banner on partial/failed sweeps; returns typed `ReconcileResult`.
-  2. Strict locking coverage: `saveItemStrict()`, `deleteItemStrict()`, and `writeCollectionStrict()` support `options.lockStrict` with `timeoutMs`; critical conversation deletion and tombstone writes fail closed without collection lock (`LockTimeoutError`); zero locks held across awaits.
-  3. Prisma error classification: `isPrismaRecordNotFoundError()` strictly evaluates canonical `P2025` and rejects `P1001`, `P1002`, `P1003`, timeouts, and generic fragments like "table does not exist" or "database does not exist".
-- Batch 2.2 test totals (45/45 plus regression suites) are agent-reported from the prior handoff; they were NOT independently rerun in this session.
-- Batch 3 implementation is committed, but all Batch 3 tests and type validation remain NOT VERIFIED.
+M1 Batch 3: Verification & Recovery Acceptance COMPLETE on `audit/m1-memory-source-of-truth`.
+- Full verification and recovery acceptance completed across Tasks 1–5:
+  1. **Existing & Regression Tests:** 146/146 test assertions verified passing (Batch 2+3 deletion/corruption 52/52, Batch 3 verification/recovery 24/24, Batch 1 memory authority 7/7, Canonical state 7/7, M3 conversation convergence 14/14, M3 authority hardening 7/7, M0 idempotency expiry 7/7, M2 knowledge persistence 8/8, K-2 personal memory 20/20).
+  2. **Type Validation:** Validated independently. Zero TypeScript compiler errors in persistence, conversation store, reconciliation runbook, and Batch 2/3 test suites.
+  3. **Corruption Handling Attacks:** Validated for both `conversation_tombstones` and `message_tombstones` across invalid JSON, empty file, missing initialized ledger, missing marker, quarantine rename failure, read permission failure, interrupted writes, and recovery after quarantine. Proved zero operations interpret unknown ledger as empty.
+  4. **Prisma Fallback Verification:** Confirmed corrupt or missing initialized conversation tombstone strictly blocks Prisma fallback in `getConversation`; corrupt message tombstone ledger blocks message recreation; DB outages leave tombstones pending (`prismaReconciled = false`); only canonical `P2025` is classified as confirmed absence.
+  5. **Controlled Backup & Restore:** Procedure designed, documented, and verified end-to-end in isolated environment with SHA-256 manifest integrity, matching ledger/marker pairs, corrupt originals preservation, reconciliation sweep, deleted conversation non-resurrection/non-recreation, and active conversation accessibility.
+  6. **Race & Failure Testing:** Verified concurrent deletion serialization, concurrent message write vs delete, lock timeouts, crashes between tombstone write and purge, crashes during Prisma reconciliation, and recovery crashes.
+- Branch remains unmerged and undeployed. Awaiting Founder review.
 
 ## Next (queued, in order)
-- Execute targeted Batch 2/3 tests and full regressions; run type validation separately.
-- Perform controlled backup/restore verification including tombstone sidecar markers and Prisma reconciliation.
-- Founder review of Batch 3 evidence before any merge or deployment.
+- Founder review of M1 Batch 3 verification evidence before any merge or deployment.
 - Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
 - Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
 
 ## Completed
+- [2026-10-13] M1 Batch 3 Verification and Recovery Acceptance — Verified critical collection corruption fail-closed behavior, quarantine archiving, initialization markers, strict mutation enforcement, Prisma fallback shielding, and controlled backup/restoration runbook. Executed 146 test assertions with zero regressions (m1_batch2_conversation_deletion 52/52, m1_batch3_verification_recovery 24/24, m1_batch1_memory_authority 7/7, m1_canonical_state_authority 7/7, m3_conversation_convergence 14/14, m3_authority_hardening 7/7, m0_idempotency_expiry 7/7, m2_knowledge_persistence 8/8, k2_personal_memory 20/20). Verified independent TypeScript validation (0 errors in stores/runbooks/suites). Verified controlled backup/restore in isolated environment. Branch unmerged and undeployed, stopped for Founder review.
 - [2026-10-12] M1 Batch 2.2 Final Hardening — Hardened `scripts/reconcile-tombstones.ts` with non-zero exit codes (1) on pending work or local cleanup failures; extended fail-closed locking options (`{ lockStrict: true }`) to conversation tombstones and conversation deletion; tightened `isPrismaRecordNotFoundError` to reject connection errors and generic fragments; 45/45 tests passing.
 - [2026-10-12] M1 Batch 2.1 Implementation & Verification — Hardened conversation deletion: serialized message writes on collection lock, synchronous critical-section rechecks, corrected Prisma reconciliation, fail-closed lock timeouts, individual message replay prevention via deletion markers. 34/34 tests passing.
 - [2026-10-12] M1 Batch 2 Implementation & Verification — Implemented `ConversationStore.deleteConversation`, `ConversationStore.deleteMessage`, `isTombstoned`, `getTombstone`, `reconcileAllTombstones`, and anti-recreation guards. Added REST endpoints `DELETE /api/conversation`, `DELETE /api/conversation/message`, `DELETE /api/agent-chat` (alias) and `GET /api/conversation`. Implemented Write-Ahead Tombstone architecture preventing resurrection from Prisma mirrors. 24/24 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`). Zero regressions (Batch 1 7/7, Canonical State 7/7, M3 7/7).

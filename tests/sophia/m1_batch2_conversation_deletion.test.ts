@@ -394,7 +394,7 @@ async function main() {
       const orphanId = 'conv-orphan-from-crash';
 
       // Simulate a crashed delete: tombstone was written, but local file record was not deleted
-      fileStore.saveItem('conversation_tombstones', orphanId, {
+      fileStore.saveItemStrict('conversation_tombstones', orphanId, {
         id: orphanId,
         founderId: FOUNDER_A,
         deletedAt: new Date().toISOString(),
@@ -476,7 +476,7 @@ async function main() {
       }, FOUNDER_A);
 
       // Simulate a crashed run: tombstone was written, but neither conversation nor message collection was wiped
-      fileStore.saveItem('conversation_tombstones', conv.id, {
+      fileStore.saveItemStrict('conversation_tombstones', conv.id, {
         id: conv.id,
         founderId: FOUNDER_A,
         deletedAt: new Date().toISOString(),
@@ -501,7 +501,7 @@ async function main() {
       const crashedConvId = 'conv-crash-sweep-test';
       const crashedMsgId = 'msg-crash-sweep-test';
 
-      fileStore.saveItem('conversation_tombstones', crashedConvId, {
+      fileStore.saveItemStrict('conversation_tombstones', crashedConvId, {
         id: crashedConvId,
         founderId: FOUNDER_A,
         deletedAt: new Date().toISOString(),
