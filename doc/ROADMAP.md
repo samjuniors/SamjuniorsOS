@@ -2,7 +2,8 @@
 **Status:** Reconciled against repository `32a6f38` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
 
 **CURRENT STATUS:**
-- 2026-10-12: M1 Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. All 5 tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 automated test assertions verified passing via `npx tsx`. Awaiting Founder review of findings, deletion/retention trade-offs, and Batch 1 execution approval.
+- 2026-10-13: M1 Batch 3 critical-ledger corruption policy is SOURCE IMPLEMENTED on `audit/m1-memory-source-of-truth`; targeted tests, type validation, full regressions, and restore exercise are NOT VERIFIED. Branch remains unmerged and undeployed.
+- 2026-10-12: M1 Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. All 5 tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 automated test assertions were reported passing in the audit phase.
 - Canonical design system migration completed and verified (ADR 0001).
 - Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
 - Phase 4 Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline over companion Node.js WebSocket process (port 3001), native Flux interruption, and PTT-only scope.
@@ -15,7 +16,7 @@
 M1 — Memory Source-of-Truth and Persistence Implementation Batches (Batch 1: configuration parser hygiene & CompanyMemoryStore cache fix; Batch 2: deletion & retention foundation; Batch 3: file corruption quarantine). Voice expansion, Qwen runtime and TTS remain deferred until Memory, the native decision workflow and the tool runtime are complete to their acceptance criteria.
 
 **NEXT ACTION:**
-Founder review of M1 audit findings and deletion/retention trade-offs. Obtain approval to execute Batch 1. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. No code written until founder confirms.
+Run Batch 3 targeted tests, type validation, full regressions, and a controlled backup/restore exercise. Review evidence before merge or deployment. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 
