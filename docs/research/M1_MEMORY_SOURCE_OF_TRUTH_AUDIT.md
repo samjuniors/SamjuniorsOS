@@ -590,7 +590,7 @@ The file-backed store does not provide a multi-file transactional snapshot. Back
 
 ### 14.5 Batch 3 verification matrix
 
-Added regression coverage for malformed JSON quarantine, empty-file quarantine, missing initialized ledger, Prisma fallback blocked by corruption, and quarantine failure preserving original bytes. These tests are committed but **NOT YET EXECUTED in this session**. Interrupted-write behavior is represented by empty/truncated-file cases; process-kill and storage-level crash recovery remain NOT VERIFIED.
+Added regression coverage for malformed JSON quarantine (including a legacy file without a marker), empty-file quarantine, missing initialized ledger, Prisma fallback blocked by corruption, quarantine failure preserving original bytes, rejection of non-strict critical-ledger mutation, and prevention of explicit lock downgrade. These tests are committed but **NOT YET EXECUTED in this session**. Interrupted-write behavior is represented by empty/truncated-file cases; process-kill and storage-level crash recovery remain NOT VERIFIED.
 
 ### 14.6 Remaining acceptance work
 
