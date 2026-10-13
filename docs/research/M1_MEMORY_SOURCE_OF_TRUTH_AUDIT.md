@@ -543,7 +543,7 @@ The operator runbook script was hardened to ensure zero false success and strict
 
 ## 14. Batch 3 — Critical Collection Corruption and Recovery
 
-**Status:** IMPLEMENTED IN SOURCE; RUNTIME / TEST VERIFICATION NOT YET COMPLETED.
+**Status:** VERIFIED IN DEDICATED ISOLATED TEST ENVIRONMENT WITH SIMULATED FAULTS; AWAITING FOUNDER REVIEW.
 
 ### 14.1 Critical collection policy
 
@@ -588,14 +588,53 @@ The reconciliation CLI reports the corruption and recovery requirement, then exi
 
 The file-backed store does not provide a multi-file transactional snapshot. Backups must therefore quiesce writers or use a storage-level consistent snapshot. A marker without its ledger, or a ledger without its matching snapshot context, is not a successful recovery.
 
-### 14.5 Batch 3 verification matrix
+### 14.5 Batch 3 verification matrix and coverage distinctions
 
-Added regression coverage for malformed JSON quarantine (including a legacy file without a marker), empty-file quarantine, missing initialized ledger, Prisma fallback blocked by corruption, quarantine failure preserving original bytes, rejection of non-strict critical-ledger mutation, and prevention of explicit lock downgrade. These tests are committed but **NOT YET EXECUTED in this session**. Interrupted-write behavior is represented by empty/truncated-file cases; process-kill and storage-level crash recovery remain NOT VERIFIED.
+The Batch 3 verification suite (`tests/sophia/m1_batch3_verification_recovery.test.ts`) and full regression suites have been executed against a dedicated, isolated temporary environment. To ensure engineering accuracy and avoid overstating acceptance, the verification scope is explicitly partitioned into four categories:
 
-### 14.6 Remaining acceptance work
+#### A. Verified Automated Test Coverage (Deterministic Assertions)
+- **Malformed JSON Quarantine:** Parsing failure on `conversation_tombstones` or `message_tombstones` strictly throws `CriticalCollectionCorruptionError` and generates a single quarantine file (`<collection>.json.corrupt.<timestamp>.<pid>`).
+- **Empty / Truncated File Quarantine:** 0-byte or whitespace-only files trigger corruption quarantine and fail closed instead of being treated as empty objects.
+- **Missing Initialized Ledger Protection:** When an `.initialized` marker exists but the JSON ledger is missing, reads throw `CriticalCollectionCorruptionError`, blocking phantom resurrection or uninitialized overwrite.
+- **Marker Auto-Seeding:** Pre-existing uncorrupted ledger files without an initialization marker auto-seed the marker upon first read.
+- **Quarantine Rename Failure:** If quarantine rename fails (e.g. simulated permission denial), the system fails closed with `CriticalCollectionCorruptionError` and preserves the original corrupt byte sequence intact on disk.
+- **Read Permission Denial:** Read failures fail closed with `CriticalCollectionCorruptionError`.
+- **Store-Wide Fail-Closed Invariant:** Verified that `isTombstoned()`, `getTombstone()`, `getConversation()`, `deleteConversation()`, and `reconcileAllTombstones()` strictly fail closed on corrupt or missing ledgers. None interpret damaged ledgers as empty.
+- **Prisma Fallback Shielding:** Confirmed that corrupt or missing initialized tombstone ledgers strictly abort before any Prisma fallback in `getConversation()`. Dual-write mirrors are unreachable under corruption.
+- **Prisma Error Classification:** Unit tests verify only canonical `P2025` is classified as confirmed absence; connection errors (`P1001`, `P1002`, `ETIMEDOUT`, `ECONNREFUSED`), database config errors (`P1003`), and error message strings are rejected.
+- **Concurrency & Race Invariants:** Parallel deletions serialize safely under collection lock; concurrent message writes during deletion fail closed or are cascaded without ghost records; strict lock timeouts fail closed without state mutation.
 
-- Execute the targeted Batch 2/3 suite and all required regressions in the repository's supported runtime.
-- Run type validation separately; a Next build that skips type validation is insufficient.
-- Exercise restoration from a real test backup, including sidecar markers and Prisma reconciliation.
-- Review marker bootstrap against the actual deployment volume before rollout.
-- Keep the branch unmerged and undeployed until these checks pass.
+#### B. Simulated Crash and Recovery Coverage (Fault Injection)
+- **Atomic Write Interruption:** Interrupted writes right before atomic rename (simulated via `renameSync` I/O errors) leave the existing target file intact at its previous valid baseline.
+- **Crash Between Tombstone Write and Conversation Purge:** If process terminates after tombstone write but before local conversation/message purge, the conversation is immediately shielded from reads, and subsequent retry sweeps lingering records cleanly.
+- **Crash During Prisma Reconciliation:** Database outages leave tombstones marked `prismaReconciled: false`; subsequent reconciliation runbook sweeps pending records upon database reconnection.
+- **Operator Recovery After Quarantine:** Validates that an operator restoring a valid backup alongside its `.initialized` marker fully restores operational read/write health.
+- **Isolated End-to-End Backup and Restore Exercise:**
+  - Executed against an isolated temporary directory (`tempTestRoot/.data`), leaving the repository `.data` directory untouched.
+  - Backed up both tombstone ledgers and both `.initialized` markers along with conversation collections.
+  - Seeded unrelated application data (`company_knowledge.json`) and pre-existing quarantine evidence (`.corrupt.historical_*`).
+  - Simulated live store corruption, verified quarantine creation and pre-restore quarantine preservation.
+  - Performed SHA-256 hash verification on each file prior to restoration.
+  - Verified unrelated application data was not modified.
+  - Verified pre-existing quarantine evidence and newly created disaster quarantine files were strictly preserved.
+  - Executed `runReconcile` script (exited 0).
+  - Verified deleted conversations remain inaccessible and cannot be recreated.
+  - Verified active conversations remain accessible and intact.
+
+#### C. Unverified Process-Kill and Storage-Level Crash Scenarios
+The following scenarios cannot be verified through process-level automated testing and are explicitly **NOT VERIFIED**:
+- **Hardware Power Loss:** Sudden power cutoffs, brownouts, or hardware write-cache drops before OS sync.
+- **Operating System Kernel Panics:** Crash-consistency of unflushed filesystem buffers during kernel-level halts.
+- **Hard Process Termination (`SIGKILL` / `kill -9`):** Process termination precisely scheduled mid-syscall inside OS kernel disk drivers.
+- **Filesystem / Storage Corruption:** Bit rot, bad sectors, or underlying disk volume corruption.
+
+#### D. Limitations of Automated Backup/Restore Verification
+- **Sequential Copy vs. Atomic Snapshot:** The automated test performs sequential file copies to test integrity, hash validation, and reconciliation logic. It **does NOT prove** an atomic multi-file snapshot under live concurrent writes.
+- **Operational Requirement:** Operators must strictly follow the runbook (§14.4): either quiesce all writers (stop application traffic) or take a storage-level crash-consistent snapshot (e.g. ZFS, LVM, EBS snapshot) when taking production backups.
+
+### 14.6 Verification Evidence and Pre-Merge Status
+
+- **Automated Regression Suite:** 146/146 test assertions verified passing (m1_batch3_verification_recovery: 24/24, m1_batch2_conversation_deletion: 52/52, m1_batch1_memory_authority: 7/7, m1_canonical_state_authority: 7/7, m3_conversation_convergence: 14/14, m3_authority_hardening: 7/7, m0_idempotency_expiry: 7/7, m2_knowledge_persistence: 8/8, k2_personal_memory: 20/20).
+- **TypeScript Compilation:** Independent compiler check verified zero errors in persistence, conversation store, reconciliation runbook, and test suites.
+- **Directory Isolation Proof:** Test suite executed in dedicated temporary root with verified assertions that resolved data directory was outside repository root and repository `.data` was untouched.
+- **Branch Status:** `audit/m1-memory-source-of-truth` remains strictly unmerged and undeployed, awaiting Founder review.

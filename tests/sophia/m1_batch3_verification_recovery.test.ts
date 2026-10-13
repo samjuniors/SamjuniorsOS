@@ -39,13 +39,44 @@ async function main() {
   console.log('SAMJUNIORS-OS: M1 BATCH 3 VERIFICATION & ACCEPTANCE');
   console.log('======================================================\n');
 
+  const originalCwd = process.cwd();
+  const tempTestRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samjuniors-m1-batch3-test-'));
+
+  // Switch working directory to dedicated temporary root BEFORE singleton initialization
+  process.chdir(tempTestRoot);
+
+  // Ensure singleton instance cache is cleared so DurableFileStore initializes against tempTestRoot
+  (DurableFileStore as any).instance = undefined;
+  (ConversationStore as any).instance = undefined;
+
   const fileStore = DurableFileStore.getInstance();
   const convStore = ConversationStore.getInstance();
+
+  const resolvedDataDir = fileStore.getDataDir();
+
+  // Strict isolation assertions before any destructive operation
+  assert(
+    resolvedDataDir.startsWith(tempTestRoot),
+    `CRITICAL ISOLATION FAILURE: resolved data directory "${resolvedDataDir}" is not inside temporary test root "${tempTestRoot}"`
+  );
+  assert(
+    !resolvedDataDir.startsWith(originalCwd),
+    `CRITICAL ISOLATION FAILURE: resolved data directory "${resolvedDataDir}" must not be inside original working directory "${originalCwd}"`
+  );
+  assert.strictEqual(
+    path.resolve(resolvedDataDir),
+    path.resolve(tempTestRoot, '.data'),
+    `Resolved data directory must exactly match tempTestRoot/.data`
+  );
+
+  console.log(`[ISOLATION VERIFIED] Test suite operating strictly in temporary root: ${tempTestRoot}`);
+  console.log(`[ISOLATION VERIFIED] Dedicated temporary data directory: ${resolvedDataDir}`);
+  console.log(`[ISOLATION VERIFIED] Workspace repository .data is completely isolated and protected.\n`);
 
   const FOUNDER_A = 'founder-batch3-a';
   const FOUNDER_B = 'founder-batch3-b';
 
-  // Ensure clean starting baseline
+  // Ensure clean starting baseline strictly inside temporary data directory
   convStore.clearForTests();
 
   try {
@@ -385,6 +416,9 @@ async function main() {
       const conv = await convStore.createConversation({ founderId: FOUNDER_A, title: 'Attack Ledger Test' });
       const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
       const original = fs.readFileSync(filePath, 'utf-8');
+      const beforeQuarantine = new Set(
+        fs.readdirSync(fileStore.getDataDir()).filter((f) => f.startsWith('conversation_tombstones.json.corrupt.'))
+      );
 
       try {
         fs.writeFileSync(filePath, '{corrupt_ledger', 'utf-8');
@@ -415,7 +449,7 @@ async function main() {
       } finally {
         fs.writeFileSync(filePath, original, 'utf-8');
         for (const f of fs.readdirSync(fileStore.getDataDir())) {
-          if (f.startsWith('conversation_tombstones.json.corrupt.')) {
+          if (f.startsWith('conversation_tombstones.json.corrupt.') && !beforeQuarantine.has(f)) {
             fs.unlinkSync(path.join(fileStore.getDataDir(), f));
           }
         }
@@ -431,6 +465,9 @@ async function main() {
       const conv = await convStore.createConversation({ founderId: FOUNDER_A, title: 'Prisma Block Test' });
       const filePath = path.join(fileStore.getDataDir(), 'conversation_tombstones.json');
       const original = fs.readFileSync(filePath, 'utf-8');
+      const beforeQuarantine = new Set(
+        fs.readdirSync(fileStore.getDataDir()).filter((f) => f.startsWith('conversation_tombstones.json.corrupt.'))
+      );
 
       let prismaFindUniqueCalled = 0;
       const originalFindUnique = (prisma as any).conversation?.findUnique;
@@ -456,7 +493,7 @@ async function main() {
           (prisma as any).conversation.findUnique = originalFindUnique;
         }
         for (const f of fs.readdirSync(fileStore.getDataDir())) {
-          if (f.startsWith('conversation_tombstones.json.corrupt.')) {
+          if (f.startsWith('conversation_tombstones.json.corrupt.') && !beforeQuarantine.has(f)) {
             fs.unlinkSync(path.join(fileStore.getDataDir(), f));
           }
         }
@@ -501,6 +538,9 @@ async function main() {
       const conv = await convStore.createConversation({ founderId: FOUNDER_A, title: 'Message Tombstone Guard' });
       const filePath = path.join(fileStore.getDataDir(), 'message_tombstones.json');
       const original = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf-8') : '{}';
+      const beforeQuarantine = new Set(
+        fs.readdirSync(fileStore.getDataDir()).filter((f) => f.startsWith('message_tombstones.json.corrupt.'))
+      );
 
       try {
         fileStore.writeCollectionStrict('message_tombstones', {}, { lockStrict: true });
@@ -513,7 +553,7 @@ async function main() {
       } finally {
         fs.writeFileSync(filePath, original, 'utf-8');
         for (const f of fs.readdirSync(fileStore.getDataDir())) {
-          if (f.startsWith('message_tombstones.json.corrupt.')) {
+          if (f.startsWith('message_tombstones.json.corrupt.') && !beforeQuarantine.has(f)) {
             fs.unlinkSync(path.join(fileStore.getDataDir(), f));
           }
         }
@@ -564,18 +604,32 @@ async function main() {
     });
 
     // ========================================================================
+    // ========================================================================
     // TASK 4: BACKUP AND RESTORATION CONTROLLED PROCEDURE
     // ========================================================================
     console.log('--- TASK 4: BACKUP & RESTORATION (ISOLATED ENVIRONMENT) ---');
 
     await runTest('4.1: Full end-to-end backup, quarantine preservation, and restore verification in isolated environment', async () => {
-      const tempBackupDir = path.join(os.tmpdir(), `samjuniors-backup-test-${Date.now()}`);
+      const dataDir = fileStore.getDataDir();
+      const tempBackupDir = path.join(tempTestRoot, `backup-snapshot-${Date.now()}`);
       fs.mkdirSync(tempBackupDir, { recursive: true });
 
       const origPrismaDelete = (prisma as any).conversation?.delete;
 
+      // Seed unrelated application data to prove backup/restore does NOT alter or overwrite it
+      const unrelatedAppFile = path.join(dataDir, 'company_knowledge.json');
+      const unrelatedAppContent = JSON.stringify({
+        'doc-audit-1': { id: 'doc-audit-1', title: 'Unrelated Knowledge Item' }
+      });
+      fs.writeFileSync(unrelatedAppFile, unrelatedAppContent, 'utf-8');
+
+      // Seed pre-existing quarantine evidence to prove historical corrupt evidence is preserved across restore
+      const preExistingQuarantineFile = path.join(dataDir, `conversation_tombstones.json.corrupt.historical_${Date.now()}`);
+      const preExistingQuarantineContent = 'HISTORICAL_CORRUPT_BYTES_FOR_FORENSIC_AUDIT';
+      fs.writeFileSync(preExistingQuarantineFile, preExistingQuarantineContent, 'utf-8');
+
       try {
-        // Step 1: Populate active state and tombstoned state
+        // Step 1: Populate active state and tombstoned state in isolated source store
         const activeConv = await convStore.createConversation({
           founderId: FOUNDER_A,
           title: 'Active Retained Conversation',
@@ -600,9 +654,14 @@ async function main() {
         const delRes = await convStore.deleteConversation(FOUNDER_A, deletedConv.id);
         assert.strictEqual(delRes.deleted, true);
 
-        // Step 2: Quiesce writers (simulate stop traffic)
-        // Step 3: Back up both tombstone JSON files and initialization markers
-        const dataDir = fileStore.getDataDir();
+        // Step 2: Quiesce writers (simulate stop traffic as required by operator runbook)
+        // NOTE: Sequential file copying in this automated test validates ledger pairing,
+        // marker integrity, hash validation, and post-restore reconciliation logic in an isolated
+        // test environment. It does NOT claim to prove an atomic multi-file snapshot across live
+        // concurrent writes. Production backups require quiesced writers (stopping application
+        // traffic) or a storage-level crash-consistent snapshot (e.g. ZFS/LVM snapshot).
+
+        // Step 3: Back up both tombstone JSON files, initialization markers, and conversation data
         const filesToBackup = [
           'conversation_tombstones.json',
           'conversation_tombstones.json.initialized',
@@ -613,9 +672,6 @@ async function main() {
         ];
 
         const manifest: Record<string, { hash: string; size: number }> = {};
-        const backupTimestamp = new Date().toISOString();
-        const backupId = `bkp-${Date.now()}`;
-
         for (const file of filesToBackup) {
           const src = path.join(dataDir, file);
           if (fs.existsSync(src)) {
@@ -629,43 +685,73 @@ async function main() {
           }
         }
 
-        // Verify backup integrity: check hashes
-        assert.ok(manifest['conversation_tombstones.json'], 'Tombstone file in backup');
-        assert.ok(manifest['conversation_tombstones.json.initialized'], 'Tombstone marker in backup');
+        // Verify backup manifest: both tombstone ledgers and both markers are included
+        assert.ok(manifest['conversation_tombstones.json'], 'conversation_tombstones.json must be in backup');
+        assert.ok(manifest['conversation_tombstones.json.initialized'], 'conversation_tombstones.json.initialized must be in backup');
+        assert.ok(manifest['message_tombstones.json'], 'message_tombstones.json must be in backup');
+        assert.ok(manifest['message_tombstones.json.initialized'], 'message_tombstones.json.initialized must be in backup');
 
-        // Step 4: Simulate a catastrophic disaster / corruption on live system
+        // Step 4: Simulate a catastrophic disaster / corruption on the live store
         const liveTombstonePath = path.join(dataDir, 'conversation_tombstones.json');
-        fs.writeFileSync(liveTombstonePath, 'CORRUPTED_DISASTER_PAYLOAD', 'utf-8');
+        fs.writeFileSync(liveTombstonePath, 'CORRUPTED_DISASTER_PAYLOAD_TEST', 'utf-8');
 
-        // Verify system fails closed and quarantines
+        // Verify system fails closed and quarantines the corrupt file
         assert.throws(
           () => fileStore.readCollection('conversation_tombstones'),
           (err: any) => err instanceof CriticalCollectionCorruptionError && Boolean(err.quarantinePath)
         );
 
-        // Find the quarantined file
-        const quarantinedFiles = fs
+        // Verify disaster quarantine file was created
+        const disasterQuarantineFiles = fs
           .readdirSync(dataDir)
-          .filter((f) => f.startsWith('conversation_tombstones.json.corrupt.'));
-        assert.ok(quarantinedFiles.length >= 1, 'Quarantine file exists');
-        // Preserve corrupt originals: verify quarantine file is not touched
+          .filter((f) => f.startsWith('conversation_tombstones.json.corrupt.') && f !== path.basename(preExistingQuarantineFile));
+        assert.ok(disasterQuarantineFiles.length >= 1, 'Disaster quarantine file must be generated upon read');
 
-        // Step 5: Restore from backup
+        // Verify pre-existing historical quarantine file was NOT modified or deleted
+        assert.strictEqual(
+          fs.readFileSync(preExistingQuarantineFile, 'utf-8'),
+          preExistingQuarantineContent,
+          'Pre-existing quarantine file must be intact prior to restore'
+        );
+
+        // Step 5: Restore from backup with pre-restore hash validation
         for (const file of Object.keys(manifest)) {
           const src = path.join(tempBackupDir, file);
           const dest = path.join(dataDir, file);
           const content = fs.readFileSync(src);
-          // Verify hash before writing
-          const currentHash = crypto.createHash('sha256').update(content).digest('hex');
-          assert.strictEqual(currentHash, manifest[file].hash, `Backup integrity verified for ${file}`);
+
+          // Hash validation performed before restoration
+          const computedHash = crypto.createHash('sha256').update(content).digest('hex');
+          assert.strictEqual(computedHash, manifest[file].hash, `Hash verification must pass for ${file} before restoration`);
+
           fs.writeFileSync(dest, content);
         }
 
-        // Step 6: Verify permissions and file contents
+        // Step 6: Verify restored state and file contents
         const restoredTombstones = fileStore.readCollection<any>('conversation_tombstones');
-        assert.ok(restoredTombstones[deletedConv.id], 'Deleted conv tombstone restored');
+        assert.ok(restoredTombstones[deletedConv.id], 'Deleted conversation tombstone must be restored');
 
-        // Step 7: Run reconciliation runbook
+        // Step 7: Verify unrelated application data was NOT modified by restore
+        assert.strictEqual(
+          fs.readFileSync(unrelatedAppFile, 'utf-8'),
+          unrelatedAppContent,
+          'Unrelated application data (company_knowledge.json) must remain completely untouched after restore'
+        );
+
+        // Step 8: Verify pre-existing quarantine evidence and disaster quarantine files are strictly preserved
+        assert.strictEqual(
+          fs.readFileSync(preExistingQuarantineFile, 'utf-8'),
+          preExistingQuarantineContent,
+          'Historical pre-existing quarantine evidence must be strictly preserved after restore'
+        );
+        for (const dqFile of disasterQuarantineFiles) {
+          assert.ok(
+            fs.existsSync(path.join(dataDir, dqFile)),
+            `Disaster quarantine file ${dqFile} must be preserved across restore for operator audit`
+          );
+        }
+
+        // Step 9: Run reconciliation runbook
         convStore.setDatabaseAvailableForTests(true);
         if ((prisma as any).conversation) {
           (prisma as any).conversation.delete = async () => ({ id: deletedConv.id });
@@ -678,7 +764,7 @@ async function main() {
         });
         assert.strictEqual(recOutput.exitCode, 0, 'Reconciliation runbook exits 0 after clean restore');
 
-        // Step 8: Verify deleted conversations CANNOT be retrieved or recreated
+        // Step 10: Verify deleted conversations CANNOT be retrieved or recreated
         const retrievedDeleted = await convStore.getConversation(FOUNDER_A, deletedConv.id);
         assert.strictEqual(retrievedDeleted, null, 'Deleted conversation cannot be retrieved');
 
@@ -688,7 +774,7 @@ async function main() {
           'Deleted conversation cannot be recreated'
         );
 
-        // Step 9: Verify unrelated active conversations remain accessible
+        // Step 11: Verify unrelated active conversations remain accessible
         const retrievedActive = await convStore.getConversation(FOUNDER_A, activeConv.id);
         assert.notStrictEqual(retrievedActive, null, 'Active conversation remains accessible');
         assert.strictEqual(retrievedActive?.title, 'Active Retained Conversation');
@@ -701,16 +787,13 @@ async function main() {
         if ((prisma as any).conversation) {
           (prisma as any).conversation.delete = origPrismaDelete;
         }
-        fs.rmSync(tempBackupDir, { recursive: true, force: true });
-        for (const f of fs.readdirSync(fileStore.getDataDir())) {
-          if (f.startsWith('conversation_tombstones.json.corrupt.')) {
-            fs.unlinkSync(path.join(fileStore.getDataDir(), f));
-          }
+        // Remove only the temporary backup snapshot directory; do NOT delete quarantine files.
+        if (fs.existsSync(tempBackupDir)) {
+          fs.rmSync(tempBackupDir, { recursive: true, force: true });
         }
       }
     });
 
-    // ========================================================================
     // TASK 5: RACE AND FAILURE TESTING
     // ========================================================================
     console.log('--- TASK 5: RACE AND FAILURE TESTING ---');
@@ -867,8 +950,24 @@ async function main() {
     });
 
   } finally {
-    // Clean all test data
-    convStore.clearForTests();
+    // Clean test data inside the temporary directory before exit
+    try {
+      convStore.clearForTests();
+    } catch {}
+
+    // Restore process working directory and reset singletons
+    process.chdir(originalCwd);
+    (DurableFileStore as any).instance = undefined;
+    (ConversationStore as any).instance = undefined;
+
+    // Remove only the temporary test root directory
+    try {
+      if (fs.existsSync(tempTestRoot)) {
+        fs.rmSync(tempTestRoot, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.warn(`[CLEANUP WARNING] Failed to remove temporary directory ${tempTestRoot}:`, cleanupErr);
+    }
   }
 
   console.log('\n======================================================');

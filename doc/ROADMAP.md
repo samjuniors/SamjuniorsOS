@@ -16,7 +16,7 @@
 M1 — Memory Source-of-Truth and Persistence Implementation Batches (Batch 1: configuration parser hygiene & CompanyMemoryStore cache fix; Batch 2: deletion & retention foundation; Batch 3: file corruption quarantine). Voice expansion, Qwen runtime and TTS remain deferred until Memory, the native decision workflow and the tool runtime are complete to their acceptance criteria.
 
 **NEXT ACTION:**
-Run Batch 3 targeted tests, type validation, full regressions, and a controlled backup/restore exercise. Review evidence before merge or deployment. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
+Founder review of M1 Batch 3 verification evidence, isolated test results, and documentation before merge or deployment. Keep branch unmerged and undeployed. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

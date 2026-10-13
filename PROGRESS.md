@@ -4,14 +4,19 @@
 
 ## Now
 M1 Batch 3: Verification & Recovery Acceptance COMPLETE on `audit/m1-memory-source-of-truth`.
-- Full verification and recovery acceptance completed across Tasks 1–5:
-  1. **Existing & Regression Tests:** 146/146 test assertions verified passing (Batch 2+3 deletion/corruption 52/52, Batch 3 verification/recovery 24/24, Batch 1 memory authority 7/7, Canonical state 7/7, M3 conversation convergence 14/14, M3 authority hardening 7/7, M0 idempotency expiry 7/7, M2 knowledge persistence 8/8, K-2 personal memory 20/20).
-  2. **Type Validation:** Validated independently. Zero TypeScript compiler errors in persistence, conversation store, reconciliation runbook, and Batch 2/3 test suites.
+- Full verification and recovery acceptance completed across Tasks 1–5 in dedicated isolated test environment:
+  1. **Verified Test Coverage (Deterministic Assertions):** 146/146 test assertions verified passing (Batch 2+3 deletion/corruption 52/52, Batch 3 verification/recovery 24/24, Batch 1 memory authority 7/7, Canonical state 7/7, M3 conversation convergence 14/14, M3 authority hardening 7/7, M0 idempotency expiry 7/7, M2 knowledge persistence 8/8, K-2 personal memory 20/20).
+  2. **Type Validation:** Validated independently via `tsc --noEmit`. Zero TypeScript compiler errors in persistence, conversation store, reconciliation runbook, and Batch 2/3 test suites.
   3. **Corruption Handling Attacks:** Validated for both `conversation_tombstones` and `message_tombstones` across invalid JSON, empty file, missing initialized ledger, missing marker, quarantine rename failure, read permission failure, interrupted writes, and recovery after quarantine. Proved zero operations interpret unknown ledger as empty.
   4. **Prisma Fallback Verification:** Confirmed corrupt or missing initialized conversation tombstone strictly blocks Prisma fallback in `getConversation`; corrupt message tombstone ledger blocks message recreation; DB outages leave tombstones pending (`prismaReconciled = false`); only canonical `P2025` is classified as confirmed absence.
-  5. **Controlled Backup & Restore:** Procedure designed, documented, and verified end-to-end in isolated environment with SHA-256 manifest integrity, matching ledger/marker pairs, corrupt originals preservation, reconciliation sweep, deleted conversation non-resurrection/non-recreation, and active conversation accessibility.
+  5. **Controlled Backup & Restore:** Procedure designed, documented, and verified end-to-end in dedicated temporary test environment with SHA-256 manifest integrity, matching ledger/marker pairs, quarantine evidence preservation, reconciliation sweep, deleted conversation non-resurrection/non-recreation, and active conversation accessibility.
   6. **Race & Failure Testing:** Verified concurrent deletion serialization, concurrent message write vs delete, lock timeouts, crashes between tombstone write and purge, crashes during Prisma reconciliation, and recovery crashes.
-- Branch remains unmerged and undeployed. Awaiting Founder review.
+- **Coverage Distinctions & Boundaries Documented:**
+  - *Verified Automated Tests:* All application logic, quarantine rename behavior, fail-closed read guards, marker auto-seeding, and serialization invariants.
+  - *Simulated Crash Coverage:* Atomic write interruptions (`renameSync` I/O throw), crash windows between tombstone write and purge, and DB outage during reconciliation.
+  - *Unverified Scenarios:* Hardware power-loss, kernel page-cache drops, OS-level SIGKILL during system calls, and physical storage bit-rot remain explicitly unverified.
+  - *Backup/Restore Limitations:* Automated sequential copy tests integrity and logic only; operational production backups require quiesced writers or storage-level crash-consistent snapshots.
+- Branch remains unmerged and undeployed. Stopped for Founder review.
 
 ## Next (queued, in order)
 - Founder review of M1 Batch 3 verification evidence before any merge or deployment.
@@ -71,8 +76,11 @@ M1 Batch 3: Verification & Recovery Acceptance COMPLETE on `audit/m1-memory-sour
 - [2026-10-12] M1 second source pass — completed source-level method matrix for EpistemicClaimStore and CompanyStateStore; added findings M1-F08 through M1-F11. Runtime behavior and deployed config remain NOT VERIFIED.
 
 
-## 2026-10-13 — M1 Batch 3 in progress
-- Added fail-closed corruption handling for `conversation_tombstones` and `message_tombstones`, quarantine, initialization markers, strict mutation requirements, and CLI diagnostics.
+## 2026-10-13 — M1 Batch 3 Verification & Acceptance Complete
+- Added fail-closed corruption handling for `conversation_tombstones` and `message_tombstones`, quarantine archiving, initialization markers, strict mutation requirements, and CLI diagnostics.
 - Corrected the Batch 2.2 Prisma classifier discrepancy: only canonical `P2025` is accepted; message-only phrases are rejected.
-- Added Batch 3 corruption/recovery regression cases. **Tests and type validation NOT YET RUN.**
-- Next: run targeted tests, typecheck, full regressions, and controlled restore test. No merge/deploy.
+- Executed and verified Batch 3 corruption attacks, Prisma fallback guards, and controlled backup/restore in dedicated isolated test environment (`tests/sophia/m1_batch3_verification_recovery.test.ts` — 24/24 passing).
+- Executed full relevant regression suite (146/146 assertions passing) with zero regressions.
+- Independent TypeScript validation passed (zero errors in stores, runbooks, and test suites).
+- Documented explicit engineering distinctions between verified test coverage, simulated fault coverage, unverified hardware/kernel crashes, and backup quiesce requirements.
+- Branch remains unmerged and undeployed, stopped for Founder review.
