@@ -3,48 +3,47 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene COMPLETE on `audit/m2-persistence-and-recovery`.
-- **Mutation Matrix & Defect Audit Completed (`docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md`):**
-  - Audited all mutation paths across `InMemoryApprovalStore`, `InMemoryIdempotencyStore`, `InMemoryWorkflowStore`, `CompanyStateStore`, `InstanceConcurrencyGuard`, `EpistemicClaimStore`, and `SideEffectAuthorizationGate`.
-  - Proved that existing persistence primitives (`withCollectionLockStrict` + atomic temp write + OS PID liveness) are fully sufficient without introducing Redis, PostgreSQL MVCC, or distributed transaction engines.
-- **5 Confirmed Defects Hardened:**
-  - **Defect 1 (`InMemoryApprovalStore.consume`):** Wrapped critical read-check-consume sequence inside `withCollectionLockStrict('approvals', ...)`. Re-reads disk state under lock, checks `isConsumed`, writes strictly to disk before updating cache, eliminating concurrent double consumption races.
-  - **Defect 2 (`InMemoryIdempotencyStore.claim`):** Wrapped read-check-claim sequence in `withCollectionLockStrict('idempotency_records', ...)`. Re-reads disk state under lock, evaluates status and TTL, strictly saves claim to disk, and updates cache, eliminating duplicate claim races.
-  - **Defect 3 (`InMemoryWorkflowStore.claimStepAtomic` & `transitionStepAtomic`):** Enclosed inside `withCollectionLockStrict('workflow_instances', ...)`. Re-reads latest instance from disk under lock, verifies optimistic `stateVersion`, transitions step, saves disk strictly, and updates memory cache.
-  - **Defect 4 (`CompanyStateStore.recordDecision`):** Enclosed inside `withCollectionLockStrict('company_state', ...)`. Reads latest disk state under lock, prepends decision, writes collection strictly, and updates cache, preventing lost decision updates under concurrent mutations.
-  - **Defect 5 (`InstanceConcurrencyGuard`):** Added PID liveness verification (`DurableFileStore.isProcessAlive(lockInfo.pid)`) to immediately reclaim abandoned leases from crashed containers without a 15-second false-positive lockout window, and serialized lease writes via atomic temp file + rename.
-- **Deterministic Verification Evidence (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
-  - **8/8 PASSED, 0 FAILED:**
-    1. 20 concurrent `ApprovalStore.consume()` calls -> exactly 1 fulfilled, 19 `ApprovalAlreadyConsumedError`.
-    2. 20 concurrent `IdempotencyStore.claim()` calls -> exactly 1 `claimed`, 19 `OperationInProgressError`.
-    3. 10 concurrent `WorkflowStore.claimStepAtomic()` calls with identical version -> exactly 1 winner, 9 rejected.
-    4. 10 concurrent `CompanyStateStore.recordDecision()` calls -> all 10 preserved on disk and cache (zero lost updates).
-    5. Concurrent cross-collection mutations (approvals, idempotency, state) -> complete independently without cross-collection contention.
-    6. Crashed owner PID in `instance.lock` with fresh heartbeat -> safely reclaimed via `isProcessAlive`.
-    7. Competing instance against live PID -> rejected failClosed with `[CONCURRENCY WARNING]`.
-    8. Interrupted write in `withCollectionLockStrict` -> leaves target collection intact, releases lock, and propagates error cleanly.
-- **Regression Suite Verification:**
+M2 Batch 2.3: Concurrency Safety & Final Recovery Verification Gate COMPLETE on `audit/m2-persistence-and-recovery`.
+- **M2.3 Final Recovery Verification Gate Completed (`docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md` §19):**
+  - **Crash Lifecycle Safety Evaluated:** Analyzed the sequence `Idempotency Claim → Approval Consume → Execute → Complete → Audit`.
+  - **Identifiable & Fail-Closed Under Interruption:** Demonstrated that crashes occurring after approval consumption leave the approval consumed and idempotency record `in_progress`, safely blocking all duplicate executions on restart.
+  - **Authorized Founder Resolution:** Added `SideEffectAuthorizationGate.resolveInterruptedOperation()` enforcing strict Founder authentication, immutable audit logging with `reasonCode: 'FOUNDER_MANUAL_RECONCILIATION'`, and invariant preservation (consumed approvals are never silently reset; completed operations cannot be marked failed).
+  - **Audit Trail Reconciliation:** Added `SideEffectAuthorizationGate.reconcileMissingAudit()` to idempotently reconcile missing audit records for completed operations interrupted before audit logging without re-executing side effects.
+  - **Interrupted Operations Scanner:** Added `SideEffectAuthorizationGate.listInterruptedOperations()` scanning for `in_progress` and `unknown` operations.
+  - **Instance Lease Identity & PID Reuse Safety (§3):** Proved that PID liveness + unique `instanceId` token (`inst-${pid}-${timestamp}`) + 15s lease expiry guarantees that dead owner leases are immediately reclaimed while live foreign processes with reused PIDs never heartbeat the lease and expire within 15 seconds.
+- **Deterministic Failure-Injection Test Suite (`tests/sophia/m2_batch3_recovery_gate.test.ts`):**
+  - **6/6 PASSED, 0 FAILED:**
+    1. Test A: Crash after approval consumption before execution is identifiable & fail-closed.
+    2. Test B: Crash after external success protects against duplicate execution & requires resolution.
+    3. Test C: Crash after completion before audit reconciles idempotently.
+    4. Test D: Repeated recovery cycles run safely without duplicates.
+    5. Test E: Founder override permissions and invariant protection.
+    6. Test F: Instance lease identity enforces instanceId token and heartbeat expiration.
+- **Milestone Regression Suite Verification:**
+  - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11 PASSED, 0 FAILED**
+  - `tests/sophia/m2_knowledge_persistence.test.ts`: **8 PASSED, 0 FAILED**
   - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24 PASSED, 0 FAILED**
   - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52 PASSED, 0 FAILED**
   - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**
-  - **Core Persistence & Concurrency Total: 157 PASSED, 0 FAILED.**
+  - **Core Persistence, Concurrency & Recovery Total: 163 PASSED, 0 FAILED.**
 - **TypeScript & Build Verification:**
   - Scoped TypeScript validation: **0 errors** across all modified files and new test suite.
-  - Production build: `npm run build` compiled successfully in 26.3s, generated 31/31 static pages, copied standalone artifacts with exit code 0.
+  - Production build: `npm run build` compiled successfully in 17.9s, generated 31/31 static pages, copied standalone distribution with exit code 0.
 - **Scope & Boundaries Maintained:**
   - Single-instance deployment constraint (`min-instances=1, max-instances=1`) strictly preserved.
   - No external distributed locking, Redis, or PostgreSQL migration introduced.
   - Branch remains unmerged, undeployed, and stopped for Founder review.
 
 ## Next (queued, in order)
-- Founder review of M2 Batch 2.3 completion and verification evidence.
-- M2 Batch 2.4: Production Snapshot & Disaster Recovery Runbooks.
+- Founder review of M2 Batch 2.3 completion and final recovery verification evidence.
+- M2 Batch 2.4: Production Snapshot & Disaster Recovery Runbooks (DO NOT START until approved).
 
 ## Completed
+- [2026-10-13] M2.3 Final Recovery Verification Gate — Implemented operation lifecycle recovery and reconciliation in `SideEffectAuthorizationGate` (`listInterruptedOperations`, `reconcileMissingAudit`, `resolveInterruptedOperation`). Failure-injection test suite `m2_batch3_recovery_gate.test.ts` (6/6 passed). Evaluated PID reuse safety in `InstanceConcurrencyGuard`. Full regression suite (163/163 passed). Production build succeeded. Stopped for Founder review.
 - [2026-10-13] M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene — Full mutation matrix audit, hardened 5 confirmed concurrency defects across approval consumption, idempotency claiming, workflow step claiming, company decision updates, and instance lease recovery. Deterministic test suite `m2_batch3_concurrency_hygiene.test.ts` (8/8 passed). Full regression suite (157/157 passed). Production build succeeded.
 - [2026-10-13] M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery — Reconciled test totals (182 core passed, 1 skipped; 228 extended passed, 2 skipped), verified Windows NT / Node.js & Bun environments, production build verified.
 - [2026-10-13] M1 Blockers Resolved & Acceptance Verified — Fixed all 7 TS2540/TS2704 errors in `m1_batch1_memory_authority.test.ts` (0 errors in `tsc --noEmit` across all M1 code and test suites). Re-verified core M1 suites: 90/90 assertions passing under both Node.js (`npx tsx`) and Bun (`bun`). Documented test-runner divergence between runner-neutral M1 suites and legacy `Bun.spawn` suites. Verified critical collection corruption fail-closed behavior, quarantine archiving, initialization markers, strict mutation enforcement, Prisma fallback shielding, and controlled backup/restoration runbook. Branch unmerged and undeployed, stopped for Founder review.

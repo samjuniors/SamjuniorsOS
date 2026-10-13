@@ -102,7 +102,9 @@ export type AuthorizationReasonCode =
   | 'IDEMPOTENT_REPLAY'
   | 'IDEMPOTENCY_PAYLOAD_MISMATCH'
   | 'OPERATION_IN_PROGRESS'
-  | 'UNKNOWN_EXTERNAL_RESULT';
+  | 'UNKNOWN_EXTERNAL_RESULT'
+  | 'FOUNDER_MANUAL_RECONCILIATION'
+  | 'AUDIT_RECONCILED';
 
 export interface FounderApprovalRecord {
   id: string;

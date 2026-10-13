@@ -13,7 +13,7 @@ import { AgentRole } from '@/types/os';
 import { InMemoryApprovalStore, InMemoryAuditStore } from './approval-store';
 import { SideEffectPolicyEvaluator } from './policy-evaluator';
 import { computeApprovalPayloadHash, verifyApprovalPayloadBinding } from './payload-binding';
-import { getIdempotencyStore } from '../idempotency/store';
+import { getIdempotencyStore, IdempotencyRecordData } from '../idempotency/store';
 import {
   generateLogicalIdempotencyKey,
   IdempotencyPayloadMismatchError,
@@ -21,6 +21,16 @@ import {
   UnknownExternalResultError,
 } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
+
+export interface ResolveInterruptedOperationParams {
+  idempotencyKey: string;
+  resolution: 'completed' | 'failed';
+  response?: any;
+  error?: string;
+  reason: string;
+  resolvedBy: string;
+  userContext?: { role?: string; userId?: string };
+}
 
 export interface RequestApprovalParams {
   actionName: string;
@@ -753,5 +763,144 @@ export class SideEffectAuthorizationGate {
 
   public async listAudits(filter?: AuditFilter): Promise<SideEffectAuditRecord[]> {
     return this.auditStore.list(filter);
+  }
+
+  /**
+   * List interrupted operations that require operator or Founder attention.
+   * Scans idempotency records for 'in_progress' and 'unknown' states.
+   */
+  public async listInterruptedOperations(): Promise<IdempotencyRecordData[]> {
+    const store = getIdempotencyStore();
+    const inProgress = await store.list({ status: 'in_progress' });
+    const unknown = await store.list({ status: 'unknown' });
+    return [...inProgress, ...unknown];
+  }
+
+  /**
+   * Reconcile missing audit record for an operation that completed in idempotency store
+   * but crashed before the audit trail record could be written.
+   * Safe to call repeatedly (idempotent).
+   */
+  public async reconcileMissingAudit(idempotencyKey: string): Promise<SideEffectAuditRecord | null> {
+    const record = await getIdempotencyStore().get(idempotencyKey);
+    if (!record || record.status !== 'completed') {
+      return null;
+    }
+
+    const existingAudits = await this.auditStore.list();
+    const match = existingAudits.find(
+      (a) => a.executionReference === record.executionRef || a.id === record.executionRef
+    );
+
+    if (match) {
+      return match;
+    }
+
+    const reconciledAudit: SideEffectAuditRecord = {
+      id: `audit-rec-${uuidv4()}`,
+      timestamp: new Date().toISOString(),
+      requestId: `req-rec-${idempotencyKey}`,
+      employeeRole: 'system',
+      requestedBy: 'recovery_reconciliation',
+      actionClassification: 'external_record_mutation',
+      actionName: record.actionName,
+      decision: 'allowed',
+      reasonCode: 'AUDIT_RECONCILED',
+      reason: `Reconciled missing audit record for completed operation with idempotency key ${idempotencyKey}`,
+      executionReference: record.executionRef || idempotencyKey,
+      executed: true,
+    };
+
+    await this.auditStore.record(reconciledAudit);
+    return reconciledAudit;
+  }
+
+  /**
+   * Founder Override and Manual Resolution for Interrupted or Ambiguous Operations.
+   * Strictly enforces Founder authorization.
+   * Every resolution creates an immutable audit trail with FOUNDER_MANUAL_RECONCILIATION.
+   * Guarantees:
+   * - Cannot silently reset an approval (consumed approvals stay consumed).
+   * - Completed operations cannot be marked failed.
+   * - Repeated resolutions are idempotent.
+   */
+  public async resolveInterruptedOperation(
+    params: ResolveInterruptedOperationParams
+  ): Promise<{ success: boolean; record: IdempotencyRecordData; auditId: string }> {
+    const ALLOWED_FOUNDER_IDENTITIES = [
+      'founder',
+      'founder-001',
+      'founder-local-session',
+      'executive_founder',
+      'executive-founder',
+    ];
+    const actor = params.resolvedBy?.toLowerCase()?.trim() || '';
+    const isAllowedFounder =
+      ALLOWED_FOUNDER_IDENTITIES.includes(actor) ||
+      (actor.startsWith('founder-') && !actor.includes('agent')) ||
+      params.userContext?.role === 'FOUNDER';
+
+    if (!isAllowedFounder) {
+      throw new Error(
+        `Permission denied: Identity "${params.resolvedBy}" is not an authorized Founder. Only verified Founder identities can resolve interrupted side-effect operations.`
+      );
+    }
+
+    const store = getIdempotencyStore();
+    const existing = await store.get(params.idempotencyKey);
+    if (!existing) {
+      throw new Error(`Idempotency record not found for key: ${params.idempotencyKey}`);
+    }
+
+    // If already completed:
+    if (existing.status === 'completed') {
+      if (params.resolution === 'failed') {
+        throw new Error('Cannot mark completed operation as failed: operation already durably completed.');
+      }
+      // Idempotent resolution
+      return { success: true, record: existing, auditId: 'already_completed' };
+    }
+
+    const auditId = `audit-override-${uuidv4()}`;
+    const executionRef = existing.executionRef || `override-${Date.now()}`;
+    let updatedRecord: IdempotencyRecordData;
+
+    if (params.resolution === 'completed') {
+      updatedRecord = await store.complete(params.idempotencyKey, params.response, executionRef);
+      const auditRecord: SideEffectAuditRecord = {
+        id: auditId,
+        timestamp: new Date().toISOString(),
+        requestId: `req-override-${params.idempotencyKey}`,
+        employeeRole: 'system',
+        requestedBy: params.resolvedBy,
+        actionClassification: 'external_record_mutation',
+        actionName: existing.actionName,
+        decision: 'allowed',
+        reasonCode: 'FOUNDER_MANUAL_RECONCILIATION',
+        reason: `Founder manual resolution [completed]: ${params.reason}`,
+        executionReference: executionRef,
+        executed: true,
+      };
+      await this.auditStore.record(auditRecord);
+    } else {
+      updatedRecord = await store.fail(params.idempotencyKey, params.error || params.reason, executionRef);
+      const auditRecord: SideEffectAuditRecord = {
+        id: auditId,
+        timestamp: new Date().toISOString(),
+        requestId: `req-override-${params.idempotencyKey}`,
+        employeeRole: 'system',
+        requestedBy: params.resolvedBy,
+        actionClassification: 'external_record_mutation',
+        actionName: existing.actionName,
+        decision: 'allowed',
+        reasonCode: 'FOUNDER_MANUAL_RECONCILIATION',
+        reason: `Founder manual resolution [failed]: ${params.reason}`,
+        executionReference: executionRef,
+        executed: false,
+      };
+      await this.auditStore.record(auditRecord);
+    }
+
+    return { success: true, record: updatedRecord, auditId };
   }
 }

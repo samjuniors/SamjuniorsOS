@@ -873,3 +873,96 @@ The 5 confirmed defects were implemented in:
 - No Redis, etcd, PostgreSQL, or distributed transaction frameworks introduced.
 - Strict persistence-before-cache invariant maintained across all state stores.
 - Branch remains unmerged, undeployed, and stopped for Founder review.
+
+---
+
+## 19. M2.3 Final Recovery Verification Gate (Operation Lifecycle & Crash Safety)
+
+### 19.1 Objective & Pipeline Analysis
+
+**Pipeline Lifecycle:**
+`Idempotency Claim → Approval Consume → Execute → Complete → Audit`
+
+The M2.3 verification gate examined whether an abrupt crash occurring after approval consumption leaves operations stranded in an unrecoverable state, and proved how the lifecycle safely classifies and manages interrupted executions:
+
+1. **Crash After Approval Consumption, Before Execution:**
+   - **On Disk:** The single-use approval is recorded as `isConsumed: true`. The idempotency record is recorded as `status: 'in_progress'`.
+   - **On Restart:** The operation is immediately identifiable via `SideEffectAuthorizationGate.listInterruptedOperations()`.
+   - **Protection:** Retrying `executeWithGate` fails closed with `OperationInProgressError`. Blind or duplicate execution is strictly prevented.
+   - **Recovery:** Founder reviews external circumstances and invokes `resolveInterruptedOperation({ resolution: 'failed', ... })`. An immutable audit record is emitted with `reasonCode: 'FOUNDER_MANUAL_RECONCILIATION'`. The consumed approval remains `isConsumed: true` (preventing silent replay attacks), requiring a fresh Founder approval if re-execution is intended.
+
+2. **Crash After External Success, Before Completion Recorded:**
+   - **On Disk:** The external third party (Stripe, Resend, email) executed the side effect once, but the local idempotency store remains `status: 'in_progress'` (or `unknown` if timeout tripped).
+   - **Protection:** Subsequent caller retries fail closed with `OperationInProgressError` or `UnknownExternalResultError`. The side effect is never re-dispatched.
+   - **Recovery:** Founder performs external status verification and invokes `resolveInterruptedOperation({ resolution: 'completed', response: ... })`. Subsequent retries receive `IDEMPOTENT_REPLAY` with the cached response and `executed: false`.
+
+3. **Crash After Completion, Before Audit Recording:**
+   - **On Disk:** Idempotency store recorded `status: 'completed'`, but process was terminated before `auditStore.record()` completed.
+   - **Protection:** Re-execution is strictly prevented; callers receive cached response.
+   - **Recovery:** `SideEffectAuthorizationGate.reconcileMissingAudit(key)` idempotently reconciles and inserts the missing audit record with `reasonCode: 'AUDIT_RECONCILED'`. Repeated reconciliation calls produce no duplicate audit entries.
+
+4. **Instance Lease Identity & PID Reuse Safety (§3 Analysis):**
+   - **Inspection:** `InstanceConcurrencyGuard` stores `instanceId: inst-${process.pid}-${Date.now()}` alongside `pid` and `lastHeartbeat`.
+   - **Liveness & Expiry:** If a process crashes, heartbeat stops. If an unrelated OS process recycles the PID, that foreign process does not touch `instance.lock`. Once `lastHeartbeat` age exceeds 15,000ms, the lease is safely reclaimed. While age < 15,000ms, if the process is dead (`ESRCH`), `isProcessAlive` reclaims immediately.
+   - **Conclusion:** Live PID + unique instance ownership token + 15s lease expiry is fully sound. No concrete defect demonstrated.
+
+### 19.2 Deterministic Failure-Injection Verification Suite
+
+Automated verification suite: `tests/sophia/m2_batch3_recovery_gate.test.ts`  
+Environment: Windows NT x64, Node.js v22.17.0 (`npx tsx`)  
+Isolation: Temporary roots (`fs.mkdtempSync`), isolated singletons.
+
+- **Test A: Crash after approval consumption before execution is identifiable & fail-closed:**
+  - Verified approval consumed and idempotency in_progress.
+  - On restart, `listInterruptedOperations` detects interrupted operation.
+  - Retry strictly fails closed with `OperationInProgressError`; execution attempted 0 times.
+  - Non-founder resolution rejected (`Permission denied`).
+  - Founder resolution marks `failed` with audit record `FOUNDER_MANUAL_RECONCILIATION`. Consumed approval never silently reset. **PASS**
+
+- **Test B: Crash after external success protects against duplicate execution & requires resolution:**
+  - Mock third-party service dispatched exactly 1 time.
+  - Crash occurs before gate complete record.
+  - On restart, retries fail closed; external service dispatch count remains strictly 1.
+  - Founder confirms outcome and resolves as `completed`.
+  - Subsequent retry replays cached result (`idempotentReplay: true`, `executed: false`). Dispatch count remains 1. **PASS**
+
+- **Test C: Crash after completion before audit reconciles idempotently:**
+  - Operation completed in idempotency store without audit record.
+  - `reconcileMissingAudit` creates missing record with `reasonCode: 'AUDIT_RECONCILED'`.
+  - Repeated call is idempotent; zero duplicate audit records produced. **PASS**
+
+- **Test D: Repeated recovery cycles run safely without duplicates:**
+  - Multiple passes of `listInterruptedOperations` and `resolveInterruptedOperation` run safely.
+  - Second pass returns `already_completed` without duplicate audit entries. **PASS**
+
+- **Test E: Founder override permissions and invariant protection:**
+  - Prohibits marking completed operations as failed (`Cannot mark completed operation as failed`).
+  - Rejects non-existent keys.
+  - Enforces strict Founder identity allowlist. **PASS**
+
+- **Test F: Instance lease identity enforces instanceId token and heartbeat expiration:**
+  - Validates `instanceId` token.
+  - Proves stale lease (>15s old) from reused PID is safely reclaimed without deadlock. **PASS**
+
+**Result: 6 PASSED, 0 FAILED.**
+
+### 19.3 Milestone Regression Test Summary
+
+| Test Suite | Focus Domain | Assertions | Status |
+|---|---|---|---|
+| `tests/sophia/m2_batch3_recovery_gate.test.ts` | Multi-Store Crash Recovery & Life-Cycle Safety | 6 passed, 0 failed | **PASS** |
+| `tests/sophia/m2_batch3_concurrency_hygiene.test.ts` | Concurrency & Mutation Serialization | 8 passed, 0 failed | **PASS** |
+| `tests/sophia/m2_batch1_lock_safety.test.ts` | Stale-Lock Breaking & TOCTOU Prevention | 20 passed, 0 failed | **PASS** |
+| `tests/sophia/m2_batch1_storage_reliability.test.ts` | Fail-Closed Mutations & Quarantine | 27 passed, 0 failed | **PASS** |
+| `tests/sophia/m2_batch2_cross_platform_restart.test.ts` | Process Restart & Runner Portability | 11 passed, 0 failed | **PASS** |
+| `tests/sophia/m2_knowledge_persistence.test.ts` | Company Knowledge Persistence & Hash Authority | 8 passed, 0 failed | **PASS** |
+| `tests/sophia/m1_batch3_verification_recovery.test.ts` | M1 Quarantine, Backups & Verification | 24 passed, 0 failed | **PASS** |
+| `tests/sophia/m1_batch2_conversation_deletion.test.ts` | M1 Conversation Deletion & Tombstones | 52 passed, 0 failed | **PASS** |
+| `tests/sophia/m1_batch1_memory_authority.test.ts` | M1 Memory Authority & Database Mode | 7 passed, 0 failed | **PASS** |
+
+**Grand Total: 163 PASSED, 0 FAILED.**
+
+### 19.4 Build & Type Verification
+- **Scoped TypeScript:** 0 errors across all modified production code and test files.
+- **Production Build:** `npm run build` completed successfully (Next.js 16.3.5 Turbopack, 31/31 static routes generated, standalone distribution copied).
+

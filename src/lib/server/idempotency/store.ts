@@ -58,6 +58,7 @@ export interface IdempotencyStore {
   fail(key: string, error: string, executionRef?: string): Promise<IdempotencyRecordData>;
   markUnknown(key: string, error: string, executionRef?: string): Promise<IdempotencyRecordData>;
   get(key: string): Promise<IdempotencyRecordData | null>;
+  list(filter?: { status?: IdempotencyStatus }): Promise<IdempotencyRecordData[]>;
   clear(): void;
 }
 
@@ -265,6 +266,17 @@ export class PostgresIdempotencyStore implements IdempotencyStore {
     // TTL enforcement (M0): expired records are not visible to readers —
     // the pre-execution replay path must not serve stale cached responses.
     return isRecordExpired(mapped) ? null : mapped;
+  }
+
+  async list(filter?: { status?: IdempotencyStatus }): Promise<IdempotencyRecordData[]> {
+    const db = await requireAuthoritativeDatabase();
+    const found = await db.idempotencyRecord.findMany({
+      where: filter?.status ? { status: filter.status } : undefined,
+      orderBy: { createdAt: 'desc' },
+    });
+    return found
+      .map((r) => this.mapPrismaToRecord(r))
+      .filter((r) => !isRecordExpired(r));
   }
 
   clear(): void {
@@ -503,6 +515,27 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     // the pre-execution replay path must not serve stale cached responses.
     if (isRecordExpired(existing)) return null;
     return JSON.parse(JSON.stringify(existing));
+  }
+
+  async list(filter?: { status?: IdempotencyStatus }): Promise<IdempotencyRecordData[]> {
+    if (isAuthoritativeMode()) {
+      return PostgresIdempotencyStore.getInstance().list(filter);
+    }
+
+    let records: IdempotencyRecordData[] = [];
+    try {
+      const onDisk = DurableFileStore.getInstance().readCollection<IdempotencyRecordData>('idempotency_records');
+      records = Object.values(onDisk);
+    } catch {
+      records = Array.from(this.records.values());
+    }
+
+    if (filter?.status) {
+      records = records.filter((r) => r.status === filter.status);
+    }
+
+    records = records.filter((r) => !isRecordExpired(r));
+    return JSON.parse(JSON.stringify(records));
   }
 
   clear(): void {
