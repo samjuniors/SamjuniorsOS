@@ -2947,7 +2947,7 @@ Submit Batch 2.2 report for Founder review. Stop and wait for Founder review bef
 - `scripts/reconcile-tombstones.ts`
   - Reports critical-ledger corruption and operator recovery instructions; fatal path remains non-zero.
 - `tests/sophia/m1_batch2_conversation_deletion.test.ts`
-  - Added coverage for malformed JSON, empty files, missing initialized ledger, Prisma fallback blocked by corruption, and quarantine failure/source preservation.
+  - Added coverage for malformed JSON, empty files, missing initialized ledger, Prisma fallback blocked by corruption, quarantine failure/source preservation, rejection of non-strict critical-ledger mutation, and prevention of explicit lock downgrade.
   - Corrected the message-only Prisma error regression to expect `false`.
 
 ### Verification status
