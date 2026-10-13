@@ -1225,7 +1225,7 @@ export class ConversationStore {
    * Helper for tests: clears only the tombstones collection.
    */
   public clearTombstonesForTests(): void {
-    this.fileStore.writeCollection(CONVERSATION_TOMBSTONES_COLLECTION, {});
-    this.fileStore.writeCollection(MESSAGE_TOMBSTONES_COLLECTION, {});
+    this.fileStore.writeCollectionStrict(CONVERSATION_TOMBSTONES_COLLECTION, {}, { lockStrict: true });
+    this.fileStore.writeCollectionStrict(MESSAGE_TOMBSTONES_COLLECTION, {}, { lockStrict: true });
   }
 }
