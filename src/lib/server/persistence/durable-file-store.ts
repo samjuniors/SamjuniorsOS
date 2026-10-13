@@ -316,6 +316,9 @@ export class DurableFileStore {
    * the serialization guarantee.
    */
   public withCollectionLock<T>(collection: string, fn: () => T): T {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires withCollectionLockStrict().`);
+    }
     this.acquireLock(collection, false);
     try {
       return fn();
@@ -425,7 +428,7 @@ export class DurableFileStore {
     data: Record<string, T>,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
@@ -474,7 +477,7 @@ export class DurableFileStore {
     item: T,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
@@ -526,7 +529,7 @@ export class DurableFileStore {
     id: string,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): boolean {
-    const lockStrict = options?.lockStrict ?? this.isCriticalCollection(collection);
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
