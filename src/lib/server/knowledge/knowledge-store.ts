@@ -446,16 +446,13 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
       return;
     }
 
-    // Local mode: explicit write — REPLACES any existing item with the same
-    // id (no duplicate-id entries in the in-process cache, mirroring the
-    // authoritative branch's replace-by-id semantics).
+    // Local mode: persistence BEFORE mutating in-process cache
+    DurableFileStore.getInstance().saveItemStrict('company_knowledge', item.id, item);
+
     this.knowledgeItems = [
       item,
       ...this.knowledgeItems.filter((k) => k.id !== item.id),
     ];
-    try {
-      DurableFileStore.getInstance().saveItem('company_knowledge', item.id, item);
-    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -485,8 +482,6 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
   }
 
   public async setKnowledge(items: CompanyKnowledgeItem[]): Promise<void> {
-    this.knowledgeItems = [...items];
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
       await db.$transaction(async (tx: any) => {
@@ -504,14 +499,16 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
           });
         }
       });
+      this.knowledgeItems = [...items];
       return;
     }
 
-    try {
-      const record: Record<string, CompanyKnowledgeItem> = {};
-      for (const item of items) record[item.id] = item;
-      DurableFileStore.getInstance().writeCollection('company_knowledge', record);
-    } catch {}
+    // Local mode: persist to disk BEFORE mutating in-process cache
+    const record: Record<string, CompanyKnowledgeItem> = {};
+    for (const item of items) record[item.id] = item;
+    DurableFileStore.getInstance().writeCollectionStrict('company_knowledge', record);
+
+    this.knowledgeItems = [...items];
 
     if (process.env.DATABASE_URL) {
       try {

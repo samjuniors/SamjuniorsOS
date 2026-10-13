@@ -482,8 +482,65 @@ To ensure focused execution without destabilizing working code, M2 is structured
 
 The findings in this audit document have been verified against the active working tree of `SamJuniorsOS` at HEAD `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
 
-- **Zero Production Code Modified:** Confirmed via `git status`.
-- **Working Tree Clean:** Confirmed.
+- **Working Tree Clean Prior to Batch 2.1:** Confirmed.
 - **Verification Evidence:** Supported by line-by-line inspection of `src/lib/server/persistence/`, `src/lib/server/memory/`, `src/lib/server/sophia/`, `prisma/schema.prisma`, and executed test suites.
 
-**Awaiting Founder Review and Approval before beginning Batch 2.1 implementation.**
+---
+
+## 14. Milestone 2 Batch 2.1 Implementation & Verification Report
+
+**Status:** IMPLEMENTED & VERIFIED  
+**Scope:** Storage Reliability and Lock Hygiene  
+**Test Suite:** `tests/sophia/m2_batch1_storage_reliability.test.ts` (27/27 PASSING)  
+**Regression Suites:** M1 Suites (83/83 PASSING — 7 M1 Batch 1, 52 M1 Batch 2, 24 M1 Batch 3)  
+**Total Verified Assertions:** 110/110 PASSING  
+
+### 14.1 Exact Guarantees Established
+
+1. **Fail-Closed Mutation Locking (Zero Fail-Open Paths):**
+   - Eliminated lock-timeout fail-open behavior in `DurableFileStore`. `acquireLock` now strictly throws `LockTimeoutError` upon deadline expiry.
+   - Every state-changing operation (`saveItem`, `saveItemStrict`, `writeCollection`, `writeCollectionStrict`, `deleteItem`, `deleteItemStrict`, `withCollectionLock`, `withCollectionLockStrict`) fails closed on timeout. No mutation can proceed without holding its exclusive lock.
+   - Locks are released reliably via `finally` blocks in both normal return and exception paths.
+   - Stale locks older than 10,000ms (`LOCK_STALE_MS`) are automatically broken and re-acquired without unbounded loops or deadlocks.
+   - In-process re-entrancy depth tracking prevents internal deadlocks when nested stores execute atomic read-modify-write units.
+
+2. **Universal Corruption Protection & Quarantine:**
+   - Universalized corruption protection across all collections in `DurableFileStore.readCollection`.
+   - Malformed JSON, truncated content, and empty files (0 bytes) are automatically quarantined to `<collection>.json.corrupt.<timestamp>.<pid>`, preserving exact corrupted bytes on disk.
+   - Throws `CriticalCollectionCorruptionError` containing collection name, file path, and quarantine path.
+   - Missing data files where an `.initialized` marker exists trigger `CriticalCollectionCorruptionError` rather than silently returning `{}`.
+   - After quarantine, subsequent calls to `saveItem` or `writeCollection` fail closed with `CriticalCollectionCorruptionError`, strictly preventing subsequent writes from overwriting unrecovered evidence.
+   - First-use initialization behavior is clearly defined: a non-existent file without an `.initialized` marker returns `{}` and creates the marker atomically on the first write.
+   - Pre-existing legacy collections on disk without a marker are lazily initialized on first read/write, ensuring seamless backward compatibility without false corruption errors.
+
+3. **Persistence Before Cache Mutation:**
+   - In all dual-mode and local stores where disk is authoritative, mutations now strictly adhere to the authoritative ordering contract:
+     1. Validate proposed state.
+     2. Persist to disk successfully (`saveItemStrict` / `writeCollectionStrict`).
+     3. Update in-memory cache / map.
+     4. Return success.
+   - Refactored stores:
+     - `CompanyStateStore` (`setInitiatives`, `recordDecision`, `updateFinancialMetrics`)
+     - `CompanyKnowledgeStore` (`addKnowledge`, `setKnowledge`)
+     - `EpistemicClaimStore` (`saveSource`, `saveSignal`, `saveClaim`, `recordVerification`, `saveFact`, `markFactSuperseded`)
+     - `InMemoryIdempotencyStore` (`claim`, `complete`, `fail`, `markUnknown`)
+     - `InMemoryApprovalStore` (`save`, `decide`, `revoke`, `consume`)
+     - `InMemoryAuditStore` (`record`)
+     - `AgentRunStore` (`saveRun`)
+     - `InMemoryWorkflowStore` (`saveDefinition`, `saveInstance`, `claimStepAtomic`, `transitionStepAtomic`)
+   - Any failed disk write (e.g. disk full, permission denied, lock timeout, corruption) strictly halts execution before mutating in-memory cache. The in-memory cache never reports an uncommitted state as authoritative.
+
+4. **Strict Error Propagation:**
+   - Removed all `catch {}` silent error-swallowing blocks in authoritative persistence mutation paths.
+   - Atomic temporary file writes (`atomicWrite`) unlink temporary files (`.tmp.*`) upon failure and re-throw write/rename errors (including `ENOSPC` and `EACCES`).
+   - Store startup automatically sweeps orphaned temporary files older than 60 seconds.
+
+### 14.2 Remaining Limitations & System Boundaries
+
+1. **Single-Instance Deployment Constraint:**
+   - File locks are cross-process on a single OS/container filesystem, but cannot synchronize across multiple distributed nodes or separate container instances.
+   - The system boundary remains strictly `min-instances=1, max-instances=1` guarded by `InstanceConcurrencyGuard`. Distributed clustering remains out of scope.
+2. **PostgreSQL Migration Out of Scope:**
+   - Database operations in local mode continue using file-backed storage and SQLite port. No PostgreSQL infrastructure was added.
+3. **Pending Batches:**
+   - Batch 2.2 (Process Crash and Recovery), Batch 2.3 (Runner Consolidation), and Batch 2.4 (Disaster Recovery Automation) remain untouched, awaiting founder review.

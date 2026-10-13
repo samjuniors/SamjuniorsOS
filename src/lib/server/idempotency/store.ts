@@ -362,10 +362,9 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
       expiresAt: params.ttlMs ? new Date(Date.now() + params.ttlMs).toISOString() : null,
     };
 
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('idempotency_records', params.key, newRecord);
     this.records.set(params.key, newRecord);
-    try {
-      DurableFileStore.getInstance().saveItem('idempotency_records', params.key, newRecord);
-    } catch {}
 
     return {
       state: 'claimed',
@@ -383,17 +382,19 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
       throw new Error(`Idempotency record not found: ${key}`);
     }
 
-    existing.status = 'completed';
-    existing.response = response !== undefined ? response : {};
-    if (executionRef) existing.executionRef = executionRef;
-    existing.updatedAt = new Date().toISOString();
+    const updated: IdempotencyRecordData = {
+      ...existing,
+      status: 'completed',
+      response: response !== undefined ? response : {},
+      executionRef: executionRef ?? existing.executionRef,
+      updatedAt: new Date().toISOString(),
+    };
 
-    this.records.set(key, existing);
-    try {
-      DurableFileStore.getInstance().saveItem('idempotency_records', key, existing);
-    } catch {}
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('idempotency_records', key, updated);
+    this.records.set(key, updated);
 
-    return JSON.parse(JSON.stringify(existing));
+    return JSON.parse(JSON.stringify(updated));
   }
 
   async fail(key: string, error: string, executionRef?: string): Promise<IdempotencyRecordData> {
@@ -406,17 +407,19 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
       throw new Error(`Idempotency record not found: ${key}`);
     }
 
-    existing.status = 'failed';
-    existing.error = error;
-    if (executionRef) existing.executionRef = executionRef;
-    existing.updatedAt = new Date().toISOString();
+    const updated: IdempotencyRecordData = {
+      ...existing,
+      status: 'failed',
+      error,
+      executionRef: executionRef ?? existing.executionRef,
+      updatedAt: new Date().toISOString(),
+    };
 
-    this.records.set(key, existing);
-    try {
-      DurableFileStore.getInstance().saveItem('idempotency_records', key, existing);
-    } catch {}
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('idempotency_records', key, updated);
+    this.records.set(key, updated);
 
-    return JSON.parse(JSON.stringify(existing));
+    return JSON.parse(JSON.stringify(updated));
   }
 
   async markUnknown(key: string, error: string, executionRef?: string): Promise<IdempotencyRecordData> {
@@ -429,17 +432,19 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
       throw new Error(`Idempotency record not found: ${key}`);
     }
 
-    existing.status = 'unknown';
-    existing.error = error;
-    if (executionRef) existing.executionRef = executionRef;
-    existing.updatedAt = new Date().toISOString();
+    const updated: IdempotencyRecordData = {
+      ...existing,
+      status: 'unknown',
+      error,
+      executionRef: executionRef ?? existing.executionRef,
+      updatedAt: new Date().toISOString(),
+    };
 
-    this.records.set(key, existing);
-    try {
-      DurableFileStore.getInstance().saveItem('idempotency_records', key, existing);
-    } catch {}
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('idempotency_records', key, updated);
+    this.records.set(key, updated);
 
-    return JSON.parse(JSON.stringify(existing));
+    return JSON.parse(JSON.stringify(updated));
   }
 
   async get(key: string): Promise<IdempotencyRecordData | null> {

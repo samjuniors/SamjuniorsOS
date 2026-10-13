@@ -92,16 +92,20 @@ export class CompanyStateStore implements ICompanyStateStore {
     }
   }
 
-  private persistState(): void {
-    try {
-      DurableFileStore.getInstance().writeCollection('company_state', {
-        initiatives: this.initiatives,
-        products: this.products,
-        customers: this.customers,
-        financialModel: this.financialModel,
-        decisions: this.decisions,
-      });
-    } catch {}
+  private persistStateStrict(patch?: {
+    initiatives?: CompanyInitiative[];
+    products?: ProductFeature[];
+    customers?: CustomerDeal[];
+    financialModel?: FinanceMetric;
+    decisions?: CompanyDecision[];
+  }): void {
+    DurableFileStore.getInstance().writeCollectionStrict('company_state', {
+      initiatives: patch?.initiatives ?? this.initiatives,
+      products: patch?.products ?? this.products,
+      customers: patch?.customers ?? this.customers,
+      financialModel: patch?.financialModel ?? this.financialModel,
+      decisions: patch?.decisions ?? this.decisions,
+    });
   }
 
   public async getProducts(): Promise<ProductFeature[]> {
@@ -156,24 +160,25 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async setInitiatives(inits: CompanyInitiative[]): Promise<void> {
-    this.initiatives = [...inits];
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
       await db.companyState.upsert({
         where: { organizationId: 'default' },
         create: {
           organizationId: 'default',
-          initiatives: this.initiatives as any,
+          initiatives: inits as any,
         },
         update: {
-          initiatives: this.initiatives as any,
+          initiatives: inits as any,
         },
       });
+      this.initiatives = [...inits];
       return;
     }
 
-    this.persistState();
+    // Disk authoritative: persist before mutating cache
+    this.persistStateStrict({ initiatives: inits });
+    this.initiatives = [...inits];
 
     if (process.env.DATABASE_URL) {
       try {
@@ -194,7 +199,7 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
-    this.decisions.unshift(decision);
+    const nextDecisions = [decision, ...this.decisions];
 
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
@@ -202,16 +207,19 @@ export class CompanyStateStore implements ICompanyStateStore {
         where: { organizationId: 'default' },
         create: {
           organizationId: 'default',
-          decisions: this.decisions as any,
+          decisions: nextDecisions as any,
         },
         update: {
-          decisions: this.decisions as any,
+          decisions: nextDecisions as any,
         },
       });
+      this.decisions = nextDecisions;
       return;
     }
 
-    this.persistState();
+    // Disk authoritative: persist before mutating cache
+    this.persistStateStrict({ decisions: nextDecisions });
+    this.decisions = nextDecisions;
 
     if (process.env.DATABASE_URL) {
       try {
@@ -232,7 +240,7 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
-    this.financialModel = { ...this.financialModel, ...metrics };
+    const nextModel = { ...this.financialModel, ...metrics };
 
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
@@ -240,16 +248,19 @@ export class CompanyStateStore implements ICompanyStateStore {
         where: { organizationId: 'default' },
         create: {
           organizationId: 'default',
-          financialModel: this.financialModel as any,
+          financialModel: nextModel as any,
         },
         update: {
-          financialModel: this.financialModel as any,
+          financialModel: nextModel as any,
         },
       });
+      this.financialModel = nextModel;
       return;
     }
 
-    this.persistState();
+    // Disk authoritative: persist before mutating cache
+    this.persistStateStrict({ financialModel: nextModel });
+    this.financialModel = nextModel;
 
     if (process.env.DATABASE_URL) {
       try {

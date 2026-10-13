@@ -76,6 +76,27 @@ export class DurableFileStore {
         }
       }
     }
+    this.cleanupOrphanedTempFiles();
+  }
+
+  /** Cleans up orphaned temporary files left by abruptly terminated processes. */
+  private cleanupOrphanedTempFiles(): void {
+    try {
+      if (!fs.existsSync(this.dataDir)) return;
+      const entries = fs.readdirSync(this.dataDir);
+      const now = Date.now();
+      for (const entry of entries) {
+        if (entry.includes('.tmp.')) {
+          const fullPath = path.join(this.dataDir, entry);
+          try {
+            const stat = fs.statSync(fullPath);
+            if (now - stat.mtimeMs > 60_000) {
+              fs.unlinkSync(fullPath);
+            }
+          } catch {}
+        }
+      }
+    } catch {}
   }
 
   public static getInstance(): DurableFileStore {
@@ -112,12 +133,11 @@ export class DurableFileStore {
   }
 
   private markCriticalCollectionInitialized(collection: string): void {
-    if (!this.isCriticalCollection(collection)) return;
     const markerPath = this.getCriticalMarkerPath(collection);
     let fd: number | undefined;
     try {
       fd = fs.openSync(markerPath, 'wx', 0o600);
-      fs.writeSync(fd, `initialized ${new Date().toISOString()}\\n`);
+      fs.writeSync(fd, `initialized ${new Date().toISOString()}\n`);
       fs.fsyncSync(fd);
     } catch (err: any) {
       if (err?.code !== 'EEXIST') {
@@ -158,49 +178,7 @@ export class DurableFileStore {
   }
 
   private readCriticalCollection<T>(collection: string): Record<string, T> {
-    const filePath = this.getCollectionPath(collection);
-    const markerPath = this.getCriticalMarkerPath(collection);
-
-    if (!fs.existsSync(filePath)) {
-      if (fs.existsSync(markerPath)) {
-        throw new CriticalCollectionCorruptionError({
-          collection,
-          filePath,
-          message: `Critical collection "${collection}" is missing although its initialization marker exists. Refusing to treat it as empty.`,
-        });
-      }
-      // First-use state only. The marker is created before the first durable write.
-      return {};
-    }
-
-    // A pre-existing file proves this ledger has been initialized. Persist the
-    // marker before parsing so quarantine cannot make it look like first-use.
-    this.markCriticalCollectionInitialized(collection);
-
-    let content: string;
-    try {
-      content = fs.readFileSync(filePath, 'utf-8');
-    } catch (err) {
-      this.quarantineCriticalCollection(collection, filePath, 'file read failed', err);
-    }
-
-    if (!content!.trim()) {
-      this.quarantineCriticalCollection(collection, filePath, 'file is empty');
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(content!);
-    } catch (err) {
-      this.quarantineCriticalCollection(collection, filePath, 'invalid JSON', err);
-    }
-
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      this.quarantineCriticalCollection(collection, filePath, 'expected a JSON object');
-    }
-
-    this.markCriticalCollectionInitialized(collection);
-    return parsed as Record<string, T>;
+    return this.readCollection<T>(collection);
   }
 
   /** Synchronous bounded sleep (Atomics.wait blocks the thread without spinning). */
@@ -246,14 +224,13 @@ export class DurableFileStore {
 
   /**
    * Acquires the per-collection cross-process lock (re-entrant in-process).
-   * When `failClosed` is true, throws LockTimeoutError if the lock cannot be
-   * acquired within `timeoutMs`, guaranteeing that critical operations never proceed
-   * without serialization. When `failClosed` is false (legacy default), proceeds
-   * without the lock after timeout and logs loudly.
+   * M2 BATCH 2.1 HARDENING: Always fails closed by throwing LockTimeoutError
+   * if the lock cannot be acquired within timeoutMs. No state-changing operation
+   * ever proceeds without acquiring its required lock.
    */
   private acquireLock(
     collection: string,
-    failClosed: boolean = false,
+    failClosed: boolean = true,
     timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
   ): void {
     const depth = this.lockDepth.get(collection) ?? 0;
@@ -264,7 +241,6 @@ export class DurableFileStore {
 
     const lockPath = this.getLockPath(collection);
     const deadline = Date.now() + timeoutMs;
-    let warned = false;
 
     for (;;) {
       if (this.tryCreateLock(lockPath)) {
@@ -273,21 +249,9 @@ export class DurableFileStore {
       }
       this.breakStaleLock(lockPath);
       if (Date.now() > deadline) {
-        if (failClosed) {
-          throw new LockTimeoutError(
-            `[DurableFileStore] Failed to acquire lock for "${collection}" within ${timeoutMs}ms (fail-closed)`
-          );
-        }
-        if (!warned) {
-          console.error(
-            `[DurableFileStore] Could not acquire lock for "${collection}" within ` +
-              `${timeoutMs}ms — proceeding WITHOUT the lock ` +
-              `(concurrent read-modify-write protection is degraded for this write).`
-          );
-          warned = true;
-        }
-        this.lockDepth.set(collection, 1); // still counted so release() stays balanced
-        return;
+        throw new LockTimeoutError(
+          `[DurableFileStore] Failed to acquire lock for "${collection}" within ${timeoutMs}ms (fail-closed)`
+        );
       }
       DurableFileStore.sleepMs(DurableFileStore.LOCK_POLL_MS);
     }
@@ -314,12 +278,17 @@ export class DurableFileStore {
    * deleteItem / writeCollection on the SAME collection without deadlocking.
    * fn must be SYNCHRONOUS — holding the lock across an await would break
    * the serialization guarantee.
+   * Fails closed with LockTimeoutError on timeout.
    */
-  public withCollectionLock<T>(collection: string, fn: () => T): T {
+  public withCollectionLock<T>(
+    collection: string,
+    fn: () => T,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): T {
     if (this.isCriticalCollection(collection)) {
       throw new Error(`Critical collection "${collection}" requires withCollectionLockStrict().`);
     }
-    this.acquireLock(collection, false);
+    this.acquireLock(collection, true, timeoutMs);
     try {
       return fn();
     } finally {
@@ -348,33 +317,68 @@ export class DurableFileStore {
 
   /**
    * Reads all items from a collection on disk.
+   *
+   * M2 BATCH 2.1 HARDENING — UNIVERSAL CORRUPTION & QUARANTINE PROTECTION:
+   *  - First-use: if neither data file nor initialization marker exists, returns {}.
+   *  - Marker check: if data file is missing but marker exists (e.g. unrecovered quarantine),
+   *    fails closed with CriticalCollectionCorruptionError.
+   *  - Malformed content: if file cannot be read, is empty, or contains invalid JSON / non-object,
+   *    the file is quarantined to <collection>.json.corrupt.<timestamp>.<pid> and
+   *    CriticalCollectionCorruptionError is thrown. Original corrupted bytes are preserved.
+   *    Subsequent writes cannot silently overwrite unrecovered data.
    */
   public readCollection<T>(collection: string): Record<string, T> {
-    if (this.isCriticalCollection(collection)) {
-      return this.readCriticalCollection<T>(collection);
-    }
     const filePath = this.getCollectionPath(collection);
+    const markerPath = this.getCriticalMarkerPath(collection);
+
     if (!fs.existsSync(filePath)) {
+      if (fs.existsSync(markerPath)) {
+        throw new CriticalCollectionCorruptionError({
+          collection,
+          filePath,
+          message: `Critical collection "${collection}" is missing although its initialization marker exists. Refusing to treat it as empty.`,
+        });
+      }
+      // First-use state only. The marker is created before the first durable write.
       return {};
     }
 
+    // A pre-existing file proves this ledger has been initialized. Persist the
+    // marker before parsing so quarantine cannot make it look like first-use.
+    this.markCriticalCollectionInitialized(collection);
+
+    let content: string;
     try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      if (!content.trim()) return {};
-      return JSON.parse(content) as Record<string, T>;
+      content = fs.readFileSync(filePath, 'utf-8');
     } catch (err) {
-      console.warn(`[DurableFileStore] Error reading collection "${collection}":`, err);
-      return {};
+      this.quarantineCriticalCollection(collection, filePath, 'file read failed', err);
     }
+
+    if (!content!.trim()) {
+      this.quarantineCriticalCollection(collection, filePath, 'file is empty');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content!);
+    } catch (err) {
+      this.quarantineCriticalCollection(collection, filePath, 'invalid JSON', err);
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.quarantineCriticalCollection(collection, filePath, 'expected a JSON object');
+    }
+
+    this.markCriticalCollectionInitialized(collection);
+    return parsed as Record<string, T>;
   }
 
   /**
-   * Extracted atomic-write core. `strict` rethrows persistence failures so
-   * callers can distinguish durable success from a swallowed loss; the
-   * legacy non-strict path keeps the original best-effort logging contract
-   * for pre-existing callers.
+   * Extracted atomic-write core.
+   * M2 BATCH 2.1 HARDENING: Re-throws persistence failures so callers can distinguish
+   * durable success from swallowed loss. ENOSPC and permission errors are never swallowed.
    */
-  private atomicWrite<T>(collection: string, data: Record<string, T>, strict: boolean): void {
+  private atomicWrite<T>(collection: string, data: Record<string, T>, strict: boolean = true): void {
     const filePath = this.getCollectionPath(collection);
     const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
 
@@ -391,53 +395,48 @@ export class DurableFileStore {
         }
       }
       if (strict) {
-        // M4-A hardening (no false success): the AUTHORITATIVE write failed —
-        // surface the failure to the caller instead of returning while the
-        // record exists only in this process's memory.
         throw err;
       }
       console.error(`[DurableFileStore] Failed to atomically persist collection "${collection}":`, err);
+      throw err;
     }
   }
-
   /**
    * Atomically writes an entire collection to disk using temp-file and atomic rename.
-   * Serialized on the per-collection cross-process lock (M4-A hardening).
+   * Serialized on the per-collection cross-process lock.
+   * M2 BATCH 2.1 HARDENING: Validates existing ledger, fails closed on lock timeout,
+   * and propagates write errors strictly.
    */
-  public writeCollection<T>(collection: string, data: Record<string, T>): void {
+  public writeCollection<T>(collection: string, data: Record<string, T>, options?: { timeoutMs?: number }): void {
     if (this.isCriticalCollection(collection)) {
       throw new Error(`Critical collection "${collection}" requires writeCollectionStrict().`);
     }
-    this.acquireLock(collection);
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, true, timeoutMs);
     try {
+      this.readCollection(collection);
       this.markCriticalCollectionInitialized(collection);
-      this.atomicWrite(collection, data, false);
+      this.atomicWrite(collection, data, true);
     } finally {
       this.releaseLock(collection);
     }
   }
 
   /**
-   * STRICT variant (M4-A hardening — no false success): identical locking and
-   * atomicity to writeCollection, but a failed authoritative write THROWS so a
-   * caller can never mistake a lost write for a durable one.
-   * When options.lockStrict is true, throws LockTimeoutError on lock timeout (fail-closed).
+   * STRICT variant: identical locking and atomicity to writeCollection, but
+   * allowed on critical collections (tombstones). Validates an existing critical
+   * ledger before allowing full replacement so unrecovered corruption cannot be overwritten.
    */
   public writeCollectionStrict<T>(
     collection: string,
     data: Record<string, T>,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.acquireLock(collection, lockStrict, timeoutMs);
+    this.acquireLock(collection, true, timeoutMs);
     try {
-      // Validate an existing critical ledger before allowing full replacement.
-      // This prevents a normal write path from silently "repairing" missing or
-      // corrupt tombstone state by overwriting the evidence.
-      if (this.isCriticalCollection(collection)) {
-        this.readCriticalCollection(collection);
-      }
+      // Validate an existing ledger before allowing full replacement.
+      this.readCollection(collection);
       this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, true);
     } finally {
@@ -447,29 +446,29 @@ export class DurableFileStore {
 
   /**
    * Saves a single entity into the collection.
-   * Cross-process serialized read-modify-write (M4-A hardening): the read,
-   * merge, and write now happen under the collection lock, so a concurrent
-   * writer can no longer be silently erased by a last-writer-wins interleave.
+   * Cross-process serialized read-modify-write.
+   * M2 BATCH 2.1 HARDENING: Fails closed on lock timeout, verifies collection
+   * is not corrupt/quarantined, and strictly propagates write failures.
    */
-  public saveItem<T>(collection: string, id: string, item: T): void {
+  public saveItem<T>(collection: string, id: string, item: T, options?: { timeoutMs?: number }): void {
     if (this.isCriticalCollection(collection)) {
       throw new Error(`Critical collection "${collection}" requires saveItemStrict().`);
     }
-    this.acquireLock(collection);
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, true, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
+      this.markCriticalCollectionInitialized(collection);
       current[id] = JSON.parse(JSON.stringify(item));
-      this.atomicWrite(collection, current, false);
+      this.atomicWrite(collection, current, true);
     } finally {
       this.releaseLock(collection);
     }
   }
 
   /**
-   * STRICT variant (M4-A hardening — no false success): locked
-   * read-modify-write that THROWS when the authoritative write fails.
-   * When options.lockStrict is true, throws LockTimeoutError if the collection
-   * lock cannot be acquired within timeoutMs (fail-closed locking).
+   * STRICT variant: locked read-modify-write that THROWS when the authoritative write fails.
+   * Used for critical collections and explicit strict-mode callers.
    */
   public saveItemStrict<T>(
     collection: string,
@@ -477,9 +476,8 @@ export class DurableFileStore {
     item: T,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): void {
-    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.acquireLock(collection, lockStrict, timeoutMs);
+    this.acquireLock(collection, true, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
       this.markCriticalCollectionInitialized(collection);
@@ -500,18 +498,21 @@ export class DurableFileStore {
 
   /**
    * Deletes a single entity from disk.
-   * Cross-process serialized read-modify-write (M4-A hardening).
+   * Cross-process serialized read-modify-write.
+   * M2 BATCH 2.1 HARDENING: Fails closed on lock timeout and propagates write failures strictly.
    */
-  public deleteItem(collection: string, id: string): void {
+  public deleteItem(collection: string, id: string, options?: { timeoutMs?: number }): void {
     if (this.isCriticalCollection(collection)) {
       throw new Error(`Critical collection "${collection}" requires deleteItemStrict().`);
     }
-    this.acquireLock(collection);
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, true, timeoutMs);
     try {
       const current = this.readCollection(collection);
       if (current[id] !== undefined) {
         delete current[id];
-        this.atomicWrite(collection, current, false);
+        this.markCriticalCollectionInitialized(collection);
+        this.atomicWrite(collection, current, true);
       }
     } finally {
       this.releaseLock(collection);
@@ -519,19 +520,15 @@ export class DurableFileStore {
   }
 
   /**
-   * STRICT variant (M4-A hardening — no false success): locked
-   * read-check-delete that THROWS when the authoritative delete-write fails.
-   * When options.lockStrict is true, throws LockTimeoutError if the collection
-   * lock cannot be acquired within timeoutMs (fail-closed locking).
+   * STRICT variant: locked read-check-delete that THROWS when the authoritative delete-write fails.
    */
   public deleteItemStrict(
     collection: string,
     id: string,
     options?: { lockStrict?: boolean; timeoutMs?: number }
   ): boolean {
-    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.acquireLock(collection, lockStrict, timeoutMs);
+    this.acquireLock(collection, true, timeoutMs);
     try {
       const current = this.readCollection(collection);
       if (current[id] === undefined) {
@@ -554,12 +551,18 @@ export class DurableFileStore {
       throw new Error(`Critical collection "${collection}" cannot be cleared through clearCollection(). Use the explicit recovery procedure.`);
     }
     const filePath = this.getCollectionPath(collection);
+    const markerPath = this.getCriticalMarkerPath(collection);
     if (fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
       } catch {
         this.writeCollection(collection, {});
       }
+    }
+    if (fs.existsSync(markerPath)) {
+      try {
+        fs.unlinkSync(markerPath);
+      } catch {}
     }
   }
 }

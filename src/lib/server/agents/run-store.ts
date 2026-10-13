@@ -167,10 +167,10 @@ export class AgentRunStore implements IAgentRunStore {
       return PostgresAgentRunStore.getInstance().saveRun(run);
     }
 
-    this.runs.set(run.runId, { ...run });
-    try {
-      DurableFileStore.getInstance().saveItem('agent_runs', run.runId, run);
-    } catch {}
+    const clone = { ...run };
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('agent_runs', run.runId, clone);
+    this.runs.set(run.runId, clone);
   }
 
   public async getRun(runId: string): Promise<AgentRunRecord | null> {
