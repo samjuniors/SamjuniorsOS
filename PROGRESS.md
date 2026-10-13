@@ -3,7 +3,7 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 2.2: Final Hardening — Runbook Integrity, Strict Lock Coverage, and Prisma Classification COMPLETE & VERIFIED on `audit/m1-memory-source-of-truth`.
+M1 Batch 3: Critical Collection Corruption — SOURCE IMPLEMENTED, VERIFICATION PENDING on `audit/m1-memory-source-of-truth`.
 - Addressed 3 final hardening areas:
   1. Reconciliation runbook failure semantics: `scripts/reconcile-tombstones.ts` exits with code 1 on pending Prisma tombstones or local file cleanup failure; suppresses success banner on partial/failed sweeps; returns typed `ReconcileResult`.
   2. Strict locking coverage: `saveItemStrict()`, `deleteItemStrict()`, and `writeCollectionStrict()` support `options.lockStrict` with `timeoutMs`; critical conversation deletion and tombstone writes fail closed without collection lock (`LockTimeoutError`); zero locks held across awaits.
@@ -12,8 +12,9 @@ M1 Batch 2.2: Final Hardening — Runbook Integrity, Strict Lock Coverage, and P
 - Awaiting Founder review before beginning Batch 3.
 
 ## Next (queued, in order)
-- Founder Review of Batch 2.2 final hardening pass.
-- Execute Batch 3: `DurableFileStore` critical collection corruption fail-closed policy & quarantine (`.corrupt.<timestamp>`).
+- Execute targeted Batch 2/3 tests and full regressions; run type validation separately.
+- Perform controlled backup/restore verification including tombstone sidecar markers and Prisma reconciliation.
+- Founder review of Batch 3 evidence before any merge or deployment.
 - Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
 - Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
 
@@ -67,3 +68,10 @@ M1 Batch 2.2: Final Hardening — Runbook Integrity, Strict Lock Coverage, and P
 - Next: finish EpistemicClaimStore and CompanyStateStore method-level audit, then trace deletion/retention paths.
 
 - [2026-10-12] M1 second source pass — completed source-level method matrix for EpistemicClaimStore and CompanyStateStore; added findings M1-F08 through M1-F11. Runtime behavior and deployed config remain NOT VERIFIED.
+
+
+## 2026-10-13 — M1 Batch 3 in progress
+- Added fail-closed corruption handling for `conversation_tombstones` and `message_tombstones`, quarantine, initialization markers, strict mutation requirements, and CLI diagnostics.
+- Corrected the Batch 2.2 Prisma classifier discrepancy: only canonical `P2025` is accepted; message-only phrases are rejected.
+- Added Batch 3 corruption/recovery regression cases. **Tests and type validation NOT YET RUN.**
+- Next: run targeted tests, typecheck, full regressions, and controlled restore test. No merge/deploy.
