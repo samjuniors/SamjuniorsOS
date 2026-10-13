@@ -1217,8 +1217,8 @@ export class ConversationStore {
     this.dbAvailableOverride = null;
     this.fileStore.writeCollection(CONVERSATIONS_COLLECTION, {});
     this.fileStore.writeCollection(CHAT_MESSAGES_COLLECTION, {});
-    this.fileStore.writeCollection(CONVERSATION_TOMBSTONES_COLLECTION, {});
-    this.fileStore.writeCollection(MESSAGE_TOMBSTONES_COLLECTION, {});
+    this.fileStore.writeCollectionStrict(CONVERSATION_TOMBSTONES_COLLECTION, {}, { lockStrict: true });
+    this.fileStore.writeCollectionStrict(MESSAGE_TOMBSTONES_COLLECTION, {}, { lockStrict: true });
   }
 
   /**
