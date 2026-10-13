@@ -634,7 +634,19 @@ The following scenarios cannot be verified through process-level automated testi
 
 ### 14.6 Verification Evidence and Pre-Merge Status
 
-- **Automated Regression Suite:** 146/146 test assertions verified passing (m1_batch3_verification_recovery: 24/24, m1_batch2_conversation_deletion: 52/52, m1_batch1_memory_authority: 7/7, m1_canonical_state_authority: 7/7, m3_conversation_convergence: 14/14, m3_authority_hardening: 7/7, m0_idempotency_expiry: 7/7, m2_knowledge_persistence: 8/8, k2_personal_memory: 20/20).
-- **TypeScript Compilation:** Independent compiler check verified zero errors in persistence, conversation store, reconciliation runbook, and test suites.
+- **Runner-Agnostic Core M1 Suite:** **90/90 test assertions verified passing** under both Node.js (`npx tsx`) and Bun (`bun`) runtimes:
+  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 passed** (DATABASE_MODE parsing, authoritative DB query routing, strict local error propagation).
+  - `tests/sophia/m1_canonical_state_authority.test.ts`: **7/7 passed** (Operational state authority, fail-soft telemetry slice 1).
+  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 passed** (Conversation & message deletion, write-ahead tombstones, REST routes, strict locking).
+  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 passed** (Critical collection corruption quarantine, `.initialized` markers, Prisma fallback shielding, isolated backup/restore).
+- **Adjacent Runner-Agnostic Hardening Suites (Node.js & Bun):**
+  - `tests/sophia/m0_idempotency_expiry.test.ts`: **7/7 passed** (Idempotency cache expiry, replay safety).
+  - `tests/sophia/m3_authority_hardening.test.ts`: **7/7 passed, 3 skipped** (Store rejecting unknown IDs, fail-closed cross-founder access).
+  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25/25 passed** (Temporal intent routing, query-conditioned facts & knowledge).
+- **Legacy Child-Spawning Suites Runner Distinction:**
+  - `tests/sophia/m3_conversation_convergence.test.ts`: **14/14 passed under Bun** (12 passed, 2 failed under Node.js/`tsx` due to hardcoded `Bun.spawn(['bun', ...])`).
+  - `tests/sophia/k2_personal_memory.test.ts`: **19/19 passed, 1 skipped under Bun** (17 passed, 2 failed under Node.js/`tsx` due to `Bun.spawn`).
+  - `tests/sophia/m2_knowledge_persistence.test.ts`: **6 passed, 2 failed under Bun** when inheriting `.env.local`'s unseeded `DATABASE_URL="file:./db/custom.db"` where `prisma/db/` directory does not exist, causing SQLite child error logs to collide with stdout JSON parsing; test 8 (authoritative SQLite mode with explicit DB) passes 100%.
+- **TypeScript Compilation:** Independent compiler check (`tsc --noEmit`) verified **zero errors** in persistence (`durable-file-store.ts`), conversation store (`store.ts`), reconciliation runbook (`reconcile-tombstones.ts`), and all M1 test suites (`m1_batch1`, `m1_batch2`, `m1_batch3`).
 - **Directory Isolation Proof:** Test suite executed in dedicated temporary root with verified assertions that resolved data directory was outside repository root and repository `.data` was untouched.
 - **Branch Status:** `audit/m1-memory-source-of-truth` remains strictly unmerged and undeployed, awaiting Founder review.

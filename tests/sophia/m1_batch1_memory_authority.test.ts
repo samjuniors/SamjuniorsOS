@@ -44,6 +44,14 @@ async function main() {
   const origDatabaseMode = process.env.DATABASE_MODE;
   const origNodeEnv = process.env.NODE_ENV;
 
+  const setNodeEnv = (val: string | undefined) => {
+    if (val === undefined) {
+      delete (process.env as Record<string, string | undefined>).NODE_ENV;
+    } else {
+      (process.env as Record<string, string | undefined>).NODE_ENV = val;
+    }
+  };
+
   try {
     // ------------------------------------------------------------------------
     // GROUP 1: M1-F11 — DATABASE_MODE PARSING & ALIAS HANDLING
@@ -71,13 +79,13 @@ async function main() {
     await runTest('M1-F11.3: Unset DATABASE_MODE falls back to NODE_ENV correctly', () => {
       delete process.env.DATABASE_MODE;
 
-      process.env.NODE_ENV = 'production';
+      setNodeEnv('production');
       assert.strictEqual(getDatabaseMode(), 'authoritative');
 
-      process.env.NODE_ENV = 'test';
+      setNodeEnv('test');
       assert.strictEqual(getDatabaseMode(), 'test');
 
-      process.env.NODE_ENV = 'development';
+      setNodeEnv('development');
       assert.strictEqual(getDatabaseMode(), 'local');
     });
 
@@ -136,7 +144,7 @@ async function main() {
     // ------------------------------------------------------------------------
     await runTest('M1-F03.1: recordMemory propagates failure when file persistence fails', async () => {
       process.env.DATABASE_MODE = 'local';
-      process.env.NODE_ENV = 'test';
+      setNodeEnv('test');
 
       const fileStore = DurableFileStore.getInstance();
       const originalSaveItemStrict = fileStore.saveItemStrict.bind(fileStore);
@@ -181,7 +189,7 @@ async function main() {
 
     await runTest('M1-F03.2: recordMemory successfully persists and updates in-memory cache', async () => {
       process.env.DATABASE_MODE = 'local';
-      process.env.NODE_ENV = 'test';
+      setNodeEnv('test');
 
       const validMemory: CompanyMemory = {
         id: 'mem-batch1-success',
@@ -254,11 +262,7 @@ async function main() {
     } else {
       delete process.env.DATABASE_MODE;
     }
-    if (origNodeEnv !== undefined) {
-      process.env.NODE_ENV = origNodeEnv;
-    } else {
-      delete process.env.NODE_ENV;
-    }
+    setNodeEnv(origNodeEnv);
   }
 
   console.log('\n======================================================');
