@@ -429,6 +429,12 @@ export class DurableFileStore {
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
+      // Validate an existing critical ledger before allowing full replacement.
+      // This prevents a normal write path from silently "repairing" missing or
+      // corrupt tombstone state by overwriting the evidence.
+      if (this.isCriticalCollection(collection)) {
+        this.readCriticalCollection(collection);
+      }
       this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, true);
     } finally {
@@ -449,7 +455,6 @@ export class DurableFileStore {
     this.acquireLock(collection);
     try {
       const current = this.readCollection<T>(collection);
-      this.markCriticalCollectionInitialized(collection);
       current[id] = JSON.parse(JSON.stringify(item));
       this.atomicWrite(collection, current, false);
     } finally {
@@ -502,7 +507,6 @@ export class DurableFileStore {
     try {
       const current = this.readCollection(collection);
       if (current[id] !== undefined) {
-        this.markCriticalCollectionInitialized(collection);
         delete current[id];
         this.atomicWrite(collection, current, false);
       }
