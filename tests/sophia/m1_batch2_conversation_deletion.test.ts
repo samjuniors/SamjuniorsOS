@@ -1689,7 +1689,7 @@ async function main() {
   }
 
   console.log('\n======================================================');
-  console.log(`M1 BATCH 2 RESULTS: ${passed} PASSED, ${failed} FAILED`);
+  console.log(`M1 BATCH 2 + BATCH 3 RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('======================================================\n');
 
   if (failed > 0) {
