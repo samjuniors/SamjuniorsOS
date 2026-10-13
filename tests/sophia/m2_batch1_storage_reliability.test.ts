@@ -19,7 +19,7 @@ import { CompanyKnowledgeItem } from '../../src/types/context';
 import { EvidenceSource, EpistemicSignal, EpistemicClaim, CanonicalFact } from '../../src/types/epistemic';
 import { FounderApprovalRecord, SideEffectAuditRecord } from '../../src/types/authorization';
 import { AgentRunRecord } from '../../src/lib/server/agents/run-store';
-import { WorkflowDefinition, WorkflowInstanceState } from '../../src/lib/server/workflow/types';
+import { WorkflowDefinition, WorkflowInstanceState } from '../../src/types/workflow';
 
 let passed = 0;
 let failed = 0;
@@ -387,7 +387,7 @@ async function main() {
 
       assert(caught instanceof CriticalCollectionCorruptionError);
       assert(caught.message.includes('file is empty'));
-      assert(fs.existsSync(caught.quarantinePath));
+      assert(caught.quarantinePath && fs.existsSync(caught.quarantinePath));
     });
 
     await runTest('4.3: Truncated JSON file is quarantined and throws CriticalCollectionCorruptionError', async () => {
@@ -404,7 +404,7 @@ async function main() {
 
       assert(caught instanceof CriticalCollectionCorruptionError);
       assert(caught.message.includes('invalid JSON'));
-      assert(fs.existsSync(caught.quarantinePath));
+      assert(caught.quarantinePath && fs.existsSync(caught.quarantinePath));
     });
 
     await runTest('4.4: Missing data file with existing .initialized marker fails closed (anti-wipe barrier)', async () => {
@@ -527,16 +527,13 @@ async function main() {
           id: 'init_1',
           codeName: 'APOLLO',
           title: 'Apollo Initiative',
-          ownerAgentId: 'coo',
           contributors: [],
-          status: 'active',
+          status: 'Active',
           currentObjective: 'Objective 1',
-          progressPct: 50,
-          confidenceScore: 0.9,
-          blockers: [],
           latestResult: 'Good',
           nextRecommendedAction: 'Continue',
-          lastActiveAt: new Date().toISOString(),
+          risks: [],
+          updatedAt: new Date().toISOString(),
         },
       ];
       await store.setInitiatives(initialInits);
@@ -638,6 +635,7 @@ async function main() {
         contentHash: 'hash1',
         capturedAt: new Date().toISOString(),
         capturedBy: 'system',
+        provenanceKind: 'live_operational',
       };
       await store.saveSource(source);
       assert.ok(await store.getSource('src_committed'));
@@ -656,6 +654,7 @@ async function main() {
           contentHash: 'hash2',
           capturedAt: new Date().toISOString(),
           capturedBy: 'system',
+          provenanceKind: 'live_operational',
         };
 
         let threw = false;
@@ -712,12 +711,13 @@ async function main() {
         workflowInstanceId: 'wf_1',
         stepId: 'step_1',
         actionName: 'stripe_charge',
+        employeeRole: 'finance',
         classification: 'financial_action',
         decision: 'pending',
         target: { targetSystem: 'stripe' },
         payloadHash: 'hash_app_1',
         requestedAt: new Date().toISOString(),
-        scope: { scopeType: 'single_action', allowedUses: 1, usedCount: 0 },
+        scope: { scopeType: 'single_action' },
       };
       await appStore.save(approval);
       assert.ok(await appStore.get('app_test_1'));
@@ -787,11 +787,13 @@ async function main() {
         durationMs: 100,
         outputContent: 'Output',
         provenance: {
-          step: 'understand',
-          agentRole: 'coo',
+          agentId: 'coo',
+          agentName: 'Sophia',
+          taskId: 'task_1',
+          protocolStep: 'understand',
           timestamp: new Date().toISOString(),
-          dependencies: [],
-          signature: 'sig',
+          isVerified: true,
+          evidenceBasis: 'external_evidence',
         },
         timestamp: new Date().toISOString(),
       };
@@ -830,16 +832,21 @@ async function main() {
         workflowId: 'wf_def_1',
         version: '1.0.0',
         stateVersion: 0,
+        objective: 'Test Objective',
         status: 'pending',
-        currentStepId: 'step_1',
         stepStates: {
           step_1: {
             stepId: 'step_1',
             status: 'ready',
+            assignedRole: 'coo',
+            skill: 'understand',
+            outputs: {},
+            evidenceReferences: [],
             retryCount: 0,
           },
         },
-        context: {},
+        outputs: {},
+        evidenceReferences: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };

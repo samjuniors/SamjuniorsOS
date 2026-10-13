@@ -544,3 +544,44 @@ The findings in this audit document have been verified against the active workin
    - Database operations in local mode continue using file-backed storage and SQLite port. No PostgreSQL infrastructure was added.
 3. **Pending Batches:**
    - Batch 2.2 (Process Crash and Recovery), Batch 2.3 (Runner Consolidation), and Batch 2.4 (Disaster Recovery Automation) remain untouched, awaiting founder review.
+
+---
+
+## 15. Batch 2.1 — Final Lock Safety and Concurrency Review
+
+### 15.1 Review Objective & Findings Classification
+
+| Area / Investigation | Finding | Classification | Rationale & Evidence |
+|---|---|---|---|
+| **Stale Lock Breaking (Age-Only Unlinking)** | Can break active locks held > 10s by living processes | **VERIFIED DEFECT** | `breakStaleLock` checked only `stat.mtimeMs > 10,000ms`, ignoring owner PID. If an operation took > 10s, a contender unlinked the lock and acquired it, resulting in dual lock ownership. |
+| **Owner Process Liveness Verification** | Owner process termination was unverified | **VERIFIED DEFECT** | `DurableFileStore` wrote PID to lock file, but `breakStaleLock` never read the PID or checked if the process was alive before unlinking. |
+| **In-Process Re-Entrancy (`lockDepth`)** | Process-global Map shared across async contexts | **VERIFIED DEFECT** | `lockDepth` tracked depth per collection name globally on the class instance (`Map<string, number>`). Unrelated concurrent async calls in the same process bypassed locking. |
+| **Async Callbacks in `withCollectionLock`** | Promises returned inside lock released prematurely | **VERIFIED DEFECT** | If a callback returned a Promise, `finally` executed synchronously at T=0, unlinking the lock file while the async body continued running unprotected. |
+| **Temporary File Cleanup Safety** | Active writes protected from premature temp-file deletion | **VERIFIED SAFE** | Enhanced `cleanupOrphanedTempFiles` to verify whether the PID in `.tmp.<pid>.*` is actively running. Temp files of living processes are never deleted. |
+| **Failed Write Data Protection** | Original data remains intact after failed writes | **VERIFIED SAFE** | Atomic rename write pattern writes to temp file first. If write or rename throws (e.g. `ENOSPC`), original file remains byte-for-byte unmodified. |
+
+### 15.2 Minimal Safe Corrections Implemented
+
+1. **Owner Process Liveness Check:**
+   - Added `DurableFileStore.isProcessAlive(pid)` using `process.kill(pid, 0)`: returns normally if alive; throws `ESRCH` if terminated/dead; throws `EPERM` if alive (different user).
+   - In `breakStaleLock`: parses the owner PID from the lock file. If the process is alive, **NEVER** breaks the lock, regardless of elapsed time. The contender waits up to `timeoutMs` and fails closed on timeout.
+   - If the process is confirmed dead (`ESRCH`), the orphaned lock is safely unlinked immediately.
+   - If the lock file is empty/unidentifiable (e.g., process crashed during creation before writing PID), it is protected when fresh (< 10s) and only broken when stale (> 10s).
+2. **Execution-Context-Isolated Re-Entrancy:**
+   - Replaced process-global `lockDepth` Map with `AsyncLocalStorage<Map<string, number>>`.
+   - Nested synchronous calls within the same execution context inherit depth and execute without deadlocking.
+   - Unrelated concurrent calls in separate execution contexts have isolated depth maps (0), preventing them from sharing or bypassing locks.
+   - `executeWithLock` strictly detects and rejects Promise return values (`result && typeof result.then === 'function'`), throwing immediately to prevent holding synchronous locks across async gaps.
+3. **PID-Tagged Temporary Files:**
+   - Temporary write files are named `<collection>.json.tmp.${process.pid}.${Date.now()}.${random}`.
+   - `cleanupOrphanedTempFiles` checks PID liveness: temp files belonging to running processes are never unlinked even if older than 60s. Orphaned temp files from dead processes are cleaned up.
+
+### 15.3 Verification Results
+
+- Dedicated test suite `tests/sophia/m2_batch1_lock_safety.test.ts`: **11/11 PASSED**.
+- Comprehensive failure test suite `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27/27 PASSED**.
+- M1 regression test suites:
+  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 PASSED**.
+  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 PASSED**.
+  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 PASSED**.
+- Total: **121/121 automated tests passed**. Zero regressions.

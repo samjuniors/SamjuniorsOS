@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
  * Robust, atomic file-backed durable persistence engine for SamJuniorsOS.
@@ -60,8 +61,8 @@ export class DurableFileStore {
   private static readonly LOCK_STALE_MS = 10_000;
   private static readonly LOCK_TIMEOUT_MS = 30_000;
 
-  /** Per-collection re-entrancy depth for THIS process (0 = not held). */
-  private readonly lockDepth = new Map<string, number>();
+  /** Execution-context-isolated lock depth tracking. */
+  private readonly asyncLocalStorage = new AsyncLocalStorage<Map<string, number>>();
 
   private constructor() {
     this.dataDir = path.resolve(process.cwd(), '.data');
@@ -80,7 +81,7 @@ export class DurableFileStore {
   }
 
   /** Cleans up orphaned temporary files left by abruptly terminated processes. */
-  private cleanupOrphanedTempFiles(): void {
+  public cleanupOrphanedTempFiles(): void {
     try {
       if (!fs.existsSync(this.dataDir)) return;
       const entries = fs.readdirSync(this.dataDir);
@@ -90,6 +91,23 @@ export class DurableFileStore {
           const fullPath = path.join(this.dataDir, entry);
           try {
             const stat = fs.statSync(fullPath);
+            // Parse PID from temp file format: <prefix>.tmp.<pid>.<timestamp>.<random>
+            const tmpIdx = entry.indexOf('.tmp.');
+            const afterTmp = entry.substring(tmpIdx + 5);
+            const pidStr = afterTmp.split('.')[0];
+            const pid = pidStr ? parseInt(pidStr, 10) : NaN;
+
+            if (Number.isInteger(pid) && pid > 0) {
+              if (DurableFileStore.isProcessAlive(pid)) {
+                // Creator process is still actively running. Never delete its active temp file!
+                continue;
+              }
+              // Creator process is confirmed dead. Safe to unlink orphaned temp file.
+              fs.unlinkSync(fullPath);
+              continue;
+            }
+
+            // Fallback for legacy or un-parseable temp files: delete only if older than 60s
             if (now - stat.mtimeMs > 60_000) {
               fs.unlinkSync(fullPath);
             }
@@ -195,13 +213,58 @@ export class DurableFileStore {
   }
 
   /**
+   * Helper to verify if a process with the specified PID is actively running.
+   * On Windows and POSIX:
+   *  - process.kill(pid, 0) returns normally if process exists and is alive.
+   *  - throws ESRCH if process has terminated / does not exist.
+   *  - throws EPERM if process exists but is owned by another user (alive).
+   */
+  public static isProcessAlive(pid: number): boolean {
+    if (!Number.isInteger(pid) || pid <= 0) {
+      return false;
+    }
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (err: any) {
+      if (err?.code === 'ESRCH') {
+        return false;
+      }
+      if (err?.code === 'EPERM') {
+        return true;
+      }
+      return false;
+    }
+  }
+
+  /** Parses the owner PID from lock file content (supports JSON format and plain PID). */
+  private parseLockPid(content: string): number | null {
+    const trimmed = content.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed?.pid === 'number' && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+          return parsed.pid;
+        }
+      } catch {}
+    }
+    const pid = parseInt(trimmed, 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  }
+
+  /**
    * Tries once to create the lock file exclusively (O_EXCL). Returns true
    * when this process now OWNS the lock file.
    */
   private tryCreateLock(lockPath: string): boolean {
     try {
       const fd = fs.openSync(lockPath, 'wx');
-      fs.writeSync(fd, `${process.pid}\n`);
+      const payload = JSON.stringify({
+        pid: process.pid,
+        createdAt: Date.now(),
+      });
+      fs.writeSync(fd, `${payload}\n`);
       fs.closeSync(fd);
       return true;
     } catch (err: any) {
@@ -210,41 +273,57 @@ export class DurableFileStore {
     }
   }
 
-  /** Breaks a stale lock (holder crashed or is stuck beyond LOCK_STALE_MS). */
+  /**
+   * Breaks a stale lock IF AND ONLY IF the owner process is confirmed dead.
+   * NEVER breaks a lock held by a live process.
+   */
   private breakStaleLock(lockPath: string): void {
     try {
       const stat = fs.statSync(lockPath);
+      let content: string;
+      try {
+        content = fs.readFileSync(lockPath, 'utf-8');
+      } catch {
+        // Disappeared or being written — nothing to do
+        return;
+      }
+
+      const ownerPid = this.parseLockPid(content);
+
+      if (ownerPid !== null) {
+        if (DurableFileStore.isProcessAlive(ownerPid)) {
+          // Owner process is alive and actively running!
+          // NEVER break a live lock, regardless of elapsed time.
+          return;
+        }
+        // Owner process is confirmed dead (ESRCH).
+        // It crashed or was terminated without releasing the lock file.
+        try {
+          fs.unlinkSync(lockPath);
+        } catch {
+          // Raced with another recovering contender or release — nothing to do
+        }
+        return;
+      }
+
+      // Lock file exists but lacks a valid PID (e.g. created but empty/corrupt).
+      // Only break if it has persisted unwritten for longer than LOCK_STALE_MS.
       if (Date.now() - stat.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
-        fs.unlinkSync(lockPath);
+        try {
+          fs.unlinkSync(lockPath);
+        } catch {}
       }
     } catch {
-      // lock disappeared or is not stat-able — nothing to break
+      // Lock disappeared or is not stat-able — nothing to break
     }
   }
 
-  /**
-   * Acquires the per-collection cross-process lock (re-entrant in-process).
-   * M2 BATCH 2.1 HARDENING: Always fails closed by throwing LockTimeoutError
-   * if the lock cannot be acquired within timeoutMs. No state-changing operation
-   * ever proceeds without acquiring its required lock.
-   */
-  private acquireLock(
-    collection: string,
-    failClosed: boolean = true,
-    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
-  ): void {
-    const depth = this.lockDepth.get(collection) ?? 0;
-    if (depth > 0) {
-      this.lockDepth.set(collection, depth + 1);
-      return; // already held by this process — re-entrant
-    }
-
+  private acquirePhysicalLock(collection: string, timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS): void {
     const lockPath = this.getLockPath(collection);
     const deadline = Date.now() + timeoutMs;
 
     for (;;) {
       if (this.tryCreateLock(lockPath)) {
-        this.lockDepth.set(collection, 1);
         return;
       }
       this.breakStaleLock(lockPath);
@@ -257,28 +336,107 @@ export class DurableFileStore {
     }
   }
 
-  /** Releases one level of the per-collection lock. */
-  private releaseLock(collection: string): void {
-    const depth = this.lockDepth.get(collection) ?? 0;
-    if (depth <= 1) {
-      this.lockDepth.delete(collection);
-      try {
-        fs.unlinkSync(this.getLockPath(collection));
-      } catch {
-        // already removed (stale-break raced us) — nothing to do
-      }
-    } else {
-      this.lockDepth.set(collection, depth - 1);
+  private releasePhysicalLock(collection: string): void {
+    try {
+      fs.unlinkSync(this.getLockPath(collection));
+    } catch {
+      // already removed or raced — nothing to do
     }
   }
 
   /**
+   * Acquires the per-collection cross-process lock (re-entrant within same execution context).
+   */
+  private acquireLock(
+    collection: string,
+    failClosed: boolean = true,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): void {
+    const store = this.asyncLocalStorage.getStore();
+    const depth = store?.get(collection) ?? 0;
+    if (depth > 0) {
+      store!.set(collection, depth + 1);
+      return;
+    }
+    this.acquirePhysicalLock(collection, timeoutMs);
+    if (store) {
+      store.set(collection, 1);
+    } else {
+      const newStore = new Map<string, number>([[collection, 1]]);
+      this.asyncLocalStorage.enterWith(newStore);
+    }
+  }
+
+  /** Releases one level of the per-collection lock. */
+  private releaseLock(collection: string): void {
+    const store = this.asyncLocalStorage.getStore();
+    const depth = store?.get(collection) ?? 0;
+    if (depth <= 1) {
+      if (store) {
+        store.delete(collection);
+      }
+      this.releasePhysicalLock(collection);
+    } else {
+      store?.set(collection, depth - 1);
+    }
+  }
+
+  /**
+   * Executes a callback within a per-collection cross-process lock.
+   * Execution-context isolated: re-entrant within the SAME asynchronous execution context,
+   * but isolated across unrelated asynchronous execution contexts in the same process.
+   * Strictly forbids returning Promises: holding a synchronous lock across async gaps is prohibited.
+   */
+  private executeWithLock<T>(
+    collection: string,
+    fn: () => T,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): T {
+    const currentStore = this.asyncLocalStorage.getStore();
+    const currentDepth = currentStore?.get(collection) ?? 0;
+
+    if (currentDepth > 0) {
+      // Re-entrant acquisition within the SAME async context
+      currentStore!.set(collection, currentDepth + 1);
+      try {
+        const result = fn();
+        if (result && typeof (result as any).then === 'function') {
+          throw new Error(
+            `[DurableFileStore] withCollectionLock callback returned a Promise. ` +
+            `Holding a synchronous collection lock across asynchronous operations is unsafe and prohibited.`
+          );
+        }
+        return result;
+      } finally {
+        currentStore!.set(collection, currentDepth);
+      }
+    }
+
+    // New acquisition: acquire physical lock file on disk
+    this.acquirePhysicalLock(collection, timeoutMs);
+    const newStore = new Map(currentStore ?? []);
+    newStore.set(collection, 1);
+
+    return this.asyncLocalStorage.run(newStore, () => {
+      try {
+        const result = fn();
+        if (result && typeof (result as any).then === 'function') {
+          throw new Error(
+            `[DurableFileStore] withCollectionLock callback returned a Promise. ` +
+            `Holding a synchronous collection lock across asynchronous operations is unsafe and prohibited.`
+          );
+        }
+        return result;
+      } finally {
+        this.releasePhysicalLock(collection);
+      }
+    });
+  }
+
+  /**
    * Serializes an arbitrary read-modify-write unit on the collection's
-   * cross-process lock. RE-ENTRANT: code inside fn may call saveItem /
-   * deleteItem / writeCollection on the SAME collection without deadlocking.
-   * fn must be SYNCHRONOUS — holding the lock across an await would break
-   * the serialization guarantee.
-   * Fails closed with LockTimeoutError on timeout.
+   * cross-process lock. RE-ENTRANT within the same execution context.
+   * fn must be SYNCHRONOUS. Fails closed with LockTimeoutError on timeout.
    */
   public withCollectionLock<T>(
     collection: string,
@@ -288,31 +446,20 @@ export class DurableFileStore {
     if (this.isCriticalCollection(collection)) {
       throw new Error(`Critical collection "${collection}" requires withCollectionLockStrict().`);
     }
-    this.acquireLock(collection, true, timeoutMs);
-    try {
-      return fn();
-    } finally {
-      this.releaseLock(collection);
-    }
+    return this.executeWithLock(collection, fn, timeoutMs);
   }
 
   /**
    * FAIL-CLOSED variant of withCollectionLock:
    * Throws LockTimeoutError if the collection lock cannot be acquired within
-   * timeoutMs. Used for critical deletion and message-write serialization where
-   * proceeding without a lock is unsafe and prohibited.
+   * timeoutMs. Used for critical deletion and message-write serialization.
    */
   public withCollectionLockStrict<T>(
     collection: string,
     fn: () => T,
     timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
   ): T {
-    this.acquireLock(collection, true, timeoutMs);
-    try {
-      return fn();
-    } finally {
-      this.releaseLock(collection);
-    }
+    return this.executeWithLock(collection, fn, timeoutMs);
   }
 
   /**
@@ -380,7 +527,7 @@ export class DurableFileStore {
    */
   private atomicWrite<T>(collection: string, data: Record<string, T>, strict: boolean = true): void {
     const filePath = this.getCollectionPath(collection);
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
+    const tempPath = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
 
     try {
       const serialized = JSON.stringify(data, null, 2);
