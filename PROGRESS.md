@@ -8,8 +8,8 @@ M1 Batch 3: Critical Collection Corruption — SOURCE IMPLEMENTED, VERIFICATION 
   1. Reconciliation runbook failure semantics: `scripts/reconcile-tombstones.ts` exits with code 1 on pending Prisma tombstones or local file cleanup failure; suppresses success banner on partial/failed sweeps; returns typed `ReconcileResult`.
   2. Strict locking coverage: `saveItemStrict()`, `deleteItemStrict()`, and `writeCollectionStrict()` support `options.lockStrict` with `timeoutMs`; critical conversation deletion and tombstone writes fail closed without collection lock (`LockTimeoutError`); zero locks held across awaits.
   3. Prisma error classification: `isPrismaRecordNotFoundError()` strictly evaluates canonical `P2025` and rejects `P1001`, `P1002`, `P1003`, timeouts, and generic fragments like "table does not exist" or "database does not exist".
-- 45/45 isolated tests passing (`tests/sophia/m1_batch2_conversation_deletion.test.ts`), plus zero regressions on Batch 1 (7/7), Canonical State (7/7), and M3 Authority (7/7).
-- Awaiting Founder review before beginning Batch 3.
+- Batch 2.2 test totals (45/45 plus regression suites) are agent-reported from the prior handoff; they were NOT independently rerun in this session.
+- Batch 3 implementation is committed, but all Batch 3 tests and type validation remain NOT VERIFIED.
 
 ## Next (queued, in order)
 - Execute targeted Batch 2/3 tests and full regressions; run type validation separately.
