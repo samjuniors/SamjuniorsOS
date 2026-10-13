@@ -3,26 +3,32 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 3: Verification & Recovery Acceptance COMPLETE on `audit/m1-memory-source-of-truth`.
-- Full verification and recovery acceptance completed across Tasks 1–5 in dedicated isolated test environment:
-  1. **Verified Test Coverage (Deterministic Assertions):** Core runner-agnostic M1 suites pass **90/90** assertions under both Node.js (`npx tsx`) and Bun (`bun`) runtimes (`m1_batch1_memory_authority`: 7/7, `m1_canonical_state_authority`: 7/7, `m1_batch2_conversation_deletion`: 52/52, `m1_batch3_verification_recovery`: 24/24). Adjacent runner-agnostic suites pass: `m0_idempotency_expiry` (7/7), `m3_authority_hardening` (7/7), `m52_retrieval_hygiene` (25/25).
-  2. **Test Runner Distinction Documented:** Legacy child-process restart suites (`m3_conversation_convergence`: 14/14, `k2_personal_memory`: 19/19) require Bun due to hardcoded `Bun.spawn` calls. `m2_knowledge_persistence` (6/8) fails child JSON parsing under default `.env.local` because `prisma/db` is unseeded on disk, but passes 100% in isolated authoritative SQLite mode (test 8).
-  3. **Type Validation:** Validated independently via `tsc --noEmit`. Resolved all 7 `NODE_ENV` reassignment errors in `m1_batch1_memory_authority.test.ts`. Zero TypeScript compiler errors in persistence, conversation store, reconciliation runbook, and all M1 test suites (`m1_batch1`, `m1_batch2`, `m1_batch3`).
-  4. **Corruption Handling Attacks:** Validated for both `conversation_tombstones` and `message_tombstones` across invalid JSON, empty file, missing initialized ledger, missing marker, quarantine rename failure, read permission failure, interrupted writes, and recovery after quarantine. Proved zero operations interpret unknown ledger as empty.
-  5. **Prisma Fallback Verification:** Confirmed corrupt or missing initialized conversation tombstone strictly blocks Prisma fallback in `getConversation`; corrupt message tombstone ledger blocks message recreation; DB outages leave tombstones pending (`prismaReconciled = false`); only canonical `P2025` is classified as confirmed absence.
-  6. **Controlled Backup & Restore:** Procedure designed, documented, and verified end-to-end in dedicated temporary test environment with SHA-256 manifest integrity, matching ledger/marker pairs, quarantine evidence preservation, reconciliation sweep, deleted conversation non-resurrection/non-recreation, and active conversation accessibility.
-  7. **Race & Failure Testing:** Verified concurrent deletion serialization, concurrent message write vs delete, lock timeouts, crashes between tombstone write and purge, crashes during Prisma reconciliation, and recovery crashes.
-- **Coverage Distinctions & Boundaries Documented:**
-  - *Verified Automated Tests:* All application logic, quarantine rename behavior, fail-closed read guards, marker auto-seeding, and serialization invariants.
-  - *Simulated Crash Coverage:* Atomic write interruptions (`renameSync` I/O throw), crash windows between tombstone write and purge, and DB outage during reconciliation.
-  - *Unverified Scenarios:* Hardware power-loss, kernel page-cache drops, OS-level SIGKILL during system calls, and physical storage bit-rot remain explicitly unverified.
-  - *Backup/Restore Limitations:* Automated sequential copy tests integrity and logic only; operational production backups require quiesced writers or storage-level crash-consistent snapshots.
-- Branch remains unmerged and undeployed. Stopped for Founder review.
+M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery COMPLETE on `audit/m2-persistence-and-recovery`.
+- **M2 Batch 2.1 Closure Verified (commit `ed0dbf5`):**
+  - Stale-lock and recovery-gate safety verified against 8 exact lifecycle and TOCTOU concurrency scenarios.
+  - Added deterministic regression tests (Tests 1.1–1.13 in `tests/sophia/m2_batch1_lock_safety.test.ts` passing 20/20).
+  - Validated that stale-gate reclamation verifies gate token identity and process liveness before unlinking, unwritten gates are protected when fresh and reclaimed when stale, and unknown owner PID state fails closed.
+  - Documented strict single-instance operational requirement (`min-instances=1, max-instances=1`) in `docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md`.
+- **M2 Batch 2.2 Implementation & Verification:**
+  - **Cross-Platform Test Helper (`tests/helpers/child-runner.ts`):** Implemented `spawnTestChild` using Node.js `child_process.fork` inheriting `execArgv` (preserving `tsx` loader across sub-processes) and `createIsolatedTestDir` using `os.tmpdir()`. Eliminates platform-dependent `Bun.spawn` calls while maintaining full Bun/Node cross-runtime compatibility.
+  - **Windows DataDir Path Normalization:** Fixed hardcoded `/tmp/samjuniors-os-data` fallback in `src/lib/server/persistence/durable-file-store.ts` to use `path.resolve(os.tmpdir(), 'samjuniors-os-data')`.
+  - **Legacy Test Suite Migration:**
+    - `tests/sophia/m3_conversation_convergence.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 14/14 tests PASSED under `npx tsx` on Windows.
+    - `tests/sophia/k2_personal_memory.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 19/19 tests PASSED (1 skipped test preserved) under `npx tsx` on Windows.
+    - `tests/sophia/m2_knowledge_persistence.test.ts`: Fixed simulated virgin-state cleanup by unlinking both file and `.initialized` marker. 8/8 tests PASSED under `npx tsx` on Windows.
+  - **Process-Boundary Restart Test Suite (`tests/sophia/m2_batch2_cross_platform_restart.test.ts`):** 11/11 tests PASSED across genuine OS process boundaries via `tests/sophia/m2_restart_child_worker.ts`.
+    - Tested write continuity across process exits, tombstone persistence and anti-resurrection barrier across restarts, interrupted write rollbacks, orphaned `.tmp` and stale lock reclamation, corrupt authoritative data quarantine and fail-closed defense, and unavailable persistence directory handling.
+- **Verification Evidence:**
+  - 182 total tests passing across M2.2, M2.1, M1, and legacy suites. 0 failed, 1 skipped (pre-existing optional provider test).
+- **Scope & Boundaries Maintained:**
+  - Single-instance deployment invariant preserved.
+  - No database migration or distributed locking introduced.
+  - Branch remains unmerged, undeployed, and stopped for Founder review.
 
 ## Next (queued, in order)
-- Founder review of M1 Batch 3 verification evidence before any merge or deployment.
-- Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
-- Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
+- Founder review of M2 Batch 2.2 completion and verification evidence.
+- M2 Batch 2.3: Epistemic & Context Recovery under restarts.
+- M2 Batch 2.4: Production Snapshot & Disaster Recovery Runbooks.
 
 ## Completed
 - [2026-10-13] M1 Blockers Resolved & Acceptance Verified — Fixed all 7 TS2540/TS2704 errors in `m1_batch1_memory_authority.test.ts` (0 errors in `tsc --noEmit` across all M1 code and test suites). Re-verified core M1 suites: 90/90 assertions passing under both Node.js (`npx tsx`) and Bun (`bun`). Documented test-runner divergence between runner-neutral M1 suites and legacy `Bun.spawn` suites. Verified critical collection corruption fail-closed behavior, quarantine archiving, initialization markers, strict mutation enforcement, Prisma fallback shielding, and controlled backup/restoration runbook. Branch unmerged and undeployed, stopped for Founder review.

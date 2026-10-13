@@ -686,5 +686,67 @@ Targeted regression tests in `tests/sophia/m2_batch1_lock_safety.test.ts` verify
 - Persistence-before-cache-mutation ordering enforced and verified.
 - Multi-process lock recovery and recovery-gate synchronization verified across all 8 race/lifecycle cases.
 - All 130 automated tests pass with 100% pass rate.
-- Ready to proceed to M2 Batch 2.2.
+
+---
+
+## 17. M2 Batch 2.2 — Cross-Platform Child Test Runner & Restart Recovery
+
+### 17.1 Cross-Platform Child Process Test Runner Helper (`tests/helpers/child-runner.ts`)
+
+**Problem Addressed:**
+Legacy child-process restart suites (`m3_conversation_convergence.test.ts`, `k2_personal_memory.test.ts`, `m2_knowledge_persistence.test.ts`) hardcoded `Bun.spawn(['bun', ...])`. When executed on Windows or environments where Bun was absent, they failed immediately with `ReferenceError: Bun is not defined`. In addition, hardcoded `/tmp` paths in persistence fallback and test fixtures caused failures on Windows hosts.
+
+**Implementation (`tests/helpers/child-runner.ts`):**
+1. Created `spawnTestChild<T>(scriptPath, args, options)`:
+   - Uses Node's standard `child_process.fork()` with inherited `execArgv` (preserving `tsx` loader flags under `npx tsx`).
+   - Fully compatible with both Node.js (`npx tsx`) and Bun (`bun test` / `bun run`).
+   - Captures `stdout` and `stderr` independently.
+   - Automatically extracts and parses JSON from the child process output contract.
+   - Enforces timeout management (`timeoutMs`, default 30s) to prevent hanging test suites.
+2. Created `createIsolatedTestDir(prefix)`:
+   - Uses `os.tmpdir()` cross-platform rather than hardcoded `/tmp`.
+   - Returns unique sandbox path and recursive cleanup handler.
+3. Updated `DurableFileStore`:
+   - Replaced hardcoded `/tmp/samjuniors-os-data` fallback path with `path.resolve(os.tmpdir(), 'samjuniors-os-data')`.
+4. Refactored Legacy Suites to use `spawnTestChild`:
+   - `tests/sophia/m3_conversation_convergence.test.ts` (14/14 PASSED)
+   - `tests/sophia/k2_personal_memory.test.ts` (19/19 PASSED)
+   - `tests/sophia/m2_knowledge_persistence.test.ts` (8/8 PASSED)
+
+### 17.2 Restart and Crash Recovery Verification (`tests/sophia/m2_batch2_cross_platform_restart.test.ts`)
+
+Added dedicated child-process restart verification suite covering 11 critical restart invariants:
+1. **Runner Cross-Platform Portability (1.1, 1.2):** Validates clean stdout/stderr/JSON capture and child crash exit codes (exit 99).
+2. **Process Restart & Continuity (2.1):** Proves Child A write -> process termination -> Child B cold-boot read and update -> Child C cold-boot verification.
+3. **Tombstone Persistence & Anti-Resurrection (3.1, 3.2):** Proves deletion tombstones persist across cold restarts, active siblings remain accessible, and tombstone shields actively block recreation attempts by fresh processes.
+4. **Interrupted Writes (4.1):** Proves that an abrupt child crash during an atomic write leaves the original authoritative collection byte-for-byte unmodified.
+5. **Orphaned Temp Files & Stale Locks (4.2, 4.3):** Proves cold boot constructor automatically sweeps orphaned `.tmp.<dead_pid>.*` files older than 60s, detects dead lock owners via `ESRCH`, and safely reclaims the lock for subsequent operations.
+6. **Corruption Quarantine Across Restarts (5.1):** Proves cold boot quarantine: corrupted JSON is renamed to `.corrupt.*`, original bytes preserved, and `CriticalCollectionCorruptionError` thrown.
+7. **Anti-Wipe Barrier Across Restarts (5.2):** Proves that a missing data file with an existing `.initialized` marker fails closed rather than silently resurrecting deleted data or treating the collection as empty.
+8. **Unavailable Directory (5.3):** Proves fail-closed behavior when persistence paths cannot be accessed.
+
+### 17.3 Verification Evidence
+
+| Test Suite | Tests Run | Result | Evidence |
+|---|---|---|---|
+| `tests/sophia/m2_batch2_cross_platform_restart.test.ts` | 11 | **11 PASSED** | All cold boot restart, tombstone, interrupted write, and cleanup tests passed |
+| `tests/sophia/m2_batch1_lock_safety.test.ts` | 20 | **20 PASSED** | All lock safety, recovery gate, and context isolation tests passed |
+| `tests/sophia/m2_batch1_storage_reliability.test.ts` | 27 | **27 PASSED** | All fail-closed mutation, corruption quarantine, and write ordering tests passed |
+| `tests/sophia/m1_batch1_memory_authority.test.ts` | 7 | **7 PASSED** | M1 memory authority regression suite passed |
+| `tests/sophia/m1_batch2_conversation_deletion.test.ts` | 52 | **52 PASSED** | M1 conversation deletion & governance suite passed |
+| `tests/sophia/m1_batch3_verification_recovery.test.ts` | 24 | **24 PASSED** | M1 verification and acceptance suite passed |
+| `tests/sophia/m3_conversation_convergence.test.ts` | 14 | **14 PASSED** | Legacy conversation convergence suite now passing 100% under Node.js |
+| `tests/sophia/k2_personal_memory.test.ts` | 20 | **19 PASSED, 1 SKIPPED** | Legacy personal memory suite now passing 100% under Node.js (1 skipped for DB) |
+| `tests/sophia/m2_knowledge_persistence.test.ts` | 8 | **8 PASSED** | Legacy knowledge persistence suite now passing 100% under Node.js |
+| **Total Automated Tests** | **183** | **182 PASSED, 1 SKIPPED, 0 FAILED** | Zero regressions across M1 and M2 |
+| **Scoped TypeScript Typecheck** | All touched files | **0 errors** | Zero type errors across modified source and test files |
+
+### 17.4 Explicit Boundaries Maintained
+
+- No PostgreSQL migration.
+- No Redis, etcd, or distributed locking added.
+- Single-instance deployment boundary (`min-instances=1, max-instances=1`) preserved.
+- Unrelated memory architecture unchanged.
+- Batch 2.3 and 2.4 untouched; stopped for founder review.
+
 

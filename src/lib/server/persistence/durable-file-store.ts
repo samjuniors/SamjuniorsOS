@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
@@ -84,8 +85,8 @@ export class DurableFileStore {
       try {
         fs.mkdirSync(this.dataDir, { recursive: true });
       } catch {
-        // Fallback to /tmp if current working directory is read-only
-        this.dataDir = path.resolve('/tmp', 'samjuniors-os-data');
+        // Fallback to OS temp directory if current working directory is read-only
+        this.dataDir = path.resolve(os.tmpdir(), 'samjuniors-os-data');
         if (!fs.existsSync(this.dataDir)) {
           fs.mkdirSync(this.dataDir, { recursive: true });
         }

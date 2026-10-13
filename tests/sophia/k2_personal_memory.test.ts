@@ -17,6 +17,7 @@ import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store'
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 import { prisma, isDatabaseAvailable } from '../../src/lib/server/db/prisma';
 import * as memoryRoute from '../../src/app/api/sofia/memory/route';
+import { spawnTestChild } from '../helpers/child-runner';
 
 /**
  * ============================================================================
@@ -88,35 +89,16 @@ function readCollectionFile<T>(name: string): Record<string, T> {
   }
 }
 
-function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
-  return new Promise((resolve, reject) => {
-    // @ts-ignore — Bun global exists when the suite runs under bun
-    const proc = Bun.spawn(['bun', 'tests/sophia/k2-memory-child.ts', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env, ...env },
-    });
-    new Response(proc.stdout)
-      .text()
-      .then((out) =>
-        proc.exited.then((code) => {
-          if (code !== 0) {
-            return new Response(proc.stderr)
-              .text()
-              .then((errText) =>
-                reject(new Error(`child (${args.join(' ')}) exited ${code}; stderr: ${errText.slice(0, 500)}`))
-              );
-          }
-          const lines = out.trim().split('\n').filter((l: string) => l.trim());
-          const last = lines[lines.length - 1];
-          try {
-            resolve(JSON.parse(last));
-          } catch {
-            reject(new Error(`child (${args.join(' ')}) emitted no JSON line; stdout: ${out.slice(0, 500)}`));
-          }
-        })
-      );
-  });
+async function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
+  const scriptPath = path.resolve(__dirname, 'k2-memory-child.ts');
+  const res = await spawnTestChild(scriptPath, args, { env });
+  if (res.exitCode !== 0) {
+    throw new Error(`child (${args.join(' ')}) exited ${res.exitCode}; stderr: ${res.stderr.slice(0, 500)}`);
+  }
+  if (!res.json) {
+    throw new Error(`child (${args.join(' ')}) emitted no JSON line; stdout: ${res.stdout.slice(0, 500)}`);
+  }
+  return res.json;
 }
 
 function routeReq(method: string, founderId: string | null, body?: Record<string, unknown>, query = ''): NextRequest {

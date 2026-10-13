@@ -1,4 +1,5 @@
 import assert from 'assert';
+import path from 'path';
 import { readFileSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { NextRequest } from 'next/server';
@@ -10,6 +11,7 @@ import {
 } from '../../src/lib/server/conversation';
 import { executeSophiaTurn } from '../../src/lib/server/sophia';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
+import { spawnTestChild } from '../helpers/child-runner';
 
 /**
  * ============================================================================
@@ -104,56 +106,16 @@ async function runAsk(body: Record<string, unknown>, founderId: string) {
   };
 }
 
-function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
-  return new Promise((resolve, reject) => {
-    // @ts-ignore — Bun global exists when the suite runs under bun
-    const proc = Bun.spawn(['bun', 'tests/sophia/m3-conversation-child.ts', ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env, ...env },
-    });
-    new Response(proc.stdout)
-      .text()
-      .then((out) =>
-        proc.exited.then((code) => {
-          if (code !== 0) {
-            return new Response(proc.stderr)
-              .text()
-              .then((errText) =>
-                reject(
-                  new Error(
-                    `child (${args.join(' ')}) exited ${code}; stderr: ${errText.slice(0, 500)}`
-                  )
-                )
-            );
-          }
-          try {
-            // The child's stdout is a single JSON line by contract; be
-            // tolerant of any stray library output by taking the LAST line
-            // that parses as JSON.
-            const lines = out.trim().split('\n').filter(Boolean);
-            let parsed: any = null;
-            for (const line of lines) {
-              try {
-                const candidate = JSON.parse(line);
-                if (candidate && typeof candidate === 'object') parsed = candidate;
-              } catch {
-                /* not a JSON line — skip */
-              }
-            }
-            if (!parsed) throw new Error('no JSON line found');
-            resolve(parsed);
-          } catch {
-            reject(
-              new Error(
-                `child (${args.join(' ')}) emitted non-JSON output: ${out.trim().slice(0, 300)}`
-              )
-            );
-          }
-        })
-      )
-      .catch(reject);
-  });
+async function runChild(args: string[], env: Record<string, string> = {}): Promise<any> {
+  const scriptPath = path.resolve(__dirname, 'm3-conversation-child.ts');
+  const res = await spawnTestChild(scriptPath, args, { env });
+  if (res.exitCode !== 0) {
+    throw new Error(`child (${args.join(' ')}) exited ${res.exitCode}; stderr: ${res.stderr.slice(0, 500)}`);
+  }
+  if (!res.json) {
+    throw new Error(`child (${args.join(' ')}) emitted non-JSON output: ${res.stdout.trim().slice(0, 300)}`);
+  }
+  return res.json;
 }
 
 async function runTests() {
