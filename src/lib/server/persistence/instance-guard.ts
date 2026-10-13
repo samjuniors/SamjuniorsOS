@@ -61,8 +61,13 @@ export class InstanceConcurrencyGuard {
         const lastBeatTime = new Date(lockInfo.lastHeartbeat).getTime();
         const ageMs = Date.now() - lastBeatTime;
 
-        // If heartbeat is fresh (< 15 seconds) and PID differs, another instance is running
-        if (ageMs < 15000 && lockInfo.pid !== process.pid) {
+        // If heartbeat is fresh (< 15 seconds) and PID differs, check if owner process is still alive.
+        // If the process is confirmed dead, the previous instance crashed and the lease can be safely reclaimed.
+        const isOwnerAlive = typeof lockInfo.pid === 'number' && lockInfo.pid > 0
+          ? DurableFileStore.isProcessAlive(lockInfo.pid)
+          : true;
+
+        if (ageMs < 15000 && lockInfo.pid !== process.pid && isOwnerAlive) {
           const warning = `[CONCURRENCY WARNING]: Another SamJuniorsOS instance (PID ${lockInfo.pid}, ID ${lockInfo.instanceId}) holds the active lease. SamJuniorsOS Milestone 1.1 requires a single instance deployment (min=1, max=1) to prevent state divergence.`;
           console.warn(warning);
           if (options?.failClosed || process.env.STRICT_SINGLE_INSTANCE === 'true') {
@@ -82,7 +87,7 @@ export class InstanceConcurrencyGuard {
       }
     }
 
-    // Write lease
+    // Write lease atomically via temp file + rename
     const newLock: InstanceLockInfo = {
       instanceId: this.currentInstanceId,
       pid: process.pid,
@@ -91,13 +96,17 @@ export class InstanceConcurrencyGuard {
       deploymentNote: 'Single-instance constraint enforced for v1. Pin Cloud Run to max-instances=1.',
     };
 
+    const tempPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
     try {
-      fs.writeFileSync(targetPath, JSON.stringify(newLock, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, JSON.stringify(newLock, null, 2), 'utf-8');
+      fs.renameSync(tempPath, targetPath);
       if (!customLockPath) {
         this.startHeartbeat();
       }
     } catch {
-      // ignore
+      try {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch {}
     }
 
     return { acquired: true };
@@ -112,7 +121,9 @@ export class InstanceConcurrencyGuard {
           const lock: InstanceLockInfo = JSON.parse(raw);
           if (lock.instanceId === this.currentInstanceId) {
             lock.lastHeartbeat = new Date().toISOString();
-            fs.writeFileSync(this.lockFilePath, JSON.stringify(lock, null, 2), 'utf-8');
+            const tempBeat = `${this.lockFilePath}.tmp.${process.pid}.${Date.now()}`;
+            fs.writeFileSync(tempBeat, JSON.stringify(lock, null, 2), 'utf-8');
+            fs.renameSync(tempBeat, this.lockFilePath);
           }
         }
       } catch {}

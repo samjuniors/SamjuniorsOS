@@ -92,19 +92,26 @@ export class CompanyStateStore implements ICompanyStateStore {
     }
   }
 
-  private persistStateStrict(patch?: {
+  private persistStateStrictUnderLock(patch: {
     initiatives?: CompanyInitiative[];
     products?: ProductFeature[];
     customers?: CustomerDeal[];
     financialModel?: FinanceMetric;
     decisions?: CompanyDecision[];
   }): void {
+    let currentDisk: Record<string, any> = {};
+    try {
+      currentDisk = DurableFileStore.getInstance().readCollection<any>('company_state');
+    } catch {
+      // fallback
+    }
+
     DurableFileStore.getInstance().writeCollectionStrict('company_state', {
-      initiatives: patch?.initiatives ?? this.initiatives,
-      products: patch?.products ?? this.products,
-      customers: patch?.customers ?? this.customers,
-      financialModel: patch?.financialModel ?? this.financialModel,
-      decisions: patch?.decisions ?? this.decisions,
+      initiatives: patch.initiatives ?? currentDisk.initiatives ?? this.initiatives,
+      products: patch.products ?? currentDisk.products ?? this.products,
+      customers: patch.customers ?? currentDisk.customers ?? this.customers,
+      financialModel: patch.financialModel ?? currentDisk.financialModel ?? this.financialModel,
+      decisions: patch.decisions ?? currentDisk.decisions ?? this.decisions,
     });
   }
 
@@ -176,9 +183,11 @@ export class CompanyStateStore implements ICompanyStateStore {
       return;
     }
 
-    // Disk authoritative: persist before mutating cache
-    this.persistStateStrict({ initiatives: inits });
-    this.initiatives = [...inits];
+    // Disk authoritative: acquire collection lock for entire read-modify-write
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ initiatives: inits });
+      this.initiatives = [...inits];
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -199,10 +208,9 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
-    const nextDecisions = [decision, ...this.decisions];
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
+      const nextDecisions = [decision, ...this.decisions];
       await db.companyState.upsert({
         where: { organizationId: 'default' },
         create: {
@@ -217,9 +225,23 @@ export class CompanyStateStore implements ICompanyStateStore {
       return;
     }
 
-    // Disk authoritative: persist before mutating cache
-    this.persistStateStrict({ decisions: nextDecisions });
-    this.decisions = nextDecisions;
+    // Disk authoritative: acquire collection lock for entire read-modify-write to prevent lost updates
+    let finalDecisions: CompanyDecision[] = [];
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      let currentDecisions = this.decisions;
+      try {
+        const persisted = DurableFileStore.getInstance().readCollection<any>('company_state');
+        if (Array.isArray(persisted.decisions)) {
+          currentDecisions = persisted.decisions;
+        }
+      } catch {
+        // Fallback to in-memory cache
+      }
+
+      finalDecisions = [decision, ...currentDecisions];
+      this.persistStateStrictUnderLock({ decisions: finalDecisions });
+      this.decisions = finalDecisions;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -240,10 +262,9 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
-    const nextModel = { ...this.financialModel, ...metrics };
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
+      const nextModel = { ...this.financialModel, ...metrics };
       await db.companyState.upsert({
         where: { organizationId: 'default' },
         create: {
@@ -259,8 +280,18 @@ export class CompanyStateStore implements ICompanyStateStore {
     }
 
     // Disk authoritative: persist before mutating cache
-    this.persistStateStrict({ financialModel: nextModel });
-    this.financialModel = nextModel;
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      let currentModel = this.financialModel;
+      try {
+        const persisted = DurableFileStore.getInstance().readCollection<any>('company_state');
+        if (persisted.financialModel) {
+          currentModel = persisted.financialModel;
+        }
+      } catch {}
+      const nextModel = { ...currentModel, ...metrics };
+      this.persistStateStrictUnderLock({ financialModel: nextModel });
+      this.financialModel = nextModel;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
