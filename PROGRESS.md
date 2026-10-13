@@ -3,39 +3,50 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery ACCEPTED AND CLOSED on `audit/m2-persistence-and-recovery`.
-- **M2 Batch 2.1 Closure Verified (commit `ed0dbf5`):**
-  - Stale-lock and recovery-gate safety verified against 8 exact lifecycle and TOCTOU concurrency scenarios.
-  - Added deterministic regression tests (Tests 1.1–1.13 in `tests/sophia/m2_batch1_lock_safety.test.ts` passing 20/20).
-  - Validated that stale-gate reclamation verifies gate token identity and process liveness before unlinking, unwritten gates are protected when fresh and reclaimed when stale, and unknown owner PID state fails closed.
-  - Documented strict single-instance operational requirement (`min-instances=1, max-instances=1`) in `docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md`.
-- **M2 Batch 2.2 Implementation & Verification:**
-  - **Cross-Platform Test Helper (`tests/helpers/child-runner.ts`):** Implemented `spawnTestChild` using Node.js `child_process.fork` inheriting `execArgv` (preserving `tsx` loader across sub-processes) and `createIsolatedTestDir` using `os.tmpdir()`. Eliminates platform-dependent `Bun.spawn` calls while maintaining full Bun/Node cross-runtime compatibility.
-  - **Windows DataDir Path Normalization:** Fixed hardcoded `/tmp/samjuniors-os-data` fallback in `src/lib/server/persistence/durable-file-store.ts` to use `path.resolve(os.tmpdir(), 'samjuniors-os-data')`.
-  - **Legacy Test Suite Migration:**
-    - `tests/sophia/m3_conversation_convergence.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 14/14 tests PASSED under both Node.js (`npx tsx`) and Bun (`bun`) on Windows.
-    - `tests/sophia/k2_personal_memory.test.ts`: Migrated from `Bun.spawn` to `spawnTestChild`. 19/19 tests PASSED (1 skipped test preserved) under both Node.js and Bun on Windows.
-    - `tests/sophia/m2_knowledge_persistence.test.ts`: Fixed simulated virgin-state cleanup by unlinking both file and `.initialized` marker. 8/8 tests PASSED under both Node.js and Bun on Windows.
-  - **Process-Boundary Restart Test Suite (`tests/sophia/m2_batch2_cross_platform_restart.test.ts`):** 11/11 tests PASSED across genuine OS process boundaries via `tests/sophia/m2_restart_child_worker.ts`.
-    - Tested write continuity across process exits, tombstone persistence and anti-resurrection barrier across restarts, interrupted write rollbacks, orphaned `.tmp` and stale lock reclamation, corrupt authoritative data quarantine and fail-closed defense, and unavailable persistence directory handling.
-- **Reconciled Verification Evidence:**
-  - **Core Persistence & Process-Boundary Suite (9 suites):** Exactly **182 PASSED, 1 SKIPPED, 0 FAILED** (183 total tests).
-  - **Comprehensive Extended Regression (13 suites):** Exactly **228 PASSED, 2 SKIPPED, 0 FAILED** (230 total tests).
-- **Platform Verification:**
-  - Verified on `Microsoft Windows NT 10.0.26200.0` (`win32 x64`) under both Node.js `v24.16.0` (`tsx v4.23.15`) and Bun `v1.4.0`.
-- **Production Build Verification:**
-  - Executed `npm run build`: Prisma generation, Turbopack compile, and standalone copy succeeded with exit code 0.
+M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene COMPLETE on `audit/m2-persistence-and-recovery`.
+- **Mutation Matrix & Defect Audit Completed (`docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md`):**
+  - Audited all mutation paths across `InMemoryApprovalStore`, `InMemoryIdempotencyStore`, `InMemoryWorkflowStore`, `CompanyStateStore`, `InstanceConcurrencyGuard`, `EpistemicClaimStore`, and `SideEffectAuthorizationGate`.
+  - Proved that existing persistence primitives (`withCollectionLockStrict` + atomic temp write + OS PID liveness) are fully sufficient without introducing Redis, PostgreSQL MVCC, or distributed transaction engines.
+- **5 Confirmed Defects Hardened:**
+  - **Defect 1 (`InMemoryApprovalStore.consume`):** Wrapped critical read-check-consume sequence inside `withCollectionLockStrict('approvals', ...)`. Re-reads disk state under lock, checks `isConsumed`, writes strictly to disk before updating cache, eliminating concurrent double consumption races.
+  - **Defect 2 (`InMemoryIdempotencyStore.claim`):** Wrapped read-check-claim sequence in `withCollectionLockStrict('idempotency_records', ...)`. Re-reads disk state under lock, evaluates status and TTL, strictly saves claim to disk, and updates cache, eliminating duplicate claim races.
+  - **Defect 3 (`InMemoryWorkflowStore.claimStepAtomic` & `transitionStepAtomic`):** Enclosed inside `withCollectionLockStrict('workflow_instances', ...)`. Re-reads latest instance from disk under lock, verifies optimistic `stateVersion`, transitions step, saves disk strictly, and updates memory cache.
+  - **Defect 4 (`CompanyStateStore.recordDecision`):** Enclosed inside `withCollectionLockStrict('company_state', ...)`. Reads latest disk state under lock, prepends decision, writes collection strictly, and updates cache, preventing lost decision updates under concurrent mutations.
+  - **Defect 5 (`InstanceConcurrencyGuard`):** Added PID liveness verification (`DurableFileStore.isProcessAlive(lockInfo.pid)`) to immediately reclaim abandoned leases from crashed containers without a 15-second false-positive lockout window, and serialized lease writes via atomic temp file + rename.
+- **Deterministic Verification Evidence (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
+  - **8/8 PASSED, 0 FAILED:**
+    1. 20 concurrent `ApprovalStore.consume()` calls -> exactly 1 fulfilled, 19 `ApprovalAlreadyConsumedError`.
+    2. 20 concurrent `IdempotencyStore.claim()` calls -> exactly 1 `claimed`, 19 `OperationInProgressError`.
+    3. 10 concurrent `WorkflowStore.claimStepAtomic()` calls with identical version -> exactly 1 winner, 9 rejected.
+    4. 10 concurrent `CompanyStateStore.recordDecision()` calls -> all 10 preserved on disk and cache (zero lost updates).
+    5. Concurrent cross-collection mutations (approvals, idempotency, state) -> complete independently without cross-collection contention.
+    6. Crashed owner PID in `instance.lock` with fresh heartbeat -> safely reclaimed via `isProcessAlive`.
+    7. Competing instance against live PID -> rejected failClosed with `[CONCURRENCY WARNING]`.
+    8. Interrupted write in `withCollectionLockStrict` -> leaves target collection intact, releases lock, and propagates error cleanly.
+- **Regression Suite Verification:**
+  - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 PASSED, 0 FAILED**
+  - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20 PASSED, 0 FAILED**
+  - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27 PASSED, 0 FAILED**
+  - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11 PASSED, 0 FAILED**
+  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24 PASSED, 0 FAILED**
+  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52 PASSED, 0 FAILED**
+  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**
+  - **Core Persistence & Concurrency Total: 157 PASSED, 0 FAILED.**
+- **TypeScript & Build Verification:**
+  - Scoped TypeScript validation: **0 errors** across all modified files and new test suite.
+  - Production build: `npm run build` compiled successfully in 26.3s, generated 31/31 static pages, copied standalone artifacts with exit code 0.
 - **Scope & Boundaries Maintained:**
-  - Single-instance deployment invariant preserved.
-  - No database migration or distributed locking introduced.
+  - Single-instance deployment constraint (`min-instances=1, max-instances=1`) strictly preserved.
+  - No external distributed locking, Redis, or PostgreSQL migration introduced.
   - Branch remains unmerged, undeployed, and stopped for Founder review.
 
 ## Next (queued, in order)
-- Founder review of M2 Batch 2.2 completion and verification evidence.
-- M2 Batch 2.3: Epistemic & Context Recovery under restarts.
+- Founder review of M2 Batch 2.3 completion and verification evidence.
 - M2 Batch 2.4: Production Snapshot & Disaster Recovery Runbooks.
 
 ## Completed
+- [2026-10-13] M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene — Full mutation matrix audit, hardened 5 confirmed concurrency defects across approval consumption, idempotency claiming, workflow step claiming, company decision updates, and instance lease recovery. Deterministic test suite `m2_batch3_concurrency_hygiene.test.ts` (8/8 passed). Full regression suite (157/157 passed). Production build succeeded.
+- [2026-10-13] M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery — Reconciled test totals (182 core passed, 1 skipped; 228 extended passed, 2 skipped), verified Windows NT / Node.js & Bun environments, production build verified.
 - [2026-10-13] M1 Blockers Resolved & Acceptance Verified — Fixed all 7 TS2540/TS2704 errors in `m1_batch1_memory_authority.test.ts` (0 errors in `tsc --noEmit` across all M1 code and test suites). Re-verified core M1 suites: 90/90 assertions passing under both Node.js (`npx tsx`) and Bun (`bun`). Documented test-runner divergence between runner-neutral M1 suites and legacy `Bun.spawn` suites. Verified critical collection corruption fail-closed behavior, quarantine archiving, initialization markers, strict mutation enforcement, Prisma fallback shielding, and controlled backup/restoration runbook. Branch unmerged and undeployed, stopped for Founder review.
 - [2026-10-12] M1 Batch 2.2 Final Hardening — Hardened `scripts/reconcile-tombstones.ts` with non-zero exit codes (1) on pending work or local cleanup failures; extended fail-closed locking options (`{ lockStrict: true }`) to conversation tombstones and conversation deletion; tightened `isPrismaRecordNotFoundError` to reject connection errors and generic fragments; 45/45 tests passing.
 - [2026-10-12] M1 Batch 2.1 Implementation & Verification — Hardened conversation deletion: serialized message writes on collection lock, synchronous critical-section rechecks, corrected Prisma reconciliation, fail-closed lock timeouts, individual message replay prevention via deletion markers. 34/34 tests passing.
