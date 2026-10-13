@@ -1563,6 +1563,10 @@ async function main() {
           () => fileStore.readCollection('conversation_tombstones'),
           (err: any) => err instanceof CriticalCollectionCorruptionError && /missing/.test(err.message)
         );
+        assert.throws(
+          () => fileStore.writeCollectionStrict('conversation_tombstones', {}, { lockStrict: true }),
+          (err: any) => err instanceof CriticalCollectionCorruptionError
+        );
       } finally {
         if (original !== null) fs.writeFileSync(filePath, original, 'utf-8');
         else if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -1615,6 +1619,10 @@ async function main() {
           () => fileStore.readCollection('conversation_tombstones'),
           (err: any) => err instanceof CriticalCollectionCorruptionError && /missing/.test(err.message)
         );
+        assert.throws(
+          () => fileStore.writeCollectionStrict('conversation_tombstones', {}, { lockStrict: true }),
+          (err: any) => err instanceof CriticalCollectionCorruptionError
+        );
       } finally {
         fs.writeFileSync(filePath, original ?? '{}', 'utf-8');
         if (!markerExisted && fs.existsSync(markerPath)) fs.unlinkSync(markerPath);
@@ -1644,6 +1652,13 @@ async function main() {
           else delete (prisma as any).conversation.findUnique;
         }
       }
+    });
+
+    await runTest('19.6: Non-strict mutation and generic clearing are rejected for critical ledgers', () => {
+      assert.throws(() => fileStore.writeCollection('conversation_tombstones', {}), /requires writeCollectionStrict/);
+      assert.throws(() => fileStore.saveItem('message_tombstones', 'unsafe', {}), /requires saveItemStrict/);
+      assert.throws(() => fileStore.deleteItem('message_tombstones', 'unsafe'), /requires deleteItemStrict/);
+      assert.throws(() => fileStore.clearCollection('conversation_tombstones'), /cannot be cleared/);
     });
 
     await runTest('19.5: Quarantine failure preserves the corrupt source and fails closed', () => {
