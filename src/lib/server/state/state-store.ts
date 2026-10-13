@@ -148,6 +148,18 @@ export class CompanyStateStore implements ICompanyStateStore {
       }
       return [];
     }
+
+    try {
+      const { DecisionStore } = await import('@/lib/server/decision/store');
+      const records = await DecisionStore.getInstance().list();
+      if (records && records.length > 0) {
+        const { mapDecisionRecordToCompanyDecision } = await import('@/lib/server/decision/adapter');
+        return records.map(mapDecisionRecordToCompanyDecision);
+      }
+    } catch {
+      // Fallback safely to local collection if DecisionStore is uninitialized
+    }
+
     return [...this.decisions];
   }
 
@@ -258,6 +270,15 @@ export class CompanyStateStore implements ICompanyStateStore {
       } catch {
         // Fallback safely for offline test environments
       }
+    }
+
+    try {
+      const { DecisionStore } = await import('@/lib/server/decision/store');
+      const { mapCompanyDecisionToDecisionRecord } = await import('@/lib/server/decision/adapter');
+      const rec = mapCompanyDecisionToDecisionRecord(decision);
+      await DecisionStore.getInstance().create(rec);
+    } catch {
+      // Best-effort sync
     }
   }
 
@@ -491,37 +512,156 @@ export class CompanyStateStore implements ICompanyStateStore {
       }
     }
 
-    // 5. Governance Decisions (Current pending or active decisions)
-    for (const dec of this.decisions) {
-      const decTokens = [
-        ...extractTokens(dec.title),
-        ...extractTokens(dec.recommendation),
-        ...extractTokens(dec.category),
-        ...extractTokens(dec.businessImpact),
-      ];
-      const matched = decTokens.filter((t) => queryTokens.has(t));
-      if (matched.length > 0 || dec.status === 'pending_approval') {
+    // 5. Governance Decisions (from Authoritative DecisionStore)
+    try {
+      const { DecisionContextProvider } = await import('@/lib/server/decision/context-provider');
+      const provider = DecisionContextProvider.getInstance();
+      const bundle = await provider.getDecisionContext({
+        queryText: params.query,
+        role: targetRole,
+      });
+
+      // 5a. Active commitments (approved, executing) -> current_truth
+      for (const dec of bundle.activeCommitments) {
+        const decTokens = [
+          ...extractTokens(dec.title),
+          ...extractTokens(dec.proposedAction),
+          ...extractTokens(dec.problemStatement),
+          ...extractTokens(dec.category),
+        ];
+        const matched = decTokens.filter((t) => queryTokens.has(t));
         results.push({
           entityType: 'decision',
-          id: dec.id,
-          title: `[Decision] ${dec.title} (${dec.status.toUpperCase()})`,
-          summary: `Recommendation: "${dec.recommendation}" | Recommended By: ${dec.recommendedBy} | Approval Req: ${dec.founderApprovalRequired ? 'YES' : 'NO'}`,
+          id: dec.decisionId,
+          title: `[Active Commitment] ${dec.title} (${dec.status.toUpperCase()})`,
+          summary: `Action: "${dec.proposedAction}" | Owner: ${dec.accountableOwner} | Impact: ${dec.impact} | Reversibility: ${dec.reversibility}${dec.linkedWorkflowId ? ` | Linked Workflow: ${dec.linkedWorkflowId}` : ''}`,
           data: dec,
-          relevanceScore: matched.length * 2 + (dec.status === 'pending_approval' ? 2 : 0),
-          matchReason: matched.length > 0 ? `Matched decision terms: ${[...new Set(matched)].join(', ')}` : 'Active pending decision in queue',
+          relevanceScore: matched.length * 2 + 6,
+          matchReason: matched.length > 0
+            ? `Matched active commitment terms: ${[...new Set(matched)].join(', ')}`
+            : 'Authoritative ratified company commitment',
           provenance: {
-            sourceSystem: 'company_state',
-            sourceId: `state:decision:${dec.id}`,
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
             sourceTitle: dec.title,
             epistemicType: 'current_truth',
-            authority: 'Founder Governance Register',
-            timestamp: nowIso,
-            confidence: 'unverified',
-            provenanceKind: 'synthetic',
-            notes: 'Seed governance proposal.',
+            authority: 'Authoritative DecisionStore (Ratified Commitment)',
+            timestamp: dec.decidedAt || dec.createdAt,
+            confidence: 'claim_supported',
+            provenanceKind: 'verified_fact',
+            notes: `Ratified decision commitment. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
           },
         });
       }
+
+      // 5b. Pending governance (proposed, under_review, pending_approval) -> current_truth
+      for (const dec of bundle.pendingGovernance) {
+        const decTokens = [
+          ...extractTokens(dec.title),
+          ...extractTokens(dec.proposedAction),
+          ...extractTokens(dec.problemStatement),
+        ];
+        const matched = decTokens.filter((t) => queryTokens.has(t));
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Pending Governance] ${dec.title} (${dec.status.toUpperCase()})`,
+          summary: `Proposed Action: "${dec.proposedAction}" | Proposer: ${dec.proposer} | Approval Required: ${dec.approvalRequired ? 'YES' : 'NO'}`,
+          data: dec,
+          relevanceScore: matched.length * 2 + (dec.status === 'pending_approval' ? 5 : 4),
+          matchReason: matched.length > 0
+            ? `Matched pending governance terms: ${[...new Set(matched)].join(', ')}`
+            : 'Governance proposal awaiting founder ratification',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'current_truth',
+            authority: 'Authoritative DecisionStore (Pending Ratification)',
+            timestamp: dec.createdAt,
+            confidence: 'unverified',
+            provenanceKind: 'synthetic',
+            notes: `Awaiting Founder ratification before execution. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
+          },
+        });
+      }
+
+      // 5c. Operational intervention required -> current_truth (High priority)
+      for (const dec of bundle.interventionRequired) {
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Intervention Required] ${dec.title} (INTERVENTION_REQUIRED)`,
+          summary: `Action: "${dec.proposedAction}" | Owner: ${dec.accountableOwner} | Requires Founder/Operator Intervention!`,
+          data: dec,
+          relevanceScore: 8,
+          matchReason: 'Operational decision requiring urgent founder/operator intervention',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'current_truth',
+            authority: 'Authoritative DecisionStore (Intervention Flagged)',
+            timestamp: dec.createdAt,
+            confidence: 'claim_supported',
+            provenanceKind: 'verified_fact',
+            notes: 'Execution halted or uncertain; operator intervention required.',
+          },
+        });
+      }
+
+      // 5d. Historical precedents (resolved) -> historical_memory
+      for (const dec of bundle.historicalPrecedents) {
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Historical Precedent] ${dec.title} (RESOLVED)`,
+          summary: `Outcome: "${dec.outcome?.outcomeSummary || 'Resolved'}" | Resolved By: ${dec.outcome?.resolvedBy || 'founder'} | Resolved At: ${dec.outcome?.resolvedAt || dec.createdAt}`,
+          data: dec,
+          relevanceScore: 3,
+          matchReason: 'Historical resolved decision relevant as precedent',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'historical_memory',
+            authority: 'Authoritative DecisionStore (Historical Outcome)',
+            timestamp: dec.outcome?.resolvedAt || dec.createdAt,
+            confidence: 'claim_supported',
+            provenanceKind: 'verified_fact',
+            notes: 'Resolved past decision — precedent only, NEVER active work.',
+          },
+        });
+      }
+
+      // 5e. Deterministic conflict warnings
+      for (const w of bundle.conflictWarnings) {
+        results.push({
+          entityType: 'decision',
+          id: `conflict:${w.decisionId}:${w.conflictType}`,
+          title: `[Governance Conflict Warning] Decision [${w.decisionId}]`,
+          summary: w.message,
+          data: w,
+          relevanceScore: 9,
+          matchReason: 'Deterministic governance conflict detected',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:conflict:${w.decisionId}`,
+            sourceTitle: `Governance Conflict in [${w.decisionId}]`,
+            epistemicType: 'current_truth',
+            authority: 'Deterministic Governance Conflict Detector',
+            timestamp: nowIso,
+            confidence: 'claim_supported',
+            provenanceKind: 'verified_fact',
+            notes: 'Deterministic structural conflict; requires resolution before execution.',
+          },
+        });
+      }
+    } catch (err: any) {
+      if (err?.name === 'CriticalCollectionCorruptionError') {
+        throw err;
+      }
+      // Fail closed: never silently inject legacy arrays when authoritative DecisionStore fails
     }
 
     // Sort by relevance score descending

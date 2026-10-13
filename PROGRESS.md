@@ -3,46 +3,57 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M2 Batch 2.3: Concurrency Safety & Final Recovery Verification Gate COMPLETE on `audit/m2-persistence-and-recovery`.
-- **M2.3 Final Recovery Verification Gate Completed (`docs/research/M2_PERSISTENCE_AND_RECOVERY_AUDIT.md` §19):**
-  - **Crash Lifecycle Safety Evaluated:** Analyzed the sequence `Idempotency Claim → Approval Consume → Execute → Complete → Audit`.
-  - **Identifiable & Fail-Closed Under Interruption:** Demonstrated that crashes occurring after approval consumption leave the approval consumed and idempotency record `in_progress`, safely blocking all duplicate executions on restart.
-  - **Authorized Founder Resolution:** Added `SideEffectAuthorizationGate.resolveInterruptedOperation()` enforcing strict Founder authentication, immutable audit logging with `reasonCode: 'FOUNDER_MANUAL_RECONCILIATION'`, and invariant preservation (consumed approvals are never silently reset; completed operations cannot be marked failed).
-  - **Audit Trail Reconciliation:** Added `SideEffectAuthorizationGate.reconcileMissingAudit()` to idempotently reconcile missing audit records for completed operations interrupted before audit logging without re-executing side effects.
-  - **Interrupted Operations Scanner:** Added `SideEffectAuthorizationGate.listInterruptedOperations()` scanning for `in_progress` and `unknown` operations.
-  - **Instance Lease Identity & PID Reuse Safety (§3):** Proved that PID liveness + unique `instanceId` token (`inst-${pid}-${timestamp}`) + 15s lease expiry guarantees that dead owner leases are immediately reclaimed while live foreign processes with reused PIDs never heartbeat the lease and expire within 15 seconds.
-- **Deterministic Failure-Injection Test Suite (`tests/sophia/m2_batch3_recovery_gate.test.ts`):**
-  - **6/6 PASSED, 0 FAILED:**
-    1. Test A: Crash after approval consumption before execution is identifiable & fail-closed.
-    2. Test B: Crash after external success protects against duplicate execution & requires resolution.
-    3. Test C: Crash after completion before audit reconciles idempotently.
-    4. Test D: Repeated recovery cycles run safely without duplicates.
-    5. Test E: Founder override permissions and invariant protection.
-    6. Test F: Instance lease identity enforces instanceId token and heartbeat expiration.
-- **Milestone Regression Suite Verification:**
+Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
+- **Phase 2.2.1 Implementation Highlights:**
+  - **Authoritative Decision Context Provider (`src/lib/server/decision/context-provider.ts`):**
+    - Single entry point `DecisionContextProvider.getInstance().getDecisionContext(options)`.
+    - Explicitly partitions all 10 Decision statuses:
+      - `activeCommitments`: `approved`, `executing` (binding company commitments).
+      - `pendingGovernance`: `proposed`, `under_review`, `pending_approval` (awaiting Founder ratification; not yet active).
+      - `interventionRequired`: `intervention_required` (operational execution paused/uncertain).
+      - `historicalPrecedents`: `resolved` (relevant precedents only; never active work).
+      - `inactiveDecisions`: `rejected`, `withdrawn`, `superseded` (strictly excluded from active commitments).
+    - Preserves all typed fields: `decisionId`, `title`, `problemStatement`, `proposedAction`, `category`, `accountableOwner`, `status`, `impact`, `reversibility`, `uncertainty`, `evidenceFactIds`, `linkedWorkflowId`, transitions, and supersession links.
+    - Lightweight deterministic conflict detection: detects unconfirmed predecessor executions (`unconfirmed_predecessor_execution`), superseded predecessor uncertainties, and superseded references (`superseded_reference`).
+    - Formatters for Sophia (`formatForSophiaContext`) and Specialist Agents (`formatForSpecialistContext`).
+  - **CompanyStateStore Integration (`src/lib/server/state/state-store.ts`):**
+    - Updated `queryState()` Section 5 (Governance Decisions) to retrieve authoritative decisions from `DecisionContextProvider`.
+    - Mapped active commitments, pending proposals, and interventions to `current_truth`.
+    - Mapped resolved decisions to `historical_memory` with source system `decision_store`.
+    - Surfaced deterministic governance conflict warnings directly into query results.
+    - Eliminated silent fallback to legacy mock decision arrays.
+    - Added automatic migration of legacy `company_state` decisions into `DecisionStore` on startup in `store.ts`.
+  - **Sophia Context Assembler Integration (`src/lib/server/sophia/context-assembly.ts`):**
+    - Updated Slice 1 (Company Operational State) to query and render structured decision context from `DecisionContextProvider`.
+    - Preserved `Decision [${id}]` query-matching and temporal window gating invariants.
+  - **Specialist & Employee Role Integration (`src/lib/server/context/company-context.ts`, `src/lib/server/context/context-assembly.ts`):**
+    - Updated `CompanyContextProvider.formatForAdvisorPrompt` to partition active commitments, pending governance, and resolved historical precedents.
+    - Added decision-awareness governance block in `formatForEmployeeRoleContext` for COO, PM, Research, and Finance roles.
+    - Updated `ContextAssemblyService.assembleContextForTask` to respect `historical_memory` provenance from `queryState`.
+- **Verification Suites Executed:**
+  - `tests/decision/phase2_2_1_context.test.ts`: **12 PASSED, 0 FAILED**
+  - `tests/decision/decision_lifecycle.test.ts`: **18 PASSED, 0 FAILED**
+  - `tests/decision/phase2_1_1_hardening.test.ts`: **10 PASSED, 0 FAILED**
+  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 PASSED, 0 FAILED**
+  - `tests/sophia/m53_dependency_relations.test.ts`: **25 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6 PASSED, 0 FAILED**
   - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 PASSED, 0 FAILED**
-  - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20 PASSED, 0 FAILED**
-  - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27 PASSED, 0 FAILED**
-  - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11 PASSED, 0 FAILED**
-  - `tests/sophia/m2_knowledge_persistence.test.ts`: **8 PASSED, 0 FAILED**
-  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24 PASSED, 0 FAILED**
-  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52 PASSED, 0 FAILED**
-  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7 PASSED, 0 FAILED**
-  - **Core Persistence, Concurrency & Recovery Total: 163 PASSED, 0 FAILED.**
-- **TypeScript & Build Verification:**
-  - Scoped TypeScript validation: **0 errors** across all modified files and new test suite.
-  - Production build: `npm run build` compiled successfully in 17.9s, generated 31/31 static pages, copied standalone distribution with exit code 0.
-- **Scope & Boundaries Maintained:**
-  - Single-instance deployment constraint (`min-instances=1, max-instances=1`) strictly preserved.
-  - No external distributed locking, Redis, or PostgreSQL migration introduced.
-  - Branch remains unmerged, undeployed, and stopped for Founder review.
+  - **Grand Total Across Targeted Suites: 104 PASSED, 0 FAILED.**
+- **Production Build:**
+  - `npm run build` compiled successfully in 18.3s, generating 31/31 static routes with exit code 0.
+- **Hygiene Confirmation:**
+  - Single-instance architecture preserved.
+  - Zero merges, commits, pushes, or deployments performed.
+  - Stopped for Founder review.
 
 ## Next (queued, in order)
-- Founder review of M2 Batch 2.3 completion and final recovery verification evidence.
-- M2 Batch 2.4: Production Snapshot & Disaster Recovery Runbooks (DO NOT START until approved).
+- Founder review of Phase 2.2.1 Decision-Aware Company Context.
+- Decision Workflow Phase 2.2.2: Multi-Agent Council Orchestration (DO NOT START until approved).
 
 ## Completed
+- [2026-10-13] Decision Workflow Phase 2.2.1: Decision-Aware Company Context — Connected authoritative `DecisionStore` into company intelligence and context-assembly architecture (`DecisionContextProvider`, `SophiaContextAssembler`, `CompanyStateStore.queryState`, `CompanyContextProvider`, `ContextAssemblyService`). Partitioned all 10 Decision statuses: active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`). Implemented deterministic conflict detection (`unconfirmed_predecessor_execution`, `superseded_reference`). Added 12-test comprehensive suite `tests/decision/phase2_2_1_context.test.ts` (12/12 passed). All regression suites passed (104/104). Production build succeeded (31/31 routes, exit code 0). Stopped for Founder review.
+- [2026-10-13] Decision Workflow Phase 2.1.1: Decision Safety Hardening — Closed verified Phase 2.1 gaps (F-01, F-02, F-03, F-04). Hardened lifecycle authorization for `resolveDecision()` and `supersedeDecision()`. Defined separate permissions for Founder governance, trusted workflow execution reports, and operational intervention. Enforced execution-aware supersession via `WorkflowRuntime.requestInstanceCancellation()`, distinguishing requested vs confirmed cancellation and blocking conflicting successor execution. Implemented idempotent audit trail reconciliation using deterministic `audit-dec-${transition.transitionId}` IDs. 10 focused hardening tests in `tests/decision/phase2_1_1_hardening.test.ts` (10/10 passed). Full regression suite (191/191 passed). Production build succeeded (exit code 0). Stopped for Founder review.
+- [2026-10-13] Decision Workflow Phase 2.1: Core Decision Store and Lifecycle Foundation — Implemented `DecisionRecord` types (`src/types/decision.ts`), `DecisionStore` (`src/lib/server/decision/store.ts`), `DecisionLifecycleService` (`src/lib/server/decision/lifecycle.ts`), cryptographic approval binding (`src/lib/server/decision/payload-binding.ts`), legacy adapter (`src/lib/server/decision/adapter.ts`), and `CompanyStateStore` delegation. 18-test deterministic test suite (`tests/decision/decision_lifecycle.test.ts`). 181/181 passing across full suite. Production build succeeded. Stopped for Founder review.
 - [2026-10-13] M2.3 Final Recovery Verification Gate — Implemented operation lifecycle recovery and reconciliation in `SideEffectAuthorizationGate` (`listInterruptedOperations`, `reconcileMissingAudit`, `resolveInterruptedOperation`). Failure-injection test suite `m2_batch3_recovery_gate.test.ts` (6/6 passed). Evaluated PID reuse safety in `InstanceConcurrencyGuard`. Full regression suite (163/163 passed). Production build succeeded. Stopped for Founder review.
 - [2026-10-13] M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene — Full mutation matrix audit, hardened 5 confirmed concurrency defects across approval consumption, idempotency claiming, workflow step claiming, company decision updates, and instance lease recovery. Deterministic test suite `m2_batch3_concurrency_hygiene.test.ts` (8/8 passed). Full regression suite (157/157 passed). Production build succeeded.
 - [2026-10-13] M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery — Reconciled test totals (182 core passed, 1 skipped; 228 extended passed, 2 skipped), verified Windows NT / Node.js & Bun environments, production build verified.

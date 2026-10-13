@@ -265,15 +265,34 @@ export class CompanyContextProvider {
     });
     lines.push('');
 
-    lines.push('=== COMPANY GOVERNANCE & PENDING DECISIONS ===');
-    context.decisions.forEach((dec) => {
-      lines.push(`[${dec.id}] "${dec.title}" | Status: ${dec.status.toUpperCase()} | Category: ${dec.category}`);
-      lines.push(`  Recommended By: ${dec.recommendedBy}`);
-      lines.push(`  Recommendation: ${dec.recommendation}`);
-      lines.push(`  Business Impact: ${dec.businessImpact}`);
-      lines.push(`  Evidence Basis: ${dec.evidenceSummary}`);
-      lines.push(`  Founder Ratification Required: ${dec.founderApprovalRequired ? 'YES' : 'NO'}`);
-    });
+    lines.push('=== COMPANY GOVERNANCE & DECISION COMMITMENTS ===');
+    const activeDecs = context.decisions.filter((d) => d.status === 'approved');
+    const pendingDecs = context.decisions.filter((d) => d.status === 'pending_approval' || d.status === 'in_review');
+    const resolvedDecs = context.decisions.filter((d) => d.status === 'resolved');
+
+    if (activeDecs.length > 0) {
+      lines.push('Active Commitments (Binding):');
+      activeDecs.forEach((dec) => {
+        lines.push(`  - [${dec.id}] "${dec.title}" (${dec.category}) -> ${dec.recommendation}`);
+        lines.push(`    Impact: ${dec.businessImpact} | Evidence: ${dec.evidenceSummary}`);
+      });
+    }
+
+    if (pendingDecs.length > 0) {
+      lines.push('Pending Governance (Awaiting Founder Ratification):');
+      pendingDecs.forEach((dec) => {
+        lines.push(`  - [${dec.id}] "${dec.title}" (${dec.status.toUpperCase()}) -> ${dec.recommendation}`);
+        lines.push(`    Proposed By: ${dec.recommendedBy} | Approval Required: ${dec.founderApprovalRequired ? 'YES' : 'NO'}`);
+      });
+    }
+
+    if (resolvedDecs.length > 0) {
+      lines.push('Historical Precedents (Resolved Decisions — Precedent Only):');
+      resolvedDecs.forEach((dec) => {
+        lines.push(`  - [${dec.id}] "${dec.title}" (Resolved ${dec.resolvedAt || dec.date} by ${dec.resolvedBy || 'founder'}):`);
+        lines.push(`    Outcome: ${dec.resolutionNote || 'Resolved'}`);
+      });
+    }
     lines.push('');
 
     lines.push('=== PRIORITY ATTENTION & GOVERNANCE QUEUE ===');
@@ -457,6 +476,30 @@ export class CompanyContextProvider {
       lines.push('Scope Guardrails: Computational financial modeling & simulation only; live banking transfers and payment mutations disabled.');
     } else {
       return '';
+    }
+
+    // Authoritative Decision Governance Context for Employees
+    if (context.decisions && context.decisions.length > 0) {
+      const activeCommitments = context.decisions.filter((d) => d.status === 'approved');
+      const pendingGovernance = context.decisions.filter((d) => d.status === 'pending_approval' || d.status === 'in_review');
+
+      if (activeCommitments.length > 0) {
+        lines.push('');
+        lines.push('=== ACTIVE COMPANY COMMITMENTS & GOVERNANCE BOUNDARIES ===');
+        lines.push('Binding company commitments (must NOT be contradicted without explicit supersession proposal):');
+        activeCommitments.forEach((dec) => {
+          lines.push(`- Decision [${dec.id}] "${dec.title}" (${dec.category}): ${dec.recommendation}`);
+          if (dec.businessImpact) lines.push(`  Impact: ${dec.businessImpact}`);
+        });
+      }
+
+      if (pendingGovernance.length > 0) {
+        lines.push('');
+        lines.push('Pending Decisions Under Review (Awaiting Founder Ratification — NOT yet approved):');
+        pendingGovernance.forEach((dec) => {
+          lines.push(`- Decision [${dec.id}] "${dec.title}" (${dec.status.toUpperCase()}): ${dec.recommendation}`);
+        });
+      }
     }
 
     lines.push('');

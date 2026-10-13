@@ -27,6 +27,20 @@ export interface ScheduledOccurrenceContext {
   scheduleId: string;
 }
 
+/**
+ * Phase 2.1.1: Detailed result of a workflow cancellation request.
+ * Strictly separates cancellation requested from cancellation confirmed.
+ */
+export interface WorkflowCancellationResult {
+  requested: boolean;
+  confirmed: boolean;
+  instanceId: string;
+  instanceStatus: WorkflowInstanceStatus;
+  runningStepIds: string[];
+  cancelledStepIds: string[];
+  reason?: string;
+}
+
 export class WorkflowRuntime {
   private store: WorkflowDefinitionStore & WorkflowInstanceStore;
   private executor: ServerAgentExecutor;
@@ -427,14 +441,14 @@ export class WorkflowRuntime {
     
     let newStatus = instance.status;
     
-    if (allCompleted) {
+    if (anyRunning) {
+      newStatus = 'running';
+    } else if (allCompleted) {
       newStatus = 'completed';
     } else if (anyFailed) {
       newStatus = 'failed';
     } else if (anyCancelled) {
       newStatus = 'cancelled';
-    } else if (anyRunning) {
-      newStatus = 'running';
     } else if (instance.status === 'pending' && states.some(s => s.status === 'ready')) {
       newStatus = 'running';
     }
@@ -444,6 +458,70 @@ export class WorkflowRuntime {
       instance.updatedAt = new Date().toISOString();
       await this.store.saveInstance(instance);
     }
+  }
+
+  /**
+   * Phase 2.1.1: Request cancellation of a running or pending workflow instance.
+   * Enforces execution safety:
+   * - Steps that are pending, ready, waiting, blocked, or awaiting_approval are transitioned to 'cancelled'.
+   * - Steps currently 'running' cannot be forcibly halted mid-execution without cooperative interruption;
+   *   they are tracked in runningStepIds, and `confirmed` is false.
+   * - If all non-terminal steps were transitioned to 'cancelled' and no step is 'running', `confirmed` is true.
+   *
+   * "Cancellation requested != cancellation confirmed."
+   */
+  async requestInstanceCancellation(
+    instanceId: string,
+    cancelledBy: string = 'founder',
+    reason?: string
+  ): Promise<WorkflowCancellationResult> {
+    const instance = await this.store.getInstance(instanceId);
+    if (!instance) {
+      throw new Error(`Instance not found: ${instanceId}`);
+    }
+
+    const cancelReason = reason || `Cancellation requested by ${cancelledBy}`;
+    const runningStepIds: string[] = [];
+    const cancelledStepIds: string[] = [];
+
+    for (const [stepId, step] of Object.entries(instance.stepStates)) {
+      if (step.status === 'completed' || step.status === 'failed' || step.status === 'cancelled') {
+        continue;
+      }
+      if (step.status === 'running') {
+        runningStepIds.push(stepId);
+        continue;
+      }
+      if (['pending', 'ready', 'waiting', 'blocked', 'awaiting_approval'].includes(step.status)) {
+        try {
+          await this.transitionStep(instanceId, stepId, 'cancelled', { error: cancelReason });
+          cancelledStepIds.push(stepId);
+        } catch {
+          runningStepIds.push(stepId);
+        }
+      }
+    }
+
+    const updated = (await this.store.getInstance(instanceId))!;
+    const confirmed = runningStepIds.length === 0;
+
+    return {
+      requested: true,
+      confirmed,
+      instanceId,
+      instanceStatus: updated.status,
+      runningStepIds,
+      cancelledStepIds,
+      reason: cancelReason,
+    };
+  }
+
+  public getStore(): WorkflowDefinitionStore & WorkflowInstanceStore {
+    return this.store;
+  }
+
+  public async getInstance(instanceId: string): Promise<WorkflowInstanceState | null> {
+    return this.store.getInstance(instanceId);
   }
 
   /**

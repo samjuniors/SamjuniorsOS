@@ -2963,3 +2963,46 @@ Submit Batch 2.2 report for Founder review. Stop and wait for Founder review bef
 
 ### Next action
 Run targeted tests and type validation in the repository's supported environment; fix any failures; then perform a controlled backup/restore exercise before Batch 3 can be accepted.
+
+
+## 2026-10-13 — Decision Workflow Phases 2.1, 2.1.1, & 2.2.1: Authoritative Decision Layer & Context Integration
+
+**Status:** COMPLETE on `audit/m2-persistence-and-recovery`.
+**Branch:** `audit/m2-persistence-and-recovery`
+**Baseline:** `76a5ce82ebd6af43486005a25c8cfacc0de8f5ff`
+
+### Summary of Changes Across Phases
+
+#### 1. Phase 2.1: Core Decision Store & Lifecycle Foundation
+- **Data Models & Types (`src/types/decision.ts`):** Defined typed `DecisionRecord`, 10-state lifecycle finite state machine (`proposed`, `under_review`, `pending_approval`, `approved`, `executing`, `intervention_required`, `resolved`, `rejected`, `withdrawn`, `superseded`), 5 decision categories, and uncertainty/impact/reversibility classifications.
+- **Authoritative Decision Store (`src/lib/server/decision/store.ts`):** Durable single-source store using `DurableFileStore` with cross-process collection locking (`withCollectionLockStrict('decisions')`). Deterministic seeding of `dec-1`, `dec-2`, `dec-3` without duplicates on restart. Automatic migration of legacy `company_state` decisions.
+- **Lifecycle Service (`src/lib/server/decision/lifecycle.ts`):** Enforces strict state transitions, optimistic locking (`stateVersion`), and mandatory outcome records upon resolution.
+- **Cryptographic Approval Binding (`src/lib/server/decision/payload-binding.ts`):** SHA-256 canonical tuple hashing binding approved decisions to prevent payload tampering prior to execution.
+- **Adapter (`src/lib/server/decision/adapter.ts`):** Bidirectional adaptation between `DecisionRecord` and legacy `CompanyDecision`.
+- **Tests (`tests/decision/decision_lifecycle.test.ts`):** 18 passing tests covering idempotent creation, valid lifecycle transitions, invalid transition rejection, stale version rejection, tamper detection, fact validation, and disk persistence.
+
+#### 2. Phase 2.1.1: Decision Safety Hardening
+- **Authorization Hardening (`src/lib/server/decision/lifecycle.ts`):** Enforced strict Founder authorization for `supersedeDecision()` and `resolveDecision()`. Disallowed AI employee personas (`researcher`, `pm`, `coo`, `finance`) or caller-controlled strings (`actor="founder"` without authenticated `role === 'FOUNDER'`) from approving, rejecting, resolving, or superseding decisions.
+- **Execution-Aware Supersession (`src/lib/server/decision/lifecycle.ts`, `src/lib/server/workflow/runtime.ts`):** Added `WorkflowRuntime.requestInstanceCancellation()`. Enforced invariant: *Cancellation requested != cancellation confirmed*. If an actively executing decision is superseded with running steps that cannot be confirmed halted, predecessor transitions to `intervention_required`. Successor execution blocked (`ConflictingExecutionBlockedError`) if predecessor remains active, uncertain, or flagged for intervention. Preserved outcome history when superseding resolved decisions.
+- **Audit Trail Reconciliation (`src/lib/server/decision/lifecycle.ts`):** Deterministic 1-to-1 event mapping via stable transition IDs (`audit-dec-${transitionId}`). Reconciles missing audit events in `InMemoryAuditStore` from durable disk logs without duplicate reconstruction.
+- **Tests (`tests/decision/phase2_1_1_hardening.test.ts`):** 10 passing tests verifying persona rejection, actor spoofing prevention, trusted worker verification, cancellation uncertainty flagging, conflicting execution blocking, outcome preservation, and restart recovery.
+
+#### 3. Phase 2.2.1: Decision-Aware Company Context
+- **Decision Context Provider (`src/lib/server/decision/context-provider.ts`):** Single entry point `DecisionContextProvider.getInstance().getDecisionContext(options)`. Explicitly partitions active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`).
+- **Conflict Detection:** Lightweight deterministic structural detection for unconfirmed predecessor executions (`unconfirmed_predecessor_execution`) and superseded references (`superseded_reference`).
+- **CompanyStateStore Integration (`src/lib/server/state/state-store.ts`):** Replaced legacy `this.decisions` array iteration in `queryState()` Section 5 with authoritative `DecisionContextProvider` queries. Mapped active commitments, pending proposals, and interventions to `current_truth`; mapped resolved decisions to `historical_memory`. Surfaced structural conflict warnings directly in query results.
+- **Sophia Integration (`src/lib/server/sophia/context-assembly.ts`):** Connected `DecisionContextProvider` into Slice 1 (`Company Operational State`), preserving `Decision [${id}]` query-matching and temporal-window gating invariants.
+- **Specialist & Context Assembly Integration (`src/lib/server/context/company-context.ts`, `src/lib/server/context/context-assembly.ts`):** Added active commitment constraints and pending governance awareness in `formatForAdvisorPrompt` and `formatForEmployeeRoleContext` across all executive roles. Preserved `historical_memory` classification in `injectedState`.
+- **Tests (`tests/decision/phase2_2_1_context.test.ts`):** 12 passing integration tests verifying active retrieval, pending visibility, intervention alerts, inactive exclusions, resolved historical memory, evidence provenance preservation, cross-agent consistency, no legacy array fallback, fail-closed corruption handling, immutability, and deterministic conflict detection.
+
+### Verification Results
+- `tests/decision/phase2_2_1_context.test.ts`: **12 passed, 0 failed**
+- `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
+- `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
+- `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
+- `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
+- `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6 passed, 0 failed**
+- `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 passed, 0 failed**
+- **Targeted Suite Total: 104 passed, 0 failed, 0 skipped.**
+- **Production Build:** `npm run build` compiled successfully in 18.3s, generating 31/31 static routes (exit code 0).
+
