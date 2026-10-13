@@ -2922,3 +2922,44 @@ Finalize hardening pass on branch `audit/m1-memory-source-of-truth`:
 ### Next Action
 Submit Batch 2.2 report for Founder review. Stop and wait for Founder review before Batch 3.
 
+
+
+## 2026-10-13 — M1 Batch 3: Critical Collection Corruption Fail-Closed Implementation
+
+**Status:** IMPLEMENTED IN SOURCE; NOT VERIFIED. Branch remains unmerged and undeployed.
+
+### Repository re-check
+- Confirmed branch head before Batch 3: `ba026766e6afee5554dbff2ec8e9a4f97b6a7f08`.
+- Re-inspection found `isPrismaRecordNotFoundError()` still accepted message-only phrases despite Batch 2.2 documentation claiming canonical P2025-only behavior. Corrected the classifier to accept only `err.code === 'P2025'` and changed the regression assertion accordingly.
+
+### Implementation committed
+- `src/lib/server/persistence/durable-file-store.ts`
+  - Added `CriticalCollectionCorruptionError`.
+  - Registered `conversation_tombstones` and `message_tombstones` as critical ledgers.
+  - Added durable `.initialized` sidecars; a missing ledger with an existing marker fails closed.
+  - Empty, malformed, unreadable, or non-object JSON ledgers are quarantined as `.corrupt.<timestamp>.<pid>` and throw; quarantine failure also throws and preserves the source.
+  - Critical ledgers require strict write/delete APIs; non-strict generic mutation and `clearCollection` are rejected. Strict lock acquisition defaults on for critical writes.
+  - Existing critical files are marked initialized before parsing, so a corrupt legacy file cannot become an apparently first-use empty ledger after quarantine.
+- `src/lib/server/conversation/store.ts`
+  - Prisma not-found classification now requires canonical `P2025`.
+  - Test reset helpers use strict writes for critical ledgers.
+  - Existing tombstone reads inherit the critical policy through `readCollection()` / `getItem()`, so unknown tombstone state throws before Prisma fallback.
+- `scripts/reconcile-tombstones.ts`
+  - Reports critical-ledger corruption and operator recovery instructions; fatal path remains non-zero.
+- `tests/sophia/m1_batch2_conversation_deletion.test.ts`
+  - Added coverage for malformed JSON, empty files, missing initialized ledger, Prisma fallback blocked by corruption, and quarantine failure/source preservation.
+  - Corrected the message-only Prisma error regression to expect `false`.
+
+### Verification status
+- Source edits and GitHub commits are present.
+- Targeted tests, full regressions, type validation, production build, real backup restore, and runtime crash recovery are **NOT VERIFIED in this session**.
+- No deployment approval; no merge to `main`.
+
+### Known limitations / risks
+- An old deployment that lost its ledger before the marker existed cannot be distinguished from a genuinely never-initialized store by this marker alone. Existing volumes need a pre-rollout inventory/bootstrap check.
+- The marker is a detection aid, not cryptographic integrity protection.
+- The file store does not provide a multi-file transactional backup. Restore must use a consistent snapshot with writers stopped or storage-level snapshot semantics.
+- The current implementation intentionally stops on corruption; there is no automatic repair or ledger reconstruction.
+
+### Next action
+Run targeted tests and type validation in the repository's supported environment; fix any failures; then perform a controlled backup/restore exercise before Batch 3 can be accepted.
