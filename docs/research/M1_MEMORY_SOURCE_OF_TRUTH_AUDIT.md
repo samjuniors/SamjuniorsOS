@@ -534,8 +534,68 @@ The operator runbook script was hardened to ensure zero false success and strict
 ### 13.3 Prisma Error Classification Tightening
 
 `isPrismaRecordNotFoundError()` was tightened to prevent false-positive reconciliation:
-- Confirmed `P2025` ("Record to delete does not exist") returns `true`.
+- Only an error carrying canonical `code === 'P2025'` returns `true`; message-only phrases are not accepted as proof of record absence.
 - Connection failures (`P1001`), timeouts (`P1002`, `ETIMEDOUT`), and database configuration errors (`P1003`) return `false` (leaving tombstones pending).
 - Generic messages containing fragments like "table does not exist" or "database does not exist" return `false`.
 
 
+
+
+## 14. Batch 3 — Critical Collection Corruption and Recovery
+
+**Status:** IMPLEMENTED IN SOURCE; RUNTIME / TEST VERIFICATION NOT YET COMPLETED.
+
+### 14.1 Critical collection policy
+
+`DurableFileStore` now explicitly classifies:
+- `conversation_tombstones`
+- `message_tombstones`
+
+Reads of these collections pass through strict validation. A malformed JSON document, empty file, non-object JSON value, or read failure throws `CriticalCollectionCorruptionError`; it is never returned as an empty collection.
+
+When quarantine succeeds, the unreadable source is renamed to:
+`<collection>.json.corrupt.<timestamp>.<pid>`
+
+When quarantine fails, the error is still fail-closed and the original source remains in place. No automatic reconstruction or deletion of the quarantined evidence is performed.
+
+### 14.2 Initialization marker
+
+A durable sidecar marker is created for each critical ledger:
+- `.data/conversation_tombstones.json.initialized`
+- `.data/message_tombstones.json.initialized`
+
+If a marker exists but its ledger file is missing, reads throw `CriticalCollectionCorruptionError` rather than treating the collection as first-use empty. Existing ledger files are marked initialized before parsing so that a corrupt legacy file cannot be quarantined and then silently appear to be a never-used ledger.
+
+Critical ledger mutations require strict APIs (`writeCollectionStrict`, `saveItemStrict`, `deleteItemStrict`); generic non-strict write/delete APIs and `clearCollection` reject critical collections. Critical strict mutations default to fail-closed lock acquisition.
+
+**Migration limitation:** a deployment that already lost its tombstone file before the initialization marker was ever created cannot be distinguished from a genuinely never-initialized deployment by the marker alone. Before rollout, operators must verify the existing `.data` volume and seed/retain markers for any existing ledger files. The marker is a detection aid, not cryptographic integrity protection.
+
+### 14.3 Prisma fallback and reconciliation
+
+`ConversationStore.isTombstoned()`, `getTombstone()`, message tombstone lookups, and reconciliation use the normal `readCollection()` interface, which now routes registered critical ledgers through strict validation. Therefore an unknown tombstone state throws before `getConversation()` can attempt its Prisma fallback.
+
+The reconciliation CLI reports the corruption and recovery requirement, then exits non-zero through its fatal error path. It must not print a zero-tombstone success result when the ledger cannot be read.
+
+### 14.4 Operator backup / restore procedure
+
+1. Stop application traffic and all writers before restoring.
+2. Restore a consistent snapshot of the entire relevant `.data` volume, not a hand-picked mixture of files from different backup times. At minimum preserve both tombstone JSON files and their `.initialized` sidecars, together with the associated conversations/messages files.
+3. Preserve any `.corrupt.*` files for investigation; do not overwrite or delete them automatically.
+4. Validate that both tombstone files are non-empty valid JSON objects and that each initialized marker is present.
+5. Restore the corresponding Prisma backup/point-in-time state if required by the incident plan.
+6. Run `npx tsx scripts/reconcile-tombstones.ts` while traffic remains stopped.
+7. Resume traffic only after the command exits zero and an operator has checked the restored data and logs.
+
+The file-backed store does not provide a multi-file transactional snapshot. Backups must therefore quiesce writers or use a storage-level consistent snapshot. A marker without its ledger, or a ledger without its matching snapshot context, is not a successful recovery.
+
+### 14.5 Batch 3 verification matrix
+
+Added regression coverage for malformed JSON quarantine, empty-file quarantine, missing initialized ledger, Prisma fallback blocked by corruption, and quarantine failure preserving original bytes. These tests are committed but **NOT YET EXECUTED in this session**. Interrupted-write behavior is represented by empty/truncated-file cases; process-kill and storage-level crash recovery remain NOT VERIFIED.
+
+### 14.6 Remaining acceptance work
+
+- Execute the targeted Batch 2/3 suite and all required regressions in the repository's supported runtime.
+- Run type validation separately; a Next build that skips type validation is insufficient.
+- Exercise restoration from a real test backup, including sidecar markers and Prisma reconciliation.
+- Review marker bootstrap against the actual deployment volume before rollout.
+- Keep the branch unmerged and undeployed until these checks pass.
