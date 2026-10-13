@@ -1639,8 +1639,9 @@ async function main() {
         assert.strictEqual(prismaReadCount, 0, 'Prisma fallback must not run when tombstone state is unknown');
       } finally {
         fs.writeFileSync(filePath, original, 'utf-8');
-        if (originalFindUnique && (prisma as any).conversation) {
-          (prisma as any).conversation.findUnique = originalFindUnique;
+        if ((prisma as any).conversation) {
+          if (originalFindUnique) (prisma as any).conversation.findUnique = originalFindUnique;
+          else delete (prisma as any).conversation.findUnique;
         }
       }
     });
