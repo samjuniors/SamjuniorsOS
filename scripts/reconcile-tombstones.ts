@@ -20,7 +20,7 @@
  */
 
 import { ConversationStore, ReconcileResult } from '../src/lib/server/conversation/store';
-import { DurableFileStore } from '../src/lib/server/persistence/durable-file-store';
+import { DurableFileStore, CriticalCollectionCorruptionError } from '../src/lib/server/persistence/durable-file-store';
 
 export interface RunReconcileOptions {
   convStore?: ConversationStore;
@@ -48,7 +48,18 @@ export async function runReconcile(options?: RunReconcileOptions): Promise<RunRe
   const fileStore = options?.fileStore ?? DurableFileStore.getInstance();
   const convStore = options?.convStore ?? ConversationStore.getInstance();
 
-  const tombstones = fileStore.readCollection<any>('conversation_tombstones');
+  let tombstones: Record<string, any>;
+  try {
+    // readCollection routes registered critical ledgers through fail-closed
+    // validation and quarantine. Never continue with an assumed-empty ledger.
+    tombstones = fileStore.readCollection<any>('conversation_tombstones');
+  } catch (err: any) {
+    if (err instanceof CriticalCollectionCorruptionError) {
+      error(`[Fatal] Critical tombstone ledger is not trustworthy: ${err.message}`);
+      error('[Recovery] Keep traffic stopped. Restore the matching ledger and initialization marker from a verified backup, then rerun reconciliation.');
+    }
+    throw err;
+  }
   const totalTombstones = Object.keys(tombstones).length;
   const initialPendingPrisma = Object.values(tombstones).filter((t: any) => t && !t.prismaReconciled).length;
 
