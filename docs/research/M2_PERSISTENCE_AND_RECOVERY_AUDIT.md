@@ -789,4 +789,87 @@ We executed all test suites across the active working tree. The test execution b
 - Reconciled test evidence: 182 passed, 1 skipped, 0 failed (Core) / 228 passed, 2 skipped, 0 failed (Comprehensive).
 - Production build verified passing cleanly.
 
+---
 
+## 18. M2 Batch 2.3 — Concurrency Safety & Multi-Store Transaction Hygiene Audit
+
+### 18.1 Mutation Matrix
+
+| Mutation Path | Stores Involved | Lock / Serialization | Durable Ordering | Partial-Failure Behavior | Finding & Classification |
+|---|---|---|---|---|---|
+| `ApprovalStore.consume(id)` | `InMemoryApprovalStore` (`approvals` collection) | `saveItemStrict` locks disk write, but `isConsumed` check runs **BEFORE** lock | Disk write precedes cache update | Concurrent callers both read `isConsumed: false` and both consume approval | **CONFIRMED DEFECT (CRITICAL):** Double approval consumption race. Read-check-consume sequence un-serialized. |
+| `IdempotencyStore.claim(params)` | `InMemoryIdempotencyStore` (`idempotency_records` collection) | `saveItemStrict` locks disk write, but record existence check runs **BEFORE** lock | Disk write precedes cache update | Concurrent callers both read `existing: undefined` and both claim key | **CONFIRMED DEFECT (HIGH):** Concurrent duplicate claim race. Two workers can claim same execution key. |
+| `WorkflowStore.claimStepAtomic` & `transitionStepAtomic` | `InMemoryWorkflowStore` (`workflow_instances` collection) | `saveItemStrict` locks disk write, but `stateVersion` check runs **BEFORE** lock | Disk write precedes cache update | Concurrent workers read same `stateVersion` from cache, both pass optimistic check, both claim step | **CONFIRMED DEFECT (HIGH):** Lost update / optimistic concurrency bypass on step claims. |
+| `CompanyStateStore.recordDecision` | `CompanyStateStore` (`company_state` collection) | `persistStateStrict` (`writeCollectionStrict`) locks disk write, but array prepend runs **BEFORE** lock | Disk write precedes cache update | Concurrent calls prepend to stale in-memory array; second write clobbers first decision | **CONFIRMED DEFECT (HIGH):** Lost updates in concurrent decisions. |
+| `InstanceConcurrencyGuard.acquireSingleInstanceLease` | `InstanceConcurrencyGuard` (`instance.lock` file) | `fs.existsSync` followed by `writeFileSync` (not atomic `wx`) | Single file write | Crashed process with fresh heartbeat (<15s) blocks new instance; PID liveness unverified | **CONFIRMED DEFECT (MEDIUM):** Stale crash false-positive and non-atomic lease check. |
+| `SideEffectAuthorizationGate.executeWithGate` | `IdempotencyStore`, `ApprovalStore`, `AuditStore` | Sequential store mutations: Idempotency Claim -> Approval Consume -> Execute -> Complete -> Audit | Write-ahead reservation order | If crash occurs between consume and execute, approval remains consumed (fails closed) | **VERIFIED SAFE ARCHITECTURE:** Write-ahead reservation pattern is sound provided individual store steps are atomic. |
+| `EpistemicClaimStore.saveFact` | `canonical_facts` collection + `DependencyRelationStore` | `saveItemStrict` on truth ledger; derived relation index updated best-effort in `try/catch` | Truth write precedes derived index update | Derived index failure is logged; canonical fact is 100% durable and rebuildable | **VERIFIED SAFE ARCHITECTURE:** Truth ledger isolated from derived projection. |
+| `ConversationStore.deleteConversation` | `conversation_tombstones`, `conversations`, `chat_messages` | Collection locks with synchronous critical-section rechecks | Write-ahead tombstone -> collection purge -> message purge | Crashes leave durable tombstone; clean restart sweeps pending messages | **VERIFIED SAFE ARCHITECTURE:** M1/M2 closed and verified. |
+
+### 18.2 Confirmed Defects Ranked by Severity
+
+1. **DEFECT M2.3-1 (CRITICAL) — Concurrent Double Approval Consumption (`InMemoryApprovalStore.consume`)**
+   - *Source:* `src/lib/server/authorization/approval-store.ts` (lines 721–745).
+   - *Mechanism:* `record = this.approvals.get(id)` is read outside the collection lock. If two requests concurrently execute `consume(id)` on the same approval, both read `record.isConsumed = false`, both construct an updated record, and both sequentially call `saveItemStrict('approvals', id, updated)`. Both report success; neither throws `ApprovalAlreadyConsumedError`.
+   - *Impact:* Critical governance failure. A single-use Founder approval can be executed multiple times concurrently.
+   - *Resolution:* Wrap the entire check-and-consume critical section in `DurableFileStore.getInstance().withCollectionLockStrict('approvals', () => { ... })`. Re-read the latest record under the lock (from disk/cache), verify `isConsumed`, persist to disk, and update in-memory cache.
+
+2. **DEFECT M2.3-2 (HIGH) — Concurrent Duplicate Idempotency Claim (`InMemoryIdempotencyStore.claim`)**
+   - *Source:* `src/lib/server/idempotency/store.ts` (lines 328–368).
+   - *Mechanism:* `existing = this.records.get(params.key)` is read outside the collection lock. If two requests concurrently attempt to claim the same idempotency key, both observe `existing === undefined`, both generate `in_progress` records, and both call `saveItemStrict`. Both return `{ state: 'claimed' }`.
+   - *Impact:* Duplicate side-effect execution. Two concurrent workers both execute the requested side-effect concurrently.
+   - *Resolution:* Wrap the read-check-claim sequence in `DurableFileStore.getInstance().withCollectionLockStrict('idempotency_records', () => { ... })`. Re-read under lock; if already present and live, throw `OperationInProgressError` or return cached response.
+
+3. **DEFECT M2.3-3 (HIGH) — Optimistic Concurrency Bypass in Workflow Step Claims (`InMemoryWorkflowStore`)**
+   - *Source:* `src/lib/server/workflow/store.ts` (lines 649–696).
+   - *Mechanism:* `instance = this.instances.get(instanceId)` and `currentVersion === expectedVersion` are evaluated outside the collection lock. Two concurrent workers claiming the same step both observe the same version, both pass validation, and both write `stateVersion + 1`. The second write overwrites the first worker's claim.
+   - *Impact:* Multiple workers claiming and executing the same workflow step.
+   - *Resolution:* Enclose `claimStepAtomic` and `transitionStepAtomic` in `DurableFileStore.getInstance().withCollectionLockStrict('workflow_instances', () => { ... })`. Re-read latest instance state under lock, verify optimistic version, mutate, and save.
+
+4. **DEFECT M2.3-4 (HIGH) — Lost Update in `CompanyStateStore.recordDecision`**
+   - *Source:* `src/lib/server/state/state-store.ts` (lines 201–223).
+   - *Mechanism:* `nextDecisions = [decision, ...this.decisions]` reads in-memory array outside the lock. Concurrent calls both prepend to the old array and overwrite the entire `company_state` collection. The second write completely loses the first decision.
+   - *Impact:* Silent data loss of executive company decisions under concurrent calls.
+   - *Resolution:* Wrap `recordDecision` in `DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => { ... })`. Under lock, read latest `company_state` from disk, prepend decision, and write collection.
+
+5. **DEFECT M2.3-5 (MEDIUM) — Stale Crash False-Positive in `InstanceConcurrencyGuard`**
+   - *Source:* `src/lib/server/persistence/instance-guard.ts` (lines 58–76).
+   - *Mechanism:* When inspecting an existing lease, if `lastHeartbeat` is < 15 seconds old, the guard assumes another instance is running even if the process with `lockInfo.pid` has already crashed (`ESRCH`). Furthermore, lease acquisition does not use `O_CREAT | O_EXCL`, creating a race window during concurrent boots.
+   - *Impact:* Fresh instance fails to start or emits false concurrency warning after an abrupt crash; concurrent boots can both claim lease.
+   - *Resolution:* Check `DurableFileStore.isProcessAlive(lockInfo.pid)`. If the owner process is confirmed dead (`ESRCH`), immediately reclaim the lease. Use atomic lock acquisition.
+
+### 18.3 Architectural Decision: Sufficient Primitives vs Transaction Engine
+
+**Verdict:** Existing persistence primitives (`DurableFileStore.withCollectionLockStrict` + atomic write + OS PID liveness) are **fully sufficient** to resolve all confirmed defects without introducing a new transaction engine, database migration, or external locking service.
+- **Why:** In SamJuniorsOS single-instance architecture (`min-instances=1, max-instances=1`), each collection has an exclusive OS-level lock file. Moving the read-check-mutate logic inside `withCollectionLockStrict` converts optimistic or un-serialized operations into strictly serialized critical sections.
+- **Alternatives Rejected:**
+  - *PostgreSQL MVCC:* Rejected per `AGENTS.md` boundaries (premature cloud dependency).
+  - *Redis Distributed Lock:* Rejected per `AGENTS.md` boundaries (unnecessary external daemon).
+  - *Generic Multi-File Two-Phase Commit:* Rejected. Cross-collection operations in SamJuniorsOS follow a clean sequential Write-Ahead Reservation pipeline (Idempotency Claim -> Approval Consume -> Execute -> Complete -> Audit), which is inherently crash-safe when each individual step is atomic.
+
+### 18.4 Implementation & Verification Summary
+
+The 5 confirmed defects were implemented in:
+1. `src/lib/server/authorization/approval-store.ts`: Wrapped `consume`, `decide`, and `revoke` in `withCollectionLockStrict('approvals', ...)`. Re-reads disk state under lock, checks `isConsumed`, updates disk strictly, updates memory cache, and returns mutated record.
+2. `src/lib/server/idempotency/store.ts`: Wrapped `claim`, `complete`, `fail`, and `markUnknown` in `withCollectionLockStrict('idempotency_records', ...)`. Re-reads disk state under lock, evaluates status and TTL, writes disk strictly, updates memory cache, and returns claimed result.
+3. `src/lib/server/workflow/store.ts`: Wrapped `claimStepAtomic` and `transitionStepAtomic` in `withCollectionLockStrict('workflow_instances', ...)`. Re-reads latest instance under lock, enforces optimistic `stateVersion`, transitions step, saves disk strictly, and updates memory cache.
+4. `src/lib/server/state/state-store.ts`: Wrapped `recordDecision`, `setInitiatives`, and `updateFinancialMetrics` in `withCollectionLockStrict('company_state', ...)`. Reads on-disk state under lock, prepends decision / updates fields, writes disk strictly, and updates cache.
+5. `src/lib/server/persistence/instance-guard.ts`: Added PID liveness verification via `DurableFileStore.isProcessAlive(lockInfo.pid)` to reclaim crashed instance leases without false-positive lockouts, and switched lease writes to atomic temporary files + rename.
+
+#### Deterministic Regression Verification (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):
+- **Test 1:** 20 concurrent `ApprovalStore.consume()` calls -> exactly 1 success, 19 `ApprovalAlreadyConsumedError`. **PASS**
+- **Test 2:** 20 concurrent `IdempotencyStore.claim()` calls -> exactly 1 `claimed`, 19 `OperationInProgressError`. **PASS**
+- **Test 3:** 10 concurrent `WorkflowStore.claimStepAtomic()` calls with identical version -> exactly 1 winner, 9 rejected. **PASS**
+- **Test 4:** 10 concurrent `CompanyStateStore.recordDecision()` calls -> all 10 preserved on disk and cache (zero lost updates). **PASS**
+- **Test 5:** Concurrent cross-collection mutations (approvals, idempotency, state) -> complete independently without cross-collection interference. **PASS**
+- **Test 6:** Crashed owner PID in `instance.lock` with fresh heartbeat -> safely reclaimed via `isProcessAlive`. **PASS**
+- **Test 7:** Competing instance against live PID -> rejected failClosed with `[CONCURRENCY WARNING]`. **PASS**
+- **Test 8:** Interrupted write in `withCollectionLockStrict` -> leaves target collection intact, releases lock, and propagates error cleanly. **PASS**
+
+**Result: 8 PASSED, 0 FAILED.**
+
+### 18.5 Architectural Boundaries Maintained
+- Single-instance deployment constraint (`min-instances=1, max-instances=1`) preserved.
+- No Redis, etcd, PostgreSQL, or distributed transaction frameworks introduced.
+- Strict persistence-before-cache invariant maintained across all state stores.
+- Branch remains unmerged, undeployed, and stopped for Founder review.
