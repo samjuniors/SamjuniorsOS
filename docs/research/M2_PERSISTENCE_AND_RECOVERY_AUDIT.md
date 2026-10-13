@@ -555,6 +555,8 @@ The findings in this audit document have been verified against the active workin
 |---|---|---|---|
 | **Stale Lock Breaking (Age-Only Unlinking)** | Can break active locks held > 10s by living processes | **VERIFIED DEFECT** | `breakStaleLock` checked only `stat.mtimeMs > 10,000ms`, ignoring owner PID. If an operation took > 10s, a contender unlinked the lock and acquired it, resulting in dual lock ownership. |
 | **Owner Process Liveness Verification** | Owner process termination was unverified | **VERIFIED DEFECT** | `DurableFileStore` wrote PID to lock file, but `breakStaleLock` never read the PID or checked if the process was alive before unlinking. |
+| **Recovery-Race TOCTOU Interleaving** | Process C inspecting dead lock could unlink Process B's newly created live lock | **VERIFIED DEFECT** | If Process B and C inspected dead lock $L_{dead}$, B unlinked it and acquired $L_B$, Process C could then unlink $L_B$ without verifying the file on disk was still $L_{dead}$. |
+| **PID Liveness Error Handling** | Unexpected errors could authorize lock deletion | **VERIFIED DEFECT** | Catching non-ESRCH errors and returning `false` could treat an unexpected OS error as a dead process. Only confirmed `ESRCH` proves termination. |
 | **In-Process Re-Entrancy (`lockDepth`)** | Process-global Map shared across async contexts | **VERIFIED DEFECT** | `lockDepth` tracked depth per collection name globally on the class instance (`Map<string, number>`). Unrelated concurrent async calls in the same process bypassed locking. |
 | **Async Callbacks in `withCollectionLock`** | Promises returned inside lock released prematurely | **VERIFIED DEFECT** | If a callback returned a Promise, `finally` executed synchronously at T=0, unlinking the lock file while the async body continued running unprotected. |
 | **Temporary File Cleanup Safety** | Active writes protected from premature temp-file deletion | **VERIFIED SAFE** | Enhanced `cleanupOrphanedTempFiles` to verify whether the PID in `.tmp.<pid>.*` is actively running. Temp files of living processes are never deleted. |
@@ -562,26 +564,45 @@ The findings in this audit document have been verified against the active workin
 
 ### 15.2 Minimal Safe Corrections Implemented
 
-1. **Owner Process Liveness Check:**
-   - Added `DurableFileStore.isProcessAlive(pid)` using `process.kill(pid, 0)`: returns normally if alive; throws `ESRCH` if terminated/dead; throws `EPERM` if alive (different user).
-   - In `breakStaleLock`: parses the owner PID from the lock file. If the process is alive, **NEVER** breaks the lock, regardless of elapsed time. The contender waits up to `timeoutMs` and fails closed on timeout.
-   - If the process is confirmed dead (`ESRCH`), the orphaned lock is safely unlinked immediately.
-   - If the lock file is empty/unidentifiable (e.g., process crashed during creation before writing PID), it is protected when fresh (< 10s) and only broken when stale (> 10s).
-2. **Execution-Context-Isolated Re-Entrancy:**
+1. **Owner Process Liveness Check & Strict Error Handling:**
+   - Updated `DurableFileStore.isProcessAlive(pid)`:
+     - Returns `true` if process exists and is alive (no error).
+     - Returns `true` on `EPERM` (process exists, different user — potentially alive).
+     - Returns `false` **ONLY** on confirmed `ESRCH` (operating system confirms process does not exist).
+     - Fails closed (`return true;`) on any unexpected error; unexpected errors never authorize lock deletion.
+     - Non-positive, non-integer, or `NaN` PIDs return `false` (invalid PID).
+2. **Deterministic Instance Verification (`safeUnlinkStaleLock`):**
+   - Each lock file is created with a unique `lockId` (`${pid}.${Date.now()}.${random}`).
+   - `inspectLockFile(lockPath)` extracts `{ pid, lockId, createdAt, raw, mtimeMs }`.
+   - Before removing an orphaned lock, `safeUnlinkStaleLock(lockPath, expected)` re-reads the lock file from disk.
+   - If the lock file has been replaced (e.g. Process B unlinked the dead lock and acquired a new lock with a new `lockId`), the instance mismatch is detected immediately and removal is aborted. Process B's live lock is never unlinked.
+   - In addition, if the current file's PID is alive, removal is strictly aborted.
+3. **Execution-Context-Isolated Re-Entrancy:**
    - Replaced process-global `lockDepth` Map with `AsyncLocalStorage<Map<string, number>>`.
    - Nested synchronous calls within the same execution context inherit depth and execute without deadlocking.
    - Unrelated concurrent calls in separate execution contexts have isolated depth maps (0), preventing them from sharing or bypassing locks.
    - `executeWithLock` strictly detects and rejects Promise return values (`result && typeof result.then === 'function'`), throwing immediately to prevent holding synchronous locks across async gaps.
-3. **PID-Tagged Temporary Files:**
+4. **PID-Tagged Temporary Files:**
    - Temporary write files are named `<collection>.json.tmp.${process.pid}.${Date.now()}.${random}`.
    - `cleanupOrphanedTempFiles` checks PID liveness: temp files belonging to running processes are never unlinked even if older than 60s. Orphaned temp files from dead processes are cleaned up.
 
-### 15.3 Verification Results
+### 15.3 Deployment Boundary & Architectural Limitations
 
-- Dedicated test suite `tests/sophia/m2_batch1_lock_safety.test.ts`: **11/11 PASSED**.
+1. **Single-Instance Deployment Constraint:**
+   - This file-lock implementation operates strictly within the existing **single-instance deployment model** (`min-instances=1, max-instances=1`).
+   - Local PID liveness checks (`process.kill(pid, 0)`) inspect the host OS process table and **do not establish ownership across different physical hosts, separate VMs, or independent containers**.
+   - Shared-filesystem, NFS, SMB, or multi-host deployments remain **strictly unsupported** without a separate distributed coordination mechanism (e.g., PostgreSQL advisory locks, etcd, or distributed leases).
+2. **PID Reuse Realities:**
+   - `createdAt` records lock creation timestamp, but cannot prove process identity against operating system PID recycling over long durations. In a single-instance OS environment, lock hold durations are milliseconds and lock timeouts are 30s; OS PID exhaustion/recycling within this window is an accepted OS-level constraint.
+3. **Single Database Authority:**
+   - SamJuniorsOS maintains one authoritative state model. No parallel databases or distributed consensus clusters were introduced.
+
+### 15.4 Verification Results
+
+- Dedicated test suite `tests/sophia/m2_batch1_lock_safety.test.ts`: **13/13 PASSED** (including deterministic interleaving test 1.5 and PID error handling test 1.6).
 - Comprehensive failure test suite `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27/27 PASSED**.
 - M1 regression test suites:
   - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 PASSED**.
   - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 PASSED**.
   - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 PASSED**.
-- Total: **121/121 automated tests passed**. Zero regressions.
+- Total: **123/123 automated tests passed**. Zero regressions.

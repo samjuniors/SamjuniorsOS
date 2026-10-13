@@ -169,6 +169,110 @@ async function main() {
       assert.strictEqual(result.item_2.val, 2);
     });
 
+    await runTest('1.5: Deterministic recovery race: Process C inspecting dead lock cannot remove Process B\'s newly acquired live lock', async () => {
+      const collection = 'test_deterministic_recovery_race';
+      const lockPath = path.join(dataDir, `${collection}.json.lock`);
+
+      // Step 1: Create a dead-owner lock instance L_dead
+      const deadPid = 999999;
+      const deadLockId = 'dead_token_999999_xyz';
+      const deadPayload = JSON.stringify({
+        pid: deadPid,
+        createdAt: Date.now() - 5000,
+        lockId: deadLockId,
+      });
+      fs.writeFileSync(lockPath, `${deadPayload}\n`, { flag: 'wx' });
+
+      // Step 2: Process C inspects L_dead and confirms PID is dead
+      const inspectedByC = fileStore.inspectLockFile(lockPath);
+      assert(inspectedByC !== null, 'Process C must successfully inspect the lock');
+      assert.strictEqual(inspectedByC.pid, deadPid);
+      assert.strictEqual(inspectedByC.lockId, deadLockId);
+      assert(!DurableFileStore.isProcessAlive(inspectedByC.pid!), 'PID must be confirmed dead');
+
+      // Step 3: Before Process C unlinks, Process B intervenes:
+      // Process B unlinks L_dead and acquires a brand new live lock L_B
+      fs.unlinkSync(lockPath);
+      const liveLockId = `live_token_${process.pid}_abc`;
+      const livePayload = JSON.stringify({
+        pid: process.pid,
+        createdAt: Date.now(),
+        lockId: liveLockId,
+      });
+      fs.writeFileSync(lockPath, `${livePayload}\n`, { flag: 'wx' });
+
+      // Verify that L_B is currently active on disk and owner is alive
+      const currentOnDisk = fileStore.inspectLockFile(lockPath);
+      assert.strictEqual(currentOnDisk?.lockId, liveLockId);
+      assert(DurableFileStore.isProcessAlive(currentOnDisk!.pid!), 'Owner of L_B must be alive');
+
+      // Step 4: Process C now continues its stale-lock recovery attempt with its earlier inspected reference
+      const unlinkedByC = fileStore.safeUnlinkStaleLock(lockPath, inspectedByC);
+
+      // Step 5: VERIFICATION
+      // - Process C must REFUSE to unlink the lock file (returns false)
+      // - The live lock L_B must remain on disk completely intact
+      // - L_B's content must still have liveLockId and belong to Process B
+      assert.strictEqual(unlinkedByC, false, 'Process C must NOT unlink the lock file because instance changed');
+      assert(fs.existsSync(lockPath), 'Live lock file L_B must still exist on disk');
+
+      const finalCheck = fileStore.inspectLockFile(lockPath);
+      assert.strictEqual(finalCheck?.lockId, liveLockId, 'Lock ID on disk must remain L_B');
+      assert.strictEqual(finalCheck?.pid, process.pid, 'Lock owner on disk must remain Process B');
+
+      // Cleanup
+      fs.unlinkSync(lockPath);
+    });
+
+    await runTest('1.6: PID validation and error handling: Only confirmed ESRCH authorizes deletion; unexpected errors and EPERM fail closed', async () => {
+      // 1. ESRCH is confirmed dead
+      assert.strictEqual(DurableFileStore.isProcessAlive(999999), false, 'ESRCH must return false');
+
+      // 2. Active PID is confirmed alive
+      assert.strictEqual(DurableFileStore.isProcessAlive(process.pid), true, 'Current process must return true');
+
+      // 3. EPERM must fail closed (treat as potentially alive)
+      const origKill = process.kill;
+      try {
+        (process as any).kill = (pid: number, signal?: any) => {
+          const err: any = new Error('Operation not permitted');
+          err.code = 'EPERM';
+          throw err;
+        };
+        assert.strictEqual(DurableFileStore.isProcessAlive(12345), true, 'EPERM must return true (potentially alive)');
+      } finally {
+        process.kill = origKill;
+      }
+
+      // 4. Unexpected errors (EIO, ENOSYS, etc.) must fail closed (treat as alive)
+      try {
+        (process as any).kill = (pid: number, signal?: any) => {
+          const err: any = new Error('Unexpected I/O failure');
+          err.code = 'EIO';
+          throw err;
+        };
+        assert.strictEqual(DurableFileStore.isProcessAlive(12345), true, 'Unexpected error EIO must return true (fail closed)');
+      } finally {
+        process.kill = origKill;
+      }
+
+      // 5. Malformed, non-positive, NaN, and invalid PIDs return false (invalid PID)
+      assert.strictEqual(DurableFileStore.isProcessAlive(0), false, 'PID 0 must return false');
+      assert.strictEqual(DurableFileStore.isProcessAlive(-1), false, 'Negative PID must return false');
+      assert.strictEqual(DurableFileStore.isProcessAlive(NaN), false, 'NaN PID must return false');
+      assert.strictEqual(DurableFileStore.isProcessAlive(12.34), false, 'Float PID must return false');
+
+      // 6. InspectLockFile rejects malformed/negative PIDs in lock file
+      const tempLock = path.join(dataDir, 'test_malformed_pid.lock');
+      fs.writeFileSync(tempLock, JSON.stringify({ pid: -100 }) + '\n');
+      assert.strictEqual(fileStore.inspectLockFile(tempLock)?.pid, null, 'Negative PID must parse as null');
+
+      fs.writeFileSync(tempLock, 'invalid_text_pid\n');
+      assert.strictEqual(fileStore.inspectLockFile(tempLock)?.pid, null, 'Text PID must parse as null');
+
+      fs.unlinkSync(tempLock);
+    });
+
     // =========================================================================
     // SECTION 2: RE-ENTRANCY & ASYNC CONTEXT ISOLATION
     // =========================================================================

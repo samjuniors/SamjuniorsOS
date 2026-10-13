@@ -214,10 +214,14 @@ export class DurableFileStore {
 
   /**
    * Helper to verify if a process with the specified PID is actively running.
-   * On Windows and POSIX:
-   *  - process.kill(pid, 0) returns normally if process exists and is alive.
-   *  - throws ESRCH if process has terminated / does not exist.
-   *  - throws EPERM if process exists but is owned by another user (alive).
+   *
+   * STRICT FAIL-CLOSED SEMANTICS:
+   *  - Returns true if the process exists and is alive (no error).
+   *  - Returns true if process.kill throws EPERM (process exists, different user).
+   *  - Returns false ONLY on confirmed ESRCH (operating system confirms process does not exist).
+   *  - Fails closed (returns true) on any unexpected error; unexpected errors
+   *    must NEVER authorize lock deletion.
+   *  - Non-positive or non-integer PIDs return false (invalid PID).
    */
   public static isProcessAlive(pid: number): boolean {
     if (!Number.isInteger(pid) || pid <= 0) {
@@ -228,29 +232,65 @@ export class DurableFileStore {
       return true;
     } catch (err: any) {
       if (err?.code === 'ESRCH') {
+        // ESRCH: No such process — the ONLY confirmed signal of process termination
         return false;
       }
       if (err?.code === 'EPERM') {
+        // EPERM: Process exists, owned by another user — potentially alive
         return true;
       }
-      return false;
+      // Fail closed on any unexpected OS error: treat as potentially alive
+      return true;
     }
   }
 
-  /** Parses the owner PID from lock file content (supports JSON format and plain PID). */
-  private parseLockPid(content: string): number | null {
-    const trimmed = content.trim();
-    if (!trimmed) return null;
-    if (trimmed.startsWith('{')) {
+  /**
+   * Inspects the current lock file on disk and extracts its ownership metadata.
+   */
+  public inspectLockFile(lockPath: string): {
+    pid: number | null;
+    lockId: string | null;
+    createdAt: number | null;
+    raw: string;
+    mtimeMs: number;
+  } | null {
+    try {
+      const stat = fs.statSync(lockPath);
+      let raw: string;
       try {
-        const parsed = JSON.parse(trimmed);
-        if (typeof parsed?.pid === 'number' && Number.isInteger(parsed.pid) && parsed.pid > 0) {
-          return parsed.pid;
+        raw = fs.readFileSync(lockPath, 'utf-8');
+      } catch {
+        return null;
+      }
+      const trimmed = raw.trim();
+      let pid: number | null = null;
+      let lockId: string | null = null;
+      let createdAt: number | null = null;
+
+      if (trimmed.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (typeof parsed?.pid === 'number' && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+            pid = parsed.pid;
+          }
+          if (typeof parsed?.lockId === 'string' && parsed.lockId.trim()) {
+            lockId = parsed.lockId.trim();
+          }
+          if (typeof parsed?.createdAt === 'number' && Number.isFinite(parsed.createdAt)) {
+            createdAt = parsed.createdAt;
+          }
+        } catch {}
+      } else if (trimmed) {
+        const parsed = parseInt(trimmed, 10);
+        if (Number.isInteger(parsed) && parsed > 0) {
+          pid = parsed;
         }
-      } catch {}
+      }
+
+      return { pid, lockId, createdAt, raw, mtimeMs: stat.mtimeMs };
+    } catch {
+      return null;
     }
-    const pid = parseInt(trimmed, 10);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
   }
 
   /**
@@ -263,6 +303,7 @@ export class DurableFileStore {
       const payload = JSON.stringify({
         pid: process.pid,
         createdAt: Date.now(),
+        lockId: `${process.pid}.${Date.now()}.${Math.random().toString(36).substring(2, 9)}`,
       });
       fs.writeSync(fd, `${payload}\n`);
       fs.closeSync(fd);
@@ -274,47 +315,86 @@ export class DurableFileStore {
   }
 
   /**
+   * Safely removes an orphaned lock file IF AND ONLY IF the file on disk
+   * is confirmed to be the exact instance originally inspected.
+   *
+   * Prevents TOCTOU recovery race where Process B recovers the lock, acquires a new
+   * live lock, and Process C subsequently deletes Process B's live lock.
+   */
+  public safeUnlinkStaleLock(
+    lockPath: string,
+    expected: {
+      pid: number | null;
+      lockId: string | null;
+      createdAt: number | null;
+      raw: string;
+      mtimeMs: number;
+    }
+  ): boolean {
+    try {
+      // Re-read current lock file immediately before unlinking
+      const current = this.inspectLockFile(lockPath);
+      if (!current) {
+        // Already removed by another process — safe no-op
+        return false;
+      }
+
+      // Check whether current lock matches the inspected dead lock instance
+      let matches = false;
+      if (expected.lockId && current.lockId) {
+        matches = expected.lockId === current.lockId;
+      } else {
+        matches = expected.raw.trim() === current.raw.trim();
+      }
+
+      if (!matches) {
+        // The lock file on disk is NO LONGER the inspected dead lock!
+        // A contender already recovered the lock and created a new live lock instance.
+        // Refuse to delete the new lock file.
+        return false;
+      }
+
+      // Additional defense-in-depth: if current PID is alive, NEVER unlink
+      if (current.pid !== null && DurableFileStore.isProcessAlive(current.pid)) {
+        return false;
+      }
+
+      fs.unlinkSync(lockPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Breaks a stale lock IF AND ONLY IF the owner process is confirmed dead.
    * NEVER breaks a lock held by a live process.
+   * Verifies that the file being removed is still the exact lock instance inspected.
    */
   private breakStaleLock(lockPath: string): void {
-    try {
-      const stat = fs.statSync(lockPath);
-      let content: string;
-      try {
-        content = fs.readFileSync(lockPath, 'utf-8');
-      } catch {
-        // Disappeared or being written — nothing to do
-        return;
-      }
-
-      const ownerPid = this.parseLockPid(content);
-
-      if (ownerPid !== null) {
-        if (DurableFileStore.isProcessAlive(ownerPid)) {
-          // Owner process is alive and actively running!
-          // NEVER break a live lock, regardless of elapsed time.
-          return;
-        }
-        // Owner process is confirmed dead (ESRCH).
-        // It crashed or was terminated without releasing the lock file.
-        try {
-          fs.unlinkSync(lockPath);
-        } catch {
-          // Raced with another recovering contender or release — nothing to do
-        }
-        return;
-      }
-
-      // Lock file exists but lacks a valid PID (e.g. created but empty/corrupt).
-      // Only break if it has persisted unwritten for longer than LOCK_STALE_MS.
-      if (Date.now() - stat.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
-        try {
-          fs.unlinkSync(lockPath);
-        } catch {}
-      }
-    } catch {
+    const inspected = this.inspectLockFile(lockPath);
+    if (!inspected) {
       // Lock disappeared or is not stat-able — nothing to break
+      return;
+    }
+
+    if (inspected.pid !== null) {
+      if (DurableFileStore.isProcessAlive(inspected.pid)) {
+        // Owner process is alive and actively running!
+        // NEVER break a live lock, regardless of elapsed time.
+        return;
+      }
+
+      // Owner process is confirmed dead (ESRCH).
+      // Safely unlink ONLY if the file on disk is still the exact instance inspected.
+      this.safeUnlinkStaleLock(lockPath, inspected);
+      return;
+    }
+
+    // Lock file exists but lacks a valid PID (e.g. created but empty/corrupt).
+    // Only break if it has persisted unwritten for longer than LOCK_STALE_MS.
+    if (Date.now() - inspected.mtimeMs > DurableFileStore.LOCK_STALE_MS) {
+      this.safeUnlinkStaleLock(lockPath, inspected);
     }
   }
 
