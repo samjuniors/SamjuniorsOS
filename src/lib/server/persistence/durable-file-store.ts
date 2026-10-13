@@ -398,9 +398,9 @@ export class DurableFileStore {
    * Serialized on the per-collection cross-process lock (M4-A hardening).
    */
   public writeCollection<T>(collection: string, data: Record<string, T>): void {
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
+      this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, false);
     } finally {
       this.releaseLock(collection);
@@ -420,9 +420,9 @@ export class DurableFileStore {
   ): void {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
+      this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, true);
     } finally {
       this.releaseLock(collection);
@@ -436,10 +436,10 @@ export class DurableFileStore {
    * writer can no longer be silently erased by a last-writer-wins interleave.
    */
   public saveItem<T>(collection: string, id: string, item: T): void {
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
       const current = this.readCollection<T>(collection);
+      this.markCriticalCollectionInitialized(collection);
       current[id] = JSON.parse(JSON.stringify(item));
       this.atomicWrite(collection, current, false);
     } finally {
@@ -461,10 +461,10 @@ export class DurableFileStore {
   ): void {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
+      this.markCriticalCollectionInitialized(collection);
       current[id] = JSON.parse(JSON.stringify(item));
       this.atomicWrite(collection, current, true);
     } finally {
@@ -485,11 +485,11 @@ export class DurableFileStore {
    * Cross-process serialized read-modify-write (M4-A hardening).
    */
   public deleteItem(collection: string, id: string): void {
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection);
     try {
       const current = this.readCollection(collection);
       if (current[id] !== undefined) {
+        this.markCriticalCollectionInitialized(collection);
         delete current[id];
         this.atomicWrite(collection, current, false);
       }
@@ -511,13 +511,13 @@ export class DurableFileStore {
   ): boolean {
     const lockStrict = options?.lockStrict ?? false;
     const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
-    this.markCriticalCollectionInitialized(collection);
     this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection(collection);
       if (current[id] === undefined) {
         return false;
       }
+      this.markCriticalCollectionInitialized(collection);
       delete current[id];
       this.atomicWrite(collection, current, true);
       return true;
