@@ -76,44 +76,9 @@ export interface MessageTombstone {
  *    be treated as record absence -> false.
  */
 export function isPrismaRecordNotFoundError(err: any): boolean {
-  if (!err) return false;
-
-  // Canonical Prisma error code for "Record to delete does not exist"
-  if (err.code === 'P2025') return true;
-
-  // Connection errors, database initialization errors, and timeouts must NEVER be treated as record absence
-  if (
-    typeof err.code === 'string' &&
-    (err.code.startsWith('P1') ||
-      err.code === 'ETIMEDOUT' ||
-      err.code === 'ECONNREFUSED' ||
-      err.code === 'ENOTFOUND')
-  ) {
-    return false;
-  }
-
-  // If a mock or driver wraps the error without code, check for exact canonical P2025 phrases.
-  // Reject generic fragments like "table does not exist", "database does not exist", "host does not exist".
-  if (typeof err.message === 'string') {
-    const msg = err.message;
-    if (
-      msg.includes('database does not exist') ||
-      msg.includes('table does not exist') ||
-      msg.includes('relation does not exist') ||
-      msg.includes('does not exist at') ||
-      msg.includes('host does not exist')
-    ) {
-      return false;
-    }
-    if (
-      msg.includes('Record to delete does not exist') ||
-      msg.includes('An operation failed because it depends on one or more records that were required but not found')
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+  // Only Prisma's canonical P2025 code proves that the targeted record is absent.
+  // Message text is not a stable contract and can describe missing tables/databases.
+  return Boolean(err && typeof err === 'object' && err.code === 'P2025');
 }
 
 export interface ReconcileResult {
