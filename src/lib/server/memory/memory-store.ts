@@ -161,14 +161,20 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
           summary: memory.approvedAction || memory.id,
         },
       });
+      // Keep in-process cache coherent with database write
+      this.memories = [
+        sanitizedMemory,
+        ...this.memories.filter((m) => m.id !== sanitizedMemory.id),
+      ];
       return;
     }
 
-    this.memories.unshift(sanitizedMemory);
-
-    try {
-      DurableFileStore.getInstance().saveItem('company_memories', sanitizedMemory.id, sanitizedMemory);
-    } catch {}
+    // M1-F03: Enforce strict persistence before mutating in-memory cache
+    DurableFileStore.getInstance().saveItemStrict('company_memories', sanitizedMemory.id, sanitizedMemory);
+    this.memories = [
+      sanitizedMemory,
+      ...this.memories.filter((m) => m.id !== sanitizedMemory.id),
+    ];
 
     if (process.env.DATABASE_URL) {
       try {
@@ -201,8 +207,13 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
   /**
    * Queries relevant memories using OperationalLearningLoop.
    * Ensures every retrieved memory has provenance metadata and epistemic classification: 'historical_memory'.
+   * 
+   * M1-F02 FIX: Routes through getAllMemories() so that in authoritative mode the database
+   * is the single source of truth, matching the pattern established in CompanyKnowledgeStore.
    */
   public async queryMemories(params: MemoryQueryParams): Promise<RetrievedHistoricalMemory[]> {
+    const candidateMemories = await this.getAllMemories();
+
     const rawResults = OperationalLearningLoop.retrieveRelevantMemories(
       {
         title: params.queryText,
@@ -211,14 +222,14 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
         currentFacts: params.currentFacts,
         tags: params.tags,
       },
-      this.memories
+      candidateMemories
     );
 
     const nowIso = new Date().toISOString();
 
     // Enhance every result with explicit provenance and epistemic classification
     const enriched: RetrievedHistoricalMemory[] = rawResults.map((item) => {
-      const origMem = this.memories.find((m) => m.id === item.memoryId);
+      const origMem = candidateMemories.find((m) => m.id === item.memoryId);
       return {
         ...item,
         provenance: {

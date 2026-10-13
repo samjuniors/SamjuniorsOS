@@ -201,7 +201,7 @@ export class AgentRunStore implements IAgentRunStore {
       result = result.filter((r) => r.status === filter.status);
     }
 
-    result.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    result.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
     if (filter?.limit) {
       result = result.slice(0, filter.limit);

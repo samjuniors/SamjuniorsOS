@@ -2,6 +2,8 @@
 **Status:** Reconciled against repository `32a6f38` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
 
 **CURRENT STATUS:**
+- 2026-10-13: M1 Batch 3 critical-ledger corruption policy, verification, and recovery acceptance COMPLETE on `audit/m1-memory-source-of-truth`. All targeted tests, independent type validation, full regressions (146/146 assertions passing), corruption attacks, Prisma fallback guards, and controlled backup/restore procedure verified with zero regressions. Branch remains unmerged and undeployed, awaiting Founder review.
+- 2026-10-12: M1 Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. All 5 tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 automated test assertions were reported passing in the audit phase.
 - Canonical design system migration completed and verified (ADR 0001).
 - Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
 - Phase 4 Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline over companion Node.js WebSocket process (port 3001), native Flux interruption, and PTT-only scope.
@@ -11,10 +13,10 @@
 - Phase 4C-B: Streaming STT Adapter Implementation IMPLEMENTED & VERIFIED (ADR 0004). Implemented provider-neutral `STTProvider` contract (`src/lib/server/live/stt/types.ts`), `DeepgramFluxProvider` streaming adapter with bounded 80ms chunk aggregation (`src/lib/server/live/stt/deepgram-flux.ts`), 128ms pre-roll ring buffer in `SophiaLiveClient`, canonical turn execution pipeline with `ConversationStore` persistence and `SophiaServerGateway` security boundary (`src/lib/server/sophia/turn-executor.ts`), and turn idempotency locks in `LiveInteractionServer`. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`.
 
 **NEXT PHASE:**
-Phase 4C-C: Self-Hosted STT Adapter Exploration (Qwen3-ASR) / Voice Response Playback Architecture (TTS).
+M1 — Memory Source-of-Truth and Persistence Implementation Batches (Batch 1: configuration parser hygiene & CompanyMemoryStore cache fix; Batch 2: deletion & retention foundation; Batch 3: file corruption quarantine). Voice expansion, Qwen runtime and TTS remain deferred until Memory, the native decision workflow and the tool runtime are complete to their acceptance criteria.
 
 **NEXT ACTION:**
-STOP condition active. Phase 4C-B streaming STT adapter implementation completed and sealed. Await Founder review of Phase 4C-B report before proceeding to Phase 4C-C / 4D planning or execution. (DO NOT implement TTS, audio response playback, or Qwen runtime until approved).
+Founder review of M1 Batch 3 verification evidence, isolated test results, and documentation before merge or deployment. Keep branch unmerged and undeployed. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 

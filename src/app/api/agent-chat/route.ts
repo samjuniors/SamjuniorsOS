@@ -782,11 +782,14 @@ export async function GET(req: NextRequest) {
           messages,
         });
       } catch (err: any) {
-        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
-          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
-        }
-        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
-          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
+        if (
+          err instanceof ConversationSecurityError ||
+          err instanceof ConversationNotFoundError ||
+          err.name === 'ConversationSecurityError' ||
+          err.name === 'ConversationNotFoundError'
+        ) {
+          // Zero Information Leakage: Never reveal existence of another founder's records
+          return NextResponse.json({ error: `Not Found: Conversation "${conversationId}" not found` }, { status: 404 });
         }
         return NextResponse.json({ error: err.message || 'Failed to retrieve conversation' }, { status: 500 });
       }
@@ -800,6 +803,107 @@ export async function GET(req: NextRequest) {
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to list conversations' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getAuthenticatedFounder(req);
+    if (!session || session.role !== 'FOUNDER') {
+      return NextResponse.json(
+        { error: 'Unauthorized: Session required to delete conversations' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(req.url);
+    let conversationId = searchParams.get('conversationId') || searchParams.get('id');
+    let messageId = searchParams.get('messageId');
+
+    if (!conversationId) {
+      try {
+        const body = await req.json();
+        conversationId = conversationId || body.conversationId || body.id;
+        messageId = messageId || body.messageId;
+      } catch {
+        // No or non-JSON body
+      }
+    }
+
+    if (!conversationId || !conversationId.trim()) {
+      return NextResponse.json(
+        { error: 'Bad Request: conversationId is required' },
+        { status: 400 }
+      );
+    }
+
+    const convStore = ConversationStore.getInstance();
+
+    if (messageId && messageId.trim()) {
+      try {
+        const result = await convStore.deleteMessage(
+          session.userId,
+          conversationId.trim(),
+          messageId.trim()
+        );
+        if (result.notFound) {
+          return NextResponse.json({ error: 'Not Found: Message not found' }, { status: 404 });
+        }
+        return NextResponse.json({
+          success: true,
+          deleted: true,
+          conversationId: result.conversationId,
+          messageId: result.messageId,
+        });
+      } catch (err: any) {
+        if (
+          err instanceof ConversationSecurityError ||
+          err instanceof ConversationNotFoundError ||
+          err.name === 'ConversationSecurityError' ||
+          err.name === 'ConversationNotFoundError'
+        ) {
+          return NextResponse.json({ error: 'Not Found: Message not found' }, { status: 404 });
+        }
+        return NextResponse.json({ error: err.message || 'Failed to delete message' }, { status: 500 });
+      }
+    }
+
+    try {
+      const result = await convStore.deleteConversation(session.userId, conversationId.trim());
+
+      if (result.notFound) {
+        return NextResponse.json({ error: 'Not Found: Conversation not found' }, { status: 404 });
+      }
+
+      if (result.alreadyDeleted) {
+        return NextResponse.json({
+          success: true,
+          deleted: false,
+          alreadyDeleted: true,
+          conversationId: result.conversationId,
+          purgedMessageCount: result.purgedMessageCount,
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        deleted: true,
+        conversationId: result.conversationId,
+        purgedMessageCount: result.purgedMessageCount,
+      });
+    } catch (err: any) {
+      if (
+        err instanceof ConversationSecurityError ||
+        err instanceof ConversationNotFoundError ||
+        err.name === 'ConversationSecurityError' ||
+        err.name === 'ConversationNotFoundError'
+      ) {
+        return NextResponse.json({ error: 'Not Found: Conversation not found' }, { status: 404 });
+      }
+      return NextResponse.json({ error: err.message || 'Failed to delete conversation' }, { status: 500 });
+    }
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || 'Failed to delete conversation' }, { status: 500 });
   }
 }
 

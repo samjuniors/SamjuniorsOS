@@ -30,6 +30,27 @@ import path from 'path';
  * within a process (a depth counter per collection), so a locked section
  * may call saveItem()/deleteItem()/writeCollection() freely.
  */
+export class LockTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LockTimeoutError';
+  }
+}
+
+export class CriticalCollectionCorruptionError extends Error {
+  public readonly collection: string;
+  public readonly filePath: string;
+  public readonly quarantinePath?: string;
+
+  constructor(args: { collection: string; filePath: string; message: string; quarantinePath?: string; cause?: unknown }) {
+    super(args.message, args.cause === undefined ? undefined : { cause: args.cause });
+    this.name = 'CriticalCollectionCorruptionError';
+    this.collection = args.collection;
+    this.filePath = args.filePath;
+    this.quarantinePath = args.quarantinePath;
+  }
+}
+
 export class DurableFileStore {
   private static instance: DurableFileStore;
   private dataDir: string;
@@ -78,6 +99,110 @@ export class DurableFileStore {
     return path.join(this.dataDir, `${sanitized}.json.lock`);
   }
 
+  /**
+   * These ledgers are security/governance barriers. An unreadable ledger must
+   * never be interpreted as empty because doing so can resurrect deleted data.
+   */
+  private isCriticalCollection(collection: string): boolean {
+    return collection === 'conversation_tombstones' || collection === 'message_tombstones';
+  }
+
+  private getCriticalMarkerPath(collection: string): string {
+    return `${this.getCollectionPath(collection)}.initialized`;
+  }
+
+  private markCriticalCollectionInitialized(collection: string): void {
+    if (!this.isCriticalCollection(collection)) return;
+    const markerPath = this.getCriticalMarkerPath(collection);
+    let fd: number | undefined;
+    try {
+      fd = fs.openSync(markerPath, 'wx', 0o600);
+      fs.writeSync(fd, `initialized ${new Date().toISOString()}\\n`);
+      fs.fsyncSync(fd);
+    } catch (err: any) {
+      if (err?.code !== 'EEXIST') {
+        throw new CriticalCollectionCorruptionError({
+          collection,
+          filePath: this.getCollectionPath(collection),
+          message: `Unable to persist initialization marker for critical collection "${collection}".`,
+          cause: err,
+        });
+      }
+    } finally {
+      if (fd !== undefined) {
+        try { fs.closeSync(fd); } catch { /* best-effort close after fsync */ }
+      }
+    }
+  }
+
+  private quarantineCriticalCollection(collection: string, filePath: string, reason: string, cause?: unknown): never {
+    const quarantinePath = `${filePath}.corrupt.${Date.now()}.${process.pid}`;
+    try {
+      fs.renameSync(filePath, quarantinePath);
+      throw new CriticalCollectionCorruptionError({
+        collection,
+        filePath,
+        quarantinePath,
+        message: `Critical collection "${collection}" is corrupt (${reason}); original file quarantined at "${quarantinePath}". Restore/reconcile it before serving traffic.`,
+        cause,
+      });
+    } catch (err: any) {
+      if (err instanceof CriticalCollectionCorruptionError) throw err;
+      throw new CriticalCollectionCorruptionError({
+        collection,
+        filePath,
+        message: `Critical collection "${collection}" is corrupt (${reason}) and quarantine failed. Refusing to continue.`,
+        cause: err ?? cause,
+      });
+    }
+  }
+
+  private readCriticalCollection<T>(collection: string): Record<string, T> {
+    const filePath = this.getCollectionPath(collection);
+    const markerPath = this.getCriticalMarkerPath(collection);
+
+    if (!fs.existsSync(filePath)) {
+      if (fs.existsSync(markerPath)) {
+        throw new CriticalCollectionCorruptionError({
+          collection,
+          filePath,
+          message: `Critical collection "${collection}" is missing although its initialization marker exists. Refusing to treat it as empty.`,
+        });
+      }
+      // First-use state only. The marker is created before the first durable write.
+      return {};
+    }
+
+    // A pre-existing file proves this ledger has been initialized. Persist the
+    // marker before parsing so quarantine cannot make it look like first-use.
+    this.markCriticalCollectionInitialized(collection);
+
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      this.quarantineCriticalCollection(collection, filePath, 'file read failed', err);
+    }
+
+    if (!content!.trim()) {
+      this.quarantineCriticalCollection(collection, filePath, 'file is empty');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content!);
+    } catch (err) {
+      this.quarantineCriticalCollection(collection, filePath, 'invalid JSON', err);
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      this.quarantineCriticalCollection(collection, filePath, 'expected a JSON object');
+    }
+
+    this.markCriticalCollectionInitialized(collection);
+    return parsed as Record<string, T>;
+  }
+
   /** Synchronous bounded sleep (Atomics.wait blocks the thread without spinning). */
   private static sleepMs(ms: number): void {
     try {
@@ -121,10 +246,16 @@ export class DurableFileStore {
 
   /**
    * Acquires the per-collection cross-process lock (re-entrant in-process).
-   * Best-effort by design: after LOCK_TIMEOUT_MS of contention the caller
-   * proceeds WITHOUT the lock (loudly logged) so persistence never wedges.
+   * When `failClosed` is true, throws LockTimeoutError if the lock cannot be
+   * acquired within `timeoutMs`, guaranteeing that critical operations never proceed
+   * without serialization. When `failClosed` is false (legacy default), proceeds
+   * without the lock after timeout and logs loudly.
    */
-  private acquireLock(collection: string): void {
+  private acquireLock(
+    collection: string,
+    failClosed: boolean = false,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): void {
     const depth = this.lockDepth.get(collection) ?? 0;
     if (depth > 0) {
       this.lockDepth.set(collection, depth + 1);
@@ -132,7 +263,7 @@ export class DurableFileStore {
     }
 
     const lockPath = this.getLockPath(collection);
-    const deadline = Date.now() + DurableFileStore.LOCK_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
     let warned = false;
 
     for (;;) {
@@ -142,10 +273,15 @@ export class DurableFileStore {
       }
       this.breakStaleLock(lockPath);
       if (Date.now() > deadline) {
+        if (failClosed) {
+          throw new LockTimeoutError(
+            `[DurableFileStore] Failed to acquire lock for "${collection}" within ${timeoutMs}ms (fail-closed)`
+          );
+        }
         if (!warned) {
           console.error(
             `[DurableFileStore] Could not acquire lock for "${collection}" within ` +
-              `${DurableFileStore.LOCK_TIMEOUT_MS}ms — proceeding WITHOUT the lock ` +
+              `${timeoutMs}ms — proceeding WITHOUT the lock ` +
               `(concurrent read-modify-write protection is degraded for this write).`
           );
           warned = true;
@@ -180,7 +316,29 @@ export class DurableFileStore {
    * the serialization guarantee.
    */
   public withCollectionLock<T>(collection: string, fn: () => T): T {
-    this.acquireLock(collection);
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires withCollectionLockStrict().`);
+    }
+    this.acquireLock(collection, false);
+    try {
+      return fn();
+    } finally {
+      this.releaseLock(collection);
+    }
+  }
+
+  /**
+   * FAIL-CLOSED variant of withCollectionLock:
+   * Throws LockTimeoutError if the collection lock cannot be acquired within
+   * timeoutMs. Used for critical deletion and message-write serialization where
+   * proceeding without a lock is unsafe and prohibited.
+   */
+  public withCollectionLockStrict<T>(
+    collection: string,
+    fn: () => T,
+    timeoutMs: number = DurableFileStore.LOCK_TIMEOUT_MS
+  ): T {
+    this.acquireLock(collection, true, timeoutMs);
     try {
       return fn();
     } finally {
@@ -192,6 +350,9 @@ export class DurableFileStore {
    * Reads all items from a collection on disk.
    */
   public readCollection<T>(collection: string): Record<string, T> {
+    if (this.isCriticalCollection(collection)) {
+      return this.readCriticalCollection<T>(collection);
+    }
     const filePath = this.getCollectionPath(collection);
     if (!fs.existsSync(filePath)) {
       return {};
@@ -244,8 +405,12 @@ export class DurableFileStore {
    * Serialized on the per-collection cross-process lock (M4-A hardening).
    */
   public writeCollection<T>(collection: string, data: Record<string, T>): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires writeCollectionStrict().`);
+    }
     this.acquireLock(collection);
     try {
+      this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, false);
     } finally {
       this.releaseLock(collection);
@@ -255,13 +420,25 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): identical locking and
    * atomicity to writeCollection, but a failed authoritative write THROWS so a
-   * caller can never mistake a lost write for a durable one. Used by the
-   * Sophia personal-memory store (the founder's Personal Mind must not
-   * report success for a write that never reached disk).
+   * caller can never mistake a lost write for a durable one.
+   * When options.lockStrict is true, throws LockTimeoutError on lock timeout (fail-closed).
    */
-  public writeCollectionStrict<T>(collection: string, data: Record<string, T>): void {
-    this.acquireLock(collection);
+  public writeCollectionStrict<T>(
+    collection: string,
+    data: Record<string, T>,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): void {
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
+      // Validate an existing critical ledger before allowing full replacement.
+      // This prevents a normal write path from silently "repairing" missing or
+      // corrupt tombstone state by overwriting the evidence.
+      if (this.isCriticalCollection(collection)) {
+        this.readCriticalCollection(collection);
+      }
+      this.markCriticalCollectionInitialized(collection);
       this.atomicWrite(collection, data, true);
     } finally {
       this.releaseLock(collection);
@@ -275,6 +452,9 @@ export class DurableFileStore {
    * writer can no longer be silently erased by a last-writer-wins interleave.
    */
   public saveItem<T>(collection: string, id: string, item: T): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires saveItemStrict().`);
+    }
     this.acquireLock(collection);
     try {
       const current = this.readCollection<T>(collection);
@@ -288,11 +468,21 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): locked
    * read-modify-write that THROWS when the authoritative write fails.
+   * When options.lockStrict is true, throws LockTimeoutError if the collection
+   * lock cannot be acquired within timeoutMs (fail-closed locking).
    */
-  public saveItemStrict<T>(collection: string, id: string, item: T): void {
-    this.acquireLock(collection);
+  public saveItemStrict<T>(
+    collection: string,
+    id: string,
+    item: T,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): void {
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection<T>(collection);
+      this.markCriticalCollectionInitialized(collection);
       current[id] = JSON.parse(JSON.stringify(item));
       this.atomicWrite(collection, current, true);
     } finally {
@@ -313,6 +503,9 @@ export class DurableFileStore {
    * Cross-process serialized read-modify-write (M4-A hardening).
    */
   public deleteItem(collection: string, id: string): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" requires deleteItemStrict().`);
+    }
     this.acquireLock(collection);
     try {
       const current = this.readCollection(collection);
@@ -328,14 +521,23 @@ export class DurableFileStore {
   /**
    * STRICT variant (M4-A hardening — no false success): locked
    * read-check-delete that THROWS when the authoritative delete-write fails.
+   * When options.lockStrict is true, throws LockTimeoutError if the collection
+   * lock cannot be acquired within timeoutMs (fail-closed locking).
    */
-  public deleteItemStrict(collection: string, id: string): boolean {
-    this.acquireLock(collection);
+  public deleteItemStrict(
+    collection: string,
+    id: string,
+    options?: { lockStrict?: boolean; timeoutMs?: number }
+  ): boolean {
+    const lockStrict = this.isCriticalCollection(collection) || options?.lockStrict === true;
+    const timeoutMs = options?.timeoutMs ?? DurableFileStore.LOCK_TIMEOUT_MS;
+    this.acquireLock(collection, lockStrict, timeoutMs);
     try {
       const current = this.readCollection(collection);
       if (current[id] === undefined) {
         return false;
       }
+      this.markCriticalCollectionInitialized(collection);
       delete current[id];
       this.atomicWrite(collection, current, true);
       return true;
@@ -348,6 +550,9 @@ export class DurableFileStore {
    * Clears a collection on disk.
    */
   public clearCollection(collection: string): void {
+    if (this.isCriticalCollection(collection)) {
+      throw new Error(`Critical collection "${collection}" cannot be cleared through clearCollection(). Use the explicit recovery procedure.`);
+    }
     const filePath = this.getCollectionPath(collection);
     if (fs.existsSync(filePath)) {
       try {
