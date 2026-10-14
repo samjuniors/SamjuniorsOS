@@ -23,24 +23,26 @@
    - Deliverable formatting: Produces `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` deliverable with full provenance.
 2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
    - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
-   - Partitioned statuses: `consensus_achieved`, `consensus_with_reservations`, `frictions_escalated`, `verification_rejected`, `degraded`.
+   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
    - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
 3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
    - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
    - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
    - Updated `participatingEmployees` to track real council review contributions.
    - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Sovereign Verification Precedence & Constitutional Hardening:**
-   - Deterministic verification is sovereign: Pre-check halts deliberation immediately on unverified/failed proposals (`totalCalls: 0`).
-   - Post-critique verification: `ConstitutionalVerifier` scans all specialist critiques and COO mediation; fails closed on margin compromises (< 80%), credential leaks, or privilege escalation.
-5. **Hard Bounds & Resilience:**
-   - Enforced `maxRounds <= 2` (default 1 round); fails closed on unbounded requests.
-   - Hard execution bounds: max 3 specialist reviews + 1 COO mediation.
-   - Per-call timeout guard (default 30s) and cancellation (`AbortSignal`) safety.
-   - Honest degradation: Provider errors/outages report `status: 'degraded'` with zero fabricated reviews or simulated agreement.
+4. **Founder Review Corrections (2026-10-14):**
+   - **Fail-closed specialist output validation:** Requires `success === true` and validates complete structured response against `SpecialistStructuredOutputSchema`. Malformed or missing output fails closed to `status: 'failed'` (never defaults to `passed`).
+   - **Fail-closed COO mediation:** Validates COO structured response against `CooMediationStructuredOutputSchema`. Failed or malformed mediation degrades honestly with zero synthetic consensus or fabricated rulings. Provenance explicitly set to `isVerified: false`, `evidenceBasis: 'unverified'`.
+   - **Partial-failure semantics:** Any required specialist failure or degraded status blocks `consensus_achieved` and sets deliberation status to `degraded`. Rejections escalate to `frictions_escalated`.
+   - **Degraded orchestration status propagation:** Degraded council deliberation sets `OrchestrationRun.status = 'failed'`, `executionOutcome = 'partial'`, surfaces explicit warnings to Founder, and disables autonomous ratification.
+   - **Timeout and cancellation:** Per-call timeout tracking identifies and records in-flight `orphanedProviderCalls` (`timeout_orphaned`), preventing false claims of task cancellation. `AbortSignal` supported in executor and council engine.
+   - **Hard bounds & Role deduplication:** Specialists deduplicated and allowlisted to `['researcher', 'pm', 'finance']` (max 3 specialists). Hard call limit strictly enforced (max 3 specialists + 1 COO mediation = 4 calls total). `maxRounds` capped strictly at 1 for Phase 2.2.2.
+   - **Financial verification:** Added deterministic mathematical calculation (`revenue`, `cogs`, `computeCost`) enforcing the 80.0% gross margin floor mandate. Missing structured financials honestly reported as `financialVerificationState: 'unverified_pending_founder_review'`.
+   - **Prompt-injection isolation:** Untrusted directives and evidence enclosed in distinct structural fences (`<<<UNTRUSTED_PROPOSAL_DATA_START>>>`) with explicit immutable instructions preventing role alteration, gate bypass, or privilege escalation.
+   - **Persistence & Idempotency:** Uses authoritative `DurableFileStore` collection `council_deliberations` and `AgentRunStore` to trace council executions, support process restart recovery, and prevent duplicate executions on retries.
 
 ### Verification Results
-- `tests/orchestration/council_deliberation.test.ts`: **15 passed, 0 failed** (run twice)
+- `tests/orchestration/council_deliberation.test.ts`: **20 passed, 0 failed** (run twice across all 10 review areas)
 - `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
 - `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
 - `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
@@ -52,12 +54,12 @@
 - `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
 - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
 - `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
-- **Grand Total Across Targeted Suites: 194 PASSED, 0 FAILED.**
+- **Grand Total Across Targeted Suites: 199 PASSED, 0 FAILED (100%).**
 - **Linting:** `npm run lint` exited with code 0 across the entire repository.
-- **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files.
+- **TypeScript:** 0 type errors across all added and modified files.
 - **Production Build:** Cross-drive worktree (`C:\...` with `node_modules` symlink to `E:\...`) triggers Turbopack out-of-root panic (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`). Documented honestly as an environment constraint without fabrication.
 
-**Next action:** Submit PR for Issue #11 against `main` and stop for Founder review. Zero merges to `main`, zero deployments.
+**Next action:** Submit updated PR for Issue #11 against `main` and stop for Founder review. Zero merges to `main`, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.

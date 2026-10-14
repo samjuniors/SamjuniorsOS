@@ -15,6 +15,7 @@
    - Produces structured deliverable `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` with full provenance.
 2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
    - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
+   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
    - Partitioned statuses: `consensus_achieved`, `consensus_with_reservations`, `frictions_escalated`, `verification_rejected`, `degraded`.
    - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
 3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
@@ -22,21 +23,24 @@
    - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
    - Updated `participatingEmployees` to track real council review contributions.
    - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Sovereign Verification Precedence & Constitutional Hardening:**
-   - Deterministic verification is sovereign: Pre-check halts deliberation immediately on unverified/failed proposals (`totalCalls: 0`).
-   - Post-critique verification: `ConstitutionalVerifier` scans all specialist critiques and COO mediation; fails closed on margin compromises (< 80%), credential leaks, or privilege escalation.
-5. **Hard Bounds & Resilience:**
-   - Enforced `maxRounds <= 2` (default 1 round); fails closed on unbounded requests.
-   - Hard execution bounds: max 3 specialist reviews + 1 COO mediation.
-   - Per-call timeout guard (default 30s) and cancellation (`AbortSignal`) safety.
-   - Honest degradation: Provider errors/outages report `status: 'degraded'` with zero fabricated reviews or simulated agreement.
+4. **Founder Review Corrections (2026-10-14):**
+   - **Fail-closed specialist output validation:** Requires `success === true` and validates complete structured response against `SpecialistStructuredOutputSchema`. Malformed or missing output fails closed to `status: 'failed'` (never defaults to `passed`).
+   - **Fail-closed COO mediation:** Validates COO structured response against `CooMediationStructuredOutputSchema`. Failed or malformed mediation degrades honestly with zero synthetic consensus or fabricated rulings. Provenance explicitly set to `isVerified: false`, `evidenceBasis: 'unverified'`.
+   - **Partial-failure semantics:** Any required specialist failure or degraded status blocks `consensus_achieved` and sets deliberation status to `degraded`. Rejections escalate to `frictions_escalated`.
+   - **Degraded orchestration status propagation:** Degraded council deliberation sets `OrchestrationRun.status = 'failed'`, `executionOutcome = 'partial'`, surfaces explicit warnings to Founder, and disables autonomous ratification.
+   - **Timeout and cancellation:** Per-call timeout tracking identifies and records in-flight `orphanedProviderCalls` (`timeout_orphaned`), preventing false claims of task cancellation. `AbortSignal` supported in executor and council engine.
+   - **Hard bounds & Role deduplication:** Specialists deduplicated and allowlisted to `['researcher', 'pm', 'finance']` (max 3 specialists). Hard call limit strictly enforced (max 3 specialists + 1 COO mediation = 4 calls total). `maxRounds` capped strictly at 1 for Phase 2.2.2.
+   - **Financial verification:** Added deterministic mathematical calculation (`revenue`, `cogs`, `computeCost`) enforcing the 80.0% gross margin floor mandate. Missing structured financials honestly reported as `financialVerificationState: 'unverified_pending_founder_review'`.
+   - **Prompt-injection isolation:** Untrusted directives and evidence enclosed in distinct structural fences (`<<<UNTRUSTED_PROPOSAL_DATA_START>>>`) with explicit immutable instructions preventing role alteration, gate bypass, or privilege escalation.
+   - **Persistence & Idempotency:** Uses authoritative `DurableFileStore` collection `council_deliberations` and `AgentRunStore` to trace council executions, support process restart recovery, and prevent duplicate executions on retries.
+   - **Comprehensive testing:** Expanded test coverage to 20 deterministic test cases covering all review criteria.
 
 **Verification Results:**
-- `tests/orchestration/council_deliberation.test.ts`: **15 passed, 0 failed** (run twice across all edge cases).
+- `tests/orchestration/council_deliberation.test.ts`: **20 passed, 0 failed** (run twice across all 10 review areas).
 - Decision suites: 69/69 pass (`phase2_2_1_context`: 15/15, `decision_lifecycle`: 18/18, `phase2_1_1_hardening`: 10/10, `workflow_capability_token`: 26/26).
 - M2 persistence & hygiene suites: 29/29 pass (`m2_batch3_concurrency_hygiene`: 8/8, `m2_knowledge_persistence`: 8/8, `m53_authoritative_read_model`: 13/13).
 - Knowledge & retrieval regressions: 81/81 pass (`m4c_query_conditioned_retrieval`: 27/27, `production_response_path_regression`: 4/4, `m52_retrieval_hygiene`: 25/25, `m53_dependency_relations`: 25/25).
-- **Total Test Assertions: 194 PASSED, 0 FAILED (100%).**
+- **Total Test Assertions: 199 PASSED, 0 FAILED (100%).**
 - **Lint:** `npm run lint` exited code 0 with 0 errors across entire codebase.
 - **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files.
 - **Production Build:** Cross-drive worktree (`C:\...` with `node_modules` symlink to `E:\...`) triggers Turbopack out-of-root panic (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`). Documented honestly as an environment constraint without fabrication.

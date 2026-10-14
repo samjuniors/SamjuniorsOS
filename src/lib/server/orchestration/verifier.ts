@@ -1,10 +1,12 @@
 import { ExecutionDeliverable, VerificationResult } from '@/types/os';
+import { StructuredFinancialInput } from '@/types/council';
 
 export interface VerificationInput {
   directive: string;
   deliverables: ExecutionDeliverable[];
   specialistOutputs?: Record<string, string | undefined>;
   safeMockRequired?: boolean;
+  structuredFinancials?: StructuredFinancialInput;
 }
 
 /**
@@ -13,6 +15,9 @@ export interface VerificationInput {
  * Enforces non-negotiable invariants before specialist work can be certified:
  * 1. Zero Credential / API Key Leakage
  * 2. Constitutional Gross Margin Floor (80%+ gross margin mandate)
+ *    - Mathematical verification via deterministic formula when structured revenue/cost inputs exist.
+ *    - Explicitly 'unverified' (requiring Founder review) when structured numbers are absent.
+ *    - Lexical scanning against anti-patterns (e.g. proposals to sacrifice or lower margins).
  * 3. Privilege Escalation & Unauthorized Mutation Guard
  * 4. Safe Mock Sandboxing for External Financial Operations
  * 5. Deliverable Provenance & Content Integrity
@@ -68,16 +73,49 @@ export class ConstitutionalVerifier {
     }
 
     // 2. Constitutional Gross Margin Floor Check (80% minimum)
-    let marginViolationDetected = false;
+    let financialVerificationState: VerificationResult['financialVerificationState'] = undefined;
+    let calculatedMarginPercent: number | undefined = undefined;
+
+    // 2a. Deterministic Mathematical Verification (if structured inputs provided)
+    const fin = input.structuredFinancials;
+    if (fin && typeof fin.revenue === 'number' && fin.revenue > 0) {
+      const cogs = typeof fin.cogs === 'number' ? fin.cogs : 0;
+      const computeCost = typeof fin.computeCost === 'number' ? fin.computeCost : 0;
+      const totalCost = cogs + computeCost;
+      calculatedMarginPercent = ((fin.revenue - totalCost) / fin.revenue) * 100;
+
+      if (calculatedMarginPercent < 80.0) {
+        checksFailed.push(
+          `CONSTITUTIONAL_MARGIN_VIOLATION: Calculated gross margin (${calculatedMarginPercent.toFixed(1)}%) falls below the mandatory 80.0% floor.`
+        );
+        financialVerificationState = 'calculated_violation';
+      } else {
+        checksPassed.push(
+          `Constitutional gross margin floor verified by deterministic calculation (${calculatedMarginPercent.toFixed(1)}% >= 80.0%)`
+        );
+        financialVerificationState = 'calculated_compliant';
+      }
+    }
+
+    // 2b. Lexical Pattern Check (Anti-pattern heuristic)
+    let lexicalMarginViolation = false;
     for (const pattern of this.MARGIN_VIOLATION_PATTERNS) {
       if (pattern.test(fullCorpus)) {
-        marginViolationDetected = true;
-        checksFailed.push('CONSTITUTIONAL_MARGIN_VIOLATION: Proposal compromises the non-negotiable 80%+ gross margin floor mandate.');
+        lexicalMarginViolation = true;
+        checksFailed.push(
+          'CONSTITUTIONAL_MARGIN_VIOLATION: Proposal text contains statements compromising the non-negotiable 80%+ gross margin floor mandate.'
+        );
+        financialVerificationState = 'lexical_violation';
         break;
       }
     }
-    if (!marginViolationDetected) {
-      checksPassed.push('Constitutional 80%+ gross margin floor mandate verified');
+
+    // 2c. Fallback when structured financial inputs are absent
+    if (!financialVerificationState) {
+      checksPassed.push(
+        'Gross margin floor: No lexical violation detected; mathematical margin UNVERIFIED (structured revenue/cost inputs absent; Founder review required).'
+      );
+      financialVerificationState = 'unverified_pending_founder_review';
     }
 
     // 3. Privilege Escalation & Permissions Guard
@@ -132,6 +170,8 @@ export class ConstitutionalVerifier {
       safeMockEnforced,
       notes,
       verifiedAt: nowIso,
+      financialVerificationState,
+      calculatedMarginPercent,
     };
   }
 }

@@ -1109,6 +1109,13 @@ Include:
     // ==========================================
     // STAGE 8: FINAL EXECUTIVE REPORT SYNTHESIS (Sophia Vance)
     // ==========================================
+    const isCouncilDegraded = councilDeliberation.status === 'degraded';
+    const isCouncilFrictionsEscalated = councilDeliberation.status === 'frictions_escalated';
+
+    const degradedPromptWarning = isCouncilDegraded
+      ? `\nCRITICAL GOVERNANCE ALERT:\nExecutive Council Deliberation is DEGRADED (${councilDeliberation.verdict}). Missing or failed specialist reviews: ${councilDeliberation.specialistCritiques.filter((c) => c.status === 'failed' || c.status === 'degraded').map((c) => c.agentName).join(', ')}. Do NOT claim consensus, approval, or autonomous completion. Explicitly document the degraded review state and recommend Founder remediation.`
+      : '';
+
     const cooReportResult = await this.executor.executeAgentTask(
       'coo',
       {
@@ -1125,7 +1132,7 @@ Include:
           councilDeliberation: councilDeliberation.verdict,
         },
       },
-      `Synthesize the Comprehensive Final Executive Report for the Founder regarding directive: "${directive}".
+      `Synthesize the Comprehensive Final Executive Report for the Founder regarding directive: "${directive}".${degradedPromptWarning}
 Structure the report:
 # EXECUTIVE WORKFORCE REPORT: ${directive.toUpperCase()}
 
@@ -1175,15 +1182,18 @@ Actionable steps in phased order.`
       agentId: 'coo',
       protocolStep: 'report',
       status: cooReportResult.success ? 'done' : 'failed',
-      outputSnippet: 'Executive synthesis compiled and archived into SamJuniors OS Vault.',
+      outputSnippet: isCouncilDegraded
+        ? 'Executive report compiled with explicit DEGRADED council status.'
+        : 'Executive synthesis compiled and archived into SamJuniors OS Vault.',
       provenance: cooReportResult.provenance,
       selectedSkill: cooReportSkill.selectedSkill,
     });
 
     const shortTitle = directive.length > 50 ? directive.slice(0, 48) + '...' : directive;
-    const summaryText =
-      cooReportResult.structuredData?.summary ||
-      `The 4-agent executive workforce (Sophia Vance, Dr. Aris Thorne, Maya Lin, Julian Cruz) completed the 9-Step Agent Work Protocol for "${shortTitle}". Deliverables generated with full provenance tracking.`;
+    const summaryText = isCouncilDegraded
+      ? `Executive Council deliberation DEGRADED for "${shortTitle}". Incomplete specialist review prevented autonomous approval. Founder review required.`
+      : (cooReportResult.structuredData?.summary ||
+        `The 4-agent executive workforce (Sophia Vance, Dr. Aris Thorne, Maya Lin, Julian Cruz) completed the 9-Step Agent Work Protocol for "${shortTitle}". Deliverables generated with full provenance tracking.`);
 
     // Construct structured Executive Result for Founder HQ
     const rawReportData = cooReportResult.structuredData || {};
@@ -1197,7 +1207,7 @@ Actionable steps in phased order.`
           `Unit Economics & Margin (Julian Cruz): ${financeResult.structuredData?.summary || 'Compute attribution, batch token efficiency, and margin sensitivity modeled.'}`,
         ];
 
-    const councilFinding = `Executive Council Deliberation: ${councilDeliberation.verdict}`;
+    const councilFinding = `Executive Council Deliberation [${councilDeliberation.status.toUpperCase()}]: ${councilDeliberation.verdict}`;
     const keyFindings: string[] = rawFindings.some((f) => f.includes('Executive Council'))
       ? rawFindings
       : [...rawFindings, councilFinding];
@@ -1239,7 +1249,7 @@ Actionable steps in phased order.`
         name: 'Sophia Vance',
         role: 'Chief Operating Officer',
         department: 'Executive Operations',
-        status: cooUnderstandResult.success && cooReportResult.success ? 'completed' : 'partial',
+        status: cooUnderstandResult.success && cooReportResult.success && !isCouncilDegraded ? 'completed' : 'partial',
         contribution: 'Directive decomposition, council deliberation presiding, and executive report synthesis.',
       },
       {
@@ -1268,20 +1278,45 @@ Actionable steps in phased order.`
       },
     ];
 
-    const founderDecisionRequired = rawReportData.founderDecisionRequired !== false;
+    const founderDecisionRequired = isCouncilDegraded || isCouncilFrictionsEscalated || rawReportData.founderDecisionRequired !== false;
     const founderDecision: FounderDecisionDetails | undefined = founderDecisionRequired
       ? {
           required: true,
-          title: rawReportData.founderDecisionTitle || `Approve Initiative: ${shortTitle}`,
-          recommendation: rawReportData.founderDecisionRecommendation || rawReportData.summary || 'Approve executive recommendation and authorize sandbox milestone progression.',
-          why: rawReportData.founderDecisionWhy || 'Requires explicit Founder authorization before allocating execution bandwidth or changing company baseline.',
-          impact: rawReportData.founderDecisionImpact || 'Authorizes executive team to proceed with implementation phase under Safe Mock constraints.',
+          title: isCouncilDegraded
+            ? `Review Degraded Initiative: ${shortTitle}`
+            : (rawReportData.founderDecisionTitle || `Approve Initiative: ${shortTitle}`),
+          recommendation: isCouncilDegraded
+            ? 'Council deliberation degraded due to incomplete specialist reviews. Founder intervention or retry required.'
+            : (rawReportData.founderDecisionRecommendation || rawReportData.summary || 'Approve executive recommendation and authorize sandbox milestone progression.'),
+          why: isCouncilDegraded
+            ? 'Autonomous consensus could not be certified because one or more required specialist reviews failed.'
+            : (rawReportData.founderDecisionWhy || 'Requires explicit Founder authorization before allocating execution bandwidth or changing company baseline.'),
+          impact: isCouncilDegraded
+            ? 'Prevents premature or unverified execution until full executive council review is satisfied.'
+            : (rawReportData.founderDecisionImpact || 'Authorizes executive team to proceed with implementation phase under Safe Mock constraints.'),
           status: 'pending',
         }
       : undefined;
 
+    // Determine honest execution outcome and run status
+    let finalExecutionOutcome: FounderExecutiveResult['executionOutcome'] = 'success';
+    let finalRunStatus: OrchestrationRun['status'] = 'completed';
+    let failureReason: string | undefined = undefined;
+
+    if (isCouncilDegraded) {
+      finalExecutionOutcome = 'partial';
+      finalRunStatus = 'failed';
+      failureReason = 'Executive Council deliberation degraded: incomplete or failed specialist peer reviews.';
+    } else if (isCouncilFrictionsEscalated) {
+      finalExecutionOutcome = 'partial';
+      finalRunStatus = 'requires_approval';
+      failureReason = 'Executive Council escalated frictions: specialists raised blocking objections.';
+    }
+
     const executiveResult: FounderExecutiveResult = {
-      recommendation: rawReportData.recommendation || cooReportResult.structuredData?.summary || summaryText,
+      recommendation: isCouncilDegraded
+        ? `DEGRADED EXECUTIVE REVIEW: Deliberation could not achieve consensus. Missing/failed specialist reviews: ${councilDeliberation.specialistCritiques.filter((c) => c.status === 'failed' || c.status === 'degraded').map((c) => c.agentName).join(', ')}. Founder remediation required.`
+        : (rawReportData.recommendation || cooReportResult.structuredData?.summary || summaryText),
       keyFindings,
       businessImplications,
       risks,
@@ -1293,12 +1328,12 @@ Actionable steps in phased order.`
         agentId: 'coo',
       },
       participatingEmployees,
-      verificationStatus: verificationResultData.isCompliant ? 'verified' : 'failed',
+      verificationStatus: verificationResultData.isCompliant && !isCouncilDegraded ? 'verified' : (isCouncilDegraded ? 'insufficient_evidence' : 'failed'),
       verificationDetails: {
-        isCompliant: verificationResultData.isCompliant,
+        isCompliant: verificationResultData.isCompliant && !isCouncilDegraded,
         checksPassed: verificationResultData.checksPassed,
-        checksFailed: verificationResultData.checksFailed,
-        notes: verificationResultData.notes,
+        checksFailed: isCouncilDegraded ? ['COUNCIL_DELIBERATION_DEGRADED: Specialist reviews incomplete.'] : verificationResultData.checksFailed,
+        notes: isCouncilDegraded ? 'Deliberation degraded: insufficient verified specialist evidence.' : verificationResultData.notes,
       },
       evidenceAvailability: {
         hasProvenance: true,
@@ -1306,14 +1341,15 @@ Actionable steps in phased order.`
         primaryBasis: (isGithubDirective && researchToolEvidence?.status === 'success') ? 'external_evidence' : 'model_reasoning',
         deliverableIds: deliverables.map((d) => d.name),
       },
-      executionOutcome: 'success',
+      executionOutcome: finalExecutionOutcome,
+      failureReason,
     };
 
     return {
       id: runId,
       directive,
       timestamp,
-      status: 'completed',
+      status: finalRunStatus,
       liveAi: true,
       currentProtocolStep: 'report',
       protocolProgress: {

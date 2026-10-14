@@ -6,7 +6,7 @@
 - 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization. PR #10 changed tests and project documentation; it did not change `src/`.
 - PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
 - M1 memory source-of-truth work remains merged to `main` at `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
-- Issue #11 verified with 194/194 tests passing across council, decision, and M2 regression suites.
+- Issue #11 verified with 199/199 tests passing across council, decision, and M2 regression suites.
 
 **NEXT PHASE:**
 Phase 2.3 — Role-Specific Knowledge & Epistemic Brain Integration (or next milestone per Founder direction).
