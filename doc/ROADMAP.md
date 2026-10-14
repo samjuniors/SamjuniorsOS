@@ -1,8 +1,9 @@
 # ROADMAP.md — SamJuniorsOS Phases
-**Status:** Reconciled against repository `32a6f38` (2026-09-08). This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
+**Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
 
 **CURRENT STATUS:**
-- 2026-10-13: M1 Batch 3 critical-ledger corruption policy, verification, and recovery acceptance COMPLETE on `audit/m1-memory-source-of-truth`. All targeted tests, independent type validation, full regressions (146/146 assertions passing), corruption attacks, Prisma fallback guards, and controlled backup/restore procedure verified with zero regressions. Branch remains unmerged and undeployed, awaiting Founder review.
+- 2026-10-14: M2 Persistence and Recovery + Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 merged to `main` via PR #8 (merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`; 16 commits, 44 files). Founder-supplied independent verification summary reports 69/69 Decision tests, 64/64 M2 persistence tests, 149/149 M1 regressions, and production build exit 0 with 31/31 static routes. Follow-up test hygiene tracked in Issue #9; production deployment is not asserted.
+- 2026-10-14: M1 memory source-of-truth work is closed and merged to `main` (baseline commit `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`).
 - 2026-10-12: M1 Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. All 5 tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 automated test assertions were reported passing in the audit phase.
 - Canonical design system migration completed and verified (ADR 0001).
 - Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
@@ -13,10 +14,10 @@
 - Phase 4C-B: Streaming STT Adapter Implementation IMPLEMENTED & VERIFIED (ADR 0004). Implemented provider-neutral `STTProvider` contract (`src/lib/server/live/stt/types.ts`), `DeepgramFluxProvider` streaming adapter with bounded 80ms chunk aggregation (`src/lib/server/live/stt/deepgram-flux.ts`), 128ms pre-roll ring buffer in `SophiaLiveClient`, canonical turn execution pipeline with `ConversationStore` persistence and `SophiaServerGateway` security boundary (`src/lib/server/sophia/turn-executor.ts`), and turn idempotency locks in `LiveInteractionServer`. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`.
 
 **NEXT PHASE:**
-M1 — Memory Source-of-Truth and Persistence Implementation Batches (Batch 1: configuration parser hygiene & CompanyMemoryStore cache fix; Batch 2: deletion & retention foundation; Batch 3: file corruption quarantine). Voice expansion, Qwen runtime and TTS remain deferred until Memory, the native decision workflow and the tool runtime are complete to their acceptance criteria.
+Post-merge stabilization of M2 Persistence and Recovery plus Decision Workflow. Do not begin Phase 2.2.2 Multi-Agent Council Orchestration until the stabilization work is complete and separately approved.
 
 **NEXT ACTION:**
-Founder review of M1 Batch 3 verification evidence, isolated test results, and documentation before merge or deployment. Keep branch unmerged and undeployed. Canonical research record: `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`.
+Complete [GitHub Issue #9](https://github.com/samjuniors/SamJuniorsOS/issues/9) on branch `maintenance/m2-decision-stabilization`: fix the three identified test-hygiene issues, synchronize progress documentation, and run the specified focused/regression tests, TypeScript validation, and production build. Submit a focused PR and stop for Founder review. PR #8 merge commit: `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
 
