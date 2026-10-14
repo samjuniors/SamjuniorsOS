@@ -442,13 +442,11 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     }
 
     const key = `${definition.id}@${definition.version}`;
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('workflow_definitions', key, definition);
+    DurableFileStore.getInstance().saveItemStrict('workflow_definitions', definition.id, definition);
     this.definitions.set(key, definition);
     this.definitions.set(definition.id, definition);
-
-    try {
-      DurableFileStore.getInstance().saveItem('workflow_definitions', key, definition);
-      DurableFileStore.getInstance().saveItem('workflow_definitions', definition.id, definition);
-    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -545,11 +543,9 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
     }
 
     const clone = JSON.parse(JSON.stringify(instance));
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('workflow_instances', instance.instanceId, clone);
     this.instances.set(instance.instanceId, clone);
-
-    try {
-      DurableFileStore.getInstance().saveItem('workflow_instances', instance.instanceId, clone);
-    } catch {}
 
     if (process.env.DATABASE_URL) {
       try {
@@ -650,60 +646,63 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
       return PostgresWorkflowStore.getInstance().claimStepAtomic(instanceId, stepId, workerId, expectedVersion);
     }
 
-    const instance = this.instances.get(instanceId);
-    if (!instance) {
-      throw new Error(`Workflow instance not found: ${instanceId}`);
-    }
+    return DurableFileStore.getInstance().withCollectionLockStrict('workflow_instances', () => {
+      // Re-read latest authoritative state from disk to prevent stale cache races
+      const onDisk = DurableFileStore.getInstance().getItem<WorkflowInstanceState>('workflow_instances', instanceId);
+      const instance = onDisk ?? this.instances.get(instanceId);
+      if (!instance) {
+        throw new Error(`Workflow instance not found: ${instanceId}`);
+      }
 
-    const currentVersion = instance.stateVersion ?? 0;
-    if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
-      throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
-    }
+      const currentVersion = instance.stateVersion ?? 0;
+      if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+        throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
+      }
 
-    const step = instance.stepStates[stepId];
-    if (!step) {
-      throw new Error(`Step not found in workflow instance: ${stepId}`);
-    }
+      const step = instance.stepStates[stepId];
+      if (!step) {
+        throw new Error(`Step not found in workflow instance: ${stepId}`);
+      }
 
-    if (step.status !== 'ready') {
-      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
-    }
+      if (step.status !== 'ready') {
+        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+      }
 
-    if (step.claimedBy && step.claimedBy !== workerId) {
-      throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
-    }
+      if (step.claimedBy && step.claimedBy !== workerId) {
+        throw new StepClaimError(instanceId, stepId, step.status, step.claimedBy);
+      }
 
-    validateStepTransition(step.status, 'running');
+      validateStepTransition(step.status, 'running');
 
-    const nowIso = new Date().toISOString();
-    step.status = 'running';
-    step.claimedBy = workerId;
-    step.claimedAt = nowIso;
-    if (!step.startedAt) {
-      step.startedAt = nowIso;
-    }
+      const nowIso = new Date().toISOString();
+      const updatedInstance: WorkflowInstanceState = JSON.parse(JSON.stringify(instance));
+      const stepClone = updatedInstance.stepStates[stepId];
+      stepClone.status = 'running';
+      stepClone.claimedBy = workerId;
+      stepClone.claimedAt = nowIso;
+      if (!stepClone.startedAt) {
+        stepClone.startedAt = nowIso;
+      }
 
-    if (instance.status === 'pending' || instance.status === 'waiting') {
-      validateInstanceTransition(instance.status, 'running');
-      instance.status = 'running';
-    }
+      if (updatedInstance.status === 'pending' || updatedInstance.status === 'waiting') {
+        validateInstanceTransition(updatedInstance.status, 'running');
+        updatedInstance.status = 'running';
+      }
 
-    instance.stateVersion = currentVersion + 1;
-    instance.claimedBy = workerId;
-    instance.claimedAt = nowIso;
-    instance.updatedAt = nowIso;
+      updatedInstance.stateVersion = currentVersion + 1;
+      updatedInstance.claimedBy = workerId;
+      updatedInstance.claimedAt = nowIso;
+      updatedInstance.updatedAt = nowIso;
 
-    const clone = JSON.parse(JSON.stringify(instance));
-    this.instances.set(instanceId, clone);
+      // Disk authoritative: persist before mutating cache
+      DurableFileStore.getInstance().saveItemStrict('workflow_instances', instanceId, updatedInstance);
+      this.instances.set(instanceId, updatedInstance);
 
-    try {
-      DurableFileStore.getInstance().saveItem('workflow_instances', instanceId, clone);
-    } catch {}
-
-    return {
-      instance: clone,
-      step: JSON.parse(JSON.stringify(step)),
-    };
+      return {
+        instance: JSON.parse(JSON.stringify(updatedInstance)),
+        step: JSON.parse(JSON.stringify(stepClone)),
+      };
+    });
   }
 
   async transitionStepAtomic(
@@ -725,52 +724,55 @@ export class InMemoryWorkflowStore implements WorkflowDefinitionStore, WorkflowI
       );
     }
 
-    const instance = this.instances.get(instanceId);
-    if (!instance) {
-      throw new Error(`Workflow instance not found: ${instanceId}`);
-    }
+    return DurableFileStore.getInstance().withCollectionLockStrict('workflow_instances', () => {
+      // Re-read latest authoritative state from disk to prevent stale cache races
+      const onDisk = DurableFileStore.getInstance().getItem<WorkflowInstanceState>('workflow_instances', instanceId);
+      const instance = onDisk ?? this.instances.get(instanceId);
+      if (!instance) {
+        throw new Error(`Workflow instance not found: ${instanceId}`);
+      }
 
-    const currentVersion = instance.stateVersion ?? 0;
-    if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
-      throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
-    }
+      const currentVersion = instance.stateVersion ?? 0;
+      if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+        throw new ConcurrencyConflictError(instanceId, expectedVersion, currentVersion);
+      }
 
-    const step = instance.stepStates[stepId];
-    if (!step) {
-      throw new Error(`Step not found in workflow instance: ${stepId}`);
-    }
+      const step = instance.stepStates[stepId];
+      if (!step) {
+        throw new Error(`Step not found in workflow instance: ${stepId}`);
+      }
 
-    validateStepTransition(step.status, targetStatus);
+      validateStepTransition(step.status, targetStatus);
 
-    const nowIso = new Date().toISOString();
-    step.status = targetStatus;
-    if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
-      step.completedAt = nowIso;
-      step.claimedBy = undefined;
-    }
-    if (patch) {
-      Object.assign(step, patch);
-    }
+      const nowIso = new Date().toISOString();
+      const clone = JSON.parse(JSON.stringify(instance)) as WorkflowInstanceState;
+      const stepClone = clone.stepStates[stepId];
+      stepClone.status = targetStatus;
+      if (targetStatus === 'completed' || targetStatus === 'failed' || targetStatus === 'cancelled') {
+        stepClone.completedAt = nowIso;
+        stepClone.claimedBy = undefined;
+      }
+      if (patch) {
+        Object.assign(stepClone, patch);
+      }
 
-    if (instancePatch?.status && instancePatch.status !== instance.status) {
-      validateInstanceTransition(instance.status, instancePatch.status);
-      instance.status = instancePatch.status;
-    }
-    if (instancePatch?.failureReason) {
-      instance.failureReason = instancePatch.failureReason;
-    }
+      if (instancePatch?.status && instancePatch.status !== clone.status) {
+        validateInstanceTransition(clone.status, instancePatch.status);
+        clone.status = instancePatch.status;
+      }
+      if (instancePatch?.failureReason) {
+        clone.failureReason = instancePatch.failureReason;
+      }
 
-    instance.stateVersion = currentVersion + 1;
-    instance.updatedAt = nowIso;
+      clone.stateVersion = currentVersion + 1;
+      clone.updatedAt = nowIso;
 
-    const clone = JSON.parse(JSON.stringify(instance));
-    this.instances.set(instanceId, clone);
+      // Disk authoritative: persist before mutating cache
+      DurableFileStore.getInstance().saveItemStrict('workflow_instances', instanceId, clone);
+      this.instances.set(instanceId, clone);
 
-    try {
-      DurableFileStore.getInstance().saveItem('workflow_instances', instanceId, clone);
-    } catch {}
-
-    return clone;
+      return JSON.parse(JSON.stringify(clone));
+    });
   }
 
   async rehydrateActiveInstances(): Promise<WorkflowInstanceState[]> {

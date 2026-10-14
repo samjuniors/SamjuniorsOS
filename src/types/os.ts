@@ -434,7 +434,19 @@ export type OperationalInferenceField =
 export interface CompanyDecision {
   id: string;
   title: string;
-  status: 'pending_approval' | 'approved' | 'rejected' | 'revision_requested' | 'in_review' | 'resolved';
+  status:
+    | 'pending_approval'
+    | 'approved'
+    | 'rejected'
+    | 'revision_requested'
+    | 'in_review'
+    | 'resolved'
+    | 'executing'
+    | 'proposed'
+    | 'under_review'
+    | 'intervention_required'
+    | 'superseded'
+    | 'withdrawn';
   category: 'Strategic' | 'Financial' | 'Product' | 'Governance';
   recommendedBy: string;
   agentId: AgentRole;
@@ -446,6 +458,10 @@ export interface CompanyDecision {
   resolutionNote?: string;
   resolvedAt?: string;
   resolvedBy?: string;
+  // Phase 2.2.1.1: Lineage preservation
+  supersedesDecisionId?: string;
+  supersededByDecisionId?: string;
+  originalStatus?: string;
   // Phase 11.10: Operational Learning Loop & 4-way Separation
   currentEvidence?: OperationalEvidenceField;
   historicalMemories?: RetrievedHistoricalMemory[];

@@ -594,42 +594,28 @@ export class SophiaContextAssembler {
       // -------------------------------------------------------------------------
       if (temporalIntent.intent !== 'window') {
         try {
-          const queryTokens = new Set(extractTokens(opts.message));
-          const matchedDecisions = (await stateStore.getDecisions())
-            .map((dec) => {
-              const decTokens = new Set([
-                ...extractTokens(dec.title),
-                ...extractTokens(dec.recommendation),
-                ...extractTokens(dec.category),
-                ...extractTokens(dec.businessImpact),
-                ...extractTokens(dec.evidenceSummary),
-              ]);
-              let matched = 0;
-              for (const token of queryTokens) {
-                if (decTokens.has(token)) matched++;
-              }
-              return { dec, matched };
-            })
-            .filter((entry) => entry.matched > 0)
-            .sort((a, b) => {
-              if (b.matched !== a.matched) return b.matched - a.matched;
-              const ta = toEpochMs(a.dec.date);
-              const tb = toEpochMs(b.dec.date);
-              if (tb !== ta) return tb - ta;
-              return a.dec.id < b.dec.id ? -1 : 1;
-            })
-            .slice(0, 2);
+          const { DecisionContextProvider } = await import('@/lib/server/decision/context-provider');
+          const provider = DecisionContextProvider.getInstance();
+          const decisionBundle = await provider.getDecisionContext({
+            queryText: opts.message,
+            includeHistoricalLimit: 2,
+          });
 
-          if (matchedDecisions.length > 0) {
-            operationalLines.push('Recent Governance Decisions (query-matched):');
-            for (const { dec } of matchedDecisions) {
-              operationalLines.push(
-                `  - Decision [${dec.id}] "${dec.title}" (${dec.status}, ${dec.date}) -> ${dec.recommendation}`
-              );
+          const hasMatches =
+            decisionBundle.activeCommitments.length > 0 ||
+            decisionBundle.pendingGovernance.length > 0 ||
+            decisionBundle.interventionRequired.length > 0 ||
+            decisionBundle.historicalPrecedents.length > 0 ||
+            decisionBundle.conflictWarnings.length > 0;
+
+          if (hasMatches) {
+            const formatted = await provider.formatForSophiaContext(decisionBundle);
+            if (formatted.trim()) {
+              operationalLines.push(formatted);
             }
           }
         } catch (err) {
-          degradedStores.push('CompanyStateStore.decisions');
+          degradedStores.push('DecisionStore.decisions');
         }
       }
 

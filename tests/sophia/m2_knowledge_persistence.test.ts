@@ -9,6 +9,7 @@ import {
   isKnowledgeContentUnchanged,
 } from '../../src/lib/server/knowledge/knowledge-store';
 import { SophiaContextAssembler } from '../../src/lib/server/sophia';
+import { spawnTestChild } from '../helpers/child-runner';
 
 /**
  * ============================================================================
@@ -63,54 +64,33 @@ async function test(name: string, fn: () => Promise<void>) {
   }
 }
 
-function runChild(mode: string): Promise<{ restartMarker?: boolean; poisonMarker?: boolean; total: number; canonicalSeedCount?: number; editedContentSurvived?: boolean; editedVersionSurvived?: boolean; contentPreview?: string | null }> {
-  return new Promise((resolve, reject) => {
-    // @ts-ignore — Bun global exists when the suite runs under `bun`
-    const proc = Bun.spawn(['bun', 'tests/sophia/m2-knowledge-child.ts', mode], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env },
-    });
-    new Response(proc.stdout)
-      .text()
-      .then((out) => proc.exited.then(() => resolve(JSON.parse(out.trim()))))
-      .catch(reject);
-  });
+async function runChild(mode: string): Promise<any> {
+  const scriptPath = path.resolve(__dirname, 'm2-knowledge-child.ts');
+  const res = await spawnTestChild(scriptPath, [mode]);
+  if (res.exitCode !== 0) {
+    throw new Error(`child (${mode}) exited ${res.exitCode}; stderr: ${res.stderr.slice(0, 500)}`);
+  }
+  if (!res.json) {
+    throw new Error(`child (${mode}) emitted non-JSON output: ${res.stdout.trim().slice(0, 300)}`);
+  }
+  return res.json;
 }
 
-function runAuthorityChild(mode: string): Promise<{
-  total?: number;
-  canonicalSeedCount?: number;
-  servedContentHasEdit?: boolean;
-  servedVersion?: string | null;
-  rowHash?: string | null;
-  rowHashMatchesEditedContent?: boolean | null;
-  rowHashDiffersFromSeedConstant?: boolean;
-}> {
-  return new Promise((resolve, reject) => {
-    // @ts-ignore — Bun global exists when the suite runs under `bun`
-    const proc = Bun.spawn(['bun', 'tests/sophia/m2-knowledge-authority-child.ts', mode], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: {
-        ...process.env,
-        DATABASE_MODE: 'authoritative',
-        DATABASE_URL: `file:${AUTHORITY_DB}`,
-      },
-    });
-    new Response(proc.stdout)
-      .text()
-      .then((out) =>
-        proc.exited.then(() => {
-          try {
-            resolve(JSON.parse(out.trim()));
-          } catch (e: any) {
-            reject(new Error(`authority child (${mode}) emitted non-JSON output: ${out.trim().slice(0, 300)}`));
-          }
-        })
-      )
-      .catch(reject);
+async function runAuthorityChild(mode: string): Promise<any> {
+  const scriptPath = path.resolve(__dirname, 'm2-knowledge-authority-child.ts');
+  const res = await spawnTestChild(scriptPath, [mode], {
+    env: {
+      DATABASE_MODE: 'authoritative',
+      DATABASE_URL: `file:${AUTHORITY_DB}`,
+    },
   });
+  if (res.exitCode !== 0) {
+    throw new Error(`authority child (${mode}) exited ${res.exitCode}; stderr: ${res.stderr.slice(0, 500)}`);
+  }
+  if (!res.json) {
+    throw new Error(`authority child (${mode}) emitted non-JSON output: ${res.stdout.trim().slice(0, 300)}`);
+  }
+  return res.json;
 }
 
 async function runTests() {
@@ -145,8 +125,10 @@ async function runTests() {
     //    only, and the durable file was never written).
     // ------------------------------------------------------------------
     await test('2. First boot persists the 8 canonical seed documents durably (one-time seed migration)', async () => {
-      // Simulate a virgin durable state.
+      // Simulate a virgin durable state (unlink both data file and initialization marker).
       if (fs.existsSync(KNOWLEDGE_FILE)) fs.unlinkSync(KNOWLEDGE_FILE);
+      const marker = `${KNOWLEDGE_FILE}.initialized`;
+      if (fs.existsSync(marker)) fs.unlinkSync(marker);
 
       const result = await runChild('count');
       assert.strictEqual(

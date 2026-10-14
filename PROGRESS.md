@@ -3,28 +3,60 @@
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
 ## Now
-M1 Batch 3: Verification & Recovery Acceptance COMPLETE on `audit/m1-memory-source-of-truth`.
-- Full verification and recovery acceptance completed across Tasks 1–5 in dedicated isolated test environment:
-  1. **Verified Test Coverage (Deterministic Assertions):** Core runner-agnostic M1 suites pass **90/90** assertions under both Node.js (`npx tsx`) and Bun (`bun`) runtimes (`m1_batch1_memory_authority`: 7/7, `m1_canonical_state_authority`: 7/7, `m1_batch2_conversation_deletion`: 52/52, `m1_batch3_verification_recovery`: 24/24). Adjacent runner-agnostic suites pass: `m0_idempotency_expiry` (7/7), `m3_authority_hardening` (7/7), `m52_retrieval_hygiene` (25/25).
-  2. **Test Runner Distinction Documented:** Legacy child-process restart suites (`m3_conversation_convergence`: 14/14, `k2_personal_memory`: 19/19) require Bun due to hardcoded `Bun.spawn` calls. `m2_knowledge_persistence` (6/8) fails child JSON parsing under default `.env.local` because `prisma/db` is unseeded on disk, but passes 100% in isolated authoritative SQLite mode (test 8).
-  3. **Type Validation:** Validated independently via `tsc --noEmit`. Resolved all 7 `NODE_ENV` reassignment errors in `m1_batch1_memory_authority.test.ts`. Zero TypeScript compiler errors in persistence, conversation store, reconciliation runbook, and all M1 test suites (`m1_batch1`, `m1_batch2`, `m1_batch3`).
-  4. **Corruption Handling Attacks:** Validated for both `conversation_tombstones` and `message_tombstones` across invalid JSON, empty file, missing initialized ledger, missing marker, quarantine rename failure, read permission failure, interrupted writes, and recovery after quarantine. Proved zero operations interpret unknown ledger as empty.
-  5. **Prisma Fallback Verification:** Confirmed corrupt or missing initialized conversation tombstone strictly blocks Prisma fallback in `getConversation`; corrupt message tombstone ledger blocks message recreation; DB outages leave tombstones pending (`prismaReconciled = false`); only canonical `P2025` is classified as confirmed absence.
-  6. **Controlled Backup & Restore:** Procedure designed, documented, and verified end-to-end in dedicated temporary test environment with SHA-256 manifest integrity, matching ledger/marker pairs, quarantine evidence preservation, reconciliation sweep, deleted conversation non-resurrection/non-recreation, and active conversation accessibility.
-  7. **Race & Failure Testing:** Verified concurrent deletion serialization, concurrent message write vs delete, lock timeouts, crashes between tombstone write and purge, crashes during Prisma reconciliation, and recovery crashes.
-- **Coverage Distinctions & Boundaries Documented:**
-  - *Verified Automated Tests:* All application logic, quarantine rename behavior, fail-closed read guards, marker auto-seeding, and serialization invariants.
-  - *Simulated Crash Coverage:* Atomic write interruptions (`renameSync` I/O throw), crash windows between tombstone write and purge, and DB outage during reconciliation.
-  - *Unverified Scenarios:* Hardware power-loss, kernel page-cache drops, OS-level SIGKILL during system calls, and physical storage bit-rot remain explicitly unverified.
-  - *Backup/Restore Limitations:* Automated sequential copy tests integrity and logic only; operational production backups require quiesced writers or storage-level crash-consistent snapshots.
-- Branch remains unmerged and undeployed. Stopped for Founder review.
+Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
+- **Phase 2.2.1 Implementation Highlights:**
+  - **Authoritative Decision Context Provider (`src/lib/server/decision/context-provider.ts`):**
+    - Single entry point `DecisionContextProvider.getInstance().getDecisionContext(options)`.
+    - Explicitly partitions all 10 Decision statuses:
+      - `activeCommitments`: `approved`, `executing` (binding company commitments).
+      - `pendingGovernance`: `proposed`, `under_review`, `pending_approval` (awaiting Founder ratification; not yet active).
+      - `interventionRequired`: `intervention_required` (operational execution paused/uncertain).
+      - `historicalPrecedents`: `resolved` (relevant precedents only; never active work).
+      - `inactiveDecisions`: `rejected`, `withdrawn`, `superseded` (strictly excluded from active commitments).
+    - Preserves all typed fields: `decisionId`, `title`, `problemStatement`, `proposedAction`, `category`, `accountableOwner`, `status`, `impact`, `reversibility`, `uncertainty`, `evidenceFactIds`, `linkedWorkflowId`, transitions, and supersession links.
+    - Lightweight deterministic conflict detection: detects unconfirmed predecessor executions (`unconfirmed_predecessor_execution`), superseded predecessor uncertainties, and superseded references (`superseded_reference`).
+    - Formatters for Sophia (`formatForSophiaContext`) and Specialist Agents (`formatForSpecialistContext`).
+  - **CompanyStateStore Integration (`src/lib/server/state/state-store.ts`):**
+    - Updated `queryState()` Section 5 (Governance Decisions) to retrieve authoritative decisions from `DecisionContextProvider`.
+    - Mapped active commitments, pending proposals, and interventions to `current_truth`.
+    - Mapped resolved decisions to `historical_memory` with source system `decision_store`.
+    - Surfaced deterministic governance conflict warnings directly into query results.
+    - Eliminated silent fallback to legacy mock decision arrays.
+    - Added automatic migration of legacy `company_state` decisions into `DecisionStore` on startup in `store.ts`.
+  - **Sophia Context Assembler Integration (`src/lib/server/sophia/context-assembly.ts`):**
+    - Updated Slice 1 (Company Operational State) to query and render structured decision context from `DecisionContextProvider`.
+    - Preserved `Decision [${id}]` query-matching and temporal window gating invariants.
+  - **Specialist & Employee Role Integration (`src/lib/server/context/company-context.ts`, `src/lib/server/context/context-assembly.ts`):**
+    - Updated `CompanyContextProvider.formatForAdvisorPrompt` to partition active commitments, pending governance, and resolved historical precedents.
+    - Added decision-awareness governance block in `formatForEmployeeRoleContext` for COO, PM, Research, and Finance roles.
+    - Updated `ContextAssemblyService.assembleContextForTask` to respect `historical_memory` provenance from `queryState`.
+- **Verification Suites Executed:**
+  - `tests/decision/phase2_2_1_context.test.ts`: **12 PASSED, 0 FAILED**
+  - `tests/decision/decision_lifecycle.test.ts`: **18 PASSED, 0 FAILED**
+  - `tests/decision/phase2_1_1_hardening.test.ts`: **10 PASSED, 0 FAILED**
+  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 PASSED, 0 FAILED**
+  - `tests/sophia/m53_dependency_relations.test.ts`: **25 PASSED, 0 FAILED**
+  - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6 PASSED, 0 FAILED**
+  - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 PASSED, 0 FAILED**
+  - **Grand Total Across Targeted Suites: 104 PASSED, 0 FAILED.**
+- **Production Build:**
+  - `npm run build` compiled successfully in 18.3s, generating 31/31 static routes with exit code 0.
+- **Hygiene Confirmation:**
+  - Single-instance architecture preserved.
+  - Zero merges, commits, pushes, or deployments performed.
+  - Stopped for Founder review.
 
 ## Next (queued, in order)
-- Founder review of M1 Batch 3 verification evidence before any merge or deployment.
-- Epistemic Governance (Deferred per Founder directive): Epistemic redaction and KMS cryptographic erasure.
-- Deferred: Batch 4 / M6 Authoritative Database Migration to PostgreSQL once multi-instance deployment decision is finalized.
+- Founder review of Phase 2.2.1 Decision-Aware Company Context.
+- Decision Workflow Phase 2.2.2: Multi-Agent Council Orchestration (DO NOT START until approved).
 
 ## Completed
+- [2026-10-13] Decision Workflow Phase 2.2.1: Decision-Aware Company Context — Connected authoritative `DecisionStore` into company intelligence and context-assembly architecture (`DecisionContextProvider`, `SophiaContextAssembler`, `CompanyStateStore.queryState`, `CompanyContextProvider`, `ContextAssemblyService`). Partitioned all 10 Decision statuses: active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`). Implemented deterministic conflict detection (`unconfirmed_predecessor_execution`, `superseded_reference`). Added 12-test comprehensive suite `tests/decision/phase2_2_1_context.test.ts` (12/12 passed). All regression suites passed (104/104). Production build succeeded (31/31 routes, exit code 0). Stopped for Founder review.
+- [2026-10-13] Decision Workflow Phase 2.1.1: Decision Safety Hardening — Closed verified Phase 2.1 gaps (F-01, F-02, F-03, F-04). Hardened lifecycle authorization for `resolveDecision()` and `supersedeDecision()`. Defined separate permissions for Founder governance, trusted workflow execution reports, and operational intervention. Enforced execution-aware supersession via `WorkflowRuntime.requestInstanceCancellation()`, distinguishing requested vs confirmed cancellation and blocking conflicting successor execution. Implemented idempotent audit trail reconciliation using deterministic `audit-dec-${transition.transitionId}` IDs. 10 focused hardening tests in `tests/decision/phase2_1_1_hardening.test.ts` (10/10 passed). Full regression suite (191/191 passed). Production build succeeded (exit code 0). Stopped for Founder review.
+- [2026-10-13] Decision Workflow Phase 2.1: Core Decision Store and Lifecycle Foundation — Implemented `DecisionRecord` types (`src/types/decision.ts`), `DecisionStore` (`src/lib/server/decision/store.ts`), `DecisionLifecycleService` (`src/lib/server/decision/lifecycle.ts`), cryptographic approval binding (`src/lib/server/decision/payload-binding.ts`), legacy adapter (`src/lib/server/decision/adapter.ts`), and `CompanyStateStore` delegation. 18-test deterministic test suite (`tests/decision/decision_lifecycle.test.ts`). 181/181 passing across full suite. Production build succeeded. Stopped for Founder review.
+- [2026-10-13] M2.3 Final Recovery Verification Gate — Implemented operation lifecycle recovery and reconciliation in `SideEffectAuthorizationGate` (`listInterruptedOperations`, `reconcileMissingAudit`, `resolveInterruptedOperation`). Failure-injection test suite `m2_batch3_recovery_gate.test.ts` (6/6 passed). Evaluated PID reuse safety in `InstanceConcurrencyGuard`. Full regression suite (163/163 passed). Production build succeeded. Stopped for Founder review.
+- [2026-10-13] M2 Batch 2.3: Concurrency Safety & Multi-Store Transaction Hygiene — Full mutation matrix audit, hardened 5 confirmed concurrency defects across approval consumption, idempotency claiming, workflow step claiming, company decision updates, and instance lease recovery. Deterministic test suite `m2_batch3_concurrency_hygiene.test.ts` (8/8 passed). Full regression suite (157/157 passed). Production build succeeded.
+- [2026-10-13] M2 Batch 2.2: Cross-Platform Child Test Runner & Restart Recovery — Reconciled test totals (182 core passed, 1 skipped; 228 extended passed, 2 skipped), verified Windows NT / Node.js & Bun environments, production build verified.
 - [2026-10-13] M1 Blockers Resolved & Acceptance Verified — Fixed all 7 TS2540/TS2704 errors in `m1_batch1_memory_authority.test.ts` (0 errors in `tsc --noEmit` across all M1 code and test suites). Re-verified core M1 suites: 90/90 assertions passing under both Node.js (`npx tsx`) and Bun (`bun`). Documented test-runner divergence between runner-neutral M1 suites and legacy `Bun.spawn` suites. Verified critical collection corruption fail-closed behavior, quarantine archiving, initialization markers, strict mutation enforcement, Prisma fallback shielding, and controlled backup/restoration runbook. Branch unmerged and undeployed, stopped for Founder review.
 - [2026-10-12] M1 Batch 2.2 Final Hardening — Hardened `scripts/reconcile-tombstones.ts` with non-zero exit codes (1) on pending work or local cleanup failures; extended fail-closed locking options (`{ lockStrict: true }`) to conversation tombstones and conversation deletion; tightened `isPrismaRecordNotFoundError` to reject connection errors and generic fragments; 45/45 tests passing.
 - [2026-10-12] M1 Batch 2.1 Implementation & Verification — Hardened conversation deletion: serialized message writes on collection lock, synchronous critical-section rechecks, corrected Prisma reconciliation, fail-closed lock timeouts, individual message replay prevention via deletion markers. 34/34 tests passing.

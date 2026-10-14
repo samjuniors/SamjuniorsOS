@@ -79,6 +79,10 @@ export class CompanyStateStore implements ICompanyStateStore {
     return CompanyStateStore.instance;
   }
 
+  public static resetInstance(): void {
+    CompanyStateStore.instance = null;
+  }
+
   private loadFromDurableStorage(): void {
     try {
       const persistedState = DurableFileStore.getInstance().readCollection<any>('company_state');
@@ -92,16 +96,27 @@ export class CompanyStateStore implements ICompanyStateStore {
     }
   }
 
-  private persistState(): void {
+  private persistStateStrictUnderLock(patch: {
+    initiatives?: CompanyInitiative[];
+    products?: ProductFeature[];
+    customers?: CustomerDeal[];
+    financialModel?: FinanceMetric;
+    decisions?: CompanyDecision[];
+  }): void {
+    let currentDisk: Record<string, any> = {};
     try {
-      DurableFileStore.getInstance().writeCollection('company_state', {
-        initiatives: this.initiatives,
-        products: this.products,
-        customers: this.customers,
-        financialModel: this.financialModel,
-        decisions: this.decisions,
-      });
-    } catch {}
+      currentDisk = DurableFileStore.getInstance().readCollection<any>('company_state');
+    } catch {
+      // fallback
+    }
+
+    DurableFileStore.getInstance().writeCollectionStrict('company_state', {
+      initiatives: patch.initiatives ?? currentDisk.initiatives ?? this.initiatives,
+      products: patch.products ?? currentDisk.products ?? this.products,
+      customers: patch.customers ?? currentDisk.customers ?? this.customers,
+      financialModel: patch.financialModel ?? currentDisk.financialModel ?? this.financialModel,
+      decisions: patch.decisions ?? currentDisk.decisions ?? this.decisions,
+    });
   }
 
   public async getProducts(): Promise<ProductFeature[]> {
@@ -129,15 +144,10 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getDecisions(): Promise<CompanyDecision[]> {
-    if (isAuthoritativeMode()) {
-      const db = await requireAuthoritativeDatabase();
-      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
-      if (record?.decisions) {
-        return record.decisions as unknown as CompanyDecision[];
-      }
-      return [];
-    }
-    return [...this.decisions];
+    const { DecisionStore } = await import('@/lib/server/decision/store');
+    const { mapDecisionRecordToCompanyDecision } = await import('@/lib/server/decision/adapter');
+    const records = await DecisionStore.getInstance().list();
+    return (records || []).map(mapDecisionRecordToCompanyDecision);
   }
 
   public async getAttentionItems(): Promise<AttentionItem[]> {
@@ -156,24 +166,27 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async setInitiatives(inits: CompanyInitiative[]): Promise<void> {
-    this.initiatives = [...inits];
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
       await db.companyState.upsert({
         where: { organizationId: 'default' },
         create: {
           organizationId: 'default',
-          initiatives: this.initiatives as any,
+          initiatives: inits as any,
         },
         update: {
-          initiatives: this.initiatives as any,
+          initiatives: inits as any,
         },
       });
+      this.initiatives = [...inits];
       return;
     }
 
-    this.persistState();
+    // Disk authoritative: acquire collection lock for entire read-modify-write
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ initiatives: inits });
+      this.initiatives = [...inits];
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -194,62 +207,43 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
-    this.decisions.unshift(decision);
-
-    if (isAuthoritativeMode()) {
-      const db = await requireAuthoritativeDatabase();
-      await db.companyState.upsert({
-        where: { organizationId: 'default' },
-        create: {
-          organizationId: 'default',
-          decisions: this.decisions as any,
-        },
-        update: {
-          decisions: this.decisions as any,
-        },
-      });
-      return;
-    }
-
-    this.persistState();
-
-    if (process.env.DATABASE_URL) {
-      try {
-        await prisma.companyState.upsert({
-          where: { organizationId: 'default' },
-          create: {
-            organizationId: 'default',
-            decisions: this.decisions as any,
-          },
-          update: {
-            decisions: this.decisions as any,
-          },
-        });
-      } catch {
-        // Fallback safely for offline test environments
-      }
-    }
+    const { DecisionStore } = await import('@/lib/server/decision/store');
+    const { mapCompanyDecisionToDecisionRecord } = await import('@/lib/server/decision/adapter');
+    const rec = mapCompanyDecisionToDecisionRecord(decision);
+    await DecisionStore.getInstance().create(rec);
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
-    this.financialModel = { ...this.financialModel, ...metrics };
-
     if (isAuthoritativeMode()) {
       const db = await requireAuthoritativeDatabase();
+      const nextModel = { ...this.financialModel, ...metrics };
       await db.companyState.upsert({
         where: { organizationId: 'default' },
         create: {
           organizationId: 'default',
-          financialModel: this.financialModel as any,
+          financialModel: nextModel as any,
         },
         update: {
-          financialModel: this.financialModel as any,
+          financialModel: nextModel as any,
         },
       });
+      this.financialModel = nextModel;
       return;
     }
 
-    this.persistState();
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      let currentModel = this.financialModel;
+      try {
+        const persisted = DurableFileStore.getInstance().readCollection<any>('company_state');
+        if (persisted.financialModel) {
+          currentModel = persisted.financialModel;
+        }
+      } catch {}
+      const nextModel = { ...currentModel, ...metrics };
+      this.persistStateStrictUnderLock({ financialModel: nextModel });
+      this.financialModel = nextModel;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -449,37 +443,156 @@ export class CompanyStateStore implements ICompanyStateStore {
       }
     }
 
-    // 5. Governance Decisions (Current pending or active decisions)
-    for (const dec of this.decisions) {
-      const decTokens = [
-        ...extractTokens(dec.title),
-        ...extractTokens(dec.recommendation),
-        ...extractTokens(dec.category),
-        ...extractTokens(dec.businessImpact),
-      ];
-      const matched = decTokens.filter((t) => queryTokens.has(t));
-      if (matched.length > 0 || dec.status === 'pending_approval') {
+    // 5. Governance Decisions (from Authoritative DecisionStore)
+    try {
+      const { DecisionContextProvider } = await import('@/lib/server/decision/context-provider');
+      const provider = DecisionContextProvider.getInstance();
+      const bundle = await provider.getDecisionContext({
+        queryText: params.query,
+        role: targetRole,
+      });
+
+      // 5a. Active commitments (approved, executing) -> current_truth
+      for (const dec of bundle.activeCommitments) {
+        const decTokens = [
+          ...extractTokens(dec.title),
+          ...extractTokens(dec.proposedAction),
+          ...extractTokens(dec.problemStatement),
+          ...extractTokens(dec.category),
+        ];
+        const matched = decTokens.filter((t) => queryTokens.has(t));
         results.push({
           entityType: 'decision',
-          id: dec.id,
-          title: `[Decision] ${dec.title} (${dec.status.toUpperCase()})`,
-          summary: `Recommendation: "${dec.recommendation}" | Recommended By: ${dec.recommendedBy} | Approval Req: ${dec.founderApprovalRequired ? 'YES' : 'NO'}`,
+          id: dec.decisionId,
+          title: `[Active Commitment] ${dec.title} (${dec.status.toUpperCase()})`,
+          summary: `Action: "${dec.proposedAction}" | Owner: ${dec.accountableOwner} | Impact: ${dec.impact} | Reversibility: ${dec.reversibility}${dec.linkedWorkflowId ? ` | Linked Workflow: ${dec.linkedWorkflowId}` : ''}`,
           data: dec,
-          relevanceScore: matched.length * 2 + (dec.status === 'pending_approval' ? 2 : 0),
-          matchReason: matched.length > 0 ? `Matched decision terms: ${[...new Set(matched)].join(', ')}` : 'Active pending decision in queue',
+          relevanceScore: matched.length * 2 + 6,
+          matchReason: matched.length > 0
+            ? `Matched active commitment terms: ${[...new Set(matched)].join(', ')}`
+            : 'Authoritative ratified company commitment',
           provenance: {
-            sourceSystem: 'company_state',
-            sourceId: `state:decision:${dec.id}`,
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
             sourceTitle: dec.title,
             epistemicType: 'current_truth',
-            authority: 'Founder Governance Register',
-            timestamp: nowIso,
-            confidence: 'unverified',
-            provenanceKind: 'synthetic',
-            notes: 'Seed governance proposal.',
+            authority: 'Authoritative DecisionStore (Ratified Commitment)',
+            timestamp: dec.decidedAt || dec.createdAt,
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
+            notes: `Ratified decision commitment. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
           },
         });
       }
+
+      // 5b. Pending governance (proposed, under_review, pending_approval) -> current_truth
+      for (const dec of bundle.pendingGovernance) {
+        const decTokens = [
+          ...extractTokens(dec.title),
+          ...extractTokens(dec.proposedAction),
+          ...extractTokens(dec.problemStatement),
+        ];
+        const matched = decTokens.filter((t) => queryTokens.has(t));
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Pending Governance] ${dec.title} (${dec.status.toUpperCase()})`,
+          summary: `Proposed Action: "${dec.proposedAction}" | Proposer: ${dec.proposer} | Approval Required: ${dec.approvalRequired ? 'YES' : 'NO'}`,
+          data: dec,
+          relevanceScore: matched.length * 2 + (dec.status === 'pending_approval' ? 5 : 4),
+          matchReason: matched.length > 0
+            ? `Matched pending governance terms: ${[...new Set(matched)].join(', ')}`
+            : 'Governance proposal awaiting founder ratification',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'pending_governance',
+            authority: 'Authoritative DecisionStore (Pending Governance — NOT Operational Ground Truth)',
+            timestamp: dec.createdAt,
+            confidence: 'unverified',
+            provenanceKind: 'real',
+            notes: `Awaiting Founder ratification before execution. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
+          },
+        });
+      }
+
+      // 5c. Operational intervention required -> operational_intervention (High priority)
+      for (const dec of bundle.interventionRequired) {
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Intervention Required] ${dec.title} (INTERVENTION_REQUIRED)`,
+          summary: `Action: "${dec.proposedAction}" | Owner: ${dec.accountableOwner} | Requires Founder/Operator Intervention!`,
+          data: dec,
+          relevanceScore: 8,
+          matchReason: 'Operational decision requiring urgent founder/operator intervention',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'operational_intervention',
+            authority: 'Authoritative DecisionStore (Execution Halted — Operational Intervention Required)',
+            timestamp: dec.createdAt,
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
+            notes: 'Execution halted or uncertain; operator intervention required.',
+          },
+        });
+      }
+
+      // 5d. Historical precedents (resolved) -> historical_memory
+      for (const dec of bundle.historicalPrecedents) {
+        results.push({
+          entityType: 'decision',
+          id: dec.decisionId,
+          title: `[Historical Precedent] ${dec.title} (RESOLVED)`,
+          summary: `Outcome: "${dec.outcome?.outcomeSummary || 'Resolved'}" | Resolved By: ${dec.outcome?.resolvedBy || 'founder'} | Resolved At: ${dec.outcome?.resolvedAt || dec.createdAt}`,
+          data: dec,
+          relevanceScore: 3,
+          matchReason: 'Historical resolved decision relevant as precedent',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:${dec.decisionId}`,
+            sourceTitle: dec.title,
+            epistemicType: 'historical_memory',
+            authority: 'Authoritative DecisionStore (Historical Outcome)',
+            timestamp: dec.outcome?.resolvedAt || dec.createdAt,
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
+            notes: 'Resolved past decision — precedent only, NEVER active work.',
+          },
+        });
+      }
+
+      // 5e. Deterministic conflict warnings
+      for (const w of bundle.conflictWarnings) {
+        results.push({
+          entityType: 'decision',
+          id: `conflict:${w.decisionId}:${w.conflictType}`,
+          title: `[Governance Conflict Warning] Decision [${w.decisionId}]`,
+          summary: w.message,
+          data: w,
+          relevanceScore: 9,
+          matchReason: 'Deterministic governance conflict detected',
+          provenance: {
+            sourceSystem: 'decision_store',
+            sourceId: `decision:conflict:${w.decisionId}`,
+            sourceTitle: `Governance Conflict in [${w.decisionId}]`,
+            epistemicType: 'current_truth',
+            authority: 'Deterministic Governance Conflict Detector',
+            timestamp: nowIso,
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
+            notes: 'Deterministic structural conflict; requires resolution before execution.',
+          },
+        });
+      }
+    } catch (err: any) {
+      if (err?.name === 'CriticalCollectionCorruptionError') {
+        throw err;
+      }
+      // Fail closed: never silently inject legacy arrays when authoritative DecisionStore fails
     }
 
     // Sort by relevance score descending

@@ -460,13 +460,9 @@ export class InMemoryApprovalStore implements IApprovalStore {
     }
 
     const clone = JSON.parse(JSON.stringify(record));
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('approvals', record.id, clone);
     this.approvals.set(record.id, clone);
-
-    try {
-      DurableFileStore.getInstance().saveItem('approvals', record.id, clone);
-    } catch (err) {
-      console.warn('[ApprovalStore] Error saving to durable file store:', err);
-    }
 
     if (process.env.DATABASE_URL) {
       try {
@@ -638,21 +634,35 @@ export class InMemoryApprovalStore implements IApprovalStore {
       return PostgresApprovalStore.getInstance().decide(id, decision, decidedBy, reason, expiresAt);
     }
 
-    const record = this.approvals.get(id);
-    if (!record) {
-      throw new Error(`Approval record not found: ${id}`);
-    }
+    const updated = DurableFileStore.getInstance().withCollectionLockStrict('approvals', () => {
+      let record: FounderApprovalRecord | undefined;
+      try {
+        const diskRecords = DurableFileStore.getInstance().readCollection<FounderApprovalRecord>('approvals');
+        record = diskRecords[id];
+      } catch {
+        // fallback
+      }
+      if (!record) {
+        record = this.approvals.get(id);
+      }
+      if (!record) {
+        throw new Error(`Approval record not found: ${id}`);
+      }
 
-    record.decision = decision;
-    record.decidedAt = new Date().toISOString();
-    record.decidedBy = decidedBy;
-    if (reason) record.decisionReason = reason;
-    if (expiresAt) record.expiresAt = expiresAt;
+      const rec: FounderApprovalRecord = {
+        ...record,
+        decision,
+        decidedAt: new Date().toISOString(),
+        decidedBy,
+        decisionReason: reason ?? record.decisionReason,
+        expiresAt: expiresAt ?? record.expiresAt,
+      };
 
-    this.approvals.set(id, record);
-    try {
-      DurableFileStore.getInstance().saveItem('approvals', id, record);
-    } catch {}
+      // Disk authoritative: persist before mutating cache
+      DurableFileStore.getInstance().saveItemStrict('approvals', id, rec);
+      this.approvals.set(id, rec);
+      return rec;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -661,8 +671,8 @@ export class InMemoryApprovalStore implements IApprovalStore {
           data: {
             decision,
             decidedBy,
-            decidedAt: new Date(record.decidedAt),
-            reason: record.decisionReason,
+            decidedAt: new Date(updated.decidedAt!),
+            reason: updated.decisionReason,
             expiresAt: expiresAt ? new Date(expiresAt) : null,
           },
         });
@@ -671,7 +681,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
       }
     }
 
-    return JSON.parse(JSON.stringify(record));
+    return JSON.parse(JSON.stringify(updated));
   }
 
   public async revoke(id: string, revokedBy: string, reason?: string): Promise<FounderApprovalRecord> {
@@ -679,20 +689,34 @@ export class InMemoryApprovalStore implements IApprovalStore {
       return PostgresApprovalStore.getInstance().revoke(id, revokedBy, reason);
     }
 
-    const record = this.approvals.get(id);
-    if (!record) {
-      throw new Error(`Approval record not found: ${id}`);
-    }
+    const updated = DurableFileStore.getInstance().withCollectionLockStrict('approvals', () => {
+      let record: FounderApprovalRecord | undefined;
+      try {
+        const diskRecords = DurableFileStore.getInstance().readCollection<FounderApprovalRecord>('approvals');
+        record = diskRecords[id];
+      } catch {
+        // fallback
+      }
+      if (!record) {
+        record = this.approvals.get(id);
+      }
+      if (!record) {
+        throw new Error(`Approval record not found: ${id}`);
+      }
 
-    record.decision = 'revoked';
-    record.decidedAt = new Date().toISOString();
-    record.decidedBy = revokedBy;
-    record.decisionReason = reason || 'Revoked by Founder';
+      const rec: FounderApprovalRecord = {
+        ...record,
+        decision: 'revoked',
+        decidedAt: new Date().toISOString(),
+        decidedBy: revokedBy,
+        decisionReason: reason || 'Revoked by Founder',
+      };
 
-    this.approvals.set(id, record);
-    try {
-      DurableFileStore.getInstance().saveItem('approvals', id, record);
-    } catch {}
+      // Disk authoritative: persist before mutating cache
+      DurableFileStore.getInstance().saveItemStrict('approvals', id, rec);
+      this.approvals.set(id, rec);
+      return rec;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -701,8 +725,8 @@ export class InMemoryApprovalStore implements IApprovalStore {
           data: {
             decision: 'revoked',
             decidedBy: revokedBy,
-            decidedAt: new Date(record.decidedAt),
-            reason: record.decisionReason,
+            decidedAt: new Date(updated.decidedAt!),
+            reason: updated.decisionReason,
           },
         });
       } catch {
@@ -710,7 +734,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
       }
     }
 
-    return JSON.parse(JSON.stringify(record));
+    return JSON.parse(JSON.stringify(updated));
   }
 
   public async consume(id: string): Promise<FounderApprovalRecord> {
@@ -718,24 +742,42 @@ export class InMemoryApprovalStore implements IApprovalStore {
       return PostgresApprovalStore.getInstance().consume(id);
     }
 
-    const record = this.approvals.get(id);
-    if (!record) {
-      throw new Error(`Approval record not found: ${id}`);
-    }
+    const updated = DurableFileStore.getInstance().withCollectionLockStrict('approvals', () => {
+      let record: FounderApprovalRecord | undefined;
+      try {
+        const diskRecords = DurableFileStore.getInstance().readCollection<FounderApprovalRecord>('approvals');
+        record = diskRecords[id];
+      } catch {
+        // fallback
+      }
+      if (!record) {
+        record = this.approvals.get(id);
+      }
+      if (!record) {
+        throw new Error(`Approval record not found: ${id}`);
+      }
 
-    const allowedUses = (record.scope as any)?.maxUses ?? (record.scope as any)?.allowedUses ?? 1;
-    const currentUses = record.scope?.usedCount ?? 0;
+      const allowedUses = (record.scope as any)?.maxUses ?? (record.scope as any)?.allowedUses ?? 1;
+      const currentUses = record.scope?.usedCount ?? 0;
 
-    if (record.isConsumed || currentUses >= allowedUses) {
-      throw new ApprovalAlreadyConsumedError(id, record.decidedAt);
-    }
+      if (record.isConsumed || currentUses >= allowedUses) {
+        throw new ApprovalAlreadyConsumedError(id, record.decidedAt);
+      }
 
-    record.isConsumed = true;
-    record.scope.usedCount = currentUses + 1;
-    this.approvals.set(id, record);
-    try {
-      DurableFileStore.getInstance().saveItem('approvals', id, record);
-    } catch {}
+      const rec: FounderApprovalRecord = {
+        ...record,
+        isConsumed: true,
+        scope: {
+          ...record.scope,
+          usedCount: currentUses + 1,
+        },
+      };
+
+      // Disk authoritative: persist before mutating cache
+      DurableFileStore.getInstance().saveItemStrict('approvals', id, rec);
+      this.approvals.set(id, rec);
+      return rec;
+    });
 
     if (process.env.DATABASE_URL) {
       try {
@@ -743,7 +785,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
           where: { id },
           data: {
             consumedAt: new Date(),
-            scope: record.scope as any,
+            scope: updated.scope as any,
           },
         });
       } catch {
@@ -751,7 +793,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
       }
     }
 
-    return JSON.parse(JSON.stringify(record));
+    return JSON.parse(JSON.stringify(updated));
   }
 }
 
@@ -804,13 +846,9 @@ export class InMemoryAuditStore implements IAuditStore {
     }
 
     const clone = JSON.parse(JSON.stringify(audit));
+    // Disk authoritative: persist before mutating cache
+    DurableFileStore.getInstance().saveItemStrict('audits', audit.id, clone);
     this.audits.set(audit.id, clone);
-
-    try {
-      DurableFileStore.getInstance().saveItem('audits', audit.id, clone);
-    } catch (err) {
-      console.warn('[AuditStore] Error saving to durable file store:', err);
-    }
 
     if (process.env.DATABASE_URL) {
       try {

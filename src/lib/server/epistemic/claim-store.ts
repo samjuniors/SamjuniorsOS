@@ -664,10 +664,9 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (isAuthoritativeMode()) {
       return PostgresEpistemicStore.getInstance().saveSource(source);
     }
-    this.sources.set(source.id, { ...source });
-    try {
-      DurableFileStore.getInstance().saveItem('epistemic_sources', source.id, source);
-    } catch {}
+    const clone = { ...source };
+    DurableFileStore.getInstance().saveItemStrict('epistemic_sources', source.id, clone);
+    this.sources.set(source.id, clone);
   }
 
   public async getSource(id: string): Promise<EvidenceSource | null> {
@@ -689,10 +688,9 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (isAuthoritativeMode()) {
       return PostgresEpistemicStore.getInstance().saveSignal(signal);
     }
-    this.signals.set(signal.id, { ...signal });
-    try {
-      DurableFileStore.getInstance().saveItem('epistemic_signals', signal.id, signal);
-    } catch {}
+    const clone = { ...signal };
+    DurableFileStore.getInstance().saveItemStrict('epistemic_signals', signal.id, clone);
+    this.signals.set(signal.id, clone);
   }
 
   public async getSignal(id: string): Promise<EpistemicSignal | null> {
@@ -707,10 +705,9 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (isAuthoritativeMode()) {
       return PostgresEpistemicStore.getInstance().saveClaim(claim);
     }
-    this.claims.set(claim.id, { ...claim });
-    try {
-      DurableFileStore.getInstance().saveItem('epistemic_claims', claim.id, claim);
-    } catch {}
+    const clone = { ...claim };
+    DurableFileStore.getInstance().saveItemStrict('epistemic_claims', claim.id, clone);
+    this.claims.set(claim.id, clone);
   }
 
   public async getClaim(id: string): Promise<EpistemicClaim | null> {
@@ -746,10 +743,9 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (isAuthoritativeMode()) {
       return PostgresEpistemicStore.getInstance().recordVerification(verification);
     }
-    this.verifications.set(verification.claimId, { ...verification });
-    try {
-      DurableFileStore.getInstance().saveItem('epistemic_verifications', verification.claimId, verification);
-    } catch {}
+    const clone = { ...verification };
+    DurableFileStore.getInstance().saveItemStrict('epistemic_verifications', verification.claimId, clone);
+    this.verifications.set(verification.claimId, clone);
   }
 
   public async getVerification(claimId: string): Promise<VerificationPolicyResult | null> {
@@ -764,10 +760,9 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (isAuthoritativeMode()) {
       return PostgresEpistemicStore.getInstance().saveFact(fact);
     }
-    this.facts.set(fact.id, { ...fact });
-    try {
-      DurableFileStore.getInstance().saveItem('canonical_facts', fact.id, fact);
-    } catch {}
+    const clone = { ...fact };
+    DurableFileStore.getInstance().saveItemStrict('canonical_facts', fact.id, clone);
+    this.facts.set(fact.id, clone);
     // M5.3-C — derived-index maintenance (rebuildable retrieval index; a
     // maintenance failure never fails the truth write).
     try {
@@ -891,16 +886,16 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     }
     const fact = this.facts.get(factId);
     if (fact) {
-      fact.validityState = 'superseded';
-      fact.supersededById = supersededById;
-      // M5.3-A — record the supersession EVENT TIME (explicit, else the
-      // successor's promotion moment, else now). Deterministic for the
-      // frozen benchmark universe: the seed saves successors before marking
-      // predecessors, so the recorded time is the fixture's frozen timeline.
-      fact.supersededAt =
+      const eventTime =
         resolveSupersessionEventTime(opts?.supersededAt, this.facts.get(supersededById)) ??
         new Date().toISOString();
-      await this.saveFact(fact);
+      const updatedFact: CanonicalFact = {
+        ...fact,
+        validityState: 'superseded',
+        supersededById,
+        supersededAt: eventTime,
+      };
+      await this.saveFact(updatedFact);
     }
   }
 }
