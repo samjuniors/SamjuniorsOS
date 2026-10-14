@@ -2,7 +2,24 @@
 
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
-## Now
+## Now — Post-merge stabilization
+
+**Baseline:** PR #8 merged to `main` on 2026-10-14.
+- Merge commit: `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`.
+- M2 Persistence and Recovery plus Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 are integrated into `main`.
+- PR #8 integrated 16 commits and 44 files.
+- Founder-supplied independent verification summary reports: Decision 69/69, M2 persistence 64/64, M1 regressions 149/149, production build exit 0 (31/31 static routes). The detailed report file was not available in this ChatGPT session; these figures are recorded as supplied audit results, not independently rerun here.
+- No claim is made here that production deployment or end-to-end DecisionLifecycleService HTTP wiring has been completed.
+
+**Current task:** [Issue #9 — Post-merge stabilization](https://github.com/samjuniors/SamJuniorsOS/issues/9).
+- Branch: `maintenance/m2-decision-stabilization`.
+- Correct the stale concurrency test assertion to read authoritative `decisions.json`.
+- Remove hard-coded Bun subprocess assumptions from the two identified persistence/read-model tests.
+- Clean up the DurableFileStore `.initialized` sidecar in test teardown.
+- Reconcile documentation and run focused + regression tests, TypeScript validation, and production build.
+- Keep Phase 2.2.2 Multi-Agent Council work on hold until stabilization is complete and separately approved.
+
+## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
 - **Phase 2.2.1 Implementation Highlights:**
   - **Authoritative Decision Context Provider (`src/lib/server/decision/context-provider.ts`):**
@@ -46,11 +63,8 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
   - Zero merges, commits, pushes, or deployments performed.
   - Stopped for Founder review.
 
-## Next (queued, in order)
-- Founder review of Phase 2.2.1 Decision-Aware Company Context.
-- Decision Workflow Phase 2.2.2: Multi-Agent Council Orchestration (DO NOT START until approved).
-
 ## Completed
+- [2026-10-14] M2 Persistence and Recovery + Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 merged to `main` via PR #8 (merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`). Founder-supplied independent audit summary reports 69/69 Decision tests, 64/64 M2 persistence tests, 149/149 M1 regressions, and a successful production build generating 31/31 static routes. Follow-up hygiene items tracked in Issue #9; deployment and production runtime wiring are not claimed complete.
 - [2026-10-13] Decision Workflow Phase 2.2.1: Decision-Aware Company Context — Connected authoritative `DecisionStore` into company intelligence and context-assembly architecture (`DecisionContextProvider`, `SophiaContextAssembler`, `CompanyStateStore.queryState`, `CompanyContextProvider`, `ContextAssemblyService`). Partitioned all 10 Decision statuses: active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`). Implemented deterministic conflict detection (`unconfirmed_predecessor_execution`, `superseded_reference`). Added 12-test comprehensive suite `tests/decision/phase2_2_1_context.test.ts` (12/12 passed). All regression suites passed (104/104). Production build succeeded (31/31 routes, exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1.1: Decision Safety Hardening — Closed verified Phase 2.1 gaps (F-01, F-02, F-03, F-04). Hardened lifecycle authorization for `resolveDecision()` and `supersedeDecision()`. Defined separate permissions for Founder governance, trusted workflow execution reports, and operational intervention. Enforced execution-aware supersession via `WorkflowRuntime.requestInstanceCancellation()`, distinguishing requested vs confirmed cancellation and blocking conflicting successor execution. Implemented idempotent audit trail reconciliation using deterministic `audit-dec-${transition.transitionId}` IDs. 10 focused hardening tests in `tests/decision/phase2_1_1_hardening.test.ts` (10/10 passed). Full regression suite (191/191 passed). Production build succeeded (exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1: Core Decision Store and Lifecycle Foundation — Implemented `DecisionRecord` types (`src/types/decision.ts`), `DecisionStore` (`src/lib/server/decision/store.ts`), `DecisionLifecycleService` (`src/lib/server/decision/lifecycle.ts`), cryptographic approval binding (`src/lib/server/decision/payload-binding.ts`), legacy adapter (`src/lib/server/decision/adapter.ts`), and `CompanyStateStore` delegation. 18-test deterministic test suite (`tests/decision/decision_lifecycle.test.ts`). 181/181 passing across full suite. Production build succeeded. Stopped for Founder review.
