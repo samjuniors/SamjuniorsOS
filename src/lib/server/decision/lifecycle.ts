@@ -69,10 +69,35 @@ export interface DecisionCallerContext {
   workerCapabilityToken?: string;
 }
 
-const WORKFLOW_SECRET =
-  process.env.WORKFLOW_INTERNAL_SECRET ||
-  process.env.SAMJUNIORS_DEV_SECRET ||
-  'samjuniors-internal-workflow-capability-key';
+export const MIN_WORKFLOW_SECRET_LENGTH = 32;
+
+/**
+ * Retrieves and validates the server-side workflow capability secret.
+ *
+ * Security Invariants:
+ * 1. Hard-coded default secrets are strictly prohibited.
+ * 2. Missing, empty, or whitespace secrets FAIL CLOSED in all environments.
+ * 3. Secret must meet the minimum strength requirement of 32 characters (256 bits).
+ */
+export function getWorkflowCapabilitySecret(): string {
+  const secret = process.env.WORKFLOW_INTERNAL_SECRET || process.env.SAMJUNIORS_DEV_SECRET;
+  if (!secret || typeof secret !== 'string') {
+    throw new Error('WORKFLOW_INTERNAL_SECRET is missing. Server must configure a secure secret (min 32 chars).');
+  }
+
+  const trimmed = secret.trim();
+  if (trimmed.length === 0) {
+    throw new Error('WORKFLOW_INTERNAL_SECRET is empty. Server must configure a secure secret (min 32 chars).');
+  }
+
+  if (trimmed.length < MIN_WORKFLOW_SECRET_LENGTH) {
+    throw new Error(
+      `WORKFLOW_INTERNAL_SECRET is insufficiently strong (${trimmed.length} chars; minimum ${MIN_WORKFLOW_SECRET_LENGTH} chars required).`
+    );
+  }
+
+  return trimmed;
+}
 
 export interface WorkerCapabilityPayload {
   workflowInstanceId: string;
@@ -81,12 +106,59 @@ export interface WorkerCapabilityPayload {
   expiresAt: number;
 }
 
+/**
+ * Issues a cryptographically signed HMAC-SHA256 worker capability token.
+ * Validates payload schema completely before signing.
+ * Fails closed if the secret is unconfigured or insufficiently strong.
+ */
 export function generateWorkerCapabilityToken(payload: WorkerCapabilityPayload): string {
-  const data = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const sig = createHmac('sha256', WORKFLOW_SECRET).update(data).digest('base64url');
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Invalid capability token payload: payload must be a non-null object');
+  }
+
+  if (typeof payload.workflowInstanceId !== 'string' || payload.workflowInstanceId.trim().length === 0) {
+    throw new Error('Invalid capability token payload: workflowInstanceId must be a non-empty string');
+  }
+
+  if (typeof payload.workerId !== 'string' || payload.workerId.trim().length === 0) {
+    throw new Error('Invalid capability token payload: workerId must be a non-empty string');
+  }
+
+  if (typeof payload.expiresAt !== 'number' || !Number.isFinite(payload.expiresAt)) {
+    throw new Error('Invalid capability token payload: expiresAt must be a valid finite number');
+  }
+
+  if (payload.decisionId !== undefined) {
+    if (typeof payload.decisionId !== 'string' || payload.decisionId.trim().length === 0) {
+      throw new Error('Invalid capability token payload: decisionId must be a non-empty string when provided');
+    }
+  }
+
+  const secret = getWorkflowCapabilitySecret();
+  const normalizedPayload: WorkerCapabilityPayload = {
+    workflowInstanceId: payload.workflowInstanceId.trim(),
+    workerId: payload.workerId.trim(),
+    expiresAt: payload.expiresAt,
+    ...(payload.decisionId ? { decisionId: payload.decisionId.trim() } : {}),
+  };
+
+  const data = Buffer.from(JSON.stringify(normalizedPayload), 'utf8').toString('base64url');
+  const sig = createHmac('sha256', secret).update(data).digest('base64url');
   return `${data}.${sig}`;
 }
 
+/**
+ * Verifies an HMAC-SHA256 worker capability token.
+ *
+ * Security Invariants:
+ * 1. Constant-time signature comparison using crypto.timingSafeEqual.
+ * 2. Structure validation: must be exactly 2 non-empty base64url segments.
+ * 3. Secret validation: fails closed if secret is missing, empty, or weak (< 32 chars).
+ * 4. Payload validation: complete schema validation (strings non-empty, expiresAt finite number).
+ * 5. Expiry validation: fails closed if token has expired.
+ * 6. Scoping: requires exact match for expectedWorkflowInstanceId, expectedDecisionId, and expectedWorkerId.
+ *    If an expected value is supplied and the payload value is missing or different, validation fails.
+ */
 export function verifyWorkerCapabilityToken(
   token: string,
   expectedWorkflowInstanceId?: string,
@@ -96,52 +168,108 @@ export function verifyWorkerCapabilityToken(
   if (!token || typeof token !== 'string') {
     return { isValid: false, reason: 'Missing worker capability token' };
   }
-  const parts = token.split('.');
-  if (parts.length !== 2) {
-    return { isValid: false, reason: 'Malformed capability token structure' };
-  }
-  const [data, sig] = parts;
-  const expectedSig = createHmac('sha256', WORKFLOW_SECRET).update(data).digest('base64url');
 
+  const trimmedToken = token.trim();
+  const parts = trimmedToken.split('.');
+  if (parts.length !== 2) {
+    return { isValid: false, reason: 'Malformed capability token structure: expected exactly 2 parts' };
+  }
+
+  const [data, sig] = parts;
+  if (!data || !sig) {
+    return { isValid: false, reason: 'Malformed capability token structure: empty data or signature' };
+  }
+
+  const BASE64URL_REGEX = /^[A-Za-z0-9_-]+$/;
+  if (!BASE64URL_REGEX.test(data) || !BASE64URL_REGEX.test(sig)) {
+    return { isValid: false, reason: 'Malformed capability token structure: invalid base64url characters' };
+  }
+
+  let secret: string;
+  try {
+    secret = getWorkflowCapabilitySecret();
+  } catch (err: any) {
+    return { isValid: false, reason: err.message || 'Workflow capability secret is not configured or insufficiently strong' };
+  }
+
+  const expectedSig = createHmac('sha256', secret).update(data).digest('base64url');
   const sigBuf = Buffer.from(sig, 'utf8');
   const expectedBuf = Buffer.from(expectedSig, 'utf8');
+
   if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
     return { isValid: false, reason: 'Invalid capability token signature' };
   }
 
-  let payload: WorkerCapabilityPayload;
+  let parsed: any;
   try {
-    payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    const jsonStr = Buffer.from(data, 'base64url').toString('utf8');
+    parsed = JSON.parse(jsonStr);
   } catch {
-    return { isValid: false, reason: 'Invalid capability token payload' };
+    return { isValid: false, reason: 'Invalid capability token payload: malformed JSON' };
   }
 
-  if (typeof payload.expiresAt === 'number' && payload.expiresAt <= Date.now()) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { isValid: false, reason: 'Invalid capability token payload: payload must be a non-null object' };
+  }
+
+  if (typeof parsed.workflowInstanceId !== 'string' || parsed.workflowInstanceId.trim().length === 0) {
+    return { isValid: false, reason: 'Missing or invalid workflowInstanceId in capability token' };
+  }
+
+  if (typeof parsed.workerId !== 'string' || parsed.workerId.trim().length === 0) {
+    return { isValid: false, reason: 'Missing or invalid workerId in capability token' };
+  }
+
+  if (typeof parsed.expiresAt !== 'number' || !Number.isFinite(parsed.expiresAt)) {
+    return { isValid: false, reason: 'Missing or invalid expiresAt in capability token: must be a finite number' };
+  }
+
+  if (parsed.expiresAt <= Date.now()) {
     return { isValid: false, reason: 'Capability token has expired' };
   }
 
-  if (expectedWorkflowInstanceId && payload.workflowInstanceId !== expectedWorkflowInstanceId) {
-    return {
-      isValid: false,
-      reason: `Capability token workflowInstanceId mismatch (expected: ${expectedWorkflowInstanceId}, got: ${payload.workflowInstanceId})`,
-    };
+  if (parsed.decisionId !== undefined) {
+    if (typeof parsed.decisionId !== 'string' || parsed.decisionId.trim().length === 0) {
+      return { isValid: false, reason: 'Invalid decisionId in capability token: must be a non-empty string when present' };
+    }
   }
 
-  if (expectedDecisionId && payload.decisionId && payload.decisionId !== expectedDecisionId) {
-    return {
-      isValid: false,
-      reason: `Capability token decisionId mismatch (expected: ${expectedDecisionId}, got: ${payload.decisionId})`,
-    };
+  if (expectedWorkflowInstanceId) {
+    if (!parsed.workflowInstanceId || parsed.workflowInstanceId.trim() !== expectedWorkflowInstanceId.trim()) {
+      return {
+        isValid: false,
+        reason: `Capability token workflowInstanceId mismatch (expected: ${expectedWorkflowInstanceId}, got: ${parsed.workflowInstanceId})`,
+      };
+    }
   }
 
-  if (expectedWorkerId && payload.workerId && payload.workerId.toLowerCase() !== expectedWorkerId.toLowerCase()) {
-    return {
-      isValid: false,
-      reason: `Capability token workerId mismatch (expected: ${expectedWorkerId}, got: ${payload.workerId})`,
-    };
+  if (expectedDecisionId) {
+    if (!parsed.decisionId || parsed.decisionId.trim() !== expectedDecisionId.trim()) {
+      return {
+        isValid: false,
+        reason: `Capability token decisionId mismatch or missing (expected: ${expectedDecisionId}, got: ${parsed.decisionId || 'none'})`,
+      };
+    }
   }
 
-  return { isValid: true, payload };
+  if (expectedWorkerId) {
+    if (!parsed.workerId || parsed.workerId.toLowerCase().trim() !== expectedWorkerId.toLowerCase().trim()) {
+      return {
+        isValid: false,
+        reason: `Capability token workerId mismatch (expected: ${expectedWorkerId}, got: ${parsed.workerId})`,
+      };
+    }
+  }
+
+  return {
+    isValid: true,
+    payload: {
+      workflowInstanceId: parsed.workflowInstanceId.trim(),
+      workerId: parsed.workerId.trim(),
+      expiresAt: parsed.expiresAt,
+      decisionId: parsed.decisionId ? parsed.decisionId.trim() : undefined,
+    },
+  };
 }
 
 /**
@@ -249,15 +377,27 @@ export function isAuthorizedWorkflowWorker(
     }
   }
 
-  // If a capability token is supplied, verify it
+  // If a capability token is supplied, verify it strictly
   if (userContext.workerCapabilityToken) {
     const verification = verifyWorkerCapabilityToken(
       userContext.workerCapabilityToken,
       linkedWorkflowId,
-      decisionId,
+      undefined,
       actor
     );
-    if (!verification.isValid) {
+    if (!verification.isValid || !verification.payload) {
+      return false;
+    }
+
+    // If token is decision-scoped, the operation MUST provide a matching decisionId
+    if (verification.payload.decisionId) {
+      if (!decisionId || verification.payload.decisionId !== decisionId) {
+        return false;
+      }
+    }
+
+    // Token payload must also match caller's claimed workflowInstanceId
+    if (userContext.workflowInstanceId && userContext.workflowInstanceId !== verification.payload.workflowInstanceId) {
       return false;
     }
   }
