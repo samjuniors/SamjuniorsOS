@@ -2,7 +2,58 @@
 
 > Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
 
-## Now
+## Now — Post-merge stabilization (Issue #9 COMPLETE)
+
+**Baseline:** PR #8 merged to `main` on 2026-10-14 (`7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`).
+- M2 Persistence and Recovery plus Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 are integrated into `main`.
+- Stabilization milestone [Issue #9](https://github.com/samjuniors/SamJuniorsOS/issues/9) conducted on `maintenance/m2-decision-stabilization`.
+
+**Completed Remediations (Issue #9):**
+1. **Authoritative Decision Persistence Assertion (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
+   - Corrected Test 4 to inspect authoritative `decisions.json` via `fileStore.readCollection('decisions')` instead of legacy `company_state.json`.
+   - Added `DecisionStore.resetInstance()` to test isolation setup.
+   - Result: 8/8 tests passing (verified consecutively across repeated executions).
+2. **Cross-Platform Prisma Test Runner Portability (`tests/helpers/child-runner.ts`):**
+   - Introduced `getPrismaCliPath()` and `runPrismaCommand()` executing `prisma/build/index.js` via `process.execPath`.
+   - Eliminated hardcoded `bunx prisma` assumptions from `tests/sophia/m2_knowledge_persistence.test.ts` and `tests/sophia/m53_authoritative_read_model.test.ts`.
+   - Replaced `execSync('bun run failclosed.ts')` in M5.3 with `spawnTestChild` using `pathToFileURL` for cross-platform ESM dynamic import compatibility on Windows and Node.js.
+3. **DurableFileStore `.initialized` Sidecar Teardown Isolation (`tests/sophia/m2_knowledge_persistence.test.ts`):**
+   - Extended teardown block to inspect and unlink `company_knowledge.json.initialized` in virgin test environments, and restore prior marker state when existing.
+   - Eliminates false-positive `CriticalCollectionCorruptionError` anti-wipe triggers in downstream test suites (e.g. `m4c_query_conditioned_retrieval.test.ts:C14`).
+
+**Verification Battery (Node v24.20.0, Windows x64):**
+- **Affected Suites (Run Individually x2):**
+  - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
+  - `tests/sophia/m2_knowledge_persistence.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
+  - `tests/sophia/m53_authoritative_read_model.test.ts`: **13/13 PASS** (Run 1: 13/13, Run 2: 13/13)
+- **Downstream Guard Isolation:**
+  - `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27/27 PASS** (C14 anti-wipe guard cleanly verified)
+- **Decision Workflow Suites:**
+  - `tests/decision/decision_lifecycle.test.ts`: **18/18 PASS**
+  - `tests/decision/phase2_1_1_hardening.test.ts`: **10/10 PASS**
+  - `tests/decision/phase2_2_1_context.test.ts`: **15/15 PASS**
+  - `tests/decision/workflow_capability_token.test.ts`: **26/26 PASS**
+  - *Decision Total:* **69/69 PASS (100%)**
+- **M2 Persistence & Recovery Suites:**
+  - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20/20 PASS**
+  - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27/27 PASS**
+  - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11/11 PASS**
+  - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6/6 PASS**
+  - *M2 Total:* **64/64 PASS (100%)**
+- **M1 & Sophia Regression Suites:**
+  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 PASS**
+  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 PASS**
+  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 PASS**
+  - `tests/sophia/m3_conversation_convergence.test.ts`: **14/14 PASS**
+  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25/25 PASS**
+  - `tests/sophia/m53_asof_read.test.ts`: **18/18 PASS**
+  - *M1/Sophia Total:* **140/140 PASS (100%)**
+- **Production Build:**
+  - `next build` (single-drive mirror): **Exit Code 0** (31/31 static routes generated, 0 errors).
+
+**Next Step:** Founder review and PR submission against `main`. Phase 2.2.2 remains on hold until merge.
+
+## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
 - **Phase 2.2.1 Implementation Highlights:**
   - **Authoritative Decision Context Provider (`src/lib/server/decision/context-provider.ts`):**
@@ -46,11 +97,8 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
   - Zero merges, commits, pushes, or deployments performed.
   - Stopped for Founder review.
 
-## Next (queued, in order)
-- Founder review of Phase 2.2.1 Decision-Aware Company Context.
-- Decision Workflow Phase 2.2.2: Multi-Agent Council Orchestration (DO NOT START until approved).
-
 ## Completed
+- [2026-10-14] M2 Persistence and Recovery + Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 merged to `main` via PR #8 (merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`). Founder-supplied independent audit summary reports 69/69 Decision tests, 64/64 M2 persistence tests, 149/149 M1 regressions, and a successful production build generating 31/31 static routes. Follow-up hygiene items tracked in Issue #9; deployment and production runtime wiring are not claimed complete.
 - [2026-10-13] Decision Workflow Phase 2.2.1: Decision-Aware Company Context — Connected authoritative `DecisionStore` into company intelligence and context-assembly architecture (`DecisionContextProvider`, `SophiaContextAssembler`, `CompanyStateStore.queryState`, `CompanyContextProvider`, `ContextAssemblyService`). Partitioned all 10 Decision statuses: active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`). Implemented deterministic conflict detection (`unconfirmed_predecessor_execution`, `superseded_reference`). Added 12-test comprehensive suite `tests/decision/phase2_2_1_context.test.ts` (12/12 passed). All regression suites passed (104/104). Production build succeeded (31/31 routes, exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1.1: Decision Safety Hardening — Closed verified Phase 2.1 gaps (F-01, F-02, F-03, F-04). Hardened lifecycle authorization for `resolveDecision()` and `supersedeDecision()`. Defined separate permissions for Founder governance, trusted workflow execution reports, and operational intervention. Enforced execution-aware supersession via `WorkflowRuntime.requestInstanceCancellation()`, distinguishing requested vs confirmed cancellation and blocking conflicting successor execution. Implemented idempotent audit trail reconciliation using deterministic `audit-dec-${transition.transitionId}` IDs. 10 focused hardening tests in `tests/decision/phase2_1_1_hardening.test.ts` (10/10 passed). Full regression suite (191/191 passed). Production build succeeded (exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1: Core Decision Store and Lifecycle Foundation — Implemented `DecisionRecord` types (`src/types/decision.ts`), `DecisionStore` (`src/lib/server/decision/store.ts`), `DecisionLifecycleService` (`src/lib/server/decision/lifecycle.ts`), cryptographic approval binding (`src/lib/server/decision/payload-binding.ts`), legacy adapter (`src/lib/server/decision/adapter.ts`), and `CompanyStateStore` delegation. 18-test deterministic test suite (`tests/decision/decision_lifecycle.test.ts`). 181/181 passing across full suite. Production build succeeded. Stopped for Founder review.
