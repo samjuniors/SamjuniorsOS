@@ -334,6 +334,7 @@ export interface OrchestrationRun {
   finalExecutiveReport?: string;
   executiveResult?: FounderExecutiveResult;
   verificationResult?: VerificationResult;
+  councilDeliberation?: import('./council').CouncilDeliberationResult;
   executionSummary?: {
     totalAgentsInvoked: number;
     agentsInvoked: AgentRole[];

@@ -519,15 +519,15 @@ export interface ApproveDecisionParams extends TransitionParams {
   notes?: string;
 }
 
-export interface RejectDecisionParams extends TransitionParams {}
+export type RejectDecisionParams = TransitionParams;
 
 export interface StartExecutionParams extends TransitionParams {
   linkedWorkflowId?: string;
 }
 
-export interface FlagInterventionParams extends TransitionParams {}
+export type FlagInterventionParams = TransitionParams;
 
-export interface ResumeExecutionParams extends TransitionParams {}
+export type ResumeExecutionParams = TransitionParams;
 
 export interface ResolveDecisionParams extends TransitionParams {
   outcome: DecisionOutcome;

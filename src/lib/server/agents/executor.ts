@@ -31,6 +31,7 @@ export interface AgentExecutionContext {
     productSpecs?: string;
     financeAssessment?: string;
     verificationNotes?: string;
+    councilDeliberation?: string;
   };
 }
 

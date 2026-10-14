@@ -24,6 +24,8 @@ import { executeGitHubRepositoryRead, executeGitHubIntelligence } from '../tools
 import { ToolDefinition, PermissionPolicy, ToolSelectionContext, ToolExecutionEvidence, SkillId } from '@/types/capabilities';
 import { determineSkillForTask } from '@/lib/skills/skill-registry';
 import { ConstitutionalVerifier } from './verifier';
+import { ExecutiveCouncilEngine } from './council';
+import { CouncilDeliberationResult } from '@/types/council';
 import { SideEffectAuthorizationGate } from '../authorization/gate';
 import { EpistemicPipeline } from '../epistemic/pipeline';
 
@@ -186,12 +188,12 @@ async function persistResearchEvidenceLineage(params: {
 export class MultiAgentOrchestrator {
   private executor: ServerAgentExecutor;
 
-  constructor() {
-    this.executor = new ServerAgentExecutor();
+  constructor(executor?: ServerAgentExecutor) {
+    this.executor = executor || new ServerAgentExecutor();
   }
 
   public async orchestrateDirective(request: OrchestrationRequest): Promise<OrchestrationRun> {
-    const { directive } = request;
+    const { directive, agents } = request;
     const shouldExecuteTools = request.executeTools ?? (directive === 'Test directive for tool selection' ? false : true);
     const runId = `run-${Date.now()}`;
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -938,29 +940,171 @@ Include:
     });
 
     // ==========================================
-    // STAGE 7: EXECUTIVE COUNCIL CONSOLIDATION CHECKPOINT (procedural)
+    // STAGE 7: EXECUTIVE COUNCIL DELIBERATION (Bounded Peer Review)
     // ==========================================
-    // R1 honesty: this is NOT an additional model deliberation round. The
-    // specialist outputs above were produced by real per-stage LLM calls;
-    // this checkpoint is the COO's procedural consolidation of them before
-    // the final report synthesis. The copy says so — it never claims a
-    // cross-agent peer review that did not happen.
-    planItems.push({
-      stage: 8,
-      title: 'Executive Council Consolidation Checkpoint',
-      agentId: 'coo',
+    const councilSkill = determineSkillForTask({
+      title: 'Executive Council Deliberation & Peer Review',
       protocolStep: 'review',
-      status: 'done',
-      outputSnippet: 'Procedural checkpoint: specialist outputs from Research, Product, and Finance consolidated for final synthesis (no additional council deliberation round is executed).',
-      selectedSkill: cooVerifySkill.selectedSkill,
+      directive,
+    }, 'coo');
+
+    const councilEngine = new ExecutiveCouncilEngine({ executor: this.executor });
+    const councilDeliberation: CouncilDeliberationResult = await councilEngine.executeDeliberation({
+      directive,
+      cooScopeContent,
+      researchFindings,
+      productSpecs,
+      financeAssessment,
+      verificationNotes,
+      verificationStatus: verificationResultData.isCompliant ? 'verified' : 'failed',
+      activeAgents: agents,
     });
+
+    if (councilDeliberation.status === 'verification_rejected') {
+      addMessage(
+        'coo',
+        `[Sophia Vance - COO] ⚠️ CRITICAL VERIFICATION FAILURE: Executive Council review rejected by constitutional verification engine: ${councilDeliberation.verdict}. Orchestration halted.`,
+        'critique',
+        'review'
+      );
+
+      planItems.push({
+        stage: 8,
+        title: 'Executive Council Deliberation & Peer Review',
+        agentId: 'coo',
+        protocolStep: 'review',
+        status: 'failed',
+        outputSnippet: `Deliberation REJECTED by constitutional verifier: ${councilDeliberation.verdict}`,
+        selectedSkill: councilSkill.selectedSkill,
+      });
+
+      const failureExecutiveResult: FounderExecutiveResult = {
+        recommendation: `DIRECTIVE REJECTED DURING COUNCIL DELIBERATION: ${councilDeliberation.verdict}`,
+        keyFindings: [councilDeliberation.verdict],
+        businessImplications: [
+          'Execution halted: Proposal violates non-negotiable constitutional, financial, or security invariants during council review.',
+          'No automated external actions permitted under non-compliant state.'
+        ],
+        risks: councilDeliberation.frictions.map((f) => f.description),
+        recommendedNextActions: councilDeliberation.recommendedNextActions,
+        preparedBy: {
+          name: 'Sophia Vance',
+          role: 'Chief Operating Officer',
+          agentId: 'coo',
+        },
+        participatingEmployees: [
+          {
+            agentId: 'coo',
+            name: 'Sophia Vance',
+            role: 'Chief Operating Officer',
+            department: 'Executive Operations',
+            status: 'failed',
+            contribution: 'Executive Council deliberation presiding & constitutional audit.',
+          },
+        ],
+        verificationStatus: 'failed',
+        verificationDetails: {
+          isCompliant: false,
+          checksPassed: verificationResultData.checksPassed,
+          checksFailed: ['COUNCIL_CONSTITUTIONAL_REJECTION: Specialist critique or mediation breached constitutional bounds.'],
+          notes: councilDeliberation.notes || 'Verification failed during council deliberation.',
+        },
+        evidenceAvailability: {
+          hasProvenance: true,
+          evidenceCount: deliverables.length,
+          primaryBasis: 'model_reasoning',
+          deliverableIds: deliverables.map((d) => d.name),
+        },
+        executionOutcome: 'verification_rejected',
+        failureReason: 'Directive rejected by constitutional verification engine during council deliberation.',
+      };
+
+      return {
+        id: runId,
+        directive,
+        title: `Directive Execution: ${directive.slice(0, 50)}`,
+        summary: `Halted: Constitutional verification checks failed during Executive Council review.`,
+        timestamp,
+        status: 'failed',
+        liveAi: true,
+        currentProtocolStep: 'review',
+        protocolProgress: {
+          understand: 'completed',
+          research: 'completed',
+          analyze: 'completed',
+          plan: 'completed',
+          build_execute: 'completed',
+          test: 'completed',
+          verify: 'completed',
+          review: 'active',
+          report: 'pending',
+        },
+        plan: planItems,
+        messages,
+        deliverables,
+        executiveResult: failureExecutiveResult,
+        verificationResult: {
+          isCompliant: false,
+          checksPassed: verificationResultData.checksPassed,
+          checksFailed: ['COUNCIL_CONSTITUTIONAL_REJECTION'],
+          safeMockEnforced: true,
+          notes: councilDeliberation.notes || 'Verification failed during council deliberation.',
+          verifiedAt: new Date().toISOString(),
+        },
+        councilDeliberation,
+        executionSummary: {
+          totalAgentsInvoked: 4,
+          agentsInvoked: ['coo', 'researcher', 'pm', 'finance'],
+          totalTasksExecuted: planItems.filter((p) => p.status === 'done').length,
+          executionMode: 'multi_agent_orchestrated',
+        },
+      };
+    }
+
+    // Deliberation passed constitutional checks — publish critique messages and deliverable
+    for (const critique of councilDeliberation.specialistCritiques) {
+      addMessage(
+        critique.agentId,
+        `[${critique.agentName} - ${critique.role}] Council Review (${critique.status.toUpperCase()}): ${critique.summary}`,
+        'critique',
+        'review',
+        critique.provenance
+      );
+    }
 
     addMessage(
       'coo',
-      `[Executive Council] Consolidation checkpoint: the specialist deliverables from Dr. Thorne (Research), Maya Lin (Product), and Julian Cruz (Finance) produced in the stages above are consolidated for the final report. This is a procedural checkpoint, not an additional peer-review deliberation round.`,
+      `[Sophia Vance - COO] Executive Council Deliberation completed (${councilDeliberation.status.toUpperCase()}): ${councilDeliberation.verdict}`,
       'status',
       'review'
     );
+
+    const councilDeliverableContent = ExecutiveCouncilEngine.formatDeliberationDeliverable(councilDeliberation);
+    deliverables.push({
+      name: 'Executive Council Deliberation & Peer Review Protocol',
+      owner: 'Executive Council (Sophia Vance, Dr. Thorne, Maya Lin, Julian Cruz)',
+      protocolStep: 'review',
+      content: councilDeliverableContent,
+      provenance: {
+        agentId: 'coo',
+        agentName: 'Sophia Vance',
+        taskId: `task-review-council-${Date.now()}`,
+        protocolStep: 'review',
+        timestamp: new Date().toISOString(),
+        isVerified: councilDeliberation.verificationPassed,
+        evidenceBasis: 'calculation',
+      },
+    });
+
+    planItems.push({
+      stage: 8,
+      title: 'Executive Council Deliberation & Peer Review',
+      agentId: 'coo',
+      protocolStep: 'review',
+      status: councilDeliberation.status === 'degraded' ? 'failed' : 'done',
+      outputSnippet: `Deliberation [${councilDeliberation.status.toUpperCase()}]: ${councilDeliberation.verdict.slice(0, 160)}`,
+      selectedSkill: councilSkill.selectedSkill,
+    });
 
     // ==========================================
     // STAGE 8: FINAL EXECUTIVE REPORT SYNTHESIS (Sophia Vance)
@@ -971,13 +1115,14 @@ Include:
         directive,
         protocolStep: 'report',
         taskTitle: 'Comprehensive Final Executive Report & Deliverable Synthesis',
-        taskDescription: 'Compile the complete executive package, synthesizing findings from Dr. Thorne, Maya Lin, and Julian Cruz into actionable recommendations for the Founder.',
+        taskDescription: 'Compile the complete executive package, synthesizing findings from Dr. Thorne, Maya Lin, and Julian Cruz, including Executive Council deliberation and friction mediation, into actionable recommendations for the Founder.',
         upstreamContext: {
           cooScope: cooScopeContent,
           researchFindings,
           productSpecs,
           financeAssessment,
           verificationNotes,
+          councilDeliberation: councilDeliberation.verdict,
         },
       },
       `Synthesize the Comprehensive Final Executive Report for the Founder regarding directive: "${directive}".
@@ -987,10 +1132,11 @@ Structure the report:
 ## 1. Executive Summary & Strategic Verdict
 Clear 2-paragraph synthesis of the cross-functional conclusion and recommendation.
 
-## 2. Cross-Functional Specialist Deliverables
-- **Strategic Research (Dr. Aris Thorne)**: Key market vectors and architectural takeaways.
-- **Product Architecture (Maya Lin)**: PRD scope, core workflows, and milestone sequence.
-- **Capital & Unit Economics (Julian Cruz)**: Compute costs, gross margins, and financial assumptions.
+## 2. Cross-Functional Specialist Deliverables & Council Deliberation
+- **Strategic Research (Dr. Aris Thorne)**: Key market vectors, architectural takeaways, and feasibility audit verdict.
+- **Product Architecture (Maya Lin)**: PRD scope, core workflows, and operational trade-offs.
+- **Capital & Unit Economics (Julian Cruz)**: Compute costs, gross margin floor verification (>80%), and budget stress-test.
+- **Executive Council Deliberation (Sophia Vance)**: Consensus state (${councilDeliberation.status.toUpperCase()}), mediated frictions, and authoritative COO rulings.
 
 ## 3. Governance, Security & Provenance
 Summary of compliance verification and safe mock bounds.
@@ -1043,13 +1189,18 @@ Actionable steps in phased order.`
     const rawReportData = cooReportResult.structuredData || {};
     
     // Key findings synthesized from actual participating specialist outputs
-    const keyFindings: string[] = Array.isArray(rawReportData.keyFindings) && rawReportData.keyFindings.length > 0
+    const rawFindings: string[] = Array.isArray(rawReportData.keyFindings) && rawReportData.keyFindings.length > 0
       ? rawReportData.keyFindings
       : [
           `Market & Tech Recon (Dr. Aris Thorne): ${researcherResult.structuredData?.summary || 'Market dynamics, architectural feasibility, and competitive differentiators mapped.'}`,
           `Product Architecture & PRD (Maya Lin): ${pmResult.structuredData?.summary || 'PRD functional scope, workflow specification, and user journey specifications drafted.'}`,
           `Unit Economics & Margin (Julian Cruz): ${financeResult.structuredData?.summary || 'Compute attribution, batch token efficiency, and margin sensitivity modeled.'}`,
         ];
+
+    const councilFinding = `Executive Council Deliberation: ${councilDeliberation.verdict}`;
+    const keyFindings: string[] = rawFindings.some((f) => f.includes('Executive Council'))
+      ? rawFindings
+      : [...rawFindings, councilFinding];
 
     const businessImplications: string[] = Array.isArray(rawReportData.businessImplications) && rawReportData.businessImplications.length > 0
       ? rawReportData.businessImplications
@@ -1059,20 +1210,27 @@ Actionable steps in phased order.`
           'Provides transparent audit trails and empirical provenance for every strategic conclusion.',
         ];
 
+    const deliberationFrictionRisks = councilDeliberation.frictions.map(
+      (f) => `Council Friction [${f.topic}]: ${f.description} (Ruling: ${f.ruling})`
+    );
+
     const risks: string[] = Array.isArray(rawReportData.risks) && rawReportData.risks.length > 0
       ? rawReportData.risks
       : [
+          ...deliberationFrictionRisks,
           'Inference rate limits during peak traffic; mitigated via automated caching fallbacks.',
           'Safe Mock Sandboxing remains strictly enforced to prevent unverified production or financial mutations.',
         ];
 
     const recommendedNextActions: string[] = Array.isArray(rawReportData.recommendedNextActions) && rawReportData.recommendedNextActions.length > 0
       ? rawReportData.recommendedNextActions
-      : [
-          'Founder review and ratification of proposed strategic initiative.',
-          'Queue drafted PRD functional requirements into development sprint milestones.',
-          'Monitor unit economics and compute attribution against the >80% gross margin target floor.',
-        ];
+      : (councilDeliberation.recommendedNextActions.length > 0
+          ? councilDeliberation.recommendedNextActions
+          : [
+              'Founder review and ratification of proposed strategic initiative.',
+              'Queue drafted PRD functional requirements into development sprint milestones.',
+              'Monitor unit economics and compute attribution against the >80% gross margin target floor.',
+            ]);
 
     // Participating employees - ONLY include employees who actually participated
     const participatingEmployees: ParticipatingEmployee[] = [
@@ -1082,7 +1240,7 @@ Actionable steps in phased order.`
         role: 'Chief Operating Officer',
         department: 'Executive Operations',
         status: cooUnderstandResult.success && cooReportResult.success ? 'completed' : 'partial',
-        contribution: 'Directive decomposition, inter-agent delegation, and executive report synthesis.',
+        contribution: 'Directive decomposition, council deliberation presiding, and executive report synthesis.',
       },
       {
         agentId: 'researcher',
@@ -1090,7 +1248,7 @@ Actionable steps in phased order.`
         role: 'Lead Researcher',
         department: 'Market & Tech Intelligence',
         status: researcherResult.success ? 'completed' : 'failed',
-        contribution: 'Market dynamics research, competitor reconnaissance, and technical feasibility.',
+        contribution: 'Market dynamics research, competitor reconnaissance, and council feasibility audit.',
       },
       {
         agentId: 'pm',
@@ -1098,7 +1256,7 @@ Actionable steps in phased order.`
         role: 'Principal PM',
         department: 'Product Strategy & PRDs',
         status: pmResult.success ? 'completed' : 'failed',
-        contribution: 'Product Requirements Document (PRD), user stories, and functional specs.',
+        contribution: 'Product Requirements Document (PRD), user stories, and council scope review.',
       },
       {
         agentId: 'finance',
@@ -1106,7 +1264,7 @@ Actionable steps in phased order.`
         role: 'Chief Financial Analyst',
         department: 'Finance & Unit Economics',
         status: financeResult.success ? 'completed' : 'failed',
-        contribution: 'Unit economics modeling, compute cost stress-test, and margin sensitivity.',
+        contribution: 'Unit economics modeling, margin floor verification, and council budget stress-test.',
       },
     ];
 
@@ -1177,10 +1335,11 @@ Actionable steps in phased order.`
       finalExecutiveReport,
       executiveResult,
       verificationResult: verificationResultData,
+      councilDeliberation,
       executionSummary: {
         totalAgentsInvoked: 4,
         agentsInvoked: ['coo', 'researcher', 'pm', 'finance'],
-        totalTasksExecuted: 5,
+        totalTasksExecuted: planItems.filter((p) => p.status === 'done').length,
         executionMode: 'multi_agent_orchestrated',
       },
     };
@@ -1220,7 +1379,7 @@ In accordance with constitutional truthfulness invariants:
       { stage: 5, title: 'Product Architecture & PRD Generation', agentId: 'pm', protocolStep: 'build_execute', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 6, title: 'Unit Economics & Compute Stress-Test', agentId: 'finance', protocolStep: 'test', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 7, title: 'Constitutional Compliance Verification', agentId: 'coo', protocolStep: 'verify', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
-      { stage: 8, title: 'Executive Council Consolidation Checkpoint', agentId: 'coo', protocolStep: 'review', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
+      { stage: 8, title: 'Executive Council Deliberation & Peer Review', agentId: 'coo', protocolStep: 'review', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
       { stage: 9, title: 'Final Executive Report Synthesis', agentId: 'coo', protocolStep: 'report', status: 'pending', outputSnippet: 'Awaiting server AI configuration.' },
     ];
 

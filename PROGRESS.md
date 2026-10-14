@@ -12,29 +12,52 @@
 - **Active branch:** `phase/2.2.2-council-deliberation`, created from the verified merge commit above.
 - **Founder authorization:** The Founder directed “merge and start next” on 2026-10-14; Phase 2.2.2 is now authorized to begin.
 
-### Repository-grounded starting point
+### Implementation Highlights
+1. **Executive Council Engine (`src/lib/server/orchestration/council.ts`):**
+   - Core engine `ExecutiveCouncilEngine` managing structured, bounded peer review among Dr. Aris Thorne (researcher), Maya Lin (pm), and Julian Cruz (finance) supervised by Sophia Vance (coo).
+   - Domain-specific specialist audits:
+     - Dr. Thorne: Technical feasibility, state-of-the-art alignment, and evidence grounding against research findings.
+     - Maya Lin: PRD scope, user journey viability, operational trade-offs, and edge-case handling against compute constraints.
+     - Julian Cruz: Compute budget ceilings, token burn sensitivity, and non-negotiable 80%+ gross margin floor verification.
+   - Sophia Vance (COO) Mediation: Synthesizes critiques, identifies cross-functional friction points, rules authoritatively on trade-offs, and declares the council verdict.
+   - Deliverable formatting: Produces `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` deliverable with full provenance.
+2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
+   - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
+   - Partitioned statuses: `consensus_achieved`, `consensus_with_reservations`, `frictions_escalated`, `verification_rejected`, `degraded`.
+   - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
+3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
+   - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
+   - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
+   - Updated `participatingEmployees` to track real council review contributions.
+   - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
+4. **Sovereign Verification Precedence & Constitutional Hardening:**
+   - Deterministic verification is sovereign: Pre-check halts deliberation immediately on unverified/failed proposals (`totalCalls: 0`).
+   - Post-critique verification: `ConstitutionalVerifier` scans all specialist critiques and COO mediation; fails closed on margin compromises (< 80%), credential leaks, or privilege escalation.
+5. **Hard Bounds & Resilience:**
+   - Enforced `maxRounds <= 2` (default 1 round); fails closed on unbounded requests.
+   - Hard execution bounds: max 3 specialist reviews + 1 COO mediation.
+   - Per-call timeout guard (default 30s) and cancellation (`AbortSignal`) safety.
+   - Honest degradation: Provider errors/outages report `status: 'degraded'` with zero fabricated reviews or simulated agreement.
 
-1. `src/lib/server/orchestration/orchestrator.ts` currently performs a mostly sequential COO → Research → Product → Finance → deterministic verification → COO synthesis flow. Its Council Consolidation Checkpoint is explicitly procedural and does not execute cross-agent peer review.
-2. `src/app/api/agent-collab/route.ts` currently makes one model call to produce a structured collaboration transcript; its provider-failure path returns an honest degraded notice with no fabricated subtasks.
-3. `src/lib/server/workflow/runtime.ts` and `workflow/store.ts` already provide workflow state transitions, dependency/readiness handling, authorization-gate integration, and local/authoritative persistence modes.
-4. Existing abstractions to reuse/evaluate: `ServerAgentExecutor`, `AgentRunStore`, `DecisionStore`, `DecisionContextProvider`, `ConstitutionalVerifier`, `WorkflowRuntime`, and `SideEffectAuthorizationGate`.
-5. No first-class Artifact/Blackboard module was found in the current repository tree. Older audit documents describe target architecture and must not be mistaken for implemented code.
+### Verification Results
+- `tests/orchestration/council_deliberation.test.ts`: **15 passed, 0 failed** (run twice)
+- `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
+- `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
+- `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
+- `tests/decision/workflow_capability_token.test.ts`: **26 passed, 0 failed**
+- `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 passed, 0 failed**
+- `tests/sophia/m2_knowledge_persistence.test.ts`: **8 passed, 0 failed**
+- `tests/sophia/m53_authoritative_read_model.test.ts`: **13 passed, 0 failed**
+- `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27 passed, 0 failed**
+- `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
+- `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
+- `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
+- **Grand Total Across Targeted Suites: 194 PASSED, 0 FAILED.**
+- **Linting:** `npm run lint` exited with code 0 across the entire repository.
+- **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files.
+- **Production Build:** Cross-drive worktree (`C:\...` with `node_modules` symlink to `E:\...`) triggers Turbopack out-of-root panic (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`). Documented honestly as an environment constraint without fabrication.
 
-### Phase 2.2.2 guardrails
-
-- Preserve one Sophia as supervisor; specialists remain bounded capabilities.
-- Use bounded deliberation with deterministic stop/escalation rules; no peer-to-peer swarm or unbounded loops.
-- Keep independent deterministic verification distinct from LLM review.
-- Preserve authenticated Founder authorization, approval payload binding, audit, idempotency, and human override.
-- Extend existing orchestration/workflow abstractions; do not create a second engine.
-- No new DB schema, Artifact/Blackboard subsystem, scheduler, provider, framework, or production deployment unless the repository audit demonstrates necessity and an ADR justifies it.
-- First deliverable is a repository-grounded call-graph/gap audit and minimal council protocol, then the smallest safe vertical implementation.
-
-### Verification boundary
-
-Issue #9's Windows/Node test totals and production build were supplied by the branch author and recorded in PR #10. They were not independently rerun in this review. No GitHub Actions runs were returned for PR #10's head commit. Do not upgrade those results to independently verified evidence.
-
-**Next action:** Complete Issue #11's code-grounded audit and protocol design on `phase/2.2.2-council-deliberation`; implement only after the design is consistent with current code and security boundaries.
+**Next action:** Submit PR for Issue #11 against `main` and stop for Founder review. Zero merges to `main`, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.

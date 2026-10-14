@@ -317,6 +317,7 @@ export interface ContextAssemblyRequest {
     productSpecs?: string;
     financeAssessment?: string;
     verificationNotes?: string;
+    councilDeliberation?: string;
   };
 }
 
