@@ -1,6 +1,30 @@
 # WORKLOG.md - Canonical Operational History
 
-## Task 6 ΓÇö SOFIA Voice & Desktop Capability Validation (2026-10-04)
+## Issue #9 — Post-Merge M2 & Decision Stabilization (2026-10-14)
+
+**Status:** COMPLETE on `maintenance/m2-decision-stabilization` (branched from merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`).
+**Context:** Resolves three non-blocking test hygiene and portability findings identified during the PR #8 independent verification without modifying production runtime code or expanding architectural scope.
+
+**Root Causes & Solutions:**
+1. **Stale Decision Persistence Assertion (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
+   - *Cause:* Test 4 asserted `Array.isArray(onDiskState.decisions)` on `company_state.json`. In Phase 2.1, decisions were migrated out of `company_state.json` to the authoritative `DecisionStore` (`decisions.json`).
+   - *Fix:* Updated assertion to inspect the canonical `decisions` collection via `fileStore.readCollection('decisions')` and verified all 10 concurrent decisions persisted with matching `decisionId`. Added `DecisionStore.resetInstance()` to test isolation setup.
+2. **Hard-coded `bunx prisma` in Test Subprocesses (`tests/sophia/m2_knowledge_persistence.test.ts`, `tests/sophia/m53_authoritative_read_model.test.ts`):**
+   - *Cause:* Tests hard-coded `bunx prisma db push`, throwing `ENOENT` on Windows and Node-only runner environments without Bun in `PATH`.
+   - *Fix:* Added `runPrismaCommand` and `getPrismaCliPath` in `tests/helpers/child-runner.ts` executing the local `prisma/build/index.js` via `process.execPath`. Replaced `execSync('bun run failclosed.ts')` in M5.3 with `spawnTestChild` using `pathToFileURL` for cross-platform ESM dynamic imports.
+3. **DurableFileStore `.initialized` Sidecar Teardown Leak (`tests/sophia/m2_knowledge_persistence.test.ts`):**
+   - *Cause:* Teardown unlinked `company_knowledge.json` but left behind `company_knowledge.json.initialized`, tripping `DurableFileStore`'s anti-wipe protection barrier on subsequent runs of `tests/sophia/m4c_query_conditioned_retrieval.test.ts:C14`.
+   - *Fix:* Updated teardown to check and clean up `company_knowledge.json.initialized` in virgin environments and restore previous marker state when existing.
+
+**Verification Results:**
+- Affected suites run individually twice: 100% pass (`m2_batch3_concurrency_hygiene`: 8/8, `m2_knowledge_persistence`: 8/8, `m53_authoritative_read_model`: 13/13).
+- Downstream guard suite: `m4c_query_conditioned_retrieval` 27/27 pass (C14 anti-wipe guard cleanly verified).
+- Decision test suites: 69/69 pass (100%).
+- M2 persistence test suites: 64/64 pass (100%).
+- M1 & Sophia regression suites: 140/140 pass (100%).
+- Next.js Turbopack production build: Exit code 0, 31/31 static routes generated.
+
+## Task 6 — SOFIA Voice & Desktop Capability Validation (2026-10-04)
 
 **Status:** COMPLETE on `audit/sofia-voice-desktop-capability-validation` (branched from `development` @ `a020cab`). Founder directive: source-grounded, evidence-driven validation of SOFIA's actual voice, desktop, and tool-execution capabilities; docs + focused tests only; no merge, no deploy, no production-code changes. Full report: `docs/audit/TASK-6-SOFIA-VOICE-DESKTOP-CAPABILITY-VALIDATION.md`.
 

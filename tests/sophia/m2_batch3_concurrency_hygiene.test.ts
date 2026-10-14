@@ -18,6 +18,7 @@ import {
 import { InMemoryWorkflowStore } from '../../src/lib/server/workflow/store';
 import { CompanyStateStore } from '../../src/lib/server/state/state-store';
 import { InstanceConcurrencyGuard } from '../../src/lib/server/persistence/instance-guard';
+import { DecisionStore } from '../../src/lib/server/decision/store';
 import { CompanyDecision } from '../../src/types/os';
 import { WorkflowStepState } from '../../src/types/workflow';
 
@@ -53,6 +54,7 @@ async function main() {
   (InMemoryWorkflowStore as any).instance = undefined;
   (CompanyStateStore as any).instance = undefined;
   (InstanceConcurrencyGuard as any).instance = undefined;
+  DecisionStore.resetInstance();
 
   const fileStore = DurableFileStore.getInstance();
   const dataDir = fileStore.getDataDir();
@@ -255,13 +257,21 @@ async function main() {
       );
     }
 
-    // Verify disk copy directly
-    const onDiskState = fileStore.readCollection<any>('company_state');
-    assert(Array.isArray(onDiskState.decisions), 'Disk state must contain decisions array');
+    // Verify disk copy directly from authoritative decisions collection
+    const onDiskDecisions = fileStore.readCollection<any>('decisions');
+    assert(
+      typeof onDiskDecisions === 'object' && onDiskDecisions !== null,
+      'Disk state must contain decisions collection'
+    );
     for (const d of testDecisions) {
       assert(
-        onDiskState.decisions.some((fd: any) => fd.id === d.id),
+        onDiskDecisions[d.id] !== undefined,
         `Decision ${d.id} is missing from on-disk JSON!`
+      );
+      assert.strictEqual(
+        onDiskDecisions[d.id].decisionId,
+        d.id,
+        `Decision ${d.id} in on-disk JSON has mismatched decisionId!`
       );
     }
   });

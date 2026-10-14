@@ -1,4 +1,4 @@
-import { fork, ChildProcess } from 'child_process';
+import { fork, ChildProcess, execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
@@ -116,3 +116,48 @@ export function createIsolatedTestDir(prefix: string = 'samjuniors-test-'): {
     },
   };
 }
+
+/**
+ * Resolves the installed Prisma CLI entry point (build/index.js).
+ * Guaranteed to find the local Prisma CLI without relying on shell commands, bunx, or npx.
+ */
+export function getPrismaCliPath(): string {
+  try {
+    const prismaPkg = require.resolve('prisma/package.json');
+    return path.join(path.dirname(prismaPkg), 'build', 'index.js');
+  } catch {
+    const fallbackPath = path.resolve(process.cwd(), 'node_modules/prisma/build/index.js');
+    if (fs.existsSync(fallbackPath)) {
+      return fallbackPath;
+    }
+    throw new Error('Could not resolve prisma/build/index.js. Ensure prisma is installed in node_modules.');
+  }
+}
+
+/**
+ * Runs a Prisma CLI command using the current runtime (Node.js or Bun)
+ * cross-platform without relying on shell wrappers, npx, or bunx.
+ */
+export function runPrismaCommand(
+  args: string[],
+  options: {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+    timeoutMs?: number;
+    stdio?: 'pipe' | 'inherit' | 'ignore';
+  } = {}
+): string {
+  const cliPath = getPrismaCliPath();
+  const cwd = options.cwd || process.cwd();
+  const env = { ...process.env, ...options.env };
+  const timeoutMs = options.timeoutMs || 120_000;
+
+  return execFileSync(process.execPath, [cliPath, ...args], {
+    cwd,
+    env: env as Record<string, string>,
+    stdio: options.stdio || 'pipe',
+    timeout: timeoutMs,
+    encoding: 'utf-8',
+  });
+}
+

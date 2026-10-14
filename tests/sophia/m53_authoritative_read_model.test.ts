@@ -1,10 +1,10 @@
 import assert from 'assert';
-import { execSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import type { CanonicalFact } from '../../src/types/epistemic';
+import { spawnTestChild, runPrismaCommand } from '../helpers/child-runner';
 
 /**
  * ============================================================================
@@ -45,11 +45,14 @@ process.env.DATABASE_MODE = 'authoritative';
 // is unchanged).
 (process.env as { NODE_ENV?: string }).NODE_ENV = 'test';
 
-execSync('bunx prisma db push --schema prisma/schema.prisma --skip-generate --accept-data-loss', {
-  cwd: REPO_ROOT,
-  env: { ...process.env, DATABASE_URL: `file:${dbFile}` },
-  stdio: 'pipe',
-});
+runPrismaCommand(
+  ['db', 'push', '--schema', 'prisma/schema.prisma', '--skip-generate', '--accept-data-loss'],
+  {
+    cwd: REPO_ROOT,
+    env: { ...process.env, DATABASE_URL: `file:${dbFile}` },
+    stdio: 'pipe',
+  }
+);
 
 interface TestResult {
   name: string;
@@ -239,33 +242,30 @@ async function main(): Promise<void> {
     // falls back to the in-memory path. (Run in a child because the Prisma
     // client binds its datasource URL at construction in this process.)
     const childScript = path.join(scratch, 'failclosed.ts');
+    const claimStoreUrl = pathToFileURL(path.join(REPO_ROOT, 'src/lib/server/epistemic/claim-store.ts')).href;
     fs.writeFileSync(
       childScript,
       [
         `process.env.DATABASE_URL = 'file:/nonexistent-m53-dir/nope.db';`,
         `process.env.DATABASE_MODE = 'authoritative';`,
-        `const { EpistemicClaimStore } = await import(${JSON.stringify(path.join(REPO_ROOT, 'src/lib/server/epistemic/claim-store'))});`,
-        `try {`,
-        `  await EpistemicClaimStore.getInstance().readFacts({ mode: 'CURRENT' });`,
-        `  console.log('READ_SUCCEEDED');`,
-        `} catch (err) {`,
-        `  console.log('THREW:' + String(err?.message ?? err).slice(0, 160));`,
-        `  process.exit(3);`,
-        `}`,
+        `(async () => {`,
+        `  try {`,
+        `    const { EpistemicClaimStore } = await import(${JSON.stringify(claimStoreUrl)});`,
+        `    await EpistemicClaimStore.getInstance().readFacts({ mode: 'CURRENT' });`,
+        `    console.log('READ_SUCCEEDED');`,
+        `  } catch (err) {`,
+        `    console.log('THREW:' + String(err?.message ?? err).slice(0, 160));`,
+        `    process.exit(3);`,
+        `  }`,
+        `})();`,
       ].join('\n')
     );
-    let stdout = '';
-    let exitCode = 0;
-    try {
-      stdout = execSync(`bun run ${JSON.stringify(childScript)}`, {
-        cwd: REPO_ROOT,
-        env: { ...process.env, DATABASE_MODE: 'authoritative' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }).toString();
-    } catch (err: any) {
-      exitCode = err.status ?? 1;
-      stdout = (err.stdout?.toString() ?? '') + (err.stderr?.toString() ?? '');
-    }
+    const childRes = await spawnTestChild(childScript, [], {
+      cwd: REPO_ROOT,
+      env: { DATABASE_MODE: 'authoritative' },
+    });
+    const stdout = (childRes.stdout || '') + (childRes.stderr || '');
+    const exitCode = childRes.exitCode;
     assert.strictEqual(exitCode, 3, `child must exit 3; output: ${stdout.slice(0, 300)}`);
     assert.ok(stdout.includes('READ_SUCCEEDED') === false, 'the read must NOT succeed');
     assert.ok(
@@ -279,6 +279,9 @@ async function main(): Promise<void> {
   console.log('\n==================================================');
   console.log(`M5.3 AUTHORITATIVE READ MODEL SUITE RESULT: ${passed} passed, ${failed} failed`);
   console.log('==================================================\n');
+  try {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  } catch {}
   if (failed > 0) process.exit(1);
 }
 

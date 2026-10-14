@@ -1,7 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import os from 'os';
 import {
   CompanyKnowledgeStore,
   CANONICAL_COMPANY_KNOWLEDGE,
@@ -9,7 +9,7 @@ import {
   isKnowledgeContentUnchanged,
 } from '../../src/lib/server/knowledge/knowledge-store';
 import { SophiaContextAssembler } from '../../src/lib/server/sophia';
-import { spawnTestChild } from '../helpers/child-runner';
+import { spawnTestChild, runPrismaCommand } from '../helpers/child-runner';
 
 /**
  * ============================================================================
@@ -43,13 +43,15 @@ import { spawnTestChild } from '../helpers/child-runner';
 
 const DATA_DIR = path.resolve(process.cwd(), '.data');
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'company_knowledge.json');
+const KNOWLEDGE_INITIALIZED_FILE = `${KNOWLEDGE_FILE}.initialized`;
 // Throwaway database for the authoritative-mode test (absolute path — Prisma
 // resolves relative SQLite paths against prisma/).
-const AUTHORITY_DB = `/tmp/m2-knowledge-authority-${process.pid}.db`;
+const AUTHORITY_DB = path.join(os.tmpdir(), `m2-knowledge-authority-${process.pid}.db`);
 
 let passed = 0;
 let failed = 0;
 let originalKnowledgeFile: string | null = null;
+let originalKnowledgeInitializedExists = false;
 
 async function test(name: string, fn: () => Promise<void>) {
   try {
@@ -104,6 +106,7 @@ async function runTests() {
   } else {
     originalKnowledgeFile = null;
   }
+  originalKnowledgeInitializedExists = fs.existsSync(KNOWLEDGE_INITIALIZED_FILE);
 
   try {
     // ------------------------------------------------------------------
@@ -315,9 +318,8 @@ async function runTests() {
     await test('8. Authoritative mode: seeds bootstrap a fresh db; a restart never overwrites an edited document', async () => {
       // Fresh throwaway database (remove any stale file from an earlier run).
       fs.rmSync(AUTHORITY_DB, { force: true });
-      execFileSync(
-        'bunx',
-        ['prisma', 'db', 'push', '--schema', 'prisma/schema.prisma', '--accept-data-loss', '--skip-generate'],
+      runPrismaCommand(
+        ['db', 'push', '--schema', 'prisma/schema.prisma', '--accept-data-loss', '--skip-generate'],
         {
           env: { ...process.env, DATABASE_URL: `file:${AUTHORITY_DB}` },
           stdio: 'pipe',
@@ -369,11 +371,21 @@ async function runTests() {
     try {
       if (originalKnowledgeFile !== null) {
         fs.writeFileSync(KNOWLEDGE_FILE, originalKnowledgeFile, 'utf-8');
-      } else if (fs.existsSync(KNOWLEDGE_FILE)) {
+        if (!originalKnowledgeInitializedExists && fs.existsSync(KNOWLEDGE_INITIALIZED_FILE)) {
+          fs.unlinkSync(KNOWLEDGE_INITIALIZED_FILE);
+        } else if (originalKnowledgeInitializedExists && !fs.existsSync(KNOWLEDGE_INITIALIZED_FILE)) {
+          fs.writeFileSync(KNOWLEDGE_INITIALIZED_FILE, `initialized ${new Date().toISOString()}\n`);
+        }
+      } else {
         // Virgin environment: remove test artifacts. The dev app's store
         // constructor will re-run the one-time canonical seed migration on
         // its next cold boot.
-        fs.unlinkSync(KNOWLEDGE_FILE);
+        if (fs.existsSync(KNOWLEDGE_FILE)) {
+          fs.unlinkSync(KNOWLEDGE_FILE);
+        }
+        if (fs.existsSync(KNOWLEDGE_INITIALIZED_FILE)) {
+          fs.unlinkSync(KNOWLEDGE_INITIALIZED_FILE);
+        }
       }
     } catch {}
   }
