@@ -78,15 +78,31 @@ export const MIN_WORKFLOW_SECRET_LENGTH = 32;
  * 1. Hard-coded default secrets are strictly prohibited.
  * 2. Missing, empty, or whitespace secrets FAIL CLOSED in all environments.
  * 3. Secret must meet the minimum strength requirement of 32 characters (256 bits).
+ * 4. Production isolation: In production mode (NODE_ENV === 'production'), SAMJUNIORS_DEV_SECRET
+ *    is strictly rejected as a fallback. Production requires WORKFLOW_INTERNAL_SECRET explicitly.
  */
 export function getWorkflowCapabilitySecret(): string {
-  const secret = process.env.WORKFLOW_INTERNAL_SECRET || process.env.SAMJUNIORS_DEV_SECRET;
+  const isProduction = process.env.NODE_ENV === 'production';
+  const secret = isProduction
+    ? process.env.WORKFLOW_INTERNAL_SECRET
+    : (process.env.WORKFLOW_INTERNAL_SECRET || process.env.SAMJUNIORS_DEV_SECRET);
+
   if (!secret || typeof secret !== 'string') {
+    if (isProduction) {
+      throw new Error(
+        'WORKFLOW_INTERNAL_SECRET is required in production mode. SAMJUNIORS_DEV_SECRET fallback is prohibited.'
+      );
+    }
     throw new Error('WORKFLOW_INTERNAL_SECRET is missing. Server must configure a secure secret (min 32 chars).');
   }
 
   const trimmed = secret.trim();
   if (trimmed.length === 0) {
+    if (isProduction) {
+      throw new Error(
+        'WORKFLOW_INTERNAL_SECRET is empty in production mode. A non-empty secret of at least 32 characters is required.'
+      );
+    }
     throw new Error('WORKFLOW_INTERNAL_SECRET is empty. Server must configure a secure secret (min 32 chars).');
   }
 
@@ -334,10 +350,17 @@ export function isAuthorizedFounder(
  * Rules:
  * 1. F-02 REMEDIATION: String-prefix ('worker-') and static name ('workflow_runtime')
  *    checks are completely removed.
- * 2. Actor cannot be an AI employee persona or prohibited role.
- * 3. userContext is mandatory with source === 'workflow_runtime' or role === 'WORKFLOW_WORKER'.
- * 4. Scoping: if linkedWorkflowId is present, userContext.workflowInstanceId MUST match.
- * 5. If workerCapabilityToken is present, its HMAC signature and expiry are verified.
+ * 2. Actor cannot be an AI employee persona or prohibited role, and must be non-empty.
+ * 3. Client sources ('client') strictly FAIL CLOSED; client requests cannot claim worker authority.
+ * 4. Workflow binding: worker must be strictly bound to an exact non-empty linkedWorkflowId.
+ *    Unlinked decisions cannot be executed or resolved by workflow workers.
+ * 5. Execution Principals:
+ *    - In-Process Server Runtime: authenticated internal runtime (`source: 'workflow_runtime' | 'system'`).
+ *      Does not require an external token to execute or resolve in-process work for its bound instance.
+ *    - Delegated Workers: any caller where source is NOT 'workflow_runtime' or 'system' MUST provide
+ *      a cryptographically signed capability token. Unauthenticated role claims fail closed.
+ * 6. Scoping: if workerCapabilityToken is present, its HMAC signature, expiry, workerId,
+ *    workflowInstanceId, and decisionId (when decision-scoped) are verified cryptographically.
  */
 export function isAuthorizedWorkflowWorker(
   actor: string,
@@ -345,7 +368,11 @@ export function isAuthorizedWorkflowWorker(
   linkedWorkflowId?: string,
   decisionId?: string
 ): boolean {
-  const normalized = (actor || '').toLowerCase().trim();
+  if (!actor || typeof actor !== 'string' || actor.trim().length === 0) {
+    return false;
+  }
+
+  const normalized = actor.toLowerCase().trim();
 
   // Prohibited agent roles cannot masquerade as workflow workers
   if (PROHIBITED_AGENT_ROLES.includes(normalized) || normalized.startsWith('agent-')) {
@@ -361,27 +388,35 @@ export function isAuthorizedWorkflowWorker(
     return false;
   }
 
+  // Workflow binding: worker must be strictly bound to the exact linked workflow instance
+  if (!linkedWorkflowId || typeof linkedWorkflowId !== 'string' || linkedWorkflowId.trim().length === 0) {
+    return false;
+  }
+
+  if (!userContext.workflowInstanceId || userContext.workflowInstanceId.trim() !== linkedWorkflowId.trim()) {
+    return false;
+  }
+
+  const isInProcessRuntime =
+    userContext.source === 'workflow_runtime' || userContext.source === 'system';
+
+  // Delegated workers (non-in-process) MUST present a cryptographic capability token
+  if (!isInProcessRuntime && !userContext.workerCapabilityToken) {
+    return false;
+  }
+
   const isWorkerRole =
-    userContext.role?.toUpperCase() === 'WORKFLOW_WORKER' ||
-    userContext.source === 'workflow_runtime' ||
-    userContext.source === 'system';
+    userContext.role?.toUpperCase() === 'WORKFLOW_WORKER' || isInProcessRuntime;
 
   if (!isWorkerRole) {
     return false;
   }
 
-  // Scoping enforcement: worker must be scoped to the exact workflow instance
-  if (linkedWorkflowId) {
-    if (!userContext.workflowInstanceId || userContext.workflowInstanceId !== linkedWorkflowId) {
-      return false;
-    }
-  }
-
-  // If a capability token is supplied, verify it strictly
+  // If a capability token is supplied (mandatory for delegated workers, optional for in-process), verify it strictly
   if (userContext.workerCapabilityToken) {
     const verification = verifyWorkerCapabilityToken(
       userContext.workerCapabilityToken,
-      linkedWorkflowId,
+      linkedWorkflowId.trim(),
       undefined,
       actor
     );
@@ -391,13 +426,13 @@ export function isAuthorizedWorkflowWorker(
 
     // If token is decision-scoped, the operation MUST provide a matching decisionId
     if (verification.payload.decisionId) {
-      if (!decisionId || verification.payload.decisionId !== decisionId) {
+      if (!decisionId || verification.payload.decisionId !== decisionId.trim()) {
         return false;
       }
     }
 
     // Token payload must also match caller's claimed workflowInstanceId
-    if (userContext.workflowInstanceId && userContext.workflowInstanceId !== verification.payload.workflowInstanceId) {
+    if (userContext.workflowInstanceId.trim() !== verification.payload.workflowInstanceId) {
       return false;
     }
   }

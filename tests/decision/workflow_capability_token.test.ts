@@ -14,6 +14,7 @@ import {
   getWorkflowCapabilitySecret,
   generateWorkerCapabilityToken,
   verifyWorkerCapabilityToken,
+  isAuthorizedWorkflowWorker,
   MIN_WORKFLOW_SECRET_LENGTH,
   DecisionLifecycleService,
 } from '@/lib/server/decision/lifecycle';
@@ -529,6 +530,278 @@ async function main(): Promise<void> {
         },
         (err: any) => err instanceof UnauthorizedDecisionActionError,
         'Must reject client-supplied context even when carrying a valid capability token'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 18: Production mode strictly rejects SAMJUNIORS_DEV_SECRET fallback
+    // -------------------------------------------------------------------------
+    await runTest('18. Production mode strictly rejects SAMJUNIORS_DEV_SECRET fallback', async () => {
+      const origNodeEnv = process.env.NODE_ENV;
+      try {
+        (process.env as any).NODE_ENV = 'production';
+        delete process.env.WORKFLOW_INTERNAL_SECRET;
+        process.env.SAMJUNIORS_DEV_SECRET = 'valid-length-development-secret-that-is-over-32-chars';
+
+        assert.throws(
+          () => getWorkflowCapabilitySecret(),
+          /SAMJUNIORS_DEV_SECRET fallback is prohibited/,
+          'Must throw when WORKFLOW_INTERNAL_SECRET is unset in production, even if SAMJUNIORS_DEV_SECRET is present'
+        );
+
+        // Even with whitespace WORKFLOW_INTERNAL_SECRET in production
+        process.env.WORKFLOW_INTERNAL_SECRET = '   ';
+        assert.throws(
+          () => getWorkflowCapabilitySecret(),
+          /empty in production mode/,
+          'Must reject whitespace secret in production mode without falling back'
+        );
+
+        // With valid WORKFLOW_INTERNAL_SECRET in production, it succeeds
+        process.env.WORKFLOW_INTERNAL_SECRET = VALID_STRONG_SECRET;
+        const secret = getWorkflowCapabilitySecret();
+        assert.strictEqual(secret, VALID_STRONG_SECRET);
+      } finally {
+        (process.env as any).NODE_ENV = origNodeEnv;
+        process.env.WORKFLOW_INTERNAL_SECRET = VALID_STRONG_SECRET;
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 19: Direct invocation without actor or userContext fails closed
+    // -------------------------------------------------------------------------
+    await runTest('19. Direct invocation without actor or userContext fails closed', async () => {
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker('', { source: 'workflow_runtime', workflowInstanceId: VALID_WORKFLOW_ID }, VALID_WORKFLOW_ID),
+        false,
+        'Empty actor must return false'
+      );
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker('worker-1', undefined, VALID_WORKFLOW_ID),
+        false,
+        'Missing userContext must return false'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 20: Non-in-process caller claiming WORKFLOW_WORKER without token fails closed
+    // -------------------------------------------------------------------------
+    await runTest('20. Non-in-process caller claiming WORKFLOW_WORKER without token fails closed', async () => {
+      // Caller has role WORKFLOW_WORKER, but source is undefined (not workflow_runtime/system)
+      // and workerCapabilityToken is absent. Must fail closed!
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-1',
+          { role: 'WORKFLOW_WORKER', workflowInstanceId: VALID_WORKFLOW_ID },
+          VALID_WORKFLOW_ID
+        ),
+        false,
+        'Non-in-process caller without capability token must fail closed'
+      );
+
+      // Caller has source: 'session' with role: 'WORKFLOW_WORKER' and no token
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-1',
+          { role: 'WORKFLOW_WORKER', source: 'session', workflowInstanceId: VALID_WORKFLOW_ID },
+          VALID_WORKFLOW_ID
+        ),
+        false,
+        'Session caller without capability token must fail closed'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 21: Legitimate in-process workflow runtime resolution without token succeeds
+    // -------------------------------------------------------------------------
+    await runTest('21. Legitimate in-process workflow runtime resolution without token succeeds', async () => {
+      // In-process runtime (source: 'workflow_runtime') does not require external token
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'workflow-runtime-daemon',
+          { source: 'workflow_runtime', workflowInstanceId: VALID_WORKFLOW_ID },
+          VALID_WORKFLOW_ID
+        ),
+        true,
+        'In-process runtime bound to matching workflow must be authorized'
+      );
+
+      // System source (source: 'system') also authorized in-process
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'system-recovery-worker',
+          { source: 'system', workflowInstanceId: VALID_WORKFLOW_ID },
+          VALID_WORKFLOW_ID
+        ),
+        true,
+        'System runtime bound to matching workflow must be authorized'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 22: Legitimate in-process workflow runtime resolution with valid token succeeds
+    // -------------------------------------------------------------------------
+    await runTest('22. Legitimate in-process workflow runtime resolution with valid token succeeds', async () => {
+      const validToken = generateWorkerCapabilityToken({
+        workflowInstanceId: VALID_WORKFLOW_ID,
+        workerId: 'worker-node-beta',
+        expiresAt: Date.now() + 60000,
+      });
+
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-beta',
+          {
+            source: 'workflow_runtime',
+            role: 'WORKFLOW_WORKER',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: validToken,
+          },
+          VALID_WORKFLOW_ID
+        ),
+        true,
+        'Runtime with matching valid token must be authorized'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 23: In-process workflow runtime resolution with invalid or expired token fails closed
+    // -------------------------------------------------------------------------
+    await runTest('23. In-process workflow runtime with invalid or expired token fails closed', async () => {
+      const expiredToken = generateWorkerCapabilityToken({
+        workflowInstanceId: VALID_WORKFLOW_ID,
+        workerId: 'worker-node-beta',
+        expiresAt: Date.now() - 5000,
+      });
+
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-beta',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: expiredToken,
+          },
+          VALID_WORKFLOW_ID
+        ),
+        false,
+        'Runtime presenting expired token must fail closed'
+      );
+
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-beta',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: 'tampered.token',
+          },
+          VALID_WORKFLOW_ID
+        ),
+        false,
+        'Runtime presenting tampered token must fail closed'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 24: Decision-scoped capability token for wrong decision fails closed
+    // -------------------------------------------------------------------------
+    await runTest('24. Decision-scoped capability token for wrong decision fails closed', async () => {
+      const decisionScopedToken = generateWorkerCapabilityToken({
+        workflowInstanceId: VALID_WORKFLOW_ID,
+        decisionId: 'dec-authorized-123',
+        workerId: 'worker-node-gamma',
+        expiresAt: Date.now() + 60000,
+      });
+
+      // Token scoped to dec-authorized-123 presented for dec-different-456
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-gamma',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: decisionScopedToken,
+          },
+          VALID_WORKFLOW_ID,
+          'dec-different-456'
+        ),
+        false,
+        'Decision-scoped token must be rejected when presented for a different decision'
+      );
+
+      // Decision-scoped token presented for matching decision succeeds
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-gamma',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: decisionScopedToken,
+          },
+          VALID_WORKFLOW_ID,
+          'dec-authorized-123'
+        ),
+        true,
+        'Decision-scoped token must succeed when presented for matching decision'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 25: Capability token presented by wrong worker fails closed
+    // -------------------------------------------------------------------------
+    await runTest('25. Capability token presented by wrong worker fails closed', async () => {
+      const tokenForWorkerAlpha = generateWorkerCapabilityToken({
+        workflowInstanceId: VALID_WORKFLOW_ID,
+        workerId: 'worker-node-alpha',
+        expiresAt: Date.now() + 60000,
+      });
+
+      // worker-node-imposter attempts to use token minted for worker-node-alpha
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-imposter',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+            workerCapabilityToken: tokenForWorkerAlpha,
+          },
+          VALID_WORKFLOW_ID
+        ),
+        false,
+        'Token presented by a different worker identity must fail closed'
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // TEST 26: Worker execution attempt on unlinked decision fails closed
+    // -------------------------------------------------------------------------
+    await runTest('26. Worker execution attempt on unlinked decision fails closed', async () => {
+      // When linkedWorkflowId is undefined or empty string
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-alpha',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+          },
+          undefined
+        ),
+        false,
+        'Worker attempt on decision without linkedWorkflowId must return false'
+      );
+
+      assert.strictEqual(
+        isAuthorizedWorkflowWorker(
+          'worker-node-alpha',
+          {
+            source: 'workflow_runtime',
+            workflowInstanceId: VALID_WORKFLOW_ID,
+          },
+          '   '
+        ),
+        false,
+        'Worker attempt with whitespace linkedWorkflowId must return false'
       );
     });
 
