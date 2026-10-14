@@ -79,6 +79,10 @@ export class CompanyStateStore implements ICompanyStateStore {
     return CompanyStateStore.instance;
   }
 
+  public static resetInstance(): void {
+    CompanyStateStore.instance = null;
+  }
+
   private loadFromDurableStorage(): void {
     try {
       const persistedState = DurableFileStore.getInstance().readCollection<any>('company_state');
@@ -140,27 +144,10 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getDecisions(): Promise<CompanyDecision[]> {
-    if (isAuthoritativeMode()) {
-      const db = await requireAuthoritativeDatabase();
-      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
-      if (record?.decisions) {
-        return record.decisions as unknown as CompanyDecision[];
-      }
-      return [];
-    }
-
-    try {
-      const { DecisionStore } = await import('@/lib/server/decision/store');
-      const records = await DecisionStore.getInstance().list();
-      if (records && records.length > 0) {
-        const { mapDecisionRecordToCompanyDecision } = await import('@/lib/server/decision/adapter');
-        return records.map(mapDecisionRecordToCompanyDecision);
-      }
-    } catch {
-      // Fallback safely to local collection if DecisionStore is uninitialized
-    }
-
-    return [...this.decisions];
+    const { DecisionStore } = await import('@/lib/server/decision/store');
+    const { mapDecisionRecordToCompanyDecision } = await import('@/lib/server/decision/adapter');
+    const records = await DecisionStore.getInstance().list();
+    return (records || []).map(mapDecisionRecordToCompanyDecision);
   }
 
   public async getAttentionItems(): Promise<AttentionItem[]> {
@@ -220,66 +207,10 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async recordDecision(decision: CompanyDecision): Promise<void> {
-    if (isAuthoritativeMode()) {
-      const db = await requireAuthoritativeDatabase();
-      const nextDecisions = [decision, ...this.decisions];
-      await db.companyState.upsert({
-        where: { organizationId: 'default' },
-        create: {
-          organizationId: 'default',
-          decisions: nextDecisions as any,
-        },
-        update: {
-          decisions: nextDecisions as any,
-        },
-      });
-      this.decisions = nextDecisions;
-      return;
-    }
-
-    // Disk authoritative: acquire collection lock for entire read-modify-write to prevent lost updates
-    let finalDecisions: CompanyDecision[] = [];
-    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
-      let currentDecisions = this.decisions;
-      try {
-        const persisted = DurableFileStore.getInstance().readCollection<any>('company_state');
-        if (Array.isArray(persisted.decisions)) {
-          currentDecisions = persisted.decisions;
-        }
-      } catch {
-        // Fallback to in-memory cache
-      }
-
-      finalDecisions = [decision, ...currentDecisions];
-      this.persistStateStrictUnderLock({ decisions: finalDecisions });
-      this.decisions = finalDecisions;
-    });
-
-    if (process.env.DATABASE_URL) {
-      try {
-        await prisma.companyState.upsert({
-          where: { organizationId: 'default' },
-          create: {
-            organizationId: 'default',
-            decisions: this.decisions as any,
-          },
-          update: {
-            decisions: this.decisions as any,
-          },
-        });
-      } catch {
-        // Fallback safely for offline test environments
-      }
-    }
-
-    try {
-      const { DecisionStore } = await import('@/lib/server/decision/store');
-      const { mapCompanyDecisionToDecisionRecord } = await import('@/lib/server/decision/adapter');
-      const rec = mapCompanyDecisionToDecisionRecord(decision);
-      await DecisionStore.getInstance().create(rec);
-    } catch {
-      // Best-effort sync
-    }
+    const { DecisionStore } = await import('@/lib/server/decision/store');
+    const { mapCompanyDecisionToDecisionRecord } = await import('@/lib/server/decision/adapter');
+    const rec = mapCompanyDecisionToDecisionRecord(decision);
+    await DecisionStore.getInstance().create(rec);
   }
 
   public async updateFinancialMetrics(metrics: Partial<FinanceMetric>): Promise<void> {
@@ -547,8 +478,8 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'current_truth',
             authority: 'Authoritative DecisionStore (Ratified Commitment)',
             timestamp: dec.decidedAt || dec.createdAt,
-            confidence: 'claim_supported',
-            provenanceKind: 'verified_fact',
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
             notes: `Ratified decision commitment. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
           },
         });
@@ -576,17 +507,17 @@ export class CompanyStateStore implements ICompanyStateStore {
             sourceSystem: 'decision_store',
             sourceId: `decision:${dec.decisionId}`,
             sourceTitle: dec.title,
-            epistemicType: 'current_truth',
-            authority: 'Authoritative DecisionStore (Pending Ratification)',
+            epistemicType: 'pending_governance',
+            authority: 'Authoritative DecisionStore (Pending Governance — NOT Operational Ground Truth)',
             timestamp: dec.createdAt,
             confidence: 'unverified',
-            provenanceKind: 'synthetic',
+            provenanceKind: 'real',
             notes: `Awaiting Founder ratification before execution. Evidence Fact IDs: [${dec.evidenceFactIds.join(', ')}]`,
           },
         });
       }
 
-      // 5c. Operational intervention required -> current_truth (High priority)
+      // 5c. Operational intervention required -> operational_intervention (High priority)
       for (const dec of bundle.interventionRequired) {
         results.push({
           entityType: 'decision',
@@ -600,11 +531,11 @@ export class CompanyStateStore implements ICompanyStateStore {
             sourceSystem: 'decision_store',
             sourceId: `decision:${dec.decisionId}`,
             sourceTitle: dec.title,
-            epistemicType: 'current_truth',
-            authority: 'Authoritative DecisionStore (Intervention Flagged)',
+            epistemicType: 'operational_intervention',
+            authority: 'Authoritative DecisionStore (Execution Halted — Operational Intervention Required)',
             timestamp: dec.createdAt,
-            confidence: 'claim_supported',
-            provenanceKind: 'verified_fact',
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
             notes: 'Execution halted or uncertain; operator intervention required.',
           },
         });
@@ -627,8 +558,8 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'historical_memory',
             authority: 'Authoritative DecisionStore (Historical Outcome)',
             timestamp: dec.outcome?.resolvedAt || dec.createdAt,
-            confidence: 'claim_supported',
-            provenanceKind: 'verified_fact',
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
             notes: 'Resolved past decision — precedent only, NEVER active work.',
           },
         });
@@ -651,8 +582,8 @@ export class CompanyStateStore implements ICompanyStateStore {
             epistemicType: 'current_truth',
             authority: 'Deterministic Governance Conflict Detector',
             timestamp: nowIso,
-            confidence: 'claim_supported',
-            provenanceKind: 'verified_fact',
+            confidence: 'verified_fact',
+            provenanceKind: 'real',
             notes: 'Deterministic structural conflict; requires resolution before execution.',
           },
         });

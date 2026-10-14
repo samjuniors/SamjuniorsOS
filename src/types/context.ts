@@ -21,7 +21,9 @@ export type EpistemicClassification =
   | 'historical_memory' // Company Memory: past decisions & recorded execution outcomes (precedent only)
   | 'current_evidence' // Empirical real-time verification from tool runs or test results
   | 'ai_inference' // Derived specialist analysis or recommendation
-  | 'canonical_fact'; // Promoted authoritative truth from epistemic pipeline
+  | 'canonical_fact' // Promoted authoritative truth from epistemic pipeline
+  | 'pending_governance' // Decisions awaiting Founder ratification (NOT operational ground truth)
+  | 'operational_intervention'; // Decisions requiring urgent operational halt / intervention
 
 /**
  * Standardized Phase 11.13 Epistemic Human-Readable Labels
@@ -32,7 +34,9 @@ export type EpistemicLabel =
   | 'company knowledge'
   | 'historical memory'
   | 'AI inference'
-  | 'canonical verified fact';
+  | 'canonical verified fact'
+  | 'pending governance proposal'
+  | 'operational intervention required';
 
 export const EPISTEMIC_LABELS: Record<EpistemicClassification, EpistemicLabel> = {
   current_evidence: 'current verified evidence',
@@ -41,13 +45,15 @@ export const EPISTEMIC_LABELS: Record<EpistemicClassification, EpistemicLabel> =
   historical_memory: 'historical memory',
   ai_inference: 'AI inference',
   canonical_fact: 'canonical verified fact',
+  pending_governance: 'pending governance proposal',
+  operational_intervention: 'operational intervention required',
 };
 
 /**
  * Mandatory Provenance Metadata for every retrieved item
  */
 export interface ContextItemProvenance {
-  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence' | 'epistemic_pipeline';
+  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence' | 'epistemic_pipeline' | 'decision_store';
   sourceId: string;
   sourceTitle: string;
   epistemicType: EpistemicClassification;
@@ -248,7 +254,7 @@ export interface InjectedContextItem {
   title: string;
   epistemicClassification: EpistemicClassification;
   epistemicLabel: EpistemicLabel;
-  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence';
+  sourceSystem: 'company_state' | 'company_knowledge' | 'company_memory' | 'current_evidence' | 'decision_store' | 'epistemic_pipeline';
   sourceId: string;
   authority: string;
   relevanceScore: number;

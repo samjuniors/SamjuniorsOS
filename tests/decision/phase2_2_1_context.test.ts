@@ -32,6 +32,9 @@ import { ContextAssemblyService } from '@/lib/server/context/context-assembly';
 import { SophiaContextAssembler } from '@/lib/server/sophia/context-assembly';
 import { DurableFileStore, CriticalCollectionCorruptionError } from '@/lib/server/persistence/durable-file-store';
 import { DecisionRecord } from '@/types/decision';
+import { DecisionLifecycleService, generateWorkerCapabilityToken } from '@/lib/server/decision/lifecycle';
+import { UnauthorizedDecisionActionError } from '@/lib/server/decision/errors';
+import { computeDecisionApprovalHash } from '@/lib/server/decision/payload-binding';
 
 interface TestResult {
   name: string;
@@ -57,17 +60,21 @@ async function main(): Promise<void> {
   console.log('PHASE 2.2.1: DECISION-AWARE COMPANY CONTEXT TEST SUITE');
   console.log('======================================================\n');
 
+  const originalCwd = process.cwd();
   // Isolated scratch directory
   const scratchDir = path.join(os.tmpdir(), `samjuniors-phase221-ctx-${Date.now()}`);
   fs.mkdirSync(scratchDir, { recursive: true });
   process.chdir(scratchDir);
 
-  // Initialize clean stores
-  DecisionStore.resetInstance();
-  DecisionContextProvider.resetInstance();
-  const fileStore = DurableFileStore.getInstance();
-  fileStore.writeCollection('decisions', {});
-  fileStore.writeCollection('company_state', {});
+  try {
+    // Initialize clean stores
+    DurableFileStore.resetInstance();
+    DecisionStore.resetInstance();
+    DecisionContextProvider.resetInstance();
+    CompanyStateStore.resetInstance();
+    const fileStore = DurableFileStore.getInstance();
+    fileStore.writeCollection('decisions', {});
+    fileStore.writeCollection('company_state', {});
 
   const decisionStore = DecisionStore.getInstance();
   const contextProvider = DecisionContextProvider.getInstance();
@@ -108,6 +115,7 @@ async function main(): Promise<void> {
       },
     ],
   };
+  dApproved.approvedPayloadHash = computeDecisionApprovalHash(dApproved);
 
   // 2. Active: executing
   const dExecuting: DecisionRecord = {
@@ -216,7 +224,9 @@ async function main(): Promise<void> {
     status: 'intervention_required',
     approvalRequired: true,
     cancellationState: {
-      haltRequestedAt: '2026-08-25T10:00:00.000Z',
+      cancellationRequested: true,
+      requestedAt: '2026-08-25T10:00:00.000Z',
+      requestedBy: 'operator',
       runningStepIds: ['step-v1-cert-revoke'],
       cancellationConfirmed: false,
     },
@@ -509,7 +519,11 @@ async function main(): Promise<void> {
     // If critical corruption occurs in decisions collection, ensure it throws CriticalCollectionCorruptionError
     class CorruptDecisionStore {
       public async list(): Promise<DecisionRecord[]> {
-        throw new CriticalCollectionCorruptionError('decisions', 'Simulated disk CRC failure');
+        throw new CriticalCollectionCorruptionError({
+          collection: 'decisions',
+          filePath: '/fake/decisions.json',
+          message: 'Simulated disk CRC failure',
+        });
       }
     }
     const corruptProvider = new DecisionContextProvider(new CorruptDecisionStore() as any);
@@ -548,6 +562,158 @@ async function main(): Promise<void> {
     assert.ok(lineageConflict, 'must flag dec-test-conflict-new superseding dec-test-executing while predecessor is still executing');
     assert.ok(lineageConflict!.message.includes('predecessor execution is still active'), 'explanatory warning message present');
   });
+
+    await runTest('13. Empty DecisionStore returns [] without synthetic fallback', async () => {
+      const storeInstance = DecisionStore.getInstance();
+      const origList = storeInstance.list.bind(storeInstance);
+      storeInstance.list = async () => [];
+      try {
+        const stateStore = CompanyStateStore.getInstance();
+        const decisions = await stateStore.getDecisions();
+        assert.ok(Array.isArray(decisions), 'getDecisions() must return an array');
+        assert.strictEqual(decisions.length, 0, 'Must return [] when store is empty (no synthetic INITIAL_COMPANY_DECISIONS)');
+      } finally {
+        storeInstance.list = origList;
+      }
+    });
+
+    await runTest('14. Prompt serialization semantic fidelity for advisor and employee prompts', async () => {
+      const canonicalContext = await CompanyContextProvider.getCanonicalContext();
+
+      // Advisor prompt
+      const advisorPrompt = CompanyContextProvider.formatForAdvisorPrompt(canonicalContext);
+      assert.ok(advisorPrompt.includes('Active Commitments (Binding):'), 'Advisor prompt contains Active section');
+      assert.ok(advisorPrompt.includes('dec-test-approved'), 'Active section includes approved decision');
+      assert.ok(advisorPrompt.includes('Pending Governance (Awaiting Founder Ratification — NOT Operational Ground Truth):'), 'Advisor prompt contains Pending Governance section');
+      assert.ok(advisorPrompt.includes('NOT Operational Ground Truth'), 'Pending Governance explicitly flags NOT Ground Truth');
+      assert.ok(advisorPrompt.includes('Operational Interventions Required (EXECUTION HALTED — Immediate Founder/Operator Action Needed):'), 'Advisor prompt contains Interventions section');
+      assert.ok(advisorPrompt.includes('EXECUTION HALTED'), 'Interventions explicitly marks EXECUTION HALTED');
+      assert.ok(advisorPrompt.includes('Historical Precedents'), 'Advisor prompt contains Historical section');
+      assert.ok(advisorPrompt.includes('Superseded Decisions'), 'Advisor prompt contains Superseded section');
+      assert.ok(advisorPrompt.includes('dec-test-superseded'), 'Superseded section includes dec-test-superseded');
+
+      // Employee role context
+      const employeeContext = CompanyContextProvider.formatForEmployeeRoleContext('pm', canonicalContext);
+      assert.ok(employeeContext.includes('ACTIVE COMPANY COMMITMENTS & GOVERNANCE BOUNDARIES'), 'Employee context contains Active section');
+      assert.ok(employeeContext.includes('OPERATIONAL INTERVENTIONS REQUIRED (EXECUTION HALTED'), 'Employee context contains Interventions section');
+      assert.ok(employeeContext.includes('[HALT]'), 'Employee context marks interventions with [HALT]');
+      assert.ok(employeeContext.includes('SUPERSEDED DECISIONS (DEPRECATED LINEAGE — DO NOT EXECUTE)'), 'Employee context contains Superseded section');
+    });
+
+    await runTest('15. Authorization hardening for Founder, Worker, and startExecution mutations', async () => {
+      const lifecycle = DecisionLifecycleService.getInstance();
+
+      // 15a. Founder unauthenticated rejection (caller without userContext fails closed, F-03)
+      await assert.rejects(
+        async () => {
+          await lifecycle.approveDecision({
+            decisionId: 'dec-test-pending',
+            expectedStateVersion: 1,
+            actor: 'founder',
+            reason: 'Attempted unauthenticated approval',
+            userContext: undefined, // Missing userContext!
+          });
+        },
+        (err: any) => err instanceof UnauthorizedDecisionActionError,
+        'Must reject approval when userContext is missing (no string fallback)'
+      );
+
+      // 15b. Client-sourced role spoofing rejection (F-03)
+      await assert.rejects(
+        async () => {
+          await lifecycle.approveDecision({
+            decisionId: 'dec-test-pending',
+            expectedStateVersion: 1,
+            actor: 'attacker',
+            reason: 'Attempted spoofed approval',
+            userContext: { role: 'FOUNDER', userId: 'attacker', source: 'client' }, // Rejected source: client
+          });
+        },
+        (err: any) => err instanceof UnauthorizedDecisionActionError,
+        'Must reject approval with source: client'
+      );
+
+      // 15c. Worker unauthenticated string prefix rejection (F-02)
+      await assert.rejects(
+        async () => {
+          await lifecycle.resolveDecision({
+            decisionId: 'dec-test-executing',
+            expectedStateVersion: 3,
+            actor: 'worker-123',
+            reason: 'Attempted prefix spoof resolution',
+            outcome: {
+              outcomeSummary: 'Resolved',
+              resolvedAt: new Date().toISOString(),
+              resolvedBy: 'worker-123',
+            },
+            userContext: undefined, // Missing capability and workflow context!
+          });
+        },
+        (err: any) => err instanceof UnauthorizedDecisionActionError,
+        'Must reject worker resolution based only on worker- prefix'
+      );
+
+      // 15d. Worker cross-workflow instance rejection (F-02)
+      await assert.rejects(
+        async () => {
+          await lifecycle.resolveDecision({
+            decisionId: 'dec-test-executing', // linkedWorkflowId is 'wf-billing-migration-01'
+            expectedStateVersion: 3,
+            actor: 'workflow_worker',
+            reason: 'Cross-workflow resolution attempt',
+            outcome: {
+              outcomeSummary: 'Cross-workflow',
+              resolvedAt: new Date().toISOString(),
+              resolvedBy: 'workflow_worker',
+            },
+            userContext: {
+              role: 'WORKFLOW_WORKER',
+              workflowInstanceId: 'wf-other-workflow-999', // Mismatched workflow instance!
+            },
+          });
+        },
+        (err: any) => err instanceof UnauthorizedDecisionActionError,
+        'Must reject worker resolution from mismatched workflow instance'
+      );
+
+      // 15e. startExecution actor authorization gate (F-04)
+      await assert.rejects(
+        async () => {
+          await lifecycle.startExecution({
+            decisionId: 'dec-test-approved',
+            expectedStateVersion: 2,
+            actor: 'unauthorized_agent',
+            reason: 'Start execution attempt',
+            linkedWorkflowId: 'wf-unauth-start',
+            userContext: undefined,
+          });
+        },
+        (err: any) => err instanceof UnauthorizedDecisionActionError,
+        'startExecution must require authorized actor'
+      );
+
+      // 15f. Legitimate startExecution with authorized Founder succeeds (F-04)
+      const execRes = await lifecycle.startExecution({
+        decisionId: 'dec-test-approved',
+        expectedStateVersion: 2,
+        actor: 'founder',
+        reason: 'Authorized execution start',
+        linkedWorkflowId: 'wf-authorized-exec',
+        userContext: { role: 'FOUNDER', userId: 'founder', source: 'session' },
+      });
+      assert.strictEqual(execRes.status, 'executing', 'Status successfully transitions to executing');
+      assert.strictEqual(execRes.linkedWorkflowId, 'wf-authorized-exec', 'Linked workflow ID correctly recorded');
+    });
+  } finally {
+    process.chdir(originalCwd);
+    try {
+      fs.rmSync(scratchDir, { recursive: true, force: true });
+    } catch {}
+    DurableFileStore.resetInstance();
+    DecisionStore.resetInstance();
+    DecisionContextProvider.resetInstance();
+    CompanyStateStore.resetInstance();
+  }
 
   console.log('\n======================================================');
   const passed = testResults.filter((r) => r.passed).length;

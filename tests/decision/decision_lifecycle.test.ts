@@ -39,6 +39,8 @@ import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store'
 import { CanonicalFact } from '../../src/types/epistemic';
 import { CompanyStateStore } from '../../src/lib/server/state/state-store';
 
+const FOUNDER_USER_CONTEXT = { role: 'FOUNDER' as const, userId: 'founder', source: 'session' as const };
+
 let passed = 0;
 let failed = 0;
 
@@ -216,6 +218,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Authorized billing automation rollout',
       });
       assert.strictEqual(d.status, 'approved');
@@ -227,7 +230,8 @@ async function main() {
       d = await service.startExecution({
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
-        actor: 'system',
+        actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         linkedWorkflowId: 'wf-stripe-sync-01',
         reason: 'Initiating workflow dispatch',
       });
@@ -240,6 +244,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Workflow verified in staging and production',
         outcome: {
           outcomeSummary: 'Webhook queue successfully handling Stripe billing events with 0 drops.',
@@ -274,7 +279,8 @@ async function main() {
           await service.startExecution({
             decisionId: d.decisionId,
             expectedStateVersion: d.stateVersion,
-            actor: 'system',
+            actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Illegal jump to execution',
           });
         },
@@ -287,6 +293,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Vector DB prohibited by company guardrails',
       });
       assert.strictEqual(rejected.status, 'rejected');
@@ -298,6 +305,7 @@ async function main() {
             decisionId: rejected.decisionId,
             expectedStateVersion: rejected.stateVersion,
             actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Illegal reactivation of rejected decision',
           });
         },
@@ -393,6 +401,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Founder authorized reallocation',
       });
       assert.strictEqual(approved.status, 'approved');
@@ -420,6 +429,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved $8,000 audit',
       });
 
@@ -437,7 +447,8 @@ async function main() {
           await service.startExecution({
             decisionId: approved.decisionId,
             expectedStateVersion: approved.stateVersion + 1,
-            actor: 'system',
+            actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Attempt execution on tampered decision',
           });
         },
@@ -502,6 +513,7 @@ async function main() {
             decisionId: dMissing.decisionId,
             expectedStateVersion: dMissing.stateVersion,
             actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Approval attempt with missing fact',
           });
         },
@@ -527,6 +539,7 @@ async function main() {
             decisionId: dStale.decisionId,
             expectedStateVersion: dStale.stateVersion,
             actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Attempt approval with stale fact without override',
           });
         },
@@ -539,6 +552,7 @@ async function main() {
         decisionId: dStale.decisionId,
         expectedStateVersion: dStale.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Founder consciously acknowledges historical superseded fact',
         allowStaleEvidence: true,
       });
@@ -560,6 +574,7 @@ async function main() {
         decisionId: dActive.decisionId,
         expectedStateVersion: dActive.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved with validated active evidence',
       });
       assert.strictEqual(approvedActive.status, 'approved');
@@ -585,13 +600,15 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved',
       });
 
       const executing = await service.startExecution({
         decisionId: approved.decisionId,
         expectedStateVersion: approved.stateVersion,
-        actor: 'system',
+        actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Executing',
       });
 
@@ -602,6 +619,7 @@ async function main() {
             decisionId: executing.decisionId,
             expectedStateVersion: executing.stateVersion,
             actor: 'founder',
+            userContext: FOUNDER_USER_CONTEXT,
             reason: 'Resolve without outcome',
             outcome: {
               outcomeSummary: '', // Empty!
@@ -635,12 +653,14 @@ async function main() {
         decisionId: dOld.decisionId,
         expectedStateVersion: dOld.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved',
       });
       const dOldExec = await service.startExecution({
         decisionId: dOldAppr.decisionId,
         expectedStateVersion: dOldAppr.stateVersion,
-        actor: 'system',
+        actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Rollout begun',
       });
 
@@ -660,6 +680,7 @@ async function main() {
         expectedStateVersion: dOldExec.stateVersion,
         supersededByDecisionId: dNew.decisionId,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Accelerating review policy to same-day',
       });
 
@@ -871,6 +892,7 @@ async function main() {
         decisionId: d.decisionId,
         expectedStateVersion: d.stateVersion,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved for audit verification',
       });
 
@@ -882,7 +904,7 @@ async function main() {
       assert.ok(matching.length >= 2, 'Must record audit entries for creation and approval');
       const approvalAudit = matching.find((a) => a.actionName === 'decision.approved');
       assert.ok(approvalAudit, 'decision.approved audit record must exist');
-      assert.strictEqual(approvalAudit?.decision, 'approved');
+      assert.strictEqual(approvalAudit?.decision, 'allowed');
       assert.strictEqual(approvalAudit?.target?.targetSystem, 'decision_store');
     });
 

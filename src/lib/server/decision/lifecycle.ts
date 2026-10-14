@@ -8,6 +8,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { createHmac, timingSafeEqual } from 'crypto';
 import {
   DecisionRecord,
   DecisionStatus,
@@ -63,6 +64,84 @@ export interface DecisionCallerContext {
   role?: string;
   userId?: string;
   source?: 'session' | 'workflow_runtime' | 'system' | 'client';
+  workflowInstanceId?: string;
+  stepId?: string;
+  workerCapabilityToken?: string;
+}
+
+const WORKFLOW_SECRET =
+  process.env.WORKFLOW_INTERNAL_SECRET ||
+  process.env.SAMJUNIORS_DEV_SECRET ||
+  'samjuniors-internal-workflow-capability-key';
+
+export interface WorkerCapabilityPayload {
+  workflowInstanceId: string;
+  decisionId?: string;
+  workerId: string;
+  expiresAt: number;
+}
+
+export function generateWorkerCapabilityToken(payload: WorkerCapabilityPayload): string {
+  const data = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sig = createHmac('sha256', WORKFLOW_SECRET).update(data).digest('base64url');
+  return `${data}.${sig}`;
+}
+
+export function verifyWorkerCapabilityToken(
+  token: string,
+  expectedWorkflowInstanceId?: string,
+  expectedDecisionId?: string,
+  expectedWorkerId?: string
+): { isValid: boolean; payload?: WorkerCapabilityPayload; reason?: string } {
+  if (!token || typeof token !== 'string') {
+    return { isValid: false, reason: 'Missing worker capability token' };
+  }
+  const parts = token.split('.');
+  if (parts.length !== 2) {
+    return { isValid: false, reason: 'Malformed capability token structure' };
+  }
+  const [data, sig] = parts;
+  const expectedSig = createHmac('sha256', WORKFLOW_SECRET).update(data).digest('base64url');
+
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expectedBuf = Buffer.from(expectedSig, 'utf8');
+  if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+    return { isValid: false, reason: 'Invalid capability token signature' };
+  }
+
+  let payload: WorkerCapabilityPayload;
+  try {
+    payload = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+  } catch {
+    return { isValid: false, reason: 'Invalid capability token payload' };
+  }
+
+  if (typeof payload.expiresAt === 'number' && payload.expiresAt <= Date.now()) {
+    return { isValid: false, reason: 'Capability token has expired' };
+  }
+
+  if (expectedWorkflowInstanceId && payload.workflowInstanceId !== expectedWorkflowInstanceId) {
+    return {
+      isValid: false,
+      reason: `Capability token workflowInstanceId mismatch (expected: ${expectedWorkflowInstanceId}, got: ${payload.workflowInstanceId})`,
+    };
+  }
+
+  if (expectedDecisionId && payload.decisionId && payload.decisionId !== expectedDecisionId) {
+    return {
+      isValid: false,
+      reason: `Capability token decisionId mismatch (expected: ${expectedDecisionId}, got: ${payload.decisionId})`,
+    };
+  }
+
+  if (expectedWorkerId && payload.workerId && payload.workerId.toLowerCase() !== expectedWorkerId.toLowerCase()) {
+    return {
+      isValid: false,
+      reason: `Capability token workerId mismatch (expected: ${expectedWorkerId}, got: ${payload.workerId})`,
+    };
+  }
+
+  return { isValid: true, payload };
 }
 
 /**
@@ -70,14 +149,11 @@ export interface DecisionCallerContext {
  * AI Employees and unauthenticated roles strictly fail-closed.
  *
  * Rules:
- * 1. If userContext is present:
- *    - If userContext.role !== 'FOUNDER', FAIL CLOSED immediately.
- *      An AI employee or non-founder session cannot impersonate a Founder
- *      by passing actor="founder".
- *    - If userContext.source === 'client' and role !== 'FOUNDER', FAIL CLOSED.
+ * 1. F-03 REMEDIATION: userContext MUST be present and verified. Unauthenticated
+ *    invocations without userContext FAIL CLOSED.
  * 2. If actor is an AI employee persona or prohibited role, FAIL CLOSED.
- * 3. Only if userContext confirms FOUNDER or in internal programmatic mode (no userContext provided),
- *    the identity allowlist is checked.
+ * 3. Client sources without verified Founder session FAIL CLOSED.
+ * 4. Role must strictly match 'FOUNDER'.
  */
 export function isAuthorizedFounder(
   actor: string,
@@ -90,29 +166,32 @@ export function isAuthorizedFounder(
     return false;
   }
 
-  // If userContext is supplied from an authenticated session or worker:
-  if (userContext) {
-    // If role is explicitly non-founder (e.g. RESEARCHER, PM, COO, WORKFLOW_WORKER, GUEST), fail closed!
-    if (userContext.role && userContext.role !== 'FOUNDER') {
-      return false;
-    }
-    // If source is client without verified FOUNDER role, fail closed!
-    if (userContext.source === 'client' && userContext.role !== 'FOUNDER') {
-      return false;
-    }
-    // If authenticated session confirms FOUNDER role:
-    if (userContext.role === 'FOUNDER') {
-      return true;
-    }
+  // F-03 REMEDIATION: Never trust caller-supplied actor string when userContext is absent.
+  if (!userContext) {
+    return false;
   }
 
-  // Allowlist match for internal programmatic invocations (e.g. tests / server background tasks)
-  if (ALLOWED_FOUNDER_IDENTITIES.includes(normalized)) {
-    return true;
+  // Client source without verified session strictly fails closed
+  if (userContext.source === 'client') {
+    return false;
   }
 
-  // founder-* session identity
-  if (normalized.startsWith('founder-') && !normalized.includes('agent')) {
+  // Non-founder role strictly fails closed
+  if (!userContext.role || userContext.role.toUpperCase() !== 'FOUNDER') {
+    return false;
+  }
+
+  // Must have non-empty userId
+  if (!userContext.userId || typeof userContext.userId !== 'string' || userContext.userId.trim().length === 0) {
+    return false;
+  }
+
+  // Allowlist match against authenticated identity
+  if (
+    ALLOWED_FOUNDER_IDENTITIES.includes(normalized) ||
+    normalized.startsWith('founder-') ||
+    normalized === userContext.userId.toLowerCase().trim()
+  ) {
     return true;
   }
 
@@ -123,38 +202,72 @@ export function isAuthorizedFounder(
  * Checks whether an actor is an authorized trusted workflow execution worker.
  * Preserves legitimate workflow execution outcome reporting without granting
  * broad governance decision authority.
+ *
+ * Rules:
+ * 1. F-02 REMEDIATION: String-prefix ('worker-') and static name ('workflow_runtime')
+ *    checks are completely removed.
+ * 2. Actor cannot be an AI employee persona or prohibited role.
+ * 3. userContext is mandatory with source === 'workflow_runtime' or role === 'WORKFLOW_WORKER'.
+ * 4. Scoping: if linkedWorkflowId is present, userContext.workflowInstanceId MUST match.
+ * 5. If workerCapabilityToken is present, its HMAC signature and expiry are verified.
  */
 export function isAuthorizedWorkflowWorker(
   actor: string,
   userContext?: DecisionCallerContext,
-  linkedWorkflowId?: string
+  linkedWorkflowId?: string,
+  decisionId?: string
 ): boolean {
   const normalized = (actor || '').toLowerCase().trim();
 
   // Prohibited agent roles cannot masquerade as workflow workers
-  if (PROHIBITED_AGENT_ROLES.includes(normalized)) {
+  if (PROHIBITED_AGENT_ROLES.includes(normalized) || normalized.startsWith('agent-')) {
     return false;
   }
 
-  if (userContext) {
-    if (userContext.role === 'WORKFLOW_WORKER' || userContext.source === 'workflow_runtime') {
-      return true;
-    }
-    // If role is set and not worker/founder, fail closed
-    if (userContext.role && userContext.role !== 'WORKFLOW_WORKER' && userContext.role !== 'FOUNDER') {
+  if (!userContext) {
+    return false;
+  }
+
+  // Client requests cannot claim workflow worker authority
+  if (userContext.source === 'client') {
+    return false;
+  }
+
+  const isWorkerRole =
+    userContext.role?.toUpperCase() === 'WORKFLOW_WORKER' ||
+    userContext.source === 'workflow_runtime' ||
+    userContext.source === 'system';
+
+  if (!isWorkerRole) {
+    return false;
+  }
+
+  // Scoping enforcement: worker must be scoped to the exact workflow instance
+  if (linkedWorkflowId) {
+    if (!userContext.workflowInstanceId || userContext.workflowInstanceId !== linkedWorkflowId) {
       return false;
     }
   }
 
-  if (normalized.startsWith('worker-') || normalized === 'workflow_runtime' || normalized === 'workflow-worker') {
-    return true;
+  // If a capability token is supplied, verify it
+  if (userContext.workerCapabilityToken) {
+    const verification = verifyWorkerCapabilityToken(
+      userContext.workerCapabilityToken,
+      linkedWorkflowId,
+      decisionId,
+      actor
+    );
+    if (!verification.isValid) {
+      return false;
+    }
   }
 
-  return false;
+  return true;
 }
 
 /**
  * Checks whether an actor is authorized for operational intervention (flagging intervention / resuming).
+ * Operator authority does NOT grant Founder approval or rejection privileges.
  */
 export function isAuthorizedOperator(
   actor: string,
@@ -163,19 +276,20 @@ export function isAuthorizedOperator(
   if (isAuthorizedFounder(actor, userContext)) {
     return true;
   }
+
   const normalized = (actor || '').toLowerCase().trim();
-  if (PROHIBITED_AGENT_ROLES.includes(normalized)) {
+  if (PROHIBITED_AGENT_ROLES.includes(normalized) || normalized.startsWith('agent-')) {
     return false;
   }
-  if (userContext?.role === 'OPERATOR') {
+
+  if (!userContext || userContext.source === 'client') {
+    return false;
+  }
+
+  if (userContext.role?.toUpperCase() === 'OPERATOR') {
     return true;
   }
-  if (normalized === 'operator' || normalized.startsWith('operator-')) {
-    if (userContext?.role && userContext.role !== 'OPERATOR' && userContext.role !== 'FOUNDER') {
-      return false;
-    }
-    return true;
-  }
+
   return false;
 }
 
@@ -322,15 +436,23 @@ export class DecisionLifecycleService {
       const auditStore = InMemoryAuditStore.getInstance();
       await auditStore.record({
         id: stableId,
+        requestId: transition.transitionId,
+        requestedBy: transition.actor,
         actionName: `decision.${transition.toStatus}`,
-        actionClassification: 'state_mutation',
+        actionClassification: 'internal_mutation',
         employeeRole: (transition.actor as any) || 'system',
         decision:
           transition.toStatus === 'approved'
-            ? 'approved'
+            ? 'allowed'
             : transition.toStatus === 'rejected'
-            ? 'rejected'
+            ? 'denied'
             : 'allowed',
+        reasonCode:
+          transition.toStatus === 'approved'
+            ? 'APPROVED_BY_FOUNDER'
+            : transition.toStatus === 'rejected'
+            ? 'APPROVAL_REJECTED'
+            : 'INTERNAL_MUTATION_ALLOWED',
         reason: transition.reason,
         target: {
           targetSystem: 'decision_store',
@@ -633,6 +755,24 @@ export class DecisionLifecycleService {
       throw new DecisionNotFoundError(params.decisionId);
     }
 
+    // F-04 REMEDIATION: Verify caller authorization before starting execution
+    const targetWorkflowId = params.linkedWorkflowId || current.linkedWorkflowId;
+    const isWorker = isAuthorizedWorkflowWorker(
+      params.actor,
+      params.userContext,
+      targetWorkflowId,
+      current.decisionId
+    );
+    const isFounder = isAuthorizedFounder(params.actor, params.userContext);
+
+    if (!isWorker && !isFounder) {
+      throw new UnauthorizedDecisionActionError(
+        params.actor,
+        'start_execution',
+        `Permission denied: Identity "${params.actor}" is not authorized to start execution for decision "${params.decisionId}". Must be an authorized workflow runtime worker bound to the linked workflow, or an authenticated Founder.`
+      );
+    }
+
     if (current.status !== 'approved') {
       throw new InvalidDecisionTransitionError(
         params.decisionId,
@@ -773,7 +913,12 @@ export class DecisionLifecycleService {
     }
 
     const isFounder = isAuthorizedFounder(params.actor, params.userContext);
-    const isWorker = isAuthorizedWorkflowWorker(params.actor, params.userContext, current.linkedWorkflowId);
+    const isWorker = isAuthorizedWorkflowWorker(
+      params.actor,
+      params.userContext,
+      current.linkedWorkflowId,
+      current.decisionId
+    );
 
     if (!isFounder && !isWorker) {
       throw new UnauthorizedDecisionActionError(
@@ -992,15 +1137,23 @@ export class DecisionLifecycleService {
         try {
           await auditStore.record({
             id: stableId,
+            requestId: transition.transitionId,
+            requestedBy: transition.actor,
             actionName: `decision.${transition.toStatus}`,
-            actionClassification: 'state_mutation',
+            actionClassification: 'internal_mutation',
             employeeRole: (transition.actor as any) || 'system',
             decision:
               transition.toStatus === 'approved'
-                ? 'approved'
+                ? 'allowed'
                 : transition.toStatus === 'rejected'
-                ? 'rejected'
+                ? 'denied'
                 : 'allowed',
+            reasonCode:
+              transition.toStatus === 'approved'
+                ? 'APPROVED_BY_FOUNDER'
+                : transition.toStatus === 'rejected'
+                ? 'APPROVAL_REJECTED'
+                : 'INTERNAL_MUTATION_ALLOWED',
             reason: transition.reason,
             target: {
               targetSystem: 'decision_store',

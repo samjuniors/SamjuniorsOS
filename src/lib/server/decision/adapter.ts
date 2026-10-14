@@ -23,22 +23,27 @@ export function mapDecisionStatusToLegacy(
 ): CompanyDecision['status'] {
   switch (status) {
     case 'proposed':
+      return 'proposed';
     case 'under_review':
+      return 'under_review';
     case 'intervention_required':
-      return 'in_review';
+      return 'intervention_required';
     case 'pending_approval':
       return 'pending_approval';
     case 'approved':
-    case 'executing':
       return 'approved';
+    case 'executing':
+      return 'executing';
     case 'resolved':
-    case 'superseded':
       return 'resolved';
+    case 'superseded':
+      return 'superseded';
     case 'rejected':
-    case 'withdrawn':
       return 'rejected';
+    case 'withdrawn':
+      return 'withdrawn';
     default:
-      return 'in_review';
+      return status as CompanyDecision['status'];
   }
 }
 
@@ -93,6 +98,9 @@ export function mapDecisionRecordToCompanyDecision(
     resolvedAt: record.outcome?.resolvedAt,
     resolvedBy: record.outcome?.resolvedBy,
     resolutionNote: record.outcome?.outcomeSummary,
+    supersedesDecisionId: record.supersedesDecisionId,
+    supersededByDecisionId: record.supersededByDecisionId,
+    originalStatus: record.status,
     currentEvidence: {
       summary: record.uncertainty.description,
       source: 'Authoritative DecisionStore',
@@ -121,10 +129,15 @@ export function mapCompanyDecisionToDecisionRecord(
 
   let status: DecisionStatus = 'proposed';
   if (cd.status === 'approved') status = 'approved';
+  else if (cd.status === 'executing') status = 'executing';
   else if (cd.status === 'pending_approval') status = 'pending_approval';
   else if (cd.status === 'resolved') status = 'resolved';
   else if (cd.status === 'rejected') status = 'rejected';
-  else if (cd.status === 'in_review' || cd.status === 'revision_requested') status = 'under_review';
+  else if (cd.status === 'withdrawn') status = 'withdrawn';
+  else if (cd.status === 'intervention_required') status = 'intervention_required';
+  else if (cd.status === 'superseded') status = 'superseded';
+  else if (cd.status === 'in_review' || cd.status === 'revision_requested' || cd.status === 'under_review') status = 'under_review';
+  else if (cd.status === 'proposed') status = 'proposed';
 
   const now = new Date().toISOString();
   const decisionId = cd.id;
@@ -154,6 +167,8 @@ export function mapCompanyDecisionToDecisionRecord(
     decidedBy: status === 'approved' || status === 'resolved' ? 'founder' : undefined,
     decidedAt: cd.resolvedAt || (status === 'approved' ? now : undefined),
     decisionReason: cd.resolutionNote,
+    supersedesDecisionId: cd.supersedesDecisionId,
+    supersededByDecisionId: cd.supersededByDecisionId,
     outcome:
       status === 'resolved'
         ? {

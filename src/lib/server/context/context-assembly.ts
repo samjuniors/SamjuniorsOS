@@ -265,9 +265,9 @@ export class ContextAssemblyService {
     // Transform State items into InjectedContextItems
     const injectedState: InjectedContextItem[] = filteredState.map((s) => {
       const content = `${s.summary}\nEntity: ${s.entityType} | ID: ${s.id}`;
-      const isHistorical = s.provenance?.epistemicType === 'historical_memory';
-      const epistemicClassification = isHistorical ? 'historical_memory' : 'current_truth';
-      const epistemicLabel = isHistorical ? EPISTEMIC_LABELS.historical_memory : EPISTEMIC_LABELS.current_truth;
+      const classification = s.provenance?.epistemicType || 'current_truth';
+      const epistemicClassification = classification;
+      const epistemicLabel = EPISTEMIC_LABELS[classification] || EPISTEMIC_LABELS.current_truth;
       return {
         id: `state:${s.id}`,
         title: s.title,
@@ -421,9 +421,11 @@ export class ContextAssemblyService {
       // Sort by epistemic precedence and relevance score descending
       const precedenceWeight: Record<EpistemicClassification, number> = {
         current_evidence: 4,
+        operational_intervention: 4,
         current_truth: 3,
         canonical_fact: 3,
         durable_reference: 2,
+        pending_governance: 2,
         historical_memory: 1,
         ai_inference: 0,
       };
@@ -691,7 +693,7 @@ export class ContextAssemblyService {
         if (mem.isConflicting) {
           memLines.push(`  - [!] CONFLICT OVERRIDE: ${mem.conflictResolutionNote || 'Superseded by current verified state.'}`);
         }
-        evLines.push('');
+        memLines.push('');
       });
     }
 

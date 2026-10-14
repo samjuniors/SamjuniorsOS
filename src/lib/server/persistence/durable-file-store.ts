@@ -139,6 +139,10 @@ export class DurableFileStore {
     return DurableFileStore.instance;
   }
 
+  public static resetInstance(): void {
+    (DurableFileStore as any).instance = undefined;
+  }
+
   public getDataDir(): string {
     return this.dataDir;
   }

@@ -266,31 +266,51 @@ export class CompanyContextProvider {
     lines.push('');
 
     lines.push('=== COMPANY GOVERNANCE & DECISION COMMITMENTS ===');
-    const activeDecs = context.decisions.filter((d) => d.status === 'approved');
-    const pendingDecs = context.decisions.filter((d) => d.status === 'pending_approval' || d.status === 'in_review');
+    const activeDecs = context.decisions.filter((d) => d.status === 'approved' || d.status === 'executing');
+    const pendingDecs = context.decisions.filter(
+      (d) => d.status === 'pending_approval' || d.status === 'in_review' || d.status === 'proposed' || d.status === 'under_review'
+    );
+    const interventionDecs = context.decisions.filter((d) => d.status === 'intervention_required');
     const resolvedDecs = context.decisions.filter((d) => d.status === 'resolved');
+    const supersededDecs = context.decisions.filter((d) => d.status === 'superseded');
 
     if (activeDecs.length > 0) {
       lines.push('Active Commitments (Binding):');
       activeDecs.forEach((dec) => {
-        lines.push(`  - [${dec.id}] "${dec.title}" (${dec.category}) -> ${dec.recommendation}`);
+        lines.push(`  - [${dec.id}] "${dec.title}" (${dec.category} - ${dec.status.toUpperCase()}) -> ${dec.recommendation}`);
         lines.push(`    Impact: ${dec.businessImpact} | Evidence: ${dec.evidenceSummary}`);
       });
     }
 
     if (pendingDecs.length > 0) {
-      lines.push('Pending Governance (Awaiting Founder Ratification):');
+      lines.push('Pending Governance (Awaiting Founder Ratification — NOT Operational Ground Truth):');
       pendingDecs.forEach((dec) => {
         lines.push(`  - [${dec.id}] "${dec.title}" (${dec.status.toUpperCase()}) -> ${dec.recommendation}`);
         lines.push(`    Proposed By: ${dec.recommendedBy} | Approval Required: ${dec.founderApprovalRequired ? 'YES' : 'NO'}`);
       });
     }
 
+    if (interventionDecs.length > 0) {
+      lines.push('Operational Interventions Required (EXECUTION HALTED — Immediate Founder/Operator Action Needed):');
+      interventionDecs.forEach((dec) => {
+        lines.push(`  - [${dec.id}] "${dec.title}" (INTERVENTION_REQUIRED) -> ${dec.recommendation}`);
+        lines.push(`    Warning: Execution halted. Requires operational intervention before resuming.`);
+      });
+    }
+
     if (resolvedDecs.length > 0) {
-      lines.push('Historical Precedents (Resolved Decisions — Precedent Only):');
+      lines.push('Historical Precedents (Resolved Decisions — Precedent Only, NOT Active Instructions):');
       resolvedDecs.forEach((dec) => {
         lines.push(`  - [${dec.id}] "${dec.title}" (Resolved ${dec.resolvedAt || dec.date} by ${dec.resolvedBy || 'founder'}):`);
         lines.push(`    Outcome: ${dec.resolutionNote || 'Resolved'}`);
+      });
+    }
+
+    if (supersededDecs.length > 0) {
+      lines.push('Superseded Decisions (Deprecated Lineage — Replaced by Successor Policy):');
+      supersededDecs.forEach((dec) => {
+        lines.push(`  - [${dec.id}] "${dec.title}" (SUPERSEDED${dec.supersededByDecisionId ? ` by [${dec.supersededByDecisionId}]` : ''}):`);
+        lines.push(`    Deprecated policy; preserved strictly for audit and lineage.`);
       });
     }
     lines.push('');
@@ -480,24 +500,45 @@ export class CompanyContextProvider {
 
     // Authoritative Decision Governance Context for Employees
     if (context.decisions && context.decisions.length > 0) {
-      const activeCommitments = context.decisions.filter((d) => d.status === 'approved');
-      const pendingGovernance = context.decisions.filter((d) => d.status === 'pending_approval' || d.status === 'in_review');
+      const activeCommitments = context.decisions.filter((d) => d.status === 'approved' || d.status === 'executing');
+      const pendingGovernance = context.decisions.filter(
+        (d) => d.status === 'pending_approval' || d.status === 'in_review' || d.status === 'proposed' || d.status === 'under_review'
+      );
+      const interventionAlerts = context.decisions.filter((d) => d.status === 'intervention_required');
+      const supersededDecisions = context.decisions.filter((d) => d.status === 'superseded');
 
       if (activeCommitments.length > 0) {
         lines.push('');
         lines.push('=== ACTIVE COMPANY COMMITMENTS & GOVERNANCE BOUNDARIES ===');
         lines.push('Binding company commitments (must NOT be contradicted without explicit supersession proposal):');
         activeCommitments.forEach((dec) => {
-          lines.push(`- Decision [${dec.id}] "${dec.title}" (${dec.category}): ${dec.recommendation}`);
+          lines.push(`- Decision [${dec.id}] "${dec.title}" (${dec.category} - ${dec.status.toUpperCase()}): ${dec.recommendation}`);
           if (dec.businessImpact) lines.push(`  Impact: ${dec.businessImpact}`);
         });
       }
 
       if (pendingGovernance.length > 0) {
         lines.push('');
-        lines.push('Pending Decisions Under Review (Awaiting Founder Ratification — NOT yet approved):');
+        lines.push('Pending Decisions Under Review (Awaiting Founder Ratification — NOT yet approved — NOT Operational Ground Truth):');
         pendingGovernance.forEach((dec) => {
           lines.push(`- Decision [${dec.id}] "${dec.title}" (${dec.status.toUpperCase()}): ${dec.recommendation}`);
+        });
+      }
+
+      if (interventionAlerts.length > 0) {
+        lines.push('');
+        lines.push('=== OPERATIONAL INTERVENTIONS REQUIRED (EXECUTION HALTED — IMMEDIATE ATTENTION NEEDED) ===');
+        interventionAlerts.forEach((dec) => {
+          lines.push(`- [HALT] Decision [${dec.id}] "${dec.title}" (INTERVENTION_REQUIRED): ${dec.recommendation}`);
+          lines.push(`  Status: Execution is halted. Do NOT treat as healthy active execution.`);
+        });
+      }
+
+      if (supersededDecisions.length > 0) {
+        lines.push('');
+        lines.push('=== SUPERSEDED DECISIONS (DEPRECATED LINEAGE — DO NOT EXECUTE) ===');
+        supersededDecisions.forEach((dec) => {
+          lines.push(`- [SUPERSEDED] Decision [${dec.id}] "${dec.title}" (Superseded${dec.supersededByDecisionId ? ` by [${dec.supersededByDecisionId}]` : ''})`);
         });
       }
     }

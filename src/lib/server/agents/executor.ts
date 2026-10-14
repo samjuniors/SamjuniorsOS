@@ -150,7 +150,7 @@ export class ServerAgentExecutor {
         sampleExcludedTitles: assembledContext.excludedNoise.sampleExcludedTitles,
       },
       formattedSeparatedPrompt: assembledContext.formattedPrompt,
-    };
+    } as TaskRetrievedContextBundle;
 
 
 

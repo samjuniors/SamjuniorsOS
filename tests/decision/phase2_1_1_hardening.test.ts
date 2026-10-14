@@ -39,6 +39,8 @@ import { InMemoryAuditStore } from '../../src/lib/server/authorization/approval-
 import { WorkflowRuntime } from '../../src/lib/server/workflow/runtime';
 import { WorkflowDefinition, WorkflowInstanceState } from '../../src/types/workflow';
 
+const FOUNDER_USER_CONTEXT = { role: 'FOUNDER' as const, userId: 'founder', source: 'session' as const };
+
 let passed = 0;
 let failed = 0;
 
@@ -101,6 +103,7 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Founder approved',
       });
 
@@ -108,6 +111,7 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 3,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Start execution',
       });
 
@@ -216,12 +220,14 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved',
       });
       await service.startExecution({
         decisionId: dec.decisionId,
         expectedStateVersion: 3,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Started',
         linkedWorkflowId: 'wf-inst-test-123',
       });
@@ -238,7 +244,7 @@ async function main() {
           resolvedBy: 'worker-node-1',
           executionRef: 'exec-ref-999',
         },
-        userContext: { role: 'WORKFLOW_WORKER', source: 'workflow_runtime' },
+        userContext: { role: 'WORKFLOW_WORKER', source: 'workflow_runtime', workflowInstanceId: 'wf-inst-test-123' },
       });
 
       assert.strictEqual(resolved.status, 'resolved');
@@ -269,6 +275,7 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approved',
       });
 
@@ -310,25 +317,37 @@ async function main() {
         id: 'wf-def-active-step',
         version: '1.0.0',
         name: 'Active Step Workflow',
+        description: 'Active Step Workflow description',
         objective: 'Test active running steps',
+        dependencies: [],
+        requiredApprovals: 0,
+        allowedRoles: ['researcher'],
+        allowedSkills: ['build_execute'],
+        expectedOutputs: [],
         steps: [
           {
             id: 'step-running',
             name: 'Running Step',
             description: 'Step currently executing',
             assignedRole: 'researcher',
-            skill: 'step_3_execute',
+            skill: 'build_execute',
             dependencies: [],
             inputReferences: [],
+            outputReferences: [],
+            requiresApproval: false,
+            retryPolicy: { maxRetries: 1, backoffMs: 100 },
           },
           {
             id: 'step-pending',
             name: 'Pending Step',
             description: 'Step awaiting running step',
             assignedRole: 'researcher',
-            skill: 'step_3_execute',
+            skill: 'build_execute',
             dependencies: ['step-running'],
             inputReferences: [],
+            outputReferences: [],
+            requiresApproval: false,
+            retryPolicy: { maxRetries: 1, backoffMs: 100 },
           },
         ],
       };
@@ -363,12 +382,14 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve',
       });
       await service.startExecution({
         decisionId: dec.decisionId,
         expectedStateVersion: 3,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Start',
         linkedWorkflowId: instance.instanceId,
       });
@@ -389,6 +410,7 @@ async function main() {
         expectedStateVersion: 4,
         supersededByDecisionId: succ.decisionId,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Superseded due to priority change',
       });
 
@@ -427,6 +449,7 @@ async function main() {
         decisionId: succ.decisionId,
         expectedStateVersion: succ.stateVersion + 1,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve successor',
       });
 
@@ -437,6 +460,7 @@ async function main() {
           decisionId: approvedSucc.decisionId,
           expectedStateVersion: approvedSucc.stateVersion,
           actor: 'founder',
+          userContext: FOUNDER_USER_CONTEXT,
           reason: 'Attempt starting successor execution',
         });
       } catch (err: any) {
@@ -460,16 +484,25 @@ async function main() {
         id: 'wf-def-cancellable',
         version: '1.0.0',
         name: 'Cancellable Workflow',
+        description: 'Cancellable Workflow description',
         objective: 'Test cancellable steps',
+        dependencies: [],
+        requiredApprovals: 0,
+        allowedRoles: ['researcher'],
+        allowedSkills: ['build_execute'],
+        expectedOutputs: [],
         steps: [
           {
             id: 'step-1',
             name: 'Pending Step 1',
             description: 'Step pending',
             assignedRole: 'researcher',
-            skill: 'step_3_execute',
+            skill: 'build_execute',
             dependencies: [],
             inputReferences: [],
+            outputReferences: [],
+            requiresApproval: false,
+            retryPolicy: { maxRetries: 1, backoffMs: 100 },
           },
         ],
       };
@@ -495,12 +528,14 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve',
       });
       await service.startExecution({
         decisionId: dec.decisionId,
         expectedStateVersion: 3,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Start',
         linkedWorkflowId: instance.instanceId,
       });
@@ -521,6 +556,7 @@ async function main() {
         expectedStateVersion: 4,
         supersededByDecisionId: succ.decisionId,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Cancelling clean execution',
       });
 
@@ -540,6 +576,7 @@ async function main() {
         decisionId: succ.decisionId,
         expectedStateVersion: currentSuccVersion + 1,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve',
       });
 
@@ -547,6 +584,7 @@ async function main() {
         decisionId: succ.decisionId,
         expectedStateVersion: currentSuccVersion + 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Start successor execution',
       });
 
@@ -575,18 +613,21 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve',
       });
       await service.startExecution({
         decisionId: dec.decisionId,
         expectedStateVersion: 3,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Start',
       });
       const resolved = await service.resolveDecision({
         decisionId: dec.decisionId,
         expectedStateVersion: 4,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Resolved with outcome',
         outcome: {
           outcomeSummary: 'Historical outcome summary',
@@ -611,6 +652,7 @@ async function main() {
         expectedStateVersion: 5,
         supersededByDecisionId: succ.decisionId,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Superseding historical decision with revised policy',
       });
 
@@ -647,6 +689,7 @@ async function main() {
         decisionId: dec.decisionId,
         expectedStateVersion: 2,
         actor: 'founder',
+        userContext: FOUNDER_USER_CONTEXT,
         reason: 'Approve',
       });
 
