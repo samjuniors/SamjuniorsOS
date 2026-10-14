@@ -32,6 +32,7 @@ export interface AgentExecutionContext {
     financeAssessment?: string;
     verificationNotes?: string;
     councilDeliberation?: string;
+    reviewFingerprint?: string;
   };
   signal?: AbortSignal;
 }
@@ -297,6 +298,10 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
           occurrenceId: context.occurrenceId,
           occurrenceNumber: context.occurrenceNumber,
         };
+
+        if (context.upstreamContext?.reviewFingerprint && parsed && typeof parsed === 'object') {
+          parsed.reviewFingerprint = context.upstreamContext.reviewFingerprint;
+        }
 
         await AgentRunStore.getInstance().saveRun({
           runId,

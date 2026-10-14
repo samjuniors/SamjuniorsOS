@@ -73,49 +73,22 @@ export class ConstitutionalVerifier {
     }
 
     // 2. Constitutional Gross Margin Floor Check (80% minimum)
-    let financialVerificationState: VerificationResult['financialVerificationState'] = undefined;
-    let calculatedMarginPercent: number | undefined = undefined;
+    // 2a. Deterministic Mathematical Verification (isolated policy check)
+    const mathMarginResult = ConstitutionalVerifier.verifyFinancialMarginPolicy(input.structuredFinancials);
+    let financialVerificationState: VerificationResult['financialVerificationState'] = mathMarginResult.state;
+    let calculatedMarginPercent: number | undefined = mathMarginResult.calculatedMarginPercent;
 
-    // 2a. Deterministic Mathematical Verification (if structured inputs provided)
-    const fin = input.structuredFinancials;
-    if (fin && typeof fin.revenue === 'number' && fin.revenue > 0) {
-      const cogs = typeof fin.cogs === 'number' ? fin.cogs : 0;
-      const computeCost = typeof fin.computeCost === 'number' ? fin.computeCost : 0;
-      const totalCost = cogs + computeCost;
-      calculatedMarginPercent = ((fin.revenue - totalCost) / fin.revenue) * 100;
-
-      if (calculatedMarginPercent < 80.0) {
-        checksFailed.push(
-          `CONSTITUTIONAL_MARGIN_VIOLATION: Calculated gross margin (${calculatedMarginPercent.toFixed(1)}%) falls below the mandatory 80.0% floor.`
-        );
-        financialVerificationState = 'calculated_violation';
-      } else {
-        checksPassed.push(
-          `Constitutional gross margin floor verified by deterministic calculation (${calculatedMarginPercent.toFixed(1)}% >= 80.0%)`
-        );
-        financialVerificationState = 'calculated_compliant';
-      }
+    if (!mathMarginResult.passed && mathMarginResult.errorReason) {
+      checksFailed.push(mathMarginResult.errorReason);
+    } else if (mathMarginResult.passedDescription) {
+      checksPassed.push(mathMarginResult.passedDescription);
     }
 
     // 2b. Lexical Pattern Check (Anti-pattern heuristic)
-    let lexicalMarginViolation = false;
-    for (const pattern of this.MARGIN_VIOLATION_PATTERNS) {
-      if (pattern.test(fullCorpus)) {
-        lexicalMarginViolation = true;
-        checksFailed.push(
-          'CONSTITUTIONAL_MARGIN_VIOLATION: Proposal text contains statements compromising the non-negotiable 80%+ gross margin floor mandate.'
-        );
-        financialVerificationState = 'lexical_violation';
-        break;
-      }
-    }
-
-    // 2c. Fallback when structured financial inputs are absent
-    if (!financialVerificationState) {
-      checksPassed.push(
-        'Gross margin floor: No lexical violation detected; mathematical margin UNVERIFIED (structured revenue/cost inputs absent; Founder review required).'
-      );
-      financialVerificationState = 'unverified_pending_founder_review';
+    const lexicalMarginResult = ConstitutionalVerifier.verifyLexicalMarginPatterns(fullCorpus);
+    if (lexicalMarginResult.hasViolation && lexicalMarginResult.errorReason) {
+      checksFailed.push(lexicalMarginResult.errorReason);
+      financialVerificationState = 'lexical_violation';
     }
 
     // 3. Privilege Escalation & Permissions Guard
@@ -173,5 +146,97 @@ export class ConstitutionalVerifier {
       financialVerificationState,
       calculatedMarginPercent,
     };
+  }
+
+  /**
+   * Deterministic Mathematical Margin Policy Verification.
+   *
+   * Invariants:
+   * 1. Requires revenue, COGS, and computeCost for a mathematical calculation.
+   * 2. Never defaults absent cost fields to zero.
+   * 3. Validates finite non-negative values and rejects invalid inputs (negative, NaN, Infinity, zero revenue).
+   * 4. Missing or incomplete numbers produce 'unverified_pending_founder_review'.
+   * 5. Calculated gross margin must meet or exceed the mandatory 80.0% floor.
+   */
+  public static verifyFinancialMarginPolicy(structuredFinancials?: StructuredFinancialInput): {
+    state: VerificationResult['financialVerificationState'];
+    calculatedMarginPercent?: number;
+    passed: boolean;
+    errorReason?: string;
+    passedDescription?: string;
+  } {
+    if (!structuredFinancials) {
+      return {
+        state: 'unverified_pending_founder_review',
+        passed: true,
+        passedDescription:
+          'Gross margin floor: Mathematical margin UNVERIFIED (structured revenue/cost inputs absent; Founder review required).',
+      };
+    }
+
+    const { revenue, cogs, computeCost } = structuredFinancials;
+
+    // Check for missing or incomplete numbers — NEVER default to zero!
+    if (revenue === undefined || cogs === undefined || computeCost === undefined) {
+      return {
+        state: 'unverified_pending_founder_review',
+        passed: true,
+        passedDescription:
+          'Gross margin floor: Mathematical margin UNVERIFIED (revenue, COGS, and computeCost must all be explicitly provided; Founder review required).',
+      };
+    }
+
+    // Validate finite non-negative values and reject invalid inputs (negative, zero revenue, NaN, Infinity)
+    const isValidRevenue = typeof revenue === 'number' && Number.isFinite(revenue) && revenue > 0;
+    const isValidCogs = typeof cogs === 'number' && Number.isFinite(cogs) && cogs >= 0;
+    const isValidComputeCost = typeof computeCost === 'number' && Number.isFinite(computeCost) && computeCost >= 0;
+
+    if (!isValidRevenue || !isValidCogs || !isValidComputeCost) {
+      return {
+        state: 'calculated_violation',
+        passed: false,
+        errorReason:
+          'CONSTITUTIONAL_MARGIN_VIOLATION: Invalid financial parameters. Revenue must be a finite positive number (> 0), and COGS and computeCost must be finite non-negative numbers (>= 0).',
+      };
+    }
+
+    // Deterministic mathematical calculation
+    const totalCost = cogs + computeCost;
+    const calculatedMarginPercent = ((revenue - totalCost) / revenue) * 100;
+
+    if (calculatedMarginPercent < 80.0) {
+      return {
+        state: 'calculated_violation',
+        calculatedMarginPercent,
+        passed: false,
+        errorReason: `CONSTITUTIONAL_MARGIN_VIOLATION: Calculated gross margin (${calculatedMarginPercent.toFixed(1)}%) falls below the mandatory 80.0% floor.`,
+      };
+    }
+
+    return {
+      state: 'calculated_compliant',
+      calculatedMarginPercent,
+      passed: true,
+      passedDescription: `Constitutional gross margin floor verified by deterministic calculation (${calculatedMarginPercent.toFixed(1)}% >= 80.0%)`,
+    };
+  }
+
+  /**
+   * Lexical Pattern Scanning against anti-patterns compromising margin policy.
+   */
+  public static verifyLexicalMarginPatterns(fullCorpus: string): {
+    hasViolation: boolean;
+    errorReason?: string;
+  } {
+    for (const pattern of this.MARGIN_VIOLATION_PATTERNS) {
+      if (pattern.test(fullCorpus)) {
+        return {
+          hasViolation: true,
+          errorReason:
+            'CONSTITUTIONAL_MARGIN_VIOLATION: Proposal text contains statements compromising the non-negotiable 80%+ gross margin floor mandate.',
+        };
+      }
+    }
+    return { hasViolation: false };
   }
 }

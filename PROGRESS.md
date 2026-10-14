@@ -30,19 +30,17 @@
    - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
    - Updated `participatingEmployees` to track real council review contributions.
    - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Founder Review Corrections (2026-10-14):**
-   - **Fail-closed specialist output validation:** Requires `success === true` and validates complete structured response against `SpecialistStructuredOutputSchema`. Malformed or missing output fails closed to `status: 'failed'` (never defaults to `passed`).
-   - **Fail-closed COO mediation:** Validates COO structured response against `CooMediationStructuredOutputSchema`. Failed or malformed mediation degrades honestly with zero synthetic consensus or fabricated rulings. Provenance explicitly set to `isVerified: false`, `evidenceBasis: 'unverified'`.
-   - **Partial-failure semantics:** Any required specialist failure or degraded status blocks `consensus_achieved` and sets deliberation status to `degraded`. Rejections escalate to `frictions_escalated`.
-   - **Degraded orchestration status propagation:** Degraded council deliberation sets `OrchestrationRun.status = 'failed'`, `executionOutcome = 'partial'`, surfaces explicit warnings to Founder, and disables autonomous ratification.
-   - **Timeout and cancellation:** Per-call timeout tracking identifies and records in-flight `orphanedProviderCalls` (`timeout_orphaned`), preventing false claims of task cancellation. `AbortSignal` supported in executor and council engine.
-   - **Hard bounds & Role deduplication:** Specialists deduplicated and allowlisted to `['researcher', 'pm', 'finance']` (max 3 specialists). Hard call limit strictly enforced (max 3 specialists + 1 COO mediation = 4 calls total). `maxRounds` capped strictly at 1 for Phase 2.2.2.
-   - **Financial verification:** Added deterministic mathematical calculation (`revenue`, `cogs`, `computeCost`) enforcing the 80.0% gross margin floor mandate. Missing structured financials honestly reported as `financialVerificationState: 'unverified_pending_founder_review'`.
-   - **Prompt-injection isolation:** Untrusted directives and evidence enclosed in distinct structural fences (`<<<UNTRUSTED_PROPOSAL_DATA_START>>>`) with explicit immutable instructions preventing role alteration, gate bypass, or privilege escalation.
-   - **Persistence & Idempotency:** Uses authoritative `DurableFileStore` collection `council_deliberations` and `AgentRunStore` to trace council executions, support process restart recovery, and prevent duplicate executions on retries.
+4. **Final Acceptance Corrections (2026-10-14):**
+   - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
+   - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
+   - **Specialist review cache bound to canonical fingerprint:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache miss and re-execution triggered on package or financial change.
+   - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
+   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`.
+   - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
+   - **Comprehensive testing:** Expanded suite to 29 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
 
 ### Verification Results
-- `tests/orchestration/council_deliberation.test.ts`: **20 passed, 0 failed** (run twice across all 10 review areas)
+- `tests/orchestration/council_deliberation.test.ts`: **29 passed, 0 failed** (run twice across all 29 test areas)
 - `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
 - `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
 - `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
@@ -54,12 +52,12 @@
 - `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
 - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
 - `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
-- **Grand Total Across Targeted Suites: 199 PASSED, 0 FAILED (100%).**
-- **Linting:** `npm run lint` exited with code 0 across the entire repository.
+- **Grand Total Across Targeted Suites: 208 PASSED, 0 FAILED (100%).**
+- **Linting:** `npm run lint` exited with code 0 across the entire repository (0 errors, 0 warnings).
 - **TypeScript:** 0 type errors across all added and modified files.
 - **Production Build:** Cross-drive worktree (`C:\...` with `node_modules` symlink to `E:\...`) triggers Turbopack out-of-root panic (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`). Documented honestly as an environment constraint without fabrication.
 
-**Next action:** Submit updated PR for Issue #11 against `main` and stop for Founder review. Zero merges to `main`, zero deployments.
+**Next action:** Commit final acceptance corrections, push to `origin phase/2.2.2-council-deliberation`, and stop for Founder review. Zero merges to `main`, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.

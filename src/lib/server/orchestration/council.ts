@@ -41,6 +41,10 @@ import {
   CouncilFrictionPoint,
   CouncilReviewStatus,
   CouncilSpecialistCritique,
+  CouncilLeaseStatus,
+  CouncilDeliberationRecord,
+  computeCouncilFingerprint,
+  computeSpecialistReviewFingerprint,
   SpecialistStructuredOutputSchema,
   CooMediationStructuredOutputSchema,
 } from '@/types/council';
@@ -49,12 +53,14 @@ import { ConstitutionalVerifier } from './verifier';
 import { SERVER_AGENTS } from '../agents/definitions';
 import { AgentRunStore } from '../agents/run-store';
 import { DurableFileStore } from '../persistence/durable-file-store';
+import { OperationInProgressError, UnknownExternalResultError } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
 export const MAX_COUNCIL_ROUNDS_HARD_LIMIT = 1;
 export const MAX_COUNCIL_SPECIALISTS_LIMIT = 3;
 export const DEFAULT_COUNCIL_TIMEOUT_MS = 30_000;
 export const ALLOWED_COUNCIL_SPECIALISTS: AgentRole[] = ['researcher', 'pm', 'finance'];
+export const COUNCIL_DELIBERATIONS_COLLECTION = 'council_deliberations';
 
 export interface CouncilEngineOptions {
   executor?: ServerAgentExecutor;
@@ -99,23 +105,122 @@ export class ExecutiveCouncilEngine {
       throw new Error('Council deliberation aborted before execution');
     }
 
-    // 2. Idempotency Check via Durable Storage
+    // 2. Cross-Process Atomic Claim & Lease via withCollectionLockStrict
     const idempotencyKey = input.idempotencyKey || deliberationId;
-    if (input.idempotencyKey && !input.forceFresh) {
-      try {
-        const cached = DurableFileStore.getInstance().getItem<CouncilDeliberationResult>(
-          'council_deliberations',
-          input.idempotencyKey
-        );
-        if (cached && cached.status !== 'degraded') {
-          return {
-            ...cached,
-            notes: (cached.notes ? cached.notes + ' ' : '') + '[Replayed from authoritative council store via idempotencyKey]',
+    const canonicalFingerprint = computeCouncilFingerprint(input);
+
+    let leaseClaim;
+    try {
+      leaseClaim = DurableFileStore.getInstance().withCollectionLockStrict(
+        COUNCIL_DELIBERATIONS_COLLECTION,
+        () => {
+          const existing = DurableFileStore.getInstance().getItem<CouncilDeliberationRecord | CouncilDeliberationResult>(
+            COUNCIL_DELIBERATIONS_COLLECTION,
+            idempotencyKey
+          );
+
+          if (existing && !input.forceFresh) {
+            const isRecord = 'leaseStatus' in existing;
+            const leaseStatus: CouncilLeaseStatus = isRecord
+              ? (existing as CouncilDeliberationRecord).leaseStatus
+              : (existing as CouncilDeliberationResult).status === 'degraded'
+              ? 'degraded'
+              : (existing as CouncilDeliberationResult).status === 'unknown_outcome'
+              ? 'unknown_outcome'
+              : 'completed';
+
+            // A. Completed result
+            if (leaseStatus === 'completed') {
+              const cachedResult = isRecord
+                ? (existing as CouncilDeliberationRecord).result
+                : (existing as CouncilDeliberationResult);
+              if (cachedResult) {
+                const recordFingerprint = isRecord ? (existing as CouncilDeliberationRecord).fingerprint : undefined;
+                if (!recordFingerprint || recordFingerprint === canonicalFingerprint) {
+                  return { state: 'cached' as const, result: cachedResult };
+                }
+              }
+            }
+
+            // B. In-Progress Lease
+            if (leaseStatus === 'in_progress' && isRecord) {
+              const rec = existing as CouncilDeliberationRecord;
+              const isAlive = rec.claimedByPid && DurableFileStore.isProcessAlive(rec.claimedByPid);
+              const isExpired = Date.now() > Date.parse(rec.expiresAt);
+
+              if (isAlive && !isExpired) {
+                throw new OperationInProgressError(idempotencyKey, rec.id, rec.claimedAt);
+              }
+
+              // Process crashed or lease expired while in-progress provider calls might still be running.
+              // Transition to unknown_outcome — blind redispatch is strictly prohibited without reconciliation!
+              const unknownRec: CouncilDeliberationRecord = {
+                ...rec,
+                leaseStatus: 'unknown_outcome',
+                error: 'Process crashed or lease expired while council deliberation was in progress. Blind redispatch prohibited.',
+              };
+              DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, unknownRec);
+              DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, rec.id, unknownRec);
+              throw new UnknownExternalResultError(idempotencyKey, rec.id, unknownRec.error);
+            }
+
+            // C. Unknown Outcome
+            if (leaseStatus === 'unknown_outcome') {
+              const err = isRecord ? (existing as CouncilDeliberationRecord).error : undefined;
+              const existingId = isRecord
+                ? (existing as CouncilDeliberationRecord).id
+                : (existing as CouncilDeliberationResult).deliberationId;
+              throw new UnknownExternalResultError(
+                idempotencyKey,
+                existingId || deliberationId,
+                err || 'Council deliberation terminated in an uncertain provider outcome state. Blind retry prohibited.'
+              );
+            }
+
+            // D. Degraded result
+            if (leaseStatus === 'degraded') {
+              const cachedResult = isRecord
+                ? (existing as CouncilDeliberationRecord).result
+                : (existing as CouncilDeliberationResult);
+              if (cachedResult && !input.forceFresh) {
+                return { state: 'cached' as const, result: cachedResult };
+              }
+            }
+          }
+
+          // Create new active lease record
+          const leaseRecord: CouncilDeliberationRecord = {
+            id: deliberationId,
+            deliberationId,
+            idempotencyKey,
+            leaseStatus: 'in_progress',
+            claimedByPid: process.pid,
+            claimedAt: nowIso,
+            expiresAt: new Date(Date.now() + timeoutMs + 10_000).toISOString(),
+            fingerprint: canonicalFingerprint,
+            orphanedProviderCalls: [],
           };
+
+          DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, leaseRecord);
+          DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, deliberationId, leaseRecord);
+
+          return { state: 'claimed' as const, leaseRecord };
         }
-      } catch {
-        // Non-fatal cache lookup failure; proceed with execution
+      );
+    } catch (err: any) {
+      if (err instanceof OperationInProgressError || err instanceof UnknownExternalResultError) {
+        throw err;
       }
+      throw new Error(
+        `Durable persistence failure in council deliberation: Failed to claim lease (${err?.message || err})`
+      );
+    }
+
+    if (leaseClaim.state === 'cached' && leaseClaim.result) {
+      return {
+        ...leaseClaim.result,
+        notes: (leaseClaim.result.notes ? leaseClaim.result.notes + ' ' : '') + '[Replayed from authoritative council store via idempotencyKey]',
+      };
     }
 
     // 3. Sovereign Verification Pre-Check Gate
@@ -149,7 +254,7 @@ export class ExecutiveCouncilEngine {
         idempotencyKey,
       };
 
-      this.persistDeliberation(rejectedResult);
+      this.persistDeliberation(rejectedResult, 'completed', canonicalFingerprint);
       return rejectedResult;
     }
 
@@ -219,6 +324,31 @@ export class ExecutiveCouncilEngine {
     }
 
     if (input.signal?.aborted) {
+      if (orphanedProviderCalls.length > 0) {
+        const unknownResult: CouncilDeliberationResult = {
+          deliberationId,
+          directive: input.directive,
+          round: 1,
+          maxRounds,
+          status: 'unknown_outcome',
+          verdict: 'Deliberation halted: In-flight provider call cancelled. Downstream execution outcome is unconfirmed.',
+          specialistCritiques,
+          frictions: [],
+          cooRuling: 'Deliberation aborted with unconfirmed provider outcome. Blind retry prohibited.',
+          recommendedNextActions: ['Inspect provider logs for orphaned execution before redispatching.'],
+          startedAt: nowIso,
+          completedAt: new Date().toISOString(),
+          totalCalls,
+          durationMs: Date.now() - startTime,
+          verificationPassed: false,
+          notes: 'Deliberation aborted with orphaned provider calls.',
+          financialVerificationState: 'unverified_pending_founder_review',
+          orphanedProviderCalls,
+          idempotencyKey,
+        };
+        this.persistDeliberation(unknownResult, 'unknown_outcome', canonicalFingerprint, 'Cancelled with unconfirmed provider calls');
+        return unknownResult;
+      }
       throw new Error('Council deliberation aborted after specialist reviews');
     }
 
@@ -278,7 +408,7 @@ export class ExecutiveCouncilEngine {
         idempotencyKey,
       };
 
-      this.persistDeliberation(rejectedResult);
+      this.persistDeliberation(rejectedResult, 'completed', canonicalFingerprint);
       return rejectedResult;
     }
 
@@ -340,14 +470,17 @@ export class ExecutiveCouncilEngine {
         idempotencyKey,
       };
 
-      this.persistDeliberation(cooRejectedResult);
+      this.persistDeliberation(cooRejectedResult, 'completed', canonicalFingerprint);
       return cooRejectedResult;
     }
 
     // 10. Strict Deterministic Derivation of Final Deliberation Status
     let deliberationStatus: CouncilDeliberationStatus = 'consensus_achieved';
 
-    if (rejectedSpecialists.length > 0) {
+    if (orphanedProviderCalls.length > 0) {
+      // In-flight calls orphaned due to timeout or cancellation; outcome is unknown
+      deliberationStatus = 'unknown_outcome';
+    } else if (rejectedSpecialists.length > 0) {
       // Any specialist rejection escalates immediately
       deliberationStatus = 'frictions_escalated';
     } else if (failedSpecialists.length > 0 || cooMediation.failed) {
@@ -358,6 +491,13 @@ export class ExecutiveCouncilEngine {
     } else {
       deliberationStatus = 'consensus_achieved';
     }
+
+    const leaseStatus: CouncilLeaseStatus =
+      deliberationStatus === 'unknown_outcome'
+        ? 'unknown_outcome'
+        : deliberationStatus === 'degraded'
+        ? 'degraded'
+        : 'completed';
 
     const finalResult: CouncilDeliberationResult = {
       deliberationId,
@@ -374,7 +514,7 @@ export class ExecutiveCouncilEngine {
       completedAt: new Date().toISOString(),
       totalCalls,
       durationMs: Date.now() - startTime,
-      verificationPassed: true,
+      verificationPassed: critiqueVerification.isCompliant && cooVerification.isCompliant,
       notes: cooVerification.notes,
       financialVerificationState: critiqueVerification.financialVerificationState,
       calculatedMarginPercent: critiqueVerification.calculatedMarginPercent,
@@ -382,21 +522,51 @@ export class ExecutiveCouncilEngine {
       idempotencyKey,
     };
 
-    this.persistDeliberation(finalResult);
+    this.persistDeliberation(finalResult, leaseStatus, canonicalFingerprint);
     return finalResult;
   }
 
   /**
    * Persists the deliberation result to authoritative DurableFileStore.
+   * Fail-Closed: Durably records both deliberationId and idempotencyKey within withCollectionLockStrict.
+   * If persistence fails, consensus CANNOT be returned. It transitions to degraded
+   * and throws an error failing closed.
    */
-  private persistDeliberation(result: CouncilDeliberationResult): void {
+  private persistDeliberation(
+    result: CouncilDeliberationResult,
+    leaseStatus: CouncilLeaseStatus,
+    fingerprint: string,
+    error?: string
+  ): void {
     try {
-      DurableFileStore.getInstance().saveItemStrict('council_deliberations', result.deliberationId, result);
-      if (result.idempotencyKey && result.idempotencyKey !== result.deliberationId) {
-        DurableFileStore.getInstance().saveItemStrict('council_deliberations', result.idempotencyKey, result);
-      }
-    } catch (err) {
-      console.warn('[ExecutiveCouncilEngine] Failed to persist deliberation to durable store:', err);
+      DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+        const record: CouncilDeliberationRecord = {
+          id: result.deliberationId,
+          deliberationId: result.deliberationId,
+          idempotencyKey: result.idempotencyKey || result.deliberationId,
+          leaseStatus,
+          claimedByPid: process.pid,
+          claimedAt: result.startedAt,
+          expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+          fingerprint,
+          result,
+          orphanedProviderCalls: result.orphanedProviderCalls,
+          error,
+        };
+
+        DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, result.deliberationId, record);
+        if (result.idempotencyKey && result.idempotencyKey !== result.deliberationId) {
+          DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, result.idempotencyKey, record);
+        }
+      });
+    } catch (err: any) {
+      // Fail closed: Remove catch-and-continue.
+      // Deliberation cannot be returned as successful if durable persistence cannot be confirmed.
+      result.status = 'degraded';
+      result.verificationPassed = false;
+      result.verdict = `Deliberation degraded: Authoritative persistence failed (${err?.message || err}). Deliberation cannot be certified without durable storage.`;
+      result.notes = (result.notes ? result.notes + '; ' : '') + `Persistence failure: ${err?.message || err}`;
+      throw new Error(`Durable persistence failure in council deliberation: ${err?.message || err}`);
     }
   }
 
@@ -413,16 +583,22 @@ export class ExecutiveCouncilEngine {
     const startTime = Date.now();
     const agentDef = SERVER_AGENTS[agentId] || SERVER_AGENTS.coo;
 
-    // Check for cached completed specialist run to prevent duplicate work on retry
+    // Check for cached completed specialist run bound to canonical input fingerprint
+    const specFingerprint = computeSpecialistReviewFingerprint(agentId, input);
     if (!input.forceFresh) {
       try {
         const existingRuns = await AgentRunStore.getInstance().listRuns({
           agentId,
           status: 'completed',
-          limit: 10,
+          limit: 20,
         });
         const match = existingRuns.find(
-          (r) => r.protocolStep === 'review' && r.directive === input.directive && r.structuredData
+          (r) =>
+            r.protocolStep === 'review' &&
+            r.status === 'completed' &&
+            r.provenance?.isVerified === true &&
+            ((r as any).metadata?.reviewFingerprint === specFingerprint ||
+              (r.structuredData as any)?.reviewFingerprint === specFingerprint)
         );
         if (match && match.structuredData) {
           const parsed = SpecialistStructuredOutputSchema.safeParse(match.structuredData);
@@ -560,6 +736,7 @@ Respond with valid JSON matching:
           productSpecs: input.productSpecs,
           financeAssessment: input.financeAssessment,
           verificationNotes: input.verificationNotes,
+          reviewFingerprint: specFingerprint,
         },
         signal,
       },
@@ -571,7 +748,8 @@ Respond with valid JSON matching:
       timeoutMs,
       `Specialist review timed out for ${agentId}`,
       agentId,
-      orphanedCalls
+      orphanedCalls,
+      signal
     );
 
     // Fail-Closed Validation 1: Require executor success
@@ -737,7 +915,8 @@ Respond with valid JSON matching:
         timeoutMs,
         'COO mediation timed out',
         'coo',
-        orphanedCalls
+        orphanedCalls,
+        signal
       );
 
       // Fail-closed: Check executor success
@@ -839,13 +1018,16 @@ Respond with valid JSON matching:
 
   /**
    * Wraps a promise with a timeout rejection and tracks orphaned in-flight calls.
+   * If cancelled or timed out after submission, marks provider call as orphaned since
+   * model providers (e.g. z-ai-web-dev-sdk) do not confirm downstream cancellation.
    */
   private async withTimeout<T>(
     promise: Promise<T>,
     timeoutMs: number,
     errorMessage: string,
     agentId: string,
-    orphanedCalls: string[]
+    orphanedCalls: string[],
+    signal?: AbortSignal
   ): Promise<T> {
     let timer: NodeJS.Timeout | null = null;
     let finished = false;
@@ -854,13 +1036,38 @@ Respond with valid JSON matching:
       timer = setTimeout(() => {
         if (!finished) {
           orphanedCalls.push(agentId);
+          orphanedCalls.push(`${agentId}:timeout_orphaned`);
           reject(new Error(`${errorMessage} [provider call orphaned in flight]`));
         }
       }, timeoutMs);
     });
 
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (signal) {
+        if (signal.aborted) {
+          orphanedCalls.push(agentId);
+          orphanedCalls.push(`${agentId}:cancellation_unconfirmed_orphaned`);
+          reject(new Error(`Specialist ${agentId} review cancelled via AbortSignal [provider cancellation unconfirmed]`));
+        } else {
+          signal.addEventListener(
+            'abort',
+            () => {
+              if (!finished) {
+                orphanedCalls.push(agentId);
+                orphanedCalls.push(`${agentId}:cancellation_unconfirmed_orphaned`);
+                reject(
+                  new Error(`Specialist ${agentId} review cancelled via AbortSignal [provider cancellation unconfirmed]`)
+                );
+              }
+            },
+            { once: true }
+          );
+        }
+      }
+    });
+
     try {
-      const result = await Promise.race([promise, timeoutPromise]);
+      const result = await Promise.race([promise, timeoutPromise, abortPromise]);
       finished = true;
       return result;
     } finally {
@@ -882,9 +1089,13 @@ Respond with valid JSON matching:
     md += `**Timestamp**: ${result.completedAt}\n`;
     md += `**Verification Gate**: ${result.verificationPassed ? 'VERIFIED COMPLIANT' : 'REJECTED'}\n`;
     if (result.financialVerificationState) {
-      md += `**Financial Verification**: \`${result.financialVerificationState}\`${
-        result.calculatedMarginPercent !== undefined ? ` (${result.calculatedMarginPercent.toFixed(1)}%)` : ''
-      }\n`;
+      const marginDetail =
+        result.calculatedMarginPercent !== undefined ? ` (${result.calculatedMarginPercent.toFixed(1)}%)` : '';
+      const unverifiedWarning =
+        result.financialVerificationState === 'unverified_pending_founder_review'
+          ? ' (Gross Margin UNVERIFIED — Not Authorized for External Effects)'
+          : '';
+      md += `**Financial Verification**: \`${result.financialVerificationState}\`${marginDetail}${unverifiedWarning}\n`;
     }
     if (result.orphanedProviderCalls && result.orphanedProviderCalls.length > 0) {
       md += `**Orphaned Provider Calls**: ${result.orphanedProviderCalls.join(', ')}\n`;
@@ -948,4 +1159,77 @@ Respond with valid JSON matching:
 
     return md;
   }
+}
+
+export interface CouncilGovernanceEvaluation {
+  allowsAutonomousApproval: boolean;
+  requiresFounderDecision: boolean;
+  allowsExternalEffects: boolean;
+  governanceDisposition:
+    | 'recommendation_pending_founder'
+    | 'founder_decision_required'
+    | 'execution_halted_remediation_required';
+  reason: string;
+}
+
+/**
+ * Deterministically evaluates the governance boundary of a CouncilDeliberationResult.
+ *
+ * GOVERNANCE RULES:
+ * 1. consensus_achieved is a recommendation to Founder HQ, NOT autonomous authorization.
+ * 2. consensus_with_reservations and frictions_escalated mandate explicit Founder decision.
+ * 3. degraded, verification_rejected, unknown_outcome, and unverified financial state
+ *    must NEVER authorize external side effects.
+ * 4. External side effects always require cryptographic Founder approval in SideEffectAuthorizationGate.
+ */
+export function evaluateCouncilGovernanceBoundary(
+  result: CouncilDeliberationResult
+): CouncilGovernanceEvaluation {
+  if (result.status === 'verification_rejected') {
+    return {
+      allowsAutonomousApproval: false,
+      requiresFounderDecision: false,
+      allowsExternalEffects: false,
+      governanceDisposition: 'execution_halted_remediation_required',
+      reason: 'Deliberation rejected by constitutional verification engine. External side effects strictly prohibited.',
+    };
+  }
+
+  if (result.status === 'degraded' || result.status === 'unknown_outcome') {
+    return {
+      allowsAutonomousApproval: false,
+      requiresFounderDecision: true,
+      allowsExternalEffects: false,
+      governanceDisposition: 'execution_halted_remediation_required',
+      reason: `Deliberation is in an uncertified state (${result.status}). External side effects strictly prohibited; Founder remediation required.`,
+    };
+  }
+
+  if (result.financialVerificationState !== 'calculated_compliant') {
+    return {
+      allowsAutonomousApproval: false,
+      requiresFounderDecision: true,
+      allowsExternalEffects: false,
+      governanceDisposition: 'founder_decision_required',
+      reason: 'Gross margin is unverified or non-compliant. External side effects prohibited until Founder reviews financial model.',
+    };
+  }
+
+  if (result.status === 'consensus_with_reservations' || result.status === 'frictions_escalated') {
+    return {
+      allowsAutonomousApproval: false,
+      requiresFounderDecision: true,
+      allowsExternalEffects: false,
+      governanceDisposition: 'founder_decision_required',
+      reason: `Specialists raised reservations or escalated frictions (${result.status}). Explicit Founder decision required.`,
+    };
+  }
+
+  return {
+    allowsAutonomousApproval: false,
+    requiresFounderDecision: false,
+    allowsExternalEffects: false, // External effects ALWAYS require SideEffectAuthorizationGate cryptographic approval
+    governanceDisposition: 'recommendation_pending_founder',
+    reason: 'Consensus achieved among executive specialists. Formulates recommendation for Founder ratification; external effects require explicit Founder approval.',
+  };
 }

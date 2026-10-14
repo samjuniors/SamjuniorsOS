@@ -26,6 +26,7 @@
  *    - Incomplete or degraded reviews prevent consensus (status: 'degraded').
  */
 
+import { createHash } from 'crypto';
 import { z } from 'zod';
 import { AgentRole, OutputProvenance } from './os';
 
@@ -113,7 +114,14 @@ export type CouncilDeliberationStatus =
   | 'consensus_with_reservations'
   | 'frictions_escalated'
   | 'verification_rejected'
-  | 'degraded';
+  | 'degraded'
+  | 'unknown_outcome';
+
+export type CouncilLeaseStatus =
+  | 'in_progress'
+  | 'completed'
+  | 'degraded'
+  | 'unknown_outcome';
 
 export interface StructuredFinancialInput {
   revenue?: number;
@@ -149,6 +157,20 @@ export interface CouncilDeliberationResult {
   idempotencyKey?: string;
 }
 
+export interface CouncilDeliberationRecord {
+  id: string;
+  deliberationId?: string;
+  idempotencyKey: string;
+  leaseStatus: CouncilLeaseStatus;
+  claimedByPid: number;
+  claimedAt: string;
+  expiresAt: string;
+  fingerprint: string;
+  result?: CouncilDeliberationResult;
+  orphanedProviderCalls?: string[];
+  error?: string;
+}
+
 export interface CouncilDeliberationInput {
   directive: string;
   cooScopeContent?: string;
@@ -164,4 +186,56 @@ export interface CouncilDeliberationInput {
   structuredFinancials?: StructuredFinancialInput;
   idempotencyKey?: string;
   forceFresh?: boolean;
+}
+
+export const SPECIALIST_CONTRACT_VERSION = 'v2.2.2';
+export const COUNCIL_CONTRACT_VERSION = 'v2.2.2';
+
+/**
+ * Computes a canonical SHA-256 fingerprint for a specialist review request.
+ * Any change to directive, upstream package, prompt version, or financial inputs
+ * invalidates the fingerprint and forces a fresh execution.
+ */
+export function computeSpecialistReviewFingerprint(
+  agentId: AgentRole,
+  input: CouncilDeliberationInput
+): string {
+  const canonicalPayload = JSON.stringify({
+    contractVersion: SPECIALIST_CONTRACT_VERSION,
+    agentId,
+    directive: input.directive,
+    cooScope: input.cooScopeContent || '',
+    researchFindings: input.researchFindings || '',
+    productSpecs: input.productSpecs || '',
+    financeAssessment: input.financeAssessment || '',
+    verificationNotes: input.verificationNotes || '',
+    financials: {
+      revenue: input.structuredFinancials?.revenue,
+      cogs: input.structuredFinancials?.cogs,
+      computeCost: input.structuredFinancials?.computeCost,
+    },
+  });
+  return createHash('sha256').update(canonicalPayload).digest('hex');
+}
+
+/**
+ * Computes a canonical SHA-256 fingerprint for a full council deliberation request.
+ */
+export function computeCouncilFingerprint(input: CouncilDeliberationInput): string {
+  const canonicalPayload = JSON.stringify({
+    contractVersion: COUNCIL_CONTRACT_VERSION,
+    directive: input.directive,
+    cooScope: input.cooScopeContent || '',
+    researchFindings: input.researchFindings || '',
+    productSpecs: input.productSpecs || '',
+    financeAssessment: input.financeAssessment || '',
+    verificationNotes: input.verificationNotes || '',
+    activeAgents: input.activeAgents ? [...input.activeAgents].sort() : [],
+    financials: {
+      revenue: input.structuredFinancials?.revenue,
+      cogs: input.structuredFinancials?.cogs,
+      computeCost: input.structuredFinancials?.computeCost,
+    },
+  });
+  return createHash('sha256').update(canonicalPayload).digest('hex');
 }

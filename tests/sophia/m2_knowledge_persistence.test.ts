@@ -323,7 +323,7 @@ async function runTests() {
         {
           env: { ...process.env, DATABASE_URL: `file:${AUTHORITY_DB}` },
           stdio: 'pipe',
-          timeout: 120_000,
+          timeoutMs: 120_000,
         }
       );
       try {

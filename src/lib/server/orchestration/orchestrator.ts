@@ -1109,7 +1109,7 @@ Include:
     // ==========================================
     // STAGE 8: FINAL EXECUTIVE REPORT SYNTHESIS (Sophia Vance)
     // ==========================================
-    const isCouncilDegraded = councilDeliberation.status === 'degraded';
+    const isCouncilDegraded = councilDeliberation.status === 'degraded' || councilDeliberation.status === 'unknown_outcome';
     const isCouncilFrictionsEscalated = councilDeliberation.status === 'frictions_escalated';
 
     const degradedPromptWarning = isCouncilDegraded
@@ -1278,18 +1278,44 @@ Actionable steps in phased order.`
       },
     ];
 
-    const founderDecisionRequired = isCouncilDegraded || isCouncilFrictionsEscalated || rawReportData.founderDecisionRequired !== false;
+    const isCouncilReservations = councilDeliberation.status === 'consensus_with_reservations';
+    const isCouncilFinancialUnverified = councilDeliberation.financialVerificationState === 'unverified_pending_founder_review';
+
+    const founderDecisionRequired =
+      isCouncilDegraded ||
+      isCouncilFrictionsEscalated ||
+      isCouncilReservations ||
+      isCouncilFinancialUnverified ||
+      rawReportData.founderDecisionRequired !== false;
     const founderDecision: FounderDecisionDetails | undefined = founderDecisionRequired
       ? {
           required: true,
           title: isCouncilDegraded
             ? `Review Degraded Initiative: ${shortTitle}`
+            : isCouncilFrictionsEscalated
+            ? `Resolve Escalated Frictions: ${shortTitle}`
+            : isCouncilReservations
+            ? `Review Initiative with Reservations: ${shortTitle}`
+            : isCouncilFinancialUnverified
+            ? `Review Unverified Margins: ${shortTitle}`
             : (rawReportData.founderDecisionTitle || `Approve Initiative: ${shortTitle}`),
           recommendation: isCouncilDegraded
             ? 'Council deliberation degraded due to incomplete specialist reviews. Founder intervention or retry required.'
+            : isCouncilFrictionsEscalated
+            ? 'Specialists raised blocking objections. Explicit Founder ruling required.'
+            : isCouncilReservations
+            ? 'Specialists approved with reservations. Explicit Founder decision required on trade-offs.'
+            : isCouncilFinancialUnverified
+            ? 'Unit economics are unverified. Founder must review revenue and cost model before authorizing progression.'
             : (rawReportData.founderDecisionRecommendation || rawReportData.summary || 'Approve executive recommendation and authorize sandbox milestone progression.'),
           why: isCouncilDegraded
             ? 'Autonomous consensus could not be certified because one or more required specialist reviews failed.'
+            : isCouncilFrictionsEscalated
+            ? 'Frictions between product scope and technical/financial bounds require Founder mediation.'
+            : isCouncilReservations
+            ? 'Technical or operational debt was flagged during council deliberation.'
+            : isCouncilFinancialUnverified
+            ? 'Constitutional gross margin floor requires verified unit economics prior to external execution.'
             : (rawReportData.founderDecisionWhy || 'Requires explicit Founder authorization before allocating execution bandwidth or changing company baseline.'),
           impact: isCouncilDegraded
             ? 'Prevents premature or unverified execution until full executive council review is satisfied.'
@@ -1306,7 +1332,7 @@ Actionable steps in phased order.`
     if (isCouncilDegraded) {
       finalExecutionOutcome = 'partial';
       finalRunStatus = 'failed';
-      failureReason = 'Executive Council deliberation degraded: incomplete or failed specialist peer reviews.';
+      failureReason = `Executive Council deliberation degraded (${councilDeliberation.status}): incomplete or unverified specialist peer reviews.`;
     } else if (isCouncilFrictionsEscalated) {
       finalExecutionOutcome = 'partial';
       finalRunStatus = 'requires_approval';

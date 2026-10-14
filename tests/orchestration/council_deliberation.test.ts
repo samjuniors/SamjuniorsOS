@@ -34,6 +34,8 @@ import {
   ExecutiveCouncilEngine,
   MAX_COUNCIL_ROUNDS_HARD_LIMIT,
   MAX_COUNCIL_SPECIALISTS_LIMIT,
+  COUNCIL_DELIBERATIONS_COLLECTION,
+  evaluateCouncilGovernanceBoundary,
 } from '@/lib/server/orchestration/council';
 import { MultiAgentOrchestrator } from '@/lib/server/orchestration/orchestrator';
 import {
@@ -44,6 +46,10 @@ import {
 import { AgentRole, OutputProvenance } from '@/types/os';
 import { SERVER_AGENTS } from '@/lib/server/agents/definitions';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
+import { ConstitutionalVerifier } from '@/lib/server/orchestration/verifier';
+import { AgentRunStore } from '@/lib/server/agents/run-store';
+import { OperationInProgressError, UnknownExternalResultError } from '@/lib/server/idempotency/state-machine';
+import { CouncilDeliberationRecord } from '@/types/council';
 
 interface TestResult {
   name: string;
@@ -145,9 +151,11 @@ function createMockExecutor(
       }
     }
 
+    let finalResult: AgentExecutionResult;
+
     if (behavior) {
       const custom = await behavior(agentId, context, specificPrompt);
-      return {
+      finalResult = {
         success: custom.success ?? true,
         agentId,
         agentName: agentDef.name,
@@ -156,22 +164,49 @@ function createMockExecutor(
         outputContent: custom.outputContent ?? defaultContent,
         structuredData: custom.structuredData !== undefined ? custom.structuredData : defaultStructured,
         provenance: custom.provenance || defaultProvenance,
-        runId: custom.runId || `run-mock-${Date.now()}`,
+        runId: custom.runId || `run-mock-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         ...custom,
+      };
+    } else {
+      finalResult = {
+        success: true,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        statusMessage: `[${agentDef.name}] Task completed.`,
+        outputContent: defaultContent,
+        structuredData: defaultStructured,
+        provenance: defaultProvenance,
+        runId: `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       };
     }
 
-    return {
-      success: true,
-      agentId,
-      agentName: agentDef.name,
-      protocolStep: context.protocolStep,
-      statusMessage: `[${agentDef.name}] Task completed.`,
-      outputContent: defaultContent,
-      structuredData: defaultStructured,
-      provenance: defaultProvenance,
-      runId: `run-${Date.now()}`,
-    };
+    if (finalResult.success) {
+      const finalStructured =
+        finalResult.structuredData && typeof finalResult.structuredData === 'object'
+          ? { ...finalResult.structuredData }
+          : {};
+      if (context.upstreamContext?.reviewFingerprint) {
+        finalStructured.reviewFingerprint = context.upstreamContext.reviewFingerprint;
+      }
+
+      await AgentRunStore.getInstance().saveRun({
+        runId: finalResult.runId || `run-${Date.now()}`,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        taskTitle: context.taskTitle,
+        directive: context.directive,
+        status: 'completed',
+        durationMs: 50,
+        outputContent: finalResult.outputContent,
+        structuredData: finalStructured,
+        provenance: finalResult.provenance,
+        timestamp: nowIso,
+      });
+    }
+
+    return finalResult;
   };
 
   return executor;
@@ -818,6 +853,448 @@ async function main() {
       run.messages.some((m) => m.text.includes('CRITICAL VERIFICATION FAILURE') && m.protocolStep === 'review'),
       'Expected critical verification failure message in review step'
     );
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 21: Two simultaneous requests sharing the same idempotency key (Claim Lease Conflict)
+  // ----------------------------------------------------------------------------
+  await runTest('21. Two simultaneous requests sharing the same idempotency key (Lease Conflict)', async () => {
+    let slowSpecialistResolve: () => void;
+    const slowSpecialistGate = new Promise<void>((resolve) => {
+      slowSpecialistResolve = resolve;
+    });
+
+    const mockExecutor = createMockExecutor(async (agentId, context) => {
+      if (agentId === 'researcher' && context.protocolStep === 'review') {
+        await slowSpecialistGate;
+      }
+      return {};
+    });
+
+    const engine = new ExecutiveCouncilEngine({ executor: mockExecutor });
+    const sharedKey = `idem-concurrent-${Date.now()}`;
+
+    // Launch request 1 (will pause inside researcher execution)
+    const req1Promise = engine.executeDeliberation({
+      directive: 'Simultaneous concurrent execution directive',
+      idempotencyKey: sharedKey,
+    });
+
+    // Wait a brief moment to ensure request 1 acquired the lease in_progress
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Launch request 2 with same idempotency key — must reject with OperationInProgressError
+    let rejectedWithInProgress = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Simultaneous concurrent execution directive',
+        idempotencyKey: sharedKey,
+      });
+    } catch (err: any) {
+      if (err instanceof OperationInProgressError || err?.name === 'OperationInProgressError') {
+        rejectedWithInProgress = true;
+      }
+    }
+
+    // Release slow specialist to allow request 1 to complete cleanly
+    slowSpecialistResolve!();
+    const req1Result = await req1Promise;
+
+    assert(rejectedWithInProgress, 'Expected second concurrent request to fail closed with OperationInProgressError');
+    assert.strictEqual(req1Result.status, 'consensus_achieved');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 22: Process Interruption after claim and after provider submission
+  // ----------------------------------------------------------------------------
+  await runTest('22. Process interruption after claim and provider submission (unknown_outcome)', async () => {
+    const deadPidKey = `idem-dead-pid-${Date.now()}`;
+    const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+
+    // Seed an in_progress lease with a dead PID (PID 99999999)
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const deadLease: CouncilDeliberationRecord = {
+        id: `delib-crashed-${Date.now()}`,
+        idempotencyKey: deadPidKey,
+        leaseStatus: 'in_progress',
+        claimedByPid: 99999999, // guaranteed dead process
+        claimedAt: new Date(Date.now() - 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        fingerprint: 'mock-fingerprint',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, deadPidKey, deadLease);
+    });
+
+    // Attempting to execute with this key must detect crashed owner and transition to unknown_outcome
+    let caughtUnknown = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Crashed deliberation recovery directive',
+        idempotencyKey: deadPidKey,
+      });
+    } catch (err: any) {
+      if (err instanceof UnknownExternalResultError || err?.name === 'UnknownExternalResultError') {
+        caughtUnknown = true;
+      }
+    }
+
+    assert(caughtUnknown, 'Expected crashed in_progress deliberation to fail closed with UnknownExternalResultError');
+
+    // Confirm record on disk transitioned to unknown_outcome
+    const recordOnDisk = DurableFileStore.getInstance().getItem<CouncilDeliberationRecord>(
+      COUNCIL_DELIBERATIONS_COLLECTION,
+      deadPidKey
+    );
+    assert.strictEqual(recordOnDisk?.leaseStatus, 'unknown_outcome');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 23: Failed Durable Writes Fail Closed
+  // ----------------------------------------------------------------------------
+  await runTest('23. Failed durable writes fail closed (cannot claim consensus)', async () => {
+    const store = DurableFileStore.getInstance();
+    const origSaveItemStrict = store.saveItemStrict.bind(store);
+
+    let failWrites = false;
+    (store as any).saveItemStrict = function (collection: string, id: string, item: any) {
+      if (failWrites && collection === COUNCIL_DELIBERATIONS_COLLECTION) {
+        throw new Error('EIO: simulated persistent storage disk write failure');
+      }
+      return origSaveItemStrict(collection, id, item);
+    };
+
+    try {
+      const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+      const failKey = `idem-fail-disk-${Date.now()}`;
+
+      failWrites = true;
+      let persistenceFailedClosed = false;
+
+      try {
+        await engine.executeDeliberation({
+          directive: 'Testing durable write failure',
+          idempotencyKey: failKey,
+        });
+      } catch (err: any) {
+        if (err.message.includes('Durable persistence failure')) {
+          persistenceFailedClosed = true;
+        }
+      }
+
+      assert(persistenceFailedClosed, 'Expected deliberation to fail closed and throw on durable persistence failure');
+    } finally {
+      (store as any).saveItemStrict = origSaveItemStrict;
+    }
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 24: Changed upstream evidence and changed financial input invalidates cached review
+  // ----------------------------------------------------------------------------
+  await runTest('24. Changed upstream package or financial input invalidates cached reviews', async () => {
+    let reviewCallCount = 0;
+    const mockExecutor = createMockExecutor((agentId, context) => {
+      if (context.protocolStep === 'review' && agentId === 'researcher') {
+        reviewCallCount++;
+      }
+      return {};
+    });
+
+    const engine = new ExecutiveCouncilEngine({ executor: mockExecutor });
+
+    // Run 1: Baseline package
+    await engine.executeDeliberation({
+      directive: 'Package cache test directive',
+      productSpecs: 'PRD Version 1: Basic MVP specifications',
+      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+    });
+    const firstCallCount = reviewCallCount;
+    assert.strictEqual(firstCallCount, 1, 'Expected 1 researcher review on initial run');
+
+    // Run 2: Exact identical package — should hit cache
+    await engine.executeDeliberation({
+      directive: 'Package cache test directive',
+      productSpecs: 'PRD Version 1: Basic MVP specifications',
+      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+    });
+    assert.strictEqual(reviewCallCount, firstCallCount, 'Expected cached review reuse for exact identical package');
+
+    // Run 3: Changed productSpecs — fingerprint differs, MUST invalidate cache and re-execute
+    await engine.executeDeliberation({
+      directive: 'Package cache test directive',
+      productSpecs: 'PRD Version 2: Major scope expansion with heavy streaming infrastructure',
+      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+    });
+    assert.strictEqual(reviewCallCount, firstCallCount + 1, 'Expected cache miss and re-execution when PRD specs change');
+
+    // Run 4: Changed financial input — fingerprint differs, MUST invalidate cache and re-execute
+    await engine.executeDeliberation({
+      directive: 'Package cache test directive',
+      productSpecs: 'PRD Version 2: Major scope expansion with heavy streaming infrastructure',
+      structuredFinancials: { revenue: 100000, cogs: 12000, computeCost: 6000 },
+    });
+    assert.strictEqual(reviewCallCount, firstCallCount + 2, 'Expected cache miss and re-execution when financials change');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 25: Missing COGS and computeCost Never Default to Zero
+  // ----------------------------------------------------------------------------
+  await runTest('25. Missing COGS and computeCost never default to zero (unverified_pending_founder_review)', () => {
+    // 1. Missing COGS and computeCost
+    const result1 = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: 100000,
+    });
+    assert.strictEqual(result1.state, 'unverified_pending_founder_review');
+    assert.strictEqual(result1.calculatedMarginPercent, undefined);
+    assert(result1.passedDescription?.includes('revenue, COGS, and computeCost must all be explicitly provided'));
+
+    // 2. Missing computeCost only
+    const result2 = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: 100000,
+      cogs: 10000,
+    });
+    assert.strictEqual(result2.state, 'unverified_pending_founder_review');
+    assert.strictEqual(result2.calculatedMarginPercent, undefined);
+
+    // 3. Completely absent structured financials
+    const result3 = ConstitutionalVerifier.verifyFinancialMarginPolicy(undefined);
+    assert.strictEqual(result3.state, 'unverified_pending_founder_review');
+    assert.strictEqual(result3.calculatedMarginPercent, undefined);
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 26: Negative, NaN, Infinity, and Zero Revenue Rejected Deterministically
+  // ----------------------------------------------------------------------------
+  await runTest('26. Negative, NaN, Infinity, and zero revenue rejected deterministically', () => {
+    // 1. Zero revenue
+    const resZero = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: 0,
+      cogs: 100,
+      computeCost: 50,
+    });
+    assert.strictEqual(resZero.state, 'calculated_violation');
+    assert.strictEqual(resZero.passed, false);
+    assert(resZero.errorReason?.includes('Revenue must be a finite positive number (> 0)'));
+
+    // 2. Negative revenue
+    const resNegRev = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: -50000,
+      cogs: 100,
+      computeCost: 50,
+    });
+    assert.strictEqual(resNegRev.state, 'calculated_violation');
+    assert.strictEqual(resNegRev.passed, false);
+
+    // 3. NaN revenue
+    const resNaN = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: NaN,
+      cogs: 100,
+      computeCost: 50,
+    });
+    assert.strictEqual(resNaN.state, 'calculated_violation');
+    assert.strictEqual(resNaN.passed, false);
+
+    // 4. Infinity revenue
+    const resInf = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: Infinity,
+      cogs: 100,
+      computeCost: 50,
+    });
+    assert.strictEqual(resInf.state, 'calculated_violation');
+    assert.strictEqual(resInf.passed, false);
+
+    // 5. Negative COGS
+    const resNegCogs = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: 100000,
+      cogs: -5000,
+      computeCost: 1000,
+    });
+    assert.strictEqual(resNegCogs.state, 'calculated_violation');
+    assert.strictEqual(resNegCogs.passed, false);
+
+    // 6. NaN computeCost
+    const resNaNCompute = ConstitutionalVerifier.verifyFinancialMarginPolicy({
+      revenue: 100000,
+      cogs: 5000,
+      computeCost: NaN,
+    });
+    assert.strictEqual(resNaNCompute.state, 'calculated_violation');
+    assert.strictEqual(resNaNCompute.passed, false);
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 27: Restart with unknown_outcome records refuses blind redispatch
+  // ----------------------------------------------------------------------------
+  await runTest('27. Deliberation with unknown_outcome record refuses blind redispatch', async () => {
+    const unknownKey = `idem-unknown-${Date.now()}`;
+    const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-unknown-${Date.now()}`,
+        idempotencyKey: unknownKey,
+        leaseStatus: 'unknown_outcome',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-unknown',
+        error: 'Prior execution had in-flight orphaned provider call',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, unknownKey, rec);
+    });
+
+    let caughtUnknown = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Testing blind retry prevention',
+        idempotencyKey: unknownKey,
+      });
+    } catch (err: any) {
+      if (err instanceof UnknownExternalResultError || err?.name === 'UnknownExternalResultError') {
+        caughtUnknown = true;
+      }
+    }
+
+    assert(caughtUnknown, 'Expected deliberation on unknown_outcome to refuse blind redispatch');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 28: Cancellation during provider execution marked unconfirmed and outcome unknown
+  // ----------------------------------------------------------------------------
+  await runTest('28. Cancellation during provider execution marked unconfirmed & outcome unknown', async () => {
+    const abortController = new AbortController();
+
+    const mockExecutor = createMockExecutor(async (agentId, context) => {
+      if (agentId === 'researcher') {
+        // Abort while researcher is executing
+        abortController.abort(new Error('Founder cancelled in-flight turn'));
+        // Wait briefly to allow abort event to trigger
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return {};
+    });
+
+    const engine = new ExecutiveCouncilEngine({ executor: mockExecutor });
+
+    const result = await engine.executeDeliberation({
+      directive: 'Directive cancelled during execution',
+      signal: abortController.signal,
+    });
+
+    assert.strictEqual(result.status, 'unknown_outcome');
+    assert(result.orphanedProviderCalls && result.orphanedProviderCalls.length > 0);
+    assert(result.orphanedProviderCalls.some((c) => c.includes('cancellation_unconfirmed_orphaned')));
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 29: Every council status against Founder approval and side-effect authorization
+  // ----------------------------------------------------------------------------
+  await runTest('29. Every council status maps safely to Founder approval & side-effect boundaries', () => {
+    const dummyCritique = {
+      agentId: 'researcher' as AgentRole,
+      agentName: 'Dr. Aris Thorne',
+      role: 'Researcher',
+      status: 'passed' as const,
+      summary: 'Feasible',
+      critiqueMarkdown: '# Feasible',
+      keyFindings: [],
+      risksOrFrictions: [],
+      recommendations: [],
+      provenance: {
+        agentId: 'researcher' as AgentRole,
+        agentName: 'Dr. Aris Thorne',
+        taskId: 't-1',
+        protocolStep: 'review' as const,
+        timestamp: new Date().toISOString(),
+        isVerified: true,
+        evidenceBasis: 'model_reasoning' as const,
+      },
+    };
+
+    const baseResult = {
+      deliberationId: 'd-test',
+      directive: 'Test governance boundaries',
+      round: 1,
+      maxRounds: 1,
+      verdict: 'Test verdict',
+      specialistCritiques: [dummyCritique],
+      frictions: [],
+      cooRuling: 'COO ruling',
+      recommendedNextActions: [],
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      totalCalls: 4,
+      durationMs: 100,
+      verificationPassed: true,
+      financialVerificationState: 'calculated_compliant' as const,
+    };
+
+    // 1. consensus_achieved
+    const govConsensus = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'consensus_achieved',
+    });
+    assert.strictEqual(govConsensus.allowsAutonomousApproval, false);
+    assert.strictEqual(govConsensus.allowsExternalEffects, false); // recommendation only; external actions require explicit approval gate
+    assert.strictEqual(govConsensus.governanceDisposition, 'recommendation_pending_founder');
+
+    // 2. consensus_with_reservations
+    const govReservations = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'consensus_with_reservations',
+    });
+    assert.strictEqual(govReservations.allowsAutonomousApproval, false);
+    assert.strictEqual(govReservations.requiresFounderDecision, true);
+    assert.strictEqual(govReservations.allowsExternalEffects, false);
+    assert.strictEqual(govReservations.governanceDisposition, 'founder_decision_required');
+
+    // 3. frictions_escalated
+    const govFrictions = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'frictions_escalated',
+    });
+    assert.strictEqual(govFrictions.allowsAutonomousApproval, false);
+    assert.strictEqual(govFrictions.requiresFounderDecision, true);
+    assert.strictEqual(govFrictions.allowsExternalEffects, false);
+    assert.strictEqual(govFrictions.governanceDisposition, 'founder_decision_required');
+
+    // 4. degraded
+    const govDegraded = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'degraded',
+    });
+    assert.strictEqual(govDegraded.allowsAutonomousApproval, false);
+    assert.strictEqual(govDegraded.requiresFounderDecision, true);
+    assert.strictEqual(govDegraded.allowsExternalEffects, false);
+    assert.strictEqual(govDegraded.governanceDisposition, 'execution_halted_remediation_required');
+
+    // 5. verification_rejected
+    const govRejected = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'verification_rejected',
+    });
+    assert.strictEqual(govRejected.allowsAutonomousApproval, false);
+    assert.strictEqual(govRejected.allowsExternalEffects, false);
+    assert.strictEqual(govRejected.governanceDisposition, 'execution_halted_remediation_required');
+
+    // 6. unknown_outcome
+    const govUnknown = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'unknown_outcome',
+    });
+    assert.strictEqual(govUnknown.allowsAutonomousApproval, false);
+    assert.strictEqual(govUnknown.allowsExternalEffects, false);
+    assert.strictEqual(govUnknown.governanceDisposition, 'execution_halted_remediation_required');
+
+    // 7. unverified financial state under consensus_achieved
+    const govUnverifiedFin = evaluateCouncilGovernanceBoundary({
+      ...baseResult,
+      status: 'consensus_achieved',
+      financialVerificationState: 'unverified_pending_founder_review',
+    });
+    assert.strictEqual(govUnverifiedFin.allowsAutonomousApproval, false);
+    assert.strictEqual(govUnverifiedFin.requiresFounderDecision, true);
+    assert.strictEqual(govUnverifiedFin.allowsExternalEffects, false); // NEVER allows external effects when margin unverified!
+    assert.strictEqual(govUnverifiedFin.governanceDisposition, 'founder_decision_required');
   });
 
   // ----------------------------------------------------------------------------

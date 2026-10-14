@@ -318,6 +318,7 @@ export interface ContextAssemblyRequest {
     financeAssessment?: string;
     verificationNotes?: string;
     councilDeliberation?: string;
+    reviewFingerprint?: string;
   };
 }
 
