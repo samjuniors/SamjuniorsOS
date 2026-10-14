@@ -1,57 +1,40 @@
 # PROGRESS.md — Running Ledger
 
-> Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
+> Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — Post-merge stabilization (Issue #9 COMPLETE)
+## Now — Phase 2.2.2: Bounded Executive Council Deliberation
 
-**Baseline:** PR #8 merged to `main` on 2026-10-14 (`7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`).
-- M2 Persistence and Recovery plus Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 are integrated into `main`.
-- Stabilization milestone [Issue #9](https://github.com/samjuniors/SamJuniorsOS/issues/9) conducted on `maintenance/m2-decision-stabilization`.
+**Baseline:** `main` at merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42` (PR #10).
 
-**Completed Remediations (Issue #9):**
-1. **Authoritative Decision Persistence Assertion (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
-   - Corrected Test 4 to inspect authoritative `decisions.json` via `fileStore.readCollection('decisions')` instead of legacy `company_state.json`.
-   - Added `DecisionStore.resetInstance()` to test isolation setup.
-   - Result: 8/8 tests passing (verified consecutively across repeated executions).
-2. **Cross-Platform Prisma Test Runner Portability (`tests/helpers/child-runner.ts`):**
-   - Introduced `getPrismaCliPath()` and `runPrismaCommand()` executing `prisma/build/index.js` via `process.execPath`.
-   - Eliminated hardcoded `bunx prisma` assumptions from `tests/sophia/m2_knowledge_persistence.test.ts` and `tests/sophia/m53_authoritative_read_model.test.ts`.
-   - Replaced `execSync('bun run failclosed.ts')` in M5.3 with `spawnTestChild` using `pathToFileURL` for cross-platform ESM dynamic import compatibility on Windows and Node.js.
-3. **DurableFileStore `.initialized` Sidecar Teardown Isolation (`tests/sophia/m2_knowledge_persistence.test.ts`):**
-   - Extended teardown block to inspect and unlink `company_knowledge.json.initialized` in virgin test environments, and restore prior marker state when existing.
-   - Eliminates false-positive `CriticalCollectionCorruptionError` anti-wipe triggers in downstream test suites (e.g. `m4c_query_conditioned_retrieval.test.ts:C14`).
+- **Issue #9 — Post-merge M2/Decision stabilization:** COMPLETE and closed.
+- **PR #10:** merged 2026-10-14; merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`.
+- **Issue #11:** [Phase 2.2.2 — Bounded Executive Council Deliberation](https://github.com/samjuniors/SamJuniorsOS/issues/11).
+- **Active branch:** `phase/2.2.2-council-deliberation`, created from the verified merge commit above.
+- **Founder authorization:** The Founder directed “merge and start next” on 2026-10-14; Phase 2.2.2 is now authorized to begin.
 
-**Verification Battery (Node v24.20.0, Windows x64):**
-- **Affected Suites (Run Individually x2):**
-  - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
-  - `tests/sophia/m2_knowledge_persistence.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
-  - `tests/sophia/m53_authoritative_read_model.test.ts`: **13/13 PASS** (Run 1: 13/13, Run 2: 13/13)
-- **Downstream Guard Isolation:**
-  - `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27/27 PASS** (C14 anti-wipe guard cleanly verified)
-- **Decision Workflow Suites:**
-  - `tests/decision/decision_lifecycle.test.ts`: **18/18 PASS**
-  - `tests/decision/phase2_1_1_hardening.test.ts`: **10/10 PASS**
-  - `tests/decision/phase2_2_1_context.test.ts`: **15/15 PASS**
-  - `tests/decision/workflow_capability_token.test.ts`: **26/26 PASS**
-  - *Decision Total:* **69/69 PASS (100%)**
-- **M2 Persistence & Recovery Suites:**
-  - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20/20 PASS**
-  - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27/27 PASS**
-  - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11/11 PASS**
-  - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6/6 PASS**
-  - *M2 Total:* **64/64 PASS (100%)**
-- **M1 & Sophia Regression Suites:**
-  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 PASS**
-  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 PASS**
-  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 PASS**
-  - `tests/sophia/m3_conversation_convergence.test.ts`: **14/14 PASS**
-  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25/25 PASS**
-  - `tests/sophia/m53_asof_read.test.ts`: **18/18 PASS**
-  - *M1/Sophia Total:* **140/140 PASS (100%)**
-- **Production Build:**
-  - `next build` (single-drive mirror): **Exit Code 0** (31/31 static routes generated, 0 errors).
+### Repository-grounded starting point
 
-**Next Step:** Founder review and PR submission against `main`. Phase 2.2.2 remains on hold until merge.
+1. `src/lib/server/orchestration/orchestrator.ts` currently performs a mostly sequential COO → Research → Product → Finance → deterministic verification → COO synthesis flow. Its Council Consolidation Checkpoint is explicitly procedural and does not execute cross-agent peer review.
+2. `src/app/api/agent-collab/route.ts` currently makes one model call to produce a structured collaboration transcript; its provider-failure path returns an honest degraded notice with no fabricated subtasks.
+3. `src/lib/server/workflow/runtime.ts` and `workflow/store.ts` already provide workflow state transitions, dependency/readiness handling, authorization-gate integration, and local/authoritative persistence modes.
+4. Existing abstractions to reuse/evaluate: `ServerAgentExecutor`, `AgentRunStore`, `DecisionStore`, `DecisionContextProvider`, `ConstitutionalVerifier`, `WorkflowRuntime`, and `SideEffectAuthorizationGate`.
+5. No first-class Artifact/Blackboard module was found in the current repository tree. Older audit documents describe target architecture and must not be mistaken for implemented code.
+
+### Phase 2.2.2 guardrails
+
+- Preserve one Sophia as supervisor; specialists remain bounded capabilities.
+- Use bounded deliberation with deterministic stop/escalation rules; no peer-to-peer swarm or unbounded loops.
+- Keep independent deterministic verification distinct from LLM review.
+- Preserve authenticated Founder authorization, approval payload binding, audit, idempotency, and human override.
+- Extend existing orchestration/workflow abstractions; do not create a second engine.
+- No new DB schema, Artifact/Blackboard subsystem, scheduler, provider, framework, or production deployment unless the repository audit demonstrates necessity and an ADR justifies it.
+- First deliverable is a repository-grounded call-graph/gap audit and minimal council protocol, then the smallest safe vertical implementation.
+
+### Verification boundary
+
+Issue #9's Windows/Node test totals and production build were supplied by the branch author and recorded in PR #10. They were not independently rerun in this review. No GitHub Actions runs were returned for PR #10's head commit. Do not upgrade those results to independently verified evidence.
+
+**Next action:** Complete Issue #11's code-grounded audit and protocol design on `phase/2.2.2-council-deliberation`; implement only after the design is consistent with current code and security boundaries.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
