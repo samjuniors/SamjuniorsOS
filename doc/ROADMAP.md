@@ -1,5 +1,5 @@
 # ROADMAP.md — SamJuniorsOS Phases
-**Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
+**Status:** Current-state status updated 2026-10-15; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS (verified 2026-10-15):**
 - Phase 2.2.2 (Bounded Executive Council Deliberation) is complete. PR #12 is merged; merge commit: `edca06919b17eaa6737afba23b140b8abb3a82e5`. Issue #11 is closed.
@@ -21,18 +21,18 @@ Complete Issue #13 on its dedicated branch. Produce the domain/store and mode ma
 
 ## FOUNDATION (v1 — the core execution loop must be trustworthy before anything else matters)
 
-Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
+Historical baseline as of `32a6f38` — implementation mechanisms reported as **IMPLEMENTED**. This is not current deployment verification; Phase 2.3A is re-auditing persistence, provenance and authority claims.
 
 | Item | Status |
 |---|---|
 | Server-established Founder authority on all privileged routes | IMPLEMENTED + WIRED — authenticated sessions derived from Clerk/dev secret; strict allowlist enforced in decideApproval; all privileged routes guarded |
-| Workflow/approval/audit state survives the actual deployment target | IMPLEMENTED + WIRED — atomic DurableFileStore + PostgreSQL schema; single-instance container constraint (min=1, max=1) guarded by InstanceConcurrencyGuard; append-only audit trail guarded in production |
+| Workflow/approval/audit persistence mechanisms | IMPLEMENTED paths exist — DurableFileStore and Prisma stores are present. Actual deployment durability is NOT VERIFIED: the checked-in schema is SQLite and deployed host/provider/storage semantics are unknown (Issue #13) |
 | Approval bound to exact action/target/payload | IMPLEMENTED + WIRED — cryptographic SHA-256 canonical hashing ({ actionName, target, payload }); verifyApprovalPayloadBinding fails closed on consequential side-effects |
 | Deterministic verification gate rejecting bad artifacts | IMPLEMENTED + WIRED — ConstitutionalVerifier.verify() deterministically halts orchestration and marks status: failed / verification_rejected on invariant breaches |
-| Synthetic data never labeled as verified fact | IMPLEMENTED + WIRED — state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory() |
+| Synthetic data never labeled as verified fact | PARTIALLY IMPLEMENTED — explicit provenance exists in several paths, but CompanyStateStore.queryState seed/current-truth behavior and INITIAL_RESEARCH confidence labels remain under audit (Issue #13) |
 | Side-effect idempotency / unknown-outcome handling | IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline |
 
-**Foundation requirements verified with 100% test pass across reference integration, milestone hardening, authorization, communication, and security suites.**
+**Historical verification statement:** prior engineering reports recorded passing targeted suites for this baseline. These are not a fresh test run on current `main`, do not establish PostgreSQL or deployed-storage behavior, and do not close the Phase 2.3A findings.
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
