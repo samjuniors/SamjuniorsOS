@@ -53,7 +53,10 @@ import {
   UnknownExternalResultError,
   IdempotencyPayloadMismatchError,
 } from '@/lib/server/idempotency/state-machine';
-import { CouncilDeliberationRecord } from '@/types/council';
+import {
+  CouncilDeliberationRecord,
+  computeCouncilFingerprint,
+} from '@/types/council';
 
 interface TestResult {
   name: string;
@@ -1302,11 +1305,19 @@ async function main() {
   });
 
   // ----------------------------------------------------------------------------
-  // TEST 30: Durable Idempotency Recovery (reconcileUnknown & reconcileUnknownDeliberation)
+  // TEST 30: Durable Idempotency Recovery (reconcileUnknownDeliberation)
   // ----------------------------------------------------------------------------
-  await runTest('30. Durable Idempotency Recovery — reconcileUnknownDeliberation and reconcileUnknown: true', async () => {
+  await runTest('30. Durable Idempotency Recovery — reconcileUnknownDeliberation unlocks redispatch with non-empty reason', async () => {
     const recoveryKey = `idem-recovery-${Date.now()}`;
     const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+
+    const recoveryDirective = 'Directive needing reconciliation';
+    const financials = { revenue: 100000, cogs: 10000, computeCost: 5000 };
+    const fp = computeCouncilFingerprint({
+      directive: recoveryDirective,
+      idempotencyKey: recoveryKey,
+      structuredFinancials: financials,
+    });
 
     // Step 1: Create an unknown_outcome record in store
     DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
@@ -1317,18 +1328,19 @@ async function main() {
         claimedByPid: process.pid,
         claimedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 86400_000).toISOString(),
-        fingerprint: 'fp-recovery-target',
+        fingerprint: fp,
         error: 'Prior execution had orphaned inference calls',
       };
       DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, recoveryKey, rec);
     });
 
-    // Step 2: Unreconciled call must throw UnknownExternalResultError
+    // Step 2: Unreconciled call must throw UnknownExternalResultError (no boolean bypass permitted)
     let threwWithoutReconcile = false;
     try {
       await engine.executeDeliberation({
-        directive: 'Directive needing reconciliation',
+        directive: recoveryDirective,
         idempotencyKey: recoveryKey,
+        structuredFinancials: financials,
       });
     } catch (err: any) {
       if (err instanceof UnknownExternalResultError || err?.name === 'UnknownExternalResultError') {
@@ -1337,7 +1349,7 @@ async function main() {
     }
     assert(threwWithoutReconcile, 'Expected unreconciled execution to fail closed with UnknownExternalResultError');
 
-    // Step 3: Reconcile via ExecutiveCouncilEngine.reconcileUnknownDeliberation
+    // Step 3: Reconcile via ExecutiveCouncilEngine.reconcileUnknownDeliberation requiring non-empty reason
     const reconciled = ExecutiveCouncilEngine.reconcileUnknownDeliberation(
       recoveryKey,
       'Provider logs inspected: inference aborted without tokens billed'
@@ -1346,13 +1358,12 @@ async function main() {
     assert(reconciled.reconciledAt, 'Expected reconciledAt timestamp');
     assert.strictEqual(reconciled.reconciliationReason, 'Provider logs inspected: inference aborted without tokens billed');
 
-    // Step 4: Call with reconcileUnknown: true executes fresh deliberation and succeeds
+    // Step 4: Redispatch executes fresh deliberation and succeeds without throwing UnknownExternalResultError
     const recoveredResult = await engine.executeDeliberation({
-      directive: 'Directive needing reconciliation',
+      directive: recoveryDirective,
       idempotencyKey: recoveryKey,
-      reconcileUnknown: true,
       forceFresh: true,
-      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+      structuredFinancials: financials,
     });
     assert.strictEqual(recoveredResult.status, 'consensus_achieved');
     assert.strictEqual(recoveredResult.verificationPassed, true);
@@ -1428,6 +1439,12 @@ async function main() {
         clobberBlocked = true;
       }
     }
+
+    // Reconcile must also be rejected on active in-progress lease
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(forceFreshKey, 'Attempting to hijack active lease'),
+      /current leaseStatus is 'in_progress', but only 'unknown_outcome' records can be reconciled/
+    );
 
     slowSpecialistResolve!();
     await req1Promise;
@@ -1505,6 +1522,111 @@ async function main() {
     // Deliverable formatting must include cache badge
     const deliverableMd = ExecutiveCouncilEngine.formatDeliberationDeliverable(result2);
     assert(deliverableMd.includes('[CACHED from'), 'Deliverable markdown must display cached badge');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 35: reconcileUnknownDeliberation Strictly Rejects Invalid Transitions
+  // ----------------------------------------------------------------------------
+  await runTest('35. reconcileUnknownDeliberation strictly rejects invalid transitions (active, completed, degraded, missing reason)', async () => {
+    const keyPrefix = `reconcile-guard-${Date.now()}`;
+
+    // Case 1: Non-existent key
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(`${keyPrefix}-nonexistent`, 'Valid reason'),
+      /Cannot reconcile non-existent deliberation record/
+    );
+
+    // Case 2: Missing or whitespace reason
+    const unkKey = `${keyPrefix}-unk`;
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-${Date.now()}-1`,
+        idempotencyKey: unkKey,
+        leaseStatus: 'unknown_outcome',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-test-35-unk',
+        error: 'Prior execution had orphaned inference calls',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, unkKey, rec);
+    });
+
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(unkKey, ''),
+      /reconciliation reason is required/
+    );
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(unkKey, '   '),
+      /reconciliation reason is required/
+    );
+
+    // Case 3: in_progress lease cannot be transitioned/overwritten by reconcile
+    const inProgKey = `${keyPrefix}-inprog`;
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-${Date.now()}-2`,
+        idempotencyKey: inProgKey,
+        leaseStatus: 'in_progress',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-test-35-inprog',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, inProgKey, rec);
+    });
+
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(inProgKey, 'Trying to hijack in_progress'),
+      /current leaseStatus is 'in_progress', but only 'unknown_outcome' records can be reconciled/
+    );
+
+    // Verify in_progress record was NOT modified
+    const unchangedInProg = DurableFileStore.getInstance().getItem<CouncilDeliberationRecord>(
+      COUNCIL_DELIBERATIONS_COLLECTION,
+      inProgKey
+    );
+    assert.strictEqual(unchangedInProg?.leaseStatus, 'in_progress');
+
+    // Case 4: completed record cannot be transitioned/overwritten by reconcile
+    const completedKey = `${keyPrefix}-completed`;
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-${Date.now()}-3`,
+        idempotencyKey: completedKey,
+        leaseStatus: 'completed',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-test-35-completed',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, completedKey, rec);
+    });
+
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(completedKey, 'Trying to hijack completed'),
+      /current leaseStatus is 'completed', but only 'unknown_outcome' records can be reconciled/
+    );
+
+    // Case 5: degraded record cannot be transitioned/overwritten by reconcile
+    const degradedKey = `${keyPrefix}-degraded`;
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-${Date.now()}-4`,
+        idempotencyKey: degradedKey,
+        leaseStatus: 'degraded',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-test-35-degraded',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, degradedKey, rec);
+    });
+
+    assert.throws(
+      () => ExecutiveCouncilEngine.reconcileUnknownDeliberation(degradedKey, 'Trying to hijack degraded'),
+      /current leaseStatus is 'degraded', but only 'unknown_outcome' records can be reconciled/
+    );
   });
 
   // ----------------------------------------------------------------------------

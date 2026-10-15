@@ -159,42 +159,23 @@ export class ExecutiveCouncilEngine {
               throw new UnknownExternalResultError(idempotencyKey, rec.id, unknownRec.error);
             }
 
-            // Unknown Outcome: Prohibits blind redispatch unless explicitly reconciled
+            // Unknown Outcome: Prohibits blind redispatch.
+            // Requires explicit operator reconciliation via ExecutiveCouncilEngine.reconcileUnknownDeliberation() before redispatch.
             if (leaseStatus === 'unknown_outcome') {
-              if (input.reconcileUnknown) {
-                const rec = isRecord ? (existing as CouncilDeliberationRecord) : undefined;
-                const recId = rec?.id || deliberationId;
-                const reconciledRec: CouncilDeliberationRecord = {
-                  id: recId,
-                  deliberationId: recId,
-                  idempotencyKey,
-                  leaseStatus: 'degraded',
-                  claimedByPid: process.pid,
-                  claimedAt: nowIso,
-                  expiresAt: new Date(Date.now() + 86400_000).toISOString(),
-                  fingerprint: canonicalFingerprint,
-                  reconciledAt: nowIso,
-                  reconciliationReason: 'Explicitly reconciled via input.reconcileUnknown',
-                  error: `[Reconciled from unknown_outcome: Explicitly acknowledged] ${rec?.error || ''}`.trim(),
-                };
-                DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, reconciledRec);
-                DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, recId, reconciledRec);
-              } else {
-                const err = isRecord ? (existing as CouncilDeliberationRecord).error : undefined;
-                const existingId = isRecord
-                  ? (existing as CouncilDeliberationRecord).id
-                  : (existing as CouncilDeliberationResult).deliberationId;
-                throw new UnknownExternalResultError(
-                  idempotencyKey,
-                  existingId || deliberationId,
-                  err || 'Council deliberation terminated in an uncertain provider outcome state. Blind retry prohibited.'
-                );
-              }
+              const err = isRecord ? (existing as CouncilDeliberationRecord).error : undefined;
+              const existingId = isRecord
+                ? (existing as CouncilDeliberationRecord).id
+                : (existing as CouncilDeliberationResult).deliberationId;
+              throw new UnknownExternalResultError(
+                idempotencyKey,
+                existingId || deliberationId,
+                err || 'Council deliberation terminated in an uncertain provider outcome state. Blind retry prohibited.'
+              );
             }
 
-            // Enforce cryptographic payload binding for completed or degraded results (unless actively reconciled):
-            // The same key cannot be reused with an altered payload without explicit reconciliation
-            if (!input.reconcileUnknown && recordFingerprint && recordFingerprint !== canonicalFingerprint) {
+            // Enforce cryptographic payload binding for completed or degraded results:
+            // The same key cannot be reused with an altered payload
+            if (recordFingerprint && recordFingerprint !== canonicalFingerprint) {
               throw new IdempotencyPayloadMismatchError(
                 idempotencyKey,
                 recordFingerprint,
@@ -1136,6 +1117,8 @@ Respond with valid JSON matching:
   /**
    * Authoritatively reconciles an unknown_outcome deliberation record in the DurableFileStore.
    * Allows operator/Founder recovery after manual inspection of external provider logs.
+   * Strictly enforces that ONLY records currently in unknown_outcome state can be transitioned.
+   * Active (in_progress), completed, and already degraded records are never overwritten.
    */
   public static reconcileUnknownDeliberation(
     idempotencyKey: string,
@@ -1152,7 +1135,7 @@ Respond with valid JSON matching:
       COUNCIL_DELIBERATIONS_COLLECTION,
       () => {
         const store = DurableFileStore.getInstance();
-        const existing = store.getItem<CouncilDeliberationRecord>(
+        const existing = store.getItem<CouncilDeliberationRecord | CouncilDeliberationResult>(
           COUNCIL_DELIBERATIONS_COLLECTION,
           idempotencyKey
         );
@@ -1161,18 +1144,35 @@ Respond with valid JSON matching:
           throw new Error(`Cannot reconcile non-existent deliberation record for key '${idempotencyKey}'`);
         }
 
+        const isRecord = 'leaseStatus' in existing;
+        const currentLeaseStatus: CouncilLeaseStatus = isRecord
+          ? (existing as CouncilDeliberationRecord).leaseStatus
+          : (existing as CouncilDeliberationResult).status === 'degraded'
+          ? 'degraded'
+          : (existing as CouncilDeliberationResult).status === 'unknown_outcome'
+          ? 'unknown_outcome'
+          : 'completed';
+
+        if (currentLeaseStatus !== 'unknown_outcome') {
+          throw new Error(
+            `Cannot reconcile deliberation record for key '${idempotencyKey}': current leaseStatus is '${currentLeaseStatus}', but only 'unknown_outcome' records can be reconciled.`
+          );
+        }
+
+        const trimmedReason = reason.trim();
         const nowIso = new Date().toISOString();
+        const existingRecord = existing as CouncilDeliberationRecord;
         const updated: CouncilDeliberationRecord = {
-          ...existing,
+          ...existingRecord,
           leaseStatus: 'degraded',
           reconciledAt: nowIso,
-          reconciliationReason: reason,
-          error: `[Reconciled from unknown_outcome: ${reason}] ${existing.error || ''}`.trim(),
+          reconciliationReason: trimmedReason,
+          error: `[Reconciled from unknown_outcome: ${trimmedReason}] ${existingRecord.error || ''}`.trim(),
         };
 
         store.saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, updated);
-        if (existing.id && existing.id !== idempotencyKey) {
-          store.saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, existing.id, updated);
+        if (existingRecord.id && existingRecord.id !== idempotencyKey) {
+          store.saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, existingRecord.id, updated);
         }
 
         return updated;

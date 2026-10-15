@@ -191,7 +191,6 @@ export interface CouncilDeliberationInput {
   structuredFinancials?: StructuredFinancialInput;
   idempotencyKey?: string;
   forceFresh?: boolean;
-  reconcileUnknown?: boolean;
 }
 
 export const SPECIALIST_CONTRACT_VERSION = 'v2.2.2';
