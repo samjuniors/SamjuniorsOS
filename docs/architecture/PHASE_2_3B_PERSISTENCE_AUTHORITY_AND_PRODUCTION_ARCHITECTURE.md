@@ -1,6 +1,6 @@
 # PHASE 2.3B — Persistence Authority & Production Architecture Design
 
-**Status:** DRAFT — REVISED FOLLOWING FOUNDER REVIEW (PENDING APPROVAL)  
+**Status:** APPROVED DESIGN BASELINE — IMPLEMENTATION NOT AUTHORIZED  
 **Tracking Issue:** [#15](https://github.com/samjuniors/SamJuniorsOS/issues/15)  
 **Document Type:** Architectural Decision Record & Production Specification  
 **Branch:** `phase/2.3b-persistence-authority-design`  
@@ -944,19 +944,19 @@ The Phase 2.3B revision is complete only when:
 2. **Founder Target Infrastructure Preference:** Selection between Single-Host Container (Option A), Managed Cloud (Option B), Serverless Hybrid (Option C), or Self-Hosted VPS (Option D).
 3. **Target Recovery Metrics:** Target RPO and RTO thresholds, backup retention schedules, and operational budget limits.
 
-### 17.3 What Can Be Approved Now
-- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, enforceable write freeze, provider-neutral durable buffering, and pre/post-write external side-effect rollback architecture.
-- **The Staged Roadmap:** Maintaining Phase 2.3B as draft specification and gating Phase 2.3C behind explicit founder sign-off.
+### 17.3 Founder Approval & Design Baseline
+- **Approved design baseline:** The revised 17-section specification was merged to `main` through [PR #16](https://github.com/samjuniors/SamJuniorsOS/pull/16) (merge commit `b8afe455086ab044088079ef9081dd476bc457d6`). Approval covers the design baseline only; it does NOT authorize PostgreSQL provisioning, schema changes, migrations, queue-provider selection, production cutover, or Role Brains.
+- **The Staged Roadmap:** Phase 2.3B is complete as a design deliverable. Phase 2.3C remains proposed and gated behind separate founder decisions and explicit implementation authorization.
 
 ### 17.4 What Cannot Yet Be Approved
 - **PostgreSQL Provisioning or Schema Migrations (Phase 2.3C):** Implementation must remain paused until the founder selects the hosting model and database provider.
 - **Production Cutover Execution:** Cannot be authorized until migration extraction scripts are rehearsed and verified with a reconciliation report.
 - **Role Brains Implementation:** Strictly deferred until Company Brain persistence authority is operational and verified.
 
-### 17.5 Evidence Required Before Implementation Begins
+### 17.5 Decisions & Evidence Required Before Implementation Begins
 1. Founder decision on Target Hosting Architecture (Option A, B, C, or D).
 2. Provisioned `DATABASE_URL` (if PostgreSQL option selected) or persistent volume configuration (if SQLite option selected).
-3. Founder review and formal approval of this revised Phase 2.3B specification.
+3. Explicit founder authorization for Phase 2.3C after the hosting/provider, RPO/RTO, backup retention, operational budget, and recovery requirements are decided.
 
 ---
-**END OF SPECIFICATION — AWAITING FOUNDER REVIEW**
+**END OF APPROVED DESIGN BASELINE — IMPLEMENTATION NOT AUTHORIZED**
