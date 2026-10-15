@@ -185,6 +185,31 @@ The audit branch is updating the roadmap/progress status to the verified 2026-10
 
 ---
 
+## 6.1 Corrections against historical memory audit
+
+The 2026-09-21 MEMORY_RECONCILIATION_REPORT is a dated snapshot, not a current source of truth. Two notable corrections from current source:
+
+- CompanyKnowledgeStore is no longer memory-only. Local mode persists to DurableFileStore with a best-effort Prisma mirror; authoritative mode uses Prisma. M5.2 also corrected queryKnowledge() to obtain candidates via getAllKnowledge(), so authoritative retrieval reads the database rather than a stale process cache.
+- CompanyContextProvider.getCanonicalContext() now reads operational initiatives/decisions, company memories and agent runs from their respective store abstractions. Its research-intelligence arrays remain process-local. The old report's description of CompanyContextProvider reading operational constants is no longer current.
+
+These corrections do not resolve the separate authority gaps described below.
+
+## 6.2 Existing test and CI coverage (source inventory only)
+
+No tests were executed during this audit. The following describes test intent and code paths from inspected test files, not fresh pass results.
+
+| Domain | Existing test evidence | Coverage boundary / gap |
+|---|---|---|
+| CompanyStateStore | tests/sophia/m1_canonical_state_authority.test.ts checks seed baseline, local state updates reaching Sophia context and CompanyContextProvider | Exercises local/test behavior; does not establish authoritative-mode parity or employee-context queryState correctness |
+| CompanyMemoryStore | tests/sophia/m1_batch1_memory_authority.test.ts checks DATABASE_MODE parsing, getAllMemories routing, strict local file failure behavior and deduplication | The inspected suite does not create a throwaway authoritative database to exercise CompanyMemoryStore's Prisma branch |
+| CompanyKnowledgeStore | tests/sophia/m2_knowledge_persistence.test.ts checks local restart durability, seed preservation, poisoned-content labels and authoritative mode using a throwaway SQLite DB | Good dual-mode coverage for this domain; it is not a PostgreSQL-server test |
+| EpistemicClaimStore | tests/sophia/m53_authoritative_read_model.test.ts exercises authoritative Prisma branches against a throwaway SQLite DB, including read modes, supersession, dependency relations and fail-closed database failure; tests/api/epistemic.auth.test.ts checks route auth and lifecycle contracts | No actual PostgreSQL server is exercised |
+| DecisionStore | tests/decision/decision_lifecycle.test.ts checks lifecycle, locking, idempotency, approval binding and local file restart recovery | No Prisma Decision model exists in the current schema; the store is file-backed and has no authoritative database implementation |
+| Workflow / approval / audit / AgentRun | Several local recovery, workflow and route-auth suites exist; source has mode-aware Prisma branches for multiple stores | The inspected test inventory did not establish a complete authoritative-mode, restart and cross-process matrix for these domains |
+| CI | .github/workflows contains one workflow, sophia-response-path-regression.yml | Its path filters cover Sophia response/voice files and selected tests, not the CompanyStateStore, DecisionStore, knowledge, memory, epistemic, workflow or approval persistence paths. Changes to these areas do not currently trigger this workflow by their own paths |
+
+The latest inspected main commit (99441fd27ac927554028a41779a19aa86f4c67ce) returned no GitHub Actions workflow runs. This is not a test failure; it means no run evidence was available for that commit. The only inspected workflow is path-filtered, and the latest commit changed repository hygiene rather than one of its watched paths.
+
 ## 7. Prioritized findings
 
 Severity here describes architectural risk based on source inspection, not a confirmed production incident.
@@ -199,11 +224,22 @@ Severity here describes architectural risk based on source inspection, not a con
 
 ### P1 — DecisionStore is not in the Prisma authority path
 
+**Schema evidence:** the current Prisma schema has no Decision/DecisionRecord model at all. The decision lifecycle therefore cannot currently be moved into authoritative Prisma mode by toggling DATABASE_MODE; doing so requires an explicit schema and migration decision, not just switching an existing store implementation.
+
+
 **Evidence:** DecisionStore reads/writes the durable file collection directly; DecisionContextProvider and CompanyStateStore decision reads depend on it.
 
 **Failure mode:** decision commitments may not share the same persistence guarantees as other Prisma-backed domains. In a runtime with ephemeral local disk, the decision ledger may not survive replacement.
 
 **Action:** after deployment decision, select one authoritative persistence path for decisions. Preserve the existing lifecycle, payload-binding, idempotency, migration and audit semantics. Do not duplicate-write indefinitely to two “authorities.”
+
+### P1 — Specialist context retrieval bypasses authoritative CompanyStateStore getters
+
+**Evidence:** both ContextualRetrievalService.retrieveContextForTask() and ContextAssemblyService.assembleContextForTask() call CompanyStateStore.queryState(). The current queryState() implementation iterates this.initiatives, this.products, this.customers and this.financialModel directly. In contrast, getInitiatives() and getFinancialMetrics() have separate authoritative-mode Prisma reads. queryState() does not call those getters or load a database snapshot.
+
+**Failure mode:** in authoritative mode, Sophia's dedicated context assembler can read selected Prisma-backed values through getInitiatives()/getFinancialMetrics(), while specialist task context can read the process-local/file-hydrated arrays instead. Updates written to the authoritative CompanyState row can therefore be missing from employee task context. Initial initiatives may also be presented with epistemicType current_truth despite originating from code-seeded in-memory state; product/customer/finance samples are marked synthetic in some result branches, but provenance must remain explicit through all formatting paths.
+
+**Action:** make queryState() derive its candidate pool from the same mode-aware canonical reads used by getters, and preserve field-level provenance. Add authoritative-mode tests proving DB updates are visible in employee context, missing records do not silently reappear from stale seeds, and synthetic fixtures never acquire current-truth labels. Do not implement until the audit confirms expected seed/bootstrap semantics.
 
 ### P1 — CompanyStateStore has field-level authority differences and a sample fallback
 
@@ -212,6 +248,14 @@ Severity here describes architectural risk based on source inspection, not a con
 **Failure mode:** a caller may receive plausible sample state where it expected absent/unavailable authoritative state. A projection may appear current despite being backed by bootstrap values.
 
 **Action:** classify each field as canonical persisted state, derived projection, seed/reference fixture, or unavailable. In authoritative mode, missing live values should be explicit, not silently replaced with a simulated value unless the response remains clearly marked synthetic.
+
+### P1 — Partial financial updates can overwrite authoritative values with stale in-memory defaults
+
+**Evidence:** the authoritative branch of CompanyStateStore.updateFinancialMetrics() builds nextModel from this.financialModel plus the patch, then upserts that whole object. It does not first read the existing CompanyState.financialModel row. The constructor initializes this.financialModel from SAMPLE_FINANCIAL_MODEL and its hydration method reads DurableFileStore, not Prisma.
+
+**Failure mode:** after a process starts with an empty/stale local file cache, a partial update (for example, only MRR) can write the seeded/default values for the other financial fields over values already stored in the authoritative database.
+
+**Action:** in authoritative mode, read the current row inside a transaction and merge the patch against the persisted JSON value, with a deliberate create/default policy when no row exists. Add a regression test with non-default persisted fields followed by a partial update and assert all untouched fields survive. This is a source-level risk requiring a targeted fix, not a confirmed production data-loss incident.
 
 ### P1 — Company Brain is currently a composition, not one enforced read/write boundary
 
