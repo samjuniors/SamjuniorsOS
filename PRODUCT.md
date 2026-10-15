@@ -1,5 +1,5 @@
 # PRODUCT.md — Product Definition
-**Status:** Reconciled against the repository working tree (Phase 3.4 runtime wiring, 2026-09-11) and founder-locked strategic decisions. Supersedes all prior versions.
+**Status:** Product boundary and strategic intent remain the founder-approved definition. Implementation-state assertions below were last reconciled against a 2026-09-11 working tree and are historical snapshots, not current verification. Revalidate them against current source and docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md before relying on implementation claims.
 
 ---
 
