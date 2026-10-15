@@ -470,7 +470,7 @@ To transition from the current SQLite/`.data` hybrid to the production database 
 
 ```
 ┌─────────────────────────────────┐
-│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Enforceable write freeze across all 6 write paths, drain in-flight, capture hashes
+│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Enforceable write freeze across all 7 write paths, drain in-flight, capture hashes
 └────────────────┬────────────────┘
                  │
                  ▼
@@ -498,32 +498,112 @@ To transition from the current SQLite/`.data` hybrid to the production database 
 
 A write freeze cannot simply rely on stopping workers, pausing WebSockets, or returning HTTP 503; such measures fail to guarantee that all concurrent writes have stopped or that all external events will be retried. The write freeze must be centrally enforced at the domain write boundary.
 
-#### 1.1 Centrally Enforced Write Freeze at the Application Boundary
-1. **Global Maintenance Lock:** The application runtime engages a centralized `MaintenanceLock` at the core domain store boundary ([`DurableFileStore`](src/lib/server/persistence/durable-file-store.ts), [`DecisionStore`](src/lib/server/decision/store.ts), [`ApprovalStore`](src/lib/server/authorization/approval-store.ts), [`WorkflowStore`](src/lib/server/workflow/store.ts), [`EpistemicClaimStore`](src/lib/server/epistemic/claim-store.ts)). Any mutation attempted while this lock is active immediately throws `MaintenanceModeError` (returning HTTP 503 with `Retry-After: 300`).
-2. **Explicit Inventory of Every Write Path Enforced:**
-   - **Path 1 (Public & Privileged REST APIs):** `/api/orchestrate`, `/api/decision/*`, `/api/workflow/*`, `/api/approvals/*`, `/api/sophia/*`, `/api/agents/*`.
-   - **Path 2 (Scheduled Work & Heartbeats):** Recurring automation loops in `ScheduledWorkEngine` and heartbeat logs in `SchedulerHeartbeat`.
-   - **Path 3 (Autonomous Workers & Council):** `ServerAgentExecutor` tool-execution side effects and `ExecutiveCouncilEngine` deliberation writes.
-   - **Path 4 (External Inbound Webhooks):** Stripe subscription/charge events, Resend email transit status, and GitHub webhook notifications.
-   - **Path 5 (Administrative & Startup Operations):** Seed bootstrap routines (`ensureInitialized()`, `seedInitialDecisionsUnderLock()`), CLI scripts, and background migrations.
-   - **Path 6 (Live Ephemeral Transport):** WebSocket Companion messages triggering cognitive turns, memory updates, or workflow state mutations.
-3. **Draining & Accounting for In-Flight Operations:**
-   - A grace drain window of 30 seconds is initiated upon freeze engagement.
-   - The system monitors active lock holders (`.lock` files, `DistributedLease` records, step claims) until active in-flight worker count reaches exactly zero.
-   - Any worker failing to terminate before the 30-second deadline is terminated fail-closed (`status = 'halted'`), transactions rolled back, and recorded in the migration drain manifest.
-4. **Durable Webhook & Event Ingress Buffering (Provider Replay Realities):**
-   - *Provider-Specific Realities:* Universal vendor retry guarantees must not be assumed without evidence:
-     - **Stripe:** Formally guarantees webhook retries with exponential backoff over a 72-hour window on HTTP 5xx responses.
-     - **GitHub:** Retries webhooks up to a bounded count, but prolonged outages can drop events, requiring manual re-delivery via GitHub App UI ("Recent Deliveries" -> "Redeliver").
-     - **Resend:** Webhook retry SLAs depend on gateway endpoint availability and must not be assumed without verified documentation.
-   - *Durable Ingress Buffering:* An edge proxy queue (e.g. Cloudflare Worker with durable KV queue) must buffer incoming raw webhook payloads during the freeze rather than relying exclusively on vendor retries.
-5. **Post-Cutover Idempotent Replay & Unknown-Status Policy:**
-   - Buffered events are replayed through `IdempotencyStore` / Transactional Inbox using their original external `eventId` once PostgreSQL authority is established.
-   - For any external event whose delivery status remains unknown or unacknowledged, an automated provider status query (Stripe Event API, GitHub Issue/PR API) verifies external state before resuming processing.
-6. **Cryptographic Source Snapshot & Manifest:**
-   - Once all write paths are verified frozen and in-flight workers drained to zero:
-   - Capture SHA-256 checksums and record counts for all source files: `.data/*.json` collections (`decisions.json`, `conversations.json`, `chat_messages.json`, `sophia_memories.json`, `council_deliberations.json`) and SQLite (`db/custom.db`).
-   - Emit a signed `migration-snapshot-manifest.json`.
+#### 1.1 Architectural Limitation of Current Repository State
+In the active repository codebase, persistence is split between local `.data/*.json` files and SQLite (`custom.db`). Locking relies on single-host PID checks (`process.kill(pid, 0)`). **There is currently no shared distributed lock manager, no global fencing token mechanism, and no cross-process write gate in active code.** Merely inspecting `.lock` files or setting an in-memory variable cannot guarantee that another worker, process, or CLI script is not mutating state. Therefore, an explicit shared fencing and draining mechanism must be established before migration can proceed.
+
+#### 1.2 Centrally Enforced Write Freeze at the Application Boundary
+1. **Authoritative Maintenance Fencing Record:** A centralized fencing record (`maintenance_state = active`, `fencing_token = N`) must be evaluated at every authoritative mutation boundary across all running application instances. Any write attempt presenting an outdated fencing token or initiated while maintenance is active throws `MaintenanceModeError` (returning HTTP 503 with `Retry-After: 300`).
+2. **Complete Inventory of Mutation Entry Points & Owning Domain Stores (7 Entry Points):**
+   - **Entry Point 1 (Public & Privileged REST APIs):** `/api/orchestrate`, `/api/decision/*`, `/api/workflow/*`, `/api/approvals/*`, `/api/sophia/*`, `/api/agents/*`, `/api/settings/*` -> Owned by `WorkflowStore`, `DecisionStore`, `ApprovalStore`, `AgentRunStore`.
+   - **Entry Point 2 (Scheduled Work Engine & Heartbeats):** Recurring automation loops in `ScheduledWorkEngine` and heartbeat logs in `SchedulerHeartbeat` -> Owned by `ScheduledWorkStore`.
+   - **Entry Point 3 (Autonomous Workers & Tool Side Effects):** `ServerAgentExecutor` tool mutations and `ConstitutionalVerifier` checks -> Owned by `AgentRunStore`, `AuditStore`.
+   - **Entry Point 4 (Executive Council Deliberations):** `ExecutiveCouncilEngine` peer review and mediation writes -> Owned by `CouncilDeliberation` in `DurableFileStore`.
+   - **Entry Point 5 (Inbound External Webhooks):** Stripe subscription/charge events, Resend email status, and GitHub webhook notifications -> Owned by `IdempotencyStore`, `AuditStore`, `CommunicationStore`.
+   - **Entry Point 6 (Live WebSocket Companion):** `/api/live/*`, WebSockets on Port 3001 triggering cognitive turns, memory updates, or workflow state mutations -> Owned by `ConversationStore`, `PersonalMemoryStore`, `LiveTicketStore`.
+   - **Entry Point 7 (Administrative & Startup Operations):** Startup seeding routines (`ensureInitialized()`, `seedInitialDecisionsUnderLock()`), database push/migrations, and CLI scripts (`scripts/reconcile-tombstones.ts`) -> Owned by `DecisionStore`, `CompanyStateStore`.
+3. **How New Work Is Prevented from Starting:**
+   - **Reverse Proxy / Edge Layer:** Intercepts all inbound HTTP traffic and returns HTTP 503 `Service Unavailable` with `Retry-After: 300` for all routes except `/api/health`.
+   - **Ingress Webhooks:** Route traffic directly to the Durable Ingress Buffer (detailed in §1.3).
+   - **WebSocket Gateway:** Broadcasts WebSocket close frame `1008 (Policy Violation / Maintenance)` to all active connections and rejects new upgrade handshakes.
+   - **Scheduler Engine:** Disables execution loops; prevents claiming items or renewing leases.
+4. **Cooperative Cancellation, Draining & Transaction Boundaries:**
+   - *No Forcible Kill Assumptions:* Forcibly terminating worker processes (`SIGKILL`) does NOT automatically roll back arbitrary database transactions or undo external provider API calls. Forcible termination risks tearing SQLite database files or leaving `.lock` files orphaned.
+   - *Cooperative Abort Signal (`AbortSignal`):* A centralized abort signal is broadcast to all active worker contexts. In-flight workers cooperatively check this signal between steps and cleanly terminate or roll back.
+   - *Drain Window & Active Mutation Counter:* Compute nodes maintain an `ActiveMutationCounter` tracking open transactions and active file writes. A 30-second drain window allows active transactions to commit cleanly if already past the point of no return, or cleanly roll back via `ROLLBACK`.
+   - *Handling Unfinished Operations:* Any worker failing to complete before the 30-second deadline has its distributed lease revoked via fencing token invalidation (preventing late writes from succeeding). Its execution state is marked `halted_uncertain` in a migration drain log, and any uncommitted transaction is aborted.
+5. **Reconciliation of Dispatched or Uncertain External Side Effects:**
+   - For any external side effect (Stripe charge, GitHub issue/PR, Resend email) that was initiated or is in an `unknown` outcome state during the freeze, an automated pre-migration status probe queries the external provider API using the operation's `idempotencyKey`. The outcome must be resolved (either confirmed executed or confirmed absent) before snapshotting.
+6. **Fencing Stale Workers:**
+   - Any stale worker (e.g. frozen in garbage collection or delayed by a slow network socket) that wakes up post-freeze will present an outdated `fencingToken` and be rejected fail-closed with `StaleFencingTokenError`.
+7. **Verification Proof Checklist (How the System Proves Mutation Paths Are Frozen):**
+   - The system must verify 6 explicit gates before snapshotting:
+     1. Gate 1: Reverse proxy returns 503 to probe requests.
+     2. Gate 2: Shared `MaintenanceLock` active and fencing token incremented.
+     3. Gate 3: `ActiveMutationCounter === 0` across all instances.
+     4. Gate 4: Zero active `.lock` files and all `DistributedLease` records unheld or expired.
+     5. Gate 5: SQLite/PostgreSQL connection set to transaction read-only mode (`PRAGMA query_only = ON`).
+     6. Gate 6: Probe mutation test to dummy key fails closed with `MaintenanceModeError`.
+   - Snapshot is taken ONLY after all 6 gates are certified and logged.
+
+#### 1.3 Provider Webhook Delivery Realities & Primary Documentation
+Universal vendor retry guarantees must not be assumed without evidence. Documented primary provider behaviors:
+
+1. **GitHub Webhooks:**
+   - **Primary Source:** [GitHub Docs: Redelivering deliveries for webhooks](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-deliveries-for-webhooks) & [Managing webhooks](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) (Accessed: October 2026).
+   - **Delivery Reality:** GitHub does **NOT** automatically redeliver failed webhook deliveries for standard organization or repository webhooks. If an endpoint is unreachable, times out, or returns HTTP 4xx/5xx, the delivery attempt is recorded as failed and is not automatically retried by GitHub.
+   - **Manual & Programmatic Redelivery:** Failed deliveries can be inspected and manually redelivered via the GitHub UI (Settings > Webhooks > Edit > Recent Deliveries > Redeliver) or programmatically re-requested via the REST API (`POST /repos/{owner}/{repo}/hooks/{hook_id}/deliveries/{delivery_id}/attempts`).
+   - **Three-Day Redelivery Window & Permissions:** GitHub documents a **three-day (3-day)** redelivery window (deliveries from the past 3 days can be redelivered). Redelivery requires repository or organization administration permissions (`admin:repo_hook` or `admin:org_hook`).
+   - **Strict Invariant:** Redelivery is not a substitute for durable ingress buffering and idempotent processing.
+2. **Stripe Webhooks:**
+   - **Primary Source:** [Stripe Docs: Webhook delivery retries](https://docs.stripe.com/webhooks#delivery-attempts) (Accessed: October 2026).
+   - **Delivery Reality:** Stripe attempts webhook delivery with exponential backoff over a **3-day (72-hour)** window in live mode if the endpoint fails to return an HTTP 2xx status code. Stripe also supports manual event resending via the Dashboard or event querying via `GET /v1/events`.
+3. **Resend Webhooks:**
+   - **Primary Source:** [Resend Webhooks Introduction](https://resend.com/docs/dashboard/webhooks/introduction) & [Svix Retry Documentation](https://docs.svix.com/retries) (Accessed: October 2026).
+   - **Delivery Reality:** Resend utilizes Svix for webhook delivery infrastructure. Svix executes exponential backoff retries on non-2xx responses or connection timeouts over a bounded schedule (typically up to 24–72 hours depending on plan tier). Unacknowledged events beyond the retry schedule transition to dead-letter state.
+4. **Generalization Rule:** Do not generalize one provider's retry behavior to another. Because GitHub does not auto-retry, any downtime without ingress buffering causes event loss unless manually redelivered.
+
+#### 1.4 Durable Ingress Buffering Specification (Provider-Neutral Queue Contract)
+To prevent event loss during migration write freezes without relying on vendor retry policies, a dedicated Durable Ingress Buffer must sit between public webhook ingress and internal domain processing:
+
+```
+EXTERNAL WEBHOOK (Stripe / GitHub / Resend)
+                     │
+                     ▼
+       ┌───────────────────────────┐
+       │ 1. INGRESS BUFFER GATEWAY │ ◄── Verifies cryptographic signature; rejects invalid.
+       └─────────────┬─────────────┘
+                     │
+                     ▼
+       ┌───────────────────────────┐
+       │ 2. DURABLE MESSAGE QUEUE  │ ◄── Synchronous fsync / consensus write before HTTP 200/202 ack.
+       │    (Provider-Neutral SQS/ │     Stores raw payload, headers, provider event ID.
+       │     PubSub/Redis Streams) │
+       └─────────────┬─────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+   NORMAL STATE             FREEZE STATE
+   (Immediate Relay)        (Buffered Queue Hold)
+        │                         │
+        ▼                         ▼
+   Application Ingest        Post-Cutover Idempotent Replay
+```
+
+1. **Durable Acceptance Before Acknowledgment:**
+   - The ingress buffer endpoint receives the raw webhook POST.
+   - Verifies payload integrity and cryptographic signature (`Stripe-Signature`, `X-Hub-Signature-256`, `svix-signature`) using the configured signing secret. Invalid signatures are rejected immediately with HTTP 400/401 and discarded.
+   - Extracts stable provider event identifiers: Stripe `event.id`, GitHub `X-GitHub-Delivery`, Resend `svix-id`.
+   - Writes raw payload, headers, provider event ID, and ISO timestamp durably to disk/queue storage with synchronous fsync or consensus acknowledgment ($f \ge 1$) before returning HTTP 200/202 to the external provider.
+2. **Acknowledgement & Retry Behavior:**
+   - Returns HTTP 200/202 to provider only after durable persistence is guaranteed.
+   - If the buffer cannot durably persist (e.g. disk full, queue full), it returns HTTP 503 so that auto-retrying providers (Stripe, Resend) back off and retry later, while alerting operators immediately for GitHub deliveries.
+3. **Retention & Replay Policy:**
+   - Raw buffered events are retained until explicitly acknowledged and reconciled by the application processor post-cutover.
+   - Retention window: **UNDECIDED — ILLUSTRATIVE PROPOSAL** (7–14 days proposed) — **FOUNDER DECISION REQUIRED**. Decision factors: storage overhead, disaster recovery margin, incident review window.
+4. **Idempotent Processing & Duplicate Handling:**
+   - Application consumer processes buffered queue items sequentially or by partitioned event ID.
+   - Checks `IdempotencyStore` using composite key `provider:eventId` inside an atomic transaction.
+   - If already processed, the duplicate is acknowledged and skipped.
+5. **Dead-Letter & Quarantine Behavior:**
+   - Malformed payloads, unparseable JSON, or persistent consumer errors are quarantined into a Dead-Letter Queue (DLQ) after a bounded retry limit (e.g. 5 attempts with exponential backoff).
+   - Quarantined events do not block processing of subsequent valid queue messages.
+6. **Monitoring & Manual Recovery:**
+   - Exposes metrics: buffer queue depth, ingestion latency, signature rejection rate, DLQ item count.
+   - CLI tool allows operators to inspect DLQ payloads, correct schema mismatches, and re-enqueue events.
+7. **Buffer Unavailability Handling:**
+   - If the buffer service itself becomes completely unavailable, inbound webhooks fail at the HTTP edge (HTTP 502/503).
+   - Immediate high-priority paging alert is sent to Founder / Operator.
+   - Post-incident recovery relies on Stripe auto-retries, Svix auto-retries, and manual GitHub redelivery via the GitHub UI/API within the documented 3-day redelivery window.
 
 ### Stage 2: Target Schema & Constraint Validation
 1. **Domain Contract Verification:** Confirm that all target tables match approved domain contracts.
@@ -599,7 +679,7 @@ To avoid unverified promises of "instant rollback" or "zero data loss", rollback
 - **Gate 1 (Semantic Equivalence Certified):** Reconciliation report certifies 0 critical discrepancies and all defined domain semantic invariants pass without exception.
 - **Gate 2 (Automated Test Pass on Target):** Full automated integration test suite passes against target PostgreSQL.
 - **Gate 3 (Operational Rehearsal Complete):** Migration dry run completed in staging within planned maintenance window.
-- **Gate 4 (Drained Workers Verified):** Active lock monitor certifies exactly 0 in-flight mutations across all 6 write paths.
+- **Gate 4 (Drained Workers Verified):** Active lock monitor certifies exactly 0 in-flight mutations across all 7 write paths.
 - **Gate 5 (Founder Authorization):** Explicit founder review and written authorization to execute authority transfer.
 
 #### 5.3 Rollback Semantics: Pre-Write vs. Post-Write (Accounting for External Side Effects)
@@ -727,7 +807,8 @@ The Phase 2.3B revision is complete only when:
 - [x] Every architectural statement is classified consistently under Section 2.2 (`REPOSITORY EVIDENCE`, `INFERRED`, `UNKNOWN`; no static file inspection labeled `VERIFIED`).
 - [x] The oversimplified four-tier classification is replaced with the independent 13-dimension classification matrix.
 - [x] Store write semantics are corrected against actual repository source code (AgentRunStore upsert, ScheduledWorkStore split, ApprovalStore CAS, etc.).
-- [x] The migration protocol in Section 12 details an enforceable write freeze across all 6 write paths, worker draining, and durable event ingress buffering.
+- [x] The migration protocol in Section 12 details an enforceable write freeze across all 7 write paths, cooperative draining, and provider-neutral durable event ingress buffering.
+- [x] Webhook delivery semantics are documented accurately from official primary sources (GitHub, Stripe, Resend/Svix) without unsupported retry assumptions.
 - [x] Migration protocol details domain-specific semantic reconciliation invariants across all 8 domains without unsupported 100% equivalence claims.
 - [x] Rollback design explicitly accounts for external side effects and distinguishes Pre-Write Cutover from Post-Write/Post-Side-Effect Cutover.
 - [x] Concurrency and external side-effect reliability architecture (Outbox, Inbox, Idempotency, Status Probes) is fully specified.
@@ -754,7 +835,7 @@ The Phase 2.3B revision is complete only when:
 3. **Target Recovery Metrics:** Target RPO and RTO thresholds, backup retention schedules, and operational budget limits.
 
 ### 17.3 What Can Be Approved Now
-- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, enforceable write freeze, and pre/post-write external side-effect rollback architecture.
+- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, enforceable write freeze, provider-neutral durable buffering, and pre/post-write external side-effect rollback architecture.
 - **The Staged Roadmap:** Maintaining Phase 2.3B as draft specification and gating Phase 2.3C behind explicit founder sign-off.
 
 ### 17.4 What Cannot Yet Be Approved
