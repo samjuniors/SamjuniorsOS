@@ -2,17 +2,18 @@
 **Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
-- 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed on branch `phase/2.2.2-council-deliberation` (PR pending review against `main`).
-- 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization. PR #10 changed tests and project documentation; it did not change `src/`.
+- 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) completed on branch `phase/2.3b-persistence-authority-design` (Issue #15, draft PR pending review against `main`).
+- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed.
+- 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed and merged to `main` (commit `edca06919b17eaa6737afba23b140b8abb3a82e5`).
+- 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization.
 - PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
 - M1 memory source-of-truth work remains merged to `main` at `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
-- Issue #11 verified with 208/208 tests passing across council, decision, and M2 regression suites.
 
 **NEXT PHASE:**
-Phase 2.3 — Role-Specific Knowledge & Epistemic Brain Integration (or next milestone per Founder direction).
+Phase 2.3C — Persistence Authority & Database Migration Execution (or next milestone per Founder direction).
 
 **NEXT ACTION:**
-Submit PR for Issue #11 on branch `phase/2.2.2-council-deliberation` against `main` and stop for Founder review. No production deployment or direct commits to `main`.
+Draft PR linked to Issue #15 on branch `phase/2.3b-persistence-authority-design` against `main` for Founder review. No production deployment, schema changes, or direct commits to `main`.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 
