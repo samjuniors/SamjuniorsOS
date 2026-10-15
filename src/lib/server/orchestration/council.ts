@@ -53,7 +53,11 @@ import { ConstitutionalVerifier } from './verifier';
 import { SERVER_AGENTS } from '../agents/definitions';
 import { AgentRunStore } from '../agents/run-store';
 import { DurableFileStore } from '../persistence/durable-file-store';
-import { OperationInProgressError, UnknownExternalResultError } from '../idempotency/state-machine';
+import {
+  OperationInProgressError,
+  UnknownExternalResultError,
+  IdempotencyPayloadMismatchError,
+} from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
 
 export const MAX_COUNCIL_ROUNDS_HARD_LIMIT = 1;
@@ -119,7 +123,7 @@ export class ExecutiveCouncilEngine {
             idempotencyKey
           );
 
-          if (existing && !input.forceFresh) {
+          if (existing) {
             const isRecord = 'leaseStatus' in existing;
             const leaseStatus: CouncilLeaseStatus = isRecord
               ? (existing as CouncilDeliberationRecord).leaseStatus
@@ -129,20 +133,11 @@ export class ExecutiveCouncilEngine {
               ? 'unknown_outcome'
               : 'completed';
 
-            // A. Completed result
-            if (leaseStatus === 'completed') {
-              const cachedResult = isRecord
-                ? (existing as CouncilDeliberationRecord).result
-                : (existing as CouncilDeliberationResult);
-              if (cachedResult) {
-                const recordFingerprint = isRecord ? (existing as CouncilDeliberationRecord).fingerprint : undefined;
-                if (!recordFingerprint || recordFingerprint === canonicalFingerprint) {
-                  return { state: 'cached' as const, result: cachedResult };
-                }
-              }
-            }
+            const recordFingerprint = isRecord
+              ? (existing as CouncilDeliberationRecord).fingerprint
+              : undefined;
 
-            // B. In-Progress Lease
+            // In-Progress Lease: active PID cannot be clobbered even if forceFresh is set
             if (leaseStatus === 'in_progress' && isRecord) {
               const rec = existing as CouncilDeliberationRecord;
               const isAlive = rec.claimedByPid && DurableFileStore.isProcessAlive(rec.claimedByPid);
@@ -164,26 +159,59 @@ export class ExecutiveCouncilEngine {
               throw new UnknownExternalResultError(idempotencyKey, rec.id, unknownRec.error);
             }
 
-            // C. Unknown Outcome
+            // Unknown Outcome: Prohibits blind redispatch unless explicitly reconciled
             if (leaseStatus === 'unknown_outcome') {
-              const err = isRecord ? (existing as CouncilDeliberationRecord).error : undefined;
-              const existingId = isRecord
-                ? (existing as CouncilDeliberationRecord).id
-                : (existing as CouncilDeliberationResult).deliberationId;
-              throw new UnknownExternalResultError(
+              if (input.reconcileUnknown) {
+                const rec = isRecord ? (existing as CouncilDeliberationRecord) : undefined;
+                const recId = rec?.id || deliberationId;
+                const reconciledRec: CouncilDeliberationRecord = {
+                  id: recId,
+                  deliberationId: recId,
+                  idempotencyKey,
+                  leaseStatus: 'degraded',
+                  claimedByPid: process.pid,
+                  claimedAt: nowIso,
+                  expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+                  fingerprint: canonicalFingerprint,
+                  reconciledAt: nowIso,
+                  reconciliationReason: 'Explicitly reconciled via input.reconcileUnknown',
+                  error: `[Reconciled from unknown_outcome: Explicitly acknowledged] ${rec?.error || ''}`.trim(),
+                };
+                DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, reconciledRec);
+                DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, recId, reconciledRec);
+              } else {
+                const err = isRecord ? (existing as CouncilDeliberationRecord).error : undefined;
+                const existingId = isRecord
+                  ? (existing as CouncilDeliberationRecord).id
+                  : (existing as CouncilDeliberationResult).deliberationId;
+                throw new UnknownExternalResultError(
+                  idempotencyKey,
+                  existingId || deliberationId,
+                  err || 'Council deliberation terminated in an uncertain provider outcome state. Blind retry prohibited.'
+                );
+              }
+            }
+
+            // Enforce cryptographic payload binding for completed or degraded results (unless actively reconciled):
+            // The same key cannot be reused with an altered payload without explicit reconciliation
+            if (!input.reconcileUnknown && recordFingerprint && recordFingerprint !== canonicalFingerprint) {
+              throw new IdempotencyPayloadMismatchError(
                 idempotencyKey,
-                existingId || deliberationId,
-                err || 'Council deliberation terminated in an uncertain provider outcome state. Blind retry prohibited.'
+                recordFingerprint,
+                canonicalFingerprint,
+                `Idempotency payload mismatch for council deliberation key '${idempotencyKey}': cannot reuse existing idempotency key with altered inputs.`
               );
             }
 
-            // D. Degraded result
-            if (leaseStatus === 'degraded') {
-              const cachedResult = isRecord
-                ? (existing as CouncilDeliberationRecord).result
-                : (existing as CouncilDeliberationResult);
-              if (cachedResult && !input.forceFresh) {
-                return { state: 'cached' as const, result: cachedResult };
+            // Completed or Degraded: replay if not forceFresh
+            if (!input.forceFresh) {
+              if (leaseStatus === 'completed' || leaseStatus === 'degraded') {
+                const cachedResult = isRecord
+                  ? (existing as CouncilDeliberationRecord).result
+                  : (existing as CouncilDeliberationResult);
+                if (cachedResult) {
+                  return { state: 'cached' as const, result: cachedResult };
+                }
               }
             }
           }
@@ -208,7 +236,11 @@ export class ExecutiveCouncilEngine {
         }
       );
     } catch (err: any) {
-      if (err instanceof OperationInProgressError || err instanceof UnknownExternalResultError) {
+      if (
+        err instanceof OperationInProgressError ||
+        err instanceof UnknownExternalResultError ||
+        err instanceof IdempotencyPayloadMismatchError
+      ) {
         throw err;
       }
       throw new Error(
@@ -348,6 +380,27 @@ export class ExecutiveCouncilEngine {
         };
         this.persistDeliberation(unknownResult, 'unknown_outcome', canonicalFingerprint, 'Cancelled with unconfirmed provider calls');
         return unknownResult;
+      }
+
+      // No provider calls orphaned: release in-progress lease cleanly as degraded so future calls aren't locked out
+      const cleanAbortRecord: CouncilDeliberationRecord = {
+        id: deliberationId,
+        deliberationId,
+        idempotencyKey,
+        leaseStatus: 'degraded',
+        claimedByPid: process.pid,
+        claimedAt: nowIso,
+        expiresAt: new Date().toISOString(),
+        fingerprint: canonicalFingerprint,
+        error: 'Council deliberation aborted before provider calls were dispatched or orphaned.',
+      };
+      try {
+        DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+          DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, cleanAbortRecord);
+          DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, deliberationId, cleanAbortRecord);
+        });
+      } catch {
+        // Non-fatal lease cleanup
       }
       throw new Error('Council deliberation aborted after specialist reviews');
     }
@@ -608,14 +661,17 @@ export class ExecutiveCouncilEngine {
               agentName: agentDef.name,
               role: agentDef.role,
               status: parsed.data.status,
-              summary: parsed.data.summary,
-              critiqueMarkdown: parsed.data.artifactContent || match.outputContent,
+              summary: `${parsed.data.summary} [Cached review from verified run ${match.runId}]`,
+              critiqueMarkdown: `> [!NOTE]\n> **Cached Review**: Reused from verified run \`${match.runId}\` bound to canonical input fingerprint \`${specFingerprint.slice(0, 16)}...\`.\n\n${parsed.data.artifactContent || match.outputContent}`,
               keyFindings: parsed.data.keyFindings,
               risksOrFrictions: parsed.data.risksOrFrictions,
               recommendations: parsed.data.recommendations,
               provenance: match.provenance,
               runId: match.runId,
               durationMs: match.durationMs,
+              isCached: true,
+              cachedFromRunId: match.runId,
+              fingerprint: specFingerprint,
             };
           }
         }
@@ -1078,6 +1134,53 @@ Respond with valid JSON matching:
   }
 
   /**
+   * Authoritatively reconciles an unknown_outcome deliberation record in the DurableFileStore.
+   * Allows operator/Founder recovery after manual inspection of external provider logs.
+   */
+  public static reconcileUnknownDeliberation(
+    idempotencyKey: string,
+    reason: string
+  ): CouncilDeliberationRecord {
+    if (!idempotencyKey || !idempotencyKey.trim()) {
+      throw new Error('idempotencyKey is required for deliberation reconciliation');
+    }
+    if (!reason || !reason.trim()) {
+      throw new Error('reconciliation reason is required');
+    }
+
+    return DurableFileStore.getInstance().withCollectionLockStrict(
+      COUNCIL_DELIBERATIONS_COLLECTION,
+      () => {
+        const store = DurableFileStore.getInstance();
+        const existing = store.getItem<CouncilDeliberationRecord>(
+          COUNCIL_DELIBERATIONS_COLLECTION,
+          idempotencyKey
+        );
+
+        if (!existing) {
+          throw new Error(`Cannot reconcile non-existent deliberation record for key '${idempotencyKey}'`);
+        }
+
+        const nowIso = new Date().toISOString();
+        const updated: CouncilDeliberationRecord = {
+          ...existing,
+          leaseStatus: 'degraded',
+          reconciledAt: nowIso,
+          reconciliationReason: reason,
+          error: `[Reconciled from unknown_outcome: ${reason}] ${existing.error || ''}`.trim(),
+        };
+
+        store.saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, idempotencyKey, updated);
+        if (existing.id && existing.id !== idempotencyKey) {
+          store.saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, existing.id, updated);
+        }
+
+        return updated;
+      }
+    );
+  }
+
+  /**
    * Formats the complete deliberation result as an authoritative markdown deliverable.
    */
   public static formatDeliberationDeliverable(result: CouncilDeliberationResult): string {
@@ -1110,7 +1213,11 @@ Respond with valid JSON matching:
 
     md += `## 3. Cross-Functional Specialist Critiques\n\n`;
     for (const critique of result.specialistCritiques) {
-      md += `### ${critique.agentName} (${critique.role}) — [${critique.status.toUpperCase()}]\n`;
+      const cachedBadge = critique.isCached ? ` [CACHED from ${critique.cachedFromRunId}]` : '';
+      md += `### ${critique.agentName} (${critique.role}) — [${critique.status.toUpperCase()}]${cachedBadge}\n`;
+      if (critique.isCached && critique.fingerprint) {
+        md += `*Provenance: Reused from verified run \`${critique.cachedFromRunId}\` (Fingerprint: \`${critique.fingerprint.slice(0, 16)}...\`)*\n\n`;
+      }
       md += `**Summary**: ${critique.summary}\n\n`;
 
       if (critique.keyFindings && critique.keyFindings.length > 0) {

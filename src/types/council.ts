@@ -95,6 +95,9 @@ export interface CouncilSpecialistCritique {
   runId?: string;
   durationMs?: number;
   error?: string;
+  isCached?: boolean;
+  cachedFromRunId?: string;
+  fingerprint?: string;
 }
 
 export interface CouncilFrictionPoint {
@@ -169,6 +172,8 @@ export interface CouncilDeliberationRecord {
   result?: CouncilDeliberationResult;
   orphanedProviderCalls?: string[];
   error?: string;
+  reconciledAt?: string;
+  reconciliationReason?: string;
 }
 
 export interface CouncilDeliberationInput {
@@ -186,6 +191,7 @@ export interface CouncilDeliberationInput {
   structuredFinancials?: StructuredFinancialInput;
   idempotencyKey?: string;
   forceFresh?: boolean;
+  reconcileUnknown?: boolean;
 }
 
 export const SPECIALIST_CONTRACT_VERSION = 'v2.2.2';

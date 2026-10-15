@@ -197,6 +197,24 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(responseBody);
   } catch (error: any) {
+    if (error instanceof OperationInProgressError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: 409 }
+      );
+    }
+    if (error instanceof UnknownExternalResultError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: 409 }
+      );
+    }
+    if (error instanceof IdempotencyPayloadMismatchError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: 422 }
+      );
+    }
     console.error("[Multi-Agent Orchestration Error]:", error);
     return NextResponse.json(
       {

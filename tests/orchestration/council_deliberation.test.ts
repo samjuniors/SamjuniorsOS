@@ -48,7 +48,11 @@ import { SERVER_AGENTS } from '@/lib/server/agents/definitions';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { ConstitutionalVerifier } from '@/lib/server/orchestration/verifier';
 import { AgentRunStore } from '@/lib/server/agents/run-store';
-import { OperationInProgressError, UnknownExternalResultError } from '@/lib/server/idempotency/state-machine';
+import {
+  OperationInProgressError,
+  UnknownExternalResultError,
+  IdempotencyPayloadMismatchError,
+} from '@/lib/server/idempotency/state-machine';
 import { CouncilDeliberationRecord } from '@/types/council';
 
 interface TestResult {
@@ -1295,6 +1299,212 @@ async function main() {
     assert.strictEqual(govUnverifiedFin.requiresFounderDecision, true);
     assert.strictEqual(govUnverifiedFin.allowsExternalEffects, false); // NEVER allows external effects when margin unverified!
     assert.strictEqual(govUnverifiedFin.governanceDisposition, 'founder_decision_required');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 30: Durable Idempotency Recovery (reconcileUnknown & reconcileUnknownDeliberation)
+  // ----------------------------------------------------------------------------
+  await runTest('30. Durable Idempotency Recovery — reconcileUnknownDeliberation and reconcileUnknown: true', async () => {
+    const recoveryKey = `idem-recovery-${Date.now()}`;
+    const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+
+    // Step 1: Create an unknown_outcome record in store
+    DurableFileStore.getInstance().withCollectionLockStrict(COUNCIL_DELIBERATIONS_COLLECTION, () => {
+      const rec: CouncilDeliberationRecord = {
+        id: `delib-recov-${Date.now()}`,
+        idempotencyKey: recoveryKey,
+        leaseStatus: 'unknown_outcome',
+        claimedByPid: process.pid,
+        claimedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+        fingerprint: 'fp-recovery-target',
+        error: 'Prior execution had orphaned inference calls',
+      };
+      DurableFileStore.getInstance().saveItemStrict(COUNCIL_DELIBERATIONS_COLLECTION, recoveryKey, rec);
+    });
+
+    // Step 2: Unreconciled call must throw UnknownExternalResultError
+    let threwWithoutReconcile = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Directive needing reconciliation',
+        idempotencyKey: recoveryKey,
+      });
+    } catch (err: any) {
+      if (err instanceof UnknownExternalResultError || err?.name === 'UnknownExternalResultError') {
+        threwWithoutReconcile = true;
+      }
+    }
+    assert(threwWithoutReconcile, 'Expected unreconciled execution to fail closed with UnknownExternalResultError');
+
+    // Step 3: Reconcile via ExecutiveCouncilEngine.reconcileUnknownDeliberation
+    const reconciled = ExecutiveCouncilEngine.reconcileUnknownDeliberation(
+      recoveryKey,
+      'Provider logs inspected: inference aborted without tokens billed'
+    );
+    assert.strictEqual(reconciled.leaseStatus, 'degraded');
+    assert(reconciled.reconciledAt, 'Expected reconciledAt timestamp');
+    assert.strictEqual(reconciled.reconciliationReason, 'Provider logs inspected: inference aborted without tokens billed');
+
+    // Step 4: Call with reconcileUnknown: true executes fresh deliberation and succeeds
+    const recoveredResult = await engine.executeDeliberation({
+      directive: 'Directive needing reconciliation',
+      idempotencyKey: recoveryKey,
+      reconcileUnknown: true,
+      forceFresh: true,
+      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+    });
+    assert.strictEqual(recoveredResult.status, 'consensus_achieved');
+    assert.strictEqual(recoveredResult.verificationPassed, true);
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 31: Reusing Idempotency Key with Altered Payload Throws IdempotencyPayloadMismatchError
+  // ----------------------------------------------------------------------------
+  await runTest('31. Reusing idempotency key with altered payload throws IdempotencyPayloadMismatchError', async () => {
+    const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+    const mismatchKey = `idem-payload-mismatch-${Date.now()}`;
+
+    // Run 1: Original payload
+    await engine.executeDeliberation({
+      directive: 'Original directive payload',
+      idempotencyKey: mismatchKey,
+      productSpecs: 'PRD Version 1',
+    });
+
+    // Run 2: Same key, different directive (altered payload) -> must throw IdempotencyPayloadMismatchError
+    let threwMismatch = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Altered directive payload with same key',
+        idempotencyKey: mismatchKey,
+        productSpecs: 'PRD Version 1',
+      });
+    } catch (err: any) {
+      if (err instanceof IdempotencyPayloadMismatchError || err?.name === 'IdempotencyPayloadMismatchError') {
+        threwMismatch = true;
+      }
+    }
+    assert(threwMismatch, 'Expected altered payload under same idempotencyKey to throw IdempotencyPayloadMismatchError');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 32: Active In-Progress Lease Cannot Be Clobbered Even with forceFresh: true
+  // ----------------------------------------------------------------------------
+  await runTest('32. Active in-progress lease cannot be clobbered even with forceFresh: true', async () => {
+    let slowSpecialistResolve: () => void;
+    const slowSpecialistGate = new Promise<void>((resolve) => {
+      slowSpecialistResolve = resolve;
+    });
+
+    const mockExecutor = createMockExecutor(async (agentId, context) => {
+      if (agentId === 'researcher' && context.protocolStep === 'review') {
+        await slowSpecialistGate;
+      }
+      return {};
+    });
+
+    const engine = new ExecutiveCouncilEngine({ executor: mockExecutor });
+    const forceFreshKey = `idem-force-clobber-${Date.now()}`;
+
+    // Request 1 claims active lease
+    const req1Promise = engine.executeDeliberation({
+      directive: 'Concurrent lease protection directive',
+      idempotencyKey: forceFreshKey,
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+
+    // Request 2 tries to clobber with forceFresh: true -> must still fail closed with OperationInProgressError
+    let clobberBlocked = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Concurrent lease protection directive',
+        idempotencyKey: forceFreshKey,
+        forceFresh: true,
+      });
+    } catch (err: any) {
+      if (err instanceof OperationInProgressError || err?.name === 'OperationInProgressError') {
+        clobberBlocked = true;
+      }
+    }
+
+    slowSpecialistResolve!();
+    await req1Promise;
+
+    assert(clobberBlocked, 'Expected forceFresh: true to be blocked by active in-progress lease');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 33: Abort Without Orphaned Provider Calls Cleans Up In-Progress Lease
+  // ----------------------------------------------------------------------------
+  await runTest('33. Abort without orphaned provider calls cleans up in-progress lease', async () => {
+    const abortController = new AbortController();
+    const abortKey = `idem-clean-abort-${Date.now()}`;
+
+    // Signal already aborted before execution starts
+    abortController.abort(new Error('Pre-dispatch cancellation'));
+
+    const engine = new ExecutiveCouncilEngine({ executor: createMockExecutor() });
+
+    let threwAbort = false;
+    try {
+      await engine.executeDeliberation({
+        directive: 'Testing clean abort lease teardown',
+        idempotencyKey: abortKey,
+        signal: abortController.signal,
+      });
+    } catch (err: any) {
+      if (err.message.includes('aborted')) {
+        threwAbort = true;
+      }
+    }
+    assert(threwAbort, 'Expected execution to reject with abort error');
+
+    // Confirm that no dangling in_progress lease exists for abortKey
+    const leaseRec = DurableFileStore.getInstance().getItem<CouncilDeliberationRecord>(
+      COUNCIL_DELIBERATIONS_COLLECTION,
+      abortKey
+    );
+    assert(!leaseRec || leaseRec.leaseStatus !== 'in_progress', 'No in_progress lease should dangle after abort');
+  });
+
+  // ----------------------------------------------------------------------------
+  // TEST 34: Cached Specialist Reviews Carry Explicit Cache Provenance and Fingerprint
+  // ----------------------------------------------------------------------------
+  await runTest('34. Cached specialist reviews carry explicit cache provenance, runId, and fingerprint', async () => {
+    const mockExecutor = createMockExecutor();
+    const engine = new ExecutiveCouncilEngine({ executor: mockExecutor });
+
+    const sharedPackage = {
+      directive: 'Provenance tracking test initiative',
+      productSpecs: 'PRD Specifications for provenance verification',
+      structuredFinancials: { revenue: 100000, cogs: 10000, computeCost: 5000 },
+    };
+
+    // Run 1: Fresh run
+    const result1 = await engine.executeDeliberation({
+      ...sharedPackage,
+      forceFresh: true,
+    });
+    const researcherRunId = result1.specialistCritiques.find((c) => c.agentId === 'researcher')?.runId;
+    assert(researcherRunId, 'Expected original runId on fresh critique');
+
+    // Run 2: Cached run
+    const result2 = await engine.executeDeliberation({
+      ...sharedPackage,
+      forceFresh: false,
+    });
+    const cachedResearcher = result2.specialistCritiques.find((c) => c.agentId === 'researcher');
+    assert(cachedResearcher, 'Expected researcher critique in result2');
+    assert.strictEqual(cachedResearcher?.isCached, true, 'isCached must be true');
+    assert.strictEqual(cachedResearcher?.cachedFromRunId, researcherRunId, 'cachedFromRunId must match original runId');
+    assert(cachedResearcher?.fingerprint, 'Fingerprint must be recorded');
+    assert(cachedResearcher?.summary.includes('[Cached review from verified run'), 'Summary must declare cached provenance');
+
+    // Deliverable formatting must include cache badge
+    const deliverableMd = ExecutiveCouncilEngine.formatDeliberationDeliverable(result2);
+    assert(deliverableMd.includes('[CACHED from'), 'Deliverable markdown must display cached badge');
   });
 
   // ----------------------------------------------------------------------------

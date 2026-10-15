@@ -23,24 +23,26 @@
    - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
    - Updated `participatingEmployees` to track real council review contributions.
    - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Final Acceptance Corrections (2026-10-14):**
+4. **Final Acceptance Resolutions & Hardening:**
    - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
    - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
-   - **Specialist review cache bound to canonical fingerprint:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache miss and re-execution triggered on package or financial change.
+   - **Cryptographic payload mismatch protection:** Enforces `IdempotencyPayloadMismatchError` when an existing idempotency key is reused with altered directive or upstream inputs. HTTP 422 mapped in `/api/orchestrate`.
+   - **Specialist review cache bound to canonical fingerprint & provenance:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache hits explicitly record provenance (`isCached: true`, `cachedFromRunId`, `fingerprint`) and render badge `[Cached review from verified run <runId>]` in deliverables.
    - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
-   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`.
+   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`. Pre-dispatch aborts cleanly transition lease to `degraded` without leaving dangling locks.
+   - **Durable idempotency unknown-outcome recovery:** Added explicit reconciliation mechanism via `reconcileUnknown: true` on deliberation input and static method `ExecutiveCouncilEngine.reconcileUnknownDeliberation(idempotencyKey, reason)`.
    - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
-   - **Comprehensive testing:** Expanded suite to 29 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
+   - **Comprehensive testing:** Expanded suite to 34 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
 
 **Verification Results:**
-- `tests/orchestration/council_deliberation.test.ts`: **29 passed, 0 failed** (run twice across all 29 test areas).
+- `tests/orchestration/council_deliberation.test.ts`: **34 passed, 0 failed** (run twice across all 34 test areas).
 - Decision suites: 69/69 pass (`phase2_2_1_context`: 15/15, `decision_lifecycle`: 18/18, `phase2_1_1_hardening`: 10/10, `workflow_capability_token`: 26/26).
 - M2 persistence & hygiene suites: 29/29 pass (`m2_batch3_concurrency_hygiene`: 8/8, `m2_knowledge_persistence`: 8/8, `m53_authoritative_read_model`: 13/13).
 - Knowledge & retrieval regressions: 81/81 pass (`m4c_query_conditioned_retrieval`: 27/27, `production_response_path_regression`: 4/4, `m52_retrieval_hygiene`: 25/25, `m53_dependency_relations`: 25/25).
-- **Total Test Assertions: 208 PASSED, 0 FAILED (100%).**
+- **Total Test Assertions: 213 PASSED, 0 FAILED (100%).**
 - **Lint:** `npm run lint` exited code 0 with 0 errors, 0 warnings across entire codebase.
-- **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files.
-- **Production Build:** Cross-drive worktree (`C:\...` with `node_modules` symlink to `E:\...`) triggers Turbopack out-of-root panic (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`). Documented honestly as an environment constraint without fabrication.
+- **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files (`src/lib/server/orchestration/*`, `src/types/council.ts`, `tests/orchestration/*`).
+- **Production Build:** `npm run build` completed with exit code 0 (Next.js 16.3.5 Turbopack compiled all 31 routes; standalone build artifacts generated).
 
 ## Issue #9 — Post-Merge M2 & Decision Stabilization (2026-10-14)
 
