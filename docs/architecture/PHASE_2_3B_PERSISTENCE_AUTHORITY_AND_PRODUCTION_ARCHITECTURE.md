@@ -934,7 +934,7 @@ The Phase 2.3B revision is complete only when:
 ## 17. Final Decision Gate
 
 ### 17.1 What Is Verified
-1. **Local Repository State:** Inspected working tree on branch `phase/2.3b-persistence-authority-design`.
+1. **GitHub Review State:** The Phase 2.3B branch was reviewed and merged through PR #16 at merge commit `b8afe455086ab044088079ef9081dd476bc457d6`. The local working-tree status is not available from this GitHub review and is NOT VERIFIED here.
 2. **Current Persistence Reality:** SQLite datasource in `prisma/schema.prisma`; active file-backed stores for Decisions, Council Deliberations, Conversations, and Personal Memories; in-memory storage for Communications.
 3. **Locking Limitations:** In-process signal 0 checks fail to provide cross-container concurrency safety.
 4. **Architectural Guardrails:** Strict preservation of Company Brain federation, Sophia Personal Mind isolation, and anti-duplication rules.
