@@ -26,17 +26,17 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 | Item | Status |
 |---|---|
 | Server-established Founder authority on all privileged routes | IMPLEMENTED + WIRED — authenticated sessions derived from Clerk/dev secret; strict allowlist enforced in decideApproval; all privileged routes guarded |
-| Workflow/approval/audit state survives the actual deployment target | IMPLEMENTED + WIRED — atomic DurableFileStore + PostgreSQL schema; single-instance container constraint (min=1, max=1) guarded by InstanceConcurrencyGuard; append-only audit trail guarded in production |
+| Workflow/approval/audit state survives the actual deployment target | PARTIALLY IMPLEMENTED (LOCAL/SANDBOX ONLY) — Currently backed by atomic DurableFileStore (`.data/*.json`) and SQLite via Prisma (`db/custom.db`). Target PostgreSQL schema definitions exist in design, but PostgreSQL is NOT currently connected, provisioned, or active as production authority. Single-instance container constraint (min=1, max=1) relies on local OS process PID checks (`InstanceConcurrencyGuard`), which are ineffective across container boundaries. |
 | Approval bound to exact action/target/payload | IMPLEMENTED + WIRED — cryptographic SHA-256 canonical hashing ({ actionName, target, payload }); verifyApprovalPayloadBinding fails closed on consequential side-effects |
 | Deterministic verification gate rejecting bad artifacts | IMPLEMENTED + WIRED — ConstitutionalVerifier.verify() deterministically halts orchestration and marks status: failed / verification_rejected on invariant breaches |
 | Synthetic data never labeled as verified fact | IMPLEMENTED + WIRED — state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory() |
 | Side-effect idempotency / unknown-outcome handling | IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline |
 
-**Foundation requirements verified with 100% test pass across reference integration, milestone hardening, authorization, communication, and security suites.**
+**Foundation requirements verified with 100% test pass across reference integration, milestone hardening, authorization, communication, and security suites in local/test modes. Production multi-instance database authority remains pending Phase 2.3C.**
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
-- Full relational persistence (Postgres/Prisma actually connected via `DATABASE_URL`) once §0's deployment decision is made.
+- Full relational persistence: Transition Prisma datasource from SQLite (`provider = "sqlite"`) to PostgreSQL (`provider = "postgresql"`), connect via production `DATABASE_URL` with connection pooling, and migrate file-backed stores (Decisions, Council Deliberations, Conversations, Personal Memories) once Founder approves Phase 2.3B architecture and selects hosting infrastructure.
 - First-class versioned `Artifact` model.
 - The Company Brain becoming the *single* path for state/knowledge reads and writes (not a correct pipeline existing alongside an un-migrated old one).
 - Confirming and closing the two open auth gaps (live Clerk provisioning, gate.ts allowlist fix).

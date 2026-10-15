@@ -24,7 +24,7 @@
 3. **Sophia Personal Mind Remains Strictly Founder-Scoped:**  
    Per `AGENTS.md §6`, the founder's personal dialogue, sensory notes, and stylistic interaction preferences ([`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts)) are segregated from company truth. Personal memories are never authoritative company truth, never an authorization bypass, and never automatically promoted into company memory without explicit founder review and deterministic epistemic verification.
 4. **Honest Migration Semantics:**  
-   No migration protocol can claim "zero data loss" or "atomic cutover" prior to automated rehearsal, constraint validation, and end-to-end verification. A database transaction cannot atomically commit an external side effect (Stripe charge, GitHub push, Resend email). The revision removes all unsupported guarantees and defines a controlled 5-stage reversible migration protocol.
+   No migration protocol can claim "zero data loss", "instant rollback", or "full semantic equivalence" prior to automated rehearsal, constraint validation, and end-to-end verification. A database transaction cannot atomically commit an external side effect (Stripe charge, GitHub push, Resend email). Rollback semantics must strictly distinguish pre-write cutover from post-write cutover. Once the target database accepts production writes, configuration rollback is invalid and forward recovery or reverse change-capture is mandatory.
 
 ---
 
@@ -42,9 +42,9 @@ Every architectural finding, assertion, and claim in this specification is class
 
 | Classification | Definition | Guardrail / Restriction |
 |---|---|---|
-| **VERIFIED** | Directly confirmed through inspected, executed code, tests, or primary external provider records. | Requires verifiable file path, line numbers, or test execution logs. |
-| **REPOSITORY EVIDENCE** | Directly visible in source code, schema files, or repository configuration, without proving active runtime behavior. | Confirms code presence; does not prove external hosting or durability. |
-| **INFERRED** | Reasoned engineering conclusion derived logically from repository evidence. | Must explicitly state the premises and reasoning. |
+| **VERIFIED** | Directly confirmed through inspected, executed code, runtime tests, or primary external provider records. | Requires verifiable file path, line numbers, or test execution logs. Static source inspection alone must NEVER be labeled VERIFIED. |
+| **REPOSITORY EVIDENCE** | Directly visible in source code, schema files, or repository configuration, without proving active runtime behavior. | Confirms code presence; does not prove external hosting, active provisioning, or runtime durability. |
+| **INFERRED** | Reasoned engineering conclusion derived logically from available evidence. | Must explicitly state the premises, reasoning, and limitations. |
 | **UNKNOWN** | Cannot currently be established from repository evidence or available environments. | Must not be fabricated, guessed, or treated as a confirmed negative. |
 
 ### 2.3 Explicit Methodological Rules
@@ -251,30 +251,30 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 
 ## 6. Independent Data Classification Matrix
 
-To replace the oversimplified four-tier classification, every persistence domain is evaluated across 13 distinct technical dimensions.
+To replace the oversimplified four-tier classification, every persistence domain is evaluated across 13 distinct technical dimensions. All evidence classifications adhere strictly to Section 2.2 (`REPOSITORY EVIDENCE` based on static code inspection; runtime execution was not performed in this design phase).
 
-| Domain & Owner | Canonical Authority | Write Semantics | Consistency Model | Durability Requirements | Retention & Deletion | Sensitivity & Auth Boundary | Transaction & Concurrency | Backup & Restore | Failure Behavior & Recovery | Current Implementation | Proposed Target Behavior | Evidence & Confidence |
+| Domain & Owner | Canonical Authority | Write Semantics | Consistency Model | Durability Requirements | Retention & Deletion Policy | Sensitivity & Auth Boundary | Transaction & Concurrency | Backup & Restore | Failure Behavior & Recovery | Current Implementation | Proposed Target Behavior | Evidence & Confidence |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Decisions** (`DecisionStore`) | Canonical | Mutable (stateVersion + transitions) | Optimistic Concurrency | High (survive redeploys) | Permanent corporate record | Highly Sensitive (Founder only) | Atomic CAS on version, collection lock | Daily backup, point-in-time | Fail-closed on lock timeout; in-memory cache | `.data/decisions.json` | PostgreSQL table `company_decisions` | **VERIFIED** ([`src/lib/server/decision/store.ts`](src/lib/server/decision/store.ts)) |
-| **Epistemic Sources & Signals** (`EpistemicClaimStore`) | Canonical | Immutable | Append-Only (Idempotent by hash) | High | Permanent audit evidence | Restricted internal | Unique hash constraint | Daily backup, immutable archive | Duplicate insert ignored; SHA-256 check | SQLite via Prisma | PostgreSQL tables `epistemic_sources`, `signals` | **VERIFIED** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Epistemic Claims** (`EpistemicClaimStore`) | Canonical | Mutable (status transitions) | Eventual / Sequential | Moderate | Retained with claim history | Restricted internal | Atomic status update | Daily backup | Re-evaluable via verification policy | SQLite via Prisma | PostgreSQL table `epistemic_claims` | **VERIFIED** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Canonical Facts** (`EpistemicClaimStore`) | Canonical | Mutable (supersession pointers) | Transactional Supersession | Critical | Permanent (superseded marked) | High (Company Truth) | Atomic predecessor / successor link | Continuous WAL, PITR | Rollback to predecessor fact if invalid | SQLite via Prisma | PostgreSQL table `canonical_facts` | **VERIFIED** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Operational State** (`CompanyStateStore`) | Canonical | Mutable | Optimistic Concurrency | High | Overwritten on strategic update | Executive only | Version check on update | Daily backup | Fallback to default state seeds | In-memory + `.data/company_state.json` | PostgreSQL table `company_state` | **REPOSITORY EVIDENCE** ([`src/lib/server/state/state-store.ts`](src/lib/server/state/state-store.ts)) |
-| **Company Knowledge** (`CompanyKnowledgeStore`) | Canonical | Replaceable / Versioned | Optimistic Concurrency | High | Version history retained | Company Internal | Content-hash uniqueness | Daily backup | Re-seed from markdown baseline | SQLite via Prisma + file cache | PostgreSQL table `company_knowledge` | **REPOSITORY EVIDENCE** ([`src/lib/server/knowledge/knowledge-store.ts`](src/lib/server/knowledge/knowledge-store.ts)) |
-| **Company Memory** (`CompanyMemoryStore`) | Canonical | Append-oriented | Best-Effort / Eventual | Moderate | Soft deprecation supported | Company Internal | Simple insert / update | Daily backup | Loss causes precedent amnesia, not crash | SQLite via Prisma + file cache | PostgreSQL table `company_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/memory/memory-store.ts`](src/lib/server/memory/memory-store.ts)) |
-| **Workflow Definitions** (`WorkflowStore`) | Canonical | Versioned / Immutable | Immutable per version | High | Retained across executions | Engineering / Admin | Unique `(id, version)` constraint | Daily backup | System cannot start if definitions missing | SQLite via Prisma | PostgreSQL table `workflow_definitions` | **VERIFIED** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
-| **Workflow Instances** (`WorkflowStore`) | Canonical | Mutable (state machine) | Strict Transactional (CAS) | Critical | Retain active & completed runs | Founder & Autonomous Engine | Atomic step claiming, version CAS | Continuous WAL, PITR | In-flight steps fail-safe, rehydrate on boot | SQLite via Prisma | PostgreSQL table `workflow_instances` | **VERIFIED** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
-| **Scheduled Work Items** (`ScheduledWorkStore`) | Canonical | Mutable | Transactional state machine | High | Retained for execution trail | System Scheduler | Lease-guarded atomic claims | Daily backup | Missed cron items detected on boot | SQLite via Prisma | PostgreSQL table `scheduled_work_items` | **VERIFIED** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
-| **Scheduler Heartbeats** (`ScheduledWorkStore`) | Audit Ledger | Append-Only | Append-Only | Moderate | Time-bounded (e.g. 90 days) | System Internal | Append-only insert | Standard snapshot | Missed heartbeat alerts founder | SQLite via Prisma | PostgreSQL table `scheduler_heartbeats` | **VERIFIED** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
-| **Approval Records** (`ApprovalStore`) | Canonical | Mutable (consumption state) | Strict Transactional (CAS) | Critical | Permanent governance audit | Founder Sovereign | Single-use CAS (`consumedAt IS NULL`) | Continuous WAL, PITR | Fails closed; requires fresh approval | SQLite via Prisma | PostgreSQL table `approval_records` | **VERIFIED** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
-| **Side Effect Audits** (`AuditStore`) | Audit Ledger | Immutable | Append-Only | Critical | Permanent immutable ledger | Compliance / Founder | Append-only insert (no updates) | Continuous WAL, immutable replica | Alert on audit write failure; halt action | SQLite via Prisma | PostgreSQL table `side_effect_audits` | **VERIFIED** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
-| **Agent Runs** (`AgentRunStore`) | Execution History | Mutable during run, then immutable | Optimistic / Upsert | Moderate | Retain for diagnostic window | Internal Engineering | Upsert on `runId` | Daily backup | Interrupted run marked `failed` on reboot | SQLite via Prisma (upsert) | PostgreSQL table `agent_runs` | **VERIFIED** ([`src/lib/server/agents/run-store.ts`](src/lib/server/agents/run-store.ts)) |
-| **Council Deliberations** (`ExecutiveCouncilEngine`) | Canonical | Mutable during review, then sealed | Optimistic Concurrency | High | Permanent strategic record | Founder & Executive | Collection lock during deliberation | Daily backup | Interrupted deliberation marks `degraded` | `.data/council_deliberations.json` | PostgreSQL table `council_deliberations` | **VERIFIED** ([`src/lib/server/orchestration/council.ts`](src/lib/server/orchestration/council.ts)) |
-| **Distributed Leases** (`LeaseManager`) | Transient Coordination | Highly Mutable | Strict Transactional (Fencing) | Low (TTL bounded) | Auto-expiring TTL | System Workers | Atomic conditional acquire/renew | Not required | Expired lease reclaimed by standby worker | SQLite via Prisma | PostgreSQL table `distributed_leases` | **VERIFIED** ([`src/lib/server/coordination/lease-manager.ts`](src/lib/server/coordination/lease-manager.ts)) |
-| **Conversations & Messages** (`ConversationStore`) | Canonical | Append-Only Messages, Mutable Threads | Transactional Append | High | Retained until founder tombstone | Founder Confidential | Idempotency key uniqueness check | Daily backup | Tombstones prevent resurrected state | `.data/conversations.json`, `chat_messages.json` | PostgreSQL tables `conversations`, `chat_messages` | **VERIFIED** ([`src/lib/server/conversation/store.ts`](src/lib/server/conversation/store.ts)) |
-| **Sophia Personal Memories** (`PersonalMemoryStore`) | Canonical (Personal) | Mutable (lifecycle FSM) | Optimistic Concurrency | High | Founder explicit revocation | Founder Confidential (Isolated) | Founder ID tenant isolation | Daily backup | Isolated from Company Brain | `.data/sophia_memories.json` | PostgreSQL table `sophia_memories` | **VERIFIED** ([`src/lib/server/sophia/personal-memory-store.ts`](src/lib/server/sophia/personal-memory-store.ts)) |
-| **Communications** (`InMemoryCommunicationStore`) | Ephemeral / Staging | Mutable | In-Memory (No isolation) | Zero today (High target) | None today | Founder & Communication Worker | None today | None today | Process restart loses all CRM state | Ephemeral JavaScript `Map` | PostgreSQL tables `comm_*` | **VERIFIED** ([`src/lib/server/communication/store.ts`](src/lib/server/communication/store.ts)) |
-| **Live WS Tickets** (`LiveTicketStore`) | Ephemeral Handshake | Replaceable (60s TTL) | In-Memory | Zero (Ephemeral) | Expired every 60 seconds | Ephemeral Gateway | Single-use consumption | None required | Expired ticket forces client re-auth | In-memory JavaScript `Map` | In-memory RAM Map / Redis | **VERIFIED** ([`src/lib/server/live/ticket-store.ts`](src/lib/server/live/ticket-store.ts)) |
+| **Decisions** (`DecisionStore`) | Canonical | Mutable (stateVersion + transitions) | Optimistic Concurrency | High (survive redeploys) | Permanent corporate record | Highly Sensitive (Founder only) | Atomic CAS on version, collection lock | Snapshot + PITR | Fail-closed on lock timeout; in-memory cache | `.data/decisions.json` | PostgreSQL table `company_decisions` | **REPOSITORY EVIDENCE** ([`src/lib/server/decision/store.ts`](src/lib/server/decision/store.ts)) |
+| **Epistemic Sources & Signals** (`EpistemicClaimStore`) | Canonical | Immutable | Append-Only (Idempotent by hash) | High | Permanent audit evidence | Restricted internal | Unique hash constraint | Snapshot + immutable archive | Duplicate insert ignored; SHA-256 check | SQLite via Prisma | PostgreSQL tables `epistemic_sources`, `signals` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
+| **Epistemic Claims** (`EpistemicClaimStore`) | Canonical | Mutable (status transitions) | Eventual / Sequential | Moderate | Retained with claim history | Restricted internal | Atomic status update | Standard snapshot | Re-evaluable via verification policy | SQLite via Prisma | PostgreSQL table `epistemic_claims` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
+| **Canonical Facts** (`EpistemicClaimStore`) | Canonical | Mutable (supersession pointers) | Transactional Supersession | Critical | Permanent (superseded marked) | High (Company Truth) | Atomic predecessor / successor link | Continuous WAL, PITR | Rollback to predecessor fact if invalid | SQLite via Prisma | PostgreSQL table `canonical_facts` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
+| **Operational State** (`CompanyStateStore`) | Canonical | Mutable | Optimistic Concurrency | High | Overwritten on strategic update | Executive only | Version check on update | Standard snapshot | Fallback to default state seeds | In-memory + `.data/company_state.json` | PostgreSQL table `company_state` | **REPOSITORY EVIDENCE** ([`src/lib/server/state/state-store.ts`](src/lib/server/state/state-store.ts)) |
+| **Company Knowledge** (`CompanyKnowledgeStore`) | Canonical | Replaceable / Versioned | Optimistic Concurrency | High | Version history retained | Company Internal | Content-hash uniqueness | Standard snapshot | Re-seed from markdown baseline | SQLite via Prisma + file cache | PostgreSQL table `company_knowledge` | **REPOSITORY EVIDENCE** ([`src/lib/server/knowledge/knowledge-store.ts`](src/lib/server/knowledge/knowledge-store.ts)) |
+| **Company Memory** (`CompanyMemoryStore`) | Canonical | Append-oriented | Best-Effort / Eventual | Moderate | Soft deprecation supported | Company Internal | Simple insert / update | Standard snapshot | Loss causes precedent amnesia, not crash | SQLite via Prisma + file cache | PostgreSQL table `company_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/memory/memory-store.ts`](src/lib/server/memory/memory-store.ts)) |
+| **Workflow Definitions** (`WorkflowStore`) | Canonical | Versioned / Immutable | Immutable per version | High | Retained across executions | Engineering / Admin | Unique `(id, version)` constraint | Standard snapshot | System cannot start if definitions missing | SQLite via Prisma | PostgreSQL table `workflow_definitions` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
+| **Workflow Instances** (`WorkflowStore`) | Canonical | Mutable (state machine) | Strict Transactional (CAS) | Critical | Retain active & completed runs | Founder & Autonomous Engine | Atomic step claiming, version CAS | Continuous WAL, PITR | In-flight steps fail-safe, rehydrate on boot | SQLite via Prisma | PostgreSQL table `workflow_instances` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
+| **Scheduled Work Items** (`ScheduledWorkStore`) | Canonical | Mutable | Transactional state machine | High | Retained for execution trail | System Scheduler | Lease-guarded atomic claims | Standard snapshot | Missed cron items detected on boot | SQLite via Prisma | PostgreSQL table `scheduled_work_items` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
+| **Scheduler Heartbeats** (`ScheduledWorkStore`) | Audit Ledger | Append-Only | Append-Only | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: audit compliance, disk storage cost, query index performance. | System Internal | Append-only insert | Standard snapshot | Missed heartbeat alerts founder | SQLite via Prisma | PostgreSQL table `scheduler_heartbeats` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
+| **Approval Records** (`ApprovalStore`) | Canonical | Mutable (consumption state) | Strict Transactional (CAS) | Critical | Permanent governance audit | Founder Sovereign | Single-use CAS (`consumedAt IS NULL`) | Continuous WAL, PITR | Fails closed; requires fresh approval | SQLite via Prisma | PostgreSQL table `approval_records` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
+| **Side Effect Audits** (`AuditStore`) | Audit Ledger | Immutable | Append-Only | Critical | Permanent immutable ledger | Compliance / Founder | Append-only insert (no updates) | Continuous WAL, immutable replica | Alert on audit write failure; halt action | SQLite via Prisma | PostgreSQL table `side_effect_audits` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
+| **Agent Runs** (`AgentRunStore`) | Execution History | Mutable during run, then immutable | Optimistic / Upsert | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (30–90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: LLM token audit trails, storage overhead, debugging needs. | Internal Engineering | Upsert on `runId` | Standard snapshot | Interrupted run marked `failed` on reboot | SQLite via Prisma (upsert) | PostgreSQL table `agent_runs` | **REPOSITORY EVIDENCE** ([`src/lib/server/agents/run-store.ts`](src/lib/server/agents/run-store.ts)) |
+| **Council Deliberations** (`ExecutiveCouncilEngine`) | Canonical | Mutable during review, then sealed | Optimistic Concurrency | High | Permanent strategic record | Founder & Executive | Collection lock during deliberation | Standard snapshot | Interrupted deliberation marks `degraded` | `.data/council_deliberations.json` | PostgreSQL table `council_deliberations` | **REPOSITORY EVIDENCE** ([`src/lib/server/orchestration/council.ts`](src/lib/server/orchestration/council.ts)) |
+| **Distributed Leases** (`LeaseManager`) | Transient Coordination | Highly Mutable | Strict Transactional (Fencing) | Low (TTL bounded) | Auto-expiring TTL | System Workers | Atomic conditional acquire/renew | Not required | Expired lease reclaimed by standby worker | SQLite via Prisma | PostgreSQL table `distributed_leases` | **REPOSITORY EVIDENCE** ([`src/lib/server/coordination/lease-manager.ts`](src/lib/server/coordination/lease-manager.ts)) |
+| **Conversations & Messages** (`ConversationStore`) | Canonical | Append-Only Messages, Mutable Threads | Transactional Append | High | Retained until founder tombstone | Founder Confidential | Idempotency key uniqueness check | Standard snapshot | Tombstones prevent resurrected state | `.data/conversations.json`, `chat_messages.json` | PostgreSQL tables `conversations`, `chat_messages` | **REPOSITORY EVIDENCE** ([`src/lib/server/conversation/store.ts`](src/lib/server/conversation/store.ts)) |
+| **Sophia Personal Memories** (`PersonalMemoryStore`) | Canonical (Personal) | Mutable (lifecycle FSM) | Optimistic Concurrency | High | Founder explicit revocation | Founder Confidential (Isolated) | Founder ID tenant isolation | Standard snapshot | Isolated from Company Brain | `.data/sophia_memories.json` | PostgreSQL table `sophia_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/sophia/personal-memory-store.ts`](src/lib/server/sophia/personal-memory-store.ts)) |
+| **Communications** (`InMemoryCommunicationStore`) | Ephemeral / Staging | Mutable | In-Memory (No isolation) | Zero today (High target) | None today | Founder & Communication Worker | None today | None today | Process restart loses all CRM state | Ephemeral JavaScript `Map` | PostgreSQL tables `comm_*` | **REPOSITORY EVIDENCE** ([`src/lib/server/communication/store.ts`](src/lib/server/communication/store.ts)) |
+| **Live WS Tickets** (`LiveTicketStore`) | Ephemeral Handshake | Replaceable (60s TTL) | In-Memory | Zero (Ephemeral) | Expired every 60 seconds | Ephemeral Gateway | Single-use consumption | None required | Expired ticket forces client re-auth | In-memory JavaScript `Map` | In-memory RAM Map / Redis | **REPOSITORY EVIDENCE** ([`src/lib/server/live/ticket-store.ts`](src/lib/server/live/ticket-store.ts)) |
 | **Dependency Relations** (`DependencyRelationStore`) | Projection | Replaceable / Rebuildable | Derived from Facts | Rebuildable | Dropped and rebuilt at will | Internal Index | Deterministic extraction pass | Not required | Deterministically rebuilt from Facts | In-memory index | PostgreSQL table `dependency_relations` | **REPOSITORY EVIDENCE** ([`src/lib/server/retrieval/dependency-relation-store.ts`](src/lib/server/retrieval/dependency-relation-store.ts)) |
 | **GraphDTO Read Model** (`read-model.ts`) | Projection | Stateless Projection | Deterministic Read Model | Rebuildable | In-memory projection | Read-Only Surface | Read-only database query | Not required | Pure function of database state | Stateless code function | Stateless code function | **REPOSITORY EVIDENCE** ([`src/lib/server/graph/read-model.ts`](src/lib/server/graph/read-model.ts)) |
 
@@ -430,10 +430,11 @@ To establish an objective technical basis for deployment decisions, four realist
   - Backups at rest: AES-256 encryption enforced prior to off-site replication.
   - Backups in transit: TLS 1.3 enforced on all transfer connections.
   - Key management: Backup encryption keys managed independently of application runtime secrets.
+- **Snapshot Retention Policy:** **UNDECIDED — ILLUSTRATIVE PROPOSAL** (daily snapshots retained for 30 days, annual audit snapshot retained for 1 year proposed) — **FOUNDER DECISION REQUIRED**. Decision factors: corporate audit requirements, storage cost, recovery window needs, and privacy/deletion obligations.
 
 ### 10.2 Restore Validation & Point-in-Time Recovery
 - **Restore Testing:** An untested backup is an invalid backup. The target operations pipeline must execute an automated monthly restore validation pass into an ephemeral sandbox database.
-- **Point-in-Time Recovery (PITR):** Continuous Write-Ahead Log (WAL) archiving allows restoring the database to any specific second within a rolling 7-day retention window.
+- **Point-in-Time Recovery (PITR) Window:** **UNDECIDED — ILLUSTRATIVE PROPOSAL** (7-day rolling PITR proposed) — **FOUNDER DECISION REQUIRED**. Continuous Write-Ahead Log (WAL) archiving allows restoring the database to any specific second. Decision factors: WAL storage volume and cost, recovery SLA, and regulatory retention obligations.
 - **Recovery Objectives Notice:** Recovery Point Objective (RPO) and Recovery Time Objective (RTO) are business policy choices that must be explicitly established by founder decision, not fabricated by engineering.
 
 ### 10.3 Observability, Health & Integrity Monitoring
@@ -465,11 +466,11 @@ To establish an objective technical basis for deployment decisions, four realist
 
 ## 12. Reversible Migration Protocol
 
-To transition from the current SQLite/`.data` hybrid to the production database architecture without unverified claims of "zero data loss", engineering must follow a strict 5-stage migration sequence.
+To transition from the current SQLite/`.data` hybrid to the production database architecture without unverified claims of "zero data loss" or "instant rollback", engineering must follow a strict 5-stage migration sequence.
 
 ```
 ┌─────────────────────────────────┐
-│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Read-only lock, inventory files, capture SHA-256 hashes
+│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Mutation freeze, inventory files, capture SHA-256 hashes
 └────────────────┬────────────────┘
                  │
                  ▼
@@ -484,17 +485,17 @@ To transition from the current SQLite/`.data` hybrid to the production database 
                  │
                  ▼
 ┌─────────────────────────────────┐
-│ STAGE 4: INGESTION & RECONCILE  │ ◄── Dry-run transaction; produce machine-readable diff report
+│ STAGE 4: INGESTION & RECONCILE  │ ◄── Dry-run transaction; semantic equivalence reconciliation
 └────────────────┬────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────┐
-│ STAGE 5: CUTOVER & ROLLBACK GATE│ ◄── Verify cutover gates; maintain instant rollback procedure
+│ STAGE 5: CUTOVER & RECOVERY GATE│ ◄── Controlled pre-write vs post-write cutover architecture
 └─────────────────────────────────┘
 ```
 
 ### Stage 1: Discovery & Source Snapshot
-1. **Mutation Freeze:** Stop local background workers, scheduler evaluations, and live WebSocket sessions.
+1. **Mutation Freeze / Write Prevention:** Stop local background workers, scheduler evaluations, and live WebSocket sessions. During extraction, incoming webhooks must buffer at the reverse proxy (or return HTTP 503 with `Retry-After: 300`) to guarantee zero concurrent writes to the source files.
 2. **Cryptographic Source Snapshot:** Capture SHA-256 checksums and record counts for all source files:
    - All `.data/*.json` collections (`decisions.json`, `conversations.json`, `chat_messages.json`, `sophia_memories.json`, `council_deliberations.json`).
    - SQLite database file (`db/custom.db`).
@@ -517,27 +518,107 @@ To transition from the current SQLite/`.data` hybrid to the production database 
    - Preserve exact ISO 8601 timestamps for creation, update, and supersession events.
 3. **Anomaly Handling:** Malformed or orphaned records are logged to an anomaly report; no record is silently discarded.
 
-### Stage 4: Ingestion & Reconciliation Pass
-1. **Dry-Run Transaction:** Ingest extracted records into target PostgreSQL inside a rolled-back transaction to validate all foreign keys and unique constraints.
-2. **Automated Verification Queries:** Execute side-by-side reconciliation queries:
-   - Compare record counts between source files and target tables.
-   - Verify that Epistemic Claims correctly link to Evidence Sources.
-   - Verify that Canonical Facts correctly link to Epistemic Claims.
-   - Verify that Approval Records correctly link to Workflow Instances.
-3. **Machine-Readable Report:** Produce `migration-reconciliation-report.json` certifying 100% record match.
+### Stage 4: Ingestion & Semantic Equivalence Reconciliation
+> **CRITICAL RECONCILIATION PRINCIPLE:** A 100% record-count match does NOT prove semantic equivalence. Matching counts can easily conceal corrupted foreign keys, lost transitions, truncated text, or mangled JSON payloads. Successful reconciliation cannot be claimed until the migration script is actually executed and verified against target PostgreSQL.
 
-### Stage 5: Cutover, Recovery & Rollback Gates
-1. **Explicit Cutover Gates:**
-   - Gate 1: Reconciliation report confirms zero missing records.
-   - Gate 2: Full automated test suite passes against target PostgreSQL.
-   - Gate 3: Founder explicitly reviews and signs off on cutover report.
-2. **Cutover Execution:**
-   - Deploy code configured with `DATABASE_MODE=authoritative` and target PostgreSQL `DATABASE_URL`.
-   - Shift application traffic to updated deployment.
-3. **Rollback Criteria & Procedure:**
-   - Rollback triggers: Database connectivity failure, transaction error rate > 0.5%, or data divergence detected within 1 hour post-cutover.
-   - Rollback action: Revert `DATABASE_URL` and `DATABASE_MODE` to previous configuration. The frozen `.data/` directory and SQLite database remain unmodified and immediately restorable.
-4. **Old Source Retirement:** Source `.data/` files and SQLite database are archived read-only and retained for 30 days before decommission.
+1. **Dry-Run Transaction:** Ingest extracted records into target PostgreSQL inside a rolled-back transaction to validate all foreign keys and unique constraints.
+2. **Domain-Specific Semantic Invariants (Mandatory Automated Checks):**
+   - **Decisions (`DecisionStore`):**
+     - Primary key integrity: All `decisionId` match source.
+     - State version integrity: `stateVersion` matches source.
+     - History integrity: All elements in `transitions` array preserved with identical `stateVersion`, `transitionId`, `actor`, `fromStatus`, `toStatus`, and timestamps.
+     - Cryptographic invariant: Recalculate `computeDecisionApprovalHash(record)` against the ingested record and assert bit-for-bit equality with `approvedPayloadHash`.
+   - **Approvals & Governance (`ApprovalStore`):**
+     - Status & consumption: Every approved record has `consumedAt` preserved; unconsumed records maintain `consumedAt IS NULL`.
+     - Revocation & Expiration: Records marked `rejected`, `revoked`, or with `expiresAt < now()` maintain terminal non-executable status.
+     - Single-use behavior: Assert that no record with `consumedAt` can ever match `findActiveMatching()` queries.
+     - Payload binding: Canonical hash tuple `sha256(canonical(workflowInstanceId, stepId, payload))` is verified against stored hash.
+   - **Epistemic Truth (`EpistemicClaimStore`):**
+     - Provenance lineage: Every `EpistemicClaim` references an existing `EvidenceSource` or `EpistemicSignal` with valid foreign keys.
+     - Content hashing: Re-hash evidence payloads to verify SHA-256 fingerprint matches stored hash.
+     - Fact supersession: For every `CanonicalFact` with `validityState === 'superseded'`, assert `supersededById` references a valid successor fact and `supersededAt` is a valid timestamp $\ge$ predecessor `promotedAt`.
+     - Active fact exclusivity: Assert exactly one active fact exists per unique subject identifier.
+   - **Conversations (`ConversationStore`):**
+     - Thread integrity: Every `ChatMessage` correctly references an existing parent `Conversation`.
+     - Chronological order: Messages maintain strict monotonic timestamp ordering (`createdAt`).
+     - Anti-resurrection tombstones: All tombstones (`ConversationTombstone`, `MessageTombstone`) verified; assert tombstoned IDs return 404/409 on query.
+     - Idempotency keys: Message `idempotencyKey` values preserved and index-enforced.
+   - **Sophia Personal Mind (`PersonalMemoryStore`):**
+     - Founder isolation: Assert 100% of memories are partitioned by `founderId`; zero cross-tenant contamination.
+     - Lifecycle states: `PROPOSED`, `ACTIVE`, `DEPRECATED`, `REVOKED`, `PURGED` preserved.
+     - Segregation boundary: Assert zero references from Personal Mind rows to Canonical Facts or Company Knowledge tables.
+   - **Workflows (`WorkflowStore`):**
+     - Instance versions: `stateVersion` matches across instance and step states.
+     - Step claims: Active worker step claims have valid `claimedBy` and step status (`claimed`, `running`).
+     - State machine integrity: All step statuses follow valid DAG transitions.
+   - **Agent Runs (`AgentRunStore`):**
+     - Lifecycle status: Final status (`completed`, `failed`, `halted`) matches duration and output content.
+     - Provenance & model: Model identifiers and token counts preserved.
+   - **Executive Council (`ExecutiveCouncilEngine`):**
+     - Deliberation structure: Input proposal, specialist critiques (Researcher, PM, Finance), and COO mediation ruling preserved with matching council fingerprint.
+3. **Anomaly Classification & Manual Resolution:**
+   - `CRITICAL` (Halts Cutover): Missing records, mismatched cryptographic hashes, broken foreign keys.
+   - `MALFORMED` (Requires Operator Review): Unparseable JSON metadata or legacy schema anomalies flagged in quarantined staging.
+   - `ORPHAN` (Requires Founder Sign-off): Records whose parent entities no longer exist.
+4. **Machine-Readable Reconciliation Report:** Emitted as `migration-reconciliation-report.json` certifying all semantic invariants before cutover is authorized.
+
+### Stage 5: Cutover, Authority Transfer & Technically Honest Rollback
+To avoid unverified promises of "instant rollback" or "zero data loss", rollback design is partitioned into explicit operational states:
+
+#### 5.1 Distinct Concepts Defined
+1. **Application Rollback:** Reverting deployed application binaries, container images, or routing traffic back to the prior application version.
+2. **Database Rollback:** Reverting schema changes or running down-migrations on the database instance.
+3. **Data Recovery:** Restoring, forward-fixing, or reconciling application data records after corruption, partial write, or transactional anomaly.
+4. **Authority Transfer:** The explicit, formal handoff where the application server switches `DATABASE_MODE=authoritative` to treat PostgreSQL as the sole system of record.
+
+#### 5.2 Explicit Cutover Gates (All Must Pass)
+- **Gate 1 (Semantic Equivalence):** Reconciliation report certifies 0 critical discrepancies and 100% semantic invariant match.
+- **Gate 2 (Automated Test Pass):** Full automated integration test suite passes against target PostgreSQL.
+- **Gate 3 (Operational Rehearsal):** Migration dry run completed in staging within planned maintenance window.
+- **Gate 4 (Founder Approval):** Explicit founder review and written authorization to execute authority transfer.
+
+#### 5.3 Rollback Semantics: Pre-Write vs. Post-Write
+Rollback behavior depends fundamentally on whether production mutations have been committed to the new database:
+
+```
+                          AUTHORITY TRANSFER
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+         STATE A: PRE-WRITE               STATE B: POST-WRITE
+       (Zero Production Writes)         (Production Writes Committed)
+                    │                         │
+                    ▼                         ▼
+        SAFE APPLICATION ROLLBACK        CONFIGURATION ROLLBACK INVALID!
+        • Route traffic back to legacy   • Flipping config discards new writes!
+        • Verified legacy source active  • Split-brain / divergent histories!
+        • Zero data loss                          │
+                                                  ▼
+                                       CONTROLLED RECOVERY GATES
+                                       1. Controlled Write Freeze
+                                       2. Founder Authorization
+                                       3. Option B.1: Forward Recovery (Preferred)
+                                       4. Option B.2: Reverse Change-Capture Replay
+```
+
+##### Scenario A: Pre-Write Rollback (Zero Production Writes Accepted)
+- **Condition:** Traffic has shifted, but health checks fail, error rates spike, or latency is unacceptable before any user or worker mutations (decisions, approvals, messages, state updates) are committed to PostgreSQL.
+- **Action:** Execute Application Rollback: immediately route traffic back to the legacy application deployment.
+- **Safety:** The source `.data/` directory and SQLite database remain unmodified and verified. Zero data loss occurs.
+
+##### Scenario B: Post-Write Rollback (Production Writes Accepted by PostgreSQL)
+- **Condition:** PostgreSQL has accepted authoritative production writes (new decisions approved, chats recorded, agent runs executed, approvals consumed).
+- **The Fatal Flaw of Naive Rollback:** **Configuration rollback (switching `DATABASE_URL` back to SQLite) is NOT a valid data rollback.** Doing so abandons all mutations committed during the PostgreSQL window, resulting in catastrophic data loss and divergent corporate histories.
+- **Post-Write Recovery Procedure:**
+  1. **Immediate Controlled Write Freeze:** Halt incoming mutations, background workers, and scheduler loops to stop data divergence.
+  2. **Founder Authorization Gate:** Founder evaluates the outage nature and authorizes one of two recovery pathways:
+     - **Path B.1: Forward Recovery on PostgreSQL (Default & Preferred):** Resolve the application crash, connection pool exhaustion, or infrastructure bug in-place on PostgreSQL. Data remains intact; corporate history remains continuous; no reverse migration is needed.
+     - **Path B.2: Reverse Reconciliation & Replay (Extreme Disaster Only):** If PostgreSQL suffers unrecoverable infrastructure failure, execute a pre-tested reverse change-capture script that extracts all mutations committed to PostgreSQL since cutover, validates them, and replays them into `.data/*.json` and SQLite before legacy authority is resumed.
+  3. **Strict Invariant:** Reversibility must never be claimed as "instant" or "guaranteed" unless the reverse change-capture and replay tool has been formally developed, tested, and demonstrated in rehearsal.
+
+#### 5.4 Legacy Data Source Retirement Policy
+- **Policy:** **UNDECIDED — ILLUSTRATIVE PROPOSAL** (30-day read-only archive proposed) — **FOUNDER DECISION REQUIRED**.
+- **Rule:** The frozen `.data/` files and SQLite database must remain preserved in read-only cold storage and never deleted until explicit founder authorization. Decision factors: post-migration audit window, compliance verification, and emergency fallback margins.
 
 ---
 
@@ -594,9 +675,13 @@ The following architectural decisions cannot be decided by engineering alone and
 │                          │ • Founder to establish RTO  │ time expectations.             │
 │                          │   (e.g. 30 min vs 4 hours)  │                                │
 ├──────────────────────────┼─────────────────────────────┼────────────────────────────────┤
-│ 4. Backup Retention &    │ • 7-day rolling PITR        │ Dictates regulatory compliance │
-│    Archival Window       │ • 30-day snapshot archive   │ and cloud storage overhead.    │
-│                          │ • 1-year annual audit freeze│                                │
+│ 4. Backup Retention &    │ • 7-day rolling PITR        │ ILLUSTRATIVE OPTIONS — FOUNDER │
+│    Archival Window       │ • 30-day snapshot archive   │ DECISION REQUIRED. Dictates    │
+│                          │ • 1-year annual audit freeze│ compliance and storage costs.  │
+├──────────────────────────┼─────────────────────────────┼────────────────────────────────┤
+│ 5. Legacy Source Data    │ • 30-day cold retention     │ ILLUSTRATIVE OPTIONS — FOUNDER │
+│    Retirement Policy     │ • 90-day cold retention     │ DECISION REQUIRED. Balances    │
+│                          │ • Permanent cold archive    │ fallback margin against disk.  │
 └──────────────────────────┴─────────────────────────────┴────────────────────────────────┘
 ```
 
@@ -605,16 +690,17 @@ The following architectural decisions cannot be decided by engineering alone and
 ## 16. Acceptance Criteria
 
 The Phase 2.3B revision is complete only when:
-- [x] Every important architectural claim is classified under the formal Evidence Register (`VERIFIED`, `REPOSITORY EVIDENCE`, `INFERRED`, `UNKNOWN`).
+- [x] Every architectural statement is classified consistently under Section 2.2 (`REPOSITORY EVIDENCE`, `INFERRED`, `UNKNOWN`; no static file inspection labeled `VERIFIED`).
 - [x] The oversimplified four-tier classification is replaced with the independent 13-dimension classification matrix.
 - [x] Store write semantics are corrected against actual repository source code (AgentRunStore upsert, ScheduledWorkStore split, ApprovalStore CAS, etc.).
-- [x] The migration protocol is redesigned as a controlled 5-stage reversible procedure without unsupported zero-data-loss guarantees.
+- [x] The migration protocol in Section 12 details domain-specific semantic reconciliation invariants across all 8 domains (Decisions, Approvals, Epistemic, Conversations, Personal Mind, Workflows, Runs, Council).
+- [x] Rollback design explicitly distinguishes Pre-Write Cutover from Post-Write Cutover, rejecting naive configuration rollback and detailing forward recovery vs. reverse change-capture.
 - [x] Concurrency and external side-effect reliability architecture (Outbox, Inbox, Idempotency, Status Probes) is fully specified.
 - [x] Four hosting and database deployment options are objectively compared without presenting PostgreSQL as an unconditional requirement.
-- [x] Backup, disaster recovery, and observability requirements are defined without invented SLAs or RPO/RTO metrics.
+- [x] Backup, disaster recovery, and retention requirements are explicitly marked as `UNDECIDED — ILLUSTRATIVE PROPOSAL — FOUNDER DECISION REQUIRED` without invented SLAs or RPO/RTO metrics.
 - [x] Twelve realistic failure scenarios are documented with Prevention, Detection, Recovery, and Human Escalation protocols.
-- [x] Roadmap status in `doc/ROADMAP.md` reflects `DRAFT — PENDING FOUNDER REVIEW` with Phase 2.3C remaining proposed.
-- [x] Machine-specific `file:///` URLs are replaced with repository-relative markdown paths.
+- [x] Stale persistence claims in `doc/ROADMAP.md` are reconciled with current repository reality (SQLite datasource acknowledged; PostgreSQL marked as target design).
+- [x] Machine-specific `file:///` URLs are completely absent; all links are repository-relative markdown paths.
 - [x] Zero runtime code, database schemas, migrations, environment variables, or production infrastructure were modified.
 
 ---
@@ -633,7 +719,7 @@ The Phase 2.3B revision is complete only when:
 3. **Target Recovery Metrics:** Target RPO and RTO thresholds, backup retention schedules, and operational budget limits.
 
 ### 17.3 What Can Be Approved Now
-- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, and 5-stage reversible migration protocol.
+- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, and pre/post-write rollback architecture.
 - **The Staged Roadmap:** Maintaining Phase 2.3B as draft specification and gating Phase 2.3C behind explicit founder sign-off.
 
 ### 17.4 What Cannot Yet Be Approved
