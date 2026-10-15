@@ -50,6 +50,10 @@ The current architecture is a set of distinct domain stores plus read projection
 
 ### 2.2 What remains unknown
 
+A read-only check of the connected Vercel team found one linked project, lumoraglm, connected to the separate Lumoraglm repository. The Vercel project query filtered to samjuniors/SamJuniorsOS returned no project, and the team's project list contained only lumoraglm. This is evidence that the connected Vercel team does not currently expose a Vercel project linked to SamJuniorsOS. It does not prove the repository is not deployed on another host, another Vercel account/team, or through a manually configured service.
+
+
+
 The repository does not prove which hosting platform currently serves the app, which environment variables are actually configured, whether the SQLite file is on persistent storage, whether .data survives instance replacement, or whether only one instance is running.
 
 There is no deployment manifest in the inspected repository root that settles these questions. Absence of a manifest does not prove absence of an external dashboard configuration.
