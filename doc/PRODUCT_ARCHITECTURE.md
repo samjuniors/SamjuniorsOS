@@ -1,6 +1,6 @@
 # SAMJUNIORS PRODUCT ARCHITECTURE SPECIFICATION
-**Version:** 3.0.0 — Reconciled against repository `8524908` and founder-locked strategic decisions (2026-09-08)
-**Status:** Frozen for implementation planning. Repository-grounded as of commit `8524908`. Supersedes v2.1.0 (which was itself never committed to the repo — the repo's `doc/PRODUCT_ARCHITECTURE.md` at commit `8524908` still reflects the earlier, pre-fix v2.0.0 draft; this version reconciles both the code drift and the doc drift).
+**Version:** 3.0.1 — Strategic specification retained; repository-state claims under re-audit (2026-10-15)
+**Status:** Founder-approved principles and target direction remain reference material. Repository-state sections were last reconciled against commit `8524908` (2026-09-08) and are historical snapshots, not current implementation verification. Use current source and docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md for current status. Do not infer live deployment configuration from this specification.
 **Reference Audits:** AUDIT 00–11 (`doc/`), this document's own repository inspection at `7154ffc` and `8524908`, and architectural research from `Bennettxai/OptimalEngine` and `Bennettxai/FounderOS-DEMO` (patterns only — neither repo's runtime is adopted; see §11a, §17).
 
 This document keeps every section that was already correct and rewrites every section that described target-state as if it were built, or that described a real gap as if it were still fully open when partial progress has landed. States distinguished throughout, tagged inline:
