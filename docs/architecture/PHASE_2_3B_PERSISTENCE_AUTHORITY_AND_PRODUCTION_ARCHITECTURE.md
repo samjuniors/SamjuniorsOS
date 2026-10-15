@@ -23,8 +23,8 @@
    Authoritative company truth is owned by a governed federation of dedicated domain stores. The "Company Brain" is an architectural governance layer—deterministic verification gates, provenance contracts, context assemblers, and bounded read projections—not a monolithic `CompanyBrainStore` class or single database table.
 3. **Sophia Personal Mind Remains Strictly Founder-Scoped:**  
    Per `AGENTS.md §6`, the founder's personal dialogue, sensory notes, and stylistic interaction preferences ([`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts)) are segregated from company truth. Personal memories are never authoritative company truth, never an authorization bypass, and never automatically promoted into company memory without explicit founder review and deterministic epistemic verification.
-4. **Honest Migration Semantics:**  
-   No migration protocol can claim "zero data loss", "instant rollback", or "full semantic equivalence" prior to automated rehearsal, constraint validation, and end-to-end verification. A database transaction cannot atomically commit an external side effect (Stripe charge, GitHub push, Resend email). Rollback semantics must strictly distinguish pre-write cutover from post-write cutover. Once the target database accepts production writes, configuration rollback is invalid and forward recovery or reverse change-capture is mandatory.
+4. **Honest Migration & Rollback Semantics:**  
+   No migration protocol can claim "zero data loss", "instant rollback", or "full semantic equivalence" prior to automated rehearsal, constraint validation, and end-to-end verification. A database transaction cannot atomically commit an external side effect (Stripe charge, GitHub push, Resend email). Rollback semantics must strictly account for both database mutations and external side effects. Pre-write rollback is valid only when zero database mutations and zero external side effects have occurred. External side effects must remain disabled during the canary cutover verification window. Once mutations or external side effects occur, configuration rollback alone is invalid and forward recovery or tested reverse change-capture is mandatory.
 
 ---
 
@@ -470,7 +470,7 @@ To transition from the current SQLite/`.data` hybrid to the production database 
 
 ```
 ┌─────────────────────────────────┐
-│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Mutation freeze, inventory files, capture SHA-256 hashes
+│ STAGE 1: DISCOVERY & SNAPSHOT   │ ◄── Enforceable write freeze across all 6 write paths, drain in-flight, capture hashes
 └────────────────┬────────────────┘
                  │
                  ▼
@@ -485,21 +485,45 @@ To transition from the current SQLite/`.data` hybrid to the production database 
                  │
                  ▼
 ┌─────────────────────────────────┐
-│ STAGE 4: INGESTION & RECONCILE  │ ◄── Dry-run transaction; semantic equivalence reconciliation
+│ STAGE 4: INGESTION & RECONCILE  │ ◄── Dry-run transaction; semantic equivalence reconciliation across 8 domains
 └────────────────┬────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────┐
-│ STAGE 5: CUTOVER & RECOVERY GATE│ ◄── Controlled pre-write vs post-write cutover architecture
+│ STAGE 5: CUTOVER & RECOVERY GATE│ ◄── Controlled pre-write vs post-write cutover architecture with external side-effect isolation
 └─────────────────────────────────┘
 ```
 
-### Stage 1: Discovery & Source Snapshot
-1. **Mutation Freeze / Write Prevention:** Stop local background workers, scheduler evaluations, and live WebSocket sessions. During extraction, incoming webhooks must buffer at the reverse proxy (or return HTTP 503 with `Retry-After: 300`) to guarantee zero concurrent writes to the source files.
-2. **Cryptographic Source Snapshot:** Capture SHA-256 checksums and record counts for all source files:
-   - All `.data/*.json` collections (`decisions.json`, `conversations.json`, `chat_messages.json`, `sophia_memories.json`, `council_deliberations.json`).
-   - SQLite database file (`db/custom.db`).
-3. **Inventory Manifest:** Generate a machine-readable JSON manifest recording file sizes, timestamps, and record counts.
+### Stage 1: Discovery, Enforceable Write Freeze & Source Snapshot
+
+A write freeze cannot simply rely on stopping workers, pausing WebSockets, or returning HTTP 503; such measures fail to guarantee that all concurrent writes have stopped or that all external events will be retried. The write freeze must be centrally enforced at the domain write boundary.
+
+#### 1.1 Centrally Enforced Write Freeze at the Application Boundary
+1. **Global Maintenance Lock:** The application runtime engages a centralized `MaintenanceLock` at the core domain store boundary ([`DurableFileStore`](src/lib/server/persistence/durable-file-store.ts), [`DecisionStore`](src/lib/server/decision/store.ts), [`ApprovalStore`](src/lib/server/authorization/approval-store.ts), [`WorkflowStore`](src/lib/server/workflow/store.ts), [`EpistemicClaimStore`](src/lib/server/epistemic/claim-store.ts)). Any mutation attempted while this lock is active immediately throws `MaintenanceModeError` (returning HTTP 503 with `Retry-After: 300`).
+2. **Explicit Inventory of Every Write Path Enforced:**
+   - **Path 1 (Public & Privileged REST APIs):** `/api/orchestrate`, `/api/decision/*`, `/api/workflow/*`, `/api/approvals/*`, `/api/sophia/*`, `/api/agents/*`.
+   - **Path 2 (Scheduled Work & Heartbeats):** Recurring automation loops in `ScheduledWorkEngine` and heartbeat logs in `SchedulerHeartbeat`.
+   - **Path 3 (Autonomous Workers & Council):** `ServerAgentExecutor` tool-execution side effects and `ExecutiveCouncilEngine` deliberation writes.
+   - **Path 4 (External Inbound Webhooks):** Stripe subscription/charge events, Resend email transit status, and GitHub webhook notifications.
+   - **Path 5 (Administrative & Startup Operations):** Seed bootstrap routines (`ensureInitialized()`, `seedInitialDecisionsUnderLock()`), CLI scripts, and background migrations.
+   - **Path 6 (Live Ephemeral Transport):** WebSocket Companion messages triggering cognitive turns, memory updates, or workflow state mutations.
+3. **Draining & Accounting for In-Flight Operations:**
+   - A grace drain window of 30 seconds is initiated upon freeze engagement.
+   - The system monitors active lock holders (`.lock` files, `DistributedLease` records, step claims) until active in-flight worker count reaches exactly zero.
+   - Any worker failing to terminate before the 30-second deadline is terminated fail-closed (`status = 'halted'`), transactions rolled back, and recorded in the migration drain manifest.
+4. **Durable Webhook & Event Ingress Buffering (Provider Replay Realities):**
+   - *Provider-Specific Realities:* Universal vendor retry guarantees must not be assumed without evidence:
+     - **Stripe:** Formally guarantees webhook retries with exponential backoff over a 72-hour window on HTTP 5xx responses.
+     - **GitHub:** Retries webhooks up to a bounded count, but prolonged outages can drop events, requiring manual re-delivery via GitHub App UI ("Recent Deliveries" -> "Redeliver").
+     - **Resend:** Webhook retry SLAs depend on gateway endpoint availability and must not be assumed without verified documentation.
+   - *Durable Ingress Buffering:* An edge proxy queue (e.g. Cloudflare Worker with durable KV queue) must buffer incoming raw webhook payloads during the freeze rather than relying exclusively on vendor retries.
+5. **Post-Cutover Idempotent Replay & Unknown-Status Policy:**
+   - Buffered events are replayed through `IdempotencyStore` / Transactional Inbox using their original external `eventId` once PostgreSQL authority is established.
+   - For any external event whose delivery status remains unknown or unacknowledged, an automated provider status query (Stripe Event API, GitHub Issue/PR API) verifies external state before resuming processing.
+6. **Cryptographic Source Snapshot & Manifest:**
+   - Once all write paths are verified frozen and in-flight workers drained to zero:
+   - Capture SHA-256 checksums and record counts for all source files: `.data/*.json` collections (`decisions.json`, `conversations.json`, `chat_messages.json`, `sophia_memories.json`, `council_deliberations.json`) and SQLite (`db/custom.db`).
+   - Emit a signed `migration-snapshot-manifest.json`.
 
 ### Stage 2: Target Schema & Constraint Validation
 1. **Domain Contract Verification:** Confirm that all target tables match approved domain contracts.
@@ -563,7 +587,7 @@ To transition from the current SQLite/`.data` hybrid to the production database 
 4. **Machine-Readable Reconciliation Report:** Emitted as `migration-reconciliation-report.json` certifying all semantic invariants before cutover is authorized.
 
 ### Stage 5: Cutover, Authority Transfer & Technically Honest Rollback
-To avoid unverified promises of "instant rollback" or "zero data loss", rollback design is partitioned into explicit operational states:
+To avoid unverified promises of "instant rollback" or "zero data loss", rollback design is partitioned into explicit operational states that account for both database mutations and external side effects:
 
 #### 5.1 Distinct Concepts Defined
 1. **Application Rollback:** Reverting deployed application binaries, container images, or routing traffic back to the prior application version.
@@ -571,50 +595,60 @@ To avoid unverified promises of "instant rollback" or "zero data loss", rollback
 3. **Data Recovery:** Restoring, forward-fixing, or reconciling application data records after corruption, partial write, or transactional anomaly.
 4. **Authority Transfer:** The explicit, formal handoff where the application server switches `DATABASE_MODE=authoritative` to treat PostgreSQL as the sole system of record.
 
-#### 5.2 Explicit Cutover Gates (All Must Pass)
-- **Gate 1 (Semantic Equivalence):** Reconciliation report certifies 0 critical discrepancies and 100% semantic invariant match.
-- **Gate 2 (Automated Test Pass):** Full automated integration test suite passes against target PostgreSQL.
-- **Gate 3 (Operational Rehearsal):** Migration dry run completed in staging within planned maintenance window.
-- **Gate 4 (Founder Approval):** Explicit founder review and written authorization to execute authority transfer.
+#### 5.2 Explicit Cutover Gates (All Must Pass with Human Founder Approval)
+- **Gate 1 (Semantic Equivalence Certified):** Reconciliation report certifies 0 critical discrepancies and all defined domain semantic invariants pass without exception.
+- **Gate 2 (Automated Test Pass on Target):** Full automated integration test suite passes against target PostgreSQL.
+- **Gate 3 (Operational Rehearsal Complete):** Migration dry run completed in staging within planned maintenance window.
+- **Gate 4 (Drained Workers Verified):** Active lock monitor certifies exactly 0 in-flight mutations across all 6 write paths.
+- **Gate 5 (Founder Authorization):** Explicit founder review and written authorization to execute authority transfer.
 
-#### 5.3 Rollback Semantics: Pre-Write vs. Post-Write
-Rollback behavior depends fundamentally on whether production mutations have been committed to the new database:
+#### 5.3 Rollback Semantics: Pre-Write vs. Post-Write (Accounting for External Side Effects)
+Rollback behavior depends fundamentally on whether production database mutations have been committed OR external side effects have been dispatched:
 
 ```
                           AUTHORITY TRANSFER
                                  │
                     ┌────────────┴────────────┐
                     ▼                         ▼
-         STATE A: PRE-WRITE               STATE B: POST-WRITE
-       (Zero Production Writes)         (Production Writes Committed)
+         STATE A: PRE-WRITE               STATE B: POST-WRITE OR
+       (Zero Production Writes          POST-EXTERNAL SIDE EFFECT
+       & Zero External Effects)         (Mutations or External Effects Occurred)
                     │                         │
                     ▼                         ▼
         SAFE APPLICATION ROLLBACK        CONFIGURATION ROLLBACK INVALID!
         • Route traffic back to legacy   • Flipping config discards new writes!
-        • Verified legacy source active  • Split-brain / divergent histories!
-        • Zero data loss                          │
+        • Verified legacy source active  • Discards external audit records!
+        • External effects verified zero • Duplicate external side-effect risk!
+                                                  │
                                                   ▼
                                        CONTROLLED RECOVERY GATES
                                        1. Controlled Write Freeze
-                                       2. Founder Authorization
-                                       3. Option B.1: Forward Recovery (Preferred)
-                                       4. Option B.2: Reverse Change-Capture Replay
+                                       2. External Provider Status Probes
+                                       3. Founder Authorization
+                                       4. Option B.1: Forward Recovery (Preferred)
+                                       5. Option B.2: Reverse Change-Capture Replay
 ```
 
-##### Scenario A: Pre-Write Rollback (Zero Production Writes Accepted)
-- **Condition:** Traffic has shifted, but health checks fail, error rates spike, or latency is unacceptable before any user or worker mutations (decisions, approvals, messages, state updates) are committed to PostgreSQL.
-- **Action:** Execute Application Rollback: immediately route traffic back to the legacy application deployment.
-- **Safety:** The source `.data/` directory and SQLite database remain unmodified and verified. Zero data loss occurs.
+##### Scenario A: Pre-Write Rollback (Zero Production Writes AND Zero External Side Effects)
+- **Strict Precondition:** A rollback can be classified as Scenario A IF AND ONLY IF:
+  1. Zero production records or state mutations have been committed to PostgreSQL.
+  2. **AND** Zero external side effects (charges created on Stripe, emails dispatched on Resend, comments/PRs posted on GitHub) were dispatched, acknowledged, or left pending with external providers.
+- **Mandatory Cutover Safety Constraint:** To guarantee Scenario A eligibility during initial canary testing, **all external side effects must remain strictly disabled (`EXECUTION_MODE=dry_run` or safe mock mode)** during the initial smoke-testing cutover window until database authority is confirmed stable.
+- **Action:** Execute Application Rollback: immediately route traffic back to the legacy deployment.
+- **Safety:** The source `.data/` directory and SQLite database remain unmodified and verified.
 
-##### Scenario B: Post-Write Rollback (Production Writes Accepted by PostgreSQL)
-- **Condition:** PostgreSQL has accepted authoritative production writes (new decisions approved, chats recorded, agent runs executed, approvals consumed).
-- **The Fatal Flaw of Naive Rollback:** **Configuration rollback (switching `DATABASE_URL` back to SQLite) is NOT a valid data rollback.** Doing so abandons all mutations committed during the PostgreSQL window, resulting in catastrophic data loss and divergent corporate histories.
-- **Post-Write Recovery Procedure:**
-  1. **Immediate Controlled Write Freeze:** Halt incoming mutations, background workers, and scheduler loops to stop data divergence.
-  2. **Founder Authorization Gate:** Founder evaluates the outage nature and authorizes one of two recovery pathways:
+##### Scenario B: Post-Write or Post-External-Side-Effect Rollback
+- **Condition:** PostgreSQL has accepted production writes (decisions, chats, runs, approvals) **OR** any external side effect was dispatched or left in an unknown state with an external provider.
+- **The Fatal Flaw of Naive Rollback:** **Configuration rollback (switching `DATABASE_URL` back to SQLite) is NOT a valid data rollback.** Doing so abandons mutations committed during the PostgreSQL window, causes divergent corporate histories, and leaves external operations orphaned without audit trails. Furthermore, an external provider may successfully execute an action even if the database write failed or timed out. Replaying from legacy storage without provider reconciliation risks duplicate charges, duplicate emails, and corrupted audit logs.
+- **Post-Write / Post-Side-Effect Recovery Procedure:**
+  1. **Immediate Controlled Write Freeze:** Engage global `MaintenanceLock` across all compute nodes to stop internal mutations.
+  2. **External Provider Status Probes:** For every external side effect dispatched or in an `unknown` outcome state during the cutover window, run asynchronous status probes querying external providers via stored `idempotencyKey` values.
+  3. **Preservation of Acknowledged Operations:** Any external action acknowledged by a provider must be imported into the audit records (`SideEffectAudit`, `EpistemicSignal`) so that historical truth is never lost.
+  4. **Idempotency Key Injection:** Populate the legacy `IdempotencyStore` with all idempotency keys used during the PostgreSQL window to strictly prevent duplicate execution of the same side effects.
+  5. **Founder Authorization Gate:** Founder evaluates the outage nature and authorizes one of two recovery pathways:
      - **Path B.1: Forward Recovery on PostgreSQL (Default & Preferred):** Resolve the application crash, connection pool exhaustion, or infrastructure bug in-place on PostgreSQL. Data remains intact; corporate history remains continuous; no reverse migration is needed.
      - **Path B.2: Reverse Reconciliation & Replay (Extreme Disaster Only):** If PostgreSQL suffers unrecoverable infrastructure failure, execute a pre-tested reverse change-capture script that extracts all mutations committed to PostgreSQL since cutover, validates them, and replays them into `.data/*.json` and SQLite before legacy authority is resumed.
-  3. **Strict Invariant:** Reversibility must never be claimed as "instant" or "guaranteed" unless the reverse change-capture and replay tool has been formally developed, tested, and demonstrated in rehearsal.
+  6. **Strict Invariant:** Reversibility must never be claimed as "instant" or "guaranteed" unless the reverse change-capture and replay tool has been formally developed, tested, and demonstrated in rehearsal.
 
 #### 5.4 Legacy Data Source Retirement Policy
 - **Policy:** **UNDECIDED — ILLUSTRATIVE PROPOSAL** (30-day read-only archive proposed) — **FOUNDER DECISION REQUIRED**.
@@ -693,13 +727,14 @@ The Phase 2.3B revision is complete only when:
 - [x] Every architectural statement is classified consistently under Section 2.2 (`REPOSITORY EVIDENCE`, `INFERRED`, `UNKNOWN`; no static file inspection labeled `VERIFIED`).
 - [x] The oversimplified four-tier classification is replaced with the independent 13-dimension classification matrix.
 - [x] Store write semantics are corrected against actual repository source code (AgentRunStore upsert, ScheduledWorkStore split, ApprovalStore CAS, etc.).
-- [x] The migration protocol in Section 12 details domain-specific semantic reconciliation invariants across all 8 domains (Decisions, Approvals, Epistemic, Conversations, Personal Mind, Workflows, Runs, Council).
-- [x] Rollback design explicitly distinguishes Pre-Write Cutover from Post-Write Cutover, rejecting naive configuration rollback and detailing forward recovery vs. reverse change-capture.
+- [x] The migration protocol in Section 12 details an enforceable write freeze across all 6 write paths, worker draining, and durable event ingress buffering.
+- [x] Migration protocol details domain-specific semantic reconciliation invariants across all 8 domains without unsupported 100% equivalence claims.
+- [x] Rollback design explicitly accounts for external side effects and distinguishes Pre-Write Cutover from Post-Write/Post-Side-Effect Cutover.
 - [x] Concurrency and external side-effect reliability architecture (Outbox, Inbox, Idempotency, Status Probes) is fully specified.
 - [x] Four hosting and database deployment options are objectively compared without presenting PostgreSQL as an unconditional requirement.
 - [x] Backup, disaster recovery, and retention requirements are explicitly marked as `UNDECIDED — ILLUSTRATIVE PROPOSAL — FOUNDER DECISION REQUIRED` without invented SLAs or RPO/RTO metrics.
 - [x] Twelve realistic failure scenarios are documented with Prevention, Detection, Recovery, and Human Escalation protocols.
-- [x] Stale persistence claims in `doc/ROADMAP.md` are reconciled with current repository reality (SQLite datasource acknowledged; PostgreSQL marked as target design).
+- [x] Stale persistence claims and test assertions in `doc/ROADMAP.md` are qualified with exact historical commit references.
 - [x] Machine-specific `file:///` URLs are completely absent; all links are repository-relative markdown paths.
 - [x] Zero runtime code, database schemas, migrations, environment variables, or production infrastructure were modified.
 
@@ -719,7 +754,7 @@ The Phase 2.3B revision is complete only when:
 3. **Target Recovery Metrics:** Target RPO and RTO thresholds, backup retention schedules, and operational budget limits.
 
 ### 17.3 What Can Be Approved Now
-- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, and pre/post-write rollback architecture.
+- **The Revised Architectural Specification:** The 17 sections of this document establishing the domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, domain-specific semantic reconciliation, enforceable write freeze, and pre/post-write external side-effect rollback architecture.
 - **The Staged Roadmap:** Maintaining Phase 2.3B as draft specification and gating Phase 2.3C behind explicit founder sign-off.
 
 ### 17.4 What Cannot Yet Be Approved

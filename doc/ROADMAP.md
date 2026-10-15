@@ -32,7 +32,7 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 | Synthetic data never labeled as verified fact | IMPLEMENTED + WIRED — state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory() |
 | Side-effect idempotency / unknown-outcome handling | IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline |
 
-**Foundation requirements verified with 100% test pass across reference integration, milestone hardening, authorization, communication, and security suites in local/test modes. Production multi-instance database authority remains pending Phase 2.3C.**
+**Foundation requirements were reported as having achieved a 100% test pass in local/test modes as of historical commit `32a6f38` (and post-merge stabilization in `edca069`). Current test pass status has NOT been independently re-verified in this design phase. This does NOT imply production verification, deployment verification, or multi-instance runtime correctness. Production multi-instance database authority remains pending Phase 2.3C.**
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
