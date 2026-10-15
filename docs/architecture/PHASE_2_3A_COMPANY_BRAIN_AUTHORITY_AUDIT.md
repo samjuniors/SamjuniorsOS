@@ -169,6 +169,17 @@ The audit does not recommend deleting seed records now. First identify their con
 
 ---
 
+### 5.1 Company-memory seed behavior needs an explicit contract
+
+Current source behavior differs by mode:
+
+- Local mode starts with INITIAL_COMPANY_MEMORIES in the in-process array. If a non-empty company_memories file exists, loadFromDurableStorage() replaces that entire seed array with the file contents. The initial seed list is not explicitly migrated as a complete collection on first boot.
+- Authoritative mode getAllMemories() reads only CompanyMemory rows from Prisma; it does not bootstrap INITIAL_COMPANY_MEMORIES into the database.
+- setMemories() only replaces the in-process array and does not persist to file or Prisma.
+- queryMemories() currently labels every returned item with authority “Founder-Approved Organizational Precedent”; the Epistemic Board separately classifies memories without resolvable fact lineage as seed_or_unattributed.
+
+This may be deliberate seed/demo behavior, but the lifecycle and authority labels need one explicit contract. Add tests for first boot, after first durable write, restart, authoritative empty DB, and provenance labels. Do not automatically promote these seeds or treat the Board label as proof that the underlying record was never founder-approved; the two projections currently express different evidence levels.
+
 ## 6. Documentation drift
 
 The current docs are not safe to use as a single current-state source without reconciliation.
@@ -256,6 +267,14 @@ Severity here describes architectural risk based on source inspection, not a con
 **Failure mode:** after a process starts with an empty/stale local file cache, a partial update (for example, only MRR) can write the seeded/default values for the other financial fields over values already stored in the authoritative database.
 
 **Action:** in authoritative mode, read the current row inside a transaction and merge the patch against the persisted JSON value, with a deliberate create/default policy when no row exists. Add a regression test with non-default persisted fields followed by a partial update and assert all untouched fields survive. This is a source-level risk requiring a targeted fix, not a confirmed production data-loss incident.
+
+### P1 — Seed research is injected into the Founder Advisor as empirical intelligence
+
+**Evidence:** CompanyContextProvider initializes serverRecentIntelligence from INITIAL_RESEARCH in src/lib/os-data.ts. The three static records carry confidence scores of 96, 94 and 91, named research authors and summaries, but no source URI, captured evidence, verification record or provenance object. CompanyContextProvider.getCanonicalContext() includes these records in recentIntelligence, and formatForAdvisorPrompt() renders them under “MARKET & TECHNICAL RESEARCH RADAR” with their confidence percentages. recordIntelligence() adds new items to the same process-local list; it does not persist or distinguish seed records.
+
+**Failure mode:** the Founder Advisor can consume static demonstration assertions as if they were researched, high-confidence market or regulatory findings. A restart discards newly recorded intelligence and reinitializes the three seeds. Confidence percentages can create false certainty without an evidence basis.
+
+**Action:** classify these entries as demo/seed content and exclude them from evidence-bearing advisor context unless explicitly labeled as illustrative. Real research should enter through the existing evidence/epistemic path with source URI, capture time, provenance and verification state. Keep the research UI useful by showing honest empty/unverified states; do not fabricate sources to make the radar look populated.
 
 ### P1 — Company Brain is currently a composition, not one enforced read/write boundary
 
