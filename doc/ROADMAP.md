@@ -2,18 +2,18 @@
 **Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
-- 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) in draft revision on branch `phase/2.3b-persistence-authority-design` (`DRAFT — PENDING FOUNDER REVIEW`, tracking Issue #15).
-- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed.
+- 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged to `main` via [PR #16](https://github.com/samjuniors/SamJuniorsOS/pull/16), merge commit `b8afe455086ab044088079ef9081dd476bc457d6`. Founder-approved design baseline; implementation is NOT authorized.
+- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed. The deployment-verification supporting report remains a local untracked artifact and is not part of the committed repository.
 - 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed and merged to `main` (commit `edca06919b17eaa6737afba23b140b8abb3a82e5`).
 - 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization.
 - PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
 - M1 memory source-of-truth work remains merged to `main` at `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
 
 **PROPOSED NEXT PHASE:**
-Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; strictly gated by Founder approval of Phase 2.3B architecture).
+Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; requires separate Founder implementation authorization after target hosting/provider, RPO/RTO, backup retention, recovery requirements, and operational budget are decided).
 
 **NEXT ACTION:**
-Complete Phase 2.3B architecture document revision on branch `phase/2.3b-persistence-authority-design` for Founder review. No production deployment, runtime schema changes, or migration execution until approved.
+Founder to resolve the outstanding infrastructure and recovery decisions, then explicitly authorize or defer Phase 2.3C. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 
