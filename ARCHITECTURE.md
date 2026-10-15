@@ -1,7 +1,7 @@
 # SamJuniorsOS Architecture
 
 **Document Type:** System Architecture Specification  
-**Status:** AUTHORITATIVE CANONICAL REFERENCE  
+**Status:** Historical architecture reference — verify implementation claims against current source and the Phase 2.3A audit before treating them as current.  
 **Repository Working Tree:** Commit `6a01bb2` + Phase 4C-B Working Tree (2026-09-21)
 
 ---
