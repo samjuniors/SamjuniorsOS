@@ -1,65 +1,35 @@
 # PROGRESS.md — Running Ledger
 
-> Written continuously during work. This file is the repository ledger for implementation status and next actions.
+> Updated 2026-10-15. This file records verified repository state separately from historical engineering-reported test/build results.
 
-## Now — Phase 2.2.2: Bounded Executive Council Deliberation
+## Now — Phase 2.3A: Company Brain Authority & Persistence Audit
 
-**Baseline:** `main` at merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42` (PR #10).
+**Baseline:** `main` at `99441fd27ac927554028a41779a19aa86f4c67ce` (2026-10-15).  
+**Issue:** [#13 — Company Brain authority & persistence audit](https://github.com/samjuniors/SamJuniorsOS/issues/13).  
+**Branch:** `phase/2.3a-company-brain-authority-audit`.
 
-- **Issue #9 — Post-merge M2/Decision stabilization:** COMPLETE and closed.
-- **PR #10:** merged 2026-10-14; merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`.
-- **Issue #11:** [Phase 2.2.2 — Bounded Executive Council Deliberation](https://github.com/samjuniors/SamJuniorsOS/issues/11).
-- **Active branch:** `phase/2.2.2-council-deliberation`, created from the verified merge commit above.
-- **Founder authorization:** The Founder directed “merge and start next” on 2026-10-14; Phase 2.2.2 is now authorized to begin.
+### Repository state
+- Phase 2.2.2 is complete; PR #12 is merged at `edca06919b17eaa6737afba23b140b8abb3a82e5`; Issue #11 is closed.
+- PR #10 and PR #8 remain merged to `main`.
+- GitHub currently lists only the `main` branch; no open PRs were found when this phase began.
+- No tests/builds have been run for the inspected `main` HEAD as part of this audit. Earlier totals are historical, reported results only.
 
-### Implementation Highlights
-1. **Executive Council Engine (`src/lib/server/orchestration/council.ts`):**
-   - Core engine `ExecutiveCouncilEngine` managing structured, bounded peer review among Dr. Aris Thorne (researcher), Maya Lin (pm), and Julian Cruz (finance) supervised by Sophia Vance (coo).
-   - Domain-specific specialist audits:
-     - Dr. Thorne: Technical feasibility, state-of-the-art alignment, and evidence grounding against research findings.
-     - Maya Lin: PRD scope, user journey viability, operational trade-offs, and edge-case handling against compute constraints.
-     - Julian Cruz: Compute budget ceilings, token burn sensitivity, and non-negotiable 80%+ gross margin floor verification.
-   - Sophia Vance (COO) Mediation: Synthesizes critiques, identifies cross-functional friction points, rules authoritatively on trade-offs, and declares the council verdict.
-   - Deliverable formatting: Produces `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` deliverable with full provenance.
-2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
-   - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
-   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
-   - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
-3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
-   - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
-   - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
-   - Updated `participatingEmployees` to track real council review contributions.
-   - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Final Acceptance Resolutions & Hardening:**
-   - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
-   - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
-   - **Cryptographic payload mismatch protection:** Enforces `IdempotencyPayloadMismatchError` when an existing idempotency key is reused with altered directive or upstream inputs. HTTP 422 mapped in `/api/orchestrate`.
-   - **Specialist review cache bound to canonical fingerprint & provenance:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache hits explicitly record provenance (`isCached: true`, `cachedFromRunId`, `fingerprint`) and render badge `[Cached review from verified run <runId>]` in deliverables.
-   - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
-   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`. Pre-dispatch aborts cleanly transition lease to `degraded` without leaving dangling locks.
-   - **Strict guarded unknown-outcome reconciliation:** `reconcileUnknownDeliberation()` strictly verifies that only records in `unknown_outcome` can be transitioned (never overwrites active, completed, or degraded records). Removed boolean recovery bypass (`reconcileUnknown?: boolean`) — recovery strictly requires a non-empty reconciliation reason through the guarded `reconcileUnknownDeliberation()` method before redispatch.
-   - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
-   - **Comprehensive testing:** Expanded suite to 35 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
+### Audit scope
+1. Inventory company-truth domains and canonical owners.
+2. Map local/test versus authoritative persistence paths and fallback behavior.
+3. Trace read/write paths through Sophia, council, advisor, API and UI projections.
+4. Identify seed/demo exposure, split authority, durability and recovery risks.
+5. Reconcile ROADMAP, PROGRESS, PRODUCT and PRODUCT_ARCHITECTURE against current source.
+6. Produce a minimal migration sequence with backup, reconciliation and rollback gates.
 
-### Verification Results
-- `tests/orchestration/council_deliberation.test.ts`: **35 passed, 0 failed** (100% pass across all 35 test areas)
-- `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
-- `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
-- `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
-- `tests/decision/workflow_capability_token.test.ts`: **26 passed, 0 failed**
-- `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 passed, 0 failed**
-- `tests/sophia/m2_knowledge_persistence.test.ts`: **8 passed, 0 failed**
-- `tests/sophia/m53_authoritative_read_model.test.ts`: **13 passed, 0 failed**
-- `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27 passed, 0 failed**
-- `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
-- `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
-- `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
-- **Grand Total Across Targeted Suites: 214 PASSED, 0 FAILED (100%).**
-- **Linting:** `npm run lint` exited with code 0 across the entire repository (0 errors, 0 warnings).
-- **TypeScript:** 0 type errors across all added and modified files (`src/lib/server/orchestration/*`, `src/types/council.ts`, `tests/orchestration/*`).
-- **Production Build:** `npm run build` completed with exit code 0 (Next.js 16.3.5 Turbopack compiled all 31 routes; standalone build artifacts generated).
+### Initial audit artifact
+- `docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md` — initial static source audit. Deployment provider, live environment configuration and actual storage durability remain unverified.
 
-**Next action:** Push completed fixes to PR #12 branch and stop for Founder review. Zero merges to `main`, zero deployments.
+### Guardrails
+- Audit/documentation first; no persistence provider migration, schema rewrite, Role Brain implementation or production deployment yet.
+- Preserve distinct operational-state, decision, epistemic-fact, reference-knowledge, historical-memory and execution/audit domains.
+- Company Brain is a governed authority/retrieval layer, not a new parallel database.
+- No direct commits to `main`; stop for Founder review before consequential architecture changes.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
