@@ -1,25 +1,20 @@
 # ROADMAP.md — SamJuniorsOS Phases
-**Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file exists because PRODUCT.md and PRODUCT_ARCHITECTURE.md kept accumulating phase information inline — separated out per founder instruction so the FOUNDATION/NEXT/LATER boundary can't be missed or silently expanded.
+**Status:** Current-state status updated 2026-10-14; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
-- 2026-10-14: M2 Persistence and Recovery + Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 merged to `main` via PR #8 (merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`; 16 commits, 44 files). Founder-supplied independent verification summary reports 69/69 Decision tests, 64/64 M2 persistence tests, 149/149 M1 regressions, and production build exit 0 with 31/31 static routes. Follow-up test hygiene tracked in Issue #9; production deployment is not asserted.
-- 2026-10-14: M1 memory source-of-truth work is closed and merged to `main` (baseline commit `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`).
-- 2026-10-12: M1 Memory Source-of-Truth and Persistence Audit COMPLETE (Audit & Evidence Phase) on `audit/m1-memory-source-of-truth`. All 5 tasks (Tasks A–E) fully completed and documented in `docs/research/M1_MEMORY_SOURCE_OF_TRUTH_AUDIT.md`. 108 automated test assertions were reported passing in the audit phase.
-- Canonical design system migration completed and verified (ADR 0001).
-- Phase 3 & 3.1: Sophia Durable Conversation Persistence SEALED (ADR 0002). Reconciled and verified on GitHub main (`2732f2c`). Server-authoritative conversation sessions, single-instance durable persistence via `DurableFileStore`, verified Prisma schema synchronization, strict Founder ownership, bounded context budgeting, turn-level idempotency replay with concurrency locking verified with 15/15 automated tests passing.
-- Phase 4 Architecture APPROVED WITH CORRECTIONS (ADR 0003). Cascaded streaming pipeline over companion Node.js WebSocket process (port 3001), native Flux interruption, and PTT-only scope.
-- Phase 4A: Authenticated Companion WebSocket & Live Session Foundation IMPLEMENTED & VERIFIED (ADR 0003). Companion server, session manager, single-tenant connection lock (`4409`), PTT state transitions, barge-in `INTERRUPT` framing, and reconnection verified with 27/27 test assertions passing.
-- Phase 4B: Client Silero VAD & Audio Streaming Ingress IMPLEMENTED & VERIFIED (ADR 0003). AudioWorklet resampling to 16 kHz mono Int16 PCM (512 samples / 32ms), client-side Silero VAD, PTT-only audio gating, local assistant audio mute/barge-in hook on speech start, binary WebSocket frame transport, client backpressure protection, and server frame bounds/telemetry validation verified with 42/42 automated test assertions passing.
-- Phase 4C-A: STT Provider Benchmark & Architecture Decision COMPLETE (ADR 0004, `doc/research/phase4c_stt_benchmark_and_architecture.md`). Evaluated Deepgram Flux, Qwen3-ASR (0.6B/1.7B), Faster-Whisper, Pipecat, and LiveKit Agents. Adopted provider-agnostic `STTProvider` adapter interface, selected Deepgram Flux STT as initial cloud provider ($0.39/hr, ~$6–$15/mo), designated Qwen3-ASR 0.6B as self-hosted target, resolved turn-taking via hybrid 128ms pre-roll ring buffer + dual endpointing, and deferred/rejected Pipecat and LiveKit. Zero runtime STT code added.
-- Phase 4C-B: Streaming STT Adapter Implementation IMPLEMENTED & VERIFIED (ADR 0004). Implemented provider-neutral `STTProvider` contract (`src/lib/server/live/stt/types.ts`), `DeepgramFluxProvider` streaming adapter with bounded 80ms chunk aggregation (`src/lib/server/live/stt/deepgram-flux.ts`), 128ms pre-roll ring buffer in `SophiaLiveClient`, canonical turn execution pipeline with `ConversationStore` persistence and `SophiaServerGateway` security boundary (`src/lib/server/sophia/turn-executor.ts`), and turn idempotency locks in `LiveInteractionServer`. Verified with 58/58 test assertions passing in `tests/sophia/phase4c_streaming_stt_adapter.test.ts`.
+- 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed on branch `phase/2.2.2-council-deliberation` (PR pending review against `main`).
+- 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization. PR #10 changed tests and project documentation; it did not change `src/`.
+- PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
+- M1 memory source-of-truth work remains merged to `main` at `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
+- Issue #11 verified with 208/208 tests passing across council, decision, and M2 regression suites.
 
 **NEXT PHASE:**
-Post-merge stabilization of M2 Persistence and Recovery plus Decision Workflow. Do not begin Phase 2.2.2 Multi-Agent Council Orchestration until the stabilization work is complete and separately approved.
+Phase 2.3 — Role-Specific Knowledge & Epistemic Brain Integration (or next milestone per Founder direction).
 
 **NEXT ACTION:**
-Complete [GitHub Issue #9](https://github.com/samjuniors/SamJuniorsOS/issues/9) on branch `maintenance/m2-decision-stabilization`: fix the three identified test-hygiene issues, synchronize progress documentation, and run the specified focused/regression tests, TypeScript validation, and production build. Submit a focused PR and stop for Founder review. PR #8 merge commit: `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`.
+Submit PR for Issue #11 on branch `phase/2.2.2-council-deliberation` against `main` and stop for Founder review. No production deployment or direct commits to `main`.
 
-**Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done, verified against the repository — not documented as done.
+**Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 
 ---
 
@@ -54,7 +49,7 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 - AI employee evaluation, skill-gap detection, training proposals — always subject to the Self-Improvement Safety Model (§11c: self-improving ≠ self-authorizing) from the very first implementation, not retrofitted after autonomy exists.
 - Continuous market intelligence as a recurring, scheduled capability (§18) — the pipeline it needs (§11) is being built now, but the scheduling/cadence layer is not part of any current task.
 - Remaining employee roster (Elena Rostova, Marcus Vance) once there's a concrete task only they can do.
-- pgvector/RAG, E2B sandboxing, fine-tuning/eval infrastructure, broader Composio integrations, voice, multi-agent council workflows.
+- pgvector/RAG, E2B sandboxing, fine-tuning/eval infrastructure, broader Composio integrations, voice, unbounded peer-to-peer swarm workflows.
 - Multi-user RBAC and full session-based auth for a second human — only if and when a second human is actually added (PRODUCT.md §1 locks this as internal/single-founder for now).
 
 ## Explicit non-goals (not a phase — outside this roadmap entirely unless the founder decision in PRODUCT.md §1 changes)

@@ -1,57 +1,65 @@
 # PROGRESS.md — Running Ledger
 
-> Written to continuously during work, not just at session end. This file — not chat history — is the source of truth for what's done, what's in progress, and what's next. Chat disappears on a cleared context; this doesn't.
+> Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — Post-merge stabilization (Issue #9 COMPLETE)
+## Now — Phase 2.2.2: Bounded Executive Council Deliberation
 
-**Baseline:** PR #8 merged to `main` on 2026-10-14 (`7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`).
-- M2 Persistence and Recovery plus Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 are integrated into `main`.
-- Stabilization milestone [Issue #9](https://github.com/samjuniors/SamJuniorsOS/issues/9) conducted on `maintenance/m2-decision-stabilization`.
+**Baseline:** `main` at merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42` (PR #10).
 
-**Completed Remediations (Issue #9):**
-1. **Authoritative Decision Persistence Assertion (`tests/sophia/m2_batch3_concurrency_hygiene.test.ts`):**
-   - Corrected Test 4 to inspect authoritative `decisions.json` via `fileStore.readCollection('decisions')` instead of legacy `company_state.json`.
-   - Added `DecisionStore.resetInstance()` to test isolation setup.
-   - Result: 8/8 tests passing (verified consecutively across repeated executions).
-2. **Cross-Platform Prisma Test Runner Portability (`tests/helpers/child-runner.ts`):**
-   - Introduced `getPrismaCliPath()` and `runPrismaCommand()` executing `prisma/build/index.js` via `process.execPath`.
-   - Eliminated hardcoded `bunx prisma` assumptions from `tests/sophia/m2_knowledge_persistence.test.ts` and `tests/sophia/m53_authoritative_read_model.test.ts`.
-   - Replaced `execSync('bun run failclosed.ts')` in M5.3 with `spawnTestChild` using `pathToFileURL` for cross-platform ESM dynamic import compatibility on Windows and Node.js.
-3. **DurableFileStore `.initialized` Sidecar Teardown Isolation (`tests/sophia/m2_knowledge_persistence.test.ts`):**
-   - Extended teardown block to inspect and unlink `company_knowledge.json.initialized` in virgin test environments, and restore prior marker state when existing.
-   - Eliminates false-positive `CriticalCollectionCorruptionError` anti-wipe triggers in downstream test suites (e.g. `m4c_query_conditioned_retrieval.test.ts:C14`).
+- **Issue #9 — Post-merge M2/Decision stabilization:** COMPLETE and closed.
+- **PR #10:** merged 2026-10-14; merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`.
+- **Issue #11:** [Phase 2.2.2 — Bounded Executive Council Deliberation](https://github.com/samjuniors/SamJuniorsOS/issues/11).
+- **Active branch:** `phase/2.2.2-council-deliberation`, created from the verified merge commit above.
+- **Founder authorization:** The Founder directed “merge and start next” on 2026-10-14; Phase 2.2.2 is now authorized to begin.
 
-**Verification Battery (Node v24.20.0, Windows x64):**
-- **Affected Suites (Run Individually x2):**
-  - `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
-  - `tests/sophia/m2_knowledge_persistence.test.ts`: **8/8 PASS** (Run 1: 8/8, Run 2: 8/8)
-  - `tests/sophia/m53_authoritative_read_model.test.ts`: **13/13 PASS** (Run 1: 13/13, Run 2: 13/13)
-- **Downstream Guard Isolation:**
-  - `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27/27 PASS** (C14 anti-wipe guard cleanly verified)
-- **Decision Workflow Suites:**
-  - `tests/decision/decision_lifecycle.test.ts`: **18/18 PASS**
-  - `tests/decision/phase2_1_1_hardening.test.ts`: **10/10 PASS**
-  - `tests/decision/phase2_2_1_context.test.ts`: **15/15 PASS**
-  - `tests/decision/workflow_capability_token.test.ts`: **26/26 PASS**
-  - *Decision Total:* **69/69 PASS (100%)**
-- **M2 Persistence & Recovery Suites:**
-  - `tests/sophia/m2_batch1_lock_safety.test.ts`: **20/20 PASS**
-  - `tests/sophia/m2_batch1_storage_reliability.test.ts`: **27/27 PASS**
-  - `tests/sophia/m2_batch2_cross_platform_restart.test.ts`: **11/11 PASS**
-  - `tests/sophia/m2_batch3_recovery_gate.test.ts`: **6/6 PASS**
-  - *M2 Total:* **64/64 PASS (100%)**
-- **M1 & Sophia Regression Suites:**
-  - `tests/sophia/m1_batch1_memory_authority.test.ts`: **7/7 PASS**
-  - `tests/sophia/m1_batch2_conversation_deletion.test.ts`: **52/52 PASS**
-  - `tests/sophia/m1_batch3_verification_recovery.test.ts`: **24/24 PASS**
-  - `tests/sophia/m3_conversation_convergence.test.ts`: **14/14 PASS**
-  - `tests/sophia/m52_retrieval_hygiene.test.ts`: **25/25 PASS**
-  - `tests/sophia/m53_asof_read.test.ts`: **18/18 PASS**
-  - *M1/Sophia Total:* **140/140 PASS (100%)**
-- **Production Build:**
-  - `next build` (single-drive mirror): **Exit Code 0** (31/31 static routes generated, 0 errors).
+### Implementation Highlights
+1. **Executive Council Engine (`src/lib/server/orchestration/council.ts`):**
+   - Core engine `ExecutiveCouncilEngine` managing structured, bounded peer review among Dr. Aris Thorne (researcher), Maya Lin (pm), and Julian Cruz (finance) supervised by Sophia Vance (coo).
+   - Domain-specific specialist audits:
+     - Dr. Thorne: Technical feasibility, state-of-the-art alignment, and evidence grounding against research findings.
+     - Maya Lin: PRD scope, user journey viability, operational trade-offs, and edge-case handling against compute constraints.
+     - Julian Cruz: Compute budget ceilings, token burn sensitivity, and non-negotiable 80%+ gross margin floor verification.
+   - Sophia Vance (COO) Mediation: Synthesizes critiques, identifies cross-functional friction points, rules authoritatively on trade-offs, and declares the council verdict.
+   - Deliverable formatting: Produces `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` deliverable with full provenance.
+2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
+   - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
+   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
+   - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
+3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
+   - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
+   - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
+   - Updated `participatingEmployees` to track real council review contributions.
+   - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
+4. **Final Acceptance Resolutions & Hardening:**
+   - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
+   - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
+   - **Cryptographic payload mismatch protection:** Enforces `IdempotencyPayloadMismatchError` when an existing idempotency key is reused with altered directive or upstream inputs. HTTP 422 mapped in `/api/orchestrate`.
+   - **Specialist review cache bound to canonical fingerprint & provenance:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache hits explicitly record provenance (`isCached: true`, `cachedFromRunId`, `fingerprint`) and render badge `[Cached review from verified run <runId>]` in deliverables.
+   - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
+   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`. Pre-dispatch aborts cleanly transition lease to `degraded` without leaving dangling locks.
+   - **Strict guarded unknown-outcome reconciliation:** `reconcileUnknownDeliberation()` strictly verifies that only records in `unknown_outcome` can be transitioned (never overwrites active, completed, or degraded records). Removed boolean recovery bypass (`reconcileUnknown?: boolean`) — recovery strictly requires a non-empty reconciliation reason through the guarded `reconcileUnknownDeliberation()` method before redispatch.
+   - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
+   - **Comprehensive testing:** Expanded suite to 35 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
 
-**Next Step:** Founder review and PR submission against `main`. Phase 2.2.2 remains on hold until merge.
+### Verification Results
+- `tests/orchestration/council_deliberation.test.ts`: **35 passed, 0 failed** (100% pass across all 35 test areas)
+- `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
+- `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
+- `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
+- `tests/decision/workflow_capability_token.test.ts`: **26 passed, 0 failed**
+- `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 passed, 0 failed**
+- `tests/sophia/m2_knowledge_persistence.test.ts`: **8 passed, 0 failed**
+- `tests/sophia/m53_authoritative_read_model.test.ts`: **13 passed, 0 failed**
+- `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27 passed, 0 failed**
+- `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
+- `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
+- `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
+- **Grand Total Across Targeted Suites: 214 PASSED, 0 FAILED (100%).**
+- **Linting:** `npm run lint` exited with code 0 across the entire repository (0 errors, 0 warnings).
+- **TypeScript:** 0 type errors across all added and modified files (`src/lib/server/orchestration/*`, `src/types/council.ts`, `tests/orchestration/*`).
+- **Production Build:** `npm run build` completed with exit code 0 (Next.js 16.3.5 Turbopack compiled all 31 routes; standalone build artifacts generated).
+
+**Next action:** Push completed fixes to PR #12 branch and stop for Founder review. Zero merges to `main`, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.

@@ -225,6 +225,12 @@ export interface VerificationResult {
   safeMockEnforced: boolean;
   notes: string;
   verifiedAt: string;
+  financialVerificationState?:
+    | 'calculated_compliant'
+    | 'calculated_violation'
+    | 'unverified_pending_founder_review'
+    | 'lexical_violation';
+  calculatedMarginPercent?: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -334,6 +340,7 @@ export interface OrchestrationRun {
   finalExecutiveReport?: string;
   executiveResult?: FounderExecutiveResult;
   verificationResult?: VerificationResult;
+  councilDeliberation?: import('./council').CouncilDeliberationResult;
   executionSummary?: {
     totalAgentsInvoked: number;
     agentsInvoked: AgentRole[];

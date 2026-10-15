@@ -31,7 +31,10 @@ export interface AgentExecutionContext {
     productSpecs?: string;
     financeAssessment?: string;
     verificationNotes?: string;
+    councilDeliberation?: string;
+    reviewFingerprint?: string;
   };
+  signal?: AbortSignal;
 }
 
 export interface AgentExecutionResult {
@@ -73,6 +76,51 @@ export class ServerAgentExecutor {
     const agentDef = SERVER_AGENTS[agentId] || SERVER_AGENTS.coo;
     const timestamp = new Date().toISOString();
     const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    // Cancellation check: Fail closed if abort signal was already triggered
+    if (context.signal?.aborted) {
+      const abortReason = (context.signal.reason as string) || 'Task execution cancelled via AbortSignal';
+      const failProvenance: OutputProvenance = {
+        agentId,
+        agentName: agentDef.name,
+        taskId: `task-${context.protocolStep}-${agentId}`,
+        protocolStep: context.protocolStep,
+        timestamp,
+        isVerified: false,
+        evidenceBasis: 'unverified',
+        workflowInstanceId: context.workflowInstanceId,
+        stepId: context.stepId,
+        occurrenceId: context.occurrenceId,
+        occurrenceNumber: context.occurrenceNumber,
+      };
+
+      await AgentRunStore.getInstance().saveRun({
+        runId,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        taskTitle: context.taskTitle,
+        directive: context.directive,
+        status: 'halted',
+        durationMs: 0,
+        outputContent: `Task aborted before execution: ${abortReason}`,
+        provenance: failProvenance,
+        error: abortReason,
+        timestamp,
+      });
+
+      return {
+        success: false,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        statusMessage: `[${agentDef.name}] Task cancelled before start: ${abortReason}.`,
+        outputContent: `Task aborted: ${abortReason}`,
+        runId,
+        provenance: failProvenance,
+        error: abortReason,
+      };
+    }
 
     // PHASE 11.13: Deterministic Context Assembly Pipeline
     // Task → Employee Role → Skill → relevant State/Knowledge/Memory → current evidence → final employee context
@@ -250,6 +298,10 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
           occurrenceId: context.occurrenceId,
           occurrenceNumber: context.occurrenceNumber,
         };
+
+        if (context.upstreamContext?.reviewFingerprint && parsed && typeof parsed === 'object') {
+          parsed.reviewFingerprint = context.upstreamContext.reviewFingerprint;
+        }
 
         await AgentRunStore.getInstance().saveRun({
           runId,

@@ -1,5 +1,49 @@
 # WORKLOG.md - Canonical Operational History
 
+## Issue #11 — Phase 2.2.2: Bounded Executive Council Deliberation (2026-10-14)
+
+**Status:** COMPLETE on `phase/2.2.2-council-deliberation` (branched from merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`, PR #10).
+**Context:** Implements GitHub Issue #11 (Phase 2.2.2) providing genuine, bounded, evidence-carrying peer review among executive specialists (Dr. Thorne, Maya Lin, Julian Cruz) under the supervision of Sophia Vance (COO), fully integrated into `MultiAgentOrchestrator` without creating peer-to-peer swarms, parallel workflow engines, or simulated metrics.
+
+**What was established:**
+1. **Executive Council Engine (`src/lib/server/orchestration/council.ts`):**
+   - Implemented `ExecutiveCouncilEngine` orchestrating structured multi-specialist critique and mediation.
+   - Dr. Aris Thorne (`researcher`) audits technical feasibility, state-of-the-art alignment, and evidence grounding against research findings.
+   - Maya Lin (`pm`) audits PRD scope, user journey viability, operational trade-offs, and edge-case handling against compute constraints.
+   - Julian Cruz (`finance`) audits compute budget ceilings, token burn sensitivity, and non-negotiable 80%+ gross margin floor verification.
+   - Sophia Vance (`coo`) synthesizes critiques, identifies cross-functional friction points, rules authoritatively on trade-offs, and declares the council verdict.
+   - Produces structured deliverable `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` with full provenance.
+2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
+   - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
+   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
+   - Partitioned statuses: `consensus_achieved`, `consensus_with_reservations`, `frictions_escalated`, `verification_rejected`, `degraded`.
+   - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
+3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
+   - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
+   - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
+   - Updated `participatingEmployees` to track real council review contributions.
+   - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
+4. **Final Acceptance Resolutions & Hardening:**
+   - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
+   - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
+   - **Cryptographic payload mismatch protection:** Enforces `IdempotencyPayloadMismatchError` when an existing idempotency key is reused with altered directive or upstream inputs. HTTP 422 mapped in `/api/orchestrate`.
+   - **Specialist review cache bound to canonical fingerprint & provenance:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache hits explicitly record provenance (`isCached: true`, `cachedFromRunId`, `fingerprint`) and render badge `[Cached review from verified run <runId>]` in deliverables.
+   - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
+   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`. Pre-dispatch aborts cleanly transition lease to `degraded` without leaving dangling locks.
+   - **Strict guarded unknown-outcome reconciliation:** `reconcileUnknownDeliberation()` strictly verifies that only records in `unknown_outcome` can be transitioned (never overwrites active, completed, or degraded records). Removed boolean recovery bypass (`reconcileUnknown?: boolean`) — recovery strictly requires a non-empty reconciliation reason through the guarded `reconcileUnknownDeliberation()` method before redispatch.
+   - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
+   - **Comprehensive testing:** Expanded suite to 35 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
+
+**Verification Results:**
+- `tests/orchestration/council_deliberation.test.ts`: **35 passed, 0 failed** (100% pass across all 35 test areas).
+- Decision suites: 69/69 pass (`phase2_2_1_context`: 15/15, `decision_lifecycle`: 18/18, `phase2_1_1_hardening`: 10/10, `workflow_capability_token`: 26/26).
+- M2 persistence & hygiene suites: 29/29 pass (`m2_batch3_concurrency_hygiene`: 8/8, `m2_knowledge_persistence`: 8/8, `m53_authoritative_read_model`: 13/13).
+- Knowledge & retrieval regressions: 81/81 pass (`m4c_query_conditioned_retrieval`: 27/27, `production_response_path_regression`: 4/4, `m52_retrieval_hygiene`: 25/25, `m53_dependency_relations`: 25/25).
+- **Total Test Assertions: 214 PASSED, 0 FAILED (100%).**
+- **Lint:** `npm run lint` exited code 0 with 0 errors, 0 warnings across entire codebase.
+- **TypeScript:** `npx tsc --noEmit` verified 0 errors across all changed and added files (`src/lib/server/orchestration/*`, `src/types/council.ts`, `tests/orchestration/*`).
+- **Production Build:** `npm run build` completed with exit code 0 (Next.js 16.3.5 Turbopack compiled all 31 routes; standalone build artifacts generated).
+
 ## Issue #9 — Post-Merge M2 & Decision Stabilization (2026-10-14)
 
 **Status:** COMPLETE on `maintenance/m2-decision-stabilization` (branched from merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`).
