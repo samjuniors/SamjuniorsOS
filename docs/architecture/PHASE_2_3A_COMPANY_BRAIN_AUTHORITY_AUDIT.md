@@ -181,7 +181,7 @@ The current docs are not safe to use as a single current-state source without re
 | doc/PRODUCT_ARCHITECTURE.md | Snapshot references old commits and contains repo-state findings that conflict with later code; its own top-level status is not current |
 | docs/architecture/MEMORY_RECONCILIATION_REPORT.md | Dated 2026-09-21; some claims (for example CompanyKnowledgeStore persistence and CompanyContextProvider data ownership) are stale relative to current source |
 
-The audit branch should update the roadmap/progress status to the verified 2026-10-15 state and add clear dated caveats to product/architecture snapshots rather than silently rewriting historical findings as if they were current.
+The audit branch is updating the roadmap/progress status to the verified 2026-10-15 state and adding dated caveats to product/architecture snapshots rather than silently rewriting historical findings as if they were current. A specific correction: the September reconciliation report's queryKnowledge authoritative-mode gap was subsequently closed by M5.2; current CompanyKnowledgeStore.queryKnowledge() obtains candidates through getAllKnowledge(), so authoritative retrieval reads from Prisma and fails closed on database failure.
 
 ---
 
