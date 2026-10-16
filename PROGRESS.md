@@ -7,7 +7,7 @@
 **Baseline:** `main` at commit `1c86599` (direct reconciliation commit; parent `aed87ba`, incorporating Phase 2.3B PR #16 and subsequent roadmap date refreshes).
 
 - **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
-- **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch (`docs/sam-5-reconciliation-hygiene`) was created to correct baseline and relative-link documentation. The branch is being reviewed separately; no PR existed at the time of this update.
+- **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch was reviewed and merged via PR #17 at `b8607f7`, correcting baseline, backup-custody, and relative-link documentation.
 - **Context:** ChatGPT technical lead coordination for workspace audit, documentation reconciliation, and proposal alignment. The Founder retains final authority.
 - **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero unapproved merges.
 
@@ -33,7 +33,7 @@
      - `tests/phase4_3a_graph_read_model.test.ts`: **9 passed, 0 failed** (100%)
      - `npm run lint`: **0 errors, 0 warnings** (exit code 0)
 
-**Next action:** Complete review of the documentation hygiene changes and record the resulting PR/acceptance evidence. Zero feature implementation, zero deployments.
+**Acceptance:** SAM-5 reconciliation and documentation hygiene accepted; current `main` baseline is `b8607f7` (PR #17). No SAM-5 implementation work remains. **Next:** Founder review/ratification of the Founder Operating Loop proposal and resolution of hosting, recovery, backup-retention, and budget decisions before any separate Phase 2.3C authorization. Zero feature implementation, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
