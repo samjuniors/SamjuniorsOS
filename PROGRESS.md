@@ -2,64 +2,38 @@
 
 > Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — Phase 2.2.2: Bounded Executive Council Deliberation
+## Now — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
-**Baseline:** `main` at merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42` (PR #10).
+**Baseline:** `main` at commit `aed87ba` (incorporating Phase 2.3B merge commit `b8afe45` / PR #16 and subsequent roadmap date refresh commits).
 
-- **Issue #9 — Post-merge M2/Decision stabilization:** COMPLETE and closed.
-- **PR #10:** merged 2026-10-14; merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`.
-- **Issue #11:** [Phase 2.2.2 — Bounded Executive Council Deliberation](https://github.com/samjuniors/SamJuniorsOS/issues/11).
-- **Active branch:** `phase/2.2.2-council-deliberation`, created from the verified merge commit above.
-- **Founder authorization:** The Founder directed “merge and start next” on 2026-10-14; Phase 2.2.2 is now authorized to begin.
+- **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
+- **Active branch:** `docs/project-reconciliation-sam-5`, created directly from `origin/main` (`aed87ba`).
+- **Context:** ChatGPT technical lead coordination for workspace audit, documentation reconciliation, and proposal alignment. The Founder retains final authority.
+- **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero merges.
 
-### Implementation Highlights
-1. **Executive Council Engine (`src/lib/server/orchestration/council.ts`):**
-   - Core engine `ExecutiveCouncilEngine` managing structured, bounded peer review among Dr. Aris Thorne (researcher), Maya Lin (pm), and Julian Cruz (finance) supervised by Sophia Vance (coo).
-   - Domain-specific specialist audits:
-     - Dr. Thorne: Technical feasibility, state-of-the-art alignment, and evidence grounding against research findings.
-     - Maya Lin: PRD scope, user journey viability, operational trade-offs, and edge-case handling against compute constraints.
-     - Julian Cruz: Compute budget ceilings, token burn sensitivity, and non-negotiable 80%+ gross margin floor verification.
-   - Sophia Vance (COO) Mediation: Synthesizes critiques, identifies cross-functional friction points, rules authoritatively on trade-offs, and declares the council verdict.
-   - Deliverable formatting: Produces `# EXECUTIVE COUNCIL DELIBERATION & PEER REVIEW PROTOCOL` deliverable with full provenance.
-2. **Domain Contracts & Types (`src/types/council.ts`, `src/types/os.ts`, `src/types/context.ts`):**
-   - Strictly typed `CouncilSpecialistCritique`, `CouncilFrictionPoint`, `CouncilDeliberationResult`, and `CouncilDeliberationInput`.
-   - Zod runtime validation schemas: `SpecialistStructuredOutputSchema` and `CooMediationStructuredOutputSchema`.
-   - Attached `councilDeliberation` to `OrchestrationRun` in `src/types/os.ts`.
-3. **MultiAgentOrchestrator Integration (`src/lib/server/orchestration/orchestrator.ts`):**
-   - Replaced procedural Stage 7/8 consolidation checkpoint with real bounded council deliberation.
-   - Threaded council deliberation verdict and frictions into Stage 9 Final Executive Report synthesis (`cooReportResult`), `FounderExecutiveResult.keyFindings`, `risks`, and `recommendedNextActions`.
-   - Updated `participatingEmployees` to track real council review contributions.
-   - Supported constructor injection (`MultiAgentOrchestrator(executor)`) for clean deterministic testing.
-4. **Final Acceptance Resolutions & Hardening:**
-   - **Fail-closed durable persistence:** Removed catch-and-continue in `persistDeliberation()` and lease claim. Consensus results fail closed (`status: 'degraded'`, `verificationPassed: false`, throwing fatal error) if authoritative write fails.
-   - **Cross-process concurrent idempotency & lease protocol:** Synchronous claim/lease protocol via `withCollectionLockStrict` tracking `CouncilLeaseStatus` (`in_progress`, `completed`, `degraded`, `unknown_outcome`). Distinguishes active PIDs from dead/expired ones. Prohibits blind redispatch on `unknown_outcome`.
-   - **Cryptographic payload mismatch protection:** Enforces `IdempotencyPayloadMismatchError` when an existing idempotency key is reused with altered directive or upstream inputs. HTTP 422 mapped in `/api/orchestrate`.
-   - **Specialist review cache bound to canonical fingerprint & provenance:** Reviews bound via SHA-256 canonical hash of directive, upstream package, evidence, financials, and contract version (`SPECIALIST_CONTRACT_VERSION = 'v2.2.2'`). Cache hits explicitly record provenance (`isCached: true`, `cachedFromRunId`, `fingerprint`) and render badge `[Cached review from verified run <runId>]` in deliverables.
-   - **Mathematical financial verification:** Requires `revenue`, `cogs`, and `computeCost`; never defaults absent costs to zero. Finite positive revenue and non-negative costs enforced. Missing numbers produce `unverified_pending_founder_review`. Margin check isolated from lexical scanning.
-   - **Cancellation & uncertain provider outcomes:** Identified model provider SDK limitation where downstream LLM inference cancellation is not confirmed. Calls aborted or timed out after submission are tracked as `orphanedProviderCalls`, transitioning the deliberation lease to `unknown_outcome`. Pre-dispatch aborts cleanly transition lease to `degraded` without leaving dangling locks.
-   - **Strict guarded unknown-outcome reconciliation:** `reconcileUnknownDeliberation()` strictly verifies that only records in `unknown_outcome` can be transitioned (never overwrites active, completed, or degraded records). Removed boolean recovery bypass (`reconcileUnknown?: boolean`) — recovery strictly requires a non-empty reconciliation reason through the guarded `reconcileUnknownDeliberation()` method before redispatch.
-   - **Governance and approval boundaries:** `evaluateCouncilGovernanceBoundary` enforces `consensus_achieved` as recommendation only; `consensus_with_reservations` and `frictions_escalated` mandate Founder decision; `degraded`, `verification_rejected`, `unknown_outcome`, and unverified financial state never authorize external effects. Cryptographic payload approval binding in `SideEffectAuthorizationGate` strictly preserved.
-   - **Comprehensive testing:** Expanded suite to 35 comprehensive deterministic tests in `tests/orchestration/council_deliberation.test.ts`.
+### Reconciliation Highlights
+1. **Repository Reality Alignment:**
+   - Corrected persistence statements across `PRODUCT.md`, `ROADMAP.md`, `PROGRESS.md`, and `ARCHITECTURE.md` to reflect actual verified code: Prisma SQLite (`provider = "sqlite"`, `file:./db/custom.db`) + atomic `DurableFileStore` (`.data/*.json`). Corrected stale claims of "PostgreSQL dual-layer" to reflect that PostgreSQL is an approved target architecture (Phase 2.3B), pending Phase 2.3C implementation authorization.
+   - Identified that `prisma/migrations` does not exist; unversioned `prisma db push` is the active schema synchronization mechanism.
+2. **Phase 2.3A Audit & PR #14 Resolution:**
+   - Preserved Phase 2.3A audit report at [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md), resolving broken references in the merged Phase 2.3B document.
+   - Preserved the local deployment-verification supporting report on dedicated backup branch `backup/phase-2.3a-deployment-verification` (documented as remaining a local untracked artifact per `ROADMAP.md`).
+   - Assessed PR #14 (draft): determined it is superseded in its roadmap/progress changes by PR #16 and commits on `main`. Left unmerged pending Founder review.
+3. **Phase 2.3B Approved Baseline:**
+   - Confirmed Phase 2.3B architecture specification (`docs/architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md`) was merged via PR #16 (`b8afe45`) and approved by Founder (`7c04463`).
+   - Confirmed Phase 2.3C (PostgreSQL Foundation) is proposed only and strictly gated behind Founder infrastructure choices (hosting model, database URL, backup retention, recovery requirements).
+4. **Founder Operating Loop Proposal Alignment:**
+   - Framed the [Founder Operating Loop Product Definition and v1 Release Strategy](https://linear.app/samjuniors/document/founder-operating-loop-product-definition-and-v1-release-strategy-6f29b0c955b3) as the proposed first-release direction.
+   - Preserved all canonical engineering invariants and product boundaries: SamJuniorsOS internal company OS, Sophia COO central intelligence, Founder final authority, closed 4-role workforce (Sophia, Thorne, Lin, Cruz), strict Personal Mind vs. Company Brain boundary, deterministic governance, no duplicate workflow engines, no unrestricted agent swarms, no speculative infrastructure.
+5. **Verified Verification Suites:**
+   - Re-verified core test suites locally on Node.js v24.20.0:
+     - `tests/orchestration/council_deliberation.test.ts`: **35 passed, 0 failed** (100%)
+     - `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed** (100%)
+     - `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed** (100%)
+     - `tests/phase4_3a_graph_read_model.test.ts`: **9 passed, 0 failed** (100%)
+     - `npm run lint`: **0 errors, 0 warnings** (exit code 0)
 
-### Verification Results
-- `tests/orchestration/council_deliberation.test.ts`: **35 passed, 0 failed** (100% pass across all 35 test areas)
-- `tests/decision/phase2_2_1_context.test.ts`: **15 passed, 0 failed**
-- `tests/decision/decision_lifecycle.test.ts`: **18 passed, 0 failed**
-- `tests/decision/phase2_1_1_hardening.test.ts`: **10 passed, 0 failed**
-- `tests/decision/workflow_capability_token.test.ts`: **26 passed, 0 failed**
-- `tests/sophia/m2_batch3_concurrency_hygiene.test.ts`: **8 passed, 0 failed**
-- `tests/sophia/m2_knowledge_persistence.test.ts`: **8 passed, 0 failed**
-- `tests/sophia/m53_authoritative_read_model.test.ts`: **13 passed, 0 failed**
-- `tests/sophia/m4c_query_conditioned_retrieval.test.ts`: **27 passed, 0 failed**
-- `tests/sophia/production_response_path_regression.test.ts`: **4 passed, 0 failed**
-- `tests/sophia/m52_retrieval_hygiene.test.ts`: **25 passed, 0 failed**
-- `tests/sophia/m53_dependency_relations.test.ts`: **25 passed, 0 failed**
-- **Grand Total Across Targeted Suites: 214 PASSED, 0 FAILED (100%).**
-- **Linting:** `npm run lint` exited with code 0 across the entire repository (0 errors, 0 warnings).
-- **TypeScript:** 0 type errors across all added and modified files (`src/lib/server/orchestration/*`, `src/types/council.ts`, `tests/orchestration/*`).
-- **Production Build:** `npm run build` completed with exit code 0 (Next.js 16.3.5 Turbopack compiled all 31 routes; standalone build artifacts generated).
-
-**Next action:** Push completed fixes to PR #12 branch and stop for Founder review. Zero merges to `main`, zero deployments.
+**Next action:** Submit clean documentation draft PR targeting `main` and stop for Founder review. Zero feature implementation, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
@@ -106,7 +80,9 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
   - Stopped for Founder review.
 
 ## Completed
-- [2026-10-14] M2 Persistence and Recovery + Decision Workflow Phases 2.1, 2.1.1, and 2.2.1 merged to `main` via PR #8 (merge commit `7e8e5723cdad60cb8738ce9300f5acc3a08af8b4`). Founder-supplied independent audit summary reports 69/69 Decision tests, 64/64 M2 persistence tests, 149/149 M1 regressions, and a successful production build generating 31/31 static routes. Follow-up hygiene items tracked in Issue #9; deployment and production runtime wiring are not claimed complete.
+- [2026-10-15] Phase 2.3B: Persistence Authority & Production Architecture Design — Completed comprehensive 17-section architecture specification ([`docs/architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md`](docs/architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md)). Merged to `main` via PR #16 (merge commit `b8afe455086ab044088079ef9081dd476bc457d6`); design baseline approved by Founder in commit `7c04463`. Establishes target domain contracts, independent data matrix, concurrency requirements, outbox/inbox reliability patterns, enforceable write freeze, provider-neutral durable buffering, and pre/post-write external side-effect rollback architecture. Implementation of Phase 2.3C is NOT authorized; gated behind Founder infrastructure choices.
+- [2026-10-15] Phase 2.3A: Company Brain Authority & Persistence Audit — Audited store authority across all domains, verified that SQLite is the active datasource in `prisma/schema.prisma` with atomic `DurableFileStore` (`.data/*.json`), verified absence of external cloud manifests in repository, and recorded findings in [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md). Assessed PR #14 (draft) and preserved supporting deployment report on dedicated backup branch.
+- [2026-10-14] Phase 2.2.2: Bounded Executive Council Deliberation — Completed bounded multi-agent council deliberation (`ExecutiveCouncilEngine`) among Dr. Aris Thorne (researcher), Maya Lin (pm), and Julian Cruz (finance) supervised by Sophia Vance (coo), with sovereign deterministic verification by `ConstitutionalVerifier` (margin floor >= 80% calculation, fail-closed lease recovery, cryptographic review caching). Merged to `main` at commit `edca06919b17eaa6737afba23b140b8abb3a82e5`. 35-test comprehensive deterministic suite (`tests/orchestration/council_deliberation.test.ts`, 35/35 passing).
 - [2026-10-13] Decision Workflow Phase 2.2.1: Decision-Aware Company Context — Connected authoritative `DecisionStore` into company intelligence and context-assembly architecture (`DecisionContextProvider`, `SophiaContextAssembler`, `CompanyStateStore.queryState`, `CompanyContextProvider`, `ContextAssemblyService`). Partitioned all 10 Decision statuses: active commitments (`approved`, `executing`), pending governance (`proposed`, `under_review`, `pending_approval`), interventions (`intervention_required`), historical precedents (`resolved` with `historical_memory` provenance), and inactive decisions (`rejected`, `withdrawn`, `superseded`). Implemented deterministic conflict detection (`unconfirmed_predecessor_execution`, `superseded_reference`). Added 12-test comprehensive suite `tests/decision/phase2_2_1_context.test.ts` (12/12 passed). All regression suites passed (104/104). Production build succeeded (31/31 routes, exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1.1: Decision Safety Hardening — Closed verified Phase 2.1 gaps (F-01, F-02, F-03, F-04). Hardened lifecycle authorization for `resolveDecision()` and `supersedeDecision()`. Defined separate permissions for Founder governance, trusted workflow execution reports, and operational intervention. Enforced execution-aware supersession via `WorkflowRuntime.requestInstanceCancellation()`, distinguishing requested vs confirmed cancellation and blocking conflicting successor execution. Implemented idempotent audit trail reconciliation using deterministic `audit-dec-${transition.transitionId}` IDs. 10 focused hardening tests in `tests/decision/phase2_1_1_hardening.test.ts` (10/10 passed). Full regression suite (191/191 passed). Production build succeeded (exit code 0). Stopped for Founder review.
 - [2026-10-13] Decision Workflow Phase 2.1: Core Decision Store and Lifecycle Foundation — Implemented `DecisionRecord` types (`src/types/decision.ts`), `DecisionStore` (`src/lib/server/decision/store.ts`), `DecisionLifecycleService` (`src/lib/server/decision/lifecycle.ts`), cryptographic approval binding (`src/lib/server/decision/payload-binding.ts`), legacy adapter (`src/lib/server/decision/adapter.ts`), and `CompanyStateStore` delegation. 18-test deterministic test suite (`tests/decision/decision_lifecycle.test.ts`). 181/181 passing across full suite. Production build succeeded. Stopped for Founder review.

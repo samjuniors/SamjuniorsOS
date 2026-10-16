@@ -2,7 +2,7 @@
 
 **Document Type:** System Architecture Specification  
 **Status:** AUTHORITATIVE CANONICAL REFERENCE  
-**Repository Working Tree:** Commit `6a01bb2` + Phase 4C-B Working Tree (2026-09-21)
+**Repository Working Tree:** Reconciled to `main` @ `aed87ba` (Phase 2.3B approved baseline, 2026-10-16)
 
 ---
 
@@ -153,8 +153,8 @@ SamjuniorsOS/
 │   ├── types/                    # Canonical TypeScript contract definitions
 │   └── proxy.ts                  # Security route middleware & session derivation
 ├── prisma/
-│   ├── schema.prisma             # Full relational database schema
-│   └── migrations/               # Database migration history
+│   ├── schema.prisma             # Full relational database schema (SQLite provider; db/custom.db)
+│   └── migrations/               # None (unversioned prisma db push used; versioned migrations planned for Phase 2.3C)
 ├── tests/                        # Automated unit & integration tests
 │   └── sophia/                   # Test suites for cognitive & live phases
 ├── doc/                          # Architecture specifications, research reports, ADRs
@@ -205,7 +205,7 @@ Epistemic Ingress (New Verified Facts committed to Company Knowledge Vault)
 
 ## 6. Company State
 
-Authoritative company state is stored in the relational database layer (`prisma/schema.prisma`), backed by `DurableFileStore` for local atomic persistence:
+Authoritative company state is stored in the relational database layer (`prisma/schema.prisma` configured for SQLite), backed by `DurableFileStore` (`.data/*.json`) for atomic local persistence. Transition to PostgreSQL relational authority is designed and approved in Phase 2.3B, pending Phase 2.3C implementation:
 
 1. **Identity & Authority:** `User` table maintaining founder roles and security credentials.
 2. **Company Operational State:** `CompanyState` storing stage, focus, product portfolio, and high-level initiatives.
@@ -350,30 +350,29 @@ The following patterns are strictly prohibited in SamJuniorsOS:
 
 ## 17. Current Status
 
-- **Git HEAD:** `6a01bb2` (Commit: `feat(live): implement and verify Phase 4B client VAD and audio ingress`)
-- **Active Branch:** `main` (synchronized with `origin/main`)
-- **Local Working Tree:** Unstaged implementation of Phase 4C-B (streaming STT adapter for Deepgram Flux, `executeSophiaTurn` cognitive ingress, `LiveTranscriptRibbon`, and tests).
+- **Git HEAD:** `aed87ba` (Current `main` baseline)
+- **Active Status:** Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged via PR #16 (commit `b8afe45`); design baseline approved by Founder (`7c04463`).
 - **Verified Working Subsystems:**
-  - Executive Council Orchestration (Sophia, Thorne, Lin, Cruz, ConstitutionalVerifier).
-  - SideEffectAuthorizationGate with SHA-256 payload binding.
-  - Authoritative GraphDTO read model and Canvas FlowEngine projection.
+  - Executive Council Deliberation & Peer Review Protocol (Sophia, Thorne, Lin, Cruz, ConstitutionalVerifier; Phase 2.2.2, commit `edca069`).
+  - Decision Lifecycle & Decision-Aware Company Context (Phase 2.1 & 2.2.1, PR #8 & PR #10).
+  - SideEffectAuthorizationGate with cryptographic SHA-256 payload binding.
+  - Authoritative GraphDTO read model and Canvas FlowEngine projection (Phase 4.3A).
   - Epistemic lifecycle (Sources, Signals, Claims, Verifications, Facts).
   - Live companion WebSocket server (Port 3001) with ticket authentication.
-  - Client AudioWorklet 16kHz PCM streaming and Silero VAD heuristic.
-  - Phase 4C-B streaming STT adapter and turn finalization idempotency.
-- **Target Subsystems (NOT IMPLEMENTED):**
+  - Client AudioWorklet 16kHz PCM streaming, Silero VAD heuristic, and Deepgram Flux streaming STT adapter.
+  - Atomic `DurableFileStore` (`.data/*.json`) and single-host instance guard.
+- **Target Subsystems (GATED / PROPOSED / NOT IMPLEMENTED):**
+  - Phase 2.3C PostgreSQL production persistence & versioned schema migrations (gated by Founder infrastructure decisions).
   - LiveKit / WebRTC media gateway.
   - Gemini Live bidirectional streaming provider.
   - Camera and screen sharing vision ingress.
-  - Private local on-device runtime node.
+  - Role Brains (strictly downstream of production Company Brain persistence).
 
 ---
 
 ## 18. Next Architecture Work
 
-1. **Working Tree Reconciliation:** Review and commit the Phase 4C-B streaming STT implementation and test suites.
-2. **LiveKit / WebRTC Gateway Design (ADR-001):** Prototype WebRTC media transport to support unified audio, camera, and screen sharing.
-3. **Gemini Live Provider Adapter:** Implement the provider adapter connecting WebRTC audio to the Gemini Live multimodal API while maintaining provider replaceability.
-4. **Visual Sensory Ingress:** Implement sample-gated camera and change-triggered screen capture ingestion into Sophia's context assembler.
-5. **Action Routing From Realtime:** Wire realtime voice intents directly to authorized workflow dispatches and approval prompts.
-6. **Local Companion Edge Node:** Design the authenticated local daemon for founder desktop interaction.
+1. **Founder Infrastructure Decision:** Resolve target hosting architecture (Single-Host Container vs. Managed Cloud/Serverless), target RPO/RTO, backup retention, and operational budget.
+2. **Phase 2.3C Authorization:** Following founder decision, authorize Phase 2.3C implementation (Prisma PostgreSQL migration, connection pooling, and store migration).
+3. **Founder Operating Loop Proposal Alignment:** Align first-release scope with the Founder Operating Loop proposal once formally approved by the founder.
+4. **Realtime Media Transport Evolution (ADR-001):** Progress toward WebRTC/LiveKit and multimodal streaming once core operating loop persistence is established.

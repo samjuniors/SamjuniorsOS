@@ -1,19 +1,21 @@
 # ROADMAP.md — SamJuniorsOS Phases
-**Status:** Current-state status updated 2026-10-15; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
+**Status:** Current-state status updated 2026-10-16; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
-- 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged to `main` via [PR #16](https://github.com/samjuniors/SamJuniorsOS/pull/16), merge commit `b8afe455086ab044088079ef9081dd476bc457d6`. Founder-approved design baseline; implementation is NOT authorized.
-- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed. The deployment-verification supporting report remains a local untracked artifact and is not part of the committed repository.
+- 2026-10-16: SAM-5 (SamJuniorsOS Repository & Project Reconciliation) underway: reconciling documentation against verified code reality, clarifying Phase 2.3A audit artifacts and PR #14 draft status, and aligning proposed first-release direction with the Founder Operating Loop proposal.
+- 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged to `main` via [PR #16](https://github.com/samjuniors/SamJuniorsOS/pull/16), merge commit `b8afe455086ab044088079ef9081dd476bc457d6`; design baseline approved by Founder in commit `7c04463`. Founder-approved design baseline; implementation is NOT authorized.
+- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed. The audit report is documented in [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](../docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md); the deployment-verification supporting report remains a local untracked artifact and is not part of the committed repository.
 - 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed and merged to `main` (commit `edca06919b17eaa6737afba23b140b8abb3a82e5`).
 - 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization.
 - PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
 - M1 memory source-of-truth work remains merged to `main` at `dd2c3c2bfb0bc5f9ea846dcd6a9410e7c840ff80`.
 
 **PROPOSED NEXT PHASE:**
-Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; requires separate Founder implementation authorization after target hosting/provider, RPO/RTO, backup retention, recovery requirements, and operational budget are decided).
+- Proposed First-Release Direction: [Founder Operating Loop Product Definition and v1 Release Strategy](https://linear.app/samjuniors/document/founder-operating-loop-product-definition-and-v1-release-strategy-6f29b0c955b3) (active proposal awaiting Founder formal ratification).
+- Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; strictly gated by Founder infrastructure decisions and explicit implementation authorization).
 
 **NEXT ACTION:**
-Founder to resolve the outstanding infrastructure and recovery decisions, then explicitly authorize or defer Phase 2.3C. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
+Founder to review the SAM-5 project reconciliation documentation PR, formally review the Founder Operating Loop proposal, and resolve the outstanding infrastructure/recovery decisions before authorizing Phase 2.3C. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 
@@ -32,11 +34,12 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 | Synthetic data never labeled as verified fact | IMPLEMENTED + WIRED — state-store initiatives demoted to unverified; initial memories demoted to high_confidence; unbacked memory injection sanitized in recordMemory() |
 | Side-effect idempotency / unknown-outcome handling | IMPLEMENTED + WIRED — idempotency cache on /api/orchestrate; deduplicated Svix webhooks on Resend; idempotent fact promotion in pipeline |
 
-**Foundation requirements were reported as having achieved a 100% test pass in local/test modes as of historical commit `32a6f38` (and post-merge stabilization in `edca069`). Current test pass status has NOT been independently re-verified in this design phase. This does NOT imply production verification, deployment verification, or multi-instance runtime correctness. Production multi-instance database authority remains pending Phase 2.3C.**
+**Test Verification Status:** Core foundation suites were re-verified locally on Node.js v24.20.0 during SAM-5 reconciliation (35/35 council deliberation tests, 15/15 decision context tests, 4/4 production response path regression tests, 9/9 graph read model tests passing; eslint exited code 0). This verifies local single-instance runtime correctness under SQLite; it does NOT imply multi-instance production verification or cloud deployment verification. Production multi-instance database authority remains pending Phase 2.3C.
 
 ## NEXT (build once FOUNDATION is real, before LATER)
 
-- Full relational persistence: Transition Prisma datasource from SQLite (`provider = "sqlite"`) to PostgreSQL (`provider = "postgresql"`), connect via production `DATABASE_URL` with connection pooling, and migrate file-backed stores (Decisions, Council Deliberations, Conversations, Personal Memories) once Founder approves Phase 2.3B architecture and selects hosting infrastructure.
+- Founder Operating Loop release alignment: Formal Founder review and ratification of the proposed first-release direction ([Founder Operating Loop Product Definition and v1 Release Strategy](https://linear.app/samjuniors/document/founder-operating-loop-product-definition-and-v1-release-strategy-6f29b0c955b3)).
+- Full relational persistence (Phase 2.3C): Transition Prisma datasource from SQLite (`provider = "sqlite"`) to PostgreSQL (`provider = "postgresql"`), connect via production `DATABASE_URL` with connection pooling, and migrate file-backed stores (Decisions, Council Deliberations, Conversations, Personal Memories) once Founder decides hosting infrastructure and authorizes Phase 2.3C implementation (Phase 2.3B design baseline approved in commit `7c04463`).
 - First-class versioned `Artifact` model.
 - The Company Brain becoming the *single* path for state/knowledge reads and writes (not a correct pipeline existing alongside an un-migrated old one).
 - Confirming and closing the two open auth gaps (live Clerk provisioning, gate.ts allowlist fix).
