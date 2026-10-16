@@ -15,7 +15,7 @@
 - Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; strictly gated by Founder infrastructure decisions and explicit implementation authorization).
 
 **NEXT ACTION:**
-Founder to formally review/ratify the Founder Operating Loop proposal and separately resolve the hosting model, RPO/RTO, backup retention, recovery requirements, and budget before considering Phase 2.3C. Phase 2.3C remains proposed and unauthorized; no production deployment, runtime schema changes, or migration execution is authorized. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
+Founder to formally review/ratify the Founder Operating Loop proposal and separately resolve the hosting model, RPO/RTO, backup retention, recovery requirements, and budget before considering Phase 2.3C. Phase 2.3C remains proposed and unauthorized. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 
