@@ -2,7 +2,7 @@
 
 **Document Type:** System Architecture Specification  
 **Status:** AUTHORITATIVE CANONICAL REFERENCE  
-**Repository Working Tree:** Reconciled to `main` @ `aed87ba` (Phase 2.3B approved baseline, 2026-10-16)
+**Repository Working Tree:** Reconciled to `main` @ `1c86599` (SAM-5 reconciliation committed directly to main, 2026-10-16)
 
 ---
 
@@ -350,7 +350,7 @@ The following patterns are strictly prohibited in SamJuniorsOS:
 
 ## 17. Current Status
 
-- **Git HEAD:** `aed87ba` (Current `main` baseline)
+- **Git HEAD:** `1c86599` (Reconciliation baseline committed directly to `main`; no PR was created or merged for this commit)
 - **Active Status:** Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged via PR #16 (commit `b8afe45`); design baseline approved by Founder (`7c04463`).
 - **Verified Working Subsystems:**
   - Executive Council Deliberation & Peer Review Protocol (Sophia, Thorne, Lin, Cruz, ConstitutionalVerifier; Phase 2.2.2, commit `edca069`).

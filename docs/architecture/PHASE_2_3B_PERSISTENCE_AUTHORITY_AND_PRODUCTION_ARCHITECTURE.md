@@ -6,7 +6,7 @@
 **Branch:** `phase/2.3b-persistence-authority-design`  
 **Mode:** Design-only revision. Implementation is NOT approved.  
 **Inputs:**  
-- [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) (*Phase 2.3A — Company Brain Authority & Persistence Audit*)  
+- [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](./PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) (*Phase 2.3A — Company Brain Authority & Persistence Audit*)  
 - `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers) (*Phase 2.3A — Deployment Verification & Infrastructure Discovery Report*)  
 - `AGENTS.md` (Highest authority engineering guardrails)  
 - `ARCHITECTURE.md`, `PRODUCT.md`, `doc/ROADMAP.md`  
@@ -854,7 +854,7 @@ Authority Audit &      ►  Architecture Design    ►  PostgreSQL Foundation  �
 Deployment Discovery      Revision (Draft)          (Gated by Founder)        & 24/7 Hardening
 ```
 
-- **Phase 2.3A — Authority Audit & Deployment Discovery (COMPLETE):** Established repository reality: SQLite datasource, file-backed stores, and unverified deployment state ([`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) and `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)).
+- **Phase 2.3A — Authority Audit & Deployment Discovery (COMPLETE):** Established repository reality: SQLite datasource, file-backed stores, and unverified deployment state ([`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](./PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) and `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)).
 - **Phase 2.3B — Persistence Authority & Production Architecture Design (CURRENT):** Architectural specification addressing founder review. Documentation only. Status: `DRAFT — PENDING FOUNDER REVIEW`.
 - **Phase 2.3C — Production Persistence Foundation (PROPOSED):** Strictly gated by founder approval of Phase 2.3B. Scope: PostgreSQL schema migration, Prisma client update, extraction scripts, and store adapter updates.
 - **Phase 2.3D — Production Cutover & 24/7 Hardening (PROPOSED):** Scope: Rehearsed cutover execution, connection pooler configuration, backup automation, and live telemetry verification.

@@ -4,12 +4,12 @@
 
 ## Now — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
-**Baseline:** `main` at commit `aed87ba` (incorporating Phase 2.3B merge commit `b8afe45` / PR #16 and subsequent roadmap date refresh commits).
+**Baseline:** `main` at commit `1c86599` (direct reconciliation commit; parent `aed87ba`, incorporating Phase 2.3B PR #16 and subsequent roadmap date refreshes).
 
 - **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
-- **Active branch:** `docs/project-reconciliation-sam-5`, created directly from `origin/main` (`aed87ba`).
+- **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch (`docs/sam-5-reconciliation-hygiene`) and draft PR are submitted to accurately record this integration reality and provide a clean review vehicle for the Founder.
 - **Context:** ChatGPT technical lead coordination for workspace audit, documentation reconciliation, and proposal alignment. The Founder retains final authority.
-- **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero merges.
+- **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero unapproved merges.
 
 ### Reconciliation Highlights
 1. **Repository Reality Alignment:**
@@ -33,7 +33,7 @@
      - `tests/phase4_3a_graph_read_model.test.ts`: **9 passed, 0 failed** (100%)
      - `npm run lint`: **0 errors, 0 warnings** (exit code 0)
 
-**Next action:** Submit clean documentation draft PR targeting `main` and stop for Founder review. Zero feature implementation, zero deployments.
+**Next action:** Stop for Founder review and formal acceptance of SAM-5 reconciliation on `main` and the hygiene draft PR. Zero feature implementation, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.

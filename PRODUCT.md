@@ -1,5 +1,5 @@
 # PRODUCT.md — Product Definition
-**Status:** Reconciled against the repository working tree (SAM-5 reconciliation, 2026-10-16) and founder-locked strategic decisions. Supersedes all prior versions.
+**Status:** Reconciled against the repository working tree (SAM-5 reconciliation committed directly to `main` at commit `1c86599`, 2026-10-16) and founder-locked strategic decisions. Supersedes all prior versions.
 
 ---
 
@@ -104,7 +104,7 @@ Internal-only (§1). Not a replacement for GitHub/Slack/email/a CRM. Not autonom
 
 ---
 
-## Current Repository State (verified against the working tree, SAM-5 reconciliation, 2026-10-16 — supersedes all earlier repository-state snapshots)
+## Current Repository State (verified against the working tree, SAM-5 reconciliation at commit `1c86599`, 2026-10-16 — supersedes all earlier repository-state snapshots)
 
 Foundation remediation, the V2 shell, runtime wiring, Decision Workflow (Phases 2.1 & 2.2.1), Executive Council Deliberation (Phase 2.2.2), and Persistence Authority Design (Phase 2.3B) are verified in code or merged architecture:
 
