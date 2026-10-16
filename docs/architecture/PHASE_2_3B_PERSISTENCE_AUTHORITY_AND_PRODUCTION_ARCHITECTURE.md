@@ -6,8 +6,8 @@
 **Branch:** `phase/2.3b-persistence-authority-design`  
 **Mode:** Design-only revision. Implementation is NOT approved.  
 **Inputs:**  
-- [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) (*Phase 2.3A — Company Brain Authority & Persistence Audit*)  
-- `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers) (*Phase 2.3A — Deployment Verification & Infrastructure Discovery Report*)  
+- [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](./PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) (*Phase 2.3A — Company Brain Authority & Persistence Audit*)  
+- `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (supporting report preserved on local-only backup branch `backup/phase-2.3a-deployment-verification`; not included in this branch or `main`, and remote backup availability is NOT VERIFIED) (*Phase 2.3A — Deployment Verification & Infrastructure Discovery Report*)  
 - `AGENTS.md` (Highest authority engineering guardrails)  
 - `ARCHITECTURE.md`, `PRODUCT.md`, `doc/ROADMAP.md`  
 - Current repository source files in `src/lib/server/` and `prisma/schema.prisma`
@@ -18,7 +18,7 @@
 
 ### 1.1 Architectural Verdict
 1. **Current Production State Is Unverified & Indefensible for Multi-Host Scale:**  
-   The active repository code uses SQLite (`prisma/schema.prisma`, `DATABASE_URL=file:./db/custom.db`) alongside a suite of local JSON collections in `.data/*.json`. As documented in the Phase 2.3A Deployment Verification report (`docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)), active cloud deployment remains unknown and unverified from repository files alone. Four consequential business domains ([`DecisionStore`](src/lib/server/decision/store.ts), [`ConversationStore`](src/lib/server/conversation/store.ts), [`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts), and [`ExecutiveCouncilEngine`](src/lib/server/orchestration/council.ts)) depend strictly on local filesystem storage with zero database read paths. In-process locks rely on OS signal 0 (`process.kill(pid, 0)`), which fails completely across container boundaries.
+   The active repository code uses SQLite (`prisma/schema.prisma`, `DATABASE_URL=file:./db/custom.db`) alongside a suite of local JSON collections in `.data/*.json`. As documented in the Phase 2.3A Deployment Verification report (`docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (supporting report preserved on local-only backup branch `backup/phase-2.3a-deployment-verification`; not included in this branch or `main`, and remote backup availability is NOT VERIFIED)), active cloud deployment remains unknown and unverified from repository files alone. Four consequential business domains ([`DecisionStore`](src/lib/server/decision/store.ts), [`ConversationStore`](src/lib/server/conversation/store.ts), [`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts), and [`ExecutiveCouncilEngine`](src/lib/server/orchestration/council.ts)) depend strictly on local filesystem storage with zero database read paths. In-process locks rely on OS signal 0 (`process.kill(pid, 0)`), which fails completely across container boundaries.
 2. **One Company Brain Architecture, Not a Monolithic Store:**  
    Authoritative company truth is owned by a governed federation of dedicated domain stores. The "Company Brain" is an architectural governance layer—deterministic verification gates, provenance contracts, context assemblers, and bounded read projections—not a monolithic `CompanyBrainStore` class or single database table.
 3. **Sophia Personal Mind Remains Strictly Founder-Scoped:**  
@@ -854,7 +854,7 @@ Authority Audit &      ►  Architecture Design    ►  PostgreSQL Foundation  �
 Deployment Discovery      Revision (Draft)          (Gated by Founder)        & 24/7 Hardening
 ```
 
-- **Phase 2.3A — Authority Audit & Deployment Discovery (COMPLETE):** Established repository reality: SQLite datasource, file-backed stores, and unverified deployment state ([`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) and `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)).
+- **Phase 2.3A — Authority Audit & Deployment Discovery (COMPLETE):** Established repository reality: SQLite datasource, file-backed stores, and unverified deployment state ([`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](./PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) and `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)).
 - **Phase 2.3B — Persistence Authority & Production Architecture Design (CURRENT):** Architectural specification addressing founder review. Documentation only. Status: `DRAFT — PENDING FOUNDER REVIEW`.
 - **Phase 2.3C — Production Persistence Foundation (PROPOSED):** Strictly gated by founder approval of Phase 2.3B. Scope: PostgreSQL schema migration, Prisma client update, extraction scripts, and store adapter updates.
 - **Phase 2.3D — Production Cutover & 24/7 Hardening (PROPOSED):** Scope: Rehearsed cutover execution, connection pooler configuration, backup automation, and live telemetry verification.

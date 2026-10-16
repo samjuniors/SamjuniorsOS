@@ -2,9 +2,9 @@
 **Status:** Current-state status updated 2026-10-16; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
-- 2026-10-16: SAM-5 (SamJuniorsOS Repository & Project Reconciliation) underway: reconciling documentation against verified code reality, clarifying Phase 2.3A audit artifacts and PR #14 draft status, and aligning proposed first-release direction with the Founder Operating Loop proposal.
+- 2026-10-16: SAM-5 (SamJuniorsOS Repository & Project Reconciliation) documentation reconciliation committed directly to main at 1c86599 (parent aed87ba; no PR was created or merged for this commit): reconciled documentation against verified code reality, restored Phase 2.3A audit report (resolving broken link in Phase 2.3B specification), and aligned proposed first-release direction with the Founder Operating Loop proposal.
 - 2026-10-15: Phase 2.3B (Persistence Authority & Production Architecture Design) completed and merged to `main` via [PR #16](https://github.com/samjuniors/SamJuniorsOS/pull/16), merge commit `b8afe455086ab044088079ef9081dd476bc457d6`; design baseline approved by Founder in commit `7c04463`. Founder-approved design baseline; implementation is NOT authorized.
-- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed. The audit report is documented in [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](../docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md); the deployment-verification supporting report remains a local untracked artifact and is not part of the committed repository.
+- 2026-10-15: Phase 2.3A (Company Brain Authority & Persistence Audit and Deployment Verification) completed. The audit report is documented in [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](../docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md); the deployment-verification supporting report is preserved on local backup branch `backup/phase-2.3a-deployment-verification`; that branch was not found among the repository's remote branches during this review, so remote backup availability is NOT VERIFIED and the report is not part of `main`.
 - 2026-10-14: Phase 2.2.2 (Bounded Executive Council Deliberation) completed and merged to `main` (commit `edca06919b17eaa6737afba23b140b8abb3a82e5`).
 - 2026-10-14: PR #10 merged to `main` (merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`), completing Issue #9 post-merge M2/Decision stabilization.
 - PR #8 remains the integration point for M2 Persistence/Recovery and Decision Workflow Phases 2.1, 2.1.1, and 2.2.1.
@@ -15,7 +15,7 @@
 - Phase 2.3C — Persistence Authority & Database Migration Execution (proposed only; strictly gated by Founder infrastructure decisions and explicit implementation authorization).
 
 **NEXT ACTION:**
-Founder to review the SAM-5 project reconciliation documentation PR, formally review the Founder Operating Loop proposal, and resolve the outstanding infrastructure/recovery decisions before authorizing Phase 2.3C. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
+Review the SAM-5 documentation hygiene PR and its evidence, formally review the Founder Operating Loop proposal, and resolve the outstanding infrastructure/recovery decisions before separately authorizing Phase 2.3C. No production deployment, runtime schema changes, or migration execution is authorized by the Phase 2.3B design approval.
 
 **Rule that governs this whole file:** nothing moves from a later phase into an earlier one because it seems interesting or because a reference repo does it well. A concept moves up only when the phase before it is actually done and verified against the repository—not merely documented as done.
 

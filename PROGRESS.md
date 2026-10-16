@@ -4,12 +4,12 @@
 
 ## Now — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
-**Baseline:** `main` at commit `aed87ba` (incorporating Phase 2.3B merge commit `b8afe45` / PR #16 and subsequent roadmap date refresh commits).
+**Baseline:** `main` at commit `1c86599` (direct reconciliation commit; parent `aed87ba`, incorporating Phase 2.3B PR #16 and subsequent roadmap date refreshes).
 
 - **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
-- **Active branch:** `docs/project-reconciliation-sam-5`, created directly from `origin/main` (`aed87ba`).
+- **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch (`docs/sam-5-reconciliation-hygiene`) was created to correct baseline and relative-link documentation. The branch is being reviewed separately; no PR existed at the time of this update.
 - **Context:** ChatGPT technical lead coordination for workspace audit, documentation reconciliation, and proposal alignment. The Founder retains final authority.
-- **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero merges.
+- **Scope:** Documentation-only baseline alignment. Zero feature implementation, zero schema migrations, zero infrastructure changes, zero unapproved merges.
 
 ### Reconciliation Highlights
 1. **Repository Reality Alignment:**
@@ -17,7 +17,7 @@
    - Identified that `prisma/migrations` does not exist; unversioned `prisma db push` is the active schema synchronization mechanism.
 2. **Phase 2.3A Audit & PR #14 Resolution:**
    - Preserved Phase 2.3A audit report at [`docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](docs/architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md), resolving broken references in the merged Phase 2.3B document.
-   - Preserved the local deployment-verification supporting report on dedicated backup branch `backup/phase-2.3a-deployment-verification` (documented as remaining a local untracked artifact per `ROADMAP.md`).
+   - Preserved the deployment-verification supporting report on local backup branch `backup/phase-2.3a-deployment-verification`. The branch was not found among the repository's remote branches during this review; the report is therefore not part of `main`, and remote backup availability is NOT VERIFIED.
    - Assessed PR #14 (draft): determined it is superseded in its roadmap/progress changes by PR #16 and commits on `main`. Left unmerged pending Founder review.
 3. **Phase 2.3B Approved Baseline:**
    - Confirmed Phase 2.3B architecture specification (`docs/architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md`) was merged via PR #16 (`b8afe45`) and approved by Founder (`7c04463`).
@@ -33,7 +33,7 @@
      - `tests/phase4_3a_graph_read_model.test.ts`: **9 passed, 0 failed** (100%)
      - `npm run lint`: **0 errors, 0 warnings** (exit code 0)
 
-**Next action:** Submit clean documentation draft PR targeting `main` and stop for Founder review. Zero feature implementation, zero deployments.
+**Next action:** Complete review of the documentation hygiene changes and record the resulting PR/acceptance evidence. Zero feature implementation, zero deployments.
 
 ## Historical detail — Phase 2.2.1 context integration
 Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit/m2-persistence-and-recovery`.
