@@ -1,0 +1,8 @@
+{
+  "id": "G3.3",
+  "doneAt": "2026-10-21T11:09:33.282Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "6d196eebd8f7929c17882944e8a1eb3d097633e7",
+  "evidence": "Automated regression suite tests/sophia/g3_3_untrusted_ingress.test.ts verifies all four untrusted ingress channels (transcripts, webhooks, tool output, and screen text); proves injected instructions cannot execute side effects or bypass SideEffectAuthorizationGate (9/9 pass). Typecheck clean."
+}
