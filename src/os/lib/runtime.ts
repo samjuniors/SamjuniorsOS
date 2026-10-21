@@ -397,6 +397,8 @@ export async function applyScheduleAction(
 export interface ChatReply {
   reply: string;
   liveAi: boolean;
+  fallback: boolean;
+  mode: 'live_model' | 'deterministic_fallback';
   intent: string;
   name: string;
   conversationId?: string;
@@ -424,6 +426,8 @@ export async function agentChat(opts: {
   return {
     reply: data.reply,
     liveAi: !!data.liveAi,
+    fallback: data.fallback ?? !data.liveAi,
+    mode: data.mode ?? (data.liveAi ? 'live_model' : 'deterministic_fallback'),
     intent: data.intent,
     name: data.name,
     conversationId: data.conversationId,
@@ -440,6 +444,7 @@ export async function fetchConversation(conversationId: string): Promise<{
     sender: 'founder' | 'assistant' | 'system';
     role: 'user' | 'assistant' | 'system';
     content: string;
+    metadata?: Record<string, any>;
     createdAt: string;
   }>;
 }> {
