@@ -121,6 +121,7 @@ export async function POST(req: NextRequest) {
         approvalId,
         revokedBy: verifiedActor,
         reason: reason || 'Revoked by Founder',
+        userContext,
       });
       return NextResponse.json({ success: true, record });
     } else {

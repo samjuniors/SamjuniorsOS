@@ -32,6 +32,10 @@ const EXECUTIVE_API_PATTERNS = [
   "/api/communication/drafts",
   "/api/communication/intents",
   "/api/communication/messages",
+  "/api/conversation",
+  "/api/sofia/memory",
+  "/api/sophia/system/action",
+  "/api/auth/ws-ticket",
 ];
 
 function isExecutiveApiRoute(pathname: string): boolean {
@@ -136,9 +140,11 @@ export function proxy(req: NextRequest) {
         // credentials (documented route behavior), and any other caller
         // keeps receiving the same 401 as before this admission existed.
       }
-      const hasProvider =
-        !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-        !!process.env.SAMJUNIORS_DEV_SECRET;
+      const hasClerk =
+        !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
+        !!process.env.CLERK_SECRET_KEY;
+      const hasDevSecret = !!process.env.SAMJUNIORS_DEV_SECRET;
+      const hasProvider = hasClerk || hasDevSecret;
       const devToken =
         req.headers.get("x-samjuniors-dev-as") ||
         req.cookies.get("samjuniors-dev-as")?.value;
@@ -146,7 +152,10 @@ export function proxy(req: NextRequest) {
         req.headers.get("x-samjuniors-dev-secret") ||
         req.cookies.get("samjuniors-dev-secret")?.value;
       const authorized =
-        hasProvider && devToken === "founder" && !!devSecret && !!process.env.SAMJUNIORS_DEV_SECRET &&
+        hasProvider &&
+        devToken === "founder" &&
+        !!devSecret &&
+        !!process.env.SAMJUNIORS_DEV_SECRET &&
         constantTimeEquals(devSecret, process.env.SAMJUNIORS_DEV_SECRET);
       if (!authorized) {
         return new NextResponse(
