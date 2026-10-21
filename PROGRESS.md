@@ -2,9 +2,31 @@
 
 > Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — SAM-5: SamJuniorsOS Repository & Project Reconciliation
+## Now — Product Kit & Gate G0 Foundation
+
+**Baseline:** `main` at commit `05552e2` incorporating product kit (`.agent/product-kit/`, 17 gates, 107 steps) and target-state architecture specs; integration branch `kit/integration`.
+
+- **Completed Steps:**
+  - `G0.1`: Product boundary recorded (internal company OS, single-founder, scalable later).
+  - `G0.4`: Sophia Vance identity & COO title retained.
+  - `G0.5`: Independent fact-check of decision briefs completed and verified (`.agent/product-kit/handoffs/G0.5.verify.md` PASS).
+- **Awaiting Founder Decisions in Gate G0:**
+  - `G0.2` (Founder Operating Loop v1 ratification)
+  - `G0.3` (Infrastructure, hosting model, RPO/RTO, backup retention, budget)
+  - `G0.6` (First AI employee roles & autonomy ceilings)
+  - `G0.7` (Autonomy policy limits, spend caps, kill-switch behavior)
+  - `G0.8` (Live conversation provider selection & monthly voice budget)
+  - `G0.9` (Initial product ownership)
+- **Active Ready Work in Gate G1 (Engineering Foundation):**
+  - `G1.1` (Canonical test suite command)
+  - `G1.3` (Full-history secret scan)
+  - `G1.5` (Honest fallback reply labeling)
+  - `G1.4` (Documentation reconciliation with code)
+
+## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
 **Baseline:** `main` at commit `1c86599` (direct reconciliation commit; parent `aed87ba`, incorporating Phase 2.3B PR #16 and subsequent roadmap date refreshes).
+
 
 - **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
 - **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch was reviewed and merged via PR #17 at `b8607f7`, correcting baseline, backup-custody, and relative-link documentation.
