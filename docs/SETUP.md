@@ -13,7 +13,7 @@ Verified against the working tree on 2026-10-21 on Windows 11 (Node 24, npm) and
 These were all reproduced on 2026-10-15. Until they are fixed, the steps below include the workaround.
 
 1. **Lockfile registry host: NOT VERIFIED as a problem.** `bun.lock` contains 609 tarball URLs on `registry.npmjs.com` rather than `registry.npmjs.org`. An earlier version of this guide called that a broken host. That was wrong: the failure was observed only in a restricted sandbox whose network allowlist blocks the host (a host that certainly exists failed the same way there), and the repository's CI installs with `bun install --frozen-lockfile` against this lockfile. If `bun install` fails on your machine with `DNSResolveFailed`, check your own network or proxy before touching the lockfile.
-2. **Windows-only SWC binary is declared as a normal dependency.** `package.json` lists `@next/swc-win32-x64-msvc`. npm refuses it on macOS and Linux with `EBADPLATFORM`. Use Bun on macOS and Linux. Windows is not affected by this error.
+2. **Windows-only SWC binary is declared under optionalDependencies (Resolved in Gate G1.6).** `@next/swc-win32-x64-msvc` is declared in `optionalDependencies` rather than hard dependencies. npm and bun install it on Windows x64 and cleanly skip it on Linux and macOS without `EBADPLATFORM` errors.
 3. **The postinstall step downloads Prisma engines.** `postinstall` runs `prisma generate`, which fetches engine binaries from `binaries.prisma.sh`. If that host is blocked on your network, the install fails. You can install with `--ignore-scripts` and run `bunx prisma generate` (or `npx prisma generate`) once the host is reachable.
 
 ## Install
@@ -21,7 +21,7 @@ These were all reproduced on 2026-10-15. Until they are fixed, the steps below i
 ```bash
 git clone https://github.com/samjuniors/SamjuniorsOS.git
 cd SamjuniorsOS
-npm install                 # Windows (or: bun install on macOS / Linux per issue 2)
+npm install                 # or: bun install (verified cross-platform on Windows and Linux)
 
 # Copy environment template for both Prisma and Next.js
 cp .env.example .env
