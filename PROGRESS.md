@@ -10,6 +10,7 @@
   - `G0.1`: Product boundary recorded (internal company OS, single-founder, scalable later).
   - `G0.4`: Sophia Vance identity & COO title retained.
   - `G0.5`: Independent fact-check of decision briefs completed and verified (`.agent/product-kit/handoffs/G0.5.verify.md` PASS).
+  - `G1.1`: Canonical test runner implemented (`scripts/test-runner.mjs`) and wired in `package.json` (`npm test`). Discovers all 71 suites; 56 Node suites pass clean (exit code 0); 15 Bun-divergent suites listed with exact reasons per runner divergence; non-zero exit verified on deliberate failure (`.agent/product-kit/handoffs/G1.1.verify.md` PASS).
 - **Awaiting Founder Decisions in Gate G0:**
   - `G0.2` (Founder Operating Loop v1 ratification)
   - `G0.3` (Infrastructure, hosting model, RPO/RTO, backup retention, budget)
@@ -18,10 +19,10 @@
   - `G0.8` (Live conversation provider selection & monthly voice budget)
   - `G0.9` (Initial product ownership)
 - **Active Ready Work in Gate G1 (Engineering Foundation):**
-  - `G1.1` (Canonical test suite command)
-  - `G1.3` (Full-history secret scan)
+  - `G1.3` (Full-history secret scan and classification of the 5 test-fixture hits)
+  - `G1.4` (Reconcile documentation with code)
   - `G1.5` (Honest fallback reply labeling)
-  - `G1.4` (Documentation reconciliation with code)
+  - `G1.6` (Reproducible install across Windows & Linux)
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 

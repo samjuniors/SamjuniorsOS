@@ -132,12 +132,12 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 1. **Deterministic vs. LLM Ownership:**  
    Security authorizations, cryptographic SHA-256 approval binding, idempotency, state transitions, and database mutations are strictly deterministic. Probabilistic models draft and reason, but never bypass policy gates.
-2. **SideEffectAuthorizationGate:**  
-   All external side effects (tool execution, financial mutations, external communications) require immutable audit logging and explicit Founder approval where policy dictates.
+2. **SideEffectAuthorizationGate & One Execution Authority:**  
+   One execution authority governs both engines (the multi-agent orchestrator for immediate directives and the workflow runtime for scheduled work). All external side effects (tool execution, financial mutations, external communications) route through the `SideEffectAuthorizationGate` singleton, requiring immutable audit logging and explicit Founder approval where policy dictates.
 3. **Fail-Closed Security:**  
    In production, all executive and orchestration routes fail closed (401) if secrets are unprovisioned or untrusted headers are supplied.
-4. **Single Brain, Multiple Surfaces:**  
-   SOFIA voice, Sophia Canvas, and SamJuniorsOS Desktop all interact with the exact same authoritative company database, memory stores, and workflow engine.
+4. **Single Brain, Multiple Surfaces (Not a Chain):**  
+   SOFIA voice, Sophia Canvas, and SamJuniorsOS Desktop all interact with the exact same authoritative company database, memory stores, and workflow engine. The core intelligence is a unified system (not a chain of divergent disconnected bots).
 
 ---
 
