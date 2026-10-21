@@ -1,0 +1,8 @@
+{
+  "id": "G3.2",
+  "doneAt": "2026-10-21T11:02:14.891Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "baac769ea9cf65560510428a1ab5c4a7e7c28014",
+  "evidence": "Threat model authored in docs/security/OWASP_AGENTIC_AND_LLM_THREAT_MODEL.md mapping all 10 Agentic (ASI01-ASI10) and 10 LLM (LLM01-LLM10) risks to code controls, test suites, and accepted risks AR-01 to AR-04, with ACS v0.1 Guardian alignment. Automated verification test tests/sophia/g3_2_threat_model.test.ts passes (7/7 pass). Typecheck clean."
+}
