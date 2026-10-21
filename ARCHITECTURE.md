@@ -376,3 +376,128 @@ The following patterns are strictly prohibited in SamJuniorsOS:
 2. **Phase 2.3C Authorization:** Following founder decision, authorize Phase 2.3C implementation (Prisma PostgreSQL migration, connection pooling, and store migration).
 3. **Founder Operating Loop Proposal Alignment:** Align first-release scope with the Founder Operating Loop proposal once formally approved by the founder.
 4. **Realtime Media Transport Evolution (ADR-001):** Progress toward WebRTC/LiveKit and multimodal streaming once core operating loop persistence is established.
+
+---
+
+## 19. Decision Contract (TARGET, NOT IMPLEMENTED)
+
+**Purpose:** a typed decision output that software can route on directly, produced from unstructured state. This is the in-house equivalent of the "System One" decision-call pattern described on TypeSafe's Jev page. Those claims (latency, cost, speedups) come from vendor-run evaluations and are unverified here. Jev is not a dependency.
+
+**Contract (proposed fields):**
+- `decision_id`, `model_version`, `evidence_refs[]`
+- `intent`: closed enum (no free-text intents)
+- `entities`: typed, schema-validated
+- `action_class`: `read` | `propose` | `side_effect`
+- `confidence`: number in [0, 1], calibrated (see below)
+- `clarify`: boolean, set when the decision should not be taken
+
+**Rules:**
+- A decision is a proposal. It never grants authority.
+- Output that fails schema validation fails closed to `clarify`.
+- Any `side_effect` action passes through `SideEffectAuthorizationGate` with payload binding, as today. A decision cannot bypass the gate.
+- Approval is never obtained through the voice path (see PRODUCT.md §12).
+
+**Calibration (before any model replacement):**
+- Build the eval from logged decisions that already exist. Measure reliability (calibration curve) and Brier score per intent.
+- Replace or fine-tune a model only if the eval shows a gap that matters, and only if the decision step is the measured latency bottleneck. Measure end-to-end voice latency first, because speech-to-text and text-to-speech also add time.
+
+**Current implementation:** typed intent proposals exist in the Sophia turn path (`src/lib/server/sophia/intent-classifier.ts`): the model must return a numeric confidence in [0, 1], and invalid output falls back to a deterministic path. That confidence is model-reported and uncalibrated. No calibration evaluation exists (searched `src`, `tests`, `benchmark`, `doc` and `docs` on 2026-10-20).
+
+---
+
+## 20. Voice Companion and Local Windows Node (TARGET, NOT IMPLEMENTED)
+
+**Topology:** one authoritative cloud brain (company state, memory, governance, orchestration). The Windows node is an authenticated actuator and audio edge. It holds no independent company memory and no alternate execution authority (consistent with §13).
+
+**Blocking dependency:** the founder infrastructure decision (§18 item 1; `doc/PRODUCT_ARCHITECTURE.md` §0) and Phase 2.3C authorization (§18 item 2). `DurableFileStore` writes to `process.cwd()/.data`, falling back to the OS temp directory (`src/lib/server/persistence/durable-file-store.ts`); `doc/PRODUCT_ARCHITECTURE.md` explains why that is not guaranteed to survive container replacement. The approved replacement design is `docs/architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md`. A multi-instance-safe persistence layer must exist before the cloud brain can be trusted.
+
+**Realtime and voice-model rules:**
+- Any speech-to-speech or Gemini Live adapter (§12, TARGET) is a modality adapter only. Its tool calls route through `executeSophiaTurn` and the authorization gate. It must not hold authority or execute actions directly.
+- Routing actions from realtime voice (formerly an item in §18) must dispatch through the gate and the approval prompt, never directly.
+
+**Windows node capability set (staged, least privilege):**
+1. Read-only: active window, window list, UI Automation tree of the focused window.
+2. Write, each behind approval: focus a window, invoke a named control, type text into a named control.
+3. Vision fallback (screenshot) only where UI Automation cannot identify the target.
+- Excluded from the capability set: arbitrary shell, registry, services, and file deletion.
+- Every capability call is allowlisted and produces an audit record.
+- Third-party Windows MCP servers may be studied but are not adopted wholesale, because several expose capabilities broader than this set.
+
+
+---
+
+## 21. Decision Engine and Routes (TARGET, NOT IMPLEMENTED)
+
+The decision engine extends the existing `SophiaIntentClassifier`. It is not a second router (`AGENTS.md`). The classifier's current kinds are `conversation`, `informational_query`, `operational_inspection`, `directive_proposal`, `steering_proposal`, `approval_proposal` and `clarification_prompt`.
+
+**Proposed route mapping (G12.1 confirms it against the code):**
+
+| Route | Builds on | New |
+|---|---|---|
+| converse | `conversation` | no |
+| recall-personal, recall-company | `informational_query`, `operational_inspection` | memory scope |
+| research | `informational_query` | tool use |
+| use-tool, delegate, schedule | `directive_proposal` | yes |
+| ask-clarify | `clarification_prompt` | no |
+| propose-for-approval | `approval_proposal`, `directive_proposal` | no |
+| refuse | none | yes |
+
+**Rules:**
+- The model proposes a route and a confidence. Deterministic code validates it. An unknown or invalid route fails closed to ask-clarify.
+- Context assembly chooses the memory scopes and budget for the route, attaches sources, and enforces the Personal and Company partition.
+- Every decision is logged with its inputs, route, confidence, policy result and outcome. No log entry, no action.
+- Low confidence asks instead of acting. Thresholds come from the calibration evaluation in section 19.
+- An autonomy policy engine, a deterministic table of action class by autonomy level by limits, returns auto, needs approval or forbidden. A model cannot change it. Changing a level needs a recorded founder decision.
+
+**Current implementation:** the classifier and its seven kinds exist. The extra routes, per-route context assembly, the decision log and the policy engine are NOT IMPLEMENTED.
+
+---
+
+## 22. Memory Scopes and Role Brains (TARGET, NOT IMPLEMENTED)
+
+| Scope | Holds | Notes |
+|---|---|---|
+| Personal Mind | The founder's personal memory | Exists; new memories stay inactive until the founder confirms them |
+| Company Brain | Verified company knowledge | Substrate exists (Source, Signal, Claim, Fact, Memory) |
+| Role Brain | One employee's view | A projection of the Company Brain plus the employee's own working and experience memory. Never company truth |
+| Session and episodic | Conversation history | Consolidated into semantic memory; deletable |
+
+**Rules:**
+- Only confirmed or verified items are recalled as fact. Facts carry provenance, confidence and validity. A newer fact supersedes an older one, and a superseded fact is not recalled as current.
+- Retrieval returns its sources and may answer "I do not remember".
+- Deletion removes derived copies (indexes, summaries, embeddings).
+- Employees read the Company Brain only through their projection and never read the Personal Mind.
+- Keys carry an owner scope so more founders can be added later. No multi-founder feature is built.
+- Ideas borrowed from open-source work, not dependencies: time-aware facts with invalidation (Graphiti) and bounded memory with background consolidation (OpenClaw, Hermes Agent). A second memory store needs an ADR approved by the founder.
+
+**Current implementation:** the Personal Mind store and the Company Brain substrate exist. Role Brains, supersession, consolidation and scope-aware retrieval are NOT IMPLEMENTED or NOT VERIFIED.
+
+---
+
+## 23. Capability Gateway (TARGET, NOT IMPLEMENTED)
+
+- One choke point. Every tool, skill and MCP server has a manifest (permissions, side-effect class, trust tier, version pin, cost). Every call passes the policy engine, is audited, and runs sandboxed with network allowlists. Secrets are injected at call time and never shown to the model.
+- The MCP client targets the spec revision that is current at implementation time (2026-07-28 when this was written). Skills use the SKILL.md format, are loaded on demand, and are instructions, never authority.
+- Vetting: provenance, permission review, version pin, sandbox, and founder confirmation. Nothing installs itself. Community skills are untrusted, because malicious ones have been reported.
+- Design references only: the OWASP Agent Control Standard (v0.1 preview) and GitLab Duo's versioned catalog of agents, flows and MCP servers.
+
+**Current implementation:** none of this exists. No MCP client, skills loader or gateway was found under `src`.
+
+---
+
+## 24. Workforce, Delegation and Governance Gap-Fills (TARGET, NOT IMPLEMENTED)
+
+**Employee model:** charter, tool allowlist, Role Brain, budget, supervisor (Sofia), version history and an evaluation record. Lifecycle: propose, founder approval, create, evaluate, retire, with immutable versions and rollback.
+
+**Delegation:** a structured task and a structured result, with no free-form agent-to-agent chat. Depth and fan-out are bounded, and each delegation has token, time and spend budgets. Breadth work (research, drafts, triage) may run in parallel. Shared-context work such as coding runs in a single thread.
+
+**Gap-fills:**
+1. Tamper-evident audit: each audit record carries the hash of the previous record, and a verifier checks the chain.
+2. Kill switch and safe mode: deterministic, reachable by voice or panel, and working without the model provider.
+3. Per-employee spend cap with a hard stop, plus pause and terminate controls.
+4. Per-employee identity: scoped credentials and a tool allowlist, with immediate revocation.
+5. Replay: any decision can be replayed from the log for diagnosis.
+
+**Invariants:** authority never sits in a model; a Role Brain never overrides the Company Brain; hiring is never autonomous; voice never approves.
+
+**Current implementation:** payload-bound approvals, idempotency records, the side-effect audit and the scheduler heartbeat exist. Everything else in this section is NOT IMPLEMENTED.

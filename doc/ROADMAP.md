@@ -59,3 +59,33 @@ Status as of `32a6f38` — **IMPLEMENTED & SEALED**:
 ## Explicit non-goals (not a phase — outside this roadmap entirely unless the founder decision in PRODUCT.md §1 changes)
 
 Commercial SaaS packaging, multi-tenancy, public signup, billing. These aren't "LATER" — they're not on this roadmap at all under the current, locked product boundary.
+
+
+---
+
+## LATER: Founder direction addendum (2026-10-15)
+
+Recorded as LATER, not moved up. Per the rule at the top of this file, each item starts only when its gate is verified in the repository, and LATER items wait until the NEXT items above are done.
+
+- **Persistence and deployment gate (blocks everything below):** the §0 deployment decision and a multi-instance-safe persistence layer. The current file store does not survive container replacement on Cloud Run. Gate: ARCHITECTURE.md §20 blocking dependency resolved.
+- **Decision-contract calibration eval (read-only analysis):** build the calibration eval from existing logged decisions. This changes no runtime code. Its placement in LATER is deliberate; if you want it started earlier, that should be an explicit founder decision recorded in PRODUCT.md §12.
+- **Voice COO, text first:** the COO brain on the cloud core, with the approval panel. Gate: FOUNDATION sealed (it is, per this file) and the persistence gate passed.
+- **Voice conversation on any topic:** streamed model output into speech, barge-in, and a conversational path. Gate: voice COO text stage verified.
+- **Windows local node, read-only:** active window and UI tree only. Gate: persistence gate passed and the authenticated local-companion design written (ARCHITECTURE.md §20).
+- **Windows local node, write with approval:** focus, invoke, and type, each behind the approval gate. Gate: read-only stage verified.
+- **Voice-triggered company tasks:** Gate: all prior stages verified and the approval path verified as non-voice.
+- **Open naming decision:** whether the COO (`Sophia`) and the voice persona (`Sofia`) are one identity. Not a gate for any stage above, but must be resolved before the voice COO text stage.
+
+
+---
+
+## LATER: AI company operating model (2026-10-20)
+
+Recorded as LATER, not moved up. Each item starts only when its gate is verified and the founder authorizes it, and LATER waits for NEXT. Gate names refer to `.agent/product-kit/gates.json`.
+
+- **Memory system (G11):** scopes, supersession, consolidation, Role Brains. Gate: persistence gate passed and the Company Brain single path done.
+- **Decision engine (G12):** routes extending the existing classifier, policy engine, decision log, kill switch. Gate: baseline integrity done and the Company Brain single path done.
+- **Capability layer (G14):** one gateway for tools, skills and MCP. Gate: security gate and decision engine done.
+- **AI workforce (G13):** employee model, delegation, per-role evaluation, hired one at a time. Gate: memory system, decision engine and security gate done.
+- **Product ownership (G15):** the AI company runs a pilot product, supervised. Gate: private-beta readiness, workforce and capability layer done.
+- **Vision acceptance (G16):** the acceptance scenarios in `.agent/product-kit/VISION.md`.

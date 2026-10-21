@@ -1,47 +1,81 @@
-# Setting SOFIA up — Next.js edition
+# Setting SamJuniorsOS up locally
 
-One app, one port. `bun run dev` (or `npm run dev`) starts the whole stack —
-page, brain, speech engines, proxies — on http://localhost:3000.
+Verified against the working tree on 2026-10-15 (Linux, Node 22, Bun 1.4.3). Windows is the target platform for the desktop work and was not tested in this check.
 
-## Quick start (zero keys)
+## What you get
 
-```bash
-bun install        # or: npm install
-bun run dev        # or: npm run dev
-```
+- **Dashboard:** http://localhost:3000 (the app runs on port 3000; the port is set in `scripts/dev.mjs`).
+- **COO chat:** Sophia Vance, through `POST /api/agent-chat`.
+- **Live companion WebSocket (optional):** port 3001, started separately with `dev:ws`.
 
-Open http://localhost:3000. You get:
+## Known issues to read before installing
 
-- the brain on z-ai (built into this platform, no key)
-- seven neural voices, no key
-- server-side transcription on z-ai ASR, no key
-- the browser's own speechSynthesis as the automatic floor
+These were all reproduced on 2026-10-15. Until they are fixed, the steps below include the workaround.
 
-That is a fully working assistant. Everything after this section is about
-making it *yours* — better links, local models, or both.
+1. **Lockfile registry host: NOT VERIFIED as a problem.** `bun.lock` contains 609 tarball URLs on `registry.npmjs.com` rather than `registry.npmjs.org`. An earlier version of this guide called that a broken host. That was wrong: the failure was observed only in a restricted sandbox whose network allowlist blocks the host (a host that certainly exists failed the same way there), and the repository's CI installs with `bun install --frozen-lockfile` against this lockfile. If `bun install` fails on your machine with `DNSResolveFailed`, check your own network or proxy before touching the lockfile.
+2. **Windows-only SWC binary is declared as a normal dependency.** `package.json` lists `@next/swc-win32-x64-msvc`. npm refuses it on macOS and Linux with `EBADPLATFORM`. Use Bun on macOS and Linux. Windows is not affected by this error.
+3. **The postinstall step downloads Prisma engines.** `postinstall` runs `prisma generate`, which fetches engine binaries from `binaries.prisma.sh`. If that host is blocked on your network, the install fails. You can install with `--ignore-scripts` and run `bunx prisma generate` once the host is reachable.
 
-## The environment file
-
-Next.js reads `.env.local` (gitignored) at boot. Copy the sample:
+## Install
 
 ```bash
-cp .env.sample .env.local
+git clone https://github.com/samjuniors/SamjuniorsOS.git
+cd SamjuniorsOS
+bun install                 # macOS / Linux (see issue 2). Windows: npm install also works.
+cp .env.example .env.local  # Next.js reads .env.local at boot
 ```
 
-Blank or missing = that link is OFF, and `/api/sofia/health` says so, naming
-the exact variable. Restart the dev server after editing — env is read at
-boot (Next prints `Reload env: .env.local` when it notices a change in dev).
+Database: the schema is SQLite. The sample `DATABASE_URL` in `.env.example` is `file:./db/custom.db`. The Prisma CLI reads `.env`, not `.env.local`, so either set `DATABASE_URL` in `.env` as well, or export it for the command:
 
-## The brain (single provider, no keys)
+```bash
+DATABASE_URL="file:./db/custom.db" bun run db:push
+```
 
-The LLM is one link: the platform's z-ai SDK, built in and pre-provisioned —
-there is nothing to configure. R1 (honesty/consolidation) removed the old
-z-ai → Gemini → local fallback ladder and the `GEMINI_API_KEY` /
-`LOCAL_LLM_*` variables: the production conversation path never walked that
-chain (every AI surface talks to the SDK directly), so the settings panel
-advertising those links was a fallback you could not actually get. If z-ai
-is rate-limited the honest answer is a beat and a retry — the settings
-ENGINES fold shows the one brain link and its state.
+This step was not completed end to end on 2026-10-15, because the Prisma engine download was blocked in that environment.
+
+Start the app:
+
+```bash
+bun run dev                 # or: npm run dev
+```
+
+Optional live companion, in a second terminal:
+
+```bash
+bun run dev:ws              # port 3001, or LIVE_WS_PORT
+```
+
+## Verify
+
+These endpoints returned as shown on 2026-10-15:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/                 # 200
+curl -s localhost:3000/api/agents | head -c 200                           # 200, 4 agents
+curl -s localhost:3000/api/sophia/status | python3 -m json.tool          # provider flags
+```
+
+Chat with the COO. Development accepts role headers; production rejects them.
+
+```bash
+curl -s -X POST localhost:3000/api/agent-chat \
+  -H 'content-type: application/json' \
+  -H 'x-samjuniors-role: FOUNDER' \
+  -H 'x-samjuniors-user-id: local' \
+  -d '{"agentId":"coo","message":"hello","history":[]}'
+```
+
+Check `"liveAi"` in the response. `false` means the reply came from the deterministic fallback, not a live model.
+
+**Note:** `/api/sofia/health` now returns `410 Gone` (the legacy voice path was retired in Phase 5). Use `/api/sophia/status` instead.
+
+## What makes Sofia answer live
+
+The COO's conversation path calls `generateText` in `src/lib/server/ai/zai-client.ts`, which uses the z-ai SDK only. The intent classifier uses the same client. Without z-ai credentials, the chat logs `Configuration file not found or invalid. Please create .z-ai-config`, and the reply falls back to deterministic text with `liveAi: false`.
+
+The Gemini, Anthropic, Ollama, and LM Studio variables in `.env.example` are present in the codebase, but the chat path above does not use them. Setting those keys does not make the COO conversational. **Result on a plain local checkout today: Sofia cannot hold a live open-topic conversation.** Closing that gap is on the roadmap as a provider decision, not a configuration step.
+
+Speech (below) is a separate path. Its keys and servers are listed in the sections that follow. I did not verify speech end to end in this check.
 
 ## A better ear
 
@@ -102,29 +136,18 @@ SOFIA_TTS_PROVIDER=local    # or elevenlabs | zai
 
 (The `JARVIS_*` spellings from the bridge era still work as aliases.)
 
-## Verifying your setup
-
-```bash
-curl -s localhost:3000/api/sofia/health | python3 -m json.tool
-```
-
-Every chain is in there: each link's `configured`, last state
-(`never|ok|err`), whether it is benched (`cooling`), and which link is
-`active`. In the app: settings gear → ENGINES fold — it re-probes on every
-open and names the env var that turns each OFF link on.
-
-To watch a failover happen: speak a phrase with the primary transcriber
-blocked (no key set, local server stopped) and the STT chain walks to its
-next link. The brain has no chain to fail over — one honest link.
-
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| "every reasoning engine is unreachable" | The z-ai backend is rate-limited or unavailable. Check `/api/sofia/health`; a 429 is a quota window — it reopens on its own. |
-| Voice input does nothing in an embedded pane | Browser policy — microphone requires a real tab. Use "Open in New Tab"; the typed command line covers embedded panes. |
-| z-ai ASR shows OFF on a local checkout | z-ai credentials only exist on this platform. Add `DEEPGRAM_API_KEY` or a `LOCAL_STT_URL`. |
-| Images in panels arrive blank | The proxy could not fetch that host. Nothing wrong with your setup — the model will say so. |
+| `EBADPLATFORM` for `@next/swc-win32-x64-msvc` | Known issue 2. Use `bun install` on macOS or Linux. |
+| `DNSResolveFailed` for `registry.npmjs.com` | Usually your network or proxy. See known issue 1; do not edit the lockfile on this evidence alone. |
+| `binaries.prisma.sh ... ENOTFOUND` | Known issue 3. Your network blocks the Prisma engine host. |
+| `/api/sofia/health` returns 410 | Expected. The legacy voice path is retired. Use `/api/sophia/status`. |
+| Chat replies look fine but `liveAi` is `false` | Deterministic fallback. The z-ai client is not configured. See "What makes Sofia answer live." |
+| `Configuration file not found or invalid. Please create .z-ai-config` in the log | z-ai credentials are missing on this machine. |
+| Voice input does nothing in an embedded pane | Browser policy. The microphone needs a real tab. Use "Open in New Tab". |
+| Images in panels arrive blank | The proxy could not fetch that host. |
 | A link says COOLING | It failed recently and is benched (90s/60s). It comes back on its own. |
 
 ## Gesture control (optional)

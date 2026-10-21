@@ -562,3 +562,41 @@ The specimen is an engineering/design laboratory:
 - **J2 + inline Token copy** — copyable token/CSS snippets (static tokens only, never secrets or runtime data) on the J2 block, the A1 background swatches, the C behavioral contract and every D conduit row.
 
 Explicitly NOT implemented (4.5 exclusion list): WebGL, decorative conduit packets, continuous ambient horizon drift, random particle activity, extra progress rings, RUNNING micro-ring, audio/WebAudio, workflow-builder interactions, agent pipeline visualization, new persistence, new API routes, new database models, new state stores, new execution/authorization/epistemic semantics.
+
+
+---
+
+## 17. Voice Presence and Action Confirmation (TARGET, NOT IMPLEMENTED)
+
+Applies to the Windows voice surface and to any future voice surface. §10 (Desktop Mode) describes the browser-simulated desktop and is unchanged. The voice surface is a separate target.
+
+**Voice presence states:** `idle`, `listening`, `thinking`, `speaking`, `interrupted`, `acting`, `awaiting_approval`, `offline`.
+- Each state has a distinct, non-color-only indicator, so it is legible without sound.
+- `offline` shows the fallback: the panel with a visible text input. Voice is never the only way to use Sofia.
+- `interrupted` is shown when the founder talks over speech; the response stops and the transcript keeps what was said.
+
+**Action confirmation card (for any `side_effect` or machine-control action):**
+- States the exact action in plain language, the target (app, window, or control), and a short hash of the payload.
+- Approve and Deny are on the panel or phone. They are not voice-activated.
+- Expires if not acted on within the approval window. Expired approvals are shown as expired, not silently dropped.
+
+**Honesty rules:**
+- Text that came from the screen or a web page is shown as quoted content, never styled as a Sofia instruction or a system message.
+- If Sofia cannot reach the Windows node or the cloud brain, the surface says so plainly and does not imply the action happened.
+
+**Motion:** the presence indicator respects `prefers-reduced-motion`. Reduced motion replaces animated states with static labels.
+
+
+---
+
+## 18. Team and Autonomy Surfaces (TARGET, NOT IMPLEMENTED)
+
+Builds on section 17. Section 10 (Desktop Mode) is unchanged.
+
+- **Greeting on open:** the screen appears and Sofia greets the founder using only real state (time, last session, pending approvals, alerts). With no state she greets plainly. The greeting is interruptible.
+- **Team view:** each employee's current task, status, cost and blockers, from authoritative state only. No simulated activity.
+- **Autonomy indicator per domain (L0 to L4).** Changing a level is an approval card that cites its evidence.
+- **Kill switch:** an always-visible control, and the voice command "stop". It shows the frozen state and asks for confirmation to resume.
+- **Why did you do that:** a panel built from the decision log, showing the route, the memory scopes read and the policy result.
+- **Memory transparency:** each answer can show which memory scopes it used, and "I do not remember" is displayed honestly.
+- The honesty rules in section 17 apply to all of these.

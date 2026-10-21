@@ -119,3 +119,53 @@ Foundation remediation, the V2 shell, runtime wiring, Decision Workflow (Phases 
 - **Runtime wiring (Phase 3.4):** IMPLEMENTED + WIRED. The canonical UI dispatches founder directives to the real `/api/orchestrate` path; conversational chat uses `/api/agent-chat`; execution state (workstreams, agent activity, decisions) is server-authoritative, derived from `/api/agents/runs` and `/api/workflow/approvals` via the client read model (`src/os/lib/runtime.ts`); the operating graph visualizes only that authoritative state; approval decisions route to `POST /api/workflow/approvals`. No simulated responses or fake workflow progress remain in the active UI.
 - **Repository structure (Phase 4.3C):** ONE canonical runtime with clear ownership: `src/app` (Next.js shell/routes) · `src/os` (the canonical application) · `src/components` (workflow design-system library + shadcn ui scaffold) · `src/lib` (server orchestration/persistence + shared lib) · `src/types` (GraphDTO + contracts) · `old/` (explicitly inert archive: legacy UI generations, prototypes, media; guarded by tsconfig/eslint/Tailwind boundaries + `scripts/verify-canonical-boundaries.js`). The canonical design/workflow primitives (Phase 4.1 tokens + Phase 4.3C-B.1 execution language) are reused across the UI — no component invents separate visual/state treatments. 19 dead dependencies removed after per-dependency verification.
 - **Role Brains, employee versioning, self-improvement governance, market intelligence:** NOT IMPLEMENTED — correctly remain target-state per §7–§9 and strictly preserved out of scope.
+
+---
+
+## 12. Founder Direction Addendum (2026-10-15): Voice COO and Machine Control (TARGET, GATED)
+
+This section records founder direction. It does not change §1 (internal, single-founder, not SaaS), §6 (voice is still deferred), or §11 (every side effect still requires a founder decision). Nothing here moves a phase up; see ROADMAP.md LATER.
+
+**Founder-stated direction (recorded as stated):**
+- The company OS remains a goal. The COO runs the company, coordinates the AI employees, and controls company tasks.
+- Sofia is the voice assistant: live two-way conversation on any topic, not limited to company work. Sofia and the COO role are intended to be one persona; the repo's COO identifier is `Sophia` (Sophia Vance in `lib/server/agents/definitions.ts`). Whether the two are one identity is **OPEN — naming not decided.**
+- The brain should run on both a Windows PC and a cloud server. Proposed resolution, pending §0: one authoritative cloud brain; the Windows PC is an authenticated actuator and audio edge (ARCHITECTURE.md §13, §20).
+- Platform order: Windows first, web later, Android later. Android and web are client surfaces over the same brain.
+- The TypeSafe / Jev API is **not** used. Any decision model is in-house and is built only after the calibration evaluation in ARCHITECTURE.md §19 shows a gap.
+
+**Constraints added by this direction:**
+- Voice can propose and read. It cannot approve. Side-effect approvals go through a non-voice channel (panel or phone), because voice is spoofable.
+- Text read from the screen, web pages, or files is data, never instructions.
+- The machine-control capability set excludes arbitrary shell, registry, and service access.
+
+**Current status (checked 2026-10-20 against `main` at `fa3e609`):**
+- Live voice: partially implemented (ARCHITECTURE.md §12, current implementation): streaming speech-to-text (Deepgram Flux adapter), client voice-activity gating, push-to-talk, and the transcript ribbon. Barge-in, an open-topic conversation path, speech output, and WebRTC transport are not listed as implemented there; treat them as NOT VERIFIED.
+- Machine control of mouse, keyboard, or windows: NOT IMPLEMENTED (no automation library or process-spawn code found under `src`, searched 2026-10-20).
+- Local Windows node: NOT IMPLEMENTED.
+- Company Brain beyond the epistemic substrate (a single read and write path): NOT IMPLEMENTED (see §7 and ROADMAP.md NEXT).
+
+
+---
+
+## 13. AI Company Operating Model (TARGET, GATED; added 2026-10-20)
+
+Records founder direction. It changes nothing in sections 1 to 11 and moves nothing up in `doc/ROADMAP.md`. Detail and acceptance scenarios are in `.agent/product-kit/VISION.md`; the work order is in `.agent/product-kit/GATES.md`.
+
+**Founder direction, as stated:**
+- Sofia is the CEO of the AI company and its single orchestrator. The repository names the role COO (Sophia Vance, id `coo`). The founder chose to change nothing for now (decision G0.4, 2026-10-20), so Sophia and COO stay and the title can be revisited. No rename is made here.
+- The founder is the owner and keeps final authority (`AGENTS.md`). CEO is a role inside the AI company, not authority over the founder.
+- Sofia must keep working whether or not the founder's PC is on, so the brain runs in the cloud and the desktop is a node (founder input; the hosting decision G0.3 is still open).
+- The system is for the founder only for now. It is designed so more founders can be added later; nothing multi-founder is implemented.
+- On opening the voice agent the screen appears and Sofia greets the founder. She talks naturally on any topic, uses personal memory for the founder and company memory for company questions, and a decision engine decides what to do.
+- Sofia manages AI employees who each have their own memory. With tools, skills and MCP servers she can take a product over end to end: build, operate, market and support it.
+
+**Constraints that stay in force:**
+- The Personal Mind and the Company Brain stay partitioned. Sofia reads either only through the routed path and can say which scopes an answer used. Employees never read the Personal Mind.
+- Hiring an employee needs demonstrated need and founder approval, one at a time.
+- A managed team, not an uncoordinated swarm. Every delegation is bounded and logged.
+- Autonomy is earned per domain by evidence and a recorded founder decision. Voice proposes and never approves. A kill switch always works.
+- Third-party tools, skills and MCP servers are untrusted until vetted.
+
+**Gaps found against the open-source landscape (searched 2026-10-20):** no hash-chained audit; no pause or kill control; no MCP client, skills loader or tool gateway; no per-employee memory; a per-agent spend cap was not identified. ARCHITECTURE.md sections 21 to 24 target them.
+
+**Status:** everything in this section is TARGET and NOT IMPLEMENTED unless a line says otherwise.
