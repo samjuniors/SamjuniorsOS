@@ -1,0 +1,8 @@
+{
+  "id": "G1.5",
+  "doneAt": "2026-10-21T09:41:37.099Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "e8cc9b754935cb33c1b9c2150e20848f7e3a58a7",
+  "evidence": "tests/sophia/g1_5_honest_fallback_labeling.test.ts passes 8/8; ChatPanel renders visible Offline Fallback badge; agent-chat returns fallback: true; npm test passes 57/57 Node suites"
+}
