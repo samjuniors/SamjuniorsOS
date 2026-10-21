@@ -9,3 +9,5 @@ Run this instead of the bootstrap interview when picking up an existing project.
 5. Summarize state back in a few lines: what's done, what's in progress, what's the obvious next step — then proceed.
 6. Only ask the founder something if it's genuinely blocking (a real decision point, not something answerable from the repo) or if PRODUCT.md and the actual code have drifted apart and need reconciling.
 7. Continue building under CLAUDE.md's rules — same spec-gate, same ask-vs-proceed logic, same completion standard as a fresh session.
+
+8. If `.agent/product-kit/` exists, also follow `.agent/product-kit/MASTER_PROMPT.md`: run `node .agent/product-kit/kit.mjs resume` and `status` to see which gate steps are claimed, stale, or ready, and continue under `.agent/product-kit/PROTOCOL.md`. The kit never overrides `AGENTS.md`, `PRODUCT.md`, or `doc/ROADMAP.md`.
