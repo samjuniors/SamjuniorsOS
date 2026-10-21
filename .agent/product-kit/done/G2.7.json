@@ -1,0 +1,8 @@
+{
+  "id": "G2.7",
+  "doneAt": "2026-10-21T10:48:25.234Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "de527d43413a88b22c87c8816fd07f37078cf6de",
+  "evidence": "ADR 0006 authored in doc/adr/0006-scale-later-seams.md and docs/architecture/ADR-006-scale-later-seams.md; comprehensive checklist of 23 Prisma models and 16 stores completed; findings opened in .agent/product-kit/findings/G2.7-owner-scoping-gaps.md; no multi-founder features built."
+}
