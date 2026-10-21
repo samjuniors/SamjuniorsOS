@@ -1,0 +1,8 @@
+{
+  "id": "G0.5",
+  "doneAt": "2026-10-21T08:20:16.246Z",
+  "agent": "Claude",
+  "branch": "kit/integration",
+  "commit": "ecaed4e5242670f4395f90cf6da0103d3526a19a",
+  "evidence": "Verified claims across all 6 briefs in .agent/product-kit/briefs against src/ and docs/; independent PASS in G0.5.verify.md"
+}
