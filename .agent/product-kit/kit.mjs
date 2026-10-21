@@ -78,7 +78,7 @@ const stepOrDie = (id) => { const s = steps.get(id); need(s, `unknown step "${id
 const worktreePath = (id) =>
   process.env.KIT_WORKTREE_DIR
     ? path.join(path.resolve(process.env.KIT_WORKTREE_DIR), id)
-    : path.join(path.dirname(root), `${path.basename(root)}-wt`, id);
+    : path.join(root, '.agent', 'worktrees', id);
 
 
 const cmds = {

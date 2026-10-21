@@ -1,0 +1,26 @@
+# Gitleaks Configuration for SamJuniorsOS
+# Defines repository-wide allowlist for known test fixtures, storage keys, and synthetic test tokens.
+
+title = "SamJuniorsOS Gitleaks Configuration"
+
+[allowlist]
+description = "Repository allowlist for test fixtures, benchmark fixtures, and internal identifiers"
+paths = [
+  '''tests/.*''',
+  '''benchmark/.*''',
+  '''\.data/.*''',
+  '''scripts/phase2_6_outage_probe\.ts''',
+  '''src/lib/persona-store\.ts''',
+  '''lib/persona-store\.ts''',
+  '''Uploaded/astra\.html''',
+  '''old/.*'''
+]
+regexes = [
+  '''samjuniors[-_]''',
+  '''sofia-''',
+  '''k2-e2e-''',
+  '''m[34]a?-''',
+  '''p26-outage-idem''',
+  '''turn-idempotency-key''',
+  '''SOP-LUMORA-PRICING'''
+]
