@@ -196,3 +196,9 @@ G0.2 (which first release), G0.3 (hosting and budget), G0.4 (one identity and th
 - **Input for G0.7:** the daily model-spend cap is not set and will be adjusted in settings. Built as G12.8; with no value set, no autonomous model spend runs.
 - **Input for G0.9:** Sofia takes over the first product. The product is not yet named; the repository calls Lumora "Product 1".
 - **Input for G13.1:** the founder wants to use Paperclip for onboarding employees in future. The ADR must evaluate it, including the second-engine risk.
+
+## 16. Milestones (added 2026-10-21)
+
+> "also add future mile stone too so we know whats left so we can test complete product also insted ask which gate or step put it conetinue or next option to agent also it marks the milestobe he finished and clean the last milestone before moving to next"
+
+`MILESTONES.md` lists twelve milestones, each with what you can test after it. The first, M1, is the "first Sofia you can talk to". The kit command `continue` picks the next work, and `PROTOCOL.md` section 10 defines how a milestone is verified, closed and cleaned up.

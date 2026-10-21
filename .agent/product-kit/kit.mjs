@@ -6,7 +6,7 @@
 //   claims      : <git-common-dir>/kit/claims/<ID>/   (local, shared by all worktrees, survives shutdown)
 //   completion  : .agent/product-kit/done/<ID>.json          (committed WITH the work on the step branch)
 //   decisions   : .agent/product-kit/ack/<KEY>.json          (committed, records a founder statement)
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,13 +24,26 @@ const gateById = new Map(gates.map((g) => [g.id, g]));
 const steps = new Map();
 for (const g of gates) for (const s of g.steps) steps.set(s.id, { ...s, gate: g.id });
 
+// Milestones: the order the founder tests in. Optional file; without it the kit behaves as before.
+const msFile = path.join(kitDir, 'milestones.json');
+const milestones = existsSync(msFile) ? JSON.parse(readFileSync(msFile, 'utf8')).milestones : [];
+const msById = new Map(milestones.map((m) => [m.id, m]));
+for (const m of milestones) {
+  for (const s of m.steps ?? []) steps.set(s.id, { ...s, gate: null, milestone: m.id });
+  for (const id of m.uses ?? []) if (steps.has(id)) steps.get(id).milestone = m.id;
+}
+const msStepIds = (m) => [...(m.uses ?? []), ...(m.steps ?? []).map((s) => s.id)];
+
 const keysIn = (dir) =>
   existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5)) : [];
 const done = new Set(keysIn(path.join(kitDir, 'done')));
 const acks = new Set(keysIn(path.join(kitDir, 'ack')));
 
 const satisfied = (key) => done.has(key) || acks.has(key);
-const gateClosed = (id) => acks.has(id) || acks.has(`NA-${id}`);
+// A gate is closed when every step in it is done (the founder accepts work at milestone level), or by an explicit ack.
+const gateClosed = (id) => acks.has(id) || acks.has(`NA-${id}`) || gateById.get(id).steps.every((s) => done.has(s.id));
+const msClosed = (id) => acks.has(`MS-${id}`);
+const activeMs = milestones.find((m) => !msClosed(m.id)) ?? null;
 const gateOpen = (id) => gateById.get(id).requires.every(gateClosed);
 
 function readClaim(id) {
@@ -46,7 +59,8 @@ function stateOf(s) {
   if (done.has(s.id)) return { k: 'done' };
   const c = readClaim(s.id);
   if (c) return { k: c.stale ? 'stale-claim' : 'claimed', c };
-  if (!gateOpen(s.gate)) return { k: 'locked', why: `gate ${s.gate} needs ack of ${gateById.get(s.gate).requires.filter((r) => !gateClosed(r)).join(', ')}` };
+  if (s.milestone && activeMs && s.milestone !== activeMs.id && !msClosed(s.milestone)) return { k: 'locked', why: `milestone ${s.milestone} is not active yet (finish ${activeMs.id} first)` };
+  if (s.gate && !gateOpen(s.gate)) return { k: 'locked', why: `gate ${s.gate} needs ack of ${gateById.get(s.gate).requires.filter((r) => !gateClosed(r)).join(', ')}` };
   const depsMissing = (s.deps ?? []).filter((d) => !done.has(d));
   if (depsMissing.length) return { k: 'blocked', why: `waiting for ${depsMissing.join(', ')}` };
   const needsMissing = (s.needs ?? []).filter((n) => !satisfied(n));
@@ -81,22 +95,52 @@ const worktreePath = (id) =>
     : path.join(root, '.agent', 'worktrees', id);
 
 
+function pickReady(list, n) {
+  const picked = [];
+  const lanes = new Set();
+  for (const pass of [0, 1]) {
+    for (const s of list) {
+      if (picked.length >= n || picked.includes(s)) continue;
+      if (pass === 0 && lanes.has(s.lane)) continue;
+      if (picked.some((p) => overlap(p.touches, s.touches))) continue;
+      picked.push(s); lanes.add(s.lane);
+    }
+  }
+  return picked;
+}
+const worktreeList = () => git(['worktree', 'list', '--porcelain'], root).split('\n\n').map((b) => Object.fromEntries(b.split('\n').map((l) => l.split(/ (.*)/s).slice(0, 2)))).filter((w) => w.worktree);
+const branchExists = (b) => { try { git(['rev-parse', '--verify', '--quiet', b], root); return true; } catch { return false; } };
+const isMerged = (b) => { try { execFileSync('git', ['merge-base', '--is-ancestor', b, 'HEAD'], { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } };
+const briefFor = (id) => { if (steps.get(id)?.brief) return steps.get(id).brief; const d = path.join(kitDir, 'briefs'); const f = existsSync(d) ? readdirSync(d).find((x) => x.startsWith(`${id}-`)) : null; return f ? `.agent/product-kit/briefs/${f}` : null; };
+
 const cmds = {
   status() {
     const sym = { done: '[x]', ready: '[>]', claimed: '[~]', 'stale-claim': '[!]', blocked: '[ ]', locked: '[-]', 'needs-founder': '[?]', 'awaiting-founder': '[?]' };
     let total = 0, finished = 0;
+    if (milestones.length) {
+      const ids = activeMs ? msStepIds(activeMs) : [];
+      console.log(activeMs ? `Active milestone: ${activeMs.id} ${activeMs.title} (${ids.filter((i) => done.has(i)).length}/${ids.length} steps). Run "continue" for what to do next.` : 'All milestones are closed.');
+    }
+    const line = (s, st) => {
+      const extra = st.k === 'claimed' || st.k === 'stale-claim' ? ` (${st.c.agent}, ${st.c.stale ? 'STALE' : 'fresh'})` : st.why ? ` (${st.why})` : '';
+      console.log(`  ${sym[st.k]} ${s.id.padEnd(5)} ${(s.milestone ?? '').padEnd(4)} ${s.lane.padEnd(9)} ${s.title}${extra}`);
+    };
     for (const g of gates) {
-      const list = g.steps.map((s) => ({ s, st: stateOf(steps.get(s.id)) }));
+      const list = g.steps.map((s) => ({ s: steps.get(s.id), st: stateOf(steps.get(s.id)) }));
       const n = list.filter((x) => x.st.k === 'done').length;
       total += list.length; finished += n;
       const tag = gateClosed(g.id) ? 'CLOSED' : gateOpen(g.id) ? 'open' : 'locked';
       console.log(`\n${g.id}  ${g.title}  ${n}/${list.length}  ${tag}${g.conditional ? '  (conditional)' : ''}`);
-      for (const { s, st } of list) {
-        const extra = st.k === 'claimed' || st.k === 'stale-claim' ? ` (${st.c.agent}, ${st.c.stale ? 'STALE' : 'fresh'})` : st.why ? ` (${st.why})` : '';
-        console.log(`  ${sym[st.k]} ${s.id.padEnd(5)} ${s.lane.padEnd(9)} ${s.title}${extra}`);
-      }
+      for (const { s, st } of list) line(s, st);
     }
-    console.log(`\n${finished}/${total} steps done.  Legend: [x] done [>] ready [~] claimed [!] stale claim [?] founder [ ] blocked [-] gate locked`);
+    for (const m of milestones.filter((x) => x.steps?.length)) {
+      const list = m.steps.map((s) => ({ s: steps.get(s.id), st: stateOf(steps.get(s.id)) }));
+      const n = list.filter((x) => x.st.k === 'done').length;
+      total += list.length; finished += n;
+      console.log(`\n${m.id}  ${m.title}: its own steps  ${n}/${list.length}`);
+      for (const { s, st } of list) line(s, st);
+    }
+    console.log(`\n${finished}/${total} steps done.  Legend: [x] done [>] ready [~] claimed [!] stale claim [?] founder [ ] blocked [-] locked`);
   },
 
   next(a) {
@@ -193,7 +237,8 @@ const cmds = {
   decide(a) {
     const s = stepOrDie(a.pos[0]);
     need(s.type === 'decision', `${s.id} is not a decision step`);
-    need(stateOf(s).k === 'awaiting-founder', `${s.id} is not awaiting the founder (${stateOf(s).k})`);
+    const st0 = stateOf(s);
+    need(st0.k === 'awaiting-founder' || st0.k === 'locked', `${s.id} cannot be decided yet (${st0.k}${st0.why ? ': ' + st0.why : ''})`);
     need(typeof a.flags.quote === 'string' && a.flags.quote.length > 3, 'decide needs --quote "<the founder\'s own words, verbatim>"');
     writeFileSync(path.join(kitDir, 'done', `${s.id}.json`), JSON.stringify({ id: s.id, decidedAt: new Date().toISOString(), by: 'founder', quote: a.flags.quote }, null, 2) + '\n');
     console.log(`Recorded founder decision for ${s.id}. Commit it.`);
@@ -208,6 +253,109 @@ const cmds = {
     need(!undone.length || a.flags.partial, `gate ${key} still has undone steps (${undone.join(', ')}). Only if the founder explicitly accepts closing it anyway, add --partial`);
     writeFileSync(path.join(kitDir, 'ack', `${key}.json`), JSON.stringify({ key, ackedAt: new Date().toISOString(), by: 'founder', quote: a.flags.quote, ...(undone.length ? { partial: true, undone } : {}) }, null, 2) + '\n');
     console.log(`Recorded ack ${key}. Commit it. This tool cannot verify who typed the quote: only record words the founder actually wrote.`);
+  },
+
+  continue() {
+    if (!milestones.length) return cmds.next({ pos: [], flags: {} });
+    if (!activeMs) return console.log('All milestones are closed. Tell the founder the complete product is ready for final review.');
+    const m = activeMs;
+    const ids = msStepIds(m);
+    const n = ids.filter((id) => done.has(id)).length;
+    console.log(`Active milestone ${m.id}: ${m.title}  (${n}/${ids.length} steps done)\nGoal: ${m.purpose}\n`);
+    const claims = allClaims().filter((c) => ids.includes(c.step));
+    const stale = claims.filter((c) => c.stale);
+    const fresh = claims.filter((c) => !c.stale);
+    let k = 1;
+    if (stale.length) {
+      console.log(`${k++}. Take over interrupted work first:`);
+      for (const c of stale) console.log(`   node .agent/product-kit/kit.mjs claim ${c.step} --agent <you> --takeover   # worktree: ${c.worktree}`);
+      console.log('');
+    }
+    if (fresh.length) console.log(`Already in progress by another agent: ${fresh.map((c) => `${c.step} (${c.agent})`).join(', ')}\n`);
+    const ready = ids.map((id) => steps.get(id)).filter((s) => stateOf(s).k === 'ready' && !touchConflict(s));
+    const picked = pickReady(ready, Math.max(0, 4 - stale.length - fresh.length));
+    if (picked.length) {
+      console.log(`${k++}. Start these ready steps (one agent session each, in parallel):`);
+      for (const s of picked) console.log(`   ${s.id} [${s.lane}] ${s.title}\n      exit: ${s.exit}\n      claim: node .agent/product-kit/kit.mjs claim ${s.id} --agent <name>\n`);
+    }
+    const asks = new Map();
+    for (const id of ids) {
+      const st = stateOf(steps.get(id));
+      if (st.k === 'awaiting-founder') asks.set(id, steps.get(id).title);
+      if (st.k === 'needs-founder') for (const key of (steps.get(id).needs ?? []).filter((x) => !satisfied(x))) asks.set(key, steps.get(key)?.title ?? `acknowledgement ${key}`);
+    }
+    if (asks.size) {
+      console.log(`${k++}. Ask the founder, in plain words, and keep working on everything else meanwhile:`);
+      for (const [key, title] of asks) console.log(`   ${key}: ${title}${briefFor(key) ? `\n      brief: ${briefFor(key)}` : ''}\n      record the answer: node .agent/product-kit/kit.mjs decide ${key} --quote "<their exact words>"`);
+      console.log('');
+    }
+    if (n === ids.length) console.log(`${k++}. Every step of ${m.id} is done. Run: node .agent/product-kit/kit.mjs milestone verify ${m.id}\n`);
+    else if (!stale.length && !fresh.length && !picked.length && !asks.size) console.log('Nothing is ready and nothing is waiting on the founder. Run "status" and report what blocks the milestone.\n');
+    console.log('Rules: no push or deploy, no third-party installs without the founder, record decisions only in the founder\'s own words, independent verification before done.');
+  },
+
+  milestone(a) {
+    need(milestones.length, 'this kit has no milestones.json');
+    const sub = a.pos[0] ?? 'status';
+    if (sub === 'status') {
+      for (const m of milestones) {
+        const ids = msStepIds(m);
+        const n = ids.filter((id) => done.has(id)).length;
+        const st = msClosed(m.id) ? 'CLOSED' : m === activeMs ? 'ACTIVE' : 'future';
+        console.log(`${m.id.padEnd(4)} ${st.padEnd(7)} ${String(n).padStart(3)}/${String(ids.length).padEnd(3)} ${m.title}\n                    you can then: ${m.can_test}`);
+      }
+      return;
+    }
+    const m = msById.get(a.pos[1]);
+    need(m, `unknown milestone "${a.pos[1]}"`);
+    const ids = msStepIds(m);
+    const undone = ids.filter((id) => !done.has(id));
+    if (sub === 'verify') {
+      need(!undone.length, `milestone ${m.id} still has ${undone.length} undone steps: ${undone.join(', ')}`);
+      console.log(`Milestone ${m.id} (${m.title}) is complete. Ask the founder to test it:\n`);
+      m.founder_test.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
+      console.log(`\nNot included yet: ${m.skips.join('; ')}\n\nThen ask: "Did this work? Tell me in your own words." If it worked, run:\n  node .agent/product-kit/kit.mjs milestone close ${m.id} --quote "<the founder's own words>"\nIf something failed, record it in findings/, fix it, and ask again. Do not close the milestone.`);
+      return;
+    }
+    need(sub === 'close', `unknown milestone command "${sub}" (use status, verify or close)`);
+    need(!msClosed(m.id), `${m.id} is already closed`);
+    need(m === activeMs, `${m.id} is not the active milestone (${activeMs?.id}); close milestones in order`);
+    need(!undone.length, `milestone ${m.id} still has ${undone.length} undone steps: ${undone.join(', ')}`);
+    need(typeof a.flags.quote === 'string' && a.flags.quote.length > 3, 'close needs --quote "<the founder\'s own words, verbatim>"');
+    const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], root);
+    need(!head.startsWith('step/'), 'run milestone close from the main checkout, not from a step worktree');
+    const arch = path.join(kitDir, 'archive', m.id);
+    const wts = worktreeList();
+    const plan = [];
+    for (const id of ids) {
+      const branch = `step/${id}`;
+      const w = wts.find((x) => x.branch === `refs/heads/${branch}`);
+      if (w) {
+        let dirty = 0;
+        try { dirty = git(['status', '--porcelain'], w.worktree).split('\n').filter(Boolean).length; } catch { /* missing worktree */ }
+        need(dirty === 0, `worktree ${w.worktree} has ${dirty} uncommitted files; commit or discard them first`);
+        plan.push({ text: `remove worktree ${w.worktree}`, run: () => git(['worktree', 'remove', w.worktree], root) });
+      }
+      if (branchExists(branch)) {
+        need(isMerged(branch), `branch ${branch} is not merged into ${head}; merge it, or decide to abandon it, before closing`);
+        plan.push({ text: `delete merged branch ${branch}`, run: () => git(['branch', '-d', branch], root) });
+      }
+      if (existsSync(path.join(claimsDir, id))) plan.push({ text: `release claim ${id}`, run: () => rmSync(path.join(claimsDir, id), { recursive: true, force: true }) });
+      for (const suffix of ['.md', '.verify.md']) {
+        const f = path.join(kitDir, 'handoffs', `${id}${suffix}`);
+        if (existsSync(f)) plan.push({ text: `archive handoffs/${id}${suffix} to archive/${m.id}/`, run: () => { mkdirSync(arch, { recursive: true }); renameSync(f, path.join(arch, `${id}${suffix}`)); } });
+      }
+    }
+    const fdir = path.join(kitDir, 'findings');
+    const openFindings = existsSync(fdir) ? readdirSync(fdir).filter((f) => f.endsWith('.md') && ids.some((id) => f.startsWith(`${id}-`))) : [];
+    console.log(`${a.flags['dry-run'] ? 'DRY RUN. ' : ''}Closing ${m.id} (${m.title}):`);
+    plan.forEach((x) => console.log(`  - ${x.text}`));
+    if (!plan.length) console.log('  - nothing to clean up');
+    if (a.flags['dry-run']) return console.log('\nNothing was changed.');
+    for (const x of plan) x.run();
+    writeFileSync(path.join(kitDir, 'ack', `MS-${m.id}.json`), JSON.stringify({ key: `MS-${m.id}`, milestone: m.id, ackedAt: new Date().toISOString(), by: 'founder', quote: a.flags.quote }, null, 2) + '\n');
+    const next = milestones[milestones.findIndex((x) => x.id === m.id) + 1];
+    console.log(`\nRecorded the founder's acceptance in ack/MS-${m.id}.json.${openFindings.length ? `\nOpen findings carried forward (still in findings/): ${openFindings.join(', ')}` : ''}\nNow: commit the archive moves and the ack together, append a short ${m.id} summary to PROGRESS.md, then ${next ? `run "continue" to start ${next.id}: ${next.title}.` : 'tell the founder the last milestone is closed.'}`);
   },
 
   resume() {
@@ -255,6 +403,7 @@ const cmds = {
     }
     writeFileSync(path.join(kitDir, 'GATES.md'), L.join('\n'));
     if (!a.flags.quiet) console.log('wrote .agent/product-kit/GATES.md');
+    if (milestones.length) renderMilestones();
   },
 
   validate() {
@@ -291,21 +440,65 @@ const cmds = {
     };
     for (const id of steps.keys()) visit(id, []);
     for (const id of done) if (!steps.has(id)) errs.push(`done/${id}.json refers to an unknown step`);
-    const gatesMd = path.join(kitDir, 'GATES.md');
-    if (!existsSync(gatesMd)) errs.push('GATES.md missing; run render');
+    if (milestones.length) {
+      const owner = new Map();
+      const gateStepIds = new Set(gates.flatMap((g) => g.steps.map((s) => s.id)));
+      const idx = new Map(milestones.map((m, i) => [m.id, i]));
+      for (const m of milestones) {
+        if (!m.founder_test?.length) errs.push(`milestone ${m.id} has no founder test`);
+        for (const id of msStepIds(m)) { if (owner.has(id)) errs.push(`step ${id} is in two milestones (${owner.get(id)} and ${m.id})`); owner.set(id, m.id); }
+        for (const id of m.uses ?? []) if (!gateStepIds.has(id)) errs.push(`milestone ${m.id} uses unknown step ${id}`);
+        for (const s of m.steps ?? []) {
+          if (gateStepIds.has(s.id)) errs.push(`milestone step ${s.id} collides with a gate step`);
+          if (!s.exit || s.exit.length < 15) errs.push(`${s.id} lacks exit evidence`);
+          if (!data.lanes.includes(s.lane)) errs.push(`${s.id} has unknown lane ${s.lane}`);
+          for (const d of s.deps ?? []) if (!steps.has(d)) errs.push(`${s.id} depends on unknown step ${d}`);
+        }
+      }
+      for (const g of gates) { if (g.conditional) continue; for (const s of g.steps) if (!owner.has(s.id)) errs.push(`step ${s.id} is in no milestone`); }
+      const later = (a, b) => owner.has(a) && owner.has(b) && idx.get(owner.get(a)) > idx.get(owner.get(b));
+      for (const g of gates) for (const r of g.requires) for (const s of g.steps) for (const rs of gateById.get(r).steps) if (later(rs.id, s.id)) errs.push(`milestone order: ${s.id} (${owner.get(s.id)}) needs gate ${r}, but ${rs.id} is later (${owner.get(rs.id)})`);
+      for (const [id, s] of steps) for (const d of [...(s.deps ?? []), ...(s.needs ?? []).filter((x) => steps.has(x))]) if (later(d, id)) errs.push(`milestone order: ${id} (${owner.get(id)}) waits for ${d} which is later (${owner.get(d)})`);
+    }
+    const gen = ['GATES.md', ...(milestones.length ? ['MILESTONES.md'] : [])].map((f) => path.join(kitDir, f));
+    if (gen.some((f) => !existsSync(f))) errs.push('a generated file is missing; run render');
     else {
-      const before = readFileSync(gatesMd, 'utf8');
+      const before = gen.map((f) => readFileSync(f, 'utf8'));
       cmds.render({ pos: [], flags: { quiet: true } });
-      if (readFileSync(gatesMd, 'utf8') !== before) errs.push('GATES.md was out of date and has been regenerated; commit it');
+      gen.forEach((f, i) => { if (readFileSync(f, 'utf8') !== before[i]) errs.push(`${path.basename(f)} was out of date and has been regenerated; commit it`); });
     }
     if (errs.length) { console.error(errs.map((e) => `- ${e}`).join('\n')); process.exit(1); }
-    console.log(`valid: ${gates.length} gates, ${steps.size} steps`);
+    console.log(`valid: ${gates.length} gates, ${steps.size} steps${milestones.length ? `, ${milestones.length} milestones` : ''}`);
   },
 };
 
+function renderMilestones() {
+  const L = ['<!-- Generated from milestones.json by "node .agent/product-kit/kit.mjs render". Do not edit by hand. -->', '', '# Milestones: what you can test, and what is left', '',
+    'Work happens one milestone at a time. When a milestone is finished the agent asks you to test it. After you accept it, the agent cleans it up and starts the next. Live status: `node .agent/product-kit/kit.mjs milestone status`.', '',
+    '| Milestone | After it you can | Steps | Decisions you make |', '|---|---|---|---|'];
+  for (const m of milestones) {
+    const ids = msStepIds(m);
+    const dec = ids.filter((id) => steps.get(id)?.type === 'decision');
+    L.push(`| ${m.id} ${m.title} | ${m.can_test} | ${ids.length} | ${dec.length ? dec.join(', ') : '-'} |`);
+  }
+  L.push('');
+  for (const m of milestones) {
+    L.push(`## ${m.id} - ${m.title}`, '', m.purpose, '', '**You test:**');
+    m.founder_test.forEach((t, i) => L.push(`${i + 1}. ${t}`));
+    L.push('', `**Not included yet:** ${m.skips.join('; ')}`, '');
+    if (m.steps?.length) {
+      L.push('**Its own steps (lighter slices; the full versions stay in their later milestones):**', '', '| Step | Lane | What | Slice of | Deferred |', '|---|---|---|---|---|');
+      for (const s of m.steps) L.push(`| ${s.id} | ${s.lane} | ${s.title} | ${s.slice_of || '-'} | ${s.defers} |`);
+      L.push('');
+    }
+    L.push(`**Gate steps:** ${m.uses.length ? m.uses.join(', ') : 'none'}`, '');
+  }
+  writeFileSync(path.join(kitDir, 'MILESTONES.md'), L.join('\n'));
+}
+
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd || !cmds[cmd]) {
-  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  status | next [--lane L] [--n 4] | resume | validate | render\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
+  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | status | next [--lane L] [--n 4] | resume | validate | render\n  milestone status | milestone verify <M> | milestone close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
   process.exit(cmd ? 1 : 0);
 }
 cmds[cmd](parse(rest));

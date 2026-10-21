@@ -11,3 +11,4 @@ Run this instead of the bootstrap interview when picking up an existing project.
 7. Continue building under CLAUDE.md's rules — same spec-gate, same ask-vs-proceed logic, same completion standard as a fresh session.
 
 8. If `.agent/product-kit/` exists, also follow `.agent/product-kit/MASTER_PROMPT.md`: run `node .agent/product-kit/kit.mjs resume` and `status` to see which gate steps are claimed, stale, or ready, and continue under `.agent/product-kit/PROTOCOL.md`. The kit never overrides `AGENTS.md`, `PRODUCT.md`, or `doc/ROADMAP.md`.
+9. When the founder says "continue", run `node .agent/product-kit/kit.mjs continue` and do what it prints. Do not ask which gate or step to work on.
