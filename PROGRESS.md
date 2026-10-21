@@ -12,6 +12,7 @@
   - `G0.5`: Independent fact-check of decision briefs completed and verified (`.agent/product-kit/handoffs/G0.5.verify.md` PASS).
   - `G1.1`: Canonical test runner implemented (`scripts/test-runner.mjs`) and wired in `package.json` (`npm test`). Discovers all 71 suites; 56 Node suites pass clean (exit code 0); 15 Bun-divergent suites listed with exact reasons per runner divergence; non-zero exit verified on deliberate failure (`.agent/product-kit/handoffs/G1.1.verify.md` PASS).
   - `G1.3`: Full-history secret scan performed via Gitleaks v8.21.2 over 471 commits; 0 live or unrevoked secrets; all 43 unique token occurrences classified (13 synthetic test fixtures, 2 storage keys, 26 idempotency UUIDs, 2 benchmark IDs) in `docs/security/SECRET_SCAN_REPORT.md`; `.gitleaks.toml` allowlist committed; `"scan:secrets"` wired in `package.json` (`.agent/product-kit/handoffs/G1.3.verify.md` PASS).
+  - `G1.2`: Comprehensive CI workflow `.github/workflows/ci.yml` authored replacing legacy 4-test workflow; enforces install, Gitleaks secret scan, lint, TypeScript typecheck, Next.js build, and full 71-suite canonical test runner on every PR and push to `main` (`.agent/product-kit/handoffs/G1.2.verify.md` PASS).
 - **Awaiting Founder Decisions in Gate G0:**
   - `G0.2` (Founder Operating Loop v1 ratification)
   - `G0.3` (Infrastructure, hosting model, RPO/RTO, backup retention, budget)
@@ -20,7 +21,6 @@
   - `G0.8` (Live conversation provider selection & monthly voice budget)
   - `G0.9` (Initial product ownership)
 - **Active Ready Work in Gate G1 (Engineering Foundation):**
-  - `G1.2` (CI on pull requests: install, lint, typecheck, build, full tests, secret scan — unblocked now that G1.1 and G1.3 are complete)
   - `G1.4` (Reconcile documentation with code)
   - `G1.5` (Honest fallback reply labeling)
   - `G1.6` (Reproducible install across Windows & Linux)

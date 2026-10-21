@@ -15,6 +15,7 @@
     "db:reset": "prisma migrate reset",
     "db:reconcile-tombstones": "npx tsx scripts/reconcile-tombstones.ts",
     "test": "node scripts/test-runner.mjs",
+    "typecheck": "tsc --noEmit",
     "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose"
   },
   "dependencies": {

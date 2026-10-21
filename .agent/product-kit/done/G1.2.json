@@ -1,0 +1,8 @@
+{
+  "id": "G1.2",
+  "doneAt": "2026-10-21T09:14:44.099Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "18e7fc93fc8eedbfd463d4674b04803e57c46908",
+  "evidence": ".github/workflows/ci.yml created covering install, lint, typecheck, build, full tests, secret scan; blocks PR on failure"
+}

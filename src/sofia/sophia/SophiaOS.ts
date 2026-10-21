@@ -30,6 +30,7 @@ import { DeepgramVoiceProvider } from './voice/DeepgramVoiceProvider';
 import { GeminiLiveProvider, type LiveConnectionMetrics } from './voice/GeminiLiveProvider';
 import { ElevenLabsVoiceProvider } from './voice/ElevenLabsVoiceProvider';
 import { LocalVoiceProvider } from './voice/LocalVoiceProvider';
+import { LiveGatewayVoiceProvider } from './voice/LiveGatewayVoiceProvider';
 import { airplaneMode } from '../lib/airplane-mode';
 import { loadVoiceMode } from '../lib/voice-router';
 import type { VoiceProvider } from './voice/VoiceProvider';
@@ -164,11 +165,13 @@ export class SophiaOS extends EventTarget {
       deepgram: new DeepgramVoiceProvider(this.audio),
       elevenlabs: new ElevenLabsVoiceProvider(this.audio),
       local: new LocalVoiceProvider(this.audio),
+      'live-gateway': new LiveGatewayVoiceProvider(this.audio),
     };
     this.wireProvider(this.providers['gemini-live']);
     this.wireProvider(this.providers.deepgram);
     this.wireProvider(this.providers.elevenlabs);
     this.wireProvider(this.providers.local);
+    this.wireProvider(this.providers['live-gateway']);
 
     this.audio.onMicLevel((l) => (this.micLvl = l));
     this.audio.onPlaybackLevel((l) => (this.playLvl = l));
