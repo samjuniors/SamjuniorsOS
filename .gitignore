@@ -84,8 +84,8 @@ artifacts/
 /.codex/
 /.kilo/
 /.zscripts/
-/examples/
-/mini-services/
+/mini-services/*
+!/mini-services/scheduler-heartbeat/
 /download/
 /Caddyfile
 /workflow_fullpage_screenshot.png

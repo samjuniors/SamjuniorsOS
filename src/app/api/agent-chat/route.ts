@@ -454,6 +454,8 @@ export async function POST(req: NextRequest) {
                 metadata: {
                   directiveExecuted: executionResult.directiveExecuted,
                   liveAi: executionResult.liveAi,
+                  fallback: !executionResult.liveAi,
+                  mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
                   tokens: turnMetrics.estimatedTokens,
                   replyToIdempotencyKey: cleanIdempotencyKey,
                 },
@@ -513,6 +515,8 @@ export async function POST(req: NextRequest) {
             },
             reply: executionResult.reply,
             liveAi: executionResult.liveAi,
+            fallback: !executionResult.liveAi,
+            mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
             metrics: turnMetrics,
             directiveExecuted: executionResult.directiveExecuted,
             orchestrationRun: executionResult.orchestrationRun,
@@ -666,6 +670,8 @@ ${roleScopedContext}
             classification,
             reply,
             liveAi: true,
+            fallback: false,
+            mode: 'live_model',
             modelUsed: model,
           });
         }
@@ -745,6 +751,8 @@ ${roleScopedContext}
       classification,
       reply: fallbackReply,
       liveAi: false,
+      fallback: true,
+      mode: 'deterministic_fallback',
     });
   } catch (error: any) {
     console.error('[AGENT-CHAT CRITICAL ERROR]:', error?.message || error);
