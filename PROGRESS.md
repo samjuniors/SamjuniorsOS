@@ -15,6 +15,8 @@
   - `G1.2`: Comprehensive CI workflow `.github/workflows/ci.yml` authored replacing legacy 4-test workflow; enforces install, Gitleaks secret scan, lint, TypeScript typecheck, Next.js build, and full 71-suite canonical test runner on every PR and push to `main` (`.agent/product-kit/handoffs/G1.2.verify.md` PASS).
   - `G1.4`: Reconciled documentation with code; resolved Prisma `.env` vs Next.js `.env.local` quickstart instruction in `README.md` and `docs/SETUP.md`; corrected multimodal brain copy to distinguish `dev:ws` live streaming from executive `ServerAgentExecutor` (zai); added `test`, `typecheck`, and `scan:secrets` to scripts table; recorded Windows 11 end-to-end verification (`.agent/product-kit/handoffs/G1.4.verify.md` PASS).
   - `G1.5`: Honest fallback reply labeling in API contracts and UI; `/api/agent-chat` and `/api/agent-collab` return `{ liveAi: false, fallback: true, mode: 'deterministic_fallback' }`; `ChatPanel.tsx` renders visible `Offline Fallback` amber badge and distinctive card styling; added `tests/sophia/g1_5_honest_fallback_labeling.test.ts` (8/8 PASS); restored tracked `mini-services/scheduler-heartbeat/index.ts` fixture (`.agent/product-kit/handoffs/G1.5.verify.md` PASS).
+  - `G1.6`: Reproducible install across Windows and Linux; moved `@next/swc-win32-x64-msvc` to `optionalDependencies` in `package.json` to prevent `EBADPLATFORM` on non-Windows systems; updated `docs/SETUP.md` with cross-platform instructions; added `tests/sophia/g1_6_reproducible_install.test.ts` (6/6 PASS) (`.agent/product-kit/handoffs/G1.6.verify.md` PASS).
+- **Gate G1 Status: 100% COMPLETE (6/6 steps done: G1.1, G1.2, G1.3, G1.4, G1.5, G1.6).**
 - **Awaiting Founder Decisions in Gate G0:**
   - `G0.2` (Founder Operating Loop v1 ratification)
   - `G0.3` (Infrastructure, hosting model, RPO/RTO, backup retention, budget)
@@ -22,8 +24,6 @@
   - `G0.7` (Autonomy policy limits, spend caps, kill-switch behavior)
   - `G0.8` (Live conversation provider selection & monthly voice budget)
   - `G0.9` (Initial product ownership)
-- **Active Ready Work in Gate G1 (Engineering Foundation):**
-  - `G1.6` (Reproducible install across Windows & Linux)
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 

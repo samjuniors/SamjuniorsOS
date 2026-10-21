@@ -1,0 +1,8 @@
+{
+  "id": "G1.6",
+  "doneAt": "2026-10-21T09:47:34.612Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "f6288c661576225b23ba440893cee08883e81f08",
+  "evidence": "package.json declares win32 SWC binary in optionalDependencies; docs/SETUP.md updated; tests/sophia/g1_6_reproducible_install.test.ts passes 6/6; clean Linux CI and Windows installs verified"
+}
