@@ -58,6 +58,24 @@ export class SophiaServerGateway {
     // Bind authenticated founder principal from trusted server session ONLY
     const verifiedFounderId = session.founderId || session.userId || 'founder-primary';
 
+    // 0. REFUSAL PROPOSAL (Security invariant & fail-closed boundary)
+    if (sanitizedProposal.kind === 'refuse') {
+      const reply = sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nI operate strictly within SamJuniorsOS governance boundaries. Request refused under governance policy.`;
+      return {
+        success: false,
+        validatedCommand: {
+          type: 'CONVERSATION_REPLY',
+          reply,
+        },
+        proposal: sanitizedProposal,
+        reply,
+        directiveExecuted: false,
+        liveAi: false,
+        metrics,
+        error: sanitizedProposal.reason || 'Request refused under governance policy.',
+      };
+    }
+
     // 1. DIRECTIVE PROPOSAL DISPATCH
     if (sanitizedProposal.kind === 'directive_proposal') {
       // Deterministic policy: non-founder cannot trigger autonomous execution
@@ -325,6 +343,10 @@ export class SophiaServerGateway {
         provenances.push(dependencySlice.provenance);
         factualReply = `[${persona.name} • ${persona.role}]\nCompany Service Dependency Chain (Canonical-Fact Evidence):\n${dependencySlice.content}`;
         authoritativeData = { dependencyPath: dependencySlice.content };
+      } else if (sanitizedProposal.domain === 'personal') {
+        provenances.push('PersonalMind');
+        factualReply = sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nPersonal Mind recall evaluated against Founder personal context.`;
+        authoritativeData = { scope: 'personal' };
       } else if (sanitizedProposal.domain === 'company_metrics') {
         // M1: read the canonical CompanyStateStore — previously this read the
         // hardcoded os-data financial constant through CompanyContextProvider.
