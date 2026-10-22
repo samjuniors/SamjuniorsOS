@@ -1,0 +1,8 @@
+{
+  "id": "G3.5",
+  "doneAt": "2026-10-22T11:52:16.024Z",
+  "agent": "secrets-agent",
+  "branch": "step/G3.5",
+  "commit": "9e154c8e0517d340c2c2800e485662405a861e13",
+  "evidence": "6/6 tests pass in tests/sophia/g3_5_secrets_handling_and_rotation.test.ts, zero secrets in client bundle, rotation runbook tested"
+}
