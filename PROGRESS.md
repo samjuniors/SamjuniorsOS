@@ -12,34 +12,27 @@
   - Full CI workflow `.github/workflows/ci.yml` covering install, lint, typecheck, build, test, and security scan on all PRs and pushes.
   - Reconciled documentation with running code, cross-platform install compatibility (`@next/swc-win32-x64-msvc` made optional), and honest offline fallback badges in UI and API contracts.
 
-## Now — Product Kit & Active Milestone M1 (First Sofia you can talk to)
+## Milestone M1 — First Sofia you can talk to (CLOSED)
 
-**Baseline:** `main` at commit `05552e2` incorporating product kit (`.agent/product-kit/`, 17 gates, 116 steps, 12 milestones) and target-state architecture specs; integration branch `kit/integration`.
+- **Status:** CLOSED on 2026-10-22 (10/10 steps complete, founder accepted with `ack/MS-M1.json`).
+- **Founder Acceptance Quote:** `"ok for now close this and start nect"`
+- **Steps Verified & Closed:** M1.1, M1.2, M1.3, M1.4, M1.5, M1.6, M1.7, M1.8, M1.9.
+- **Capabilities Delivered:**
+  - First Sofia conversational voice and text surface running on local PC.
+  - Real voice greeting on boot/wake via neural TTS (`/api/sophia/mouth/speak`).
+  - Coexistence of voice turns (Hands-Free WebSpeech on Chrome/Edge at `http://localhost:3000` / PTT) and typing turns (ChatPanel via `T` / `/`).
+  - Personal mind intake and recall with strict candidate gating and honest abstention.
+  - Company context recall with strict scope isolation (zero personal memory leakage).
+  - Instant Stop control (Space / `P` / UI) and safe mode freeze.
+  - Autonomy ceiling and spend cap enforcement (blocks when unset or exceeded).
+  - Resolved WebSpeech environment handling across non-Chrome browsers / non-secure network origins with honest status indicators and fallback text-voice chat.
+  - Fixed SQLite Error 14 database file creation and synchronized Prisma schema.
+  - Whole-path verification: `npm run smoke:m1` passes all 6/6 phases cleanly.
 
-- **Completed Steps:**
-  - `G0.1`: Product boundary recorded (internal company OS, single-founder, scalable later).
-  - `G0.4`: Sophia Vance identity & COO title retained.
-  - `G0.5`: Independent fact-check of decision briefs completed and verified (`.agent/product-kit/handoffs/G0.5.verify.md` PASS).
-  - `G1.1`: Canonical test runner implemented (`scripts/test-runner.mjs`) and wired in `package.json` (`npm test`). Discovers all 71 suites; 56 Node suites pass clean (exit code 0); 15 Bun-divergent suites listed with exact reasons per runner divergence; non-zero exit verified on deliberate failure (`.agent/product-kit/handoffs/G1.1.verify.md` PASS).
-  - `G1.3`: Full-history secret scan performed via Gitleaks v8.21.2 over 471 commits; 0 live or unrevoked secrets; all 43 unique token occurrences classified (13 synthetic test fixtures, 2 storage keys, 26 idempotency UUIDs, 2 benchmark IDs) in `docs/security/SECRET_SCAN_REPORT.md`; `.gitleaks.toml` allowlist committed; `"scan:secrets"` wired in `package.json` (`.agent/product-kit/handoffs/G1.3.verify.md` PASS).
-  - `G1.2`: Comprehensive CI workflow `.github/workflows/ci.yml` authored replacing legacy 4-test workflow; enforces install, Gitleaks secret scan, lint, TypeScript typecheck, Next.js build, and full 71-suite canonical test runner on every PR and push to `main` (`.agent/product-kit/handoffs/G1.2.verify.md` PASS).
-  - `G1.4`: Reconciled documentation with code; resolved Prisma `.env` vs Next.js `.env.local` quickstart instruction in `README.md` and `docs/SETUP.md`; corrected multimodal brain copy to distinguish `dev:ws` live streaming from executive `ServerAgentExecutor` (zai); added `test`, `typecheck`, and `scan:secrets` to scripts table; recorded Windows 11 end-to-end verification (`.agent/product-kit/handoffs/G1.4.verify.md` PASS).
-  - `G1.5`: Honest fallback reply labeling in API contracts and UI; `/api/agent-chat` and `/api/agent-collab` return `{ liveAi: false, fallback: true, mode: 'deterministic_fallback' }`; `ChatPanel.tsx` renders visible `Offline Fallback` amber badge and distinctive card styling; added `tests/sophia/g1_5_honest_fallback_labeling.test.ts` (8/8 PASS); restored tracked `mini-services/scheduler-heartbeat/index.ts` fixture (`.agent/product-kit/handoffs/G1.5.verify.md` PASS).
-  - `G1.6`: Reproducible install across Windows and Linux; moved `@next/swc-win32-x64-msvc` to `optionalDependencies` in `package.json` to prevent `EBADPLATFORM` on non-Windows systems; updated `docs/SETUP.md` with cross-platform instructions; added `tests/sophia/g1_6_reproducible_install.test.ts` (6/6 PASS) (`.agent/product-kit/handoffs/G1.6.verify.md` PASS).
-  - `G3.1`: Closed two open auth gaps; enforced strict `ALLOWED_FOUNDER_IDENTITIES` allowlist in `gate.ts` across `decideApproval`, `revokeApproval` (eliminating `prohibitedRoles` blocklist), and `resolveInterruptedOperation` (eliminating prefix match); documented live Clerk credentials (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`) in `.env.example`; expanded `EXECUTIVE_API_PATTERNS` in `proxy.ts` to fail closed (401) on unauthenticated or role-override requests in production; added `tests/sophia/g3_1_auth_gaps.test.ts` (16/16 PASS) (`.agent/product-kit/handoffs/G3.1.verify.md` PASS).
-  - `G3.2`: Authored comprehensive canonical threat model against current OWASP Top 10 for Agentic Applications (ASI01–ASI10, Dec 2025) and OWASP LLM Top 10 (2026 Edition) in `docs/security/OWASP_AGENTIC_AND_LLM_THREAT_MODEL.md`; aligned natively with OWASP Agent Control Standard (ACS v0.1 preview) Guardian architecture; mapped all 20 threat categories to active repository code (`gate.ts`, `policy-evaluator.ts`, `payload-binding.ts`, `net.ts`, `authority-content-guard.ts`, `runtime.ts`), verified test suites, or explicit Accepted Risks (`AR-01` through `AR-04`); implemented automated validation test suite `tests/sophia/g3_2_threat_model.test.ts` (7/7 PASS) (`.agent/product-kit/handoffs/G3.2.verify.md` PASS).
-  - `G3.3`: Added comprehensive untrusted-ingress automated regression suite across all four channels (transcripts, webhooks, tool outputs, screen text) in `tests/sophia/g3_3_untrusted_ingress.test.ts` (9/9 PASS); proved direct and laundered prompt injections, unsigned/signed webhook payloads, tampered tool arguments, and forged visual screen approval certificates cannot bypass `SideEffectAuthorizationGate` or trigger side effects without Founder approval (`.agent/product-kit/handoffs/G3.3.verify.md` PASS).
-  - `G2.7`: Authored canonical ADR 0006 on scale-later seams (`doc/adr/0006-scale-later-seams.md` and `docs/architecture/ADR-006-scale-later-seams.md`); completed comprehensive checklist of all 23 Prisma models and 16 server stores; verified Personal Mind is owner-scoped (`founderId`) and Company Brain is company-scoped (`organizationId`); filed finding `.agent/product-kit/findings/G2.7-owner-scoping-gaps.md`; enforced strict single-founder focus with zero multi-founder features built in code (`.agent/product-kit/handoffs/G2.7.verify.md` PASS).
-- **Gate G1 Status: 100% COMPLETE (6/6 steps done: G1.1, G1.2, G1.3, G1.4, G1.5, G1.6; acknowledged by Founder).**
-- **Gate G2 Status: In Progress (1/7 steps done: G2.7).**
-- **Gate G3 Status: In Progress (3/6 steps done: G3.1, G3.2, G3.3).**
-- **Awaiting Founder Decisions in Gate G0:**
-  - `G0.2` (Founder Operating Loop v1 ratification)
-  - `G0.3` (Infrastructure, hosting model, RPO/RTO, backup retention, budget)
-  - `G0.6` (First AI employee roles & autonomy ceilings)
-  - `G0.7` (Autonomy policy limits, spend caps, kill-switch behavior)
-  - `G0.8` (Live conversation provider selection & monthly voice budget)
-  - `G0.9` (Initial product ownership)
+## Now — Active Milestone M2 (Sofia works when your PC is off)
+
+**Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
+- **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 

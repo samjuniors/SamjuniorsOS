@@ -18,12 +18,42 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
   private speaking = false;
   private busy = false;
   private recognizer: any = null;
+  private pendingTranscript = '';
+  private interimDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private restartTimeout: ReturnType<typeof setTimeout> | null = null;
+  private detachPlaybackStart: (() => void) | null = null;
+  private detachPlaybackEnd: (() => void) | null = null;
 
   constructor(private audio: AudioEngine) {
     super();
+    this.detachPlaybackStart = this.audio.onPlaybackStart(() => {
+      this.speaking = true;
+      this.stopSpeechRecognition();
+    });
+    this.detachPlaybackEnd = this.audio.onPlaybackEnd(() => {
+      this.speaking = false;
+      if (this.active && !this.busy) {
+        this.rearmListening();
+      }
+    });
+  }
+
+  public isSupported(): boolean {
+    if (typeof window === 'undefined') return true;
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
   }
 
   async start(): Promise<void> {
+    if (typeof window !== 'undefined' && !this.isSupported()) {
+      this.active = false;
+      console.warn('[elevenlabs-provider] Browser WebSpeech not available in this environment');
+      this.emit('error', {
+        code: 'webspeech-unsupported',
+        message: 'Browser WebSpeech not available in this environment',
+        source: this.id,
+      });
+      throw new Error('Browser WebSpeech not available in this environment');
+    }
     this.active = true;
     this.emit('listening', { source: this.id });
     this.startSpeechRecognition();
@@ -35,10 +65,43 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
     this.interrupt();
   }
 
+  public rearmListening() {
+    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) return;
+    this.startSpeechRecognition();
+  }
+
   private startSpeechRecognition() {
     if (typeof window === 'undefined') return;
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRec) return;
+    if (!SpeechRec) {
+      console.warn('[elevenlabs-provider] Browser WebSpeech not available in this environment');
+      return;
+    }
+
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+    if (this.interimDebounceTimer) {
+      clearTimeout(this.interimDebounceTimer);
+      this.interimDebounceTimer = null;
+    }
+    this.pendingTranscript = '';
+
+    // Clean up any existing recognizer instance
+    if (this.recognizer) {
+      try {
+        this.recognizer.onend = null;
+        this.recognizer.onerror = null;
+        this.recognizer.onresult = null;
+        this.recognizer.stop();
+      } catch {
+        /* ignore */
+      }
+      this.recognizer = null;
+    }
+
+    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) return;
 
     try {
       const rec = new SpeechRec();
@@ -47,63 +110,117 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       rec.lang = 'en-US';
 
       rec.onstart = () => {
-        if (this.active) this.emit('listening', { source: this.id });
+        if (this.active && !this.speaking && !this.busy) {
+          this.emit('listening', { source: this.id });
+        }
       };
 
       rec.onresult = (e: any) => {
-        if (!this.active) return;
+        if (!this.active || this.speaking || this.busy || this.audio.isSpeaking) return;
         let interim = '';
         let final = '';
 
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const item = e.results[i];
-          const text = item[0].transcript;
+          const text = item[0]?.transcript || '';
           if (item.isFinal) final += text;
           else interim += text;
         }
 
         const currentText = (final || interim).trim();
         if (currentText) {
-          if (this.speaking) {
-            // Barge-in interruption
-            this.interrupt();
-            this.emit('interrupted', { source: this.id });
-          }
+          this.pendingTranscript = currentText;
           controlLayer.addUserTurn(currentText, Boolean(final));
           this.emit('transcript', { role: 'user', text: currentText, final: Boolean(final), source: this.id });
         }
 
-        if (final.trim() && !this.busy) {
+        if (final.trim() && !this.busy && !this.speaking) {
+          if (this.interimDebounceTimer) {
+            clearTimeout(this.interimDebounceTimer);
+            this.interimDebounceTimer = null;
+          }
+          this.pendingTranscript = '';
+          this.stopSpeechRecognition();
           void this.runTurn(final.trim());
+          return;
+        }
+
+        // Silence fallback for interim transcripts:
+        // If Chrome delays setting isFinal = true after speech ceases,
+        // trigger the turn after 850ms of silence so the user is never left hanging.
+        if (this.pendingTranscript.trim() && !this.busy && !this.speaking) {
+          if (this.interimDebounceTimer) clearTimeout(this.interimDebounceTimer);
+          this.interimDebounceTimer = setTimeout(() => {
+            if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
+              const textToCommit = this.pendingTranscript.trim();
+              this.pendingTranscript = '';
+              controlLayer.addUserTurn(textToCommit, true);
+              this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
+              this.stopSpeechRecognition();
+              void this.runTurn(textToCommit);
+            }
+          }, 850);
         }
       };
 
       rec.onerror = (err: any) => {
-        if (err.error !== 'no-speech' && this.active) {
-          console.warn('[elevenlabs-provider] Speech recognition notice:', err.error);
+        const errType = err?.error;
+        if (errType !== 'no-speech' && this.active) {
+          console.warn('[elevenlabs-provider] Speech recognition notice:', errType);
+        }
+        if (errType === 'not-allowed' || errType === 'service-not-allowed') {
+          this.emit('error', { code: 'mic-permission-denied', message: errType, source: this.id });
         }
       };
 
       rec.onend = () => {
-        if (this.active && !this.busy) {
-          try {
-            rec.start();
-          } catch {
-            /* ignore restart collisions */
-          }
+        this.recognizer = null;
+        if (this.interimDebounceTimer) {
+          clearTimeout(this.interimDebounceTimer);
+          this.interimDebounceTimer = null;
+        }
+
+        // If onend fired while we had pending speech, commit it as a completed turn
+        if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
+          const textToCommit = this.pendingTranscript.trim();
+          this.pendingTranscript = '';
+          controlLayer.addUserTurn(textToCommit, true);
+          this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
+          void this.runTurn(textToCommit);
+          return;
+        }
+
+        // Otherwise cleanly re-arm speech recognition with bounded backoff
+        if (this.active && !this.busy && !this.speaking && !this.audio.isSpeaking) {
+          if (this.restartTimeout) clearTimeout(this.restartTimeout);
+          this.restartTimeout = setTimeout(() => {
+            this.rearmListening();
+          }, 150);
         }
       };
 
       rec.start();
       this.recognizer = rec;
     } catch (e) {
-      console.warn('[elevenlabs-provider] Browser WebSpeech not available:', e);
+      console.warn('[elevenlabs-provider] Error starting speech recognition:', e);
+      this.recognizer = null;
     }
   }
 
   private stopSpeechRecognition() {
+    if (this.interimDebounceTimer) {
+      clearTimeout(this.interimDebounceTimer);
+      this.interimDebounceTimer = null;
+    }
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
     if (this.recognizer) {
       try {
+        this.recognizer.onend = null;
+        this.recognizer.onerror = null;
+        this.recognizer.onresult = null;
         this.recognizer.stop();
       } catch {
         /* ignore */
@@ -159,9 +276,12 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
         this.busy = false;
         this.emit('response_finished', { source: this.id });
         this.emit('listening', { source: this.id });
+        this.rearmListening();
       }
     } catch (e: any) {
       this.busy = false;
+      this.emit('listening', { source: this.id });
+      this.rearmListening();
       if (e.name !== 'AbortError') {
         this.emit('error', { code: 'elevenlabs-turn', message: e.message, source: this.id });
       }
@@ -178,7 +298,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
         signal,
         body: JSON.stringify({
           text,
-          provider: controlLayer.mouthProvider,
+          provider: controlLayer.pureGeminiLive ? 'gemini' : (controlLayer.mouthProvider || 'auto'),
           voice: controlLayer.voiceName,
           voiceId: controlLayer.elevenLabsVoiceId || 'bMxLr8fP6hzNRRi9nJxU',
           modelId: controlLayer.elevenLabsModelId || 'eleven_turbo_v2_5',
@@ -218,6 +338,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       this.emit('response_finished', { source: this.id });
       this.emit('playback_finished', { source: this.id });
       this.emit('listening', { source: this.id });
+      this.rearmListening();
     } catch (e: any) {
       if (e.name !== 'AbortError' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
         try {
@@ -232,6 +353,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
             this.emit('response_finished', { source: this.id });
             this.emit('playback_finished', { source: this.id });
             this.emit('listening', { source: this.id });
+            this.rearmListening();
           };
           u.onerror = () => {
             this.speaking = false;
@@ -239,6 +361,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
             this.emit('response_finished', { source: this.id });
             this.emit('playback_finished', { source: this.id });
             this.emit('listening', { source: this.id });
+            this.rearmListening();
           };
           window.speechSynthesis.speak(u);
           return;
@@ -250,6 +373,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       this.busy = false;
       this.emit('playback_finished', { source: this.id });
       this.emit('listening', { source: this.id });
+      this.rearmListening();
       if (e.name !== 'AbortError') {
         this.emit('error', { code: 'mouth-error', message: e.message, source: this.id });
       }
@@ -261,5 +385,6 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
     this.audio.interruptPlayback();
     this.speaking = false;
     this.busy = false;
+    this.rearmListening();
   }
 }

@@ -7,7 +7,7 @@ import { getAIClient, ChatMessage as ZaiChatMessage } from '../zai-client';
  */
 export class ZaiConversationProvider implements ConversationProvider {
   public readonly id = 'zai';
-  public readonly label = 'Z-AI (Pre-configured)';
+  public readonly label = 'Z-AI';
 
   public isConfigured(): boolean {
     // In sandboxes where z-ai is provisioned, this succeeds.

@@ -113,6 +113,89 @@ async function main() {
     assert.strictEqual((provider as any).speaking, false, 'speaking flag must be reset to false');
   });
 
+  console.log('\n--- Test 4: ElevenLabsVoiceProvider Ear Lifecycle & Playback Synchronization ---');
+
+  await runTest('4.1. AudioEngine playback start/end coordinates provider speech state and rearmListening', async () => {
+    const engine = new AudioEngine();
+    const provider = new ElevenLabsVoiceProvider(engine);
+
+    (provider as any).active = true;
+    (provider as any).speaking = false;
+    (provider as any).busy = false;
+
+    let rearmCalled = false;
+    (provider as any).rearmListening = () => {
+      rearmCalled = true;
+    };
+
+    // Trigger playback start on audio engine
+    (engine as any).playbackStartHandlers.forEach((fn: any) => fn());
+    assert.strictEqual((provider as any).speaking, true, 'Provider speaking flag must be true during playback');
+
+    // Trigger playback end on audio engine
+    (engine as any).playbackHandlers.forEach((fn: any) => fn());
+    assert.strictEqual((provider as any).speaking, false, 'Provider speaking flag must return to false after playback');
+    assert.strictEqual(rearmCalled, true, 'rearmListening must be triggered after playback ends');
+  });
+
+  await runTest('4.2. ElevenLabsVoiceProvider rearmListening creates fresh recognition instance when active', async () => {
+    const engine = new AudioEngine();
+    const provider = new ElevenLabsVoiceProvider(engine);
+
+    let startCalled = false;
+    class MockSpeechRec {
+      continuous = true;
+      interimResults = true;
+      lang = 'en-US';
+      onstart = null;
+      onresult = null;
+      onerror = null;
+      onend = null;
+      start() {
+        startCalled = true;
+      }
+      stop() {}
+    }
+
+    (global as any).window = {
+      SpeechRecognition: MockSpeechRec,
+    };
+
+    try {
+      (provider as any).active = true;
+      (provider as any).speaking = false;
+      (provider as any).busy = false;
+
+      provider.rearmListening();
+      assert.strictEqual(startCalled, true, 'start() must be invoked on the fresh SpeechRecognition instance');
+      assert.ok((provider as any).recognizer !== null, 'recognizer instance must be populated');
+    } finally {
+      delete (global as any).window;
+    }
+  });
+
+  await runTest('4.3. ElevenLabsVoiceProvider isSupported returns false and start() throws when WebSpeech missing', async () => {
+    const engine = new AudioEngine();
+    const provider = new ElevenLabsVoiceProvider(engine);
+
+    (global as any).window = {}; // No SpeechRecognition or webkitSpeechRecognition
+
+    try {
+      assert.strictEqual(provider.isSupported(), false, 'Must report unsupported when SpeechRecognition missing');
+      let threw = false;
+      try {
+        await provider.start();
+      } catch (err: any) {
+        threw = true;
+        assert.ok(err.message.includes('Browser WebSpeech not available'));
+      }
+      assert.strictEqual(threw, true, 'start() must throw rather than claiming active listening');
+      assert.strictEqual((provider as any).active, false, 'Provider must not claim active');
+    } finally {
+      delete (global as any).window;
+    }
+  });
+
   console.log('\n======================================================');
   console.log('ALL FOUNDER VOICE HANG & GREETING CONTRACTS VERIFIED');
   console.log('======================================================\n');

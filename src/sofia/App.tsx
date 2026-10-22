@@ -82,6 +82,7 @@ export default function App({ active = true }: { active?: boolean }) {
   });
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [micModalOpen, setMicModalOpen] = useState(false);
+  const [speechNotice, setSpeechNotice] = useState<{ message: string; action: string; reason: string } | null>(null);
   const [glFailed, setGlFailed] = useState(false);
   const [booted, setBooted] = useState(false);
   const [view, setView] = useState<AppView>('sofia');
@@ -244,12 +245,19 @@ export default function App({ active = true }: { active?: boolean }) {
         setMicModalOpen(true);
       }
     };
+    const onSpeechUnsupported = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        setSpeechNotice(detail);
+      }
+    };
     const onFail = () => setGlFailed(true);
     const onEntered = () => setBooted(true);
 
     os.addEventListener('state', onState);
     os.addEventListener('status', onStatus);
     os.addEventListener('mic-status', onMicStatus);
+    os.addEventListener('speech-unsupported', onSpeechUnsupported);
     os.addEventListener('renderer-failed', onFail);
     os.addEventListener('entered', onEntered);
 
@@ -270,6 +278,7 @@ export default function App({ active = true }: { active?: boolean }) {
       os.removeEventListener('state', onState);
       os.removeEventListener('status', onStatus);
       os.removeEventListener('mic-status', onMicStatus);
+      os.removeEventListener('speech-unsupported', onSpeechUnsupported);
       os.removeEventListener('renderer-failed', onFail);
       os.removeEventListener('entered', onEntered);
       os.detach();
@@ -300,11 +309,20 @@ export default function App({ active = true }: { active?: boolean }) {
       setMicModalOpen(true);
       return;
     }
-    if (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed')) {
-      if (os.isPaused || paused) os.resume();
+    if (!os.hasVoiceRecognition) {
+      setChatOpen(true);
+      const details = os.getSpeechUnsupportedDetails();
+      setSpeechNotice(details);
+      void os.speakText("Voice recognition is not available in this browser. You can type right here and I will reply aloud, or open localhost 3000 in Google Chrome for voice.");
+      return;
+    }
+    if (os.isPaused || paused) {
+      os.resume();
       void os.enterSession('mic-button');
+    } else if (os.state.is('speaking')) {
+      os.interrupt();
     } else {
-      os.pause();
+      void os.enterSession('mic-button');
     }
   }, [os, paused]);
 
@@ -313,6 +331,13 @@ export default function App({ active = true }: { active?: boolean }) {
     if (os.rendererFailed) return;
     if (os.audio.micStatus === 'denied' || os.isMicDisabledError) {
       setMicModalOpen(true);
+      return;
+    }
+    if (!os.hasVoiceRecognition && (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed'))) {
+      setChatOpen(true);
+      const details = os.getSpeechUnsupportedDetails();
+      setSpeechNotice(details);
+      void os.speakText("Voice recognition is not available in this browser. You can type right here and I will reply aloud, or open localhost 3000 in Google Chrome for voice.");
       return;
     }
     if (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed')) {
@@ -418,6 +443,29 @@ export default function App({ active = true }: { active?: boolean }) {
 
       <Brand />
       <VisionGlow />
+      {speechNotice && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-40 flex max-w-xl items-center gap-3 px-4 py-2 rounded-full border border-amber-400/30 bg-[#060a14]/90 backdrop-blur-md text-amber-200 text-xs shadow-[0_0_25px_rgba(251,191,36,0.2)] animate-in fade-in slide-in-from-top-2 duration-300">
+          <span className="flex size-2 shrink-0 rounded-full bg-amber-400 animate-pulse" />
+          <span className="font-mono text-[11px] leading-tight text-white/90">
+            {speechNotice.message} <span className="text-sky-300 font-sans">{speechNotice.action}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-[10px] font-semibold uppercase tracking-wider transition"
+          >
+            Chat (T)
+          </button>
+          <button
+            type="button"
+            onClick={() => setSpeechNotice(null)}
+            className="text-white/40 hover:text-white p-1"
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <StatusCluster
         health={health}
         active={state !== 'ambient' || status === 'live'}

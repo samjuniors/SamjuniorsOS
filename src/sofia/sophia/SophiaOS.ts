@@ -237,7 +237,9 @@ export class SophiaOS extends EventTarget {
       this.director.state = s;
       this.dispatchEvent(new CustomEvent('state', { detail: { state: s, prev, ...meta } }));
       const why = typeof meta?.reason === 'string' ? ` (${(meta as { reason: string }).reason})` : '';
-      this.pushLog('event', `state: ${prev} → ${s}${why}`);
+      if (s === 'listening' && this.activeProvider) {
+        (this.activeProvider as any)?.rearmListening?.();
+      }
       if (s === 'wakeup') pulse('wake');
       else if (s === 'completed') pulse('complete');
       else if (s === 'paused' && prev !== 'paused') pulse('pause');
@@ -252,6 +254,7 @@ export class SophiaOS extends EventTarget {
           if (this.state.is('focusing')) {
             this.state.transition('listening', { reason: 'focus-complete' }, true);
             this.pushLog('event', 'focused — listening for speech');
+            (this.activeProvider as any)?.rearmListening?.();
           }
         }, 550);
       } else if ((s === 'ambient' || s === 'idle') && prev !== 'transforming') {
@@ -588,6 +591,7 @@ export class SophiaOS extends EventTarget {
       this.director.playWake();
       this.state.transition('focusing', { source }, true);
       this.dispatchEvent(new CustomEvent('entered', { detail: { source } }));
+      (this.activeProvider as any)?.rearmListening?.();
       return;
     }
     await this.activate(source);
@@ -633,6 +637,40 @@ export class SophiaOS extends EventTarget {
     this.micStatus = 'idle';
     this.micErrorDetails = null;
     this.dispatchEvent(new CustomEvent('mic-status', { detail: { status: 'idle', err: null } }));
+  }
+
+  get hasVoiceRecognition(): boolean {
+    if (typeof window === 'undefined') return true;
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  }
+
+  getSpeechUnsupportedDetails(): { reason: 'insecure_origin' | 'brave_shield' | 'browser_unsupported'; message: string; action: string } {
+    if (typeof window === 'undefined') {
+      return {
+        reason: 'browser_unsupported',
+        message: 'Speech recognition is not available in non-browser environments.',
+        action: 'Use text chat to communicate.',
+      };
+    }
+    if (window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.isSecureContext) {
+      return {
+        reason: 'insecure_origin',
+        message: 'Speech recognition requires a secure origin. Chrome disables speech on non-localhost HTTP.',
+        action: 'Please open http://localhost:3000 in Google Chrome instead of the network IP.',
+      };
+    }
+    if (typeof navigator !== 'undefined' && (navigator as any).brave) {
+      return {
+        reason: 'brave_shield',
+        message: 'In Brave Browser, Google speech services are disabled by default.',
+        action: 'Enable "Use Google services for speech recognition" in brave://settings/privacy, or use Google Chrome at http://localhost:3000.',
+      };
+    }
+    return {
+      reason: 'browser_unsupported',
+      message: 'Web Speech Recognition is not supported in this browser.',
+      action: 'Please open http://localhost:3000 in Google Chrome or Microsoft Edge, or click Chat (T) to type.',
+    };
   }
 
   getGeminiLiveMetrics(): LiveConnectionMetrics {
@@ -748,12 +786,18 @@ export class SophiaOS extends EventTarget {
           void this.speakText("I'm listening!");
         }
       } catch {
+        this.activeProvider = null;
         this.setStatus('live');
-        this.state.transition('listening', { source }, true);
+        const details = this.getSpeechUnsupportedDetails();
+        this.pushLog('error', `${details.message} ${details.action}`);
+        this.dispatchEvent(new CustomEvent('speech-unsupported', { detail: details }));
+
+        // Never leave Sofia hung in a deaf 'listening' state when no provider has ears
+        this.state.transition('idle', { source, reason: 'speech-unsupported' }, true);
         if (source === 'boot') {
           void this.speakGreeting();
-        } else if (source === 'wake-word') {
-          void this.speakText("G'day! I'm right here with you, how can I help?");
+        } else if (source === 'wake-word' || source === 'mic-button') {
+          void this.speakText("Speech recognition is not available in this browser. Please open SamJuniors in Google Chrome at localhost:3000, or use the chat bar to type.");
         }
       }
     }
@@ -960,7 +1004,16 @@ export class SophiaOS extends EventTarget {
     }
 
     if (!textToSpeak) {
-      textToSpeak = "Good to connect, Founder. Sofia is online and listening. How can I assist you today?";
+      if (this.hasVoiceRecognition) {
+        textToSpeak = "Good to connect, Founder. Sofia is online and listening. How can I assist you today?";
+      } else {
+        const details = this.getSpeechUnsupportedDetails();
+        if (details.reason === 'insecure_origin') {
+          textToSpeak = "Good to connect, Founder. Sofia is online. For voice recognition, please navigate to localhost 3000 in Chrome instead of the network IP. You can also press T to chat.";
+        } else {
+          textToSpeak = "Good to connect, Founder. Sofia is online. Voice recognition isn't supported in this browser. Please open localhost 3000 in Google Chrome for voice, or press T to chat with me.";
+        }
+      }
     }
 
     // Strip bracket preamble like "[Sophia Vance • Chief Operating Officer]\n" for natural vocalization
