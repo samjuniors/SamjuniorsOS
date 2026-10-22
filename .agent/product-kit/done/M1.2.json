@@ -1,0 +1,8 @@
+{
+  "id": "M1.2",
+  "doneAt": "2026-10-22T04:09:18.163Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "bde6ae094b332e05c89aa4358eab7a448da1bf3f",
+  "evidence": "19/19 tests pass in tests/sophia/m1_2_minimal_router.test.ts, 22/22 in phase1_intent_contract.test.ts, lint & typecheck clean"
+}
