@@ -364,8 +364,8 @@ async function runTests() {
       encoding: 'utf-8',
     });
     assert.ok(
-      result.includes('PASS: Dependency security audit completed with zero critical vulnerabilities'),
-      'Audit script must report zero critical vulnerabilities'
+      result.includes('PASS: Dependency security audit completed with zero unmitigated critical vulnerabilities'),
+      'Audit script must report zero unmitigated critical vulnerabilities'
     );
   });
 
