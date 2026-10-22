@@ -1,21 +1,37 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  globalRateLimiter,
+  getClientIdentifier,
+  RATE_LIMIT_POLICIES,
+  type RateLimitResult,
+} from "./lib/server/security/rate-limiter";
 
 /**
  * SamJuniorsOS gateway middleware.
  *
- * The upstream repository gated executive API routes behind Clerk
- * authentication (@clerk/nextjs). This deployment environment runs a
- * single-tenant sandbox with no Clerk credentials, so the middleware
- * was ported to a provider-free implementation:
- *
- *  - Security headers + request-id propagation are preserved verbatim.
- *  - In development (sandbox demo) executive API routes are open so the
- *    bundled OS frontend functions end-to-end.
- *  - In production without a real identity provider the executive routes
- *    fail closed (401), matching the original fail-closed posture.
+ * Enforces:
+ *  - Strict HTTP Security Headers & Content Security Policy (CSP)
+ *  - Request body size limits (fail-closed 413 Payload Too Large)
+ *  - Edge-compatible rate limits with IETF RateLimit-* headers (429 Too Many Requests)
+ *  - Executive API route authorization with constant-time founder & machine authentication
  */
 
 const REQUEST_ID_HEADER = "x-request-id";
+
+// Request body size limits
+export const MAX_STANDARD_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
+export const MAX_UPLOAD_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
+export function getRequestSizeLimit(pathname: string): number {
+  if (
+    pathname.startsWith("/api/media") ||
+    pathname.startsWith("/api/upload") ||
+    pathname.startsWith("/api/speech")
+  ) {
+    return MAX_UPLOAD_BODY_BYTES;
+  }
+  return MAX_STANDARD_BODY_BYTES;
+}
 
 // Executive API routes that require Founder authority
 const EXECUTIVE_API_PATTERNS = [
@@ -38,7 +54,7 @@ const EXECUTIVE_API_PATTERNS = [
   "/api/auth/ws-ticket",
 ];
 
-function isExecutiveApiRoute(pathname: string): boolean {
+export function isExecutiveApiRoute(pathname: string): boolean {
   return EXECUTIVE_API_PATTERNS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   );
@@ -60,12 +76,68 @@ function constantTimeEquals(presented: string, expected: string): boolean {
   return diff === 0;
 }
 
-function applySecurityHeaders(req: NextRequest) {
+/**
+ * Generate standard Content Security Policy directives.
+ * Permits same-origin frame ancestors only for prototype static asset routes.
+ */
+export function getContentSecurityPolicy(isPrototypeAsset: boolean): string {
+  const directives = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com data:",
+    "img-src 'self' data: blob: https://picsum.photos https://images.unsplash.com",
+    "media-src 'self' blob: data:",
+    "connect-src 'self' https: wss: ws:",
+    `frame-ancestors ${isPrototypeAsset ? "'self'" : "'none'"}`,
+    "frame-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ];
+  return directives.join("; ");
+}
+
+/**
+ * Create a JSON response with all security headers attached fail-closed.
+ */
+function createJsonResponse(
+  req: NextRequest,
+  body: unknown,
+  status: number,
+  extraHeaders: Record<string, string> = {}
+): NextResponse {
   const requestId =
     req.headers.get(REQUEST_ID_HEADER) || crypto.randomUUID().toString();
-  // The Core V4 prototype (/) embeds the static prototype directory in a
-  // same-origin iframe; allow same-origin framing for those assets only.
   const isPrototypeAsset = req.nextUrl.pathname.startsWith("/prototype/");
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    [REQUEST_ID_HEADER]: requestId,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": isPrototypeAsset ? "SAMEORIGIN" : "DENY",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
+    "X-DNS-Prefetch-Control": "on",
+    "Content-Security-Policy": getContentSecurityPolicy(isPrototypeAsset),
+    ...extraHeaders,
+  };
+
+  return new NextResponse(JSON.stringify(body), {
+    status,
+    headers,
+  });
+}
+
+function applySecurityHeaders(
+  req: NextRequest,
+  extraHeaders: Record<string, string> = {}
+): NextResponse {
+  const requestId =
+    req.headers.get(REQUEST_ID_HEADER) || crypto.randomUUID().toString();
+  const isPrototypeAsset = req.nextUrl.pathname.startsWith("/prototype/");
+
   const securityHeaders: Record<string, string> = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": isPrototypeAsset ? "SAMEORIGIN" : "DENY",
@@ -73,6 +145,8 @@ function applySecurityHeaders(req: NextRequest) {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
     "X-DNS-Prefetch-Control": "on",
+    "Content-Security-Policy": getContentSecurityPolicy(isPrototypeAsset),
+    ...extraHeaders,
   };
 
   const response = NextResponse.next({
@@ -89,57 +163,110 @@ function applySecurityHeaders(req: NextRequest) {
 }
 
 export function proxy(req: NextRequest) {
-  if (isExecutiveApiRoute(req.nextUrl.pathname)) {
-    // Production without an identity provider: fail closed.
-    if (process.env.NODE_ENV === "production") {
-      // The dev-only ROLE override is prohibited in production — the same
-      // policy auth/session.ts and live/auth.ts already enforce. A forged
-      // role header voids the request instead of upgrading it. This check
-      // deliberately precedes the machine-credential admission below: a
-      // request presenting role headers is voided even with a valid cron
-      // secret (the heartbeat never sends them).
-      if (req.headers.has("x-samjuniors-role") || req.cookies.has("samjuniors-role")) {
-        return new NextResponse(
-          JSON.stringify({ error: "Unauthorized: Role override headers are prohibited in production" }),
-          { status: 401, headers: { "Content-Type": "application/json" } }
+  const pathname = req.nextUrl.pathname;
+
+  // 1. REQUEST SIZE LIMITS (fail-closed on oversized mutation bodies)
+  if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH") {
+    const contentLengthHeader = req.headers.get("content-length");
+    if (contentLengthHeader) {
+      const contentLength = parseInt(contentLengthHeader, 10);
+      const maxLimit = getRequestSizeLimit(pathname);
+      if (!Number.isNaN(contentLength) && contentLength > maxLimit) {
+        return createJsonResponse(
+          req,
+          {
+            error: `Payload Too Large: request body of ${contentLength} bytes exceeds limit of ${maxLimit} bytes`,
+            limit: maxLimit,
+            received: contentLength,
+          },
+          413
         );
       }
-      // MACHINE AUTHENTICATION — the single non-founder production admission.
-      // The scheduler heartbeat (mini-services/scheduler-heartbeat, or a
-      // platform cron in a deployed environment) wakes due-work evaluation by
-      // POSTing EXACTLY this endpoint with the x-cron-secret machine
-      // credential. The scope is deliberately minimal:
-      //   - exact path only: /api/workflow/scheduling, NOT …/actions,
-      //     …/status or any other executive route (schedule lifecycle stays
-      //     founder-session-only; the machine can evaluate work, never
-      //     approve, pause, resume, cancel or create schedules),
-      //   - POST only (reads of scheduler state stay founder-only),
-      //   - constant-time comparison, fail-closed when CRON_TRIGGER_SECRET
-      //     is unset or the presented header is absent/empty.
-      // This mirrors what the route itself already authorizes
-      // (founder session OR cron secret — see the route's cronSecretMatches):
-      // the gate admits the request; the route STILL re-authenticates it
-      // independently, so this is defense in depth, not a bypass. Machine
-      // auth mints no identity: no session, no cookies, no role — the
-      // cron-secret path can never make a request look founder-authored
-      // (the route reports triggerSource: 'cron' honestly).
+    }
+  }
+
+  // 2. RATE LIMITING ON API ROUTES
+  let rateLimitHeaders: Record<string, string> = {};
+  if (pathname.startsWith("/api/")) {
+    const cronSecret = process.env.CRON_TRIGGER_SECRET;
+    const presentedCronSecret = req.headers.get("x-cron-secret");
+    const isCronHeartbeat =
+      pathname === "/api/workflow/scheduling" &&
+      req.method === "POST" &&
+      !!cronSecret &&
+      !!presentedCronSecret &&
+      constantTimeEquals(presentedCronSecret, cronSecret);
+
+    const policy = isCronHeartbeat
+      ? RATE_LIMIT_POLICIES.CRON_MACHINE
+      : isExecutiveApiRoute(pathname)
+      ? RATE_LIMIT_POLICIES.EXECUTIVE_API
+      : RATE_LIMIT_POLICIES.STANDARD_API;
+
+    const clientKey = isCronHeartbeat
+      ? "machine:cron:heartbeat"
+      : `${getClientIdentifier(req)}:${policy.maxRequests}`;
+
+    const rateLimitResult: RateLimitResult = globalRateLimiter.check(
+      clientKey,
+      policy
+    );
+
+    rateLimitHeaders = {
+      "RateLimit-Limit": rateLimitResult.limit.toString(),
+      "RateLimit-Remaining": rateLimitResult.remaining.toString(),
+      "RateLimit-Reset": rateLimitResult.resetSeconds.toString(),
+    };
+
+    if (!rateLimitResult.allowed) {
+      return createJsonResponse(
+        req,
+        {
+          error: `Too Many Requests: Rate limit exceeded. Try again in ${rateLimitResult.resetSeconds} seconds`,
+          retryAfter: rateLimitResult.resetSeconds,
+        },
+        429,
+        {
+          "Retry-After": rateLimitResult.resetSeconds.toString(),
+          ...rateLimitHeaders,
+        }
+      );
+    }
+  }
+
+  // 3. EXECUTIVE API AUTHORIZATION GATE
+  if (isExecutiveApiRoute(pathname)) {
+    // Production without an identity provider: fail closed.
+    if (process.env.NODE_ENV === "production") {
+      // The dev-only ROLE override is prohibited in production
       if (
-        req.nextUrl.pathname === "/api/workflow/scheduling" &&
+        req.headers.has("x-samjuniors-role") ||
+        req.cookies.has("samjuniors-role")
+      ) {
+        return createJsonResponse(
+          req,
+          { error: "Unauthorized: Role override headers are prohibited in production" },
+          401,
+          rateLimitHeaders
+        );
+      }
+
+      // MACHINE AUTHENTICATION — scheduler heartbeat POST admission
+      if (
+        pathname === "/api/workflow/scheduling" &&
         req.method === "POST"
       ) {
         const cronSecret = process.env.CRON_TRIGGER_SECRET;
         const presentedCronSecret = req.headers.get("x-cron-secret");
         if (
-          cronSecret && presentedCronSecret &&
+          cronSecret &&
+          presentedCronSecret &&
           constantTimeEquals(presentedCronSecret, cronSecret)
         ) {
-          return applySecurityHeaders(req);
+          return applySecurityHeaders(req, rateLimitHeaders);
         }
-        // Invalid/absent machine credential: fall through to the founder
-        // check below — a Founder may still POST here manually with founder
-        // credentials (documented route behavior), and any other caller
-        // keeps receiving the same 401 as before this admission existed.
       }
+
       const hasClerk =
         !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY &&
         !!process.env.CLERK_SECRET_KEY;
@@ -157,16 +284,20 @@ export function proxy(req: NextRequest) {
         !!devSecret &&
         !!process.env.SAMJUNIORS_DEV_SECRET &&
         constantTimeEquals(devSecret, process.env.SAMJUNIORS_DEV_SECRET);
+
       if (!authorized) {
-        return new NextResponse(
-          JSON.stringify({ error: "Unauthorized: Valid Founder session required" }),
-          { status: 401, headers: { "Content-Type": "application/json" } }
+        return createJsonResponse(
+          req,
+          { error: "Unauthorized: Valid Founder session required" },
+          401,
+          rateLimitHeaders
         );
       }
     }
     // Development sandbox: single-tenant demo mode, requests pass through.
   }
-  return applySecurityHeaders(req);
+
+  return applySecurityHeaders(req, rateLimitHeaders);
 }
 
 export const config = {
