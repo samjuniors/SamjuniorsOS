@@ -54,6 +54,21 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   private isTransmitting = false;
   private isSpeaking = false;
   private turnStartPerfMs = 0;
+  private turnStopPerfMs = 0;
+  private transcriptFinalPerfMs = 0;
+  private sophiaResponsePerfMs = 0;
+  private latencyRecords: Array<{
+    turnId: string;
+    turnType: 'voice' | 'text';
+    turnStartMs: number;
+    turnStopMs?: number;
+    sttLatencyMs?: number;
+    cognitionLatencyMs?: number;
+    ttsLatencyMs?: number;
+    endToEndFromStopMs: number;
+    endToEndTotalMs: number;
+    timestamp: number;
+  }> = [];
 
   /**
    * Fix 1 & 2: Monotonically increasing generation counter.
@@ -545,6 +560,9 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     this.activeTurnId = turnId;
     this.isTransmitting = true;
     this.turnStartPerfMs = performance.now();
+    this.turnStopPerfMs = 0;
+    this.transcriptFinalPerfMs = 0;
+    this.sophiaResponsePerfMs = 0;
 
     if (this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
       this.ws.send(
@@ -566,6 +584,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   stopPtt(turnId?: string): void {
     const targetTurnId = turnId || this.activeTurnId;
     this.isTransmitting = false;
+    this.turnStopPerfMs = performance.now();
 
     if (targetTurnId && this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
       this.ws.send(
@@ -625,6 +644,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
       case 'TRANSCRIPT_FINAL':
         if (msg.text && !this.interruptedTurnIds.has(msg.turnId)) {
+          this.transcriptFinalPerfMs = performance.now();
           this.emit('transcript', {
             role: 'user',
             text: msg.text,
@@ -635,6 +655,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         break;
 
       case 'SOPHIA_RESPONSE':
+        this.sophiaResponsePerfMs = performance.now();
         void this.handleSophiaResponse(msg);
         break;
 
@@ -709,6 +730,8 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
 
+    const ttsStartPerfMs = performance.now();
+
     try {
       const ttsRes = await this.fetchFn('/api/sophia/mouth/speak', {
         method: 'POST',
@@ -722,6 +745,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       }
 
       const audioBuffer = await ttsRes.arrayBuffer();
+      const ttsEndPerfMs = performance.now();
 
       // Check if interrupted or superseded while fetching or downloading audio
       if (
@@ -735,7 +759,41 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         return;
       }
 
-      this.emit('audio_started', { latencyMs: clientLatencyMs });
+      const playbackStartPerfMs = performance.now();
+      const endToEndTotalMs = this.turnStartPerfMs > 0 ? playbackStartPerfMs - this.turnStartPerfMs : 0;
+      const endToEndFromStopMs = this.turnStopPerfMs > 0 ? playbackStartPerfMs - this.turnStopPerfMs : endToEndTotalMs;
+      const sttLatencyMs = this.transcriptFinalPerfMs > 0 && this.turnStopPerfMs > 0 ? this.transcriptFinalPerfMs - this.turnStopPerfMs : 0;
+      const cognitionLatencyMs = this.sophiaResponsePerfMs > 0 && this.transcriptFinalPerfMs > 0 ? this.sophiaResponsePerfMs - this.transcriptFinalPerfMs : 0;
+      const ttsLatencyMs = ttsEndPerfMs - ttsStartPerfMs;
+
+      const latencyRecord = {
+        turnId,
+        turnType: turnId.startsWith('text_') ? ('text' as const) : ('voice' as const),
+        turnStartMs: this.turnStartPerfMs,
+        turnStopMs: this.turnStopPerfMs > 0 ? this.turnStopPerfMs : undefined,
+        sttLatencyMs: Math.round(sttLatencyMs),
+        cognitionLatencyMs: Math.round(cognitionLatencyMs),
+        ttsLatencyMs: Math.round(ttsLatencyMs),
+        endToEndFromStopMs: Math.round(endToEndFromStopMs),
+        endToEndTotalMs: Math.round(endToEndTotalMs),
+        timestamp: Date.now(),
+      };
+      this.latencyRecords.push(latencyRecord);
+
+      this.emit('audio_started', {
+        latencyMs: clientLatencyMs,
+        endToEndMs: Math.round(endToEndTotalMs),
+        endToEndFromStopMs: Math.round(endToEndFromStopMs),
+        turnId,
+        record: latencyRecord,
+      });
+
+      // Best-effort post to voice latency endpoint
+      void this.fetchFn('/api/sofia/voice/latency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record: latencyRecord }),
+      }).catch(() => {});
 
       // Play audio through AudioEngine
       await this.audio.playEncoded(audioBuffer);
@@ -813,5 +871,35 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       code: 'GATEWAY_DISCONNECTED',
       message: `Live gateway WebSocket closed (code: ${code}, reason: ${reason || 'normal'})`,
     });
+  }
+
+  getLatencyRecords() {
+    return [...this.latencyRecords];
+  }
+
+  getLatencySummary() {
+    const records = this.latencyRecords;
+    const stopLatencies = records.map((r) => r.endToEndFromStopMs).sort((a, b) => a - b);
+    const totalLatencies = records.map((r) => r.endToEndTotalMs).sort((a, b) => a - b);
+    const calc = (vals: number[], p: number) => {
+      if (vals.length === 0) return 0;
+      if (vals.length === 1) return vals[0];
+      const rank = (p / 100) * (vals.length - 1);
+      const l = Math.floor(rank);
+      const u = Math.ceil(rank);
+      return l === u ? vals[l] : Math.round((vals[l] + (rank - l) * (vals[u] - vals[l])) * 100) / 100;
+    };
+    return {
+      sampleCount: records.length,
+      p50EndToEndFromStopMs: calc(stopLatencies, 50),
+      p95EndToEndFromStopMs: calc(stopLatencies, 95),
+      p50TotalMs: calc(totalLatencies, 50),
+      p95TotalMs: calc(totalLatencies, 95),
+      records: [...records],
+    };
+  }
+
+  clearLatencyRecords(): void {
+    this.latencyRecords = [];
   }
 }

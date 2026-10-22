@@ -16,3 +16,4 @@ export * from "./greeting";
 export * from "./decision-log";
 export * from "./stop-control";
 export * from "./spend-settings";
+export * from "./voice-latency";

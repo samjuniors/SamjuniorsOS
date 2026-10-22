@@ -7,6 +7,7 @@ import { STTProvider, CanonicalTranscriptEvent } from './stt/types';
 import { DeepgramFluxProvider } from './stt/deepgram-flux-provider';
 import { executeSophiaTurn, ExecuteSophiaTurnOptions, SophiaTurnResult } from '../sophia/turn-executor';
 import { isValidTurnId } from './turn-id';
+import { VoiceLatencyTracker } from '../sophia/voice-latency';
 
 export type SophiaTurnExecutorFn = (opts: ExecuteSophiaTurnOptions) => Promise<SophiaTurnResult>;
 
@@ -205,6 +206,8 @@ export class LiveInteractionServer {
           return;
         }
         client.session.activeTurnId = msg.turnId;
+        client.session.turnStartTime = Date.now();
+        client.session.turnStopTime = undefined;
         this.sessionManager.setSessionState(ws, 'LISTENING', 'PTT press detected');
         this.sessionManager.send(ws, {
           type: 'PTT_ACK',
@@ -219,6 +222,7 @@ export class LiveInteractionServer {
       }
 
       case 'STOP_PTT': {
+        client.session.turnStopTime = Date.now();
         this.sessionManager.setSessionState(ws, 'THINKING', 'PTT release detected');
         this.sessionManager.send(ws, {
           type: 'PTT_ACK',
@@ -468,6 +472,7 @@ export class LiveInteractionServer {
     const controller = new AbortController();
     this.activeTurnExecutions.set(ws, { turnId, controller });
     let wasCancelled = false;
+    const sttFinalTime = Date.now();
 
     try {
       const sophiaResult = await this.turnExecutor({
@@ -492,6 +497,25 @@ export class LiveInteractionServer {
           `[LiveInteractionServer] Turn ${turnId} cancelled by client interrupt; no reply delivered`
         );
       } else {
+        const turnStopTime = client.session.turnStopTime || client.session.turnStartTime || sttFinalTime;
+        const sttDuration = Math.max(0, sttFinalTime - turnStopTime);
+        const cognitionDuration = Math.max(0, Date.now() - sttFinalTime);
+        const gatewayTurnaround = Math.max(0, Date.now() - turnStopTime);
+
+        VoiceLatencyTracker.getInstance().recordTurn({
+          turnId,
+          turnType: 'voice',
+          timestamp: Date.now(),
+          durationSpeakingMs: client.session.turnStopTime && client.session.turnStartTime ? Math.max(0, client.session.turnStopTime - client.session.turnStartTime) : undefined,
+          sttLatencyMs: sttDuration,
+          cognitionLatencyMs: cognitionDuration,
+          endToEndFromStopMs: gatewayTurnaround,
+          endToEndTotalMs: client.session.turnStartTime ? Math.max(0, Date.now() - client.session.turnStartTime) : gatewayTurnaround,
+          transcriptLengthChars: text.length,
+          replyLengthChars: sophiaResult.reply?.length,
+          liveAi: sophiaResult.liveAi,
+        });
+
         this.sessionManager.send(ws, {
           type: 'SOPHIA_RESPONSE',
           turnId,
@@ -500,7 +524,12 @@ export class LiveInteractionServer {
           messageId: sophiaResult.assistantMessageId,
           liveAi: sophiaResult.liveAi,
           directiveExecuted: sophiaResult.directiveExecuted,
-          metrics: sophiaResult.metrics,
+          metrics: {
+            ...(sophiaResult.metrics || {}),
+            sttLatencyMs: sttDuration,
+            cognitionLatencyMs: cognitionDuration,
+            gatewayTurnaroundMs: gatewayTurnaround,
+          },
         });
       }
     } catch (err: any) {

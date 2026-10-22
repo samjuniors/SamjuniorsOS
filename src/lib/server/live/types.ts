@@ -31,6 +31,9 @@ export interface LiveSessionRecord {
   audioBytesReceived?: number;
   droppedAudioFrames?: number;
   lastAudioFrameAt?: number;
+  // M1.4 / G6.2 Voice Latency Tracking
+  turnStartTime?: number;
+  turnStopTime?: number;
 }
 
 export type ClientLiveMessage =

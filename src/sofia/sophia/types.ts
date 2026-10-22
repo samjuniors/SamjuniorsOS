@@ -73,6 +73,10 @@ export interface SophiaEventDetail {
   tool?: string;
   callId?: string;
   latencyMs?: number;
+  endToEndMs?: number;
+  endToEndFromStopMs?: number;
+  turnId?: string;
+  record?: any;
 }
 
 export type VoiceProviderId = 'gemini-live' | 'deepgram' | 'elevenlabs' | 'local' | 'live-gateway';
