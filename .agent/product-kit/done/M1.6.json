@@ -1,0 +1,8 @@
+{
+  "id": "M1.6",
+  "doneAt": "2026-10-22T05:30:30.720Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "72bdf5c0c46d5a5dd94d97cdbabcbd21d517d26b",
+  "evidence": "The log is written for every turn; 'why did you do that' cites log entries; no new store is created (chat_messages metadata in ConversationStore). 14 automated tests pass, typecheck and lint pass."
+}
