@@ -118,4 +118,5 @@ export interface Turn {
   liveAi?: boolean;
   fallback?: boolean;
   mode?: string;
+  scopes?: string[];
 }

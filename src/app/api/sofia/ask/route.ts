@@ -178,6 +178,8 @@ export async function POST(req: NextRequest) {
             liveAi: result.liveAi,
             fallback: !result.liveAi,
             mode: result.liveAi ? 'live_model' : 'deterministic_fallback',
+            scopes: result.scopes || [],
+            sources: result.sources || [],
           })
         }
       } catch (err) {

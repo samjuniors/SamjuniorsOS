@@ -25,6 +25,8 @@ export type SophiaAuthorityClass =
   | 'EPISODIC_MEMORY'                 // M5.2 — founder-scoped past-conversation recall; interaction records only, never company truth
   | 'PERSONAL_MIND_MEMORY';           // Founder-scoped personal/interaction context (M3 K-2) — contextual ONLY, never company authority, never an authorization source
 
+export type MemoryScope = 'personal_mind' | 'company_brain';
+
 export interface SophiaContextSlice {
   label: string;
   authority: SophiaAuthorityClass;
@@ -40,6 +42,8 @@ export interface SophiaAssembledContext {
   dynamicPayloadTokens?: number;
   retrievalHit?: boolean;
   degradedStores?: string[];
+  scopes?: MemoryScope[];
+  sources?: string[];
   tokenBreakdown?: {
     operationalState?: number;
     activeWorkflows?: number;
@@ -188,11 +192,15 @@ export type ValidatedSophiaCommand =
   | {
       type: 'CONVERSATION_REPLY';
       reply: string;
+      scopes?: MemoryScope[];
+      sources?: string[];
     }
   | {
       type: 'RESOLVED_INFORMATION';
       reply: string;
       provenance: string[];
+      scopes?: MemoryScope[];
+      sources?: string[];
     }
   | {
       type: 'DISPATCH_INSPECTION';
@@ -275,4 +283,6 @@ export interface SophiaExecutionResult {
   name?: string;
   role?: string;
   intent?: string;
+  scopes?: MemoryScope[];
+  sources?: string[];
 }

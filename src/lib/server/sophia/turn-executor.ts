@@ -4,6 +4,7 @@ import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
 import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
+import { SophiaRoute, MemoryScope } from './types';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -11,6 +12,15 @@ export interface ExecuteSophiaTurnOptions {
   conversationId?: string;
   turnId?: string;
   executeDirective?: boolean;
+  /**
+   * Scope-aware context partition override (M1.3 / G12.3).
+   * When omitted, automatically derived from the classified route.
+   */
+  scope?: 'all' | 'personal_only' | 'company_only' | 'none';
+  /**
+   * Explicit route override (M1.2 / M1.3).
+   */
+  route?: SophiaRoute;
   /**
    * Ingress channel label recorded on the persisted assistant message
    * (observability only — never an authority signal). Defaults to
@@ -62,6 +72,8 @@ export interface SophiaTurnResult {
   /** True when the turn was stopped at a stage boundary by an aborted
    * `signal` (Phase 3 cancellation) — no reply is delivered. */
   cancelled?: boolean;
+  scopes?: MemoryScope[];
+  sources?: string[];
 }
 
 /** Persisted content of the cancelled-turn assistant marker (Phase 3). */
@@ -123,6 +135,8 @@ async function cancelledTurnResult(
     directiveExecuted: false,
     liveAi: false,
     error: 'Turn cancelled before completion',
+    scopes: [],
+    sources: [],
   };
 }
 
@@ -346,15 +360,86 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       text: h.text,
     }));
 
+    // Route & Scope determination for scope-aware context partition (M1.3 / G12.3)
+    let route = opts.route;
+    if (!route) {
+      const routeResult = await SophiaIntentClassifier.route({
+        message: cleanMessage,
+        history: historyItems,
+      });
+      route = routeResult.route;
+    }
+
+    let scope: 'all' | 'personal_only' | 'company_only' | 'none' = opts.scope ?? 'all';
+    if (!opts.scope) {
+      if (route === 'recall-personal') {
+        scope = 'personal_only';
+      } else if (route === 'recall-company') {
+        scope = 'company_only';
+      } else if (route === 'converse' || route === 'refuse') {
+        scope = 'none';
+      } else {
+        scope = 'company_only';
+      }
+    }
+
     // 6. Context Assembly: deterministic, multi-source, authority-classified
-    //    (M3 K-2: the authenticated founder principal threads through so the
-    //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS founder
-    //    only — personal context, never company authority.)
+    //    (M3 K-2 / M1.3: scope-aware context partition ensures personal memories
+    //    are read ONLY for personal queries, and Company Brain ONLY for company queries.)
     const assembledContext = await SophiaContextAssembler.assemble({
       message: cleanMessage,
       history: historyItems,
       founderId,
+      scope,
     });
+
+    // Check for Personal Mind empty result (M1.3: honest abstention)
+    const personalSlice = assembledContext.slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
+    const hasPersonalMemory = personalSlice && personalSlice.content.includes('<personal_memory');
+
+    if (route === 'recall-personal' && !hasPersonalMemory) {
+      const persona = 'Sophia Vance • COO';
+      const abstainReply = `[${persona}]\nI do not remember any personal notes or preferences regarding that.\n\n[Scopes: personal_mind | Sources: SophiaMemoryStore]`;
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage(
+          {
+            conversationId: conversation.id,
+            sender: 'assistant',
+            role: 'assistant',
+            content: abstainReply,
+            idempotencyKey: assistantIdempotencyKey,
+            intent: 'informational_query',
+            confidence: 0.9,
+            metadata: {
+              liveAi: false,
+              directiveExecuted: false,
+              ingress: opts.ingress ?? 'live_voice',
+              scopes: ['personal_mind'],
+              sources: ['SophiaMemoryStore'],
+            },
+          },
+          founderId
+        );
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist assistant abstain reply:', err);
+      }
+
+      return {
+        success: true,
+        reply: abstainReply,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'informational_query',
+        directiveExecuted: false,
+        liveAi: false,
+        scopes: ['personal_mind'],
+        sources: ['SophiaMemoryStore'],
+      };
+    }
 
     // 7. Intent Classification with structural trust boundary
     const classificationResult = await SophiaIntentClassifier.classify({
@@ -389,6 +474,8 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         directiveExecuted: false,
         liveAi: false,
         error: executionResult.error,
+        scopes: executionResult.scopes ?? assembledContext.scopes ?? [],
+        sources: executionResult.sources ?? assembledContext.sources ?? [],
       };
     }
 
@@ -454,9 +541,17 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       });
     }
 
+    const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
+    const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
+
+    let finalReply = executionResult.reply;
+    if (finalReply && returnScopes.length > 0 && !finalReply.includes('Scopes:')) {
+      finalReply += `\n\n[Scopes: ${returnScopes.join(', ')} | Sources: ${returnSources.join(', ') || 'none'}]`;
+    }
+
     return {
       success: executionResult.success,
-      reply: executionResult.reply,
+      reply: finalReply,
       conversationId: conversation.id,
       founderMessageId: founderMessageRecord.id,
       assistantMessageId: assistantMessageRecord?.id,
@@ -465,6 +560,8 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       liveAi: executionResult.liveAi,
       metrics: executionResult.metrics,
       error: executionResult.error,
+      scopes: returnScopes,
+      sources: returnSources,
     };
   };
 

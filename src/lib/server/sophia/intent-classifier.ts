@@ -509,7 +509,7 @@ Output a JSON code block with your proposal:
     // 6. Epistemic / Company Metrics / Knowledge / Precedent / Activity Informational Queries
     const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margin|cash|revenue|financial|arr)\b/i.test(clean);
     const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?)\b/i.test(clean);
-    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock)\b/i.test(clean);
+    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
     const hasConversationContext = context?.slices.some(s => s.authority === 'CONVERSATIONAL_RECORD') ?? false;
@@ -583,9 +583,10 @@ Output a JSON code block with your proposal:
   public static isPersonalQuery(message: string): boolean {
     const clean = message.trim().toLowerCase();
     const personalPatterns = [
-      /\b(my|about me|founder)\s+(preferences?|habits?|favorite|family|kids?|wife|birthday|workout|notes?|routine|schedule|personal)\b/i,
-      /\b(what do you remember about me|who am i|what are my preferences|my personal info|remind me about myself)\b/i,
-      /\b(personal memory|personal mind)\b/i,
+      /\b(my|about me|founder)\s+(preferences?|habits?|favorite|family|kids?|wife|husband|birthday|workout|notes?|routine|schedule|personal|private|secret|pin|dog|cat|pet|hobbies?|coffee|food|drink)\b/i,
+      /\b(what do you remember about me|who am i|what are my preferences|my personal info|remind me about myself|what do you know about me)\b/i,
+      /\b(personal memory|personal mind|my memory|about my personal)\b/i,
+      /\bwhat('s| is) my (favorite|private|secret|dog|cat|pet|pin|birthday|workout|schedule|routine|preference|hobby|note)\b/i,
     ];
     return personalPatterns.some(p => p.test(clean));
   }
@@ -796,7 +797,7 @@ You must classify the Founder's utterance into exactly one of the following 5 au
     // Company query -> recall-company
     const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margin|cash|revenue|financial|arr)\b/i.test(clean);
     const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?)\b/i.test(clean);
-    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock)\b/i.test(clean);
+    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
 

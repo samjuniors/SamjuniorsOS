@@ -1039,6 +1039,7 @@ export class SophiaOS extends EventTarget {
         liveAi?: boolean;
         fallback?: boolean;
         mode?: string;
+        scopes?: string[];
       };
 
       let generatedImg: { url: string; prompt: string } | undefined;
@@ -1064,6 +1065,7 @@ export class SophiaOS extends EventTarget {
           liveAi: out.liveAi,
           fallback: out.fallback,
           mode: out.mode,
+          scopes: out.scopes,
         });
         this.dispatchEvent(new CustomEvent('transcript', {
           detail: {
