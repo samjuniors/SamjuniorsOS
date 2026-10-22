@@ -940,8 +940,9 @@ Include:
     });
 
     // ==========================================
-    // STAGE 7: EXECUTIVE COUNCIL DELIBERATION (Bounded Peer Review)
+    // STAGE 7: EXECUTIVE COUNCIL DELIBERATION
     // ==========================================
+    const COUNCIL_STAGE_CHECKPOINT = 'Executive Council Consolidation Checkpoint — Procedural checkpoint';
     const councilSkill = determineSkillForTask({
       title: 'Executive Council Deliberation & Peer Review',
       protocolStep: 'review',

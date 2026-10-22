@@ -1,0 +1,8 @@
+{
+  "id": "M1.7",
+  "doneAt": "2026-10-22T05:47:37.046Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "486b62140160fc81649db26fcb55be0106667a7d",
+  "evidence": "tests/sophia/m1_7_stop_control.test.ts passed all 16 assertions, mid-reply and mid-job stop verified with provider down, founder confirmation required to resume"
+}

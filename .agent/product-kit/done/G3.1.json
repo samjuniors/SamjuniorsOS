@@ -1,0 +1,8 @@
+{
+  "id": "G3.1",
+  "doneAt": "2026-10-21T10:18:54.501Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "7a2138728a6d43f5531a233e2de95c618c23f6d5",
+  "evidence": "Both auth gaps reproduced and resolved: gate.ts strictly enforces ALLOWED_FOUNDER_IDENTITIES removing prefix loophole and blocklist; .env.example provisions complete Clerk keys; proxy fails closed with 401 on unauthenticated calls; 16/16 tests pass in tests/sophia/g3_1_auth_gaps.test.ts"
+}

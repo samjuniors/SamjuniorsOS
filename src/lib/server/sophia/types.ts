@@ -25,6 +25,8 @@ export type SophiaAuthorityClass =
   | 'EPISODIC_MEMORY'                 // M5.2 — founder-scoped past-conversation recall; interaction records only, never company truth
   | 'PERSONAL_MIND_MEMORY';           // Founder-scoped personal/interaction context (M3 K-2) — contextual ONLY, never company authority, never an authorization source
 
+export type MemoryScope = 'personal_mind' | 'company_brain';
+
 export interface SophiaContextSlice {
   label: string;
   authority: SophiaAuthorityClass;
@@ -40,6 +42,8 @@ export interface SophiaAssembledContext {
   dynamicPayloadTokens?: number;
   retrievalHit?: boolean;
   degradedStores?: string[];
+  scopes?: MemoryScope[];
+  sources?: string[];
   tokenBreakdown?: {
     operationalState?: number;
     activeWorkflows?: number;
@@ -85,16 +89,41 @@ export type EntityResolutionResult<T> =
  * 
  * The candidate proposal is treated strictly as UNTRUSTED data.
  */
+/**
+ * Authoritative 5-Route Minimal Router taxonomy for Sophia (M1.2 / G12.1).
+ * The model proposes; deterministic policy disposes.
+ */
+export const SOPHIA_ROUTES = [
+  'converse',
+  'recall-personal',
+  'recall-company',
+  'ask-clarify',
+  'refuse',
+] as const;
+
+export type SophiaRoute = (typeof SOPHIA_ROUTES)[number];
+
+export interface SophiaRouteResult {
+  route: SophiaRoute;
+  proposal: CandidateIntentProposal;
+  liveAi: boolean;
+  confidence: number;
+  reason: string;
+  rawOutput?: string;
+}
+
 export type CandidateIntentProposal =
   | {
       kind: 'conversation';
+      route?: SophiaRoute;
       reply: string;
       confidence: number;
       reason: string;
     }
   | {
       kind: 'informational_query';
-      domain: 'company_metrics' | 'epistemic_fact' | 'workstream_status' | 'general';
+      route?: SophiaRoute;
+      domain: 'company_metrics' | 'epistemic_fact' | 'workstream_status' | 'general' | 'personal';
       query: string;
       subject?: string;
       confidence: number;
@@ -102,6 +131,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'operational_inspection';
+      route?: SophiaRoute;
       target: string;
       proposedTool?: string;
       reason: string;
@@ -109,6 +139,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'directive_proposal';
+      route?: SophiaRoute;
       title: string;
       objective: string;
       assignedAgents: ('coo' | 'researcher' | 'pm' | 'finance')[];
@@ -118,6 +149,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'steering_proposal';
+      route?: SophiaRoute;
       action: 'pause' | 'resume' | 'redirect' | 'halt';
       targetRunId?: string;
       modification?: string;
@@ -126,6 +158,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'approval_proposal';
+      route?: SophiaRoute;
       decision: 'approved' | 'rejected' | 'request_revision';
       approvalId?: string;
       actionName?: string;
@@ -135,9 +168,17 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'clarification_prompt';
+      route?: SophiaRoute;
       ambiguityReason: string;
       structuredOptions: string[];
       suggestedScope?: string;
+      confidence: number;
+      reason: string;
+    }
+  | {
+      kind: 'refuse';
+      route?: 'refuse';
+      reply: string;
       confidence: number;
       reason: string;
     };
@@ -151,11 +192,15 @@ export type ValidatedSophiaCommand =
   | {
       type: 'CONVERSATION_REPLY';
       reply: string;
+      scopes?: MemoryScope[];
+      sources?: string[];
     }
   | {
       type: 'RESOLVED_INFORMATION';
       reply: string;
       provenance: string[];
+      scopes?: MemoryScope[];
+      sources?: string[];
     }
   | {
       type: 'DISPATCH_INSPECTION';
@@ -238,4 +283,6 @@ export interface SophiaExecutionResult {
   name?: string;
   role?: string;
   intent?: string;
+  scopes?: MemoryScope[];
+  sources?: string[];
 }

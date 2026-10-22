@@ -620,6 +620,57 @@ export class ConversationStore {
   }
 
   /**
+   * Retrieves the most recent decision log entry in a conversation (M1.6 / G12.6).
+   * Reads from existing persisted messages without creating any new store.
+   */
+  public async getLatestDecisionLog(
+    conversationId: string,
+    founderId: string
+  ): Promise<any | null> {
+    const messages = await this.getMessages(conversationId, founderId);
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const log = messages[i]?.metadata?.decisionLog;
+      if (log) return log;
+    }
+    return null;
+  }
+
+  /**
+   * Retrieves a decision log entry by its log ID, turn ID, or message ID (M1.6 / G12.6).
+   */
+  public async getDecisionLog(
+    conversationId: string,
+    idOrTurnId: string,
+    founderId: string
+  ): Promise<any | null> {
+    const messages = await this.getMessages(conversationId, founderId);
+    for (const msg of messages) {
+      const log = msg?.metadata?.decisionLog;
+      if (log && (log.id === idOrTurnId || log.turnId === idOrTurnId || msg.id === idOrTurnId)) {
+        return log;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Lists decision log entries for a conversation in reverse chronological order (newest first).
+   */
+  public async listDecisionLogs(
+    conversationId: string,
+    founderId: string,
+    limit: number = 20
+  ): Promise<any[]> {
+    const messages = await this.getMessages(conversationId, founderId);
+    const logs: any[] = [];
+    for (let i = messages.length - 1; i >= 0 && logs.length < limit; i--) {
+      const log = messages[i]?.metadata?.decisionLog;
+      if (log) logs.push(log);
+    }
+    return logs;
+  }
+
+  /**
    * Looks up a message by its idempotency key within a conversation.
    *
    * Read source: DurableFileStore ONLY. The turn-idempotency gate is

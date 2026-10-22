@@ -33,6 +33,7 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 
 | Command | Use |
 |---|---|
+| `continue` | What to do next: interrupted work to take over, ready steps of the active milestone, decisions to ask. The founder only has to say "continue" |
 | `status` | Every gate and step with its state |
 | `next --n 4` | Up to four ready steps that do not conflict on files, spread across lanes |
 | `resume` | After an interruption: claims, stale claims, step worktrees, uncommitted work |
@@ -42,7 +43,8 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 | `done <ID> --evidence "..."` | Record completion (requires a handoff note and an independent PASS from a second agent session) |
 | `release <ID>` | Lead only, after integration |
 | `decide <ID>` / `ack <KEY>` | Record a founder decision or gate acknowledgement, quoting the founder's own words |
-| `render` / `validate` | Regenerate `GATES.md` and check the roadmap for errors |
+| `milestone status` / `verify <M>` / `close <M>` | List milestones; give the founder the test script; after acceptance, clean up and start the next milestone |
+| `render` / `validate` | Regenerate `GATES.md` and `MILESTONES.md` and check the roadmap for errors |
 
 ## How resuming works
 
@@ -51,7 +53,7 @@ Claims live in the git common directory, shared by every worktree and kept acros
 ## What the founder does
 
 1. Answers the decisions in G0, using the briefs in `briefs/`.
-2. At the end of each gate, reads the gate report and replies with the next step. The kit then records it with `ack`.
+2. At the end of each milestone, tests it with the script in `MILESTONES.md` and tells the agent how it went, in your own words. At any other time, just say "continue".
 3. Confirms any new tool or integration an agent proposes (`CAPABILITIES.md`).
 
 Everything else is meant to proceed without you.

@@ -37,10 +37,57 @@ export function ChatPanel({
   const [targetLang, setTargetLang] = useState('off');
   const [isTranslating, setIsTranslating] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [expandedWhyTurn, setExpandedWhyTurn] = useState<number | null>(null);
+  const [isFrozen, setIsFrozen] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    fetch('/api/sofia/stop')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.status?.isFrozen) {
+          setIsFrozen(true);
+        }
+      })
+      .catch(() => {});
+
+    const onStop = () => setIsFrozen(true);
+    controlLayer.addEventListener('command:stop_control', onStop);
+    return () => controlLayer.removeEventListener('command:stop_control', onStop);
+  }, []);
+
+  const handleStopControl = async () => {
+    try {
+      await fetch('/api/sofia/stop', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'panel', reason: 'Founder clicked STOP button on panel' }),
+      });
+      setIsFrozen(true);
+      controlLayer.addSystemNote('Emergency Stop: System is FROZEN in Safe Mode. Resuming requires explicit confirmation.');
+    } catch (err) {
+      console.error('Stop control failed:', err);
+    }
+  };
+
+  const handleConfirmResume = async () => {
+    try {
+      const res = await fetch('/api/sofia/resume', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true, reason: 'Founder confirmed resume via panel button' }),
+      });
+      if (res.ok) {
+        setIsFrozen(false);
+        controlLayer.addSystemNote('Safe Mode deactivated. System resumed by Founder confirmation.');
+      }
+    } catch (err) {
+      console.error('Confirm resume failed:', err);
+    }
+  };
 
   useEffect(() => {
     const on = () => setTurns([...controlLayer.history]);
@@ -243,6 +290,18 @@ export function ChatPanel({
             </div>
           )}
 
+          {/* M1.7 Stop Control (Safe Mode Freeze) */}
+          <button
+            type="button"
+            data-testid="stop-control-button"
+            onClick={handleStopControl}
+            title="Emergency Stop / Safe Mode: Freeze all in-flight turns and scheduled workflows"
+            className="flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[9px] font-mono font-semibold text-red-300 hover:bg-red-500/30 transition-all active:scale-95"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            <span>STOP</span>
+          </button>
+
           <button
             type="button"
             onClick={onClose}
@@ -253,6 +312,27 @@ export function ChatPanel({
           </button>
         </div>
       </header>
+
+      {/* M1.7 Safe Mode Frozen Banner */}
+      {isFrozen && (
+        <div
+          data-testid="system-frozen-banner"
+          className="m-3 mb-0 flex items-center justify-between rounded-xl border border-red-500/50 bg-red-950/60 p-2.5 text-xs text-red-200 shadow-lg"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-red-400 font-mono font-bold text-xs">⚠ SAFE MODE</span>
+            <span className="text-[11px] text-red-300">System is frozen. In-flight turns and workflows are suspended.</span>
+          </div>
+          <button
+            type="button"
+            data-testid="confirm-resume-button"
+            onClick={handleConfirmResume}
+            className="rounded-lg bg-red-500 hover:bg-red-600 px-2.5 py-1 font-semibold text-[10px] font-mono text-white shadow-sm transition active:scale-95"
+          >
+            Confirm Resume
+          </button>
+        </div>
+      )}
 
       {/* Live Status Banner */}
       {status === 'live' ? (
@@ -283,9 +363,58 @@ export function ChatPanel({
             </p>
           ) : (
             <div key={`turn-${t.ts}-${i}`} className={t.role === 'user' ? 'text-right' : 'text-left'}>
-              <p className="mb-1 text-[8px] font-normal uppercase tracking-[0.25em] text-white/30">
-                {t.role === 'user' ? 'you' : 'sophia'}
-              </p>
+              <div className={`mb-1 flex items-center gap-1.5 text-[8px] font-normal uppercase tracking-[0.25em] text-white/30 ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <span>{t.role === 'user' ? 'you' : 'sophia'}</span>
+                {t.role === 'sophia' && (
+                  <>
+                    {t.fallback === true || t.liveAi === false ? (
+                      <span
+                        data-testid="fallback-badge"
+                        className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-amber-300 normal-case"
+                        title="Deterministic fallback reply — live model reasoning was unavailable"
+                      >
+                        Offline Fallback
+                      </span>
+                    ) : t.liveAi === true ? (
+                      <span
+                        data-testid="live-ai-badge"
+                        className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-cyan-300 normal-case"
+                        title="Live model reasoning"
+                      >
+                        Live AI
+                      </span>
+                    ) : null}
+
+                    {t.scopes && t.scopes.map((scope) => (
+                      <span
+                        key={scope}
+                        data-testid={`scope-chip-${scope}`}
+                        className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide normal-case ${
+                          scope === 'personal_mind'
+                            ? 'border-purple-400/30 bg-purple-500/15 text-purple-200'
+                            : 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
+                        }`}
+                        title={`Answer read from ${scope === 'personal_mind' ? 'Personal Mind' : 'Company Brain'}`}
+                      >
+                        <span className={`size-1 rounded-full ${scope === 'personal_mind' ? 'bg-purple-400' : 'bg-emerald-400'}`} />
+                        <span>{scope === 'personal_mind' ? 'Personal Mind' : 'Company Brain'}</span>
+                      </span>
+                    ))}
+
+                    {t.decisionLog && (
+                      <button
+                        type="button"
+                        data-testid="why-turn-button"
+                        onClick={() => setExpandedWhyTurn(expandedWhyTurn === i ? null : i)}
+                        className="rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-indigo-300 normal-case hover:bg-indigo-500/20"
+                        title="Why did Sophia choose this action? View decision log entry"
+                      >
+                        {expandedWhyTurn === i ? 'Close Why' : 'Why?'}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
               <div
                 className={`inline-block max-w-[90%] px-3.5 py-2 text-left text-[12px] font-normal leading-relaxed ${
                   t.role === 'user'
@@ -294,6 +423,29 @@ export function ChatPanel({
                 } ${t.final ? '' : 'opacity-65'}`}
               >
                 {t.text && <p>{t.text}</p>}
+
+                {/* Minimal Decision Log Why View (M1.6 / G12.6) */}
+                {expandedWhyTurn === i && t.decisionLog && (
+                  <div
+                    data-testid="why-view"
+                    className="mt-2.5 rounded-lg border border-indigo-400/30 bg-indigo-950/60 p-2.5 font-mono text-[9px] text-indigo-100 shadow-inner"
+                  >
+                    <div className="flex items-center justify-between border-b border-indigo-400/20 pb-1 text-[8.5px] text-indigo-300">
+                      <span className="font-semibold uppercase tracking-wider">Decision Log</span>
+                      <span data-testid="why-log-id" className="text-white/50">{t.decisionLog.id}</span>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      <div><span className="text-white/40">Route: </span><span data-testid="why-route" className="font-semibold text-indigo-200">{t.decisionLog.route}</span></div>
+                      <div><span className="text-white/40">Confidence: </span><span data-testid="why-confidence">{Math.round((t.decisionLog.confidence ?? 1) * 100)}%</span></div>
+                      <div><span className="text-white/40">Outcome: </span><span data-testid="why-outcome" className="capitalize text-emerald-300">{t.decisionLog.outcome}</span></div>
+                      <div><span className="text-white/40">Scopes Read: </span><span data-testid="why-scopes">{(t.decisionLog.scopes || []).join(', ') || 'none'}</span></div>
+                      {t.decisionLog.sources && t.decisionLog.sources.length > 0 && (
+                        <div><span className="text-white/40">Sources: </span><span data-testid="why-sources">{t.decisionLog.sources.join(', ')}</span></div>
+                      )}
+                      <div><span className="text-white/40">Reasoning: </span><span data-testid="why-reasoning" className="text-white/80">{t.decisionLog.reasoning}</span></div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Generated Image Card */}
                 {t.imageUrl && (

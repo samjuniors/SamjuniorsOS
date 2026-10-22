@@ -180,7 +180,16 @@ export class ControlLayer extends EventTarget {
     role: Turn['role'],
     text: string,
     final: boolean,
-    extra?: { imageUrl?: string; imagePrompt?: string; sources?: Array<{ title: string; url: string }> }
+    extra?: {
+      imageUrl?: string;
+      imagePrompt?: string;
+      sources?: Array<{ title: string; url: string }>;
+      liveAi?: boolean;
+      fallback?: boolean;
+      mode?: string;
+      scopes?: string[];
+      decisionLog?: any;
+    }
   ) {
     const last = this.history[this.history.length - 1];
     const t = Date.now();
@@ -190,6 +199,11 @@ export class ControlLayer extends EventTarget {
       if (extra?.imageUrl) last.imageUrl = extra.imageUrl;
       if (extra?.imagePrompt) last.imagePrompt = extra.imagePrompt;
       if (extra?.sources) last.sources = extra.sources;
+      if (typeof extra?.liveAi === 'boolean') last.liveAi = extra.liveAi;
+      if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
+      if (extra?.mode) last.mode = extra.mode;
+      if (extra?.scopes) last.scopes = extra.scopes;
+      if (extra?.decisionLog) (last as any).decisionLog = extra.decisionLog;
     } else if (last && last.role === role && !last.final && final) {
       last.text = text;
       last.final = true;
@@ -197,6 +211,11 @@ export class ControlLayer extends EventTarget {
       if (extra?.imageUrl) last.imageUrl = extra.imageUrl;
       if (extra?.imagePrompt) last.imagePrompt = extra.imagePrompt;
       if (extra?.sources) last.sources = extra.sources;
+      if (typeof extra?.liveAi === 'boolean') last.liveAi = extra.liveAi;
+      if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
+      if (extra?.mode) last.mode = extra.mode;
+      if (extra?.scopes) last.scopes = extra.scopes;
+      if (extra?.decisionLog) (last as any).decisionLog = extra.decisionLog;
     } else {
       this.history.push({
         role,
@@ -217,7 +236,16 @@ export class ControlLayer extends EventTarget {
   addSophiaTurn(
     text: string,
     final = true,
-    extra?: { imageUrl?: string; imagePrompt?: string; sources?: Array<{ title: string; url: string }> }
+    extra?: {
+      imageUrl?: string;
+      imagePrompt?: string;
+      sources?: Array<{ title: string; url: string }>;
+      liveAi?: boolean;
+      fallback?: boolean;
+      mode?: string;
+      scopes?: string[];
+      decisionLog?: any;
+    }
   ) {
     this.upsert('sophia', text, final, extra);
   }
@@ -343,6 +371,20 @@ export class ControlLayer extends EventTarget {
     }
     if (/(?:press\s+enter|hit\s+enter|submit)/i.test(text)) {
       this.dispatchEvent(new CustomEvent('command:browser_interact', { detail: { action: 'press_key', key: 'Enter' } }));
+      return true;
+    }
+
+    // Stop Control / Safe Mode freeze by voice (M1.7)
+    if (/^(?:stop|halt|freeze|pause everything|emergency stop|shut down)$/i.test(text.trim())) {
+      fetch('/api/sofia/stop', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'voice', reason: `Spoken stop directive: "${text}"` }),
+      }).catch(() => {});
+      this.dispatchEvent(new CustomEvent('command:stop_control', { detail: { action: 'stop' } }));
+      this.dispatchEvent(new CustomEvent('command:notification', {
+        detail: { message: 'Emergency Stop: System is FROZEN in Safe Mode. Resuming requires confirmation.', level: 'error' },
+      }));
       return true;
     }
 

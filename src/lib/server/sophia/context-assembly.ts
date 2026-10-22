@@ -24,7 +24,7 @@ import {
   resolveDependencyAnchors,
   traverseDependents,
 } from '../retrieval/dependency-relations';
-import { SophiaAssembledContext, SophiaContextSlice } from './types';
+import { SophiaAssembledContext, SophiaContextSlice, MemoryScope } from './types';
 
 /**
  * ============================================================================
@@ -517,11 +517,23 @@ export class SophiaContextAssembler {
      * founderId — callers must pass the authenticated session principal only.
      */
     founderId?: string;
+    /**
+     * Scope-aware context partition (M1.3 / G12.3).
+     * - 'personal_only': reads only Personal Mind (SophiaMemoryStore); Company Brain is strictly excluded.
+     * - 'company_only': reads only Company Brain; Personal Mind is strictly excluded.
+     * - 'none': neither personal mind nor company brain is read.
+     * - 'all': reads all eligible slices (default).
+     */
+    scope?: 'all' | 'personal_only' | 'company_only' | 'none';
   }): Promise<SophiaAssembledContext> {
     const slices: SophiaContextSlice[] = [];
     const degradedStores: string[] = [];
     let retrievalHit = false;
     const tokenBreakdown: SophiaAssembledContext['tokenBreakdown'] = {};
+
+    const requestedScope = opts.scope ?? 'all';
+    const includeCompany = requestedScope === 'all' || requestedScope === 'company_only';
+    const includePersonal = requestedScope === 'all' || requestedScope === 'personal_only';
 
     const isCasual = isCasualGreeting(opts.message);
 
@@ -548,6 +560,7 @@ export class SophiaContextAssembler {
     //     hardcoded os-data constants through CompanyContextProvider, so
     //     state-store updates never reached Sophia's context.)
     // =========================================================================
+    if (includeCompany) {
     try {
       const stateStore = CompanyStateStore.getInstance();
       const fin = await stateStore.getFinancialMetrics();
@@ -935,6 +948,9 @@ export class SophiaContextAssembler {
         ...newestActiveFacts.filter((f) => !matchIds.has(f.id)),
       ].slice(0, 3);
       const factsFallback = factMatches.length === 0;
+      if (!factsFallback) {
+        retrievalHit = true;
+      }
       const allClaims = await claimStore.listClaims();
 
       if (facts.length > 0) {
@@ -1191,6 +1207,7 @@ export class SophiaContextAssembler {
         degradedStores.push('ActivityProjection');
       }
     }
+    } // end includeCompany
 
     // =========================================================================
     // 6B. Personal Mind Memory — Founder-Scoped Interaction Context (M3 K-2)
@@ -1207,7 +1224,7 @@ export class SophiaContextAssembler {
     // inject instructions outside the data block). Natural-language
     // warnings alone were never the security control — the structural
     // separation is.
-    if (opts.founderId && opts.founderId.trim()) {
+    if (includePersonal && opts.founderId && opts.founderId.trim()) {
       try {
         const memoryStore = SophiaMemoryStore.getInstance();
         // P2 follow-up (context starvation): consider the FULL active set
@@ -1264,7 +1281,7 @@ export class SophiaContextAssembler {
     // scoping is inherited from the store's founder-owned read; another
     // founder's conversations can never enter.
     // =========================================================================
-    if (!isCasual && opts.founderId && opts.founderId.trim()) {
+    if (includeCompany && !isCasual && opts.founderId && opts.founderId.trim()) {
       try {
         const episodicHits = await ConversationStore.getInstance().searchConversations(
           opts.founderId.trim(),
@@ -1336,6 +1353,32 @@ export class SophiaContextAssembler {
     const formattedContext = formattedBlocks.join('\n\n');
     const dynamicPayloadTokens = estimateTokens(formattedContext);
 
+    const scopes: MemoryScope[] = [];
+    const sourcesSet = new Set<string>();
+
+    if (includePersonal) {
+      const personalSlice = slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
+      if (personalSlice) {
+        scopes.push('personal_mind');
+        sourcesSet.add('SophiaMemoryStore');
+      } else if (requestedScope === 'personal_only') {
+        scopes.push('personal_mind');
+        sourcesSet.add('SophiaMemoryStore');
+      }
+    }
+
+    if (includeCompany) {
+      const companySlices = slices.filter(
+        (s) => s.authority !== 'PERSONAL_MIND_MEMORY' && s.authority !== 'CONVERSATIONAL_RECORD'
+      );
+      if (companySlices.length > 0) {
+        scopes.push('company_brain');
+        companySlices.forEach((s) => sourcesSet.add(s.provenance));
+      } else if (requestedScope === 'company_only') {
+        scopes.push('company_brain');
+      }
+    }
+
     return {
       slices,
       formattedContext,
@@ -1344,6 +1387,9 @@ export class SophiaContextAssembler {
       retrievalHit,
       degradedStores: degradedStores.length > 0 ? degradedStores : undefined,
       tokenBreakdown,
+      scopes,
+      sources: Array.from(sourcesSet),
     };
   }
 }
+

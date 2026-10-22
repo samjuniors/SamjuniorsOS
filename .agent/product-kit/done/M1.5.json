@@ -1,0 +1,8 @@
+{
+  "id": "M1.5",
+  "doneAt": "2026-10-22T05:06:59.902Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "16ff96f48136f67be6ed4abf87696c24e1d85c53",
+  "evidence": "Greeting from real state tested with empty and full state; live-or-fallback badge tested; memory scope chips tested; 9/9 tests pass in tests/sophia/m1_5_greeting_and_indicators.test.ts"
+}

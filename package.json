@@ -13,11 +13,17 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "db:reconcile-tombstones": "npx tsx scripts/reconcile-tombstones.ts"
+    "db:reconcile-tombstones": "npx tsx scripts/reconcile-tombstones.ts",
+    "test": "node scripts/test-runner.mjs",
+    "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
+    "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
+    "typecheck": "tsc --noEmit",
+    "audit:deps": "node scripts/audit-deps.mjs",
+    "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose",
+    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
-    "@next/swc-win32-x64-msvc": "^16.4.0",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -74,6 +80,9 @@
     "z-ai-web-dev-sdk": "^0.0.18",
     "zod": "^4.0.2",
     "zustand": "^5.0.6"
+  },
+  "optionalDependencies": {
+    "@next/swc-win32-x64-msvc": "^16.4.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

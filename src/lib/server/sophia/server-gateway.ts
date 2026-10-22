@@ -16,6 +16,7 @@ export interface GatewayProcessOptions {
   context: SophiaAssembledContext;
   metrics?: TurnMetrics;
   executeDirective?: boolean;
+  liveAi?: boolean;
 }
 
 /**
@@ -57,6 +58,24 @@ export class SophiaServerGateway {
 
     // Bind authenticated founder principal from trusted server session ONLY
     const verifiedFounderId = session.founderId || session.userId || 'founder-primary';
+
+    // 0. REFUSAL PROPOSAL (Security invariant & fail-closed boundary)
+    if (sanitizedProposal.kind === 'refuse') {
+      const reply = sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nI operate strictly within SamJuniorsOS governance boundaries. Request refused under governance policy.`;
+      return {
+        success: false,
+        validatedCommand: {
+          type: 'CONVERSATION_REPLY',
+          reply,
+        },
+        proposal: sanitizedProposal,
+        reply,
+        directiveExecuted: false,
+        liveAi: false,
+        metrics,
+        error: sanitizedProposal.reason || 'Request refused under governance policy.',
+      };
+    }
 
     // 1. DIRECTIVE PROPOSAL DISPATCH
     if (sanitizedProposal.kind === 'directive_proposal') {
@@ -325,6 +344,20 @@ export class SophiaServerGateway {
         provenances.push(dependencySlice.provenance);
         factualReply = `[${persona.name} • ${persona.role}]\nCompany Service Dependency Chain (Canonical-Fact Evidence):\n${dependencySlice.content}`;
         authoritativeData = { dependencyPath: dependencySlice.content };
+      } else if (sanitizedProposal.domain === 'personal' || sanitizedProposal.route === 'recall-personal') {
+        provenances.push('SophiaMemoryStore');
+        const personalSlice = opts.context.slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
+        if (personalSlice && personalSlice.content.includes('<personal_memory')) {
+          factualReply = sanitizedProposal.reply || `[${persona.name} • ${persona.role}]\nPersonal Mind recall evaluated against Founder personal context:\n${personalSlice.content}`;
+          if (!factualReply.includes('Scopes:')) {
+            factualReply += `\n\n[Scopes: personal_mind | Sources: SophiaMemoryStore]`;
+          }
+          authoritativeData = { scope: 'personal', content: personalSlice.content };
+        } else {
+          // Empty result abstention (M1.3)
+          factualReply = `[${persona.name} • ${persona.role}]\nI do not remember any personal notes or preferences regarding that.\n\n[Scopes: personal_mind | Sources: SophiaMemoryStore]`;
+          authoritativeData = { scope: 'personal', empty: true };
+        }
       } else if (sanitizedProposal.domain === 'company_metrics') {
         // M1: read the canonical CompanyStateStore — previously this read the
         // hardcoded os-data financial constant through CompanyContextProvider.
@@ -339,7 +372,7 @@ export class SophiaServerGateway {
         const runwayText = typeof fin?.runwayMonths === 'number' ? `${fin.runwayMonths} months` : 'Unavailable';
         const note = fin?.isSimulatedModel ? ' [SANDBOX SIMULATION MODEL — Live ledger integration pending]' : '';
 
-        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry${note}:\n- Monthly Recurring Revenue (MRR): ${mrrText}\n- Annual Run Rate (ARR): ${arrText}\n- Monthly Burn Rate: ${burnText}\n- Gross Margin Floor: ${marginText}\n- Cash Reserve Runway: ${runwayText}`;
+        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry${note}:\n- Monthly Recurring Revenue (MRR): ${mrrText}\n- Annual Run Rate (ARR): ${arrText}\n- Monthly Burn Rate: ${burnText}\n- Gross Margin Floor: ${marginText}\n- Cash Reserve Runway: ${runwayText}\n\n[Scopes: company_brain | Sources: CompanyStateStore / FinancialModel]`;
       } else if (sanitizedProposal.domain === 'epistemic_fact') {
         provenances.push('EpistemicClaimStore');
         const claims = await EpistemicClaimStore.getInstance().listClaims();
@@ -351,9 +384,10 @@ export class SophiaServerGateway {
           const status = facts[0] ? 'PROMOTED TO FACT' : claims[0]?.verificationStatus?.toUpperCase();
           const confidence = (sample as any).confidence || 'verified_fact';
           authoritativeData = { claims, facts };
-          factualReply = `[${persona.name} • ${persona.role}]\nEpistemic Evidence Status:\n- Statement: "${statement}"\n- Status: [${status}] (Confidence: ${confidence})\n- Lineage: ${(sample as any).evidenceReferences?.join(', ') || 'Empirical research'}\n- Total tracked claims: ${claims.length}, canonical facts: ${facts.length}.`;
+          factualReply = `[${persona.name} • ${persona.role}]\nEpistemic Evidence Status:\n- Statement: "${statement}"\n- Status: [${status}] (Confidence: ${confidence})\n- Lineage: ${(sample as any).evidenceReferences?.join(', ') || 'Empirical research'}\n- Total tracked claims: ${claims.length}, canonical facts: ${facts.length}.\n\n[Scopes: company_brain | Sources: EpistemicClaimStore]`;
         } else {
-          factualReply = `[${persona.name} • ${persona.role}]\nRegarding your query: No empirical claims matching this subject are currently recorded in the Epistemic Claim Store. Would you like Dr. Thorne to initiate research?`;
+          // Empty result abstention (M1.3)
+          factualReply = `[${persona.name} • ${persona.role}]\nI do not remember any recorded company facts matching this subject in the Epistemic Claim Store.\n\n[Scopes: company_brain | Sources: EpistemicClaimStore]`;
         }
       } else if (sanitizedProposal.domain === 'workstream_status') {
         provenances.push('AgentRunStore');
@@ -361,31 +395,40 @@ export class SophiaServerGateway {
         const active = runs.filter(r => r.status === 'running');
         authoritativeData = runs;
         if (active.length > 0) {
-          factualReply = `[${persona.name} • ${persona.role}]\nActive Workstreams:\n` + active.map(r => `- Run [${r.runId}] "${r.directive}" | Step: ${r.protocolStep} | Agent: ${r.agentId}`).join('\n');
+          factualReply = `[${persona.name} • ${persona.role}]\nActive Workstreams:\n` + active.map(r => `- Run [${r.runId}] "${r.directive}" | Step: ${r.protocolStep} | Agent: ${r.agentId}`).join('\n') + `\n\n[Scopes: company_brain | Sources: AgentRunStore]`;
         } else {
-          factualReply = `[${persona.name} • ${persona.role}]\nNo multi-agent council directives are currently in flight. All specialist agents are ready.`;
+          factualReply = `[${persona.name} • ${persona.role}]\nNo multi-agent council directives are currently in flight. All specialist agents are ready.\n\n[Scopes: company_brain | Sources: AgentRunStore]`;
         }
       } else {
         const knowledgeSlice = opts.context.slices.find((s) => s.authority === 'COMPANY_KNOWLEDGE');
         const memorySlice = opts.context.slices.find((s) => s.authority === 'HISTORICAL_PRECEDENT');
         const activitySlice = opts.context.slices.find((s) => s.authority === 'RECENT_ACTIVITY');
+        const factsSlice = opts.context.slices.find((s) => s.authority === 'CANONICAL_FACT');
 
         if (knowledgeSlice) {
           provenances.push(knowledgeSlice.provenance);
-          factualReply = `[${persona.name} • ${persona.role}]\nCompany Knowledge & Standard Operating Procedures:\n${knowledgeSlice.content}`;
+          factualReply = `[${persona.name} • ${persona.role}]\nCompany Knowledge & Standard Operating Procedures:\n${knowledgeSlice.content}\n\n[Scopes: company_brain | Sources: ${knowledgeSlice.provenance}]`;
           authoritativeData = { knowledge: knowledgeSlice.content };
+        } else if (factsSlice) {
+          provenances.push(factsSlice.provenance);
+          factualReply = `[${persona.name} • ${persona.role}]\nCanonical Company Facts:\n${factsSlice.content}\n\n[Scopes: company_brain | Sources: ${factsSlice.provenance}]`;
+          authoritativeData = { facts: factsSlice.content };
         } else if (memorySlice) {
           provenances.push(memorySlice.provenance);
-          factualReply = `[${persona.name} • ${persona.role}]\nHistorical Company Precedent:\n${memorySlice.content}`;
+          factualReply = `[${persona.name} • ${persona.role}]\nHistorical Company Precedent:\n${memorySlice.content}\n\n[Scopes: company_brain | Sources: ${memorySlice.provenance}]`;
           authoritativeData = { precedent: memorySlice.content };
-        } else if (activitySlice) {
+        } else if (activitySlice && (sanitizedProposal.domain === 'activity' || /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(message))) {
           provenances.push(activitySlice.provenance);
-          factualReply = `[${persona.name} • ${persona.role}]\nRecent Company Activity History:\n${activitySlice.content}`;
+          factualReply = `[${persona.name} • ${persona.role}]\nRecent Company Activity History:\n${activitySlice.content}\n\n[Scopes: company_brain | Sources: ${activitySlice.provenance}]`;
           authoritativeData = { activity: activitySlice.content };
         } else {
-          factualReply = sanitizedProposal.reason || `[${persona.name} • ${persona.role}]\nRegarding "${message}": Systems report nominal operations across all departments.`;
+          // Empty result abstention (M1.3)
+          factualReply = `[${persona.name} • ${persona.role}]\nI do not remember any recorded company knowledge or facts regarding "${message}".\n\n[Scopes: company_brain | Sources: none]`;
         }
       }
+
+      const returnScopes = opts.context.scopes ?? (sanitizedProposal.domain === 'personal' || sanitizedProposal.route === 'recall-personal' ? ['personal_mind'] : ['company_brain']);
+      const returnSources = opts.context.sources && opts.context.sources.length > 0 ? opts.context.sources : provenances;
 
       return {
         success: true,
@@ -393,6 +436,8 @@ export class SophiaServerGateway {
           type: 'RESOLVED_INFORMATION',
           reply: factualReply,
           provenance: provenances,
+          scopes: returnScopes,
+          sources: returnSources,
         },
         proposal: sanitizedProposal,
         reply: factualReply,
@@ -400,6 +445,8 @@ export class SophiaServerGateway {
         authoritativeData,
         liveAi: false,
         metrics,
+        scopes: returnScopes,
+        sources: returnSources,
       };
     }
 
@@ -506,6 +553,7 @@ export class SophiaServerGateway {
     // 7. DEFAULT CONVERSATIONAL EXCHANGE
     // R1 honesty: no fabricated operational status on the default reply.
     const defaultReply = `[${persona.name} • ${persona.role}]\nGood to connect, Founder.`;
+    const isLive = opts.liveAi === true;
     return {
       success: true,
       validatedCommand: {
@@ -515,7 +563,7 @@ export class SophiaServerGateway {
       proposal: sanitizedProposal,
       reply: sanitizedProposal.reply || defaultReply,
       directiveExecuted: false,
-      liveAi: false,
+      liveAi: isLive,
       metrics,
     };
   }

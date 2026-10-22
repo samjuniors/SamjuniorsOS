@@ -1,0 +1,8 @@
+{
+  "id": "M1.3",
+  "doneAt": "2026-10-22T04:54:40.854Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "b35bc381fb2baca747a7afda3fe97350fff6c704",
+  "evidence": "Planted personal facts never appear in company metrics/strategy answers; scopes and sources reported on every factual turn; honest abstention on empty memory; 11/11 tests pass in tests/sophia/m1_3_scope_aware_context.test.ts"
+}

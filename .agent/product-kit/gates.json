@@ -70,7 +70,8 @@
           "title": "DECISION: which provider to try first for live open-topic conversation, and the monthly voice budget",
           "lane": "founder",
           "type": "decision",
-          "exit": "Founder decision recorded: the candidates to measure first and a monthly voice budget. The final provider is chosen from the G6.2 measurements. Options are in briefs/G0.4-identity-title-provider.md (provider section)."
+          "exit": "Founder decision recorded: the candidates to measure first and a monthly voice budget. The final provider is chosen from the G6.2 measurements. Options are in briefs/G0.4-identity-title-provider.md (provider section).",
+          "brief": ".agent/product-kit/briefs/G0.4-identity-title-provider.md (see its provider section)"
         },
         {
           "id": "G0.9",

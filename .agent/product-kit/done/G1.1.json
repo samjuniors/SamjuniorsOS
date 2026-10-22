@@ -1,0 +1,8 @@
+{
+  "id": "G1.1",
+  "doneAt": "2026-10-21T08:53:09.759Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "556bfffe25a0df995948b0d5f1d6872a4fd7d87d",
+  "evidence": "npm test runs 71 suites; 56 passed, 15 Bun-divergent listed with reasons; exit 0 clean, exit 1 on break"
+}

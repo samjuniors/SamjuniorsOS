@@ -73,6 +73,10 @@ export interface SophiaEventDetail {
   tool?: string;
   callId?: string;
   latencyMs?: number;
+  endToEndMs?: number;
+  endToEndFromStopMs?: number;
+  turnId?: string;
+  record?: any;
 }
 
 export type VoiceProviderId = 'gemini-live' | 'deepgram' | 'elevenlabs' | 'local' | 'live-gateway';
@@ -105,7 +109,7 @@ export type SophiaShape =
   | 'letter-o';
 
 /** What actually wakes Sophia. */
-export type ActivationSource = 'wake-word' | 'mic-button' | 'chat' | 'clap' | 'boot';
+export type ActivationSource = 'wake-word' | 'mic-button' | 'chat' | 'clap' | 'boot' | 'ptt';
 
 export interface Turn {
   role: 'user' | 'sophia' | 'system';
@@ -115,4 +119,18 @@ export interface Turn {
   imageUrl?: string;
   imagePrompt?: string;
   sources?: Array<{ title: string; url: string }>;
+  liveAi?: boolean;
+  fallback?: boolean;
+  mode?: string;
+  scopes?: string[];
+  decisionLog?: {
+    id: string;
+    route: string;
+    confidence: number;
+    scopes: string[];
+    outcome: string;
+    sources?: string[];
+    reasoning: string;
+    timestamp?: string;
+  };
 }

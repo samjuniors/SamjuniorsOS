@@ -53,7 +53,9 @@ SamJuniorsOS runs out of the box with zero required external keys using built-in
 - **Node.js** v20+ or **Bun** v1.1+
 - Windows, macOS, or Linux
 
-### 2. Installation & Database Sync
+### 2. Environment Configuration & Database Sync
+
+Copy the example environment file for both Next.js and Prisma:
 
 ```bash
 # Clone the repository
@@ -64,22 +66,18 @@ cd SamjuniorsOS
 npm install
 # (or: bun install)
 
+# Configure environment (Prisma reads .env; Next.js reads .env.local and .env)
+cp .env.example .env
+cp .env.example .env.local
+
 # Initialize local SQLite database
 npm run db:push
 # (or: bun run db:push)
 ```
 
-### 3. Environment Configuration
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env.local
-```
-
 Configure any desired API keys in `.env.local` (see [Environment Variables](#environment-variables) below).
 
-### 4. Running the Development Server
+### 3. Running the Development Server
 
 ```bash
 # Start Next.js development server
@@ -89,7 +87,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 5. Running the Live Companion WebSocket Gateway (Optional)
+### 4. Running the Live Companion WebSocket Gateway (Optional)
 
 For real-time low-latency bidirectional voice and companion streaming:
 
@@ -114,12 +112,11 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 - `CRON_TRIGGER_SECRET`: Machine credential for automated scheduler heartbeat ticks.
 
 ### Multimodal Brain & Speech Chains
-- `GEMINI_API_KEY`: Google Gemini API key for multimodal reasoning, live vision, and audio turns.
+- `GEMINI_API_KEY`: Powers real-time live vision and audio streaming on the live companion WebSocket server (`dev:ws` on port 3001).
+- **Executive AI Provider:** Executive reasoning and COO chat (`POST /api/agent-chat`, `/api/orchestrate`) route through `ServerAgentExecutor` via the server AI provider (`src/lib/server/ai/zai-client.ts`), falling back honestly to deterministic analysis with `liveAi: false` when unconfigured.
 - `DEEPGRAM_API_KEY`: High-fidelity real-time transcription (Nova-3).
 - `ELEVENLABS_API_KEY`: Neural speech synthesis and Scribe transcription.
 - `SOFIA_VOICE_ID`: Custom voice ID for ElevenLabs synthesis.
-- `SOPHIA_BRAIN_MODE`: Brain selection (`auto` | `gemini` | `ollama` | `lmstudio`).
-- `OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL`: Local self-hosted LLM endpoints.
 
 ### Integrations
 - `COMPOSIO_API_KEY`: Multi-agent SaaS and developer tool integration.
@@ -132,12 +129,12 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 1. **Deterministic vs. LLM Ownership:**  
    Security authorizations, cryptographic SHA-256 approval binding, idempotency, state transitions, and database mutations are strictly deterministic. Probabilistic models draft and reason, but never bypass policy gates.
-2. **SideEffectAuthorizationGate:**  
-   All external side effects (tool execution, financial mutations, external communications) require immutable audit logging and explicit Founder approval where policy dictates.
+2. **SideEffectAuthorizationGate & One Execution Authority:**  
+   One execution authority governs both engines (the multi-agent orchestrator for immediate directives and the workflow runtime for scheduled work). All external side effects (tool execution, financial mutations, external communications) route through the `SideEffectAuthorizationGate` singleton, requiring immutable audit logging and explicit Founder approval where policy dictates.
 3. **Fail-Closed Security:**  
    In production, all executive and orchestration routes fail closed (401) if secrets are unprovisioned or untrusted headers are supplied.
-4. **Single Brain, Multiple Surfaces:**  
-   SOFIA voice, Sophia Canvas, and SamJuniorsOS Desktop all interact with the exact same authoritative company database, memory stores, and workflow engine.
+4. **Single Brain, Multiple Surfaces (Not a Chain):**  
+   SOFIA voice, Sophia Canvas, and SamJuniorsOS Desktop all interact with the exact same authoritative company database, memory stores, and workflow engine. The core intelligence is a unified system (not a chain of divergent disconnected bots).
 
 ---
 
@@ -149,9 +146,12 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 | `dev:ws` | `npm run dev:ws` | Runs the live companion WebSocket server on port 3001. |
 | `build` | `npm run build` | Generates Prisma client, builds Next.js production bundle, and copies standalone assets. |
 | `start` | `npm run start` | Boots standalone production server. |
+| `test` | `npm test` | Runs the canonical test runner discovering all 71 test suites. |
+| `typecheck` | `npm run typecheck` | Runs TypeScript type checking via `tsc --noEmit`. |
+| `lint` | `npm run lint` | Runs ESLint verification across the repository. |
+| `scan:secrets`| `npm run scan:secrets` | Runs Gitleaks secret detection across commits using `.gitleaks.toml`. |
 | `db:push` | `npm run db:push` | Pushes Prisma schema changes directly to SQLite database. |
 | `db:generate`| `npm run db:generate` | Regenerates Prisma TypeScript client. |
-| `lint` | `npm run lint` | Runs ESLint verification across the repository. |
 
 ---
 

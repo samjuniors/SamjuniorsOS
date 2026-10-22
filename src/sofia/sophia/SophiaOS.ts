@@ -30,6 +30,7 @@ import { DeepgramVoiceProvider } from './voice/DeepgramVoiceProvider';
 import { GeminiLiveProvider, type LiveConnectionMetrics } from './voice/GeminiLiveProvider';
 import { ElevenLabsVoiceProvider } from './voice/ElevenLabsVoiceProvider';
 import { LocalVoiceProvider } from './voice/LocalVoiceProvider';
+import { LiveGatewayVoiceProvider } from './voice/LiveGatewayVoiceProvider';
 import { airplaneMode } from '../lib/airplane-mode';
 import { loadVoiceMode } from '../lib/voice-router';
 import type { VoiceProvider } from './voice/VoiceProvider';
@@ -155,6 +156,7 @@ export class SophiaOS extends EventTarget {
   private fpsCounter = 60;
   private frameCount = 0;
   private lastFpsTime = performance.now();
+  private greetingSpoken = false;
 
   constructor() {
     super();
@@ -164,11 +166,13 @@ export class SophiaOS extends EventTarget {
       deepgram: new DeepgramVoiceProvider(this.audio),
       elevenlabs: new ElevenLabsVoiceProvider(this.audio),
       local: new LocalVoiceProvider(this.audio),
+      'live-gateway': new LiveGatewayVoiceProvider(this.audio),
     };
     this.wireProvider(this.providers['gemini-live']);
     this.wireProvider(this.providers.deepgram);
     this.wireProvider(this.providers.elevenlabs);
     this.wireProvider(this.providers.local);
+    this.wireProvider(this.providers['live-gateway']);
 
     this.audio.onMicLevel((l) => (this.micLvl = l));
     this.audio.onPlaybackLevel((l) => (this.playLvl = l));
@@ -233,7 +237,9 @@ export class SophiaOS extends EventTarget {
       this.director.state = s;
       this.dispatchEvent(new CustomEvent('state', { detail: { state: s, prev, ...meta } }));
       const why = typeof meta?.reason === 'string' ? ` (${(meta as { reason: string }).reason})` : '';
-      this.pushLog('event', `state: ${prev} → ${s}${why}`);
+      if (s === 'listening' && this.activeProvider) {
+        (this.activeProvider as any)?.rearmListening?.();
+      }
       if (s === 'wakeup') pulse('wake');
       else if (s === 'completed') pulse('complete');
       else if (s === 'paused' && prev !== 'paused') pulse('pause');
@@ -248,6 +254,7 @@ export class SophiaOS extends EventTarget {
           if (this.state.is('focusing')) {
             this.state.transition('listening', { reason: 'focus-complete' }, true);
             this.pushLog('event', 'focused — listening for speech');
+            (this.activeProvider as any)?.rearmListening?.();
           }
         }, 550);
       } else if ((s === 'ambient' || s === 'idle') && prev !== 'transforming') {
@@ -265,7 +272,7 @@ export class SophiaOS extends EventTarget {
         const baseShape = this.prefs.form === 'ring' ? 'circle' : 'organic';
         this.director.requestTransform(baseShape, this.renderer);
       }
-      if (s === 'completed' && meta?.reason === 'turn-complete') {
+      if (s === 'completed') {
         this.armCompletedHold();
       }
     });
@@ -584,6 +591,7 @@ export class SophiaOS extends EventTarget {
       this.director.playWake();
       this.state.transition('focusing', { source }, true);
       this.dispatchEvent(new CustomEvent('entered', { detail: { source } }));
+      (this.activeProvider as any)?.rearmListening?.();
       return;
     }
     await this.activate(source);
@@ -629,6 +637,40 @@ export class SophiaOS extends EventTarget {
     this.micStatus = 'idle';
     this.micErrorDetails = null;
     this.dispatchEvent(new CustomEvent('mic-status', { detail: { status: 'idle', err: null } }));
+  }
+
+  get hasVoiceRecognition(): boolean {
+    if (typeof window === 'undefined') return true;
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  }
+
+  getSpeechUnsupportedDetails(): { reason: 'insecure_origin' | 'brave_shield' | 'browser_unsupported'; message: string; action: string } {
+    if (typeof window === 'undefined') {
+      return {
+        reason: 'browser_unsupported',
+        message: 'Speech recognition is not available in non-browser environments.',
+        action: 'Use text chat to communicate.',
+      };
+    }
+    if (window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && !window.isSecureContext) {
+      return {
+        reason: 'insecure_origin',
+        message: 'Speech recognition requires a secure origin. Chrome disables speech on non-localhost HTTP.',
+        action: 'Please open http://localhost:3000 in Google Chrome instead of the network IP.',
+      };
+    }
+    if (typeof navigator !== 'undefined' && (navigator as any).brave) {
+      return {
+        reason: 'brave_shield',
+        message: 'In Brave Browser, Google speech services are disabled by default.',
+        action: 'Enable "Use Google services for speech recognition" in brave://settings/privacy, or use Google Chrome at http://localhost:3000.',
+      };
+    }
+    return {
+      reason: 'browser_unsupported',
+      message: 'Web Speech Recognition is not supported in this browser.',
+      action: 'Please open http://localhost:3000 in Google Chrome or Microsoft Edge, or click Chat (T) to type.',
+    };
   }
 
   getGeminiLiveMetrics(): LiveConnectionMetrics {
@@ -711,21 +753,15 @@ export class SophiaOS extends EventTarget {
         this.state.transition('focusing', { source, transport: id }, true);
         this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: id } }));
 
-        // Trigger immediate greeting so user hears Sofia's voice on boot/connect/wake
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
+        // Trigger immediate greeting so user hears Sofia's voice on boot/wake
+        if (source === 'boot') {
           setTimeout(() => {
-            if (this.activeProvider && this.activeProvider.isActive()) {
-              if (this.activeProvider instanceof GeminiLiveProvider) {
-                this.activeProvider.sendPrompt(
-                  source === 'wake-word'
-                    ? "Your friend just said 'Hey Sofia' to wake you up. Greet them in one short, warm spoken sentence and ask how you can help."
-                    : "Introduce yourself briefly in one friendly sentence and ask how you can help today."
-                );
-              } else {
-                this.activeProvider.sendText(source === 'wake-word' ? "I'm listening!" : "Hello Sofia!");
-              }
-            }
-          }, 350);
+            void this.speakGreeting();
+          }, 200);
+        } else if (source === 'wake-word') {
+          setTimeout(() => {
+            void this.speakText("I'm listening!");
+          }, 150);
         }
         break;
       } catch (err) {
@@ -744,18 +780,24 @@ export class SophiaOS extends EventTarget {
         this.pushLog('info', 'Gemini Neural Mouth TTS & Brain active as conversational transport');
         this.state.transition('focusing', { source, transport: 'neural-fallback' }, true);
         this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: 'neural-fallback' } }));
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
-          void fallbackProvider.sendText(source === 'wake-word' ? "I'm listening!" : "Hello Sofia!");
+        if (source === 'boot') {
+          void this.speakGreeting();
+        } else if (source === 'wake-word') {
+          void this.speakText("I'm listening!");
         }
       } catch {
+        this.activeProvider = null;
         this.setStatus('live');
-        this.state.transition('listening', { source }, true);
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
-          void this.speakText(
-            source === 'wake-word'
-              ? "G'day! I'm right here with you, how can I help?"
-              : "Hello! I'm Sofia. I'm right here with you. What's on your mind today?"
-          );
+        const details = this.getSpeechUnsupportedDetails();
+        this.pushLog('error', `${details.message} ${details.action}`);
+        this.dispatchEvent(new CustomEvent('speech-unsupported', { detail: details }));
+
+        // Never leave Sofia hung in a deaf 'listening' state when no provider has ears
+        this.state.transition('idle', { source, reason: 'speech-unsupported' }, true);
+        if (source === 'boot') {
+          void this.speakGreeting();
+        } else if (source === 'wake-word' || source === 'mic-button') {
+          void this.speakText("Speech recognition is not available in this browser. Please open SamJuniors in Google Chrome at localhost:3000, or use the chat bar to type.");
         }
       }
     }
@@ -931,6 +973,63 @@ export class SophiaOS extends EventTarget {
     }
   }
 
+  async speakGreeting(customText?: string): Promise<void> {
+    if (this.greetingSpoken) return;
+    this.greetingSpoken = true;
+
+    let textToSpeak = customText;
+    if (!textToSpeak) {
+      const firstTurn = controlLayer.history.find((t) => t.role === 'sophia');
+      if (firstTurn?.text) {
+        textToSpeak = firstTurn.text;
+      } else {
+        try {
+          const res = await fetch('/api/sofia/greeting');
+          if (res.ok) {
+            const data = await res.json();
+            textToSpeak = data.text;
+            if (textToSpeak && controlLayer.history.length === 0) {
+              controlLayer.addSophiaTurn(textToSpeak, true, {
+                liveAi: data.liveAi,
+                fallback: data.fallback,
+                scopes: data.scopes,
+                sources: (data.sources || []).map((s: string) => ({ title: s, url: '' })),
+              });
+            }
+          }
+        } catch {
+          /* fail soft if greeting endpoint unreachable */
+        }
+      }
+    }
+
+    if (!textToSpeak) {
+      if (this.hasVoiceRecognition) {
+        textToSpeak = "Good to connect, Founder. Sofia is online and listening. How can I assist you today?";
+      } else {
+        const details = this.getSpeechUnsupportedDetails();
+        if (details.reason === 'insecure_origin') {
+          textToSpeak = "Good to connect, Founder. Sofia is online. For voice recognition, please navigate to localhost 3000 in Chrome instead of the network IP. You can also press T to chat.";
+        } else {
+          textToSpeak = "Good to connect, Founder. Sofia is online. Voice recognition isn't supported in this browser. Please open localhost 3000 in Google Chrome for voice, or press T to chat with me.";
+        }
+      }
+    }
+
+    // Strip bracket preamble like "[Sophia Vance • Chief Operating Officer]\n" for natural vocalization
+    const spoken = textToSpeak.replace(/^\[[^\]]+\]\s*/, '').trim();
+    if (!spoken) return;
+
+    this.pushLog('event', 'greeting: speaking operational standing');
+    this.state.transition('speaking', { source: 'greeting' }, true);
+    try {
+      await this.speakText(spoken);
+    } finally {
+      const next: SophiaStateName = this.activeProvider?.isActive() ? 'listening' : 'idle';
+      this.state.transition(next, { reason: 'greeting-complete' }, true);
+    }
+  }
+
   async speakText(text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -1033,6 +1132,11 @@ export class SophiaOS extends EventTarget {
         text: string;
         toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
         sources?: Array<{ title: string; url: string }>;
+        liveAi?: boolean;
+        fallback?: boolean;
+        mode?: string;
+        scopes?: string[];
+        decisionLog?: any;
       };
 
       let generatedImg: { url: string; prompt: string } | undefined;
@@ -1055,6 +1159,11 @@ export class SophiaOS extends EventTarget {
           imageUrl: generatedImg?.url,
           imagePrompt: generatedImg?.prompt,
           sources: out.sources,
+          liveAi: out.liveAi,
+          fallback: out.fallback,
+          mode: out.mode,
+          scopes: out.scopes,
+          decisionLog: out.decisionLog,
         });
         this.dispatchEvent(new CustomEvent('transcript', {
           detail: {

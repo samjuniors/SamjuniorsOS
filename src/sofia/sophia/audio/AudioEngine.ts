@@ -90,6 +90,7 @@ export class AudioEngine {
   private playRms = 0;
   private speechStreakMs = 0;
   private lastBargeCheck = performance.now();
+  private encodedSourceNodes: AudioBufferSourceNode[] = [];
   private output = new AudioOutput(
     (isPlaying) => {
       scoreEngine.setDucked(isPlaying);
@@ -147,7 +148,7 @@ export class AudioEngine {
   }
 
   get isSpeaking(): boolean {
-    return this.output.getIsPlaying() || this.playRms > 0.02;
+    return this.output.getIsPlaying() || this.encodedSourceNodes.length > 0 || this.playRms > 0.02;
   }
 
   private checkBargeIn() {
@@ -396,34 +397,93 @@ export class AudioEngine {
 
   /** Play an encoded buffer (mpeg/wav…) — used by TTS fallback paths. */
   async playEncoded(data: ArrayBuffer): Promise<void> {
+    if (!data || data.byteLength === 0) return;
     await this.output.init();
     const ctx = this.output.getAudioContext();
-    if (ctx && ctx.state !== 'closed') {
+    if (!ctx || ctx.state === 'closed') {
+      return;
+    }
+    if (ctx.state === 'suspended') {
       try {
-        const buf = await ctx.decodeAudioData(data.slice(0));
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        const analyser = this.output.getAnalyserNode();
-        if (analyser) {
-          src.connect(analyser);
-        } else {
-          src.connect(ctx.destination);
-        }
-        const now = ctx.currentTime;
-        src.start(now + 0.02);
-        return;
+        await ctx.resume();
       } catch {
-        /* If decodeAudioData fails (raw PCM), play directly through AudioOutput */
+        /* user interaction might be required by browser autoplay policy */
       }
     }
-    this.output.playChunk(data);
+
+    let buf: AudioBuffer;
+    try {
+      buf = await ctx.decodeAudioData(data.slice(0));
+    } catch {
+      /* If decodeAudioData fails (raw PCM), play directly through AudioOutput */
+      this.output.playChunk(data);
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      let finished = false;
+      let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const analyser = this.output.getAnalyserNode();
+      if (analyser) {
+        src.connect(analyser);
+      } else {
+        src.connect(ctx.destination);
+      }
+
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        if (safetyTimer) {
+          clearTimeout(safetyTimer);
+          safetyTimer = null;
+        }
+        const idx = this.encodedSourceNodes.indexOf(src);
+        if (idx >= 0) {
+          this.encodedSourceNodes.splice(idx, 1);
+        }
+        this.playRms = 0;
+        this.playbackLevelHandlers.forEach((fn) => fn(0));
+        this.playbackHandlers.forEach((fn) => fn());
+        resolve();
+      };
+
+      src.onended = () => {
+        cleanup();
+      };
+
+      // Safety fallback: if onended fails to trigger (e.g. background tab), clear state
+      const durationMs = Math.max(500, Math.ceil(buf.duration * 1000) + 400);
+      safetyTimer = setTimeout(() => {
+        cleanup();
+      }, durationMs);
+
+      this.encodedSourceNodes.push(src);
+      this.playbackStartHandlers.forEach((fn) => fn());
+
+      const now = ctx.currentTime;
+      src.start(now + 0.02);
+    });
   }
 
   /** Barge-in: kill everything that is playing or queued. Immediately. */
   interruptPlayback() {
     this.output.stopImmediately();
+    for (const src of this.encodedSourceNodes) {
+      try {
+        src.onended = null;
+        src.stop();
+        src.disconnect();
+      } catch {
+        // already stopped
+      }
+    }
+    this.encodedSourceNodes = [];
     this.playRms = 0;
     this.playbackLevelHandlers.forEach((fn) => fn(0));
+    this.playbackHandlers.forEach((fn) => fn());
   }
 
   dispose() {

@@ -58,6 +58,41 @@ export interface RevokeApprovalParams {
   approvalId: string;
   revokedBy: string;
   reason?: string;
+  userContext?: { role?: string; userId?: string };
+}
+
+/**
+ * Strict allowlist of recognized founder identities.
+ * Loose prefixes (e.g. "founder-attacker") or unlisted roles are strictly rejected.
+ */
+export const ALLOWED_FOUNDER_IDENTITIES: readonly string[] = Object.freeze([
+  'founder',
+  'founder-001',
+  'founder-local-session',
+  'founder-production-session',
+  'founder@samjuniors.com',
+  'executive_founder',
+  'executive-founder',
+]);
+
+/**
+ * Validates whether an actor or verified userContext corresponds to an authorized Founder.
+ */
+export function isAuthorizedFounderIdentity(
+  actor: string | undefined | null,
+  userContext?: { role?: string; userId?: string }
+): boolean {
+  const normalizedActor = actor?.toLowerCase()?.trim() || '';
+  if (ALLOWED_FOUNDER_IDENTITIES.includes(normalizedActor)) {
+    return true;
+  }
+  if (userContext?.role === 'FOUNDER') {
+    const ctxId = userContext.userId?.toLowerCase()?.trim();
+    if (!ctxId || ALLOWED_FOUNDER_IDENTITIES.includes(ctxId) || ctxId === normalizedActor) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export interface ExecuteWithGateParams<T> {
@@ -189,18 +224,7 @@ export class SideEffectAuthorizationGate {
    * AI Employees (researcher, pm, coo, finance, advisor) cannot self-approve or approve others.
    */
   public async decideApproval(params: DecideApprovalParams): Promise<FounderApprovalRecord> {
-    const ALLOWED_FOUNDER_IDENTITIES = [
-      'founder',
-      'founder-001',
-      'founder-local-session',
-      'executive_founder',
-      'executive-founder',
-    ];
-    const actor = params.decidedBy?.toLowerCase()?.trim() || '';
-    const isAllowedFounder =
-      ALLOWED_FOUNDER_IDENTITIES.includes(actor) ||
-      (actor.startsWith('founder-') && !actor.includes('agent')) ||
-      params.userContext?.role === 'FOUNDER';
+    const isAllowedFounder = isAuthorizedFounderIdentity(params.decidedBy, params.userContext);
 
     if (!isAllowedFounder) {
       throw new Error(
@@ -220,13 +244,14 @@ export class SideEffectAuthorizationGate {
   /**
    * Founder Revocation Handler.
    * Immediately revokes a previously granted approval.
+   * Strictly enforces Founder authorization allowlist (Audit 07 / G3.1).
    */
   public async revokeApproval(params: RevokeApprovalParams): Promise<FounderApprovalRecord> {
-    const prohibitedRoles = ['researcher', 'pm', 'coo', 'finance', 'advisor', 'agent', 'system', 'developer', 'guest'];
-    const actor = params.revokedBy?.toLowerCase()?.trim() || '';
-    if (!actor || prohibitedRoles.includes(actor)) {
+    const isAllowedFounder = isAuthorizedFounderIdentity(params.revokedBy, params.userContext);
+
+    if (!isAllowedFounder) {
       throw new Error(
-        `Permission denied: Only the Founder can revoke approvals. Attempted by "${params.revokedBy}".`
+        `Permission denied: Identity "${params.revokedBy}" is not an authorized Founder. Only verified Founder identities can revoke approvals.`
       );
     }
 
@@ -827,18 +852,7 @@ export class SideEffectAuthorizationGate {
   public async resolveInterruptedOperation(
     params: ResolveInterruptedOperationParams
   ): Promise<{ success: boolean; record: IdempotencyRecordData; auditId: string }> {
-    const ALLOWED_FOUNDER_IDENTITIES = [
-      'founder',
-      'founder-001',
-      'founder-local-session',
-      'executive_founder',
-      'executive-founder',
-    ];
-    const actor = params.resolvedBy?.toLowerCase()?.trim() || '';
-    const isAllowedFounder =
-      ALLOWED_FOUNDER_IDENTITIES.includes(actor) ||
-      (actor.startsWith('founder-') && !actor.includes('agent')) ||
-      params.userContext?.role === 'FOUNDER';
+    const isAllowedFounder = isAuthorizedFounderIdentity(params.resolvedBy, params.userContext);
 
     if (!isAllowedFounder) {
       throw new Error(

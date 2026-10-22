@@ -1,0 +1,6 @@
+{
+  "id": "G0.3",
+  "decidedAt": "2026-10-22T11:38:40.323Z",
+  "by": "founder",
+  "quote": "Option A: Single VPS with persistent volume & SQLite (–/mo); Daily automated backups with 30-day retention (RPO < 24h, RTO < 2h)"
+}

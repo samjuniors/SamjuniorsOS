@@ -1,0 +1,8 @@
+{
+  "id": "M1.8",
+  "doneAt": "2026-10-22T06:04:58.253Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "ac37a375290750052ffcbf308ef72581bb67904c",
+  "evidence": "tests/sophia/m1_8_spend_settings.test.ts passed all 16 assertions, unset cap blocks autonomous spend, lowering cap stops running tasks, founder changes logged to audits"
+}

@@ -1,0 +1,6 @@
+{
+  "key": "AUTH-2.3C",
+  "ackedAt": "2026-10-22T11:46:43.062Z",
+  "by": "founder",
+  "quote": "Yes, I authorize proceeding with the database persistence migration per Option A (versioned SQLite migrations and moving .data JSON into SQLite)"
+}

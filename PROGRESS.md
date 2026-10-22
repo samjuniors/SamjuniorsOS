@@ -2,9 +2,59 @@
 
 > Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — SAM-5: SamJuniorsOS Repository & Project Reconciliation
+## Milestone M0 — Baseline Ready (CLOSED)
+
+- **Status:** CLOSED on 2026-10-22 (9/9 steps complete, founder accepted with `ack/MS-M0.json`).
+- **Steps Verified & Closed:** G0.1, G0.4, G0.5, G1.1, G1.2, G1.3, G1.4, G1.5, G1.6.
+- **Capabilities Delivered:**
+  - One-command canonical test runner (`scripts/test-runner.mjs`, `npm test`) running 71 suites with clean failure handling.
+  - Full-history secret scan with zero live leaks via Gitleaks v8.21.2 (`npm run scan:secrets`).
+  - Full CI workflow `.github/workflows/ci.yml` covering install, lint, typecheck, build, test, and security scan on all PRs and pushes.
+  - Reconciled documentation with running code, cross-platform install compatibility (`@next/swc-win32-x64-msvc` made optional), and honest offline fallback badges in UI and API contracts.
+
+## Milestone M1 — First Sofia you can talk to (CLOSED)
+
+- **Status:** CLOSED on 2026-10-22 (10/10 steps complete, founder accepted with `ack/MS-M1.json`).
+- **Founder Acceptance Quote:** `"ok for now close this and start nect"`
+- **Steps Verified & Closed:** M1.1, M1.2, M1.3, M1.4, M1.5, M1.6, M1.7, M1.8, M1.9.
+- **Capabilities Delivered:**
+  - First Sofia conversational voice and text surface running on local PC.
+  - Real voice greeting on boot/wake via neural TTS (`/api/sophia/mouth/speak`).
+  - Coexistence of voice turns (Hands-Free WebSpeech on Chrome/Edge at `http://localhost:3000` / PTT) and typing turns (ChatPanel via `T` / `/`).
+  - Personal mind intake and recall with strict candidate gating and honest abstention.
+  - Company context recall with strict scope isolation (zero personal memory leakage).
+  - Instant Stop control (Space / `P` / UI) and safe mode freeze.
+  - Autonomy ceiling and spend cap enforcement (blocks when unset or exceeded).
+  - Resolved WebSpeech environment handling across non-Chrome browsers / non-secure network origins with honest status indicators and fallback text-voice chat.
+  - Fixed SQLite Error 14 database file creation and synchronized Prisma schema.
+  - Whole-path verification: `npm run smoke:m1` passes all 6/6 phases cleanly.
+
+## Now — Active Milestone M2 (Sofia works when your PC is off)
+
+**Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
+- **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
+- **Progress:** 5/11 steps done (G0.3, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
+- **Recent Deliveries:**
+  - **G3.4 (Security Headers, CSP, Request Limits, Rate Limiter, and CI Audit):**
+    - Enforced Content Security Policy (CSP) and HTTP security headers (`nosniff`, `DENY` with `/prototype/` iframe exception, STS, Referrer-Policy, Permissions-Policy, `x-request-id`) on all responses including early error returns.
+    - Implemented mutation body size limits (2MB standard, 10MB media/upload; 413 Payload Too Large).
+    - Authoritative edge-compatible sliding window rate limiter (`MemoryRateLimiter`) with IETF `RateLimit-*` headers, monotonic decrement, and 429 Retry-After on abuse.
+    - Added dependency vulnerability security audit step (`npm run audit:deps` running `scripts/audit-deps.mjs`) into `.github/workflows/ci.yml`.
+    - Automated regression suite `tests/sophia/g3_4_security_headers_and_limits.test.ts` (17/17 PASS).
+  - **G3.5 (Production Secrets Handling & Rotation Runbook):**
+    - Client bundle secret scanner (`scripts/scan-client-bundle-secrets.mjs`, `npm run scan:client-secrets`) guaranteeing zero credentials reach `.next/static` or frontend assets.
+    - Authoritative production secrets rotation runbook (`docs/security/PRODUCTION_SECRETS_HANDLING_AND_ROTATION.md`) covering all 10 production credentials with 256-bit CSPRNG standards and zero-downtime procedures.
+    - Automated rotation test suite `tests/sophia/g3_5_secrets_handling_and_rotation.test.ts` (6/6 PASS) demonstrating refusal of retired keys (401) and acceptance of rotated keys (200).
+- **Recorded Founder Decisions:**
+  - **G0.3:** Option A selected — Single VPS with persistent volume & SQLite ($5–$20/mo), daily automated backups with 30-day retention, RPO < 24h, RTO < 2h (`ack/G0.3.json`).
+  - **AUTH-2.3C:** Founder authorized proceeding with persistence migration under Option A (versioned SQLite migrations and moving `.data` JSON into SQLite).
+- **Next Step Ready:**
+  - **G2.1:** Provision staging hosting and database per infrastructure decision.
+
+## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
 **Baseline:** `main` at commit `1c86599` (direct reconciliation commit; parent `aed87ba`, incorporating Phase 2.3B PR #16 and subsequent roadmap date refreshes).
+
 
 - **Linear Task:** SAM-5 (SamJuniorsOS Repository and Project Reconciliation).
 - **Integration State:** Reconciliation changes were committed directly and pushed to `main` at commit `1c865991cb861283413b7b721777c0d89910da88` via Git fast-forward (upstream tracking configuration). No Pull Request was opened or merged for `1c86599`. A subsequent documentation hygiene branch was reviewed and merged via PR #17 at `b8607f7`, correcting baseline, backup-custody, and relative-link documentation.

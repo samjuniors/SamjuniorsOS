@@ -1,0 +1,8 @@
+{
+  "id": "M1.9",
+  "doneAt": "2026-10-22T06:43:50.512Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "986b38ee4b92d7c64657d5a8c15afa9e5570b8d4",
+  "evidence": "npm run smoke:m1 passed all 6 phases (greeting, chat, personal recall, company question with sources, stop, spend cap) in 2.08s; full M1 test suite (13/13 suites) passed, typecheck and lint clean"
+}

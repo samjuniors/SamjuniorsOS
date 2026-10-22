@@ -11,6 +11,9 @@ type Message = {
   text: string;
   at: number;
   read: boolean;
+  liveAi?: boolean;
+  fallback?: boolean;
+  mode?: string;
 };
 
 const INITIAL_MESSAGES: Message[] = [];
@@ -62,6 +65,9 @@ export default function ChatPanel() {
             text: m.content,
             at: new Date(m.createdAt).getTime(),
             read: true,
+            liveAi: m.metadata?.liveAi,
+            fallback: m.metadata?.fallback ?? (m.metadata?.liveAi !== undefined ? !m.metadata.liveAi : undefined),
+            mode: m.metadata?.mode,
           }));
           setMessages((prev) => {
             const nonSophia = prev.filter((m) => m.agentId !== "sophia");
@@ -185,6 +191,9 @@ export default function ChatPanel() {
             text: res.reply,
             at: Date.now(),
             read: open,
+            liveAi: res.liveAi,
+            fallback: res.fallback ?? !res.liveAi,
+            mode: res.mode,
           },
         ]);
       })
@@ -341,6 +350,23 @@ export default function ChatPanel() {
                           <span className="font-semibold text-white">{activeAgent.name}</span>
                           <span>·</span>
                           <span className="font-mono">{fmtTime(m.at)}</span>
+                          {m.fallback === true || m.liveAi === false ? (
+                            <span
+                              data-testid="fallback-badge"
+                              className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8.5px] font-medium tracking-wide text-amber-300"
+                              title="Deterministic fallback reply — live model reasoning was unavailable"
+                            >
+                              Offline Fallback
+                            </span>
+                          ) : m.liveAi === true ? (
+                            <span
+                              data-testid="live-ai-badge"
+                              className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[8.5px] font-medium tracking-wide text-cyan-300"
+                              title="Live model reasoning"
+                            >
+                              Live AI
+                            </span>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -348,6 +374,8 @@ export default function ChatPanel() {
                       className={`max-w-[85%] rounded-2xl px-3 py-2 text-[12px] leading-relaxed ${
                         isUser
                           ? "rounded-tr-xs border border-cyan-400/30 bg-gradient-to-br from-cyan-500/25 to-sky-600/20 text-cyan-50 shadow-[0_2px_12px_rgba(56,189,248,0.2)]"
+                          : m.fallback === true || m.liveAi === false
+                          ? "rounded-tl-xs border border-amber-500/25 bg-amber-950/20 text-slate-200 shadow-sm"
                           : "rounded-tl-xs border border-white/10 bg-white/[0.04] text-slate-200 shadow-sm"
                       }`}
                     >

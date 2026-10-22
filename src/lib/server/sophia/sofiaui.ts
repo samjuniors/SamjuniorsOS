@@ -182,8 +182,13 @@ export async function sophiaChatTurn(founderId: string, body: SophiaChatBody): P
     text: result.reply,
     toolCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     brain: 'sophia-os',
-    sources: [] as Array<{ title: string; url: string }>,
+    sources: (result.sources || []).map((s) => ({ title: s, url: '' })),
+    scopes: result.scopes || [],
     conversationId: result.conversationId,
+    liveAi: result.liveAi,
+    fallback: !result.liveAi,
+    mode: result.liveAi ? 'live_model' : 'deterministic_fallback',
+    decisionLog: result.decisionLog,
   });
 }
 

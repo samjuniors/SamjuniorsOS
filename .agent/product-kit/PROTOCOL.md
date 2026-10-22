@@ -56,6 +56,8 @@ For each finished step: confirm the verification says PASS; review the diff agai
 
 ## 7. Gate report (lead, when all steps of a gate are done)
 
+This is an internal note for `PROGRESS.md`. The founder's check-in is the milestone test in section 10.
+
 Gate and result; each step with its evidence; `QUALITY_BAR.md` items covered, not applicable, or excepted; open findings by severity; risks; what is now unlocked and what is still locked; decisions needed from the founder; a recommended next gate with two alternatives. Then wait for the founder's reply, record it with `ack`, and keep every unlocked lane busy meanwhile.
 
 ## 8. Resume after any interruption
@@ -68,3 +70,14 @@ Gate and result; each step with its evidence; `QUALITY_BAR.md` items covered, no
 ## 9. Git rules
 
 Inherited from `AGENTS.md` section 16: no force-push, no history rewriting, no pushes without the founder's instruction, focused commits.
+
+## 10. Milestones and "continue"
+
+The founder tests in milestones (`MILESTONES.md`). Exactly one milestone is active, and steps in later milestones are locked until it closes. A founder decision in a later milestone can still be recorded early.
+
+- **"continue".** When the founder says "continue", run `node .agent/product-kit/kit.mjs continue` and do what it prints. It lists interrupted work to take over, the steps of the active milestone to start in parallel, and the decisions to ask the founder. Never ask the founder which gate or step to work on.
+- **Finishing.** When every step of the milestone is done, run `milestone verify <M>`. Give the founder its test script in plain words and ask how it went. Do not close the milestone yourself.
+- **Closing.** After the founder says it works, run `milestone close <M> --quote "<their words>"` from the main checkout, after a `--dry-run`. It removes the milestone's merged step worktrees and branches, releases its claims, moves its handoffs to `archive/<M>/`, and records the acceptance in `ack/MS-<M>.json`. It never forces anything: it refuses if a branch is unmerged or a worktree has uncommitted work. Then commit the archive moves and the ack together, append a short summary to `PROGRESS.md`, and run `continue` to start the next milestone.
+- **If the test fails.** Record what failed in `findings/`, fix it, and ask the founder to test again. Open findings stay in `findings/` and carry forward.
+- **Gates.** A gate counts as closed when all its steps are done. An explicit `ack <gate>` still works.
+- **Milestone M1 slices.** M1's own steps are lighter slices of later gate steps. The full gate steps stay in their later milestones and build on the slice; do not skip them because a slice exists.

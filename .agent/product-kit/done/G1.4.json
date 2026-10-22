@@ -1,0 +1,8 @@
+{
+  "id": "G1.4",
+  "doneAt": "2026-10-21T09:19:50.156Z",
+  "agent": "Antigravity-Worker",
+  "branch": "kit/integration",
+  "commit": "1f43db1316f62916d52af71f9b082fe08a278a61",
+  "evidence": "Reconciled README.md quickstart, scripts table, and brain provider copy with docs/SETUP.md and code reality; verified Windows status; regression tests and lint/typecheck exit 0"
+}

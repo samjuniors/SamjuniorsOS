@@ -1,0 +1,8 @@
+{
+  "id": "M1.4",
+  "doneAt": "2026-10-22T06:24:46.211Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "476162b1b0e8d66d443ad2f881e1254d5eb8bdb4",
+  "evidence": "tests/sophia/m1_4_voice_loop.test.ts passed all 11 assertions, 25-turn latency drill measured p50: 16ms and p95: 16ms, typing coexistence verified, typecheck and lint clean"
+}
