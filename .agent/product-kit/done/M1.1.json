@@ -1,0 +1,8 @@
+{
+  "id": "M1.1",
+  "doneAt": "2026-10-22T04:27:27.571Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "e928df8742aac39d54379e690ba5154f71777f6b",
+  "evidence": "8/8 tests pass in tests/sophia/m1_1_provider_neutral_conversation.test.ts, 19/19 in m1_2, 22/22 in phase1, lint & typecheck clean"
+}
