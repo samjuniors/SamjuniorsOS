@@ -85,16 +85,41 @@ export type EntityResolutionResult<T> =
  * 
  * The candidate proposal is treated strictly as UNTRUSTED data.
  */
+/**
+ * Authoritative 5-Route Minimal Router taxonomy for Sophia (M1.2 / G12.1).
+ * The model proposes; deterministic policy disposes.
+ */
+export const SOPHIA_ROUTES = [
+  'converse',
+  'recall-personal',
+  'recall-company',
+  'ask-clarify',
+  'refuse',
+] as const;
+
+export type SophiaRoute = (typeof SOPHIA_ROUTES)[number];
+
+export interface SophiaRouteResult {
+  route: SophiaRoute;
+  proposal: CandidateIntentProposal;
+  liveAi: boolean;
+  confidence: number;
+  reason: string;
+  rawOutput?: string;
+}
+
 export type CandidateIntentProposal =
   | {
       kind: 'conversation';
+      route?: SophiaRoute;
       reply: string;
       confidence: number;
       reason: string;
     }
   | {
       kind: 'informational_query';
-      domain: 'company_metrics' | 'epistemic_fact' | 'workstream_status' | 'general';
+      route?: SophiaRoute;
+      domain: 'company_metrics' | 'epistemic_fact' | 'workstream_status' | 'general' | 'personal';
       query: string;
       subject?: string;
       confidence: number;
@@ -102,6 +127,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'operational_inspection';
+      route?: SophiaRoute;
       target: string;
       proposedTool?: string;
       reason: string;
@@ -109,6 +135,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'directive_proposal';
+      route?: SophiaRoute;
       title: string;
       objective: string;
       assignedAgents: ('coo' | 'researcher' | 'pm' | 'finance')[];
@@ -118,6 +145,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'steering_proposal';
+      route?: SophiaRoute;
       action: 'pause' | 'resume' | 'redirect' | 'halt';
       targetRunId?: string;
       modification?: string;
@@ -126,6 +154,7 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'approval_proposal';
+      route?: SophiaRoute;
       decision: 'approved' | 'rejected' | 'request_revision';
       approvalId?: string;
       actionName?: string;
@@ -135,9 +164,17 @@ export type CandidateIntentProposal =
     }
   | {
       kind: 'clarification_prompt';
+      route?: SophiaRoute;
       ambiguityReason: string;
       structuredOptions: string[];
       suggestedScope?: string;
+      confidence: number;
+      reason: string;
+    }
+  | {
+      kind: 'refuse';
+      route?: 'refuse';
+      reply: string;
       confidence: number;
       reason: string;
     };
