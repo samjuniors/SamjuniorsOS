@@ -781,6 +781,72 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       };
     }
 
+    // Check for Company Brain empty result (M1.3: honest abstention)
+    const hasKnowledgeSlice = assembledContext.slices.some((s) => s.authority === 'COMPANY_KNOWLEDGE');
+    const hasPrecedentSlice = assembledContext.slices.some((s) => s.authority === 'HISTORICAL_PRECEDENT');
+    const canonicalFactSlice = assembledContext.slices.find((s) => s.authority === 'CANONICAL_FACT');
+    const hasMatchedFact = canonicalFactSlice && !canonicalFactSlice.content.includes('(no query match');
+    const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margin|cash|revenue|financial|arr)\b/i.test(cleanMessage);
+    const hasCompanyKnowledge = hasKnowledgeSlice || hasPrecedentSlice || hasMatchedFact || isMetricsQuery || assembledContext.retrievalHit;
+
+    if (route === 'recall-company' && !hasCompanyKnowledge) {
+      const persona = 'Sophia Vance • COO';
+      const abstainReply = `[${persona}]\nI do not remember or have any recorded facts or guidelines regarding that in the Company Brain.\n\n[Scopes: company_brain | Sources: CompanyKnowledgeStore]`;
+
+      const abstainLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'recall-company',
+        scopes: ['company_brain'],
+        confidence: 0.9,
+        outcome: 'answered',
+        sources: ['CompanyKnowledgeStore'],
+        reasoning: 'Company Brain query with no matching facts or knowledge abstained honestly.',
+      });
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage(
+          {
+            conversationId: conversation.id,
+            sender: 'assistant',
+            role: 'assistant',
+            content: abstainReply,
+            idempotencyKey: assistantIdempotencyKey,
+            intent: 'informational_query',
+            confidence: 0.9,
+            metadata: {
+              liveAi: false,
+              directiveExecuted: false,
+              ingress: opts.ingress ?? 'live_voice',
+              scopes: ['company_brain'],
+              sources: ['CompanyKnowledgeStore'],
+              decisionLog: abstainLog,
+            },
+          },
+          founderId
+        );
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist assistant abstain reply:', err);
+      }
+
+      return {
+        success: true,
+        reply: abstainReply,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'informational_query',
+        directiveExecuted: false,
+        liveAi: false,
+        scopes: ['company_brain'],
+        sources: ['CompanyKnowledgeStore'],
+        decisionLog: abstainLog,
+      };
+    }
+
     // 7. Intent Classification with structural trust boundary
     const classificationResult = await SophiaIntentClassifier.classify({
       message: cleanMessage,

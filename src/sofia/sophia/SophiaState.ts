@@ -70,6 +70,7 @@ export class SophiaState {
   private _cognitiveState: CognitiveState = 'idle';
   private _audioState: AudioPlaybackState = 'silent';
   private _transportState: TransportState = 'disconnected';
+  private speakingWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
   get current(): SophiaStateName {
     return this._state;
@@ -131,8 +132,32 @@ export class SophiaState {
     this._state = to;
     this._since = performance.now();
     if (to === 'ambient' || to === 'idle') this.clearTimers();
+    if (to === 'speaking') {
+      this.armSpeakingWatchdog();
+    } else if (prev === 'speaking') {
+      this.clearSpeakingWatchdog();
+    }
     this.listeners.forEach((fn) => fn(to, prev, meta));
     return true;
+  }
+
+  private armSpeakingWatchdog() {
+    this.clearSpeakingWatchdog();
+    this.speakingWatchdogTimer = setTimeout(() => {
+      if (this._state === 'speaking') {
+        console.warn('[SophiaState] Speaking watchdog timeout (12s) — auto-recovering from speaking state');
+        this._audioState = 'silent';
+        this._cognitiveState = 'done';
+        this.transition('completed', { reason: 'speaking-watchdog-timeout' }, true);
+      }
+    }, 12000);
+  }
+
+  private clearSpeakingWatchdog() {
+    if (this.speakingWatchdogTimer) {
+      clearTimeout(this.speakingWatchdogTimer);
+      this.speakingWatchdogTimer = null;
+    }
   }
 
   /** Force state change for manual preview / settings triggers. */
@@ -209,7 +234,7 @@ export class SophiaState {
       case 'audio_started':
       case 'audio_chunk':
         this._audioState = 'playing';
-        if (this.is('thinking', 'listening', 'rendering', 'wakeup', 'completed', 'focusing')) {
+        if (this.is('thinking', 'listening', 'rendering', 'wakeup', 'completed', 'focusing', 'ambient', 'idle')) {
           this.transition('speaking');
         }
         break;
@@ -232,6 +257,7 @@ export class SophiaState {
         break;
       case 'playback_finished':
         this._audioState = 'silent';
+        this.clearSpeakingWatchdog();
         // Natural end of utterance playback: now that audio has fully drained, settle state.
         if (this._cognitiveState === 'done') {
           if (this.is('speaking', 'thinking', 'rendering')) {
@@ -240,6 +266,11 @@ export class SophiaState {
         } else if (this._cognitiveState === 'listening') {
           if (this.is('speaking')) {
             this.transition('listening', { reason: 'playback-drained' });
+          }
+        } else {
+          // Robust recovery: if audio drained while still in speaking state, transition out
+          if (this.is('speaking')) {
+            this.transition('completed', { reason: 'playback-drained' });
           }
         }
         break;

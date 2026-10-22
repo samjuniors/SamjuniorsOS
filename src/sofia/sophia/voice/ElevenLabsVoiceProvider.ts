@@ -216,6 +216,7 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       this.speaking = false;
       this.busy = false;
       this.emit('response_finished', { source: this.id });
+      this.emit('playback_finished', { source: this.id });
       this.emit('listening', { source: this.id });
     } catch (e: any) {
       if (e.name !== 'AbortError' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -229,12 +230,15 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
             this.speaking = false;
             this.busy = false;
             this.emit('response_finished', { source: this.id });
+            this.emit('playback_finished', { source: this.id });
             this.emit('listening', { source: this.id });
           };
           u.onerror = () => {
             this.speaking = false;
             this.busy = false;
             this.emit('response_finished', { source: this.id });
+            this.emit('playback_finished', { source: this.id });
+            this.emit('listening', { source: this.id });
           };
           window.speechSynthesis.speak(u);
           return;
@@ -244,6 +248,8 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       }
       this.speaking = false;
       this.busy = false;
+      this.emit('playback_finished', { source: this.id });
+      this.emit('listening', { source: this.id });
       if (e.name !== 'AbortError') {
         this.emit('error', { code: 'mouth-error', message: e.message, source: this.id });
       }

@@ -948,6 +948,9 @@ export class SophiaContextAssembler {
         ...newestActiveFacts.filter((f) => !matchIds.has(f.id)),
       ].slice(0, 3);
       const factsFallback = factMatches.length === 0;
+      if (!factsFallback) {
+        retrievalHit = true;
+      }
       const allClaims = await claimStore.listClaims();
 
       if (facts.length > 0) {

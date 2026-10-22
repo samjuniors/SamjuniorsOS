@@ -279,6 +279,9 @@ export default function App({ active = true }: { active?: boolean }) {
   useEffect(() => {
     const unlock = () => {
       void os.audio.unlockAudio();
+      if (booted) {
+        void os.speakGreeting();
+      }
     };
     window.addEventListener('pointerdown', unlock, { once: true });
     window.addEventListener('keydown', unlock, { once: true });
@@ -288,7 +291,7 @@ export default function App({ active = true }: { active?: boolean }) {
       window.removeEventListener('keydown', unlock);
       window.removeEventListener('touchstart', unlock);
     };
-  }, [os]);
+  }, [os, booted]);
 
   const onMic = useCallback(() => {
     void os.audio.unlockAudio();

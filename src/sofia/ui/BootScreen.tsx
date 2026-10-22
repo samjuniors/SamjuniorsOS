@@ -42,6 +42,7 @@ export function BootScreen({ os, onEnter }: { os: SophiaOS; onEnter: () => void 
     await os.audio.unlockAudio();
     try {
       await os.enterSession('boot');
+      void os.speakGreeting();
     } catch (err) {
       console.warn('[BootScreen] Start session note:', err);
     } finally {
@@ -52,6 +53,7 @@ export function BootScreen({ os, onEnter }: { os: SophiaOS; onEnter: () => void 
   const handleStartTextOnly = async () => {
     await os.audio.unlockAudio();
     void os.enterSession('chat');
+    void os.speakGreeting();
     onEnter();
   };
 

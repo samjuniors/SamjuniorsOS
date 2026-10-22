@@ -156,6 +156,7 @@ export class SophiaOS extends EventTarget {
   private fpsCounter = 60;
   private frameCount = 0;
   private lastFpsTime = performance.now();
+  private greetingSpoken = false;
 
   constructor() {
     super();
@@ -268,7 +269,7 @@ export class SophiaOS extends EventTarget {
         const baseShape = this.prefs.form === 'ring' ? 'circle' : 'organic';
         this.director.requestTransform(baseShape, this.renderer);
       }
-      if (s === 'completed' && meta?.reason === 'turn-complete') {
+      if (s === 'completed') {
         this.armCompletedHold();
       }
     });
@@ -714,21 +715,15 @@ export class SophiaOS extends EventTarget {
         this.state.transition('focusing', { source, transport: id }, true);
         this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: id } }));
 
-        // Trigger immediate greeting so user hears Sofia's voice on boot/connect/wake
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
+        // Trigger immediate greeting so user hears Sofia's voice on boot/wake
+        if (source === 'boot') {
           setTimeout(() => {
-            if (this.activeProvider && this.activeProvider.isActive()) {
-              if (this.activeProvider instanceof GeminiLiveProvider) {
-                this.activeProvider.sendPrompt(
-                  source === 'wake-word'
-                    ? "Your friend just said 'Hey Sofia' to wake you up. Greet them in one short, warm spoken sentence and ask how you can help."
-                    : "Introduce yourself briefly in one friendly sentence and ask how you can help today."
-                );
-              } else {
-                this.activeProvider.sendText(source === 'wake-word' ? "I'm listening!" : "Hello Sofia!");
-              }
-            }
-          }, 350);
+            void this.speakGreeting();
+          }, 200);
+        } else if (source === 'wake-word') {
+          setTimeout(() => {
+            void this.speakText("I'm listening!");
+          }, 150);
         }
         break;
       } catch (err) {
@@ -747,18 +742,18 @@ export class SophiaOS extends EventTarget {
         this.pushLog('info', 'Gemini Neural Mouth TTS & Brain active as conversational transport');
         this.state.transition('focusing', { source, transport: 'neural-fallback' }, true);
         this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: 'neural-fallback' } }));
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
-          void fallbackProvider.sendText(source === 'wake-word' ? "I'm listening!" : "Hello Sofia!");
+        if (source === 'boot') {
+          void this.speakGreeting();
+        } else if (source === 'wake-word') {
+          void this.speakText("I'm listening!");
         }
       } catch {
         this.setStatus('live');
         this.state.transition('listening', { source }, true);
-        if (source === 'boot' || source === 'mic-button' || source === 'wake-word') {
-          void this.speakText(
-            source === 'wake-word'
-              ? "G'day! I'm right here with you, how can I help?"
-              : "Hello! I'm Sofia. I'm right here with you. What's on your mind today?"
-          );
+        if (source === 'boot') {
+          void this.speakGreeting();
+        } else if (source === 'wake-word') {
+          void this.speakText("G'day! I'm right here with you, how can I help?");
         }
       }
     }
@@ -931,6 +926,54 @@ export class SophiaOS extends EventTarget {
       this.audio.stopCapture();
       this.state.transition('idle', { source: 'ptt' }, true);
       this.maybeArmWake();
+    }
+  }
+
+  async speakGreeting(customText?: string): Promise<void> {
+    if (this.greetingSpoken) return;
+    this.greetingSpoken = true;
+
+    let textToSpeak = customText;
+    if (!textToSpeak) {
+      const firstTurn = controlLayer.history.find((t) => t.role === 'sophia');
+      if (firstTurn?.text) {
+        textToSpeak = firstTurn.text;
+      } else {
+        try {
+          const res = await fetch('/api/sofia/greeting');
+          if (res.ok) {
+            const data = await res.json();
+            textToSpeak = data.text;
+            if (textToSpeak && controlLayer.history.length === 0) {
+              controlLayer.addSophiaTurn(textToSpeak, true, {
+                liveAi: data.liveAi,
+                fallback: data.fallback,
+                scopes: data.scopes,
+                sources: (data.sources || []).map((s: string) => ({ title: s, url: '' })),
+              });
+            }
+          }
+        } catch {
+          /* fail soft if greeting endpoint unreachable */
+        }
+      }
+    }
+
+    if (!textToSpeak) {
+      textToSpeak = "Good to connect, Founder. Sofia is online and listening. How can I assist you today?";
+    }
+
+    // Strip bracket preamble like "[Sophia Vance • Chief Operating Officer]\n" for natural vocalization
+    const spoken = textToSpeak.replace(/^\[[^\]]+\]\s*/, '').trim();
+    if (!spoken) return;
+
+    this.pushLog('event', 'greeting: speaking operational standing');
+    this.state.transition('speaking', { source: 'greeting' }, true);
+    try {
+      await this.speakText(spoken);
+    } finally {
+      const next: SophiaStateName = this.activeProvider?.isActive() ? 'listening' : 'idle';
+      this.state.transition(next, { reason: 'greeting-complete' }, true);
     }
   }
 
