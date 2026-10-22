@@ -2,9 +2,19 @@
 
 > Written continuously during work. This file is the repository ledger for implementation status and next actions.
 
-## Now — Product Kit & Gate G0 Foundation
+## Milestone M0 — Baseline Ready (CLOSED)
 
-**Baseline:** `main` at commit `05552e2` incorporating product kit (`.agent/product-kit/`, 17 gates, 107 steps) and target-state architecture specs; integration branch `kit/integration`.
+- **Status:** CLOSED on 2026-10-22 (9/9 steps complete, founder accepted with `ack/MS-M0.json`).
+- **Steps Verified & Closed:** G0.1, G0.4, G0.5, G1.1, G1.2, G1.3, G1.4, G1.5, G1.6.
+- **Capabilities Delivered:**
+  - One-command canonical test runner (`scripts/test-runner.mjs`, `npm test`) running 71 suites with clean failure handling.
+  - Full-history secret scan with zero live leaks via Gitleaks v8.21.2 (`npm run scan:secrets`).
+  - Full CI workflow `.github/workflows/ci.yml` covering install, lint, typecheck, build, test, and security scan on all PRs and pushes.
+  - Reconciled documentation with running code, cross-platform install compatibility (`@next/swc-win32-x64-msvc` made optional), and honest offline fallback badges in UI and API contracts.
+
+## Now — Product Kit & Active Milestone M1 (First Sofia you can talk to)
+
+**Baseline:** `main` at commit `05552e2` incorporating product kit (`.agent/product-kit/`, 17 gates, 116 steps, 12 milestones) and target-state architecture specs; integration branch `kit/integration`.
 
 - **Completed Steps:**
   - `G0.1`: Product boundary recorded (internal company OS, single-founder, scalable later).
