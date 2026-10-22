@@ -33,7 +33,7 @@
 
 **Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
 - **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
-- **Progress:** 3/11 steps done (G2.7, G3.1, G3.4 completed and merged).
+- **Progress:** 5/11 steps done (G0.3, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
 - **Recent Deliveries:**
   - **G3.4 (Security Headers, CSP, Request Limits, Rate Limiter, and CI Audit):**
     - Enforced Content Security Policy (CSP) and HTTP security headers (`nosniff`, `DENY` with `/prototype/` iframe exception, STS, Referrer-Policy, Permissions-Policy, `x-request-id`) on all responses including early error returns.
@@ -41,11 +41,15 @@
     - Authoritative edge-compatible sliding window rate limiter (`MemoryRateLimiter`) with IETF `RateLimit-*` headers, monotonic decrement, and 429 Retry-After on abuse.
     - Added dependency vulnerability security audit step (`npm run audit:deps` running `scripts/audit-deps.mjs`) into `.github/workflows/ci.yml`.
     - Automated regression suite `tests/sophia/g3_4_security_headers_and_limits.test.ts` (17/17 PASS).
-- **Next Step in Flight:**
-  - **G3.5:** Production secrets handling and rotation procedure (`step/G3.5` claimed by `secrets-agent`).
-- **Decisions Awaiting Founder Input:**
-  - **G0.3:** Hosting model, database, RPO/RTO, backup retention, budget (see `.agent/product-kit/briefs/G0.3-infrastructure.md`).
-  - **AUTH-2.3C:** Acknowledgement to proceed with PostgreSQL schema migration.
+  - **G3.5 (Production Secrets Handling & Rotation Runbook):**
+    - Client bundle secret scanner (`scripts/scan-client-bundle-secrets.mjs`, `npm run scan:client-secrets`) guaranteeing zero credentials reach `.next/static` or frontend assets.
+    - Authoritative production secrets rotation runbook (`docs/security/PRODUCTION_SECRETS_HANDLING_AND_ROTATION.md`) covering all 10 production credentials with 256-bit CSPRNG standards and zero-downtime procedures.
+    - Automated rotation test suite `tests/sophia/g3_5_secrets_handling_and_rotation.test.ts` (6/6 PASS) demonstrating refusal of retired keys (401) and acceptance of rotated keys (200).
+- **Recorded Founder Decisions:**
+  - **G0.3:** Option A selected — Single VPS with persistent volume & SQLite ($5–$20/mo), daily automated backups with 30-day retention, RPO < 24h, RTO < 2h (`ack/G0.3.json`).
+  - **AUTH-2.3C:** Founder authorized proceeding with persistence migration under Option A (versioned SQLite migrations and moving `.data` JSON into SQLite).
+- **Next Step Ready:**
+  - **G2.1:** Provision staging hosting and database per infrastructure decision.
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
