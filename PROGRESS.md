@@ -33,6 +33,19 @@
 
 **Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
 - **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
+- **Progress:** 3/11 steps done (G2.7, G3.1, G3.4 completed and merged).
+- **Recent Deliveries:**
+  - **G3.4 (Security Headers, CSP, Request Limits, Rate Limiter, and CI Audit):**
+    - Enforced Content Security Policy (CSP) and HTTP security headers (`nosniff`, `DENY` with `/prototype/` iframe exception, STS, Referrer-Policy, Permissions-Policy, `x-request-id`) on all responses including early error returns.
+    - Implemented mutation body size limits (2MB standard, 10MB media/upload; 413 Payload Too Large).
+    - Authoritative edge-compatible sliding window rate limiter (`MemoryRateLimiter`) with IETF `RateLimit-*` headers, monotonic decrement, and 429 Retry-After on abuse.
+    - Added dependency vulnerability security audit step (`npm run audit:deps` running `scripts/audit-deps.mjs`) into `.github/workflows/ci.yml`.
+    - Automated regression suite `tests/sophia/g3_4_security_headers_and_limits.test.ts` (17/17 PASS).
+- **Next Step in Flight:**
+  - **G3.5:** Production secrets handling and rotation procedure (`step/G3.5` claimed by `secrets-agent`).
+- **Decisions Awaiting Founder Input:**
+  - **G0.3:** Hosting model, database, RPO/RTO, backup retention, budget (see `.agent/product-kit/briefs/G0.3-infrastructure.md`).
+  - **AUTH-2.3C:** Acknowledgement to proceed with PostgreSQL schema migration.
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 
