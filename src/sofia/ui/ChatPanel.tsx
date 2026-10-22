@@ -38,10 +38,56 @@ export function ChatPanel({
   const [isTranslating, setIsTranslating] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [expandedWhyTurn, setExpandedWhyTurn] = useState<number | null>(null);
+  const [isFrozen, setIsFrozen] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    fetch('/api/sofia/stop')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.status?.isFrozen) {
+          setIsFrozen(true);
+        }
+      })
+      .catch(() => {});
+
+    const onStop = () => setIsFrozen(true);
+    controlLayer.addEventListener('command:stop_control', onStop);
+    return () => controlLayer.removeEventListener('command:stop_control', onStop);
+  }, []);
+
+  const handleStopControl = async () => {
+    try {
+      await fetch('/api/sofia/stop', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'panel', reason: 'Founder clicked STOP button on panel' }),
+      });
+      setIsFrozen(true);
+      controlLayer.addSystemNote('Emergency Stop: System is FROZEN in Safe Mode. Resuming requires explicit confirmation.');
+    } catch (err) {
+      console.error('Stop control failed:', err);
+    }
+  };
+
+  const handleConfirmResume = async () => {
+    try {
+      const res = await fetch('/api/sofia/resume', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ confirmed: true, reason: 'Founder confirmed resume via panel button' }),
+      });
+      if (res.ok) {
+        setIsFrozen(false);
+        controlLayer.addSystemNote('Safe Mode deactivated. System resumed by Founder confirmation.');
+      }
+    } catch (err) {
+      console.error('Confirm resume failed:', err);
+    }
+  };
 
   useEffect(() => {
     const on = () => setTurns([...controlLayer.history]);
@@ -244,6 +290,18 @@ export function ChatPanel({
             </div>
           )}
 
+          {/* M1.7 Stop Control (Safe Mode Freeze) */}
+          <button
+            type="button"
+            data-testid="stop-control-button"
+            onClick={handleStopControl}
+            title="Emergency Stop / Safe Mode: Freeze all in-flight turns and scheduled workflows"
+            className="flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-500/15 px-2 py-0.5 text-[9px] font-mono font-semibold text-red-300 hover:bg-red-500/30 transition-all active:scale-95"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            <span>STOP</span>
+          </button>
+
           <button
             type="button"
             onClick={onClose}
@@ -254,6 +312,27 @@ export function ChatPanel({
           </button>
         </div>
       </header>
+
+      {/* M1.7 Safe Mode Frozen Banner */}
+      {isFrozen && (
+        <div
+          data-testid="system-frozen-banner"
+          className="m-3 mb-0 flex items-center justify-between rounded-xl border border-red-500/50 bg-red-950/60 p-2.5 text-xs text-red-200 shadow-lg"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-red-400 font-mono font-bold text-xs">⚠ SAFE MODE</span>
+            <span className="text-[11px] text-red-300">System is frozen. In-flight turns and workflows are suspended.</span>
+          </div>
+          <button
+            type="button"
+            data-testid="confirm-resume-button"
+            onClick={handleConfirmResume}
+            className="rounded-lg bg-red-500 hover:bg-red-600 px-2.5 py-1 font-semibold text-[10px] font-mono text-white shadow-sm transition active:scale-95"
+          >
+            Confirm Resume
+          </button>
+        </div>
+      )}
 
       {/* Live Status Banner */}
       {status === 'live' ? (

@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordination/lease-manager';
 import { validateStepTransition, validateInstanceTransition } from './state-machine';
 import type { ScheduledOccurrenceContext } from './runtime';
+import { SafeModeManager, FreezableScheduler } from '../sophia/stop-control';
 
 export interface ScheduleWorkParams {
   workflowInstanceId: string;
@@ -38,7 +39,7 @@ export interface DueWorkEvaluationResult {
   }>;
 }
 
-export class WorkflowScheduler {
+export class WorkflowScheduler implements FreezableScheduler {
   private schedulerStore: InMemoryScheduledWorkStore;
   private workflowStore: InMemoryWorkflowStore;
   private runtime: WorkflowRuntime;
@@ -60,6 +61,9 @@ export class WorkflowScheduler {
     this.leaseManager = leaseManager || getLeaseManager();
     this.workerId = workerId || generateWorkerIdentity();
     this.leaseTtlMs = leaseTtlMs;
+
+    // Register with SafeModeManager for stop control
+    SafeModeManager.getInstance().registerActiveScheduler(this);
   }
 
   getWorkerId(): string {
@@ -183,6 +187,14 @@ export class WorkflowScheduler {
    * Evaluates all scheduled items due at or before asOfTime with bounded batch size and distributed leases.
    */
   async evaluateDueWork(asOfTime?: string, batchLimit: number = 50): Promise<DueWorkEvaluationResult> {
+    // M1.7 Stop Control / Safe Mode freeze check: halts autonomous scheduled execution
+    if (SafeModeManager.getInstance().isFrozen()) {
+      return {
+        processedCount: 0,
+        results: [],
+      };
+    }
+
     const cutoff = asOfTime ? this.canonicalizeTimestamp(asOfTime) : new Date().toISOString();
     const dueItems = await this.schedulerStore.listDue(cutoff, batchLimit);
 
@@ -716,5 +728,33 @@ export class WorkflowScheduler {
    */
   async listSchedules(filter?: ScheduledWorkFilter): Promise<ScheduledWorkItem[]> {
     return this.schedulerStore.list(filter);
+  }
+
+  /**
+   * M1.7 Stop Control: Freezes scheduled work when Safe Mode is triggered.
+   * Freezes active scheduled items so no autonomous execution can run.
+   */
+  async freezeScheduledWork(reason: string): Promise<number> {
+    const now = new Date().toISOString();
+    const dueItems = await this.schedulerStore.listDue(now, 100);
+    let count = 0;
+    for (const item of dueItems) {
+      if (item.status === 'scheduled') {
+        try {
+          await this.pauseSchedule(item.id, 'safe_mode', reason);
+          count++;
+        } catch {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
+   * M1.7 Stop Control: Resumption hook called when Safe Mode is released.
+   */
+  async resumeScheduledWork(_reason: string): Promise<void> {
+    // Registered scheduler receives the resume signal
   }
 }

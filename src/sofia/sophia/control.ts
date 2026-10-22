@@ -374,6 +374,20 @@ export class ControlLayer extends EventTarget {
       return true;
     }
 
+    // Stop Control / Safe Mode freeze by voice (M1.7)
+    if (/^(?:stop|halt|freeze|pause everything|emergency stop|shut down)$/i.test(text.trim())) {
+      fetch('/api/sofia/stop', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'voice', reason: `Spoken stop directive: "${text}"` }),
+      }).catch(() => {});
+      this.dispatchEvent(new CustomEvent('command:stop_control', { detail: { action: 'stop' } }));
+      this.dispatchEvent(new CustomEvent('command:notification', {
+        detail: { message: 'Emergency Stop: System is FROZEN in Safe Mode. Resuming requires confirmation.', level: 'error' },
+      }));
+      return true;
+    }
+
     // Play/Pause active video or music
     if (/(?:pause\s+(?:the\s+)?(?:video|music|player)|stop\s+(?:the\s+)?(?:video|music))/i.test(text)) {
       this.dispatchEvent(new CustomEvent('command:browser_interact', { detail: { action: 'play_pause' } }));

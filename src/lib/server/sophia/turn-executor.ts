@@ -13,6 +13,11 @@ import {
   formatDecisionLogExplanation,
   formatNoDecisionLogExplanation,
 } from './decision-log';
+import {
+  SafeModeManager,
+  isStopCommand,
+  isResumeCommand,
+} from './stop-control';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -298,6 +303,159 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
   }
 
+  const safeMode = SafeModeManager.getInstance();
+
+  // M1.7 Stop Control / Safe Mode Guard
+  if (safeMode.isFrozen()) {
+    if (isResumeCommand(cleanMessage)) {
+      await safeMode.confirmResume({
+        founderId,
+        confirmed: true,
+        reason: `Voice/text resume directive: "${cleanMessage}"`,
+      });
+      const resumeReply = `[Sophia Vance • COO]\nSafe Mode deactivated. System has been resumed successfully by Founder confirmation.\n\nAll operations and workflows are restored.`;
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        await convStore.saveMessage({
+          conversationId: conversation.id,
+          sender: 'founder',
+          role: 'user',
+          content: cleanMessage,
+          idempotencyKey: cleanTurnId,
+        }, founderId);
+
+        const resumeLog = buildDecisionLogEntry({
+          turnId: cleanTurnId,
+          conversationId: conversation.id,
+          query: cleanMessage,
+          route: 'converse',
+          scopes: [],
+          confidence: 1.0,
+          outcome: 'answered',
+          sources: ['SafeModeManager'],
+          reasoning: 'System resumed by Founder confirmation.',
+        });
+
+        assistantMessageRecord = await convStore.saveMessage({
+          conversationId: conversation.id,
+          sender: 'assistant',
+          role: 'assistant',
+          content: resumeReply,
+          idempotencyKey: cleanTurnId ? `${cleanTurnId}:assistant` : undefined,
+          intent: 'conversation',
+          confidence: 1.0,
+          metadata: {
+            liveAi: false,
+            directiveExecuted: true,
+            ingress: opts.ingress ?? 'live_voice',
+            scopes: [],
+            sources: ['SafeModeManager'],
+            decisionLog: resumeLog,
+          },
+        }, founderId);
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist resume action:', err);
+      }
+
+      return {
+        success: true,
+        reply: resumeReply,
+        conversationId: conversation.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'conversation',
+        directiveExecuted: true,
+        liveAi: false,
+        scopes: [],
+        sources: ['SafeModeManager'],
+      };
+    }
+
+    const freezeInfo = safeMode.getFreezeStatus();
+    const frozenReply = `[Sophia Vance • COO]\nSYSTEM IS FROZEN under Safe Mode / Stop Control (activated at ${freezeInfo.frozenAt || 'earlier'}).\nReason: ${freezeInfo.reason || 'Emergency stop triggered'}.\n\nAll autonomous actions, background jobs, and dialogue turns are suspended.\nTo resume normal operation, explicit Founder confirmation is required. Please say or send "confirm resume".`;
+
+    return {
+      success: false,
+      reply: frozenReply,
+      conversationId: conversation.id,
+      intent: 'refuse',
+      directiveExecuted: false,
+      liveAi: false,
+      error: 'System is frozen under Safe Mode / Stop Control',
+      cancelled: true,
+      scopes: [],
+      sources: ['SafeModeManager'],
+    };
+  }
+
+  // M1.7 Stop Control: Immediate Voice or Text "Stop" Directive
+  if (isStopCommand(cleanMessage)) {
+    await safeMode.triggerStop({
+      source: (opts.ingress as any) || 'panel',
+      reason: `Voice/text stop directive: "${cleanMessage}"`,
+      founderId,
+    });
+
+    const stopReply = `[Sophia Vance • COO]\nEMERGENCY STOP ACTIVATED. All in-flight turns and scheduled workflows have been frozen.\n\nSystem is now in Safe Mode. Resuming requires explicit Founder confirmation (send "confirm resume").`;
+
+    let assistantMessageRecord: ChatMessageRecord | null = null;
+    try {
+      await convStore.saveMessage({
+        conversationId: conversation.id,
+        sender: 'founder',
+        role: 'user',
+        content: cleanMessage,
+        idempotencyKey: cleanTurnId,
+      }, founderId);
+
+      const stopLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'converse',
+        scopes: [],
+        confidence: 1.0,
+        outcome: 'cancelled',
+        sources: ['SafeModeManager'],
+        reasoning: 'Stop control activated by Founder.',
+      });
+
+      assistantMessageRecord = await convStore.saveMessage({
+        conversationId: conversation.id,
+        sender: 'assistant',
+        role: 'assistant',
+        content: stopReply,
+        idempotencyKey: cleanTurnId ? `${cleanTurnId}:assistant` : undefined,
+        intent: 'stop',
+        confidence: 1.0,
+        metadata: {
+          liveAi: false,
+          directiveExecuted: true,
+          cancelled: true,
+          ingress: opts.ingress ?? 'live_voice',
+          scopes: [],
+          sources: ['SafeModeManager'],
+          decisionLog: stopLog,
+        },
+      }, founderId);
+    } catch (err) {
+      console.error('[SophiaTurnExecutor] Failed to persist stop action:', err);
+    }
+
+    return {
+      success: true,
+      reply: stopReply,
+      conversationId: conversation.id,
+      assistantMessageId: assistantMessageRecord?.id,
+      intent: 'stop',
+      directiveExecuted: true,
+      liveAi: false,
+      cancelled: true,
+      scopes: [],
+      sources: ['SafeModeManager'],
+    };
+  }
+
   // Phase 3 cancellation checkpoint 1 — after conversation resolution, before
   // the replay lookup: an aborted caller wants no reply, replayed or not.
   if (signal?.aborted) {
@@ -338,11 +496,23 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   }
 
   const executeCore = async (): Promise<SophiaTurnResult> => {
-    // Phase 3 cancellation checkpoint 2 — before founder-message persistence:
-    // cancelled turns leave no conversation record (retry re-executes).
-    if (signal?.aborted) {
-      return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+    const internalController = new AbortController();
+    if (signal) {
+      if (signal.aborted) {
+        internalController.abort();
+      } else {
+        signal.addEventListener('abort', () => internalController.abort(), { once: true });
+      }
     }
+    const safeModeKey = cleanTurnId || `turn-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    safeMode.registerInFlightTurn(safeModeKey, internalController);
+
+    try {
+      // Phase 3 cancellation checkpoint 2 — before founder-message persistence:
+      // cancelled turns leave no conversation record (retry re-executes).
+      if (signal?.aborted || internalController.signal.aborted) {
+        return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+      }
 
     // 4. Persist incoming Founder turn with idempotency key
     let founderMessageRecord;
@@ -559,7 +729,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       userId: founderId,
     };
 
-    const executionResult = await SophiaServerGateway.process({
+    const executionPromise = SophiaServerGateway.process({
       proposal: classificationResult.proposal,
       session,
       message: cleanMessage,
@@ -567,6 +737,30 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       executeDirective: executeDirective !== false, // Live interaction default: execute authorized directives
       liveAi: classificationResult.liveAi,
     });
+
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (internalController.signal.aborted || signal?.aborted) {
+        reject(new Error('Turn aborted by stop control'));
+      } else {
+        const onAbort = () => reject(new Error('Turn aborted by stop control'));
+        internalController.signal.addEventListener('abort', onAbort, { once: true });
+        signal?.addEventListener('abort', onAbort, { once: true });
+      }
+    });
+
+    let executionResult: any;
+    try {
+      executionResult = await Promise.race([executionPromise, abortPromise]);
+    } catch (err: any) {
+      if (internalController.signal.aborted || signal?.aborted) {
+        return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+      }
+      throw err;
+    }
+
+    if (signal?.aborted || internalController.signal.aborted) {
+      return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+    }
 
     if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
       const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
@@ -631,7 +825,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     // not yet delivered is discarded; the cancelled marker records the
     // interruption instead. (The gateway call itself runs to completion —
     // see ExecuteSophiaTurnOptions.signal for the documented limitation.)
-    if (signal?.aborted) {
+    if (signal?.aborted || internalController.signal.aborted) {
       return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
     }
 
@@ -735,6 +929,9 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       sources: returnSources,
       decisionLog,
     };
+    } finally {
+      safeMode.unregisterInFlightTurn(safeModeKey);
+    }
   };
 
   if (turnKey) {

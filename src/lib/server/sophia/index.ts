@@ -14,3 +14,4 @@ export * from "./authority-content-guard";
 export * from "./memory-review-annotations";
 export * from "./greeting";
 export * from "./decision-log";
+export * from "./stop-control";
