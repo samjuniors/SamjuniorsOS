@@ -175,6 +175,9 @@ export async function POST(req: NextRequest) {
             text: result.reply,
             conversationId: result.conversationId,
             idempotentReplay: result.idempotentReplay === true,
+            liveAi: result.liveAi,
+            fallback: !result.liveAi,
+            mode: result.liveAi ? 'live_model' : 'deterministic_fallback',
           })
         }
       } catch (err) {

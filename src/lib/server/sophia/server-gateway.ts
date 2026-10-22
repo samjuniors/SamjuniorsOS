@@ -16,6 +16,7 @@ export interface GatewayProcessOptions {
   context: SophiaAssembledContext;
   metrics?: TurnMetrics;
   executeDirective?: boolean;
+  liveAi?: boolean;
 }
 
 /**
@@ -528,6 +529,7 @@ export class SophiaServerGateway {
     // 7. DEFAULT CONVERSATIONAL EXCHANGE
     // R1 honesty: no fabricated operational status on the default reply.
     const defaultReply = `[${persona.name} • ${persona.role}]\nGood to connect, Founder.`;
+    const isLive = opts.liveAi === true;
     return {
       success: true,
       validatedCommand: {
@@ -537,7 +539,7 @@ export class SophiaServerGateway {
       proposal: sanitizedProposal,
       reply: sanitizedProposal.reply || defaultReply,
       directiveExecuted: false,
-      liveAi: false,
+      liveAi: isLive,
       metrics,
     };
   }

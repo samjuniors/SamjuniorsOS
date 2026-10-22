@@ -45,21 +45,27 @@ export interface GenerateOptions {
   messages: ChatMessage[];
 }
 
-/** Non-streaming text completion via the shared client. */
+/** Non-streaming text completion via the provider-neutral adapter with SDK fallback. */
 export async function generateText(options: GenerateOptions): Promise<string> {
-  const zai = await getAIClient();
-  const messages: ChatMessage[] = [];
-  if (options.system && options.system.trim().length > 0) {
-    messages.push({ role: 'assistant', content: options.system });
+  try {
+    const { generateConversationReply } = await import('./adapter');
+    const res = await generateConversationReply(options);
+    return res.text;
+  } catch {
+    const zai = await getAIClient();
+    const messages: ChatMessage[] = [];
+    if (options.system && options.system.trim().length > 0) {
+      messages.push({ role: 'assistant', content: options.system });
+    }
+    messages.push(...options.messages);
+
+    const completion = await zai.chat.completions.create({
+      messages,
+      thinking: { type: 'disabled' },
+    });
+
+    return completion.choices[0]?.message?.content || '';
   }
-  messages.push(...options.messages);
-
-  const completion = await zai.chat.completions.create({
-    messages,
-    thinking: { type: 'disabled' },
-  });
-
-  return completion.choices[0]?.message?.content || '';
 }
 
 /** Defensively parse a model response that should contain JSON. */

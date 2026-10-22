@@ -154,6 +154,8 @@ export function ttsPinId(): string {
 // /api/sofia/health, the ask ready-frame and the settings panel need no
 // client changes — it now reports the one link that actually answers.
 
+import { ConversationAdapterRegistry } from './ai/adapter'
+
 export type LlmLinkInfo = {
   id: string
   label: string
@@ -174,30 +176,39 @@ export type LlmInfo = {
 }
 
 /** What /api/sofia/health and the settings panel show about the brain.
- * There is no fallback ladder to walk — this is the single live link, and
- * `configured: false` is the honest "the z-ai SDK cannot start on this
- * machine" case rather than a claim that a key is missing. */
+ * Truthfully reports the provider-neutral adapter status across Gemini,
+ * OpenAI, LM Studio, and Z-AI. */
 export function llmInfo(): LlmInfo {
-  const configured = zaiAvailable()
+  const reg = ConversationAdapterRegistry.getInstance()
+  const report = reg.getHealthReport()
+
+  const providerNotes: Record<string, string> = {
+    gemini: 'cloud primary (G0.8)',
+    openai: 'cloud fallback (G0.8)',
+    lmstudio: 'local hardware model (G0.8)',
+    zai: 'sandbox built-in',
+    fake: 'automated test double',
+  }
+
+  const links: LlmLinkInfo[] = report.providers.map((p) => ({
+    id: p.id,
+    label: p.label,
+    note: providerNotes[p.id] || 'adapter link',
+    configured: p.configured,
+    healthy: p.healthy,
+    state: p.healthy ? 'never' : p.cooling ? 'cool' : p.configured ? 'ready' : 'off',
+    cooling: p.cooling,
+    tools: true,
+    error: p.configured ? null : `${p.label} not configured`,
+  }))
+
+  const activeLink = links.find((l) => l.id === report.active) || links[0]
+
   return {
-    active: 'zai',
-    label: 'Z-AI',
-    pin: null,
-    providers: [
-      {
-        id: 'zai',
-        label: 'Z-AI',
-        note: 'built-in, no key',
-        configured,
-        // 'never' reads as ready-to-serve, not broken; there is no chain
-        // walk to record outcomes for a link that is the whole chain.
-        healthy: configured,
-        state: configured ? 'never' : 'err',
-        cooling: false,
-        tools: true,
-        error: configured ? null : 'z-ai sdk is not available on this machine',
-      },
-    ],
+    active: report.active,
+    label: activeLink?.label || 'AI Provider',
+    pin: report.pin,
+    providers: links,
   }
 }
 

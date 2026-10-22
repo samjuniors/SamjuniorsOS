@@ -376,6 +376,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       message: cleanMessage,
       context: assembledContext,
       executeDirective: executeDirective !== false, // Live interaction default: execute authorized directives
+      liveAi: classificationResult.liveAi,
     });
 
     if (!executionResult.success && executionResult.error?.includes('Forbidden')) {

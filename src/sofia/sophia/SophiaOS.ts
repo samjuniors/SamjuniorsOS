@@ -1036,6 +1036,9 @@ export class SophiaOS extends EventTarget {
         text: string;
         toolCalls?: Array<{ name: string; args: Record<string, unknown> }>;
         sources?: Array<{ title: string; url: string }>;
+        liveAi?: boolean;
+        fallback?: boolean;
+        mode?: string;
       };
 
       let generatedImg: { url: string; prompt: string } | undefined;
@@ -1058,6 +1061,9 @@ export class SophiaOS extends EventTarget {
           imageUrl: generatedImg?.url,
           imagePrompt: generatedImg?.prompt,
           sources: out.sources,
+          liveAi: out.liveAi,
+          fallback: out.fallback,
+          mode: out.mode,
         });
         this.dispatchEvent(new CustomEvent('transcript', {
           detail: {

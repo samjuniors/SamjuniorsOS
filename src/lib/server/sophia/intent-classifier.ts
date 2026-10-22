@@ -1,4 +1,4 @@
-import { generateText, parseJsonLoose, GenerateOptions } from '../ai/zai-client';
+import { generateText, parseJsonLoose, GenerateOptions } from '../ai';
 import { SERVER_AGENTS } from '../agents/definitions';
 import {
   CandidateIntentProposal,

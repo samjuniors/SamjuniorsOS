@@ -180,7 +180,14 @@ export class ControlLayer extends EventTarget {
     role: Turn['role'],
     text: string,
     final: boolean,
-    extra?: { imageUrl?: string; imagePrompt?: string; sources?: Array<{ title: string; url: string }> }
+    extra?: {
+      imageUrl?: string;
+      imagePrompt?: string;
+      sources?: Array<{ title: string; url: string }>;
+      liveAi?: boolean;
+      fallback?: boolean;
+      mode?: string;
+    }
   ) {
     const last = this.history[this.history.length - 1];
     const t = Date.now();
@@ -190,6 +197,9 @@ export class ControlLayer extends EventTarget {
       if (extra?.imageUrl) last.imageUrl = extra.imageUrl;
       if (extra?.imagePrompt) last.imagePrompt = extra.imagePrompt;
       if (extra?.sources) last.sources = extra.sources;
+      if (typeof extra?.liveAi === 'boolean') last.liveAi = extra.liveAi;
+      if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
+      if (extra?.mode) last.mode = extra.mode;
     } else if (last && last.role === role && !last.final && final) {
       last.text = text;
       last.final = true;
@@ -197,6 +207,9 @@ export class ControlLayer extends EventTarget {
       if (extra?.imageUrl) last.imageUrl = extra.imageUrl;
       if (extra?.imagePrompt) last.imagePrompt = extra.imagePrompt;
       if (extra?.sources) last.sources = extra.sources;
+      if (typeof extra?.liveAi === 'boolean') last.liveAi = extra.liveAi;
+      if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
+      if (extra?.mode) last.mode = extra.mode;
     } else {
       this.history.push({
         role,
@@ -217,7 +230,14 @@ export class ControlLayer extends EventTarget {
   addSophiaTurn(
     text: string,
     final = true,
-    extra?: { imageUrl?: string; imagePrompt?: string; sources?: Array<{ title: string; url: string }> }
+    extra?: {
+      imageUrl?: string;
+      imagePrompt?: string;
+      sources?: Array<{ title: string; url: string }>;
+      liveAi?: boolean;
+      fallback?: boolean;
+      mode?: string;
+    }
   ) {
     this.upsert('sophia', text, final, extra);
   }

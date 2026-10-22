@@ -115,4 +115,7 @@ export interface Turn {
   imageUrl?: string;
   imagePrompt?: string;
   sources?: Array<{ title: string; url: string }>;
+  liveAi?: boolean;
+  fallback?: boolean;
+  mode?: string;
 }
