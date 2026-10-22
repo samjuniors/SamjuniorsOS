@@ -188,6 +188,7 @@ export class ControlLayer extends EventTarget {
       fallback?: boolean;
       mode?: string;
       scopes?: string[];
+      decisionLog?: any;
     }
   ) {
     const last = this.history[this.history.length - 1];
@@ -202,6 +203,7 @@ export class ControlLayer extends EventTarget {
       if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
       if (extra?.mode) last.mode = extra.mode;
       if (extra?.scopes) last.scopes = extra.scopes;
+      if (extra?.decisionLog) (last as any).decisionLog = extra.decisionLog;
     } else if (last && last.role === role && !last.final && final) {
       last.text = text;
       last.final = true;
@@ -213,6 +215,7 @@ export class ControlLayer extends EventTarget {
       if (typeof extra?.fallback === 'boolean') last.fallback = extra.fallback;
       if (extra?.mode) last.mode = extra.mode;
       if (extra?.scopes) last.scopes = extra.scopes;
+      if (extra?.decisionLog) (last as any).decisionLog = extra.decisionLog;
     } else {
       this.history.push({
         role,
@@ -241,6 +244,7 @@ export class ControlLayer extends EventTarget {
       fallback?: boolean;
       mode?: string;
       scopes?: string[];
+      decisionLog?: any;
     }
   ) {
     this.upsert('sophia', text, final, extra);

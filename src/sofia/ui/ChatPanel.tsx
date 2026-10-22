@@ -37,6 +37,7 @@ export function ChatPanel({
   const [targetLang, setTargetLang] = useState('off');
   const [isTranslating, setIsTranslating] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [expandedWhyTurn, setExpandedWhyTurn] = useState<number | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -320,6 +321,18 @@ export function ChatPanel({
                         <span>{scope === 'personal_mind' ? 'Personal Mind' : 'Company Brain'}</span>
                       </span>
                     ))}
+
+                    {t.decisionLog && (
+                      <button
+                        type="button"
+                        data-testid="why-turn-button"
+                        onClick={() => setExpandedWhyTurn(expandedWhyTurn === i ? null : i)}
+                        className="rounded border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-indigo-300 normal-case hover:bg-indigo-500/20"
+                        title="Why did Sophia choose this action? View decision log entry"
+                      >
+                        {expandedWhyTurn === i ? 'Close Why' : 'Why?'}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -331,6 +344,29 @@ export function ChatPanel({
                 } ${t.final ? '' : 'opacity-65'}`}
               >
                 {t.text && <p>{t.text}</p>}
+
+                {/* Minimal Decision Log Why View (M1.6 / G12.6) */}
+                {expandedWhyTurn === i && t.decisionLog && (
+                  <div
+                    data-testid="why-view"
+                    className="mt-2.5 rounded-lg border border-indigo-400/30 bg-indigo-950/60 p-2.5 font-mono text-[9px] text-indigo-100 shadow-inner"
+                  >
+                    <div className="flex items-center justify-between border-b border-indigo-400/20 pb-1 text-[8.5px] text-indigo-300">
+                      <span className="font-semibold uppercase tracking-wider">Decision Log</span>
+                      <span data-testid="why-log-id" className="text-white/50">{t.decisionLog.id}</span>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      <div><span className="text-white/40">Route: </span><span data-testid="why-route" className="font-semibold text-indigo-200">{t.decisionLog.route}</span></div>
+                      <div><span className="text-white/40">Confidence: </span><span data-testid="why-confidence">{Math.round((t.decisionLog.confidence ?? 1) * 100)}%</span></div>
+                      <div><span className="text-white/40">Outcome: </span><span data-testid="why-outcome" className="capitalize text-emerald-300">{t.decisionLog.outcome}</span></div>
+                      <div><span className="text-white/40">Scopes Read: </span><span data-testid="why-scopes">{(t.decisionLog.scopes || []).join(', ') || 'none'}</span></div>
+                      {t.decisionLog.sources && t.decisionLog.sources.length > 0 && (
+                        <div><span className="text-white/40">Sources: </span><span data-testid="why-sources">{t.decisionLog.sources.join(', ')}</span></div>
+                      )}
+                      <div><span className="text-white/40">Reasoning: </span><span data-testid="why-reasoning" className="text-white/80">{t.decisionLog.reasoning}</span></div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Generated Image Card */}
                 {t.imageUrl && (

@@ -188,6 +188,7 @@ export async function sophiaChatTurn(founderId: string, body: SophiaChatBody): P
     liveAi: result.liveAi,
     fallback: !result.liveAi,
     mode: result.liveAi ? 'live_model' : 'deterministic_fallback',
+    decisionLog: result.decisionLog,
   });
 }
 

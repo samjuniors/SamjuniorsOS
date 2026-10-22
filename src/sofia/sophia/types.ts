@@ -119,4 +119,14 @@ export interface Turn {
   fallback?: boolean;
   mode?: string;
   scopes?: string[];
+  decisionLog?: {
+    id: string;
+    route: string;
+    confidence: number;
+    scopes: string[];
+    outcome: string;
+    sources?: string[];
+    reasoning: string;
+    timestamp?: string;
+  };
 }

@@ -5,6 +5,14 @@ import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
 import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
 import { SophiaRoute, MemoryScope } from './types';
+import {
+  SophiaDecisionLogEntry,
+  DecisionOutcome,
+  buildDecisionLogEntry,
+  isExplanationQuery,
+  formatDecisionLogExplanation,
+  formatNoDecisionLogExplanation,
+} from './decision-log';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -74,6 +82,7 @@ export interface SophiaTurnResult {
   cancelled?: boolean;
   scopes?: MemoryScope[];
   sources?: string[];
+  decisionLog?: SophiaDecisionLogEntry;
 }
 
 /** Persisted content of the cancelled-turn assistant marker (Phase 3). */
@@ -95,6 +104,17 @@ async function cancelledTurnResult(
   cleanTurnId: string | undefined,
   ingress: string | undefined
 ): Promise<SophiaTurnResult> {
+  const cancelLog = buildDecisionLogEntry({
+    turnId: cleanTurnId,
+    conversationId: conversationId || '',
+    query: cleanTurnId ? `[turn ${cleanTurnId}]` : '(cancelled turn)',
+    route: 'converse',
+    scopes: [],
+    confidence: 0.0,
+    outcome: 'cancelled',
+    reasoning: 'Turn interrupted by client cancellation before completion.',
+  });
+
   let assistantMessageId: string | undefined;
   if (conversationId && cleanTurnId) {
     try {
@@ -112,6 +132,7 @@ async function cancelledTurnResult(
             metadata: {
               cancelled: true,
               ingress: ingress ?? 'live_voice',
+              decisionLog: cancelLog,
             },
           },
           founderId
@@ -137,6 +158,7 @@ async function cancelledTurnResult(
     error: 'Turn cancelled before completion',
     scopes: [],
     sources: [],
+    decisionLog: cancelLog,
   };
 }
 
@@ -302,6 +324,9 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         // A previously cancelled turn replays as cancelled — callers must not
         // present the marker as a live reply (Phase 3).
         cancelled: existingAssistantMessage.metadata?.cancelled === true,
+        scopes: existingAssistantMessage.metadata?.scopes,
+        sources: existingAssistantMessage.metadata?.sources,
+        decisionLog: existingAssistantMessage.metadata?.decisionLog,
       };
     }
   }
@@ -349,6 +374,71 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     // persists the assistant cancelled-marker (retry replays the cancel).
     if (signal?.aborted) {
       return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
+    }
+
+    // Explanation Query Check (M1.6 / G12.6):
+    // If the founder asks "why did you do that" (or equivalent explanation query),
+    // cite the previous turn's decision log entry directly from ConversationStore.
+    if (isExplanationQuery(cleanMessage)) {
+      const priorLog = await convStore.getLatestDecisionLog(conversation.id, founderId);
+      const explanationReply = priorLog
+        ? formatDecisionLogExplanation(priorLog)
+        : formatNoDecisionLogExplanation();
+
+      const explanationLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'converse',
+        scopes: [],
+        confidence: 1.0,
+        outcome: 'answered',
+        sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
+        reasoning: priorLog
+          ? `Cited decision log entry [${priorLog.id}] to explain prior turn.`
+          : 'Abstained from explanation because no prior decision log entry exists in session.',
+      });
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage(
+          {
+            conversationId: conversation.id,
+            sender: 'assistant',
+            role: 'assistant',
+            content: explanationReply,
+            idempotencyKey: assistantIdempotencyKey,
+            intent: 'conversation',
+            confidence: 1.0,
+            metadata: {
+              liveAi: false,
+              directiveExecuted: false,
+              ingress: opts.ingress ?? 'live_voice',
+              scopes: [],
+              sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
+              decisionLog: explanationLog,
+            },
+          },
+          founderId
+        );
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist explanation assistant reply:', err);
+      }
+
+      return {
+        success: true,
+        reply: explanationReply,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'conversation',
+        directiveExecuted: false,
+        liveAi: false,
+        scopes: [],
+        sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
+        decisionLog: explanationLog,
+      };
     }
 
     // 5. Server-Authoritative bounded dialogue history retrieval
@@ -401,6 +491,18 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       const persona = 'Sophia Vance • COO';
       const abstainReply = `[${persona}]\nI do not remember any personal notes or preferences regarding that.\n\n[Scopes: personal_mind | Sources: SophiaMemoryStore]`;
 
+      const abstainLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'recall-personal',
+        scopes: ['personal_mind'],
+        confidence: 0.9,
+        outcome: 'answered',
+        sources: ['SophiaMemoryStore'],
+        reasoning: 'Personal memory query with no matching facts abstained honestly.',
+      });
+
       let assistantMessageRecord: ChatMessageRecord | null = null;
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
@@ -419,6 +521,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: ['personal_mind'],
               sources: ['SophiaMemoryStore'],
+              decisionLog: abstainLog,
             },
           },
           founderId
@@ -438,6 +541,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         scopes: ['personal_mind'],
         sources: ['SophiaMemoryStore'],
+        decisionLog: abstainLog,
       };
     }
 
@@ -465,17 +569,60 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     });
 
     if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
+      const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
+      const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
+      const refuseLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'refuse',
+        scopes: returnScopes,
+        confidence: 1.0,
+        outcome: 'refused',
+        sources: returnSources,
+        reasoning: executionResult.error || 'Request refused under governance policy.',
+      });
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage(
+          {
+            conversationId: conversation.id,
+            sender: 'assistant',
+            role: 'assistant',
+            content: executionResult.reply || 'Forbidden',
+            idempotencyKey: assistantIdempotencyKey,
+            intent: 'refuse',
+            confidence: 1.0,
+            metadata: {
+              liveAi: false,
+              directiveExecuted: false,
+              ingress: opts.ingress ?? 'live_voice',
+              scopes: returnScopes,
+              sources: returnSources,
+              decisionLog: refuseLog,
+            },
+          },
+          founderId
+        );
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist forbidden assistant reply:', err);
+      }
+
       return {
         success: false,
         reply: executionResult.reply || 'Forbidden',
         conversationId: conversation.id,
         founderMessageId: founderMessageRecord.id,
-        intent: 'conversation',
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'refuse',
         directiveExecuted: false,
         liveAi: false,
         error: executionResult.error,
-        scopes: executionResult.scopes ?? assembledContext.scopes ?? [],
-        sources: executionResult.sources ?? assembledContext.sources ?? [],
+        scopes: returnScopes,
+        sources: returnSources,
+        decisionLog: refuseLog,
       };
     }
 
@@ -487,6 +634,30 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     if (signal?.aborted) {
       return cancelledTurnResult(conversation.id, founderId, cleanTurnId, opts.ingress);
     }
+
+    const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
+    const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
+
+    const outcome: DecisionOutcome =
+      executionResult.proposal.kind === 'refuse' || route === 'refuse'
+        ? 'refused'
+        : executionResult.proposal.kind === 'clarification_prompt' || route === 'ask-clarify'
+        ? 'clarification_requested'
+        : executionResult.success
+        ? 'answered'
+        : 'error';
+
+    const decisionLog = buildDecisionLogEntry({
+      turnId: cleanTurnId,
+      conversationId: conversation.id,
+      query: cleanMessage,
+      route,
+      scopes: returnScopes,
+      confidence: classificationResult.proposal.confidence,
+      outcome,
+      sources: returnSources,
+      reasoning: classificationResult.proposal.reason || `Processed turn with route ${route}`,
+    });
 
     // 9. Persist assistant turn to durable storage with assistant idempotency key
     //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
@@ -511,6 +682,9 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               metrics: executionResult.metrics,
               voiceIngress: (opts.ingress ?? 'live_voice') !== 'sofia_ask',
               ingress: opts.ingress ?? 'live_voice',
+              scopes: returnScopes,
+              sources: returnSources,
+              decisionLog,
             },
           },
           founderId
@@ -541,9 +715,6 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       });
     }
 
-    const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
-    const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
-
     let finalReply = executionResult.reply;
     if (finalReply && returnScopes.length > 0 && !finalReply.includes('Scopes:')) {
       finalReply += `\n\n[Scopes: ${returnScopes.join(', ')} | Sources: ${returnSources.join(', ') || 'none'}]`;
@@ -562,6 +733,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       error: executionResult.error,
       scopes: returnScopes,
       sources: returnSources,
+      decisionLog,
     };
   };
 
