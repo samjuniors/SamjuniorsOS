@@ -13,6 +13,7 @@ import { LeaseManager, getLeaseManager, generateWorkerIdentity } from '../coordi
 import { validateStepTransition, validateInstanceTransition } from './state-machine';
 import type { ScheduledOccurrenceContext } from './runtime';
 import { SafeModeManager, FreezableScheduler } from '../sophia/stop-control';
+import { SpendSettingsManager } from '../sophia/spend-settings';
 
 export interface ScheduleWorkParams {
   workflowInstanceId: string;
@@ -197,6 +198,25 @@ export class WorkflowScheduler implements FreezableScheduler {
 
     const cutoff = asOfTime ? this.canonicalizeTimestamp(asOfTime) : new Date().toISOString();
     const dueItems = await this.schedulerStore.listDue(cutoff, batchLimit);
+
+    // M1.8 Spend Settings / Autonomous Spend Gate:
+    // With no spend cap set, no autonomous model spend runs.
+    // When cap is reached, autonomous work halts and says so.
+    const spendCheck = SpendSettingsManager.getInstance().canExecuteAutonomousSpend();
+    if (!spendCheck.allowed) {
+      return {
+        processedCount: 0,
+        results: dueItems.map((item) => {
+          const occurrenceNumber = item.recurrence?.currentOccurrence || 1;
+          return {
+            scheduleId: item.id,
+            occurrenceId: `${item.id}-occ-${occurrenceNumber}`,
+            status: 'skipped' as const,
+            error: spendCheck.message,
+          };
+        }),
+      };
+    }
 
     const evaluationResult: DueWorkEvaluationResult = {
       processedCount: dueItems.length,

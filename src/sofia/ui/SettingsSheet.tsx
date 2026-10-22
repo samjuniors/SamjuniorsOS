@@ -435,6 +435,7 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
 
   // Collapsible accordion states
   const [sections, setSections] = useState({
+    spend: true,
     env: true,
     perception: true,
     voice: true,
@@ -453,6 +454,72 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
 
   const [visionActive, setVisionActive] = useState(screenVisionBridge.active);
   const [prefMusic, setPrefMusic] = useState<PreferredMusicSource>(decisionEngine.getPreferredMusic());
+
+  // M1.8 Spend Settings State
+  const [spendData, setSpendData] = useState<{
+    dailySpendCapUsd: number | null;
+    currentDailySpendUsd: number;
+    interactiveSpendUsd: number;
+    autonomousSpendUsd: number;
+    canRunAutonomous: boolean;
+    isCapReached: boolean;
+  } | null>(null);
+  const [spendCapInput, setSpendCapInput] = useState<string>('');
+  const [savingSpendCap, setSavingSpendCap] = useState(false);
+  const [spendNotice, setSpendNotice] = useState<string | null>(null);
+
+  const fetchSpend = () => {
+    fetch('/api/sofia/spend')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.settings) {
+          setSpendData({
+            dailySpendCapUsd: d.settings.dailySpendCapUsd,
+            currentDailySpendUsd: d.settings.currentDailySpendUsd,
+            interactiveSpendUsd: d.settings.interactiveSpendUsd,
+            autonomousSpendUsd: d.settings.autonomousSpendUsd,
+            canRunAutonomous: d.canRunAutonomous,
+            isCapReached: d.isCapReached,
+          });
+          setSpendCapInput(d.settings.dailySpendCapUsd !== null && d.settings.dailySpendCapUsd !== undefined ? String(d.settings.dailySpendCapUsd) : '');
+        }
+      })
+      .catch(() => undefined);
+  };
+
+  useEffect(() => {
+    fetchSpend();
+  }, []);
+
+  const handleUpdateSpendCap = async (newVal: number | null) => {
+    setSavingSpendCap(true);
+    try {
+      const res = await fetch('/api/sofia/spend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spendCap: newVal }),
+      });
+      const data = await res.json();
+      if (data.success && data.settings) {
+        setSpendData({
+          dailySpendCapUsd: data.settings.dailySpendCapUsd,
+          currentDailySpendUsd: data.settings.currentDailySpendUsd,
+          interactiveSpendUsd: data.settings.interactiveSpendUsd,
+          autonomousSpendUsd: data.settings.autonomousSpendUsd,
+          canRunAutonomous: data.settings.dailySpendCapUsd !== null && data.settings.currentDailySpendUsd < data.settings.dailySpendCapUsd,
+          isCapReached: data.settings.dailySpendCapUsd !== null && data.settings.currentDailySpendUsd >= data.settings.dailySpendCapUsd,
+        });
+        setSpendCapInput(data.settings.dailySpendCapUsd !== null ? String(data.settings.dailySpendCapUsd) : '');
+        setSpendNotice(data.message || 'Saved');
+        setTimeout(() => setSpendNotice(null), 3000);
+      }
+    } catch (err: any) {
+      setSpendNotice(`Error: ${err.message}`);
+      setTimeout(() => setSpendNotice(null), 3000);
+    } finally {
+      setSavingSpendCap(false);
+    }
+  };
 
   useEffect(() => {
     const handleVision = (e: Event) => {
@@ -613,6 +680,129 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
         </div>
 
         <div className="space-y-2">
+          {/* M1.8 MODEL SPEND SETTINGS & AUTONOMY CEILING */}
+          <AccordionSection
+            title="Spend & Autonomy Limits"
+            badge={
+              spendData?.dailySpendCapUsd === null || spendData?.dailySpendCapUsd === undefined
+                ? 'Cap Unset · Autonomous Off'
+                : spendData?.isCapReached
+                ? 'Cap Reached'
+                : `$${spendData?.dailySpendCapUsd?.toFixed(2)}/day`
+            }
+            isOpen={sections.spend}
+            onToggle={() => toggleSection('spend')}
+          >
+            <div data-testid="spend-settings-section" className="space-y-3 rounded-xl border border-sky-400/20 bg-sky-950/20 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-normal uppercase tracking-[0.2em] text-white/80">Daily Model Spend Ceiling</p>
+                  <p className="text-[8.5px] font-light text-white/40">
+                    With no cap set, autonomous spend is disabled. Interactive spend is always tracked.
+                  </p>
+                </div>
+                {spendData?.dailySpendCapUsd === null || spendData?.dailySpendCapUsd === undefined ? (
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-mono text-amber-300">
+                    Autonomous Blocked
+                  </span>
+                ) : spendData?.isCapReached ? (
+                  <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[8px] font-mono text-red-300">
+                    Cap Reached
+                  </span>
+                ) : (
+                  <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-mono text-emerald-300">
+                    Active
+                  </span>
+                )}
+              </div>
+
+              {/* Spend Metrics Grid */}
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/[0.06] bg-black/30 p-2 text-center font-mono text-[9px]">
+                <div>
+                  <p className="text-[7.5px] uppercase tracking-wider text-white/40">Total Today</p>
+                  <p className="text-white font-medium" data-testid="current-daily-spend">
+                    ${spendData?.currentDailySpendUsd?.toFixed(3) ?? '0.000'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[7.5px] uppercase tracking-wider text-white/40">Interactive</p>
+                  <p className="text-sky-300 font-medium" data-testid="interactive-spend">
+                    ${spendData?.interactiveSpendUsd?.toFixed(3) ?? '0.000'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[7.5px] uppercase tracking-wider text-white/40">Autonomous</p>
+                  <p className="text-violet-300 font-medium" data-testid="autonomous-spend">
+                    ${spendData?.autonomousSpendUsd?.toFixed(3) ?? '0.000'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Cap Input & Presets */}
+              <div className="space-y-1.5">
+                <div className="flex gap-2 items-center">
+                  <div className="relative flex-1">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-white/40 text-[10px]">$</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      placeholder="Unset (No Cap)"
+                      value={spendCapInput}
+                      onChange={(e) => setSpendCapInput(e.target.value)}
+                      data-testid="spend-cap-input"
+                      className="w-full rounded-lg border border-white/10 bg-white/5 py-1 pl-6 pr-2 font-mono text-[10px] text-white placeholder-white/20 focus:border-sky-400 focus:outline-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = spendCapInput.trim() === '' ? null : parseFloat(spendCapInput);
+                      void handleUpdateSpendCap(val);
+                    }}
+                    disabled={savingSpendCap}
+                    data-testid="save-spend-cap-button"
+                    className="rounded-lg border border-sky-400/40 bg-sky-400/20 px-3 py-1 text-[9px] font-medium text-sky-200 transition hover:bg-sky-400/30 active:scale-95 disabled:opacity-50"
+                  >
+                    {savingSpendCap ? 'Saving…' : 'Save Cap'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSpendCapInput('');
+                      void handleUpdateSpendCap(null);
+                    }}
+                    data-testid="clear-spend-cap-button"
+                    className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] text-white/50 hover:bg-white/10 hover:text-white"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="flex gap-1.5 pt-1">
+                  {[5, 10, 25, 50].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        setSpendCapInput(String(preset));
+                        void handleUpdateSpendCap(preset);
+                      }}
+                      className="flex-1 rounded border border-white/10 bg-white/[0.03] py-0.5 font-mono text-[8.5px] text-white/60 transition hover:border-sky-400/30 hover:text-sky-200"
+                    >
+                      ${preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {spendNotice && (
+                <p className="text-[8.5px] text-sky-300 transition-opacity">{spendNotice}</p>
+              )}
+            </div>
+          </AccordionSection>
+
           {/* ENVIRONMENT: GEMINI LIVE API & ASR BARGE-IN */}
           <AccordionSection
             title="Environment & Gemini Live Setup"

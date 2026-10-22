@@ -18,6 +18,7 @@ import {
   isStopCommand,
   isResumeCommand,
 } from './stop-control';
+import { SpendSettingsManager } from './spend-settings';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -453,6 +454,71 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       cancelled: true,
       scopes: [],
       sources: ['SafeModeManager'],
+    };
+  }
+
+  // M1.8 Spend Settings: Interactive Spend Gate
+  const spendManager = SpendSettingsManager.getInstance();
+  const spendCheck = spendManager.canExecuteInteractiveSpend();
+  if (!spendCheck.allowed) {
+    const capReachedReply = `[Sophia Vance • COO]\nMODEL SPEND CAP REACHED ($${spendCheck.currentSpendUsd.toFixed(2)} / $${(spendCheck.spendCapUsd ?? 0).toFixed(2)}).\n\nAll model operations are suspended to protect capital.\nTo adjust your limits, update the Model Spend Cap in Settings.`;
+
+    let assistantMessageRecord: ChatMessageRecord | null = null;
+    try {
+      await convStore.saveMessage({
+        conversationId: conversation.id,
+        sender: 'founder',
+        role: 'user',
+        content: cleanMessage,
+        idempotencyKey: cleanTurnId,
+      }, founderId);
+
+      const capLog = buildDecisionLogEntry({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'refuse',
+        scopes: [],
+        confidence: 1.0,
+        outcome: 'refused',
+        sources: ['SpendSettingsManager'],
+        reasoning: 'Model spend cap exceeded.',
+      });
+
+      assistantMessageRecord = await convStore.saveMessage({
+        conversationId: conversation.id,
+        sender: 'assistant',
+        role: 'assistant',
+        content: capReachedReply,
+        idempotencyKey: cleanTurnId ? `${cleanTurnId}:assistant` : undefined,
+        intent: 'refuse',
+        confidence: 1.0,
+        metadata: {
+          liveAi: false,
+          directiveExecuted: false,
+          cancelled: true,
+          ingress: opts.ingress ?? 'live_voice',
+          scopes: [],
+          sources: ['SpendSettingsManager'],
+          decisionLog: capLog,
+        },
+      }, founderId);
+    } catch (err) {
+      console.error('[SophiaTurnExecutor] Failed to persist spend cap refusal:', err);
+    }
+
+    return {
+      success: false,
+      reply: capReachedReply,
+      conversationId: conversation.id,
+      assistantMessageId: assistantMessageRecord?.id,
+      intent: 'refuse',
+      directiveExecuted: false,
+      liveAi: false,
+      error: 'Model spend cap reached',
+      cancelled: true,
+      scopes: [],
+      sources: ['SpendSettingsManager'],
     };
   }
 
@@ -906,6 +972,15 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         founderMessage: cleanMessage,
         assistantReply: executionResult.reply,
         ingress: opts.ingress ?? 'live_voice',
+      });
+    }
+
+    // M1.8 Spend Settings: Count interactive model spend
+    if (executionResult.success) {
+      spendManager.recordSpend({
+        amountUsd: 0.002,
+        type: 'interactive',
+        turnId: cleanTurnId,
       });
     }
 
