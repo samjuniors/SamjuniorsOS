@@ -286,23 +286,41 @@ export function ChatPanel({
               <div className={`mb-1 flex items-center gap-1.5 text-[8px] font-normal uppercase tracking-[0.25em] text-white/30 ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <span>{t.role === 'user' ? 'you' : 'sophia'}</span>
                 {t.role === 'sophia' && (
-                  t.fallback === true || t.liveAi === false ? (
-                    <span
-                      data-testid="fallback-badge"
-                      className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-amber-300 normal-case"
-                      title="Deterministic fallback reply — live model reasoning was unavailable"
-                    >
-                      Offline Fallback
-                    </span>
-                  ) : t.liveAi === true ? (
-                    <span
-                      data-testid="live-ai-badge"
-                      className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-cyan-300 normal-case"
-                      title="Live model reasoning"
-                    >
-                      Live AI
-                    </span>
-                  ) : null
+                  <>
+                    {t.fallback === true || t.liveAi === false ? (
+                      <span
+                        data-testid="fallback-badge"
+                        className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-amber-300 normal-case"
+                        title="Deterministic fallback reply — live model reasoning was unavailable"
+                      >
+                        Offline Fallback
+                      </span>
+                    ) : t.liveAi === true ? (
+                      <span
+                        data-testid="live-ai-badge"
+                        className="rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide text-cyan-300 normal-case"
+                        title="Live model reasoning"
+                      >
+                        Live AI
+                      </span>
+                    ) : null}
+
+                    {t.scopes && t.scopes.map((scope) => (
+                      <span
+                        key={scope}
+                        data-testid={`scope-chip-${scope}`}
+                        className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[7.5px] font-medium tracking-wide normal-case ${
+                          scope === 'personal_mind'
+                            ? 'border-purple-400/30 bg-purple-500/15 text-purple-200'
+                            : 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
+                        }`}
+                        title={`Answer read from ${scope === 'personal_mind' ? 'Personal Mind' : 'Company Brain'}`}
+                      >
+                        <span className={`size-1 rounded-full ${scope === 'personal_mind' ? 'bg-purple-400' : 'bg-emerald-400'}`} />
+                        <span>{scope === 'personal_mind' ? 'Personal Mind' : 'Company Brain'}</span>
+                      </span>
+                    ))}
+                  </>
                 )}
               </div>
               <div

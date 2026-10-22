@@ -96,6 +96,27 @@ export default function App({ active = true }: { active?: boolean }) {
     return () => backgroundKeepAlive.stop();
   }, []);
 
+  // M1.5: Opening the Sofia screen starts a greeting from real state (plain if none)
+  useEffect(() => {
+    if (controlLayer.history.length === 0) {
+      fetch('/api/sofia/greeting')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((greeting) => {
+          if (greeting?.text && controlLayer.history.length === 0) {
+            controlLayer.addSophiaTurn(greeting.text, true, {
+              liveAi: greeting.liveAi,
+              fallback: greeting.fallback,
+              scopes: greeting.scopes,
+              sources: (greeting.sources || []).map((s: string) => ({ title: s, url: '' })),
+            });
+          }
+        })
+        .catch(() => {
+          /* fail soft if greeting endpoint is unreachable */
+        });
+    }
+  }, []);
+
   useEffect(() => {
     os.setDocked(docked);
   }, [docked, os]);

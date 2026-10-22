@@ -12,4 +12,4 @@ export * from "./memory-extractor";
 export * from "./memory-capture-stage";
 export * from "./authority-content-guard";
 export * from "./memory-review-annotations";
-
+export * from "./greeting";
