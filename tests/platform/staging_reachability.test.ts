@@ -1,8 +1,10 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+const dbPath = path.resolve(process.cwd(), 'prisma/db/custom.db');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = `file:${path.resolve(process.cwd(), 'prisma/db/custom.db').replace(/\\/g, '/')}`;
+  process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, '/')}`;
 }
 import { GET as healthHandler } from '@/app/api/health/route';
 

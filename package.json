@@ -23,7 +23,9 @@
     "typecheck": "tsc --noEmit",
     "audit:deps": "node scripts/audit-deps.mjs",
     "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose",
-    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs"
+    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs",
+    "deploy:staging": "npx tsx scripts/deploy-staging.ts",
+    "verify:deployment": "npx tsx scripts/verify-deployment.ts"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
