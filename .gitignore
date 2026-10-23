@@ -96,3 +96,22 @@ artifacts/
 /download/
 /Caddyfile
 /workflow_fullpage_screenshot.png
+
+# Local IDE & Agent tool state
+.gemini/
+.gsd/
+.qodo/
+.tmp_ref/
+.patch/
+*.patch
+
+# Product kit bundles & worktrees
+kit-bundle/
+samjuniors-kit-bundle*/
+.agent/worktrees/
+.agent/bin/
+.agent/gitleaks-report.json
+
+# Untracked legacy uploads & scratch
+/Uploaded/
+/project-setup/
