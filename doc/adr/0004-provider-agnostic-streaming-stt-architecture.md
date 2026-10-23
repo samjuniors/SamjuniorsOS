@@ -128,6 +128,6 @@ We resolve the Phase 4B open question by adopting a **Hybrid Pre-Roll Ring Buffe
 ---
 
 ## References
-- Research Report: `doc/research/phase4c_stt_benchmark_and_architecture.md`
+- Research Report: `docs/research/phase4c_stt_benchmark_and_architecture.md`
 - Foundation ADRs: `doc/adr/0002-sophia-durable-conversation-persistence.md`, `doc/adr/0003-sophia-live-interaction-architecture.md`
 - Implementation Test: `tests/sophia/phase4c_streaming_stt_adapter.test.ts`
