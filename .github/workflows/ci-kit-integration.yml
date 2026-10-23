@@ -39,23 +39,8 @@ jobs:
         with:
           node-version: "20"
 
-      # Temporary audit mode: install so subsequent quality gates can run.
-      # The final step deliberately fails if the tracked lockfile was stale.
-      # Do not consider this a reproducible release until the lockfile is fixed.
-      - name: Install dependencies and report lockfile drift
-        run: |
-          bun install
-          git diff --stat -- bun.lock
-
-      # Temporary inspectable lockfile export. Only public dependency metadata
-      # is emitted; remove this step after the reviewed lockfile is committed.
-      - name: Export refreshed dependency lock for review
-        run: |
-          if ! git diff --quiet -- bun.lock; then
-            echo "BUN_LOCK_EXPORT_BEGIN"
-            base64 -w0 bun.lock | fold -w 160
-            echo "BUN_LOCK_EXPORT_END"
-          fi
+      - name: Restore dependencies from the reviewed Bun lockfile
+        run: bun install --frozen-lockfile
 
       - name: Generate Prisma client
         run: bunx prisma generate
@@ -65,13 +50,14 @@ jobs:
           npm run test:docs
           npm run docs:links
 
+      - name: Inventory links in older documentation (informational)
+        continue-on-error: true
+        run: npm run docs:links:all
+
       - name: Scan full Git history for secrets
         run: |
           curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz
           ./gitleaks detect --config .gitleaks.toml --verbose
-
-      - name: Dependency vulnerability audit
-        run: npm run audit:deps
 
       - name: Lint and typecheck
         run: |
@@ -84,11 +70,5 @@ jobs:
       - name: Run repository test suites
         run: npm test
 
-      - name: Reproducible dependency lockfile gate
-        if: always()
-        run: |
-          if ! git diff --quiet -- bun.lock; then
-            echo "::error::bun.lock is stale against package.json; regenerate and review the lockfile on this branch."
-            git diff --numstat -- bun.lock
-            exit 1
-          fi
+      - name: Dependency vulnerability audit
+        run: npm run audit:deps
