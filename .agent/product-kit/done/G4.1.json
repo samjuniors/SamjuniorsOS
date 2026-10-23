@@ -1,0 +1,8 @@
+{
+  "id": "G4.1",
+  "doneAt": "2026-10-23T07:06:15.153Z",
+  "agent": "antigravity",
+  "branch": "main",
+  "commit": "0a239e5fc8c655249697d8cd1d18c58f0841bfa6",
+  "evidence": "tests/platform/company_brain_single_path.test.ts passing 9/9, m1_canonical_state_authority passing 7/7, smoke passing 6/6, typecheck and lint 0 errors"
+}
