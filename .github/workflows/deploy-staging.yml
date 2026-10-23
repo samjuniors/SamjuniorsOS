@@ -1,0 +1,53 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-and-verify:
+    name: Build, Deploy & Live Verify Staging (Option A)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline || npm install
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Pre-deploy quality checks
+        run: |
+          npm run lint
+          npm run typecheck
+
+      - name: Secret scan check
+        run: |
+          curl -sL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz
+          ./gitleaks detect --config .gitleaks.toml --verbose
+
+      - name: Execute Deploy Pipeline with Post-Deploy Verification
+        run: npx tsx scripts/deploy-staging.ts --dry-run-verify
+        env:
+          NODE_ENV: production
+          DATABASE_URL: file:./prisma/db/custom.db
+          DATABASE_MODE: authoritative
+          APP_URL: http://localhost:3000
+          LIVE_WS_PORT: 3001
