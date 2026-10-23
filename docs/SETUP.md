@@ -1,5 +1,10 @@
 # Setting SamJuniorsOS up locally
 
+> [!IMPORTANT]
+> **HISTORICAL SETUP NOTES FOR EARLIER NEXT.JS RUNTIME.** On `kit/integration` (2026-10-23), use [KIT_INTEGRATION.md](setup/KIT_INTEGRATION.md): `npm run dev` runs `tsx server.ts` with Vite + Express and the same-port WebSocket endpoint `/api/live-ws`. The `dev:ws` script below no longer exists on this branch. Original commands and verification history are preserved for audit; do not follow them for this runtime.
+
+
+
 Verified against the working tree on 2026-10-21 on Windows 11 (Node 24, npm) and on 2026-10-15 (Linux, Node 22, Bun 1.4.3).
 
 ## What you get
