@@ -39,8 +39,13 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Restore dependencies from tracked bun.lock
-        run: bun install --frozen-lockfile
+      # Temporary audit mode: install so subsequent quality gates can run.
+      # The final step deliberately fails if the tracked lockfile was stale.
+      # Do not consider this a reproducible release until the lockfile is fixed.
+      - name: Install dependencies and report lockfile drift
+        run: |
+          bun install
+          git diff --stat -- bun.lock
 
       - name: Generate Prisma client
         run: bunx prisma generate
@@ -68,3 +73,12 @@ jobs:
 
       - name: Run repository test suites
         run: npm test
+
+      - name: Reproducible dependency lockfile gate
+        if: always()
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            echo "::error::bun.lock is stale against package.json; regenerate and review the lockfile on this branch."
+            git diff --numstat -- bun.lock
+            exit 1
+          fi
