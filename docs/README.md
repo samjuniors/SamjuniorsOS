@@ -1,6 +1,6 @@
 # SamJuniorsOS documentation map
 
-**Documentation reconciliation: 2026-10-23 — based on the non-default `kit/integration` branch (`d209f67`).** This is a navigation map, not a claim that tests, deployment, voice or every historical architecture statement have been revalidated. See the [branch documentation audit](audit/2026-10-23-kit-integration-documentation-audit.md) for scope, evidence, dispositions and remaining gates.
+**Documentation reconciliation: 2026-10-23 — based on the non-default `kit/integration` branch (`d209f67`).** This is a navigation map, not a claim that tests, deployment, voice or every historical architecture statement have been revalidated. See the [branch documentation audit](audit/2026-10-23-kit-integration-documentation-audit.md) for scope, evidence, dispositions and remaining gates. The [repository hygiene follow-up](audit/2026-10-23-kit-integration-repository-hygiene.md) records CI, security, test failures and staging migration status.
 
 ## Start here — what is current?
 
