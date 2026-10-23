@@ -11,7 +11,7 @@
 
 ## Evidence inspected
 
-A complete, non-truncated Git tree for `step/MX.1` contained **1,278 entries** and **211 Markdown/related text documentation files**. Inspected headers and content from the 12 September 7 audits, the September 15 live-voice research report and September 16 Sophia/Jarvis audit. All 14 complete sources have **zero relative Markdown links** of the form `[label](relative-file)`. Inspected key canonical index, setup, product, architecture, roadmap, ADR 0007 and product-kit master-prompt files.
+A complete, non-truncated Git tree for `step/MX.1` contained **1,278 entries** and **211 Markdown/related text documentation files**. Inspected headers and content from the 12 September 7 audits, the September 15 live-voice research report and September 16 Sophia/Jarvis audit. All 14 complete sources have **zero relative Markdown links** of the conventional Markdown inline-link form (relative destination paths). Inspected key canonical index, setup, product, architecture, roadmap, ADR 0007 and product-kit master-prompt files.
 
 This is **not** a full semantic review of all 211 documents, a local-worktree audit, or a complete backlink search across all code. Those checks remain pending.
 
@@ -58,4 +58,6 @@ Original full-text files are **preserved in Git as their original blobs**. All f
 **Local typecheck, lint, tests, browser microphone QA, full reference scan:** NOT RUN (local checkout unavailable).  
 **Deletion / merge / production migration:** HOLD pending explicit path-scoped consent and acceptance evidence.
 
-**Next:** confirm exact archived SHA identities and redirect targets on the new branch, validate diff contains no removed paths, run a full non-Markdown/code-link audit from a local clone, and revise setup commands only after MX migration tests pass.
+**Path-check verification:** PASS for the selected index, setup, root canonical banners, archive index, first redirect and audit-page links against the non-main branch tree; no missing targets after excluding code examples. All branch changes are Markdown, with zero removed files.
+
+**Next:** run a full reference scan including code and non-Markdown files from a local clone; revise setup commands only after MX migration tests pass.
