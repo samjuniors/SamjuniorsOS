@@ -145,6 +145,12 @@ These reflect the inspected `kit/integration` `package.json`, not earlier Next.j
 | `lint` | `npm run lint` | Runs ESLint. |
 | `db:push` | `npm run db:push` | Prisma schema push **with `--accept-data-loss`**; only for reviewed disposable databases. |
 | `db:generate` | `npm run db:generate` | Generates Prisma client. |
+| `audit:deps` | `npm run audit:deps` | Audits unmitigated critical dependency advisories. |
+| `docs:links` | `npm run docs:links` | Checks maintained Markdown links. |
+| `docs:links:all` | `npm run docs:links:all` | Checks all tracked Markdown, including historical links. |
+| `test:docs` | `npm run test:docs` | Runs the link checker regression tests. |
+
+> **Deployment caution:** The existing `Dockerfile` and staging scripts still target Next.js standalone output. They are **not verified** for this Vite/Express branch; do not deploy with them before a separate staging migration passes. [Repository hygiene audit](docs/audit/2026-10-23-kit-integration-repository-hygiene.md).
 
 **Not present in this branch's scripts:** `dev:ws`, `scan:secrets`. Do not copy those commands from historical setup guides.
 
