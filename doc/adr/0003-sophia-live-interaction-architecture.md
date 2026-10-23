@@ -217,7 +217,7 @@ The client-side Voice Activity Detection and audio streaming ingress layer (Phas
 
 The STT provider benchmark, latency budget, security modeling, and provider-agnostic interface design have been completed (RESEARCH ONLY — zero runtime code added):
 - Formalized in **ADR 0004** (`doc/adr/0004-provider-agnostic-streaming-stt-architecture.md`).
-- Exhaustive research report in **`doc/research/phase4c_stt_benchmark_and_architecture.md`**.
+- Exhaustive research report in **`docs/research/phase4c_stt_benchmark_and_architecture.md`**.
 - Adopted provider-agnostic `STTProvider` adapter interface with canonical transcript events (`CanonicalTranscriptEvent`).
 - Selected **Deepgram Flux STT** (`model=flux-general-en`/`multi` via `wss://api.deepgram.com/v2/listen`) as the initial production cloud provider (~$6–$15/mo, native conversational turn-taking).
 - Selected **Qwen3-ASR (0.6B)** as the designated open-weight self-hosted target (~2 GB VRAM FP16, Apache 2.0).
