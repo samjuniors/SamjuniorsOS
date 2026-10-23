@@ -1,6 +1,9 @@
 {
   "mainBranch": "main",
   "remote": "origin",
-  "checks": [],
+  "checks": [
+    "npm run typecheck",
+    "npm run lint"
+  ],
   "secretScanIgnore": []
 }
