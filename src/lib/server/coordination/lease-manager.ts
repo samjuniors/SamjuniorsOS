@@ -79,78 +79,104 @@ export class PostgresLeaseManager implements LeaseManager {
     const expiresAt = new Date(now.getTime() + ttlMs);
 
     try {
-      return await db.$transaction(async (tx) => {
-        const existing = await tx.distributedLease.findUnique({
-          where: { resourceKey },
-        });
+      const existing = await db.distributedLease.findUnique({
+        where: { resourceKey },
+      });
 
-        if (!existing) {
-          try {
-            const created = await tx.distributedLease.create({
-              data: {
-                resourceKey,
-                holderId,
-                acquiredAt: now,
-                expiresAt,
-                metadata: metadata ?? {},
-              },
-            });
-            return { acquired: true, lease: mapPrismaLease(created) };
-          } catch (createErr: any) {
-            // Concurrent insert race (unique constraint violation P2002)
-            if (createErr.code === 'P2002') {
-              const active = await tx.distributedLease.findUnique({ where: { resourceKey } });
-              return {
-                acquired: false,
-                activeLease: active ? mapPrismaLease(active) : undefined,
-                reason: 'concurrent_acquisition_lost',
-              };
-            }
-            throw createErr;
+      if (!existing) {
+        try {
+          const created = await db.distributedLease.create({
+            data: {
+              resourceKey,
+              holderId,
+              acquiredAt: now,
+              expiresAt,
+              metadata: metadata ?? {},
+            },
+          });
+          return { acquired: true, lease: mapPrismaLease(created) };
+        } catch (createErr: any) {
+          // Concurrent insert race (unique constraint violation P2002)
+          if (createErr.code === 'P2002') {
+            const active = await db.distributedLease.findUnique({ where: { resourceKey } });
+            return {
+              acquired: false,
+              activeLease: active ? mapPrismaLease(active) : undefined,
+              reason: 'concurrent_acquisition_lost',
+            };
           }
+          throw createErr;
         }
+      }
 
-        // Lease exists: check expiration
-        if (existing.expiresAt > now) {
-          // Lease is still validly held
-          return {
-            acquired: false,
-            activeLease: mapPrismaLease(existing),
-            reason: 'active_lease_held_by_another_worker',
-          };
+      // Lease exists: check expiration
+      if (existing.expiresAt > now) {
+        // If the SAME holder re-acquires, renew/extend the lease
+        if (existing.holderId === holderId) {
+          const updated = await db.distributedLease.update({
+            where: { resourceKey },
+            data: {
+              expiresAt,
+              metadata: metadata !== undefined ? metadata : (existing.metadata as any),
+              updatedAt: now,
+            },
+          });
+          return { acquired: true, lease: mapPrismaLease(updated) };
         }
+        // Lease is still validly held by another worker
+        return {
+          acquired: false,
+          activeLease: mapPrismaLease(existing),
+          reason: 'active_lease_held_by_another_worker',
+        };
+      }
 
-        // Lease is expired: atomically reclaim
-        const updated = await tx.distributedLease.updateMany({
-          where: {
-            resourceKey,
-            expiresAt: { lte: now }, // Ensure no concurrent renew or reclaim occurred
-          },
-          data: {
-            holderId,
-            acquiredAt: now,
-            expiresAt,
-            metadata: metadata ?? {},
-            updatedAt: now,
-          },
-        });
+      // Lease is expired: atomically reclaim
+      const updated = await db.distributedLease.updateMany({
+        where: {
+          resourceKey,
+          expiresAt: { lte: now }, // Ensure no concurrent renew or reclaim occurred
+        },
+        data: {
+          holderId,
+          acquiredAt: now,
+          expiresAt,
+          metadata: metadata ?? {},
+          updatedAt: now,
+        },
+      });
 
-        if (updated.count === 1) {
-          const fresh = await tx.distributedLease.findUnique({ where: { resourceKey } });
-          return { acquired: true, lease: mapPrismaLease(fresh!) };
-        } else {
-          // Another worker reclaimed it concurrently
-          const active = await tx.distributedLease.findUnique({ where: { resourceKey } });
+      if (updated.count === 1) {
+        const fresh = await db.distributedLease.findUnique({ where: { resourceKey } });
+        return { acquired: true, lease: mapPrismaLease(fresh!) };
+      } else {
+        // Another worker reclaimed it concurrently
+        const active = await db.distributedLease.findUnique({ where: { resourceKey } });
+        return {
+          acquired: false,
+          activeLease: active ? mapPrismaLease(active) : undefined,
+          reason: 'concurrent_reclamation_lost',
+        };
+      }
+    } catch (err: any) {
+      // In SQLite/Postgres concurrent races, a transaction write conflict (P2034), unique constraint (P2002),
+      // or busy lock indicates another concurrent worker acquired or reclaimed the lease.
+      if (
+        err?.code === 'P2034' ||
+        err?.code === 'P2002' ||
+        err?.message?.includes('database is locked') ||
+        err?.message?.includes('write conflict')
+      ) {
+        try {
+          const active = await db.distributedLease.findUnique({ where: { resourceKey } });
           return {
             acquired: false,
             activeLease: active ? mapPrismaLease(active) : undefined,
-            reason: 'concurrent_reclamation_lost',
+            reason: 'concurrent_acquisition_lost',
           };
+        } catch {
+          // Ignore and rethrow original below
         }
-      });
-    } catch (err) {
-      if (isAuthoritativeMode()) {
-        throw err;
       }
       throw err;
     }
@@ -309,11 +335,27 @@ export class InMemoryLeaseManager implements LeaseManager {
 }
 
 /**
- * Factory returning appropriate LeaseManager depending on mode.
+ * Options for lease manager resolution.
  */
-export function getLeaseManager(): LeaseManager {
-  if (isAuthoritativeMode()) {
+export interface GetLeaseManagerOptions {
+  forceDatabase?: boolean;
+}
+
+/**
+ * Factory returning appropriate LeaseManager depending on mode.
+ * Defaults to DatabaseDistributedLeaseManager (PostgresLeaseManager) in authoritative mode
+ * or when forceDatabase is specified; otherwise falls back to InMemoryLeaseManager.
+ */
+export function getLeaseManager(options?: GetLeaseManagerOptions): LeaseManager {
+  if (options?.forceDatabase || isAuthoritativeMode()) {
     return PostgresLeaseManager.getInstance();
   }
   return InMemoryLeaseManager.getInstance();
 }
+
+/**
+ * Canonical alias for the Prisma-backed database lease manager.
+ * Operates on the distributed_leases table via Prisma (SQLite or PostgreSQL).
+ */
+export { PostgresLeaseManager as DatabaseDistributedLeaseManager };
+

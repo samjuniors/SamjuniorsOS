@@ -1,6 +1,9 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = `file:${path.resolve(process.cwd(), 'prisma/db/custom.db').replace(/\\/g, '/')}`;
+}
 import { GET as healthHandler } from '@/app/api/health/route';
 
 async function runTests() {
