@@ -106,7 +106,7 @@ async function runSuite() {
   console.log('4. Testing prisma migrate deploy against an empty database...');
   const testDbName = `test_g2_2_${Date.now()}.db`;
   const testDbPath = path.join(prismaDir, 'db', testDbName);
-  const testDbUrl = `file:./db/${testDbName}`;
+  const testDbUrl = `file:${testDbPath.replace(/\\/g, '/')}`;
 
   try {
     if (existsSync(testDbPath)) {

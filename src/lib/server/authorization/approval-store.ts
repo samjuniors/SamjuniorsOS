@@ -242,8 +242,8 @@ export class PostgresApprovalStore implements IApprovalStore {
 
   public async consume(id: string): Promise<FounderApprovalRecord> {
     const db = await requireAuthoritativeDatabase();
-    return await db.$transaction(async (tx) => {
-      const existing = await tx.approvalRecord.findUnique({ where: { id } });
+    try {
+      const existing = await db.approvalRecord.findUnique({ where: { id } });
       if (!existing) {
         throw new Error(`Approval record not found: ${id}`);
       }
@@ -258,16 +258,38 @@ export class PostgresApprovalStore implements IApprovalStore {
 
       scope.usedCount = currentUses + 1;
 
-      const updated = await tx.approvalRecord.update({
-        where: { id },
+      // Atomic conditional update guarantees only ONE caller can mark consumedAt from null
+      const result = await db.approvalRecord.updateMany({
+        where: {
+          id,
+          consumedAt: null,
+        },
         data: {
           consumedAt: new Date(),
           scope,
         },
       });
 
-      return this.mapPrismaToApproval(updated);
-    });
+      if (result.count === 0) {
+        const fresh = await db.approvalRecord.findUnique({ where: { id } });
+        throw new ApprovalAlreadyConsumedError(id, fresh?.consumedAt ?? undefined);
+      }
+
+      const updated = await db.approvalRecord.findUnique({ where: { id } });
+      return this.mapPrismaToApproval(updated!);
+    } catch (err: any) {
+      if (err instanceof ApprovalAlreadyConsumedError) {
+        throw err;
+      }
+      // In concurrent write races (P2034/busy conflict), verify whether competing caller consumed it
+      if (err?.code === 'P2034' || err?.code === 'P2002' || err?.message?.includes('database is locked') || err?.message?.includes('conflict')) {
+        const check = await db.approvalRecord.findUnique({ where: { id } });
+        if (check && check.consumedAt !== null) {
+          throw new ApprovalAlreadyConsumedError(id, check.consumedAt);
+        }
+      }
+      throw err;
+    }
   }
 
   private mapPrismaToApproval(r: any): FounderApprovalRecord {
@@ -919,3 +941,6 @@ export class InMemoryAuditStore implements IAuditStore {
     return JSON.parse(JSON.stringify(list));
   }
 }
+
+export { ApprovalAlreadyConsumedError };
+

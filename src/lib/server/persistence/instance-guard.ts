@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { DurableFileStore } from './durable-file-store';
+import { getLeaseManager, DistributedLeaseData } from '@/lib/server/coordination/lease-manager';
+import { isAuthoritativeMode } from '@/lib/server/db/authority';
 
 export interface InstanceLockInfo {
   instanceId: string;
@@ -11,23 +13,23 @@ export interface InstanceLockInfo {
 }
 
 /**
- * Concurrency & Deployment Safety Guard for SamJuniorsOS Milestone 1.1.
+ * Concurrency & Deployment Safety Guard for SamJuniorsOS.
  *
- * ARCHITECTURAL INVARIANT (§9 Concurrency):
- * Milestone 1.1 persists durable state to the local container volume.
- * Running more than one concurrent container instance (e.g. Cloud Run auto-scaling)
- * causes store divergence because separate instances cannot coordinate file locks.
+ * ARCHITECTURAL EVOLUTION:
+ * Milestone 1.1 used a single-process local file lock (.data/instance.lock) with PID checks.
+ * Milestone 2 (Phase 2.3B / Option A) replaces the single-host PID guard with shared
+ * distributed leases in the database (distributed_leases table via DistributedLease model).
  *
- * Deployment Target Configuration:
- * - Cloud Run min-instances: 1
- * - Cloud Run max-instances: 1
- * - Concurrency: 80 requests / 1 container instance
+ * The PID guard is NO LONGER load-bearing across container instances, VMs, or multi-process
+ * deployments. Shared leases in the database provide atomic acquire, conditional renewal,
+ * and failover reclamation based on expiration timestamps (expiresAt) rather than OS PIDs.
  */
 export class InstanceConcurrencyGuard {
   private static instance: InstanceConcurrencyGuard;
   private currentInstanceId: string;
   private lockFilePath: string;
   private heartbeatTimer?: NodeJS.Timeout;
+  private databaseHeartbeats: Map<string, NodeJS.Timeout> = new Map();
 
   private constructor() {
     const dataDir = DurableFileStore.getInstance().getDataDir();
@@ -41,6 +43,7 @@ export class InstanceConcurrencyGuard {
     }
     return InstanceConcurrencyGuard.instance;
   }
+
 
   /**
    * Checks and acquires the single-instance lease.
@@ -139,6 +142,11 @@ export class InstanceConcurrencyGuard {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
+    for (const [, timer] of this.databaseHeartbeats.entries()) {
+      clearInterval(timer);
+    }
+    this.databaseHeartbeats.clear();
+
     try {
       if (fs.existsSync(this.lockFilePath)) {
         const raw = fs.readFileSync(this.lockFilePath, 'utf-8');
@@ -150,28 +158,141 @@ export class InstanceConcurrencyGuard {
     } catch {}
   }
 
+  /**
+   * Indicates whether the legacy local OS process PID check is load-bearing.
+   * Milestone M2 replaces local PID guards with shared distributed leases in the database.
+   * Therefore, PID checks are no longer load-bearing for multi-instance deployments.
+   */
+  public isPidGuardLoadBearing(): boolean {
+    return false;
+  }
+
+  /**
+   * Acquire a shared distributed instance lease backed by the authoritative database.
+   * This replaces single-host PID guards across containers, VMs, and multiple processes.
+   * Liveness is enforced by database timestamps (expiresAt and TTL) instead of OS PIDs.
+   */
+  public async acquireSharedInstanceLease(options?: {
+    resourceKey?: string;
+    holderId?: string;
+    ttlMs?: number;
+    heartbeatIntervalMs?: number;
+    failClosed?: boolean;
+    metadata?: Record<string, any>;
+  }): Promise<{
+    acquired: boolean;
+    lease?: DistributedLeaseData;
+    activeLease?: DistributedLeaseData;
+    instanceId: string;
+    warning?: string;
+  }> {
+    const resourceKey = options?.resourceKey || 'instance:primary';
+    const holderId = options?.holderId || this.currentInstanceId;
+    const ttlMs = options?.ttlMs ?? 15000;
+    const heartbeatIntervalMs = options?.heartbeatIntervalMs ?? 5000;
+
+    const leaseManager = getLeaseManager({ forceDatabase: true });
+    const result = await leaseManager.acquire(resourceKey, holderId, ttlMs, options?.metadata);
+
+    if (result.acquired) {
+      // Start heartbeat renewal
+      this.startDatabaseHeartbeat(resourceKey, holderId, heartbeatIntervalMs, ttlMs);
+      return {
+        acquired: true,
+        lease: result.lease,
+        instanceId: holderId,
+      };
+    }
+
+    const warning = `[CONCURRENCY WARNING]: Resource "${resourceKey}" is currently held by instance "${result.activeLease?.holderId}" until ${result.activeLease?.expiresAt}. Active database lease prevents conflicting multi-instance operations.`;
+    const shouldFailClosed = options?.failClosed !== undefined
+      ? options.failClosed
+      : process.env.STRICT_SINGLE_INSTANCE === 'true';
+    if (shouldFailClosed) {
+      throw new Error(warning);
+    }
+
+    return {
+      acquired: false,
+      activeLease: result.activeLease,
+      instanceId: holderId,
+      warning,
+    };
+  }
+
+  /**
+   * Release an acquired shared database lease and stop its heartbeat.
+   */
+  public async releaseSharedInstanceLease(resourceKey = 'instance:primary', holderId?: string): Promise<boolean> {
+    const targetHolder = holderId || this.currentInstanceId;
+    this.stopDatabaseHeartbeat(resourceKey);
+    const leaseManager = getLeaseManager({ forceDatabase: true });
+    return await leaseManager.release(resourceKey, targetHolder);
+  }
+
+  /**
+   * Start a background heartbeat to maintain an acquired database lease.
+   */
+  public startDatabaseHeartbeat(
+    resourceKey = 'instance:primary',
+    holderId?: string,
+    intervalMs = 5000,
+    ttlMs = 15000
+  ): void {
+    const targetHolder = holderId || this.currentInstanceId;
+    this.stopDatabaseHeartbeat(resourceKey);
+
+    const timer = setInterval(async () => {
+      try {
+        const leaseManager = getLeaseManager({ forceDatabase: true });
+        const renewed = await leaseManager.renew(resourceKey, targetHolder, ttlMs);
+        if (!renewed) {
+          console.warn(`[InstanceConcurrencyGuard] Failed to renew lease "${resourceKey}" for instance "${targetHolder}".`);
+        }
+      } catch (err: any) {
+        console.warn(`[InstanceConcurrencyGuard] Heartbeat error on "${resourceKey}":`, err?.message);
+      }
+    }, intervalMs);
+
+    if (timer.unref) {
+      timer.unref();
+    }
+
+    this.databaseHeartbeats.set(resourceKey, timer);
+  }
+
+  /**
+   * Stop background heartbeat for a specific database lease.
+   */
+  public stopDatabaseHeartbeat(resourceKey = 'instance:primary'): void {
+    const existing = this.databaseHeartbeats.get(resourceKey);
+    if (existing) {
+      clearInterval(existing);
+      this.databaseHeartbeats.delete(resourceKey);
+    }
+  }
+
   public getDeploymentConstraintDocumentation(): string {
     return `
 ================================================================================
-SamJuniorsOS v1 Single-Instance Deployment Constraint
+SamJuniorsOS Multi-Instance Concurrency Architecture (Milestone M2 / Option A)
 ================================================================================
-Current Milestone: 1.1
-Requirement: Single Instance Deployment (Pinned max-instances=1, min-instances=1)
+Milestone: M2 (Always-On Cloud Brain & Shared Persistence)
+Status: Shared distributed leases active via Prisma (distributed_leases table)
 
-Why single instance is required for v1:
-1. Milestone 1.1 uses file-backed durable persistence (.data/) which provides
-   process-restart durability for a single container.
-2. If multiple container instances run concurrently without shared Postgres:
-   - Workflow step states can diverge across containers.
-   - Approval single-action consumption can be double-consumed.
-   - Company state mutations in Container A will not replicate to Container B.
-3. Cloud Run Service Configuration:
-   - max-instances=1
-   - min-instances=1
-   - Concurrency: 80 requests / instance
-4. Target Architecture (§13): Full multi-instance concurrency requires PostgreSQL
-   distributed row-locks and transactional leasing.
+Evolution from Milestone 1.1:
+1. In M1.1, single-instance deployment was enforced via local OS process PID check (.data/instance.lock).
+2. In M2, the PID guard is NO LONGER load-bearing. Multi-instance concurrency, leader
+   election, and scheduled work partitioning are governed by DistributedLease records
+   in the authoritative database (SQLite with Option A volume, target PostgreSQL).
+3. If an instance crashes, its lease expires at expiresAt (TTL). A standby or peer
+   instance reclaims the lease atomically without inspecting OS PIDs.
+4. Concurrency protection:
+   - Primary/coordinator leader election: acquireSharedInstanceLease('instance:primary')
+   - Work item evaluation: sched-item:\${id}
+   - Approval single-action consumption: atomic transaction with consumedAt guard
 ================================================================================
 `;
   }
 }
+
