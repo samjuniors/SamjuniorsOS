@@ -51,3 +51,14 @@
 - **Audit evidence:** GitHub tree for the target commit; `package.json`, `server.ts`, `src/server/api.ts`, `src/App.tsx`, `src/os/App.tsx`, `vite.config.ts`, `README.md`, `docs/SETUP.md`, `docs/README.md`, `doc/ROADMAP.md`, `.agent/product-kit/README.md`, `docs/voice/SHARED-SOFIA-VOICE-PATCH.md`, named September reports.
 - **Checks required after doc changes:** new branch tree/read-back; archive blob SHA equality; Markdown target paths exist; `git diff --check` in local checkout; `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`; local `GET /api/status` and real voice test. All are **NOT RUN** during remote documentation audit.
 - **Release gate:** HOLD until review of audit and actual branch CI / local execution. No automatic merge.
+
+## Execution receipt — isolated documentation branch (2026-10-23)
+
+Following this audit, the author created documentation-only commit `4b91d055b4224b30ff17afbfc03acb2953df9ce4` on `docs/audit-reconcile-kit-integration-20261023`:
+
+- Updated `README.md`, `docs/SETUP.md`, `docs/README.md`, `.env.example`, the non-generated product-kit README, and targeted notices in `ARCHITECTURE.md` and `PRODUCT.md`.
+- Added `docs/current/STACK-AND-RUN.md` and `docs/archive/README.md`.
+- Copied five original historical files to `docs/archive/` using their *original blob SHAs*: pre-Vite setup, shared voice patch, pre-implementation voice research, Jarvis voice audit, and provider-fallback merge prompt. Old locations remain pointer pages (or a new current setup guide).
+- **Archive integrity: PASS.** Every archive destination's Git blob SHA equals its original source SHA. Nine changed/current-navigation Markdown files were link-scanned; three relative audit links in pointer pages were detected and fixed in a follow-up commit.
+- **No deletions, no change to runtime source code, no merge, no deployment.** Large historical audit series, formal ADRs, product-kit generated documents, `doc/ROADMAP.md` and the running ledger were kept intact.
+- **Still NOT RUN:** local checkout status, markdown deep-link/anchor inspection beyond the new pages, full CI/build/typecheck/lint/tests, voice/browser E2E and production security checks. This is a documentation reconciliation, **not** an acceptance of the application.
