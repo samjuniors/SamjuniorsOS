@@ -75,4 +75,5 @@ jobs:
         run: npm test
 
       - name: Dependency vulnerability audit
+        if: ${{ !cancelled() }}
         run: npm run audit:deps
