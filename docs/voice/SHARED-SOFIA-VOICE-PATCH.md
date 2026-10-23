@@ -1,5 +1,8 @@
 # Shared SofiaUI voice for SamjuniorsOS
 
+> **HISTORICAL MIGRATION NOTE — DO NOT REAPPLY ON `kit/integration` (audit 2026-10-23).** This document describes an earlier patch procedure for a different application baseline. The inspected `kit/integration` code already contains `src/os/components/voice/SharedSophiaVoicePresence.tsx` and uses `server.ts` with an integrated WebSocket at `/api/live-ws` on the application port. Its `package.json` does not expose `dev:ws`. The original implementation history, testing checklist and governance warnings below are kept for provenance; **the `Apply` and separate-process sections are historical instructions, not commands to execute on this branch**. Consult [current setup](../SETUP.md) and the [documentation audit](../audit/2026-10-23-kit-integration-documentation-audit.md).
+
+
 This patch replaces the OS desktop's **second** push-to-talk WebSocket / Deepgram
 voice interface with a visual/control surface over the **already-mounted**
 `getSophiaOS()` singleton. The full-screen Sofia tab and OS desktop now use the
