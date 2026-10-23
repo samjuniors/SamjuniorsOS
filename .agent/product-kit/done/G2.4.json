@@ -1,0 +1,8 @@
+{
+  "id": "G2.4",
+  "doneAt": "2026-10-23T05:15:01.852Z",
+  "agent": "lead",
+  "branch": "main",
+  "commit": "872e8f050233ccc225da3fd535a9ebfd78418a8c",
+  "evidence": "tests/platform/multi_instance_concurrency.test.ts (9/9 passed), m2_batch3_concurrency_hygiene (8/8), m2_batch3_recovery_gate (6/6), typecheck and lint 0 errors"
+}
