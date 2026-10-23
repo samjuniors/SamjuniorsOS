@@ -47,6 +47,16 @@ jobs:
           bun install
           git diff --stat -- bun.lock
 
+      # Temporary inspectable lockfile export. Only public dependency metadata
+      # is emitted; remove this step after the reviewed lockfile is committed.
+      - name: Export refreshed dependency lock for review
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            echo "BUN_LOCK_EXPORT_BEGIN"
+            base64 -w0 bun.lock | fold -w 160
+            echo "BUN_LOCK_EXPORT_END"
+          fi
+
       - name: Generate Prisma client
         run: bunx prisma generate
 
