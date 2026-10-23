@@ -316,9 +316,10 @@ export async function executeGitHubIntelligence(
     },
   };
 
-  // Record into server-authoritative Company Context
-  CompanyContextProvider.recordIntelligence(intelligenceTopic);
-  CompanyContextProvider.recordEngineeringIntelligence({
+  // Record into server-authoritative Company Brain
+  const { CompanyBrain } = await import('@/lib/server/brain/company-brain');
+  await CompanyBrain.getInstance().recordIntelligence(intelligenceTopic);
+  await CompanyBrain.getInstance().recordEngineeringIntelligence({
     repositoryTarget: `${targetRepo.owner}/${targetRepo.repo}`,
     lastReconTimestamp: new Date().toISOString(),
     status: 'active_grounded',

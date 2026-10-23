@@ -91,6 +91,8 @@ export class CompanyStateStore implements ICompanyStateStore {
       if (persistedState.customers) this.customers = persistedState.customers;
       if (persistedState.financialModel) this.financialModel = persistedState.financialModel;
       if (persistedState.decisions) this.decisions = persistedState.decisions;
+      if (persistedState.attentionItems) this.attentionItems = persistedState.attentionItems;
+      if (persistedState.employees) this.employees = persistedState.employees;
     } catch {
       // fallback
     }
@@ -102,6 +104,8 @@ export class CompanyStateStore implements ICompanyStateStore {
     customers?: CustomerDeal[];
     financialModel?: FinanceMetric;
     decisions?: CompanyDecision[];
+    attentionItems?: AttentionItem[];
+    employees?: AIAgent[];
   }): void {
     let currentDisk: Record<string, any> = {};
     try {
@@ -116,11 +120,59 @@ export class CompanyStateStore implements ICompanyStateStore {
       customers: patch.customers ?? currentDisk.customers ?? this.customers,
       financialModel: patch.financialModel ?? currentDisk.financialModel ?? this.financialModel,
       decisions: patch.decisions ?? currentDisk.decisions ?? this.decisions,
+      attentionItems: patch.attentionItems ?? currentDisk.attentionItems ?? this.attentionItems,
+      employees: patch.employees ?? currentDisk.employees ?? this.employees,
     });
   }
 
   public async getProducts(): Promise<ProductFeature[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.products) {
+        return record.products as unknown as ProductFeature[];
+      }
+      return [];
+    }
     return [...this.products];
+  }
+
+  public async updateProducts(products: ProductFeature[]): Promise<void> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          products: products as any,
+        },
+        update: {
+          products: products as any,
+        },
+      });
+      this.products = [...products];
+      return;
+    }
+
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ products });
+      this.products = [...products];
+    });
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            products: this.products as any,
+          },
+          update: {
+            products: this.products as any,
+          },
+        });
+      } catch {}
+    }
   }
 
   public async getInitiatives(): Promise<CompanyInitiative[]> {
@@ -136,11 +188,103 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getCustomers(): Promise<CustomerDeal[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.customers) {
+        return record.customers as unknown as CustomerDeal[];
+      }
+      return [];
+    }
     return [...this.customers];
   }
 
+  public async updateCustomers(customers: CustomerDeal[]): Promise<void> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          customers: customers as any,
+        },
+        update: {
+          customers: customers as any,
+        },
+      });
+      this.customers = [...customers];
+      return;
+    }
+
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ customers });
+      this.customers = [...customers];
+    });
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            customers: this.customers as any,
+          },
+          update: {
+            customers: this.customers as any,
+          },
+        });
+      } catch {}
+    }
+  }
+
   public async getEmployees(): Promise<AIAgent[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.employees) {
+        return record.employees as unknown as AIAgent[];
+      }
+      return [];
+    }
     return [...this.employees];
+  }
+
+  public async updateEmployees(agents: AIAgent[]): Promise<void> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          employees: agents as any,
+        },
+        update: {
+          employees: agents as any,
+        },
+      });
+      this.employees = [...agents];
+      return;
+    }
+
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ employees: agents });
+      this.employees = [...agents];
+    });
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            employees: this.employees as any,
+          },
+          update: {
+            employees: this.employees as any,
+          },
+        });
+      } catch {}
+    }
   }
 
   public async getDecisions(): Promise<CompanyDecision[]> {
@@ -151,7 +295,53 @@ export class CompanyStateStore implements ICompanyStateStore {
   }
 
   public async getAttentionItems(): Promise<AttentionItem[]> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const record = await db.companyState.findUnique({ where: { organizationId: 'default' } });
+      if (record?.attentionItems) {
+        return record.attentionItems as unknown as AttentionItem[];
+      }
+      return [];
+    }
     return [...this.attentionItems];
+  }
+
+  public async updateAttentionItems(items: AttentionItem[]): Promise<void> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      await db.companyState.upsert({
+        where: { organizationId: 'default' },
+        create: {
+          organizationId: 'default',
+          attentionItems: items as any,
+        },
+        update: {
+          attentionItems: items as any,
+        },
+      });
+      this.attentionItems = [...items];
+      return;
+    }
+
+    DurableFileStore.getInstance().withCollectionLockStrict('company_state', () => {
+      this.persistStateStrictUnderLock({ attentionItems: items });
+      this.attentionItems = [...items];
+    });
+
+    if (process.env.DATABASE_URL) {
+      try {
+        await prisma.companyState.upsert({
+          where: { organizationId: 'default' },
+          create: {
+            organizationId: 'default',
+            attentionItems: this.attentionItems as any,
+          },
+          update: {
+            attentionItems: this.attentionItems as any,
+          },
+        });
+      } catch {}
+    }
   }
 
   public async getFinancialMetrics(): Promise<FinanceMetric> {

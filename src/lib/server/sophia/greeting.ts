@@ -9,7 +9,7 @@
 
 import { InMemoryApprovalStore } from '../authorization/approval-store';
 import { AgentRunStore } from '../agents/run-store';
-import { CompanyStateStore } from '../state/state-store';
+import { CompanyBrain } from '../brain/company-brain';
 import type { MemoryScope } from './types';
 
 export interface SofiaGreetingStateSummary {
@@ -42,12 +42,12 @@ export async function getSofiaGreeting(opts?: { founderId?: string }): Promise<S
 
   let finMetrics: { mrr?: number; runwayMonths?: number } | null = null;
   try {
-    const fin = await CompanyStateStore.getInstance().getFinancialMetrics();
+    const fin = await CompanyBrain.getInstance().getFinancialMetrics();
     if (fin && !fin.isSimulatedModel && typeof fin.mrr === 'number' && fin.mrr > 0) {
       finMetrics = fin;
     }
   } catch {
-    // state store optional fail-soft
+    // brain optional fail-soft
   }
 
   const pendingCount = pendingApprovals.length;
@@ -60,7 +60,10 @@ export async function getSofiaGreeting(opts?: { founderId?: string }): Promise<S
   const sources: string[] = [];
   if (pendingCount > 0) sources.push('InMemoryApprovalStore');
   if (activeCount > 0) sources.push('AgentRunStore');
-  if (mrr !== null && mrr > 0) sources.push('CompanyStateStore');
+  if (mrr !== null && mrr > 0) {
+    sources.push('CompanyBrain');
+    sources.push('CompanyStateStore');
+  }
 
   let text: string;
   if (!hasRealState) {
@@ -93,6 +96,6 @@ export async function getSofiaGreeting(opts?: { founderId?: string }): Promise<S
     liveAi: false,
     fallback: true,
     scopes: ['company_brain'],
-    sources: sources.length > 0 ? sources : ['CompanyStateStore'],
+    sources: sources.length > 0 ? sources : ['CompanyBrain', 'CompanyStateStore'],
   };
 }
