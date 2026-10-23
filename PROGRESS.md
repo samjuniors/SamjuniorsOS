@@ -33,8 +33,24 @@
 
 **Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
 - **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
-- **Progress:** 8/11 steps done (G0.3, G2.1, G2.2, G2.3, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
+- **Progress:** 10/11 steps done (G0.3, G2.1, G2.2, G2.3, G2.4, G2.5, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
 - **Recent Deliveries:**
+  - **G2.4 (Multi-instance Concurrency: Shared Leases Replace the PID Guard):**
+    - Decoupled `InstanceConcurrencyGuard` from load-bearing single-process PID checks (`.data/instance.lock`); added `isPidGuardLoadBearing(): boolean` returning `false`.
+    - Implemented database-backed shared leases via `acquireSharedInstanceLease`, `releaseSharedInstanceLease`, `startDatabaseHeartbeat`, and `stopDatabaseHeartbeat` using the `distributed_leases` table.
+    - Upgraded `PostgresLeaseManager` (aliased as `DatabaseDistributedLeaseManager`) with atomic Prisma queries, avoiding SQLite interactive transaction lock timeouts; added same-holder re-acquisition and TTL renewal.
+    - Hardened `PostgresApprovalStore.consume()` with atomic conditional updates (`WHERE id = ... AND consumedAt IS NULL`) to eliminate double-consumption race conditions; exported `ApprovalAlreadyConsumedError`.
+    - Automated 9-test multi-instance concurrency suite `tests/platform/multi_instance_concurrency.test.ts` (9/9 PASS) verifying two instances mutual exclusion against one database, TTL renewal, crash failover, 20-worker stampede, approval single-action consumption, and cross-process SIGKILL takeover.
+  - **G2.5 (Backup and Restore Drill Meeting Decided RPO/RTO):**
+    - Cross-platform backup and restore engine `scripts/backup-restore.ts` supporting SQLite database snapshot and `.data/` file stores with gzip compression, SHA-256 integrity manifests, and automated 30-day retention pruning (`pruneOldBackups`).
+    - Option A Linux bash restore utility `scripts/restore-sqlite.sh` for staging VPS host.
+    - Added npm script commands `"db:backup"` and `"db:restore"` in `package.json`.
+    - Automated 7-stage disaster recovery drill suite `tests/platform/backup_restore_drill.test.ts` (7/7 PASS) verifying real restore into a clean environment:
+      - Measured RPO: 0 seconds (target < 24 hours) — PASS.
+      - Measured RTO: 0.025 seconds (target < 2 hours) — PASS.
+      - SQLite PRAGMA integrity_check: ok — PASS.
+      - 100% semantic and byte-level cryptographic parity across all restored domain tables and `.data` JSON stores.
+      - Automated 30-day retention pruning verified (45-day backup purged, recent preserved).
   - **G2.1 (Provision Staging Hosting and Database per Infrastructure Decision):**
     - Canonical `/api/health` route with database connectivity verification (`SELECT 1`), response latency tracking, and database mode reporting.
     - Option A single-container `Dockerfile` and `docker-compose.staging.yml` with persistent volume mappings (`/app/db`, `/app/.data`, `/app/backups`), healthcheck monitoring, and daily automated backup cron runner.
@@ -65,9 +81,7 @@
   - **G0.3:** Option A selected — Single VPS with persistent volume & SQLite ($5–$20/mo), daily automated backups with 30-day retention, RPO < 24h, RTO < 2h (`ack/G0.3.json`).
   - **AUTH-2.3C:** Founder authorized proceeding with persistence migration under Option A (versioned SQLite migrations and moving `.data` JSON into SQLite).
 - **Next Steps Ready:**
-  - **G2.4:** Multi-instance concurrency: shared leases replace the PID guard.
-  - **G2.5:** Backup and restore drill meeting the decided RPO/RTO.
-  - **G2.6:** Deploy pipeline with post-deploy verification of the live environment.
+  - **G2.6:** Deploy pipeline with post-deploy verification of the live environment (final step of Milestone M2).
 
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
