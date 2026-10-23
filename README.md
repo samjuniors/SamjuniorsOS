@@ -1,5 +1,10 @@
 # SamJuniorsOS + SOFIA
 
+> [!IMPORTANT]
+> **For the `kit/integration` runtime (2026-10-23):** This branch has switched to **Vite + Express**. Older Next.js and `npm run dev:ws` instructions below are historical and do **not** match this branch's `package.json`. See [branch-specific setup](docs/setup/KIT_INTEGRATION.md) and [documentation reconciliation audit](docs/audit/KIT_INTEGRATION_DOCUMENT_RECONCILIATION_2026-10-23.md). The older material is retained pending reference-safe reconciliation.
+
+
+
 > **AI-Native Company Operating System**  
 > One app, one port. Autonomous executive workflows, persistent institutional memory, deterministic governance, and real-time multimodal intelligence.
 
