@@ -2,11 +2,11 @@
 
 # Gate roadmap
 
-A gate opens when the gates it requires are acknowledged by the founder. Live status: `node .agent/product-kit/kit.mjs status`.
+**Gates are bookkeeping groups of steps. They are NOT the order of work and nobody starts "a gate".** The order of work is the milestones in `MILESTONES.md`; the agent finds it by running `node .agent/product-kit/kit.mjs continue`. Live status: `node .agent/product-kit/kit.mjs status`.
 
-## Order of work (waves)
+## Dependency waves (reference only, not the order of work)
 
-Gate IDs are stable names, not an order. Gates in the same wave can run in parallel once the previous wave is acknowledged.
+Which gates depend on which. Use it to understand dependencies; to know what to do next, run `continue`.
 
 | Wave | Gates |
 |---|---|
@@ -43,7 +43,7 @@ Requires: nothing
 
 | Step | Lane | Type | What | After | Exit evidence |
 |---|---|---|---|---|---|
-| G1.1 | quality | work | One canonical test command covering all test files, failing non-zero on any failure | - | A documented 'test' script runs every test file under tests/ (including .test.ts and the runner-specific suites); the exit code is 0 on a clean tree and non-zero when a test is deliberately broken; counts are printed; suites that only run under Bun are listed with the reason, per the runner divergence noted in PROGRESS.md. |
+| G1.1 | quality | work | One canonical test command covering all test files, failing non-zero on any failure | - | A documented 'test' script runs every test file under tests/ (including .test.ts and the runner-specific suites); the exit code is 0 on a clean tree and non-zero when a test is deliberately broken; counts are printed; kit.config.json "checks" lists the real commands that must pass before anything lands on main (this test command, lint, typecheck, build); suites that only run under Bun are listed with the reason, per the runner divergence noted in PROGRESS.md. |
 | G1.2 | platform | work | CI on pull requests: install, lint, typecheck, build, full tests, secret scan | G1.1, G1.3 | Workflow runs on a PR and is green; a failing step blocks. Only 4 test files run in CI today. |
 | G1.3 | security | work | Full-history secret scan and classification of the 5 test-fixture hits | - | Scanner report over the full git history with every finding classified (fixture, revoked, or live); no unexplained finding; the chosen scanner and command are recorded so CI can reuse them. |
 | G1.4 | quality | work | Reconcile documentation with code (voice status, README quickstart, SETUP.md) | - | Each contradiction listed with file evidence and resolved; no doc claims an unverified status; PROGRESS.md entry written. |

@@ -1,14 +1,14 @@
 # Product kit
 
-A resumable, gate-by-gate work system so AI agents can take SamJuniorsOS from its current state to a production-grade product, several agents at a time, without losing their place when a session ends or the computer shuts down.
+A resumable, milestone-by-milestone work system so AI agents can take SamJuniorsOS from its current state to a production-grade product, several agents at a time, without losing their place when a session ends or the computer shuts down.
 
-**One prompt starts or resumes everything:** paste `MASTER_PROMPT.md` into your coding agent. `VISION.md` holds the founder's vision (greeting, memory, decision engine, AI employees, tools, product takeover) how each part is built and proven, and what to reuse from the open-source ecosystem.
+**One prompt starts or resumes everything:** paste `MASTER_PROMPT.md` into your coding agent. It is the only prompt; it replaces any earlier copy. The order of work is the milestones in `MILESTONES.md` and the agent finds it with `continue`. Gates below are bookkeeping groups of steps, never an order. `VISION.md` holds the founder's vision (greeting, memory, decision engine, AI employees, tools, product takeover) how each part is built and proven, and what to reuse from the open-source ecosystem.
 
 ## What this is and is not
 
 - It **adds** a roadmap with exit evidence, a claim-and-resume mechanism, a multi-agent protocol, a production quality bar and a capability-discovery procedure.
 - It **does not replace** the repo's rules. `AGENTS.md` is binding; `CLAUDE.md` is the engineering operating system; `CONTINUE.md` is the resume protocol; `PROGRESS.md` is the ledger.
-- It **cannot** make one prompt finish the product. Progress is bounded by founder decisions (gate G0 and the gate acknowledgements). The kit's job is to make every other hour productive and every stop recoverable.
+- It **cannot** make one prompt finish the product. Progress is bounded by founder decisions (the G0 decisions) and by the founder's acceptance of each milestone. The kit's job is to make every other hour productive and every stop recoverable.
 
 ## How the gates relate to `doc/ROADMAP.md`
 
@@ -33,6 +33,13 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 
 | Command | Use |
 |---|---|
+| `recover` | After any stop: what is finished, what was interrupted, what is not on main yet, what is next. Read-only. `install-hook` makes Claude Code run it at every session start |
+| `checkpoint` | In a step worktree: secret scan, commit, push the step branch (never main) |
+| `sync` | Push commits that sit on main but not on the remote (decisions, PROGRESS.md), after the checks pass |
+| `land <ID>` | Lead only: bring main into the step, run the checks, merge into main, push, clean up |
+| `qa start <M>` / `qa check <M>` | The QA pass before the founder tests a milestone |
+| `milestone ship <M>` | After close: tag, push, leave the repository clean |
+| `doctor` | Finds older kit wording (gate-by-gate, kit/integration) in other files |
 | `continue` | What to do next: interrupted work to take over, ready steps of the active milestone, decisions to ask. The founder only has to say "continue" |
 | `status` | Every gate and step with its state |
 | `next --n 4` | Up to four ready steps that do not conflict on files, spread across lanes |
@@ -42,7 +49,7 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 | `scaffold <ID>` | Create the handoff and verification templates for a step |
 | `done <ID> --evidence "..."` | Record completion (requires a handoff note and an independent PASS from a second agent session) |
 | `release <ID>` | Lead only, after integration |
-| `decide <ID>` / `ack <KEY>` | Record a founder decision or gate acknowledgement, quoting the founder's own words |
+| `decide <ID>` / `ack <KEY>` | Record a founder decision or acknowledgement (including `GIT-SYNC`), quoting the founder's own words |
 | `milestone status` / `verify <M>` / `close <M>` | List milestones; give the founder the test script; after acceptance, clean up and start the next milestone |
 | `render` / `validate` | Regenerate `GATES.md` and `MILESTONES.md` and check the roadmap for errors |
 
@@ -52,9 +59,10 @@ Claims live in the git common directory, shared by every worktree and kept acros
 
 ## What the founder does
 
-1. Answers the decisions in G0, using the briefs in `briefs/`.
-2. At the end of each milestone, tests it with the script in `MILESTONES.md` and tells the agent how it went, in your own words. At any other time, just say "continue".
-3. Confirms any new tool or integration an agent proposes (`CAPABILITIES.md`).
+1. Answers the decisions when `continue` lists them, using the briefs in `briefs/`.
+2. Once, authorizes git sync (`ack GIT-SYNC`) so the agent can push and merge to main safely.
+3. At the end of each milestone, after the agent's own QA pass, tests it with the script in `MILESTONES.md` and tells the agent how it went, in your own words. At any other time, just say "continue".
+4. Confirms any new tool or integration an agent proposes (`CAPABILITIES.md`).
 
 Everything else is meant to proceed without you.
 

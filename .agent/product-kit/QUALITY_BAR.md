@@ -50,7 +50,13 @@ A step or a release is done only with evidence for every applicable item: a comm
 - Q-QA-2 Each journey has an automated end-to-end test.
 - Q-QA-3 Every fixed defect gets a regression test.
 - Q-QA-4 Typecheck, lint and build are clean in CI.
+- Q-QA-6 Before the founder tests a milestone, a QA pass is recorded in `qa/<M>.md`: every founder test step was run against the real running product by a session that did not build most of it; bugs found were fixed with regression tests or recorded as findings; steps an agent cannot check (real microphone, phone, live key) are listed as founder-only.
 - Q-QA-5 LLM-dependent behavior (intent, retrieval, faithfulness) has an evaluation set, a recorded baseline and a regression threshold.
+
+## Repository hygiene
+- Q-GIT-1 `main` is always green: nothing lands until the configured checks pass on the merged result.
+- Q-GIT-2 No force-push, no history rewriting, no secrets committed (checkpoint scans before committing).
+- Q-GIT-3 After each milestone ships: working tree clean, no leftover step or QA branches or worktrees, a `milestone/<M>` tag exists.
 
 ## Documentation
 - Q-DOC-1 A new person can set up the system from the docs on a clean machine.

@@ -6,8 +6,8 @@
 //   claims      : <git-common-dir>/kit/claims/<ID>/   (local, shared by all worktrees, survives shutdown)
 //   completion  : .agent/product-kit/done/<ID>.json          (committed WITH the work on the step branch)
 //   decisions   : .agent/product-kit/ack/<KEY>.json          (committed, records a founder statement)
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, renameSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, renameSync, statSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +16,11 @@ const git = (args, cwd = kitDir) => execFileSync('git', args, { cwd, encoding: '
 const root = git(['rev-parse', '--show-toplevel']);
 const commonDir = path.resolve(kitDir, git(['rev-parse', '--git-common-dir']));
 const claimsDir = path.join(commonDir, 'kit', 'claims');
+
+const KIT_VERSION = 2;
+// Optional local settings: kit.config.json { mainBranch, remote, checks: [shell commands that must pass before anything lands on main], secretScanIgnore: [paths] }
+const cfgFile = path.join(kitDir, 'kit.config.json');
+const cfg = { mainBranch: 'main', remote: 'origin', checks: [], secretScanIgnore: [], ...(existsSync(cfgFile) ? (() => { try { return JSON.parse(readFileSync(cfgFile, 'utf8')); } catch (e) { console.error(`kit: kit.config.json is not valid JSON (${e.message}). Fix it; nothing was changed.`); process.exit(1); } })() : {}) };
 
 const data = JSON.parse(readFileSync(path.join(kitDir, 'gates.json'), 'utf8'));
 const STALE_MS = (data.stale_claim_minutes ?? 30) * 60 * 1000;
@@ -112,6 +117,101 @@ const worktreeList = () => git(['worktree', 'list', '--porcelain'], root).split(
 const branchExists = (b) => { try { git(['rev-parse', '--verify', '--quiet', b], root); return true; } catch { return false; } };
 const isMerged = (b) => { try { execFileSync('git', ['merge-base', '--is-ancestor', b, 'HEAD'], { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } };
 const briefFor = (id) => { if (steps.get(id)?.brief) return steps.get(id).brief; const d = path.join(kitDir, 'briefs'); const f = existsSync(d) ? readdirSync(d).find((x) => x.startsWith(`${id}-`)) : null; return f ? `.agent/product-kit/briefs/${f}` : null; };
+
+// ---- git sync helpers (kit v2) ----
+const tryGit = (args, cwd = root) => { try { return { ok: true, out: git(args, cwd) }; } catch (e) { return { ok: false, out: String(e.stderr || e.message).trim() }; } };
+const branchOf = (cwd = root) => git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+const dirtyCount = (cwd = root) => git(['status', '--porcelain'], cwd).split('\n').filter(Boolean).length;
+const hasRemote = () => tryGit(['remote'], root).out.split('\n').includes(cfg.remote);
+const syncAcked = () => acks.has('GIT-SYNC');
+const ago = (iso) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 1 ? 'just now' : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+const SECRET_PATTERNS = [
+  ['AWS access key', /AKIA[0-9A-Z]{16}/], ['private key', /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/],
+  ['GitHub token', /gh[pousr]_[A-Za-z0-9]{30,}/], ['API key (sk-)', /sk-[A-Za-z0-9_-]{20,}/], ['Slack token', /xox[abprs]-[A-Za-z0-9-]{10,}/],
+  ['Google API key', /AIza[0-9A-Za-z_-]{35}/], ['hard-coded secret', /(?:api[_-]?key|secret|token|passwd|password)\s*[:=]\s*['"][A-Za-z0-9_\-/+=]{20,}['"]/i],
+];
+// Report only file and line and the kind of secret. Never print the value.
+function secretHits(cwd) {
+  const files = new Set([
+    ...tryGit(['diff', 'HEAD', '--name-only'], cwd).out.split('\n'),
+    ...tryGit(['ls-files', '--others', '--exclude-standard'], cwd).out.split('\n'),
+  ].filter(Boolean));
+  const hits = [];
+  for (const f of files) {
+    if ((cfg.secretScanIgnore ?? []).some((i) => f === i || f.startsWith(`${i}/`))) continue;
+    if (/(^|\/)\.env(\.|$)/.test(f) && !/\.(example|sample|template)$/.test(f)) hits.push(`${f}: an environment file must not be committed`);
+    const full = path.join(cwd, f);
+    if (!existsSync(full) || statSync(full).size > 1_000_000) continue;
+    const text = readFileSync(full, 'utf8');
+    if (text.includes('\u0000')) continue;
+    text.split('\n').forEach((line, i) => { for (const [name, re] of SECRET_PATTERNS) if (re.test(line)) hits.push(`${f}:${i + 1}: looks like ${name}`); });
+  }
+  return hits;
+}
+// Returns an error message, or null when every check passed. Never exits, so callers can undo a half-done merge first.
+function checksPrecondition(a) {
+  if (cfg.checks.length) return null;
+  return typeof a.flags['no-checks'] === 'string' && a.flags['no-checks'].length > 5 ? null : 'kit.config.json has no "checks" yet. Set it to the repository\'s real commands (the single test command from step G1.1, lint, typecheck, build). Until it exists, pass --no-checks "<why>" and the reason goes into the commit message.';
+}
+function runChecks(cwd, a) {
+  const pre = checksPrecondition(a);
+  if (pre) return pre;
+  if (!cfg.checks.length) { console.log(`WARNING: no automated checks configured (${a.flags['no-checks']}).`); return null; }
+  for (const c of cfg.checks) {
+    console.log(`$ ${c}`);
+    const r = spawnSync(c, { cwd, shell: true, stdio: 'inherit' });
+    if (r.status !== 0) return `check failed: ${c}`;
+  }
+  return null;
+}
+const finishedNotLanded = () => [...done].filter((id) => branchExists(`step/${id}`) && !isMerged(`step/${id}`));
+const qaFile = (mid) => { for (const base of [kitDir, ...worktreeList().filter((w) => w.branch === `refs/heads/qa/${mid}`).map((w) => path.join(w.worktree, '.agent', 'product-kit'))]) { const f = path.join(base, 'qa', `${mid}.md`); if (existsSync(f)) return f; } return null; };
+function qaProblems(m, file) {
+  const t = readFileSync(file, 'utf8');
+  const errs = [];
+  const blocks = [...t.matchAll(/^### (T\d+)[^\n]*\n([\s\S]*?)(?=^### T\d+|^## |(?![\s\S]))/gm)];
+  if (blocks.length < m.founder_test.length) errs.push(`expected ${m.founder_test.length} test blocks (T1..T${m.founder_test.length}), found ${blocks.length}`);
+  for (const [, id, body] of blocks) {
+    const r = (body.match(/^Result:\s*(.+)$/m) ?? [])[1]?.trim();
+    const e = (body.match(/^Evidence:\s*(.+)$/m) ?? [])[1]?.trim();
+    if (!['PASS', 'FOUNDER-ONLY'].includes(r)) errs.push(`${id}: Result must be PASS or FOUNDER-ONLY (found "${r ?? 'none'}")`);
+    if (!e || e.startsWith('<')) errs.push(`${id}: Evidence is empty`);
+  }
+  const by = (t.match(/^QA by:\s*(.+)$/m) ?? [])[1]?.trim();
+  if (!by || by.startsWith('<')) errs.push('"QA by:" needs the name of the session that ran the pass');
+  if (!/^Verdict:\s*PASS\s*$/m.test(t)) errs.push('"Verdict: PASS" is missing');
+  if (!/^## Bugs found and fixed/m.test(t)) errs.push('the "Bugs found and fixed" section is missing');
+  return { errs, founderOnly: blocks.filter(([, , b]) => /^Result:\s*FOUNDER-ONLY/m.test(b)).map(([, id]) => id) };
+}
+
+// Older kit wording that sends an agent down the wrong path. Looked for outside the kit's own folder.
+const STALE = [
+  [/gate[- ]wise|gate[- ]by[- ]gate/i, 'the order of work is milestones, not gates; say "continue"'],
+  [/\bnext gate\b|\bstart gate\b|\bwork on gate\b/i, 'agents never pick a gate; "continue" decides'],
+  [/kit\/integration/, 'work happens on main (founder decision, kit v2); see PROTOCOL.md sections 1, 6 and 9'],
+  [/\back\s+<?gate/i, 'gates close when their steps are done; founders accept milestones'],
+  [/(do not|never|no) (push|merge to main)/i, 'check: pushing and merging to main are now allowed only through checkpoint, land and milestone ship, after ack GIT-SYNC'],
+];
+function doctorHits() {
+  const files = [];
+  const walk = (dir, depth) => {
+    if (depth > 3 || !existsSync(dir)) return;
+    for (const n of readdirSync(dir)) {
+      if (['node_modules', '.git', 'archive', 'kit-bundle', 'product-kit'].includes(n)) continue;
+      const f = path.join(dir, n);
+      const st = statSync(f);
+      if (st.isDirectory()) walk(f, depth + 1);
+      else if (/\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f);
+    }
+  };
+  for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f); }
+  for (const d of ['docs', 'doc', '.agent', '.claude']) walk(path.join(root, d), 0);
+  const hits = [];
+  for (const f of new Set(files)) readFileSync(f, 'utf8').split('\n').forEach((line, i) => { for (const [re, why] of STALE) if (re.test(line)) hits.push({ file: path.relative(root, f), line: i + 1, why, text: line.trim().slice(0, 140) }); });
+  const mp = path.join(kitDir, 'MASTER_PROMPT.md');
+  if (!existsSync(mp) || !readFileSync(mp, 'utf8').includes(`kit-version: ${KIT_VERSION}`)) hits.push({ file: '.agent/product-kit/MASTER_PROMPT.md', line: 1, why: `not kit version ${KIT_VERSION}; apply the update patch`, text: '' });
+  return hits;
+}
 
 const cmds = {
   status() {
@@ -261,7 +361,9 @@ const cmds = {
     const m = activeMs;
     const ids = msStepIds(m);
     const n = ids.filter((id) => done.has(id)).length;
-    console.log(`Active milestone ${m.id}: ${m.title}  (${n}/${ids.length} steps done)\nGoal: ${m.purpose}\n`);
+    console.log(`Active milestone ${m.id}: ${m.title}  (${n}/${ids.length} steps done)\nGoal: ${m.purpose}\nThe order of work is the active milestone. Gates are only bookkeeping; never pick one.\n`);
+    const unlanded = finishedNotLanded().filter((id) => ids.includes(id));
+    if (unlanded.length) console.log(`0. Land finished steps on ${cfg.mainBranch} first (from the main checkout; needs ack GIT-SYNC):\n${unlanded.map((id) => `   node .agent/product-kit/kit.mjs land ${id}`).join('\n')}\n`);
     const claims = allClaims().filter((c) => ids.includes(c.step));
     const stale = claims.filter((c) => c.stale);
     const fresh = claims.filter((c) => !c.stale);
@@ -289,9 +391,13 @@ const cmds = {
       for (const [key, title] of asks) console.log(`   ${key}: ${title}${briefFor(key) ? `\n      brief: ${briefFor(key)}` : ''}\n      record the answer: node .agent/product-kit/kit.mjs decide ${key} --quote "<their exact words>"`);
       console.log('');
     }
-    if (n === ids.length) console.log(`${k++}. Every step of ${m.id} is done. Run: node .agent/product-kit/kit.mjs milestone verify ${m.id}\n`);
+    if (n === ids.length) {
+      const qf = path.join(kitDir, 'qa', `${m.id}.md`);
+      const qaOk = existsSync(qf) && !qaProblems(m, qf).errs.length;
+      console.log(qaOk ? `${k++}. Every step of ${m.id} is done and QA passed. Run: node .agent/product-kit/kit.mjs milestone verify ${m.id}\n` : `${k++}. Every step of ${m.id} is done. Run the QA pass before the founder tests anything: node .agent/product-kit/kit.mjs qa start ${m.id}  (then qa check, land QA-${m.id})\n`);
+    }
     else if (!stale.length && !fresh.length && !picked.length && !asks.size) console.log('Nothing is ready and nothing is waiting on the founder. Run "status" and report what blocks the milestone.\n');
-    console.log('Rules: no push or deploy, no third-party installs without the founder, record decisions only in the founder\'s own words, independent verification before done.');
+    console.log('Rules: no deploy; push only through checkpoint, land and ship after ack GIT-SYNC; no third-party installs without the founder, record decisions only in the founder\'s own words, independent verification before done.');
   },
 
   milestone(a) {
@@ -312,12 +418,43 @@ const cmds = {
     const undone = ids.filter((id) => !done.has(id));
     if (sub === 'verify') {
       need(!undone.length, `milestone ${m.id} still has ${undone.length} undone steps: ${undone.join(', ')}`);
-      console.log(`Milestone ${m.id} (${m.title}) is complete. Ask the founder to test it:\n`);
+      const qf = path.join(kitDir, 'qa', `${m.id}.md`);
+      need(existsSync(qf), `no QA report for ${m.id} on ${cfg.mainBranch}. Run the QA pass first: qa start ${m.id}, qa check ${m.id}, land QA-${m.id}. The founder tests only after QA passed.`);
+      const q = qaProblems(m, qf);
+      need(!q.errs.length, `QA report for ${m.id} is not ready:\n  ${q.errs.join('\n  ')}`);
+      if (q.founderOnly.length) console.log(`Tell the founder first: ${q.founderOnly.join(', ')} could not be checked by an agent (see .agent/product-kit/qa/${m.id}.md). They must try those themselves.\n`);
+      console.log(`Milestone ${m.id} (${m.title}) is complete and passed QA. Ask the founder to test it:\n`);
       m.founder_test.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
       console.log(`\nNot included yet: ${m.skips.join('; ')}\n\nThen ask: "Did this work? Tell me in your own words." If it worked, run:\n  node .agent/product-kit/kit.mjs milestone close ${m.id} --quote "<the founder's own words>"\nIf something failed, record it in findings/, fix it, and ask again. Do not close the milestone.`);
       return;
     }
-    need(sub === 'close', `unknown milestone command "${sub}" (use status, verify or close)`);
+    if (sub === 'ship') {
+      need(msClosed(m.id), `${m.id} is not closed; close it with the founder's words first`);
+      need(syncAcked(), 'shipping needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC --quote "...")');
+      need(branchOf() === cfg.mainBranch, `run ship from the main checkout on ${cfg.mainBranch}`);
+      need(dirtyCount() === 0, 'commit the archive moves, the ack and the PROGRESS.md entry first; the tree must be clean');
+      if (hasRemote()) { const f = tryGit(['fetch', '--prune', cfg.remote], root); need(f.ok, `fetch failed: ${f.out}`); }
+      const failedShip = runChecks(root, a);
+      need(!failedShip, failedShip);
+      const tag = `milestone/${m.id}`;
+      if (!tryGit(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`], root).ok) git(['tag', '-a', tag, '-m', `${m.id} ${m.title}: accepted by the founder`], root);
+      if (hasRemote()) {
+        const r = tryGit(['push', cfg.remote, cfg.mainBranch, tag], root);
+        need(r.ok, `push was rejected (never force it):\n${r.out}`);
+        console.log(`Pushed ${cfg.mainBranch} and tag ${tag}.`);
+      } else console.log(`No remote "${cfg.remote}": tagged ${tag} locally only.`);
+      tryGit(['worktree', 'prune'], root);
+      const left = [];
+      const names = (o) => o.split('\n').map((l) => l.replace(/^[*+ ]+/, '').trim()).filter(Boolean);
+      for (const b of names(tryGit(['branch', '--list', 'step/*', 'qa/*'], root).out)) {
+        if (isMerged(b)) { if (hasRemote() && tryGit(['ls-remote', '--exit-code', '--heads', cfg.remote, b], root).ok) tryGit(['push', cfg.remote, '--delete', b], root); tryGit(['branch', '-d', b], root); }
+        else left.push(b);
+      }
+      const other = names(tryGit(['branch', '--no-merged', cfg.mainBranch], root).out).filter((b) => !left.includes(b));
+      console.log(`Repository after ${m.id}: working tree clean, ${left.length ? `kit branches NOT merged and kept: ${left.join(', ')}` : 'no leftover step or QA branches'}.${other.length ? `\nOther unmerged branches (not the kit's; report them to the founder): ${other.join(', ')}` : ''}`);
+      return;
+    }
+    need(sub === 'close', `unknown milestone command "${sub}" (use status, verify, close or ship)`);
     need(!msClosed(m.id), `${m.id} is already closed`);
     need(m === activeMs, `${m.id} is not the active milestone (${activeMs?.id}); close milestones in order`);
     need(!undone.length, `milestone ${m.id} still has ${undone.length} undone steps: ${undone.join(', ')}`);
@@ -355,7 +492,7 @@ const cmds = {
     for (const x of plan) x.run();
     writeFileSync(path.join(kitDir, 'ack', `MS-${m.id}.json`), JSON.stringify({ key: `MS-${m.id}`, milestone: m.id, ackedAt: new Date().toISOString(), by: 'founder', quote: a.flags.quote }, null, 2) + '\n');
     const next = milestones[milestones.findIndex((x) => x.id === m.id) + 1];
-    console.log(`\nRecorded the founder's acceptance in ack/MS-${m.id}.json.${openFindings.length ? `\nOpen findings carried forward (still in findings/): ${openFindings.join(', ')}` : ''}\nNow: commit the archive moves and the ack together, append a short ${m.id} summary to PROGRESS.md, then ${next ? `run "continue" to start ${next.id}: ${next.title}.` : 'tell the founder the last milestone is closed.'}`);
+    console.log(`\nRecorded the founder's acceptance in ack/MS-${m.id}.json.${openFindings.length ? `\nOpen findings carried forward (still in findings/): ${openFindings.join(', ')}` : ''}\nNow: commit the archive moves and the ack together, append a short ${m.id} summary to PROGRESS.md and commit it, then run:\n  node .agent/product-kit/kit.mjs milestone ship ${m.id}\nwhich tags and pushes ${cfg.mainBranch} and leaves the repository clean. After that ${next ? `run "continue" to start ${next.id}: ${next.title}.` : 'tell the founder the last milestone is closed.'}`);
   },
 
   resume() {
@@ -367,7 +504,7 @@ const cmds = {
     const out = git(['worktree', 'list', '--porcelain'], root).split('\n\n').map((b) => Object.fromEntries(b.split('\n').map((l) => l.split(/ (.*)/s).slice(0, 2))));
     let any = false;
     for (const w of out) {
-      if (!w.branch || !w.branch.startsWith('refs/heads/step/')) continue;
+      if (!w.branch || !/^refs\/heads\/(step|qa)\//.test(w.branch)) continue;
       any = true;
       let dirty = '?';
       try { dirty = git(['status', '--porcelain'], w.worktree).split('\n').filter(Boolean).length; } catch { /* worktree missing */ }
@@ -382,13 +519,13 @@ const cmds = {
 
   render(a = { flags: {} }) {
     const L = ['<!-- Generated from gates.json by "node .agent/product-kit/kit.mjs render". Do not edit by hand. -->', '', '# Gate roadmap', '',
-      'A gate opens when the gates it requires are acknowledged by the founder. Live status: `node .agent/product-kit/kit.mjs status`.', ''];
+      '**Gates are bookkeeping groups of steps. They are NOT the order of work and nobody starts "a gate".** The order of work is the milestones in `MILESTONES.md`; the agent finds it by running `node .agent/product-kit/kit.mjs continue`. Live status: `node .agent/product-kit/kit.mjs status`.', ''];
     const level = new Map();
     const lv = (id) => { if (level.has(id)) return level.get(id); const g = gateById.get(id); const v = g.requires.length ? 1 + Math.max(...g.requires.map(lv)) : 0; level.set(id, v); return v; };
     gates.forEach((g) => lv(g.id));
     const waves = new Map();
     for (const g of gates) waves.set(level.get(g.id), [...(waves.get(level.get(g.id)) ?? []), `${g.id} ${g.title}`]);
-    L.push('## Order of work (waves)', '', 'Gate IDs are stable names, not an order. Gates in the same wave can run in parallel once the previous wave is acknowledged.', '', '| Wave | Gates |', '|---|---|');
+    L.push('## Dependency waves (reference only, not the order of work)', '', 'Which gates depend on which. Use it to understand dependencies; to know what to do next, run `continue`.', '', '| Wave | Gates |', '|---|---|');
     for (const [v, names] of [...waves].sort((a, b) => a[0] - b[0])) L.push(`| ${v} | ${names.join('; ')} |`);
     L.push('');
     for (const g of gates) {
@@ -404,6 +541,212 @@ const cmds = {
     writeFileSync(path.join(kitDir, 'GATES.md'), L.join('\n'));
     if (!a.flags.quiet) console.log('wrote .agent/product-kit/GATES.md');
     if (milestones.length) renderMilestones();
+  },
+
+  // ---- kit v2: git sync, recover, QA pass, doctor ----
+  checkpoint() {
+    const br = branchOf();
+    need(/^(step|qa)\//.test(br), `checkpoint saves work on a step or QA branch; you are on "${br}". ${br === cfg.mainBranch ? 'Work never happens directly on main.' : ''}`);
+    const id = br.split('/').slice(1).join('/');
+    const hits = secretHits(root);
+    need(!hits.length, `possible secrets found; nothing was committed. Remove them or add the file to .gitignore (values are not shown):\n  ${hits.join('\n  ')}`);
+    if (dirtyCount()) {
+      git(['add', '-A'], root);
+      git(['commit', '-m', `wip(${id}): checkpoint ${new Date().toISOString()}`], root);
+      console.log(`Committed a checkpoint on ${br}.`);
+    } else console.log(`Nothing uncommitted on ${br}.`);
+    if (readClaim(id)) cmds.heartbeat({ pos: [id], flags: {} });
+    if (!hasRemote()) return console.log(`No remote "${cfg.remote}": the checkpoint is committed locally only.`);
+    if (!syncAcked()) return console.log('Not pushed: pushing needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC). The checkpoint is committed locally.');
+    const r = tryGit(['push', '-u', cfg.remote, br], root);
+    need(r.ok, `committed locally, but the push of ${br} failed (never force it):\n${r.out}`);
+    console.log(`Pushed ${br} to ${cfg.remote}. main is untouched.`);
+  },
+
+  land(a) {
+    const id = a.pos[0];
+    need(id, 'land needs a step id (for example M1.3) or QA-<milestone> (for example QA-M1)');
+    const isQa = /^QA-/.test(id);
+    const branch = isQa ? `qa/${id.slice(3)}` : `step/${id}`;
+    if (!isQa) stepOrDie(id);
+    need(!checksPrecondition(a), checksPrecondition(a));
+    need(syncAcked(), 'landing on main needs the founder\'s GIT-SYNC authorization. Ask for it, then record it: ack GIT-SYNC --quote "<their words>"');
+    need(branchOf() === cfg.mainBranch, `run land from the main checkout on ${cfg.mainBranch}, not on "${branchOf()}"`);
+    need(dirtyCount() === 0, 'the main checkout has uncommitted changes; commit or move them first (main must be clean to land)');
+    need(branchExists(branch), `branch ${branch} does not exist`);
+    if (isQa) {
+      const mid = id.slice(3);
+      const f = path.join(worktreeList().find((w) => w.branch === `refs/heads/${branch}`)?.worktree ?? '', '.agent', 'product-kit', 'qa', `${mid}.md`);
+      need(existsSync(f), `no QA report for ${mid} on ${branch}`);
+      const bad = qaProblems(msById.get(mid), f).errs;
+      need(!bad.length, `QA report is not ready:\n  ${bad.join('\n  ')}`);
+    } else need(tryGit(['cat-file', '-e', `${branch}:.agent/product-kit/done/${id}.json`], root).ok, `${id} has no done record on ${branch}: run "done" in its worktree and commit it`);
+    const wt = worktreeList().find((w) => w.branch === `refs/heads/${branch}`);
+    if (wt) need(dirtyCount(wt.worktree) === 0, `worktree ${wt.worktree} has uncommitted work; run "checkpoint" there first`);
+    if (hasRemote()) {
+      const f = tryGit(['fetch', cfg.remote], root);
+      need(f.ok, `fetch failed: ${f.out}`);
+      if (tryGit(['rev-parse', '--verify', '--quiet', `${cfg.remote}/${cfg.mainBranch}`], root).ok) {
+        const [behind, ahead] = git(['rev-list', '--left-right', '--count', `${cfg.remote}/${cfg.mainBranch}...${cfg.mainBranch}`], root).split(/\s+/).map(Number);
+        if (behind && ahead) die(`local ${cfg.mainBranch} and ${cfg.remote}/${cfg.mainBranch} have both moved (local +${ahead}, remote +${behind}). Someone else pushed. Do not force anything: stop and tell the founder what each side holds (git log --oneline ${cfg.mainBranch}..${cfg.remote}/${cfg.mainBranch}).`);
+        if (behind) { git(['merge', '--ff-only', `${cfg.remote}/${cfg.mainBranch}`], root); console.log(`Fast-forwarded ${cfg.mainBranch} by ${behind} commit(s) from ${cfg.remote}.`); }
+      }
+    }
+    // 1. Bring main into the step branch first, so any conflict is resolved on the step branch and main stays untouched.
+    if (wt) {
+      const m = tryGit(['merge', '--no-edit', cfg.mainBranch], wt.worktree);
+      if (!m.ok) {
+        const files = tryGit(['diff', '--name-only', '--diff-filter=U'], wt.worktree).out;
+        console.error(`Merge conflict while bringing ${cfg.mainBranch} into ${branch}. Resolve it in ${wt.worktree} following PROTOCOL.md section 11, commit, then run land again.\nConflicted files:\n${files.split('\n').map((x) => `  ${x}`).join('\n')}`);
+        process.exit(2);
+      }
+    }
+    // 2. Merge into main without committing, run the checks on the merged result, then commit.
+    const m2 = tryGit(['merge', '--no-ff', '--no-commit', branch], root);
+    if (!m2.ok) { tryGit(['merge', '--abort'], root); die(`merging ${branch} into ${cfg.mainBranch} failed unexpectedly and was aborted: ${m2.out}`); }
+    const failed = runChecks(root, a);
+    if (failed) { tryGit(['merge', '--abort'], root); die(`${failed}. The merge was aborted and ${cfg.mainBranch} is unchanged. Fix it on ${branch} and run land again.`); }
+    const title = isQa ? `QA pass ${id.slice(3)}` : steps.get(id).title.slice(0, 70);
+    git(['commit', '--no-edit', '-m', `land(${id}): ${title}${a.flags['no-checks'] ? `\n\nNo automated checks ran: ${a.flags['no-checks']}` : ''}`], root);
+    console.log(`Landed ${branch} on ${cfg.mainBranch}.`);
+    if (hasRemote()) {
+      const r = tryGit(['push', cfg.remote, cfg.mainBranch], root);
+      need(r.ok, `landed locally, but the push was rejected (never force it). Run land's fetch step again or stop and tell the founder:\n${r.out}`);
+      console.log(`Pushed ${cfg.mainBranch} to ${cfg.remote}.`);
+    } else console.log(`No remote "${cfg.remote}": landed locally only.`);
+    // 3. Clean up what is now merged.
+    if (!isQa) rmSync(path.join(claimsDir, id), { recursive: true, force: true });
+    if (wt) tryGit(['worktree', 'remove', wt.worktree], root);
+    if (hasRemote() && tryGit(['ls-remote', '--exit-code', '--heads', cfg.remote, branch], root).ok) tryGit(['push', cfg.remote, '--delete', branch], root);
+    const d = tryGit(['branch', '-d', branch], root);
+    if (!d.ok) console.log(`Kept ${branch}: ${d.out}`);
+    console.log(`Now: append a short ${id} summary to PROGRESS.md (on main, in the next landed change), then run "continue".`);
+  },
+
+  sync(a) {
+    need(syncAcked(), 'syncing needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC --quote "...")');
+    need(branchOf() === cfg.mainBranch, `run sync from the main checkout on ${cfg.mainBranch}`);
+    need(dirtyCount() === 0, 'the main checkout has uncommitted changes; commit them first (main must be clean)');
+    need(hasRemote(), `no remote "${cfg.remote}"; nothing to sync`);
+    const f = tryGit(['fetch', '--prune', cfg.remote], root);
+    need(f.ok, `fetch failed: ${f.out}`);
+    const ref = `${cfg.remote}/${cfg.mainBranch}`;
+    if (!tryGit(['rev-parse', '--verify', '--quiet', ref], root).ok) {
+      const failedFirst = runChecks(root, a); need(!failedFirst, failedFirst);
+      need(tryGit(['push', '-u', cfg.remote, cfg.mainBranch], root).ok, 'push failed');
+      return console.log(`Pushed ${cfg.mainBranch} to ${cfg.remote} (first push).`);
+    }
+    const [behind, ahead] = git(['rev-list', '--left-right', '--count', `${ref}...${cfg.mainBranch}`], root).split(/\s+/).map(Number);
+    if (behind && ahead) die(`local ${cfg.mainBranch} and ${ref} have both moved (local +${ahead}, remote +${behind}). Do not force anything: stop and tell the founder what each side holds.`);
+    if (behind) { git(['merge', '--ff-only', ref], root); return console.log(`Fast-forwarded ${cfg.mainBranch} by ${behind} commit(s). Nothing to push.`); }
+    if (!ahead) return console.log(`${cfg.mainBranch} already matches ${ref}.`);
+    const failed = runChecks(root, a);
+    need(!failed, `${failed}. Nothing was pushed.`);
+    const r = tryGit(['push', cfg.remote, cfg.mainBranch], root);
+    need(r.ok, `push was rejected (never force it):\n${r.out}`);
+    console.log(`Pushed ${ahead} commit(s) to ${ref}.`);
+  },
+
+  recover(a) {
+    const hook = !!a.flags.hook;
+    const L = [];
+    const out = (s = '') => L.push(s);
+    try {
+      const br = branchOf();
+      const remoteState = (() => {
+        if (!hasRemote()) return 'no remote';
+        if (!tryGit(['rev-parse', '--verify', '--quiet', `${cfg.remote}/${cfg.mainBranch}`], root).ok) return `${cfg.remote} not fetched yet`;
+        const [behind, ahead] = git(['rev-list', '--left-right', '--count', `${cfg.remote}/${cfg.mainBranch}...${cfg.mainBranch}`], root).split(/\s+/).map(Number);
+        return behind || ahead ? `${cfg.mainBranch} is ${ahead} ahead / ${behind} behind ${cfg.remote} (as of the last fetch)` : `${cfg.mainBranch} matches ${cfg.remote} (as of the last fetch)`;
+      })();
+      out(`== SamjuniorsOS recover (kit v${KIT_VERSION}) ==`);
+      out(`Checkout: ${root}  branch: ${br}  uncommitted files: ${dirtyCount()}  remote: ${remoteState}${/ahead/.test(remoteState) && !/ 0 ahead/.test(remoteState) ? '  -> run "sync"' : ''}`);
+      if (activeMs) { const ids = msStepIds(activeMs); out(`Active milestone: ${activeMs.id} ${activeMs.title}  (${ids.filter((i) => done.has(i)).length}/${ids.length} steps done)`); }
+      else out('All milestones are closed.');
+      const recent = [...done].map((id) => { try { return JSON.parse(readFileSync(path.join(kitDir, 'done', `${id}.json`), 'utf8')); } catch { return null; } }).filter((r) => r?.doneAt).sort((x, y) => y.doneAt.localeCompare(x.doneAt)).slice(0, 3);
+      out(`Last finished: ${recent.length ? recent.map((r) => `${r.id} (${ago(r.doneAt)})`).join(', ') : 'nothing yet'}`);
+      const unlanded = finishedNotLanded();
+      if (unlanded.length) out(`Finished but NOT on ${cfg.mainBranch} yet: ${unlanded.join(', ')}  -> run "land <ID>" for each (from the main checkout)`);
+      out('In progress:');
+      let any = false;
+      for (const w of worktreeList()) {
+        const b = (w.branch ?? '').replace('refs/heads/', '');
+        if (!/^(step|qa)\//.test(b)) continue;
+        any = true;
+        const id = b.split('/')[1];
+        const c = readClaim(id.replace(/^QA-/, ''));
+        let dirty = '?', last = 'n/a';
+        try { dirty = dirtyCount(w.worktree); last = git(['log', '-1', '--format=%cr: %s'], w.worktree); } catch { /* missing worktree */ }
+        const pushed = tryGit(['rev-parse', '--verify', '--quiet', `${cfg.remote}/${b}`], root).ok ? 'pushed' : 'not pushed';
+        out(`  ${b}  ${c ? `${c.agent}, ${c.stale ? 'STALE' : 'fresh'}` : 'no claim'}  uncommitted: ${dirty}  last commit ${last}  ${pushed}\n    ${w.worktree}`);
+      }
+      if (!any) out('  none');
+      const fdir = path.join(kitDir, 'findings');
+      const nf = existsSync(fdir) ? readdirSync(fdir).filter((f) => f.endsWith('.md')).length : 0;
+      if (nf) out(`Open findings: ${nf} (.agent/product-kit/findings/)`);
+      const bad = doctorHits();
+      if (bad.length) out(`Stale instructions found in ${new Set(bad.map((x) => x.file)).size} file(s): run "doctor".`);
+      out('');
+      out('Next: tell the founder in 3 lines where things stand, then run:  node .agent/product-kit/kit.mjs continue');
+      out('The order of work is the active milestone, never a gate. This command changed nothing.');
+    } catch (e) {
+      out(`recover could not finish: ${e.message}`);
+      out('Run "git status" and "node .agent/product-kit/kit.mjs resume" by hand.');
+    }
+    console.log(L.join('\n'));
+    if (!hook) { console.log('\n== Details from resume =='); cmds.resume(); }
+  },
+
+  qa(a) {
+    const sub = a.pos[0];
+    const m = msById.get(a.pos[1]);
+    need(['start', 'check'].includes(sub) && m, 'usage: qa start <M> | qa check <M>');
+    const undone = msStepIds(m).filter((id) => !done.has(id));
+    if (sub === 'start') {
+      need(!undone.length, `milestone ${m.id} still has undone steps: ${undone.join(', ')}`);
+      const nl = finishedNotLanded();
+      need(!nl.length, `land these first, so QA tests what is really on ${cfg.mainBranch}: ${nl.join(', ')}`);
+      need(branchOf() === cfg.mainBranch && dirtyCount() === 0, `start QA from a clean ${cfg.mainBranch} checkout`);
+      const branch = `qa/${m.id}`;
+      const wt = path.join(path.dirname(root), `${path.basename(root)}-wt`, `QA-${m.id}`);
+      if (!existsSync(wt)) { mkdirSync(path.dirname(wt), { recursive: true }); git(branchExists(branch) ? ['worktree', 'add', wt, branch] : ['worktree', 'add', '-b', branch, wt, 'HEAD'], root); }
+      const f = path.join(wt, '.agent', 'product-kit', 'qa', `${m.id}.md`);
+      if (!existsSync(f)) {
+        mkdirSync(path.dirname(f), { recursive: true });
+        const T = m.founder_test.map((t, i) => `### T${i + 1} ${t}\nResult: <PASS or FOUNDER-ONLY>\nEvidence: <command and output, test name, file, or screenshot. FOUNDER-ONLY needs the reason an agent cannot check it, for example a real microphone>\n`).join('\n');
+        writeFileSync(f, `# QA pass for ${m.id}: ${m.title}\n\nQA by: <name of the session that ran this pass; it should not be the one that built most of the milestone>\nVerdict: <replace with PASS only when every item below is PASS or FOUNDER-ONLY>\n\nRun this against the real app on ${cfg.mainBranch}, the way the founder will: start it, do each test step below yourself, and write what you saw. Do not mark PASS from reading code. A step you cannot exercise (real microphone, real phone, a live provider key) is FOUNDER-ONLY with the reason, and goes to the founder first in their test script.\n\n## Automated checks\n(every command from kit.config.json "checks" with its result)\n\n## Founder test steps, run for real\n\n${T}\n## Bugs found and fixed\n(one line each: what broke, the fix commit, the regression test that now covers it. Write "none" if none.)\n\n## Bugs found and not fixed\n(severity and why; each also goes in findings/)\n\n## Quality bar items checked in the running product\n(Q-UX-2, Q-UX-3, Q-UX-5, Q-A11Y-1 at least; item and evidence)\n`);
+      }
+      console.log(`QA worktree ready: ${wt}  (branch ${branch})\nDo this, in order:\n 1. Run the checks, then start the app and walk through every founder test step of ${m.id} yourself. Record each in ${f}.\n 2. Fix every bug that blocks a test step, in this worktree: smallest change, plus a regression test (Q-QA-3). Stay inside the auto-fix scope in PROTOCOL.md section 4; at most two fix rounds, then record the rest in findings/.\n 3. Run "checkpoint" often. When the report is complete: node .agent/product-kit/kit.mjs qa check ${m.id}\n 4. From the main checkout: node .agent/product-kit/kit.mjs land QA-${m.id}\n 5. Then: node .agent/product-kit/kit.mjs milestone verify ${m.id}`);
+      return;
+    }
+    const f = qaFile(m.id);
+    need(f, `no QA report for ${m.id}. Run: qa start ${m.id}`);
+    const { errs, founderOnly } = qaProblems(m, f);
+    if (errs.length) { console.error(`QA report for ${m.id} is not ready:\n${errs.map((e) => `- ${e}`).join('\n')}`); process.exit(1); }
+    console.log(`QA report for ${m.id} is complete.${founderOnly.length ? ` Founder-only checks: ${founderOnly.join(', ')}.` : ''}`);
+  },
+
+  doctor(a) {
+    const hits = doctorHits();
+    if (!hits.length) return console.log(`doctor: no stale instructions found (kit v${KIT_VERSION}).`);
+    console.log(`doctor: ${hits.length} place(s) still carry older kit wording. Fix each with the smallest edit that keeps the rest of the file as it is, then run doctor again.\n`);
+    for (const h of hits) console.log(`${h.file}:${h.line}  ${h.why}\n    ${h.text}`);
+    if (a.flags.strict) process.exit(1);
+  },
+
+  'install-hook'() {
+    const dir = path.join(root, '.claude');
+    const f = path.join(dir, 'settings.json');
+    let s = {};
+    if (existsSync(f)) { try { s = JSON.parse(readFileSync(f, 'utf8')); } catch { die(`${f} is not valid JSON; fix it first. Nothing was changed.`); } }
+    const command = 'node .agent/product-kit/kit.mjs recover --hook';
+    s.hooks ??= {};
+    s.hooks.SessionStart ??= [];
+    if (s.hooks.SessionStart.some((e) => (e.hooks ?? []).some((h) => h.command === command))) console.log('SessionStart hook already installed.');
+    else { s.hooks.SessionStart.push({ matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command }] }); mkdirSync(dir, { recursive: true }); writeFileSync(f, JSON.stringify(s, null, 2) + '\n'); console.log(`Added the SessionStart hook to ${path.relative(root, f)}.`); }
+    const cmdFile = path.join(dir, 'commands', 'recover.md');
+    if (!existsSync(cmdFile)) { mkdirSync(path.dirname(cmdFile), { recursive: true }); writeFileSync(cmdFile, '---\ndescription: Where did we stop? Show what is finished, what is in progress and what is next\n---\n\nRun `node .agent/product-kit/kit.mjs recover`. Tell me in three lines what is finished, what was interrupted, and what is next. Then run `node .agent/product-kit/kit.mjs continue` and do what it prints.\n'); console.log(`Added the /recover command at ${path.relative(root, cmdFile)}.`); }
+    console.log('Commit both files. NOT VERIFIED: the hook runs only in Claude Code; other agents use "recover" by hand (see MASTER_PROMPT.md).');
   },
 
   validate() {
@@ -498,7 +841,7 @@ function renderMilestones() {
 
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd || !cmds[cmd]) {
-  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | status | next [--lane L] [--n 4] | resume | validate | render\n  milestone status | milestone verify <M> | milestone close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
+  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | recover [--hook] | status | next [--lane L] [--n 4] | resume | validate | render | doctor [--strict]\n  qa start <M> | qa check <M> | checkpoint | land <ID|QA-M> | sync | install-hook\n  milestone status | verify <M> | ship <M> | close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
   process.exit(cmd ? 1 : 0);
 }
 cmds[cmd](parse(rest));

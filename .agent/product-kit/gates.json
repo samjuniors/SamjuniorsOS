@@ -93,7 +93,7 @@
           "title": "One canonical test command covering all test files, failing non-zero on any failure",
           "lane": "quality",
           "type": "work",
-          "exit": "A documented 'test' script runs every test file under tests/ (including .test.ts and the runner-specific suites); the exit code is 0 on a clean tree and non-zero when a test is deliberately broken; counts are printed; suites that only run under Bun are listed with the reason, per the runner divergence noted in PROGRESS.md.",
+          "exit": "A documented 'test' script runs every test file under tests/ (including .test.ts and the runner-specific suites); the exit code is 0 on a clean tree and non-zero when a test is deliberately broken; counts are printed; kit.config.json \"checks\" lists the real commands that must pass before anything lands on main (this test command, lint, typecheck, build); suites that only run under Bun are listed with the reason, per the runner divergence noted in PROGRESS.md.",
           "touches": [
             "package.json"
           ]
