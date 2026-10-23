@@ -304,16 +304,10 @@ export default function App({ active = true }: { active?: boolean }) {
 
   const onMic = useCallback(() => {
     void os.audio.unlockAudio();
-    if (os.rendererFailed) return;
+    // Native Gemini Live / Deepgram listen through WebAudio, not WebSpeech.
+    // Renderer availability is also unrelated to microphone availability.
     if (os.audio.micStatus === 'denied') {
       setMicModalOpen(true);
-      return;
-    }
-    if (!os.hasVoiceRecognition) {
-      setChatOpen(true);
-      const details = os.getSpeechUnsupportedDetails();
-      setSpeechNotice(details);
-      void os.speakText("Voice recognition is not available in this browser. You can type right here and I will reply aloud, or open localhost 3000 in Google Chrome for voice.");
       return;
     }
     if (os.isPaused || paused) {
@@ -328,18 +322,11 @@ export default function App({ active = true }: { active?: boolean }) {
 
   const toggleShapePause = useCallback(() => {
     void os.audio.unlockAudio();
-    if (os.rendererFailed) return;
     if (os.audio.micStatus === 'denied' || os.isMicDisabledError) {
       setMicModalOpen(true);
       return;
     }
-    if (!os.hasVoiceRecognition && (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed'))) {
-      setChatOpen(true);
-      const details = os.getSpeechUnsupportedDetails();
-      setSpeechNotice(details);
-      void os.speakText("Voice recognition is not available in this browser. You can type right here and I will reply aloud, or open localhost 3000 in Google Chrome for voice.");
-      return;
-    }
+    // Only the selected provider can determine whether recognition works.
     if (os.isPaused || paused || os.state.is('ambient', 'idle', 'completed')) {
       if (os.isPaused || paused) os.resume();
       void os.enterSession('mic-button');

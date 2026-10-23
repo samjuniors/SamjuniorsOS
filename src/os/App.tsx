@@ -6,8 +6,6 @@ import dynamic from "next/dynamic";
 import { Sparkles, LayoutGrid, Palette } from "lucide-react";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
-import LiveTranscriptRibbon from "./components/os/LiveTranscriptRibbon";
-import VoicePresence from "./components/voice/VoicePresence";
 import { os } from "./lib/osStore";
 import { syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
@@ -25,6 +23,12 @@ const SofiaSurface = dynamic(() => import("@/sofia/App"), {
   ssr: false,
   loading: () => <div className="sofia-scope" aria-hidden="true" />,
 });
+
+// The shared voice widget imports a browser-only SofiaOS singleton.
+const SharedSophiaVoicePresence = dynamic(
+  () => import("./components/voice/SharedSophiaVoicePresence"),
+  { ssr: false },
+);
 
 type Tab = "sophia" | "os";
 
@@ -102,17 +106,13 @@ export default function App() {
 
       {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
 
-      {/* While Sophia's display is up, the OS's own conversation chrome
-          stands down — she IS the conversation surface, with her own chat,
-          transcript line and voice. The chrome returns on the OS surface. */}
+      {/* Retain the canonical text chat surface; do not mount a second
+          microphone/voice WebSocket when switching to the OS desktop. */}
       {tab !== "sophia" && <ChatPanel />}
 
-      {/* Contextual Live Voice & STT Transcript Ribbon */}
-      {tab !== "sophia" && <LiveTranscriptRibbon />}
-
-      {/* SofiaUI-derived voice presence: the state-driven orb, mic-permission
-          UX and interruption feedback — the voice surface of the OS desktop. */}
-      {tab !== "sophia" && <VoicePresence />}
+      {/* Same SofiaOS instance as the always-mounted full-screen SofiaUI.
+          This shares Gemini Live audio, VAD, TTS, context and barge-in. */}
+      {tab !== "sophia" && <SharedSophiaVoicePresence />}
     </div>
   );
 }

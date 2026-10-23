@@ -1,1 +1,3 @@
-export { runtime, dynamic, GET, POST } from '../../sofia/spend/route';
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export { GET, POST } from '../../sofia/spend/route';

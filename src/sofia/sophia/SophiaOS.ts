@@ -640,6 +640,8 @@ export class SophiaOS extends EventTarget {
   }
 
   get hasVoiceRecognition(): boolean {
+    // A live WebAudio voice provider has ears even without Web Speech API.
+    if (this.activeProvider?.isActive()) return true;
     if (typeof window === 'undefined') return true;
     return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
   }
@@ -703,19 +705,26 @@ export class SophiaOS extends EventTarget {
       return;
     }
     const owner: MicOwner = source === 'ptt' ? 'ptt' : 'conversation';
-    this.micCoordinator.requestOwnership(owner, source);
+    if (!this.micCoordinator.requestOwnership(owner, source)) return;
     this.spotter?.suspend();
     this.pushLog('info', `waking sophia (${source})`);
     this.director.playWake();
     this.state.transition('wakeup', { source }, true);
     this.setStatus('connecting');
 
-    // Attempt real microphone capture
+    // Do not claim to be listening if the browser did not supply a live mic.
     try {
       await this.audio.startCapture();
     } catch (micErr: any) {
-      console.warn('[SophiaOS] Mic capture note:', micErr);
-      this.pushLog('info', `Microphone access status: ${micErr.message}`);
+      const message = micErr instanceof Error ? micErr.message : 'Microphone capture failed';
+      this.pushLog('error', `Microphone unavailable: ${message}`);
+      this.micCoordinator.releaseOwnership(owner, 'capture-failed');
+      this.state.transition('blocked', { reason: 'microphone-unavailable' }, true);
+      this.setStatus(this.audio.micStatus === 'denied' ? 'denied' : 'error');
+      this.dispatchEvent(new CustomEvent('speech-unsupported', {
+        detail: { reason: 'browser_unsupported', message, action: 'Check microphone permission, HTTPS and selected input device.' },
+      }));
+      return;
     }
 
     // Determine provider selection: honor user's chosen Mouth TTS engine & transport.
@@ -787,18 +796,22 @@ export class SophiaOS extends EventTarget {
         }
       } catch {
         this.activeProvider = null;
-        this.setStatus('live');
+        this.audio.stopCapture();
+        this.micCoordinator.releaseOwnership(owner, 'voice-provider-failed');
+        this.setStatus('error');
         const details = this.getSpeechUnsupportedDetails();
-        this.pushLog('error', `${details.message} ${details.action}`);
-        this.dispatchEvent(new CustomEvent('speech-unsupported', { detail: details }));
-
-        // Never leave Sofia hung in a deaf 'listening' state when no provider has ears
-        this.state.transition('idle', { source, reason: 'speech-unsupported' }, true);
-        if (source === 'boot') {
-          void this.speakGreeting();
-        } else if (source === 'wake-word' || source === 'mic-button') {
-          void this.speakText("Speech recognition is not available in this browser. Please open SamJuniors in Google Chrome at localhost:3000, or use the chat bar to type.");
-        }
+        const message = this.hasVoiceRecognition
+          ? 'All configured voice providers failed to start. Check server logs and API keys.'
+          : details.message;
+        const action = this.hasVoiceRecognition
+          ? 'Check GEMINI_API_KEY, voice service availability and the browser console.'
+          : details.action;
+        this.pushLog('error', `${message} ${action}`);
+        this.dispatchEvent(new CustomEvent('speech-unsupported', {
+          detail: { reason: details.reason, message, action },
+        }));
+        // Never claim to be "live" or "listening" with no active provider.
+        this.state.transition('blocked', { source, reason: 'voice-provider-failed' }, true);
       }
     }
   }
