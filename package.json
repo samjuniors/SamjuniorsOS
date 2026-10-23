@@ -20,7 +20,11 @@
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:deps": "node scripts/audit-deps.mjs",
+    "docs:links": "node scripts/check-doc-links.mjs",
+    "docs:links:all": "node scripts/check-doc-links.mjs --all",
+    "test:docs": "node --test tests/docs/check-doc-links.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
