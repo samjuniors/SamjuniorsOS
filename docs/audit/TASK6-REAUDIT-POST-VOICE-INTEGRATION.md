@@ -1,7 +1,7 @@
 # Task 6 — Re-Audit After Voice Integration (Phase 6)
 
-**Type:** Evidence-backed re-audit of Task 6 (SOFIA voice & desktop capability validation) against the post-voice-integration tree. Docs only; no production code changed; no merge, no deploy, no push.
-**Audit target:** `feat/sofiaui-voice-integration` @ **`ae70d2bf2d3c88b52f41f324809325d31b23b66b`** (local branch, never pushed)
+**Type:** Evidence-backed re-audit of Task 6 (SOFIA voice & desktop capability validation) against the post-voice-integration tree. Docs only; read-only verification; production code untouched.
+**Audit target:** `feat/sofiaui-voice-integration` @ **`ae70d2bf2d3c88b52f41f324809325d31b23b66b`** (local branch, local only at time of audit)
 **Baselines compared:**
 - `origin/development` @ **`a020cab4a75385f4f94d820dd2945f9d9f168e55`** — **unchanged** since the original Task 6 audit base (verified by fresh `git fetch origin` + `rev-parse`)
 - `audit/sofia-voice-desktop-capability-validation` @ `1ea565c` (the original Task 6 deliverable: report + 15-assertion pin suite)

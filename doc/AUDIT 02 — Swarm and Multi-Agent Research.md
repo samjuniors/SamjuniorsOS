@@ -420,11 +420,11 @@ Prisma + PostgreSQL State             Typed DAG Runner + Critic Gate       Compo
 
 ---
 
-## 7. Next Gate
+## 7. Next Step
 
 > [!IMPORTANT]
-> **GATE 02 CONCLUSION:**  
+> **AUDIT 02 CONCLUSION:**  
 > Multi-agent architecture research is concluded. Swarms are formally rejected; the **Durable Hierarchical Blackboard DAG** is established as the canonical target design.  
 > 
-> **Next Recommended Gate:**  
+> **Next Recommended Step:**  
 > Await founder review of **AUDIT 02**. Upon authorization, proceed to **AUDIT 03: Product & Business Architecture Strategy** or begin execution of **Milestone 1 (Prisma & PostgreSQL Persistence Layer)**.

@@ -376,11 +376,11 @@ SamJuniors must deliberately reject the temptation to build:
 
 ---
 
-## 5. Next Gate
+## 5. Next Step
 
 > [!IMPORTANT]
-> **GATE 04 CONCLUSION:**  
+> **AUDIT 04 CONCLUSION:**  
 > Frontier market intelligence is synthesized. SamJuniors' strategic differentiation is locked: **The Epistemic Company Operating System with Invariant Governance**.  
 > 
-> **Next Recommended Gate:**  
+> **Next Recommended Step:**  
 > Proceed to **AUDIT 05: Product & Business Architecture Strategy**, formalizing the pricing, customer acquisition wedge, and economic defensibility for SamJuniors.

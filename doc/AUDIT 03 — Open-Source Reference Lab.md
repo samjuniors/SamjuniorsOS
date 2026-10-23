@@ -324,11 +324,11 @@ These 10 repositories represent the highest-value technical reference material f
 
 ---
 
-## 5. Next Gate
+## 5. Next Step
 
 > [!IMPORTANT]
-> **GATE 03 CONCLUSION:**  
+> **AUDIT 03 CONCLUSION:**  
 > Open-source reference research is complete. Proven patterns (Durable Checkpoints, Blackboard Artifacts, Evaluator-Critic Gates) are isolated for adoption; brittle swarm anti-patterns are rejected.  
 > 
-> **Next Recommended Gate:**  
+> **Next Recommended Step:**  
 > Proceed to **AUDIT 04: Product & Business Architecture Strategy**, establishing the precise target customer, economic wedge, and defensibility moat for SamJuniors.

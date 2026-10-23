@@ -201,10 +201,10 @@ function doctorHits() {
       const f = path.join(dir, n);
       const st = statSync(f);
       if (st.isDirectory()) walk(f, depth + 1);
-      else if (/\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f);
+      else if (/\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md' && !/worklog/i.test(n)) files.push(f);
     }
   };
-  for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f); }
+  for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md' && !/worklog/i.test(n)) files.push(f); }
   for (const d of ['docs', 'doc', '.agent', '.claude']) walk(path.join(root, d), 0);
   const hits = [];
   for (const f of new Set(files)) readFileSync(f, 'utf8').split('\n').forEach((line, i) => { for (const [re, why] of STALE) if (re.test(line)) hits.push({ file: path.relative(root, f), line: i + 1, why, text: line.trim().slice(0, 140) }); });

@@ -333,11 +333,11 @@ AI agents working on this codebase must adhere to the highest standard of techni
 - **Inspect working state first:** Run `git status` and inspect modified/untracked files before beginning work.
 - **Never force-push:** Force-pushing (`git push --force`) is strictly forbidden.
 - **Preserve history:** Never rewrite history or delete commits to make the repository look tidy.
-- **No unapproved pushes:** Do not push to remote repositories unless explicitly instructed by the founder.
+- **No unapproved pushes:** Push and merge to main only through checkpoint, land, and milestone ship per MASTER_PROMPT.md after founder's GIT-SYNC authorization. Never force-push or rewrite history.
 - **Keep commits focused:** Separate architectural documentation, structural refactoring, and feature implementations into clean, distinct commits.
 
 ---
 
 ## Product kit (added 2026-10-20 at the founder's request)
 
-The roadmap, gates, multi-agent protocol and quality bar live in `.agent/product-kit/`. Start at `.agent/product-kit/MASTER_PROMPT.md`. The kit never overrides this file, `PRODUCT.md` or `doc/ROADMAP.md`.
+The roadmap, gates, multi-agent protocol and quality bar live in `.agent/product-kit/`. Start at `.agent/product-kit/MASTER_PROMPT.md` (milestones decide the order of work; gates are bookkeeping). The kit never overrides this file, `PRODUCT.md` or `doc/ROADMAP.md`.
