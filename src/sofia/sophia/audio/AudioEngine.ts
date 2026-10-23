@@ -24,7 +24,7 @@ export type MicStatus = 'idle' | 'requesting' | 'capturing' | 'denied' | 'error'
 export function bargeInThreshold(playbackLevel: number): number {
   const level = Number.isFinite(playbackLevel) ? Math.max(0, playbackLevel) : 0;
   // Keep enough margin over speaker echo while allowing normal speech levels.
-  return Math.max(0.12, Math.min(0.24, level * 0.3 + 0.08));
+  return Math.max(0.10, Math.min(0.15, level * 0.16 + 0.08));
 }
 
 const CAPTURE_WORKLET = `
@@ -86,6 +86,8 @@ export class AudioEngine {
   private stream: MediaStream | null = null;
   private captureNode: AudioWorkletNode | ScriptProcessorNode | null = null;
   private pcmHandlers = new Set<PCMHandler>();
+  private playbackMicBuffer: ArrayBuffer[] = [];
+  private readonly playbackMicBufferFrames = 12;
   private levelHandlers = new Set<LevelHandler>();
   private playbackLevelHandlers = new Set<LevelHandler>();
   private playbackHandlers = new Set<() => void>();
@@ -183,9 +185,45 @@ export class AudioEngine {
         } else {
           this.interruptPlayback();
         }
+        this.flushPlaybackMicBuffer();
       }
     } else {
       this.speechStreakMs = Math.max(0, this.speechStreakMs - dt * 2.5);
+    }
+  }
+
+  private handleCapturedPcm(pcm: ArrayBuffer, samples: Int16Array) {
+    const isSpeaking = this.isSpeaking;
+    if (!userVoiceProfile.shouldForwardChunk(
+      samples,
+      isSpeaking,
+      controlLayer.asrInterruption,
+      controlLayer.crowdFilterEnabled,
+    )) {
+      if (!isSpeaking) this.playbackMicBuffer.length = 0;
+      return;
+    }
+
+    if (isSpeaking) {
+      // Keep a short, voiceprint-filtered pre-roll while Sophia speaks. If local
+      // barge-in is confirmed, replay it after the output is stopped so the
+      // start of the user's interruption is not lost.
+      this.playbackMicBuffer.push(pcm.slice(0));
+      if (this.playbackMicBuffer.length > this.playbackMicBufferFrames) {
+        this.playbackMicBuffer.shift();
+      }
+      return;
+    }
+
+    this.playbackMicBuffer.length = 0;
+    this.pcmHandlers.forEach((fn) => fn(pcm));
+  }
+
+  private flushPlaybackMicBuffer() {
+    const frames = this.playbackMicBuffer;
+    this.playbackMicBuffer = [];
+    for (const frame of frames) {
+      this.pcmHandlers.forEach((fn) => fn(frame));
     }
   }
 
@@ -261,11 +299,7 @@ export class AudioEngine {
             const d = e.data;
             if (d.type === 'pcm') {
               const b: ArrayBuffer = d.buffer;
-              const int16 = new Int16Array(b);
-              // Filter through UserVoiceProfile: gates out crowd and prevents hiccups during Sofia speech
-              if (userVoiceProfile.shouldForwardChunk(int16, this.isSpeaking, controlLayer.asrInterruption, controlLayer.crowdFilterEnabled)) {
-                this.pcmHandlers.forEach((fn) => fn(b));
-              }
+              this.handleCapturedPcm(b, new Int16Array(b));
             } else if (d.type === 'level') {
               this._mic = this._mic * 0.72 + Math.min(1, d.rms * 5.5) * 0.28;
               this.levelHandlers.forEach((fn) => fn(this._mic));
@@ -337,9 +371,7 @@ export class AudioEngine {
 
             if (pcmLen >= 640) {
               const chunk = new Int16Array(pcmBuf.subarray(0, 640));
-              if (userVoiceProfile.shouldForwardChunk(chunk, this.isSpeaking, controlLayer.asrInterruption, controlLayer.crowdFilterEnabled)) {
-                this.pcmHandlers.forEach((fn) => fn(chunk.buffer));
-              }
+              this.handleCapturedPcm(chunk.buffer, chunk);
               pcmLen = 0;
             }
             idx += ratio;
@@ -369,6 +401,7 @@ export class AudioEngine {
 
   stopCapture() {
     this.capturing = false;
+    this.playbackMicBuffer.length = 0;
     this.captureNode?.disconnect();
     this.captureNode = null;
     this.stream?.getTracks().forEach((t) => t.stop());

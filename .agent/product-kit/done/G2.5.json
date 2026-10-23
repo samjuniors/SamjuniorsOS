@@ -1,0 +1,8 @@
+{
+  "id": "G2.5",
+  "doneAt": "2026-10-23T05:25:23.148Z",
+  "agent": "lead",
+  "branch": "main",
+  "commit": "db24b8088deb4592308eab0531a897515abf247f",
+  "evidence": "Real restore into clean environment verified with PRAGMA integrity_check ok, 100% cryptographic parity, measured RPO 0s (<24h), measured RTO 0.021s (<2h), 30-day retention pruning verified via tests/platform/backup_restore_drill.test.ts"
+}
