@@ -54,7 +54,7 @@ Original full-text files are **preserved in Git as their original blobs**. All f
 ## Verification and next gate
 
 **Read audit:** PASS (verified non-main source paths/hashes and historical classification).  
-**Archive identity / zero removed paths:** PENDING post-commit read-back.  
+**Archive identity / zero removed paths:** PASS — read-back confirmed all 14 archive destinations have precisely the original Git blob SHA; all 14 old paths remain present as redirects; initial branch comparison reported 0 removed files and only Markdown changes.  
 **Local typecheck, lint, tests, browser microphone QA, full reference scan:** NOT RUN (local checkout unavailable).  
 **Deletion / merge / production migration:** HOLD pending explicit path-scoped consent and acceptance evidence.
 
