@@ -10,9 +10,9 @@ A resumable, milestone-by-milestone work system so AI agents can take SamJuniors
 - It **does not replace** the repo's rules. `AGENTS.md` is binding; `CLAUDE.md` is the engineering operating system; `CONTINUE.md` is the resume protocol; `PROGRESS.md` is the ledger.
 - It **cannot** make one prompt finish the product. Progress is bounded by founder decisions (the G0 decisions) and by the founder's acceptance of each milestone. The kit's job is to make every other hour productive and every stop recoverable.
 
-## How the gates relate to `doc/ROADMAP.md`
+## Historical roadmap crosswalk (`doc/ROADMAP.md` is superseded for execution ordering)
 
-Gate IDs are stable names, not an ordering; `GATES.md` shows the order of work as waves. If this kit and `PRODUCT.md` or `doc/ROADMAP.md` disagree, those documents win. The agent logs a finding in `findings/` and does not proceed on the disputed step.
+Gate IDs are stable names, not an ordering; `GATES.md` shows the order of work as waves. If this kit and binding `AGENTS.md` or founder-locked `PRODUCT.md` disagree, the binding policy or product decision wins. `doc/ROADMAP.md` is explicitly marked historical and must not override the executable milestone order. The agent logs any substantive disagreement in `findings/` and does not silently proceed on a disputed step.
 
 | Kit gate | Roadmap position |
 |---|---|

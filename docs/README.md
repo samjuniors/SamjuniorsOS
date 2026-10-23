@@ -1,69 +1,43 @@
-# SamJuniorsOS Documentation Index & Map
+# Documentation map — SamJuniorsOS (`kit/integration`)
 
-This document serves as the master navigation guide across all specifications, architectural decision records, domain manuals, and historical records for SamJuniorsOS.
+**Entry point for documentation.** Checked against the `kit/integration` source tree on 2026-10-23; **not a CI/runtime certification**. Use the [source-backed audit](audit/2026-10-23-kit-integration-documentation-audit.md) before promoting older reports to current truth.
 
----
+## Binding scope and current developer guide
 
-## 1. Hierarchy of Authority (Source of Truth)
+| Document | Authority / use |
+|---|---|
+| [`AGENTS.md`](../AGENTS.md) | Binding engineering, security and provenance policy. |
+| [`PRODUCT.md`](../PRODUCT.md) | Founder-locked product boundary and requirements; dated implementation snapshots need fresh checks. |
+| [Current stack map](current/STACK-AND-RUN.md) | **Branch-specific implemented entry points** (Vite / Express / port 3000), not a production QA result. |
+| [Local setup](SETUP.md) | **Current** install/run/verification instructions for `kit/integration`. |
+| [`README.md`](../README.md) | Public-facing overview and quickstart. |
+| [`ARCHITECTURE.md`](../ARCHITECTURE.md) | Canonical architectural principles; **historical Next.js repository diagrams require reconciliation**. |
+| [`CONTINUE.md`](../CONTINUE.md), [`PROGRESS.md`](../PROGRESS.md) | Resume protocol and append-only milestone history. |
 
-Per [`AGENTS.md`](../AGENTS.md) §1, all contributors and AI agents must follow this strict hierarchy:
+## Active work and generated project-kit assets
 
-1. **Active Working Code:** Active code in `src/`, `prisma/`, `scripts/`, `tests/`
-2. **Current Architecture Documentation:** [`AGENTS.md`](../AGENTS.md), [`ARCHITECTURE.md`](../ARCHITECTURE.md), [`doc/adr/`](../doc/adr/), [`docs/architecture/`](architecture/)
-3. **Product Kit Roadmap & Protocol:** [`.agent/product-kit/`](../.agent/product-kit/)
-4. **Primary External Documentation:** Official SDK, Next.js, Prisma specs
-5. **Runtime Evidence & Automated Tests:** `tests/` verifiable execution
+- [Product kit overview](../.agent/product-kit/README.md), [execution prompt](../.agent/product-kit/MASTER_PROMPT.md) and [multi-agent protocol](../.agent/product-kit/PROTOCOL.md).
+- [`milestones.json`](../.agent/product-kit/milestones.json) governs milestone data; [`MILESTONES.md`](../.agent/product-kit/MILESTONES.md) is **generated** — do not hand-edit.
+- [`GATES.md`](../.agent/product-kit/GATES.md) and [`QUALITY_BAR.md`](../.agent/product-kit/QUALITY_BAR.md) record acceptance and verification conventions.
+- [`VISION.md`](../.agent/product-kit/VISION.md) documents target vision, not by itself proof of delivered features.
 
----
+## Architectural decisions and domain records
 
-## 2. Document Map
+- [Formal ADR index](../doc/adr/README.md) and [ADR-0001 through ADR-0006](../doc/adr/) — historic decisions and decision rationale; verify implementation before treating a target as delivered.
+- [Architecture and memory reports](architecture/) — design specifications, experiments and historical acceptance evidence.
+- [Security and threat models](security/) — security-policy references and verification reports.
+- [Audits and QA](audit/) — including [the current branch documentation audit](audit/2026-10-23-kit-integration-documentation-audit.md).
+- [Research and provider evaluations](research/) — **reference material**, not installation instructions.
+- [Benchmarks](../benchmark/) — experimental result records.
 
-### A. Root Canonical Specs & Invariants
-- [`AGENTS.md`](../AGENTS.md) — Canonical engineering guardrails, governance invariants, and non-negotiable rules.
-- [`ARCHITECTURE.md`](../ARCHITECTURE.md) — System architecture, 8 layers, 11 invariants, and realtime target architecture.
-- [`PRODUCT.md`](../PRODUCT.md) — Explicit entity boundaries (SamJuniors vs Lumora vs SamJuniorsOS), single-founder focus.
-- [`PROGRESS.md`](../PROGRESS.md) — Append-only chronological ledger of completed and verified steps.
-- [`CONTINUE.md`](../CONTINUE.md) — Standard resume protocol for agent sessions.
-- [`WORKLOG.md`](../WORKLOG.md) — Active operational engineering log.
+## Historical, superseded and archived records
 
-### B. Execution Engine & Roadmap (`.agent/product-kit/`)
-- [`.agent/product-kit/MASTER_PROMPT.md`](../.agent/product-kit/MASTER_PROMPT.md) — Authoritative session prompt (milestones decide work; gates are bookkeeping).
-- [`.agent/product-kit/MILESTONES.md`](../.agent/product-kit/MILESTONES.md) — The 12 product milestones (M0 through M11).
-- [`.agent/product-kit/GATES.md`](../.agent/product-kit/GATES.md) — Bookkeeping gates and step dependencies.
-- [`.agent/product-kit/PROTOCOL.md`](../.agent/product-kit/PROTOCOL.md) — Multi-agent workflow, claims, worktree isolation, checkpointing, and landing protocol.
-- [`.agent/product-kit/QUALITY_BAR.md`](../.agent/product-kit/QUALITY_BAR.md) — Non-negotiable quality checks (TypeScript, UX, a11y, telemetry, security).
+- [Archive index](archive/README.md) — retained full text of prior setup, voice patch migration, September voice research and legacy reference prompt.
+- [Historical SAM-5 roadmap](../doc/ROADMAP.md) — already marked superseded by the product-kit milestones; preserved due governance links.
+- [Original AUDIT 00–11 series](../doc/) — September 2026 investigation/decision records; **kept in place** pending an inbound-link and heading-anchor audit. Old verdicts do not replace current code inspection.
+- [Historical worklogs](../archive/worklogs/) and [legacy prototypes](../old/) — preserved as history; not active runtime entry points.
+- [Prior voice patch location](voice/SHARED-SOFIA-VOICE-PATCH.md) — redirect to historical patch notes; **do not apply old patch commands** on `kit/integration`.
 
-### C. Architecture Decision Records (`doc/adr/`)
-- [`doc/adr/README.md`](../doc/adr/README.md) — Master index of all formal ADRs:
-  - `ADR-0001`: Replace Legacy Design System with Canonical Visual Language
-  - `ADR-0002`: Sophia Durable Conversation Persistence
-  - `ADR-0003`: Sophia Live Interaction Architecture
-  - `ADR-0004`: Provider-Agnostic Streaming STT Architecture
-  - `ADR-0005`: TelemetryMetric Model Disposition
-  - `ADR-0006`: Scale-Later Seams
+## Safe-document maintenance rule
 
-### D. Subsystem & Domain Specifications (`docs/`)
-- **Architecture & Authority (`docs/architecture/`):**
-  - [`PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md`](architecture/PHASE_2_3A_COMPANY_BRAIN_AUTHORITY_AUDIT.md) — Company brain authority baseline.
-  - [`PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md`](architecture/PHASE_2_3B_PERSISTENCE_AUTHORITY_AND_PRODUCTION_ARCHITECTURE.md) — Persistence authority specification.
-  - [`SOPHIA_MEMORY_ARCHITECTURE.md`](architecture/SOPHIA_MEMORY_ARCHITECTURE.md) — Institutional memory and epistemic schemas.
-  - [`ADR-001-realtime-sophia-interface.md`](architecture/ADR-001-realtime-sophia-interface.md) — Target design for WebRTC, multimodal vision, and sensory boundaries.
-- **Voice & Realtime Gateway (`docs/voice/`):**
-  - [`SHARED-SOFIA-VOICE-PATCH.md`](voice/SHARED-SOFIA-VOICE-PATCH.md) — Unified floating voice presence, companion server, and WebSocket ticket store contracts.
-- **Security & Hygiene (`docs/security/`):**
-  - [`OWASP_AGENTIC_AND_LLM_THREAT_MODEL.md`](security/OWASP_AGENTIC_AND_LLM_THREAT_MODEL.md) — Threat model and fail-closed security gates.
-  - [`PRODUCTION_SECRETS_HANDLING_AND_ROTATION.md`](security/PRODUCTION_SECRETS_HANDLING_AND_ROTATION.md) — Production credentials management.
-- **Research & Reference Studies (`docs/research/`):**
-  - [`COMPANY_BRAIN_JEV_REFERENCE_STUDY.md`](research/COMPANY_BRAIN_JEV_REFERENCE_STUDY.md) — JEV architecture comparison.
-  - [`memory-and-honcho-assessment.md`](research/memory-and-honcho-assessment.md) — State-of-the-art memory assessments.
-- **Audit & Verification (`docs/audit/`):**
-  - [`TASK-6-SOFIA-VOICE-DESKTOP-CAPABILITY-VALIDATION.md`](audit/TASK-6-SOFIA-VOICE-DESKTOP-CAPABILITY-VALIDATION.md) — Voice desktop validation.
-  - [`TASK6-REAUDIT-POST-VOICE-INTEGRATION.md`](audit/TASK6-REAUDIT-POST-VOICE-INTEGRATION.md) — Post-voice integration audit.
-
-### E. Archive & Historical Context (`archive/`, `doc/`, `old/`)
-- [`archive/worklogs/`](../archive/worklogs/) — Historical pre-reconciliation and sandbox session worklogs:
-  - `worklog-migration.md`
-  - `worklog-sandbox-r0-r3.md`
-- [`doc/ROADMAP.md`](../doc/ROADMAP.md) — Historical SAM-5 phase roadmap (superseded by product kit milestones).
-- [`doc/AUDIT 00` through `11`](../doc/) — Foundational October 2026 audits inspecting codebase reality, frontier research, and governance.
-- [`old/`](../old/) — Legacy UI, early prototypes, and initial wireframes.
+Before changing or moving any document: identify its authority, inspect inbound references, preserve the original in git history or an archival blob copy, provide stable path-level pointers, and verify the new target. Never delete substantive content from a documentation cleanup without specific evidence and review.

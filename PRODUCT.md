@@ -3,6 +3,10 @@
 
 ---
 
+> **Runtime note for `kit/integration` (2026-10-23):** Founder-locked product decisions below remain intact. Historical sections labeled *current repository state* reflect an earlier implementation snapshot, not the Vite/Express branch. Use [current runtime map](docs/current/STACK-AND-RUN.md) and [documentation audit](docs/audit/2026-10-23-kit-integration-documentation-audit.md) for branch-specific code evidence. No production test was run as part of this notice.
+
+---
+
 ## 1. What is SamJuniorsOS?
 
 **LOCKED DECISION:** SamJuniorsOS is the internal operating system of SamJuniors, built first to help SamJuniors operate itself as an AI-native company — not a SaaS product for external customers. Commercialization is an explicit open future option (§8) and must not distort current architecture decisions. This replaces the previously-unresolved "internal tool vs. sellable product" question from earlier drafts — the founder has now decided: internal, for now.

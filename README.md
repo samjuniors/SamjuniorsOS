@@ -35,67 +35,33 @@ SamJuniorsOS is the authoritative control surface and nervous system of SamJunio
 
 ---
 
-## The Three Surfaces
+## Current user interface on `kit/integration`
 
-| Surface | Description |
-|---|---|
-| **SOFIA / SofiaUI** | **Ambient Companion & Voice Interface.** Talk to her via "Hey Sofia" or conversational text. Features holographic particle rendering, zero-latency speech pipelines, and direct OS steering. Survives tab navigation. |
-| **Sophia Canvas** | **Executive Intelligence & COO.** The spatial neural canvas visualizing company context, active workstreams, epistemic claims, and company memory. |
-| **SamJuniorsOS Desktop** | **Company Control Center.** Cockpit overview, Workflows DAG execution, AI Employees (Researcher, PM, Finance), Approvals gate queue, Decision logs, and Spotlight (`⌘K` / `Ctrl+K`). |
+The Vite entry `src/App.tsx` loads `src/os/App.tsx`, which offers **Sophia** and **SamJuniorsOS** tabs. The OS tab mounts `SharedSophiaVoicePresence` and the Sofia tab loads the SofiaUI-derived surface. The branch also contains a newer `src/components/SofiaVoiceCompanion.tsx`; its intended integration status requires a separate runtime test.
+
+This is a branch-specific source snapshot, **not a claim that voice or desktop automation passed end-to-end testing**.
 
 ---
 
-## Quickstart
+## Quickstart (`kit/integration` runtime)
 
-SamJuniorsOS runs out of the box with zero required external keys using built-in SQLite persistence and fallback browser speech synthesis.
-
-### 1. Prerequisites
-- **Node.js** v20+ or **Bun** v1.1+
-- Windows, macOS, or Linux
-
-### 2. Environment Configuration & Database Sync
-
-Copy the example environment file for both Next.js and Prisma:
+This branch uses **React + Vite + Express + TypeScript**, rather than the previous Next.js launcher. Check out the correct non-main branch before following these steps:
 
 ```bash
-# Clone the repository
 git clone https://github.com/samjuniors/SamjuniorsOS.git
 cd SamjuniorsOS
-
-# Install dependencies
+git fetch origin kit/integration
+git switch kit/integration
 npm install
-# (or: bun install)
-
-# Configure environment (Prisma reads .env; Next.js reads .env.local and .env)
 cp .env.example .env
 cp .env.example .env.local
-
-# Initialize local SQLite database
 npm run db:push
-# (or: bun run db:push)
-```
-
-Configure any desired API keys in `.env.local` (see [Environment Variables](#environment-variables) below).
-
-### 3. Running the Development Server
-
-```bash
-# Start Next.js development server
 npm run dev
-# (or: bun run dev)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+The HTTP application and integrated live WebSocket are on **port 3000** by default: `http://localhost:3000` and `ws://localhost:3000/api/live-ws`. Voice quality and real-provider access depend on the configured credentials and browser permissions; no successful live test is implied. Do **not** run `npm run dev:ws` on this branch; it is not a package script here.
 
-### 4. Running the Live Companion WebSocket Gateway (Optional)
-
-For real-time low-latency bidirectional voice and companion streaming:
-
-```bash
-npm run dev:ws
-# (or: bun run dev:ws)
-```
-Default gateway port: `3001` (configurable via `LIVE_WS_PORT`).
+For a clean install, production and testing notes, see [`docs/SETUP.md`](docs/SETUP.md) and the [current runtime map](docs/current/STACK-AND-RUN.md).
 
 ---
 
@@ -111,12 +77,13 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 - `SAMJUNIORS_DEV_SECRET`: Server-side secret for Founder session validation.
 - `CRON_TRIGGER_SECRET`: Machine credential for automated scheduler heartbeat ticks.
 
-### Multimodal Brain & Speech Chains
-- `GEMINI_API_KEY`: Powers real-time live vision and audio streaming on the live companion WebSocket server (`dev:ws` on port 3001).
-- **Executive AI Provider:** Executive reasoning and COO chat (`POST /api/agent-chat`, `/api/orchestrate`) route through `ServerAgentExecutor` via the server AI provider (`src/lib/server/ai/zai-client.ts`), falling back honestly to deterministic analysis with `liveAi: false` when unconfigured.
-- `DEEPGRAM_API_KEY`: High-fidelity real-time transcription (Nova-3).
-- `ELEVENLABS_API_KEY`: Neural speech synthesis and Scribe transcription.
-- `SOFIA_VOICE_ID`: Custom voice ID for ElevenLabs synthesis.
+### Voice and AI providers
+- `GEMINI_API_KEY`: Optional live model access. Keep API keys server-side.
+- `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`: Optional provider-specific speech integrations.
+- `LIVE_WS_URL`: Defaults to the integrated `ws://localhost:3000/api/live-ws` endpoint in the Express entry when unset.
+- `PORT`: Defaults to `3000`; `server.ts` uses this HTTP server for the live WebSocket path.
+
+The actual provider fallback and voice connection need runtime verification. The archived Next.js and two-process setup notes are **not** instructions for this branch.
 
 ### Integrations
 - `COMPOSIO_API_KEY`: Multi-agent SaaS and developer tool integration.
@@ -138,20 +105,19 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 ---
 
-## Available Scripts
+## Available scripts on this branch
 
-| Script | Command | Purpose |
-|---|---|---|
-| `dev` | `npm run dev` | Runs the full Next.js development server on port 3000. |
-| `dev:ws` | `npm run dev:ws` | Runs the live companion WebSocket server on port 3001. |
-| `build` | `npm run build` | Generates Prisma client, builds Next.js production bundle, and copies standalone assets. |
-| `start` | `npm run start` | Boots standalone production server. |
-| `test` | `npm test` | Runs the canonical test runner discovering all 71 test suites. |
-| `typecheck` | `npm run typecheck` | Runs TypeScript type checking via `tsc --noEmit`. |
-| `lint` | `npm run lint` | Runs ESLint verification across the repository. |
-| `scan:secrets`| `npm run scan:secrets` | Runs Gitleaks secret detection across commits using `.gitleaks.toml`. |
-| `db:push` | `npm run db:push` | Pushes Prisma schema changes directly to SQLite database. |
-| `db:generate`| `npm run db:generate` | Regenerates Prisma TypeScript client. |
+| Command | Source-backed behavior |
+|---|---|
+| `npm run dev` | Starts `tsx server.ts` (Express, Vite middleware, integrated WebSocket). |
+| `npm run build` | Builds the Vite frontend into `dist/`. |
+| `npm run start` | Starts `tsx server.ts`; in production it serves `dist/` after building. |
+| `npm run typecheck` | Runs `tsc --noEmit`. |
+| `npm run lint` | Runs ESLint. |
+| `npm test` | Runs `node scripts/test-runner.mjs`. |
+| `npm run db:push` | Synchronizes Prisma schema (destructive on incompatible local data: back up first). |
+
+No `dev:ws` or `scan:secrets` script is defined in this branch's `package.json`. Script presence is verified in source; successful execution is **NOT VERIFIED** by this documentation audit.
 
 ---
 
@@ -159,7 +125,9 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 - **[`AGENTS.md`](AGENTS.md)** — Canonical engineering guardrails, architecture rules, and source of truth.
 - **[`docs/SETUP.md`](docs/SETUP.md)** — In-depth setup guide, speech provider configuration, and troubleshooting.
-- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records (ADRs) and subsystem specs.
+- **[`docs/README.md`](docs/README.md)** — Canonical document navigation: current runtime, architecture, research, audits and archive.
+- **[`docs/architecture/`](docs/architecture/)** — Subsystem specs; formal ADRs remain under `doc/adr/`.
+- **[`docs/audit/2026-10-23-kit-integration-documentation-audit.md`](docs/audit/2026-10-23-kit-integration-documentation-audit.md)** — Source-linked branch audit and preservation rules.
 
 ---
 

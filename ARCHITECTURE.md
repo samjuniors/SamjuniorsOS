@@ -2,7 +2,11 @@
 
 **Document Type:** System Architecture Specification  
 **Status:** AUTHORITATIVE CANONICAL REFERENCE  
-**Repository Working Tree:** Reconciled to `main` @ `1c86599` (SAM-5 reconciliation committed directly to main, 2026-10-16)
+**Repository Working Tree:** Historical implementation layout snapshot (SAM-5, 2026-10-16); **NOT VERIFIED as current for `kit/integration`**
+
+---
+
+> **Runtime reconciliation notice (2026-10-23, `kit/integration`):** This architecture document remains a source of product and governance principles, but its Next.js App Router tree and standalone 3001 WebSocket descriptions (especially sections 4 and 12) are **historical implementation details**, not the active branch launcher. Source inspection finds `vite build`, `tsx server.ts`, and an integrated `/api/live-ws` endpoint on port 3000. See [current stack](docs/current/STACK-AND-RUN.md) and the [audit](docs/audit/2026-10-23-kit-integration-documentation-audit.md). The rest of this document has **not** been fully reconciled; do not infer runtime QA from it.
 
 ---
 
