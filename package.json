@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
+    "db:migrate:stores": "npx tsx scripts/migrate-file-stores-to-sqlite.ts",
     "db:reconcile-tombstones": "npx tsx scripts/reconcile-tombstones.ts",
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",

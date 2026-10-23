@@ -1,0 +1,8 @@
+{
+  "id": "G2.3",
+  "doneAt": "2026-10-23T04:48:58.855Z",
+  "agent": "lead",
+  "branch": "step/G2.3",
+  "commit": "a836221d60393931beb9388ad1a1383f65675b7b",
+  "evidence": "Tests pass in tests/platform/store_migration_parity.test.ts; migrateFileStoresToSqlite executes with 100% parity across decisions, council, conversations, and memories; rollback export rehearsed with zero data loss; live .data migration verified."
+}
