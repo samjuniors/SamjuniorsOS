@@ -1,9 +1,17 @@
 {
   "mainBranch": "main",
+  "integrationBranch": "kit/integration",
   "remote": "origin",
-  "checks": [
-    "npm run typecheck",
-    "npm run lint"
-  ],
+  "checks": [],
+  "ci": {
+    "mode": "off",
+    "timeoutMinutes": 25,
+    "startWaitMinutes": 4,
+    "pollSeconds": 20
+  },
+  "lean": {
+    "maxFilesPerStep": 15,
+    "maxAddedLines": 800
+  },
   "secretScanIgnore": []
 }

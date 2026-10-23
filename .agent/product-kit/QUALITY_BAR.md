@@ -54,9 +54,13 @@ A step or a release is done only with evidence for every applicable item: a comm
 - Q-QA-5 LLM-dependent behavior (intent, retrieval, faithfulness) has an evaluation set, a recorded baseline and a regression threshold.
 
 ## Repository hygiene
-- Q-GIT-1 `main` is always green: nothing lands until the configured checks pass on the merged result.
+- Q-GIT-1 The integration branch is always green: nothing lands until CI (when on) and the configured checks pass on the merged result; `main` only receives accepted milestones.
 - Q-GIT-2 No force-push, no history rewriting, no secrets committed (checkpoint scans before committing).
 - Q-GIT-3 After each milestone ships: working tree clean, no leftover step or QA branches or worktrees, a `milestone/<M>` tag exists.
+
+## Simplicity
+- Q-SIMPLE-1 Every step answers the smallest-change ladder (needed, already in the codebase, platform or dependency, not built, added) and the verifier names code that could be deleted or reused.
+- Q-SIMPLE-2 No new dependency, abstraction layer or large new file without a written reason.
 
 ## Documentation
 - Q-DOC-1 A new person can set up the system from the docs on a clean machine.

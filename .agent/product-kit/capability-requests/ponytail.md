@@ -1,6 +1,6 @@
 # Capability request: Ponytail (agent coding rules)
 
-Status: REVIEWED 2026-10-20. Recommendation: borrow the idea as text (done); do not install the plugin. Nothing installed.
+Status: REVIEWED 2026-10-20. Recommendation: borrow the idea as text (done); do not install the plugin. Nothing installed. Update 2026-10-23: the ladder is now enforced by the kit itself (handoff section, verifier's over-engineering check, size limits in `done`), so no plugin is needed.
 
 ## Need
 Stop agents over-building. This matters for AI-assisted development under `AGENTS.md` ("no speculative implementation", "check for duplication").

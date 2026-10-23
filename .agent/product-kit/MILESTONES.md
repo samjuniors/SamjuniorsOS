@@ -8,6 +8,7 @@ Work happens one milestone at a time. When a milestone is finished the agent ask
 |---|---|---|---|
 | M0 Baseline ready | Run every test with one command, see CI run, and start the app from a clean clone. | 9 | G0.1, G0.4 |
 | M1 First Sofia you can talk to | Open the Sofia screen, get greeted, talk by voice or text, ask about yourself and about the company, stop her, and set a spend cap. | 10 | G0.8 |
+| MX A faster, desktop-ready stack: Vite + React + Express | Start the app with one command, see the same Sofia screen, talk to her and compare measured latency before and after, run the M1 test again, and install a first Windows build. | 7 | - |
 | M2 Sofia works when your PC is off | Turn off your PC and still reach and talk to Sofia from another device; restart the cloud host and lose nothing. | 11 | G0.3 |
 | M3 Sofia remembers you and knows your company | Tell her something, restart everything, and ask again; ask company questions with sources; delete a memory and see it gone. | 13 | - |
 | M4 Sofia decides well, and you can stop her | See why she chose each action, make her ask when unsure, stop everything, and change limits in settings. | 10 | G0.7 |
@@ -62,6 +63,33 @@ A Sofia you can open, be greeted by, and talk to about anything, who answers per
 | M1.9 | quality | One-command smoke test of the whole M1 path with a fake provider | - | everything in the later milestones |
 
 **Gate steps:** G0.8
+
+## MX - A faster, desktop-ready stack: Vite + React + Express
+
+Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later. Same behaviour, nothing new for Sofia.
+
+**You test:**
+1. Run the one start command and open the Sofia screen. It looks and behaves like before (the agent shows before and after screenshots).
+2. Ask Sofia something by voice. The agent shows the latency numbers before and after, measured the same way. You judge whether it feels faster; the numbers decide what the agent may claim.
+3. Run the M1 test script again from the start: greeting, talk, a personal and a company question, stop, spend cap. Everything still works.
+4. Install the Windows installer the agent built and open the app. Sofia answers. (It is unsigned, so Windows may warn you.)
+5. Check that no .next folder is left and the setup guide shows only the new commands.
+
+**Not included yet:** No new Sofia abilities; the same abilities as M1; No code signing, auto-update or cloud hosting (the cloud is M2)
+
+**Its own steps (lighter slices; the full versions stay in their later milestones):**
+
+| Step | Lane | What | Slice of | Deferred |
+|---|---|---|---|---|
+| MX.1 | platform | ADR and inventory: every Next.js-only feature in use, its replacement in Vite, React or Express, the target folder layout, the live-audio transport, and how the same server runs in the cloud and inside a desktop app | - | the desktop build itself, signing, auto-update |
+| MX.2 | quality | Baseline before changing anything: rerunnable M1 smoke test, recorded voice-loop latency, and API contract tests for every route | M1.4, M1.9 | latency optimisation |
+| MX.3 | platform | Express server: the server-side code moves out of Next into a framework-free TypeScript server with the same API, input validation, the same auth rules, a health route and a streaming channel | - | cloud hosting (M2), new routes |
+| MX.4 | frontend | Vite + React app: screens move one by one, Sofia screen first, with client-side routing, no server components, and the same look and behaviour | - | visual redesign |
+| MX.5 | platform | Live conversation on the new stack: audio capture with an AudioWorklet, streaming over the chosen channel, and latency measured against the MX.2 baseline | M1.4 | barge-in, turn detection, latency optimisation beyond the transport |
+| MX.6 | quality | Cutover: Next.js is removed; one dev, build and start command; checks, CI and setup docs use the new commands | - | nothing |
+| MX.7 | platform | Desktop shell proof: a minimal Electron app that opens the Vite build and runs the same Express server, packaged as an unsigned Windows installer (.exe) | - | code signing, auto-update, macOS and Linux builds |
+
+**Gate steps:** none
 
 ## M2 - Sofia works when your PC is off
 

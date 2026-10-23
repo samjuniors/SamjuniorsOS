@@ -35,10 +35,11 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 |---|---|
 | `recover` | After any stop: what is finished, what was interrupted, what is not on main yet, what is next. Read-only. `install-hook` makes Claude Code run it at every session start |
 | `checkpoint` | In a step worktree: secret scan, commit, push the step branch (never main) |
-| `sync` | Push commits that sit on main but not on the remote (decisions, PROGRESS.md), after the checks pass |
-| `land <ID>` | Lead only: bring main into the step, run the checks, merge into main, push, clean up |
+| `sync` | Push commits that sit on the integration branch but not on the remote (decisions, PROGRESS.md), after the checks and CI pass |
+| `ci check` / `ci wait` | Check that `gh` and the workflows are ready; wait for CI on a branch |
+| `land <ID>` | Lead only: bring the integration branch into the step, wait for CI, run the checks, merge, push, clean up |
 | `qa start <M>` / `qa check <M>` | The QA pass before the founder tests a milestone |
-| `milestone ship <M>` | After close: tag, push, leave the repository clean |
+| `milestone ship <M>` | After close: CI, release the integration branch to main, tag, push, leave the repository clean |
 | `doctor` | Finds older kit wording (gate-by-gate, kit/integration) in other files |
 | `continue` | What to do next: interrupted work to take over, ready steps of the active milestone, decisions to ask. The founder only has to say "continue" |
 | `status` | Every gate and step with its state |
@@ -60,7 +61,7 @@ Claims live in the git common directory, shared by every worktree and kept acros
 ## What the founder does
 
 1. Answers the decisions when `continue` lists them, using the briefs in `briefs/`.
-2. Once, authorizes git sync (`ack GIT-SYNC`) so the agent can push and merge to main safely.
+2. Once, authorizes git sync (`ack GIT-SYNC`) so the agent can push, and release to `main` once per milestone.
 3. At the end of each milestone, after the agent's own QA pass, tests it with the script in `MILESTONES.md` and tells the agent how it went, in your own words. At any other time, just say "continue".
 4. Confirms any new tool or integration an agent proposes (`CAPABILITIES.md`).
 

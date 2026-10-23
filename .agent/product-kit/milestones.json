@@ -177,6 +177,121 @@
       ]
     },
     {
+      "id": "MX",
+      "title": "A faster, desktop-ready stack: Vite + React + Express",
+      "purpose": "Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later. Same behaviour, nothing new for Sofia.",
+      "can_test": "Start the app with one command, see the same Sofia screen, talk to her and compare measured latency before and after, run the M1 test again, and install a first Windows build.",
+      "uses": [],
+      "steps": [
+        {
+          "id": "MX.1",
+          "title": "ADR and inventory: every Next.js-only feature in use, its replacement in Vite, React or Express, the target folder layout, the live-audio transport, and how the same server runs in the cloud and inside a desktop app",
+          "lane": "platform",
+          "type": "work",
+          "exit": "The ADR lists every use of a Next-only feature found by searching the repository (route handlers, server components and actions, middleware, next/image, next/font, next/link, environment handling, request-time database use), each with its replacement; the target layout and the migration order are stated; WebSocket versus server-sent events is chosen with the reason; the Electron approach (renderer from the Vite build, the Express server in a child or utility process, context isolation on, Node integration off) is written down and marked NOT VERIFIED until MX.7; infrastructure decision G0.3 is re-read against a long-running Node service with streaming connections and any change it needs is reported to the founder; a second agent session confirms no Next-only feature was missed.",
+          "slice_of": "",
+          "defers": "the desktop build itself, signing, auto-update",
+          "needs": [
+            "STACK-VITE-EXPRESS"
+          ]
+        },
+        {
+          "id": "MX.2",
+          "title": "Baseline before changing anything: rerunnable M1 smoke test, recorded voice-loop latency, and API contract tests for every route",
+          "lane": "quality",
+          "type": "work",
+          "exit": "One command reruns the M1 smoke test (M1.9) and passes; latency (median and 95th percentile over at least 20 turns, same method as M1.4) is saved in a dated file with the machine and provider; a contract test exists for every API route and passes against the current Next app; no application code was changed in this step.",
+          "slice_of": "M1.4, M1.9",
+          "defers": "latency optimisation",
+          "needs": [
+            "STACK-VITE-EXPRESS"
+          ]
+        },
+        {
+          "id": "MX.3",
+          "title": "Express server: the server-side code moves out of Next into a framework-free TypeScript server with the same API, input validation, the same auth rules, a health route and a streaming channel",
+          "lane": "platform",
+          "type": "work",
+          "exit": "The MX.2 contract tests pass unchanged against the Express server; every route validates its input and fails closed; the same auth rules apply (tests); secrets are read only on the server; one command starts the server; existing store, Prisma and provider code is moved, not rewritten; Next route handlers are removed only after parity is shown.",
+          "slice_of": "",
+          "defers": "cloud hosting (M2), new routes",
+          "deps": [
+            "MX.1",
+            "MX.2"
+          ],
+          "touches": [
+            "src/server",
+            "src/lib/server"
+          ]
+        },
+        {
+          "id": "MX.4",
+          "title": "Vite + React app: screens move one by one, Sofia screen first, with client-side routing, no server components, and the same look and behaviour",
+          "lane": "frontend",
+          "type": "work",
+          "exit": "Each moved screen shows the same content and behaves the same (before and after screenshots and tests); the build output is static files; a scan finds no secret in the client bundle (Q-SEC-4); only public values use the Vite client prefix; the accessibility items in QUALITY_BAR.md still pass.",
+          "slice_of": "",
+          "defers": "visual redesign",
+          "deps": [
+            "MX.1",
+            "MX.2"
+          ]
+        },
+        {
+          "id": "MX.5",
+          "title": "Live conversation on the new stack: audio capture with an AudioWorklet, streaming over the chosen channel, and latency measured against the MX.2 baseline",
+          "lane": "platform",
+          "type": "work",
+          "exit": "A spoken question gets a spoken answer; median and 95th-percentile latency over at least 20 turns are recorded next to the MX.2 baseline using the same method; if the new numbers are not better, the report says so and names the measured cause; no improvement is claimed without numbers; typing still works; the stop control from M1.7 works mid-reply.",
+          "slice_of": "M1.4",
+          "defers": "barge-in, turn detection, latency optimisation beyond the transport",
+          "deps": [
+            "MX.3",
+            "MX.4"
+          ]
+        },
+        {
+          "id": "MX.6",
+          "title": "Cutover: Next.js is removed; one dev, build and start command; checks, CI and setup docs use the new commands",
+          "lane": "quality",
+          "type": "work",
+          "exit": "Next, its config and the .next folder are gone from the repository; a clean clone runs install, test, build and start with the documented commands on the founder's Windows PC; kit.config.json checks and the CI workflow use the new commands and pass; docs/SETUP.md and the README describe only the new commands; the M1 smoke test passes.",
+          "slice_of": "",
+          "defers": "nothing",
+          "deps": [
+            "MX.5"
+          ],
+          "touches": [
+            "package.json",
+            "docs/SETUP.md"
+          ]
+        },
+        {
+          "id": "MX.7",
+          "title": "Desktop shell proof: a minimal Electron app that opens the Vite build and runs the same Express server, packaged as an unsigned Windows installer (.exe)",
+          "lane": "platform",
+          "type": "work",
+          "exit": "On the founder's Windows PC the installer runs, the app opens the Sofia screen and talks through the same server; context isolation is on and Node integration is off in the renderer; the renderer has a content security policy; the server listens only on loopback and requires a per-launch token; signing, auto-update and other operating systems are listed as deferred; the cloud server build is unaffected.",
+          "slice_of": "",
+          "defers": "code signing, auto-update, macOS and Linux builds",
+          "deps": [
+            "MX.6"
+          ]
+        }
+      ],
+      "founder_test": [
+        "Run the one start command and open the Sofia screen. It looks and behaves like before (the agent shows before and after screenshots).",
+        "Ask Sofia something by voice. The agent shows the latency numbers before and after, measured the same way. You judge whether it feels faster; the numbers decide what the agent may claim.",
+        "Run the M1 test script again from the start: greeting, talk, a personal and a company question, stop, spend cap. Everything still works.",
+        "Install the Windows installer the agent built and open the app. Sofia answers. (It is unsigned, so Windows may warn you.)",
+        "Check that no .next folder is left and the setup guide shows only the new commands."
+      ],
+      "skips": [
+        "No new Sofia abilities; the same abilities as M1",
+        "No code signing, auto-update or cloud hosting (the cloud is M2)"
+      ]
+    },
+    {
       "id": "M2",
       "title": "Sofia works when your PC is off",
       "purpose": "The always-on cloud brain with durable storage, backups and sign-in, so she keeps working with your PC off.",
