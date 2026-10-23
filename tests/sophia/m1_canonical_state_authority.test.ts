@@ -45,11 +45,17 @@ const DATA_DIR = path.resolve(process.cwd(), '.data');
  */
 const TOUCHED_DATA_FILES = [
   'company_state.json',
+  'company_state.json.initialized',
   'company_knowledge.json',
+  'company_knowledge.json.initialized',
   'company_memories.json',
+  'company_memories.json.initialized',
   'agent_runs.json',
+  'agent_runs.json.initialized',
   'epistemic_claims.json',
+  'epistemic_claims.json.initialized',
   'idempotency_records.json',
+  'idempotency_records.json.initialized',
   'instance.lock',
 ].map((name) => path.join(DATA_DIR, name));
 const TOUCHED_SNAPSHOTS: Array<{ file: string; original: string | null }> = [];
@@ -161,7 +167,10 @@ async function runTests() {
         !opSlice.content.includes(`$${originalMrr.toLocaleString()}`),
         'The STALE seed MRR must no longer appear in the slice (constants authority is dead)'
       );
-      assert.strictEqual(opSlice.provenance, 'CompanyStateStore (canonical operational state)');
+      assert.ok(
+        opSlice.provenance.includes('CompanyBrain') || opSlice.provenance === 'CompanyStateStore (canonical operational state)',
+        `Expected provenance to cite CompanyBrain or CompanyStateStore, got: ${opSlice.provenance}`
+      );
     });
 
     // ------------------------------------------------------------------

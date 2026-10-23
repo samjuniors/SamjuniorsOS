@@ -16,7 +16,7 @@ import {
   RetrievedStateItem,
 } from '@/types/context';
 import { RetrievedHistoricalMemory } from '@/types/os';
-import { CompanyStateStore } from '../state/state-store';
+import { CompanyBrain } from '../brain/company-brain';
 import { CompanyKnowledgeStore } from '../knowledge/knowledge-store';
 import { CompanyMemoryStore } from '../memory/memory-store';
 import { ContextualRetrievalService } from './context-retrieval';
@@ -48,7 +48,7 @@ export class ContextAssemblyService {
   private static defaultInstance: ContextAssemblyService | null = null;
 
   constructor(
-    private stateStore: ICompanyStateStore = CompanyStateStore.getInstance(),
+    private stateStore: ICompanyStateStore = CompanyBrain.getInstance(),
     private knowledgeStore: ICompanyKnowledgeStore = CompanyKnowledgeStore.getInstance(),
     private memoryStore: ICompanyMemoryStore = CompanyMemoryStore.getInstance(),
     private retrievalService: ContextualRetrievalService = ContextualRetrievalService.getInstance()

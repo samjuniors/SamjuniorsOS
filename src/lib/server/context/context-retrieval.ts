@@ -9,7 +9,7 @@ import {
   TaskRetrievedContextBundle,
 } from '@/types/context';
 import { RetrievedHistoricalMemory } from '@/types/os';
-import { CompanyStateStore } from '../state/state-store';
+import { CompanyBrain } from '../brain/company-brain';
 import { CompanyKnowledgeStore } from '../knowledge/knowledge-store';
 import { CompanyMemoryStore } from '../memory/memory-store';
 
@@ -50,7 +50,7 @@ export class ContextualRetrievalService {
   private static defaultInstance: ContextualRetrievalService | null = null;
 
   constructor(
-    private stateStore: ICompanyStateStore = CompanyStateStore.getInstance(),
+    private stateStore: ICompanyStateStore = CompanyBrain.getInstance(),
     private knowledgeStore: ICompanyKnowledgeStore = CompanyKnowledgeStore.getInstance(),
     private memoryStore: ICompanyMemoryStore = CompanyMemoryStore.getInstance()
   ) {}

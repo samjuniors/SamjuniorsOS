@@ -1,6 +1,6 @@
 import { MultiAgentOrchestrator } from '../orchestration/orchestrator';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
-import { CompanyStateStore } from '../state/state-store';
+import { CompanyBrain } from '../brain/company-brain';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { AgentRunStore } from '../agents/run-store';
 import { SERVER_AGENTS } from '../agents/definitions';
@@ -359,10 +359,9 @@ export class SophiaServerGateway {
           authoritativeData = { scope: 'personal', empty: true };
         }
       } else if (sanitizedProposal.domain === 'company_metrics') {
-        // M1: read the canonical CompanyStateStore — previously this read the
-        // hardcoded os-data financial constant through CompanyContextProvider.
-        const fin = await CompanyStateStore.getInstance().getFinancialMetrics();
-        provenances.push('CompanyStateStore / FinancialModel');
+        // G4.1: read the authoritative CompanyBrain single read path
+        const fin = await CompanyBrain.getInstance().getFinancialMetrics();
+        provenances.push('CompanyBrain / CompanyStateStore / FinancialModel');
         authoritativeData = fin;
 
         const mrrText = typeof fin?.mrr === 'number' ? `$${fin.mrr.toLocaleString()}` : 'Unavailable (Live ledger sync required)';
@@ -372,7 +371,7 @@ export class SophiaServerGateway {
         const runwayText = typeof fin?.runwayMonths === 'number' ? `${fin.runwayMonths} months` : 'Unavailable';
         const note = fin?.isSimulatedModel ? ' [SANDBOX SIMULATION MODEL — Live ledger integration pending]' : '';
 
-        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry${note}:\n- Monthly Recurring Revenue (MRR): ${mrrText}\n- Annual Run Rate (ARR): ${arrText}\n- Monthly Burn Rate: ${burnText}\n- Gross Margin Floor: ${marginText}\n- Cash Reserve Runway: ${runwayText}\n\n[Scopes: company_brain | Sources: CompanyStateStore / FinancialModel]`;
+        factualReply = `[${persona.name} • ${persona.role}]\nAuthoritative Company Telemetry${note}:\n- Monthly Recurring Revenue (MRR): ${mrrText}\n- Annual Run Rate (ARR): ${arrText}\n- Monthly Burn Rate: ${burnText}\n- Gross Margin Floor: ${marginText}\n- Cash Reserve Runway: ${runwayText}\n\n[Scopes: company_brain | Sources: CompanyBrain / CompanyStateStore / FinancialModel]`;
       } else if (sanitizedProposal.domain === 'epistemic_fact') {
         provenances.push('EpistemicClaimStore');
         const claims = await EpistemicClaimStore.getInstance().listClaims();

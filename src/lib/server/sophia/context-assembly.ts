@@ -1,4 +1,4 @@
-import { CompanyStateStore } from '../state/state-store';
+import { CompanyBrain } from '../brain/company-brain';
 import { AgentRunStore } from '../agents/run-store';
 import { EpistemicClaimStore } from '../epistemic/claim-store';
 import { InMemoryApprovalStore } from '../authorization/approval-store';
@@ -562,9 +562,9 @@ export class SophiaContextAssembler {
     // =========================================================================
     if (includeCompany) {
     try {
-      const stateStore = CompanyStateStore.getInstance();
-      const fin = await stateStore.getFinancialMetrics();
-      const allInitiatives = await stateStore.getInitiatives();
+      const brain = CompanyBrain.getInstance();
+      const fin = await brain.getFinancialMetrics();
+      const allInitiatives = await brain.getInitiatives();
       // 'Active' / 'In Progress' are the real CompanyInitiative status values
       // (the former 'in_progress'/'active' comparison could never match and
       // silently dropped every active initiative from slice 1).
@@ -588,7 +588,7 @@ export class SophiaContextAssembler {
       // -------------------------------------------------------------------------
       // M5.2 FIX CLASS 3 — GOVERNANCE DECISION VISIBILITY (query-conditioned).
       //
-      // Decisions always existed authoritatively in CompanyStateStore
+      // Decisions always existed authoritatively in CompanyBrain
       // (getDecisions); the M5.1-measured gap was that NO canonical render
       // path exposed them. This is the smallest missing projection: the
       // decisions lexically matching the CURRENT message render (top 2),
@@ -647,15 +647,16 @@ export class SophiaContextAssembler {
       slices.push({
         label: 'Company Operational State',
         authority: 'AUTHORITATIVE_OPERATIONAL_STATE',
-        provenance: 'CompanyStateStore (canonical operational state)',
+        provenance: 'CompanyBrain (canonical operational state)',
         content,
       });
     } catch (err) {
+      degradedStores.push('CompanyBrain');
       degradedStores.push('CompanyStateStore');
       slices.push({
         label: 'Company Operational State',
         authority: 'AUTHORITATIVE_OPERATIONAL_STATE',
-        provenance: 'CompanyStateStore (Offline)',
+        provenance: 'CompanyBrain (Offline)',
         content: 'Authoritative operational telemetry is currently unavailable.',
         isStale: true,
       });
@@ -772,7 +773,7 @@ export class SophiaContextAssembler {
         const allFacts = await EpistemicClaimStore.getInstance().listAllFacts();
         const allPrecedents = await CompanyMemoryStore.getInstance().getAllMemories();
         const allKnowledge = await CompanyKnowledgeStore.getInstance().getAllKnowledge();
-        const allDecisions = await CompanyStateStore.getInstance().getDecisions();
+        const allDecisions = await CompanyBrain.getInstance().getDecisions();
 
         const latestEventMs = Math.max(
           0,
@@ -906,7 +907,7 @@ export class SophiaContextAssembler {
           slices.push({
             label: 'Recent Company Changes (Change Record)',
             authority: 'CHANGE_RECORD',
-            provenance: 'Derived windowed enumeration over EpistemicClaimStore/CompanyMemoryStore/CompanyKnowledgeStore/CompanyStateStore',
+            provenance: 'Derived windowed enumeration over EpistemicClaimStore/CompanyMemoryStore/CompanyKnowledgeStore/CompanyBrain',
             content,
           });
         }

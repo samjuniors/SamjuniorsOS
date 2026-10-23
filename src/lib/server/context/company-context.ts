@@ -51,11 +51,9 @@ export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
  * - The CONSTITUTION is a static charter, not operational state.
  *
  * Consequence: `getCanonicalContext()` / `getMergedContext()` are now
- * ASYNC and reflect CompanyStateStore / CompanyMemoryStore / AgentRunStore
- * updates within the same call.
+ * ASYNC and reflect CompanyBrain updates within the same call.
  */
-let serverRecentIntelligence: ResearchTopic[] = [...INITIAL_RESEARCH];
-let serverEngineeringIntelligence: CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined = undefined;
+import { CompanyBrain } from '@/lib/server/brain/company-brain';
 
 export class CompanyContextProvider {
   /**
@@ -63,115 +61,36 @@ export class CompanyContextProvider {
    * not operational state and only changes by explicit founder amendment.
    */
   public static getCompanyConstitution(): FullCompanyContext['constitution'] {
-    return {
-      name: 'SamJuniors OS',
-      mission: 'Autonomous, deterministic multi-agent enterprise operating system for agile founders.',
-      operatingPrinciples: [
-        'Autonomous Specialist Collaboration: Sophia Vance (COO), Dr. Aris Thorne (Research), Maya Lin (PM), and Julian Cruz (Finance) execute 9-step protocols.',
-        'Result-First Executive Presentation: Deliver clear recommendations, verifiable artifacts, and explicit next steps before background logs.',
-        'Strict Capital Efficiency: Maintain a minimum 80%+ gross margin floor across all operational compute.',
-        'Zero-Trust Safe Mock Sandboxing: All external capital transfers, live mutations, and unverified credentials remain isolated in safe sandboxes.',
-        'Human-in-the-Loop Governance: High-impact strategic decisions require explicit Founder ratification.',
-      ],
-      safeguards: [
-        'No fabricated metrics or hallucinated revenue accounts.',
-        'Truthful reporting when external API credentials or integrations are unconfigured.',
-        'Verifiable provenance tracking for all specialist findings.',
-      ],
-    };
+    return CompanyBrain.getCompanyConstitution();
   }
 
   /**
-   * Records a new research intelligence topic into server state
+   * Records a new research intelligence topic into server state via Company Brain
    */
-  public static recordIntelligence(topic: ResearchTopic): void {
-    // Deduplicate by ID or title
-    serverRecentIntelligence = [
-      topic,
-      ...serverRecentIntelligence.filter(t => t.id !== topic.id && t.title !== topic.title)
-    ].slice(0, 15);
+  public static async recordIntelligence(topic: ResearchTopic): Promise<void> {
+    await CompanyBrain.getInstance().recordIntelligence(topic);
   }
 
   /**
-   * Records engineering/repository reconnaissance into server state
+   * Records engineering/repository reconnaissance into server state via Company Brain
    */
-  public static recordEngineeringIntelligence(intel: NonNullable<CompanyExecutiveContextSnapshot['engineeringIntelligence']>): void {
-    serverEngineeringIntelligence = intel;
+  public static async recordEngineeringIntelligence(intel: NonNullable<CompanyExecutiveContextSnapshot['engineeringIntelligence']>): Promise<void> {
+    await CompanyBrain.getInstance().recordEngineeringIntelligence(intel);
   }
 
-  public static getEngineeringIntelligence(): CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined {
-    return serverEngineeringIntelligence;
+  public static async getEngineeringIntelligence(): Promise<CompanyExecutiveContextSnapshot['engineeringIntelligence'] | undefined> {
+    return CompanyBrain.getInstance().getEngineeringIntelligence();
   }
 
   public static resetServerIntelligence(): void {
-    serverRecentIntelligence = [...INITIAL_RESEARCH];
-    serverEngineeringIntelligence = undefined;
+    CompanyBrain.getInstance().resetIntelligence();
   }
 
   /**
-   * Adapts a canonical AgentRunRecord into the OrchestrationRun display shape
-   * used by the advisory prompt projection. Only REAL, persisted runs are
-   * shown; the demo-seeded orchestration constant was removed with the dead
-   * serverOrchestrationHistory module array (M1).
-   */
-  private static adaptRunToOrchestrationDisplay(r: AgentRunRecord): OrchestrationRun {
-    return {
-      id: r.runId,
-      directive: r.directive,
-      timestamp: r.timestamp,
-      status: r.status === 'running' ? 'running' : r.status === 'halted' ? 'paused' : r.status === 'failed' ? 'failed' : 'completed',
-      liveAi: true,
-      title: r.taskTitle,
-      summary: (r.outputContent || '').slice(0, 400),
-      plan: [],
-      messages: [],
-      deliverables: [],
-    };
-  }
-
-  /**
-   * Returns the canonical company context, assembled from the canonical
-   * owners of each authority domain (M1):
-   *   - operational state   → CompanyStateStore
-   *   - historical memory   → CompanyMemoryStore
-   *   - workstream runs     → AgentRunStore
-   *   - research intel      → this module (recorders above)
-   *   - constitution        → static charter
+   * Returns the canonical company context, assembled directly from the Company Brain.
    */
   public static async getCanonicalContext(): Promise<FullCompanyContext> {
-    const stateStore = CompanyStateStore.getInstance();
-
-    const [
-      initiatives,
-      decisions,
-      attentionItems,
-      agents,
-      financialModel,
-      companyMemory,
-      recentRuns,
-    ] = await Promise.all([
-      stateStore.getInitiatives(),
-      stateStore.getDecisions(),
-      stateStore.getAttentionItems(),
-      stateStore.getEmployees(),
-      stateStore.getFinancialMetrics(),
-      CompanyMemoryStore.getInstance().getAllMemories(),
-      AgentRunStore.getInstance().listRuns({ limit: 5 }),
-    ]);
-
-    return {
-      constitution: this.getCompanyConstitution(),
-      initiatives,
-      decisions,
-      attentionItems,
-      agents,
-      recentIntelligence: [...serverRecentIntelligence],
-      financialModel,
-      orchestrationHistory: recentRuns.map((r) => this.adaptRunToOrchestrationDisplay(r)),
-      companyMemory,
-      engineeringIntelligence: serverEngineeringIntelligence,
-      lastUpdated: new Date().toISOString(),
-    };
+    return CompanyBrain.getInstance().getCanonicalContext();
   }
 
   /**
