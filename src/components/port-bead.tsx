@@ -1,4 +1,3 @@
-"use client";
 
 /** A physical socket, not an effect ring. Runtime heat is applied by the shared stroke engine. */
 export function PortBead({ x, y, active = false, accent = "#ff9a3c" }: { x: number; y: number; active?: boolean; accent?: string }) {

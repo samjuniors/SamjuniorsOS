@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import {
   proxy,
   getContentSecurityPolicy,

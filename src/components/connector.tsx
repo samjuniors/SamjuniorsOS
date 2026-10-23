@@ -1,4 +1,3 @@
-"use client";
 
 import React, { useId, useEffect, useState } from "react";
 import {

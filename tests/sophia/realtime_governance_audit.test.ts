@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { POST, GET } from '../../src/app/api/realtime/turn/route';
 import {
   computeApprovalPayloadHash,

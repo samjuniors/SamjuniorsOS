@@ -1,7 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { proxy } from '../../src/proxy';
 import { runClientBundleScan } from '../../scripts/scan-client-bundle-secrets.mjs';
 

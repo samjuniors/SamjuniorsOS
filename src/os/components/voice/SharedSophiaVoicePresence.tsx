@@ -1,4 +1,3 @@
-"use client";
 
 /**
  * OS desktop controls the SAME SofiaOS singleton as the full-screen Sofia tab.

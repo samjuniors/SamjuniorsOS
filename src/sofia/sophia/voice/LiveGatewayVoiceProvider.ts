@@ -19,8 +19,10 @@
 
 import { AudioEngine } from '../audio/AudioEngine';
 import type { SophiaEventDetail, SophiaEventType, VoiceProviderId } from '../types';
+import { controlLayer } from '../control';
 import { VoiceProvider } from './VoiceProvider';
 import { validateGatewayHost, GatewayValidationOptions } from '../../lib/voice-config';
+import { SileroVadEngine } from '../../../lib/client/live/vad';
 
 export interface LiveGatewayOptions extends GatewayValidationOptions {
   wsUrl?: string;
@@ -53,6 +55,19 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
   private isTransmitting = false;
   private isSpeaking = false;
+  private packetsSent = 0;
+  private packetsReceived = 0;
+  private handsFreeListening = false;
+  private readonly vad = new SileroVadEngine({
+    speechStartThreshold: 0.5,
+    speechEndThreshold: 0.35,
+    minSpeechFrames: 2,
+    // AudioEngine emits 640-sample / 40ms frames; 20 frames gives an 800ms
+    // hangover so ordinary phrase pauses do not prematurely end a turn.
+    redemptionFrames: 20,
+  });
+  private readonly preRollFrames: ArrayBuffer[] = [];
+  private readonly maxPreRollFrames = 4;
   private turnStartPerfMs = 0;
   private turnStopPerfMs = 0;
   private transcriptFinalPerfMs = 0;
@@ -88,7 +103,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
   constructor(
     private audio: AudioEngine,
-    wsUrl = 'ws://localhost:3001',
+    wsUrl = (typeof window !== 'undefined' && window.location ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/live-ws` : 'ws://localhost:3000/api/live-ws'),
     options: LiveGatewayOptions = {}
   ) {
     super();
@@ -114,6 +129,31 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       throw new Error(`LiveGatewayVoiceProvider: ${hostCheck.error}`);
     }
     return url.trim();
+  }
+
+  /** Update the authenticated status endpoint's URL before opening a session. */
+  configureWsUrl(url: string): void {
+    if (this.active || this.startPromise) {
+      throw new Error('Cannot change the live gateway URL while a session is active');
+    }
+    this.wsUrl = this.validateWsUrl(url, this.options);
+  }
+
+  /**
+   * Enable local speech segmentation for an explicitly started microphone
+   * session. Only buffered onset plus speech-turn PCM is sent to the gateway.
+   */
+  enableHandsFreeListening(): void {
+    this.handsFreeListening = true;
+    this.vad.reset();
+    this.preRollFrames.length = 0;
+  }
+
+  disableHandsFreeListening(): void {
+    this.handsFreeListening = false;
+    this.vad.reset();
+    this.preRollFrames.length = 0;
+    if (this.isTransmitting) this.stopPtt();
   }
 
   /**
@@ -274,6 +314,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
         ws.onmessage = (event) => {
           if (this.generation !== myGeneration || !this.active) return;
+          this.packetsReceived++;
           this.handleServerMessage(event.data);
         };
 
@@ -384,7 +425,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     if (this.ws) {
       try {
         if (this.ws.readyState === this.WebSocketClass.OPEN) {
-          this.ws.send(JSON.stringify({ type: 'CLOSE_SESSION' }));
+          this.sendControl({ type: 'CLOSE_SESSION' });
         }
         this.ws.close();
       } catch {
@@ -397,6 +438,9 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     this.interruptedTurnIds.clear();
     this.isTransmitting = false;
     this.isSpeaking = false;
+    this.handsFreeListening = false;
+    this.vad.reset();
+    this.preRollFrames.length = 0;
   }
 
   /**
@@ -421,17 +465,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       // control frame to LiveInteractionServer with the previous turn ID while
       // its identity is still available.
       if (this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
-        try {
-          this.ws.send(
-            JSON.stringify({
-              type: 'INTERRUPT',
-              turnId: previousTurnId,
-              timestamp: Date.now(),
-            })
-          );
-        } catch {
-          /* ignore */
-        }
+        this.sendControl({
+          type: 'INTERRUPT',
+          turnId: previousTurnId,
+          timestamp: Date.now(),
+        });
       }
     }
     if (this.textTurnAbortController) {
@@ -484,8 +522,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         if (reply) {
           await this.handleSophiaResponse({ turnId, reply }, turnAbort.signal);
         } else {
-          this.emit('response_finished');
-          this.emit('playback_finished');
+          this.finishTurn(turnId);
         }
       } catch (err: any) {
         if ((err as Error).name === 'AbortError') return;
@@ -494,6 +531,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
           code: 'TEXT_TURN_FAILED',
           message: err?.message || 'Text turn failed',
         });
+        this.recoverTurn(turnId);
       } finally {
         if (this.textTurnAbortController === turnAbort) {
           this.textTurnAbortController = null;
@@ -530,6 +568,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     }
 
     const currentTurnId = this.activeTurnId;
+    this.isTransmitting = false;
     this.isSpeaking = false;
 
     // 4. Emit normalized interrupted and playback_finished events
@@ -538,17 +577,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
     // 5. Send cooperative INTERRUPT control frame to LiveInteractionServer
     if (this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
-      try {
-        this.ws.send(
-          JSON.stringify({
-            type: 'INTERRUPT',
-            turnId: currentTurnId || undefined,
-            timestamp: Date.now(),
-          })
-        );
-      } catch {
-        /* ignore */
-      }
+      this.sendControl({
+        type: 'INTERRUPT',
+        turnId: currentTurnId || undefined,
+        timestamp: Date.now(),
+      });
     }
   }
 
@@ -565,13 +598,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
     this.sophiaResponsePerfMs = 0;
 
     if (this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'START_PTT',
-          turnId,
-          timestamp: Date.now(),
-        })
-      );
+      this.sendControl({
+        type: 'START_PTT',
+        turnId,
+        timestamp: Date.now(),
+      });
     }
 
     this.emit('speech_started', { level: 0.5 });
@@ -582,18 +613,17 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * Stops a push-to-talk / speech turn.
    */
   stopPtt(turnId?: string): void {
+    if (!this.isTransmitting) return;
     const targetTurnId = turnId || this.activeTurnId;
     this.isTransmitting = false;
     this.turnStopPerfMs = performance.now();
 
     if (targetTurnId && this.ws && this.ws.readyState === this.WebSocketClass.OPEN) {
-      this.ws.send(
-        JSON.stringify({
-          type: 'STOP_PTT',
-          turnId: targetTurnId,
-          timestamp: Date.now(),
-        })
-      );
+      this.sendControl({
+        type: 'STOP_PTT',
+        turnId: targetTurnId,
+        timestamp: Date.now(),
+      });
     }
 
     this.emit('thinking');
@@ -603,14 +633,85 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
    * Forward incoming 16 kHz PCM microphone audio chunks to server.
    */
   private handleMicrophonePCM(pcm: ArrayBuffer): void {
+    if (!this.active || !this.ws || this.ws.readyState !== this.WebSocketClass.OPEN) return;
+
+    if (!this.handsFreeListening) {
+      if (this.isTransmitting) this.sendPcm(pcm);
+      return;
+    }
+
+    if (pcm.byteLength < 2 || pcm.byteLength % 2 !== 0) return;
+    const frame = pcm.slice(0);
+    const vad = this.vad.process(new Int16Array(frame));
+
+    if (!this.isTransmitting) {
+      this.preRollFrames.push(frame);
+      if (this.preRollFrames.length > this.maxPreRollFrames) this.preRollFrames.shift();
+
+      if (vad.event === 'speech_start') {
+        const previousTurnId = this.activeTurnId;
+        if (previousTurnId && !this.interruptedTurnIds.has(previousTurnId)) {
+          // New speech during Sophia's response or cognitive work supersedes
+          // that turn. The server cancels its executor/STT before the new PTT.
+          this.interrupt();
+        }
+
+        this.startPtt();
+        for (const bufferedFrame of this.preRollFrames) this.sendPcm(bufferedFrame);
+        this.preRollFrames.length = 0;
+      }
+      return;
+    }
+
+    this.sendPcm(frame);
+    if (vad.event === 'speech_end') this.stopPtt();
+  }
+
+  private sendPcm(pcm: ArrayBuffer): void {
     if (!this.active || !this.isTransmitting || !this.ws) return;
     if (this.ws.readyState !== this.WebSocketClass.OPEN) return;
-
     try {
       this.ws.send(pcm);
+      this.packetsSent++;
     } catch {
       /* ignore */
     }
+  }
+
+  private sendControl(message: Record<string, unknown>): void {
+    if (!this.ws || this.ws.readyState !== this.WebSocketClass.OPEN) return;
+    try {
+      this.ws.send(JSON.stringify(message));
+      this.packetsSent++;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  getTrafficMetrics(): { packetsSent: number; packetsReceived: number } {
+    return { packetsSent: this.packetsSent, packetsReceived: this.packetsReceived };
+  }
+
+  private finishTurn(turnId: string): void {
+    if (this.activeTurnId !== turnId) return;
+    this.activeTurnId = null;
+    this.interruptedTurnIds.delete(turnId);
+    this.isTransmitting = false;
+    this.isSpeaking = false;
+    this.emit('response_finished');
+    this.emit('playback_finished');
+    this.emit('listening', { source: this.id });
+  }
+
+  private recoverTurn(turnId: string | null): void {
+    if (!turnId || this.activeTurnId !== turnId) return;
+    this.activeTurnId = null;
+    this.isTransmitting = false;
+    this.isSpeaking = false;
+    this.vad.reset();
+    this.preRollFrames.length = 0;
+    this.emit('playback_finished');
+    this.emit('listening', { source: this.id });
   }
 
   /**
@@ -633,7 +734,11 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         break;
 
       case 'TRANSCRIPT_INTERIM':
-        if (msg.text && !this.interruptedTurnIds.has(msg.turnId)) {
+        if (
+          msg.text &&
+          !this.interruptedTurnIds.has(msg.turnId) &&
+          (!this.activeTurnId || this.activeTurnId === msg.turnId)
+        ) {
           this.emit('transcript', {
             role: 'user',
             text: msg.text,
@@ -643,14 +748,35 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         break;
 
       case 'TRANSCRIPT_FINAL':
-        if (msg.text && !this.interruptedTurnIds.has(msg.turnId)) {
+        if (
+          typeof msg.text === 'string' &&
+          !msg.text.trim() &&
+          !this.interruptedTurnIds.has(msg.turnId) &&
+          (!this.activeTurnId || this.activeTurnId === msg.turnId)
+        ) {
+          if (this.isTransmitting && (!this.activeTurnId || this.activeTurnId === msg.turnId)) {
+            this.stopPtt(msg.turnId);
+          }
+          this.vad.reset();
+          this.preRollFrames.length = 0;
+          this.recoverTurn(msg.turnId || this.activeTurnId);
+        } else if (
+          msg.text &&
+          !this.interruptedTurnIds.has(msg.turnId) &&
+          (!this.activeTurnId || this.activeTurnId === msg.turnId)
+        ) {
           this.transcriptFinalPerfMs = performance.now();
           this.emit('transcript', {
             role: 'user',
             text: msg.text,
             final: true,
           });
-          this.emit('thinking');
+          if (this.isTransmitting) this.stopPtt(msg.turnId);
+          else this.emit('thinking');
+          // A semantic STT final can arrive before the local silence hangover.
+          // Reset VAD here so the next spoken phrase can open a fresh turn.
+          this.vad.reset();
+          this.preRollFrames.length = 0;
         }
         break;
 
@@ -665,12 +791,19 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         }
         break;
 
-      case 'ERROR':
+      case 'ERROR': {
+        const failedTurnId = msg.turnId || this.activeTurnId;
+        if (msg.turnId && this.activeTurnId && msg.turnId !== this.activeTurnId) break;
         this.emit('error', {
           code: msg.code || 'SERVER_ERROR',
           message: msg.message || 'Error from voice gateway',
         });
+        if (failedTurnId && this.activeTurnId === failedTurnId) {
+          this.interrupt();
+          this.recoverTurn(failedTurnId);
+        }
         break;
+      }
     }
   }
 
@@ -700,8 +833,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
 
     const replyText = String(msg.reply || '').trim();
     if (!replyText) {
-      this.emit('response_finished');
-      this.emit('playback_finished');
+      this.finishTurn(turnId);
       return;
     }
 
@@ -736,7 +868,13 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
       const ttsRes = await this.fetchFn('/api/sophia/mouth/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: replyText }),
+        body: JSON.stringify({
+          text: replyText,
+          provider: controlLayer.pureGeminiLive ? 'gemini' : (controlLayer.mouthProvider || 'auto'),
+          voice: controlLayer.voiceName,
+          voiceId: controlLayer.elevenLabsVoiceId || 'bMxLr8fP6hzNRRi9nJxU',
+          modelId: controlLayer.elevenLabsModelId || 'eleven_turbo_v2_5',
+        }),
         signal: controller.signal,
       });
 
@@ -806,8 +944,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
         !signal?.aborted &&
         (!this.activeTurnId || this.activeTurnId === turnId)
       ) {
-        this.emit('response_finished');
-        this.emit('playback_finished');
+        this.finishTurn(turnId);
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
@@ -822,7 +959,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
             code: 'TTS_PLAYBACK_FAILED',
             message: err?.message || 'Failed to synthesize or play reply audio',
           });
-          this.emit('playback_finished');
+        this.recoverTurn(turnId);
         }
       }
     } finally {

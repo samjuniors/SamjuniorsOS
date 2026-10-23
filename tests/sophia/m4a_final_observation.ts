@@ -37,7 +37,7 @@
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import {
   SophiaMemoryStore,
   SOPHIA_MEMORY_TYPES,

@@ -136,7 +136,7 @@ async function run(): Promise<void> {
   const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'samjuniors-r3-metrics-'));
   process.chdir(scratchDir);
   const { POST } = await import('../../src/app/api/agent-chat/route');
-  const { NextRequest } = await import('next/server');
+  const { NextRequest } = await import('@/lib/server/http');
 
   const founderHeaders: Record<string, string> = {
     'content-type': 'application/json',

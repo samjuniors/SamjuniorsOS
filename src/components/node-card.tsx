@@ -1,4 +1,3 @@
-"use client";
 
 import { useId, type CSSProperties, type ReactNode } from "react";
 import { SHAPE_SIZE, outlinePath, shapePort, type NodeShape, type Point, type PortSide } from "@/lib/shape-geometry";

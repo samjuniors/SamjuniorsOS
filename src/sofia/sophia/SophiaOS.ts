@@ -33,6 +33,7 @@ import { LocalVoiceProvider } from './voice/LocalVoiceProvider';
 import { LiveGatewayVoiceProvider } from './voice/LiveGatewayVoiceProvider';
 import { airplaneMode } from '../lib/airplane-mode';
 import { loadVoiceMode } from '../lib/voice-router';
+import { fetchVoiceConfig } from '../lib/voice-config';
 import type { VoiceProvider } from './voice/VoiceProvider';
 import { WakeWordSpotter } from './voice/wake';
 import { VisualDirector } from './VisualDirector';
@@ -335,6 +336,11 @@ export class SophiaOS extends EventTarget {
     if (!this.prefs.wake) this.spotter?.stop();
     else this.maybeArmWake();
     this.dispatchEvent(new CustomEvent('prefs', { detail: this.prefs }));
+  }
+
+  setAudioLevels(mic: number, play: number) {
+    this.micLvl = mic;
+    this.playLvl = play;
   }
 
   resetPrefs() {
@@ -675,21 +681,61 @@ export class SophiaOS extends EventTarget {
     };
   }
 
+  getVoiceMetrics(): LiveConnectionMetrics {
+    const active = this.activeProvider;
+    if (!active?.isActive()) {
+      return {
+        isConnected: false,
+        latencyMs: 0,
+        stabilityPercent: 0,
+        quality: 'offline',
+        packetsSent: 0,
+        packetsReceived: 0,
+        modelName: 'No active voice session',
+        voiceName: controlLayer.voiceName,
+        history: [],
+      };
+    }
+
+    if (active.id === 'gemini-live') {
+      return (this.providers['gemini-live'] as GeminiLiveProvider).getMetrics();
+    }
+
+    if (active.id === 'live-gateway') {
+      const gateway = this.providers['live-gateway'] as LiveGatewayVoiceProvider;
+      const records = gateway.getLatencyRecords();
+      const traffic = gateway.getTrafficMetrics();
+      return {
+        isConnected: true,
+        latencyMs: records.at(-1)?.endToEndFromStopMs ?? 0,
+        stabilityPercent: 0,
+        quality: records.length ? 'good' : 'unmeasured',
+        packetsSent: traffic.packetsSent,
+        packetsReceived: traffic.packetsReceived,
+        modelName: 'Canonical Sophia turn executor',
+        voiceName: controlLayer.voiceName,
+        history: records.map((record) => record.endToEndFromStopMs),
+      };
+    }
+
+    return {
+      isConnected: true,
+      latencyMs: 0,
+      stabilityPercent: 0,
+      quality: 'unmeasured',
+      packetsSent: 0,
+      packetsReceived: 0,
+      modelName: active.id === 'elevenlabs'
+        ? 'Canonical Sophia chat'
+        : 'Local voice mode',
+      voiceName: controlLayer.voiceName,
+      history: [],
+    };
+  }
+
+  /** @deprecated Use getVoiceMetrics(); this name remains for older UI callers. */
   getGeminiLiveMetrics(): LiveConnectionMetrics {
-    const gemini = this.providers['gemini-live'] as GeminiLiveProvider | undefined;
-    return gemini
-      ? gemini.getMetrics()
-      : {
-          isConnected: false,
-          latencyMs: 0,
-          stabilityPercent: 0,
-          quality: 'offline',
-          packetsSent: 0,
-          packetsReceived: 0,
-          modelName: 'gemini-3.8-live',
-          voiceName: 'Aoede',
-          history: [],
-        };
+    return this.getVoiceMetrics();
   }
 
   async activate(source: ActivationSource): Promise<void> {
@@ -727,26 +773,49 @@ export class SophiaOS extends EventTarget {
       return;
     }
 
-    // Determine provider selection: honor user's chosen Mouth TTS engine & transport.
-    // Airplane mode forces the fully local transport; otherwise 'local' rides last
-    // in the chain so a cloud outage falls back to on-device instead of silence (Phase 9).
-    const forceLocal = airplaneMode.enabled || loadVoiceMode() === 'local';
-    let primary: VoiceProviderId = 'gemini-live';
+    // The default microphone path must use the governed Sophia turn executor.
+    // Gemini Live and the standalone Deepgram provider bypass that ingress, so
+    // they are not eligible transports for an ordinary live conversation.
+    const forceLocal =
+      airplaneMode.enabled ||
+      loadVoiceMode() === 'local' ||
+      this.prefs.provider === 'local';
+    let order: VoiceProviderId[];
+    let gateway: LiveGatewayVoiceProvider | null = null;
+
     if (forceLocal) {
-      primary = 'local';
-    } else if (!controlLayer.pureGeminiLive) {
-      if (controlLayer.mouthProvider === 'elevenlabs') {
-        primary = 'elevenlabs';
-      } else if (controlLayer.mouthProvider === 'deepgram') {
-        primary = 'deepgram';
-      } else if (this.prefs.provider !== 'auto') {
-        primary = this.prefs.provider;
+      order = ['local'];
+    } else {
+      const voiceConfig = await fetchVoiceConfig();
+      if (voiceConfig.mode === 'CANONICAL_GATEWAY' && (voiceConfig.deepgramConfigured || Boolean(voiceConfig.liveWsUrl))) {
+        gateway = this.providers['live-gateway'] as LiveGatewayVoiceProvider;
+        try {
+          gateway.configureWsUrl(voiceConfig.liveWsUrl);
+          gateway.enableHandsFreeListening();
+          order = ['live-gateway', 'elevenlabs'];
+        } catch (err) {
+          this.pushLog('error', `Canonical voice gateway configuration failed: ${(err as Error).message}`);
+          order = ['elevenlabs'];
+          gateway = null;
+        }
+      } else {
+        const reason = voiceConfig.mode === 'CANONICAL_GATEWAY'
+          ? 'Deepgram STT is not configured'
+          : voiceConfig.mode === 'CONFIG_UNAVAILABLE'
+            ? voiceConfig.error
+            : voiceConfig.mode === 'VOICE_DISABLED'
+              ? voiceConfig.reason
+              : 'the canonical streaming gateway is disabled';
+        this.pushLog(
+          'info',
+          `Using browser speech recognition with canonical Sophia chat (${reason})`,
+        );
+        order = ['elevenlabs'];
+      }
+      if (controlLayer.pureGeminiLive) {
+        this.pushLog('info', 'Direct Gemini Live is disabled for governed voice turns; using Sophia’s canonical conversation path.');
       }
     }
-
-    const order: VoiceProviderId[] = Array.from(
-      new Set(forceLocal ? ['local' as VoiceProviderId] : [primary, 'gemini-live', 'elevenlabs', 'deepgram', 'local' as VoiceProviderId])
-    );
 
     let started = false;
     for (const id of order) {
@@ -756,22 +825,13 @@ export class SophiaOS extends EventTarget {
         this.pushLog('info', `connecting ${id}…`);
         this.activeProvider = p;
         await p.start();
+        if (p === gateway) gateway.enableHandsFreeListening();
         this.setStatus('live');
         this.pushLog('event', `${id} session live & listening`);
         started = true;
         this.state.transition('focusing', { source, transport: id }, true);
         this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: id } }));
 
-        // Trigger immediate greeting so user hears Sofia's voice on boot/wake
-        if (source === 'boot') {
-          setTimeout(() => {
-            void this.speakGreeting();
-          }, 200);
-        } else if (source === 'wake-word') {
-          setTimeout(() => {
-            void this.speakText("I'm listening!");
-          }, 150);
-        }
         break;
       } catch (err) {
         this.activeProvider = null;
@@ -780,39 +840,23 @@ export class SophiaOS extends EventTarget {
     }
 
     if (!started) {
-      // Fallback: active state with server neural brain/mouth
-      const fallbackProvider = this.providers.elevenlabs;
-      try {
-        this.activeProvider = fallbackProvider;
-        await fallbackProvider.start();
-        this.setStatus('live');
-        this.pushLog('info', 'Gemini Neural Mouth TTS & Brain active as conversational transport');
-        this.state.transition('focusing', { source, transport: 'neural-fallback' }, true);
-        this.dispatchEvent(new CustomEvent('entered', { detail: { source, transport: 'neural-fallback' } }));
-        if (source === 'boot') {
-          void this.speakGreeting();
-        } else if (source === 'wake-word') {
-          void this.speakText("I'm listening!");
-        }
-      } catch {
-        this.activeProvider = null;
-        this.audio.stopCapture();
-        this.micCoordinator.releaseOwnership(owner, 'voice-provider-failed');
-        this.setStatus('error');
-        const details = this.getSpeechUnsupportedDetails();
-        const message = this.hasVoiceRecognition
-          ? 'All configured voice providers failed to start. Check server logs and API keys.'
-          : details.message;
-        const action = this.hasVoiceRecognition
-          ? 'Check GEMINI_API_KEY, voice service availability and the browser console.'
-          : details.action;
-        this.pushLog('error', `${message} ${action}`);
-        this.dispatchEvent(new CustomEvent('speech-unsupported', {
-          detail: { reason: details.reason, message, action },
-        }));
-        // Never claim to be "live" or "listening" with no active provider.
-        this.state.transition('blocked', { source, reason: 'voice-provider-failed' }, true);
-      }
+      this.activeProvider = null;
+      this.audio.stopCapture();
+      this.micCoordinator.releaseOwnership(owner, 'voice-provider-failed');
+      this.setStatus('error');
+      const details = this.getSpeechUnsupportedDetails();
+      const message = this.hasVoiceRecognition
+        ? 'The canonical voice gateway and browser speech-recognition fallback both failed to start.'
+        : details.message;
+      const action = this.hasVoiceRecognition
+        ? 'Check the live gateway and canonical Sophia chat status in Diagnostics.'
+        : details.action;
+      this.pushLog('error', `${message} ${action}`);
+      this.dispatchEvent(new CustomEvent('speech-unsupported', {
+        detail: { reason: details.reason, message, action },
+      }));
+      // Never claim to be "live" or "listening" with no active provider.
+      this.state.transition('blocked', { source, reason: 'voice-provider-failed' }, true);
     }
   }
 
@@ -888,8 +932,7 @@ export class SophiaOS extends EventTarget {
   }
 
   getLiveMetrics(): LiveConnectionMetrics {
-    const liveProvider = this.providers['gemini-live'] as GeminiLiveProvider;
-    return liveProvider.getMetrics();
+    return this.getVoiceMetrics();
   }
 
   async pingLive(): Promise<number> {
@@ -898,7 +941,19 @@ export class SophiaOS extends EventTarget {
   }
 
   getDiagnostics(): DiagnosticsSnapshot {
-    const liveProvider = this.providers['gemini-live'] as GeminiLiveProvider;
+    const active = this.activeProvider;
+    const voiceMetrics = this.getVoiceMetrics();
+    const providerName = active?.id === 'live-gateway'
+      ? 'SamJuniorsOS Live Gateway'
+      : active?.id === 'elevenlabs'
+        ? 'Browser Speech + Canonical Sophia Chat'
+        : active?.id === 'local'
+          ? 'Local voice mode'
+          : active?.id === 'deepgram'
+            ? 'Deepgram voice adapter'
+            : active?.id === 'gemini-live'
+              ? 'Gemini Live (legacy transport)'
+              : 'Not connected';
     return {
       mic: {
         status: this.audio.micStatus,
@@ -906,19 +961,21 @@ export class SophiaOS extends EventTarget {
         error: this.audio.micErrorDetails,
       },
       live: {
-        status: liveProvider.isConnected ? 'connected' : this.status === 'connecting' ? 'connecting' : this.status === 'error' ? 'error' : 'idle',
-        provider: 'Gemini Live (Native Audio)',
-        model: liveProvider.stats.modelName,
-        voice: controlLayer.voiceName,
-        packetsSent: liveProvider.stats.packetsSent,
-        packetsReceived: liveProvider.stats.packetsReceived,
+        status: voiceMetrics.isConnected ? 'connected' : this.status === 'connecting' ? 'connecting' : this.status === 'error' ? 'error' : 'idle',
+        provider: providerName,
+        model: voiceMetrics.modelName,
+        voice: voiceMetrics.voiceName,
+        packetsSent: voiceMetrics.packetsSent,
+        packetsReceived: voiceMetrics.packetsReceived,
       },
       brain: {
         mode: controlLayer.brainMode,
-        pureGemini: controlLayer.pureGeminiLive,
+        pureGemini: active?.id === 'gemini-live',
       },
       mouth: {
-        engine: controlLayer.pureGeminiLive ? 'gemini' : controlLayer.mouthProvider,
+        engine: active?.id === 'gemini-live'
+          ? 'gemini'
+          : controlLayer.mouthProvider,
         level: this.audio.playbackLevel,
       },
       visuals: {
@@ -1057,6 +1114,7 @@ export class SophiaOS extends EventTarget {
           provider: controlLayer.pureGeminiLive ? 'gemini' : controlLayer.mouthProvider,
           voice: controlLayer.voiceName,
           voiceId: controlLayer.elevenLabsVoiceId,
+          modelId: controlLayer.elevenLabsModelId,
         }),
       });
 
@@ -1235,6 +1293,18 @@ export class SophiaOS extends EventTarget {
               if (detail.code === 'transport-closed' || detail.code === 'live-ws-error') {
                 this.setStatus('offline');
                 this.pushLog('info', 'Live link disconnected. Ready to reconnect.');
+              } else if (
+                detail.code === 'speech-recognition-aborted' ||
+                detail.code === 'webspeech-start-failed'
+              ) {
+                this.activeProvider = null;
+                this.audio.stopCapture();
+                this.micCoordinator.releaseOwnership(
+                  this.micCoordinator.currentOwner,
+                  'speech-recognition-failed',
+                );
+                this.setStatus('error');
+                this.state.transition('blocked', { reason: detail.code }, true);
               }
             }
             break;

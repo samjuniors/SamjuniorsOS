@@ -10,6 +10,7 @@ export type VoiceConfigResolution =
   | {
       mode: 'CANONICAL_GATEWAY';
       liveWsUrl: string;
+      deepgramConfigured: boolean;
     }
   | {
       mode: 'VOICE_ONLY_LEGACY';
@@ -164,7 +165,7 @@ export function validateGatewayHost(
     if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
       return { valid: false, error: `Invalid port "${parsed.port}" in gateway URL` };
     }
-    const allowedPorts = options?.allowedPorts ?? [3001, 80, 443, 8443];
+    const allowedPorts = options?.allowedPorts ?? [3000, 3001, 80, 443, 8443];
     if (!allowedPorts.includes(portNum)) {
       return { valid: false, error: `Port ${portNum} is not in the allowed gateway ports list` };
     }
@@ -175,7 +176,7 @@ export function validateGatewayHost(
   if (normalizedPath.includes('..')) {
     return { valid: false, error: 'Path traversal in gateway URL is forbidden' };
   }
-  const defaultAllowedPaths = ['/', '/ws', '/api/live/ws', '/live'];
+  const defaultAllowedPaths = ['/', '/ws', '/api/live/ws', '/api/live-ws', '/live'];
   const allowedPaths = options?.allowedPaths ?? defaultAllowedPaths;
   if (!allowedPaths.includes(normalizedPath)) {
     return { valid: false, error: `Path "${normalizedPath}" is not in the allowed gateway path list` };
@@ -226,6 +227,7 @@ export function resolveVoiceConfig(
     return {
       mode: 'CANONICAL_GATEWAY',
       liveWsUrl,
+      deepgramConfigured: s.deepgram === true,
     };
   }
 
@@ -249,27 +251,45 @@ export function resolveVoiceConfig(
  */
 export async function fetchVoiceConfig(
   fetchFn: typeof fetch = fetch,
-  options?: GatewayValidationOptions
+  options?: GatewayValidationOptions,
+  timeoutMs = 5000,
 ): Promise<VoiceConfigResolution> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
-    const res = await fetchFn('/api/sophia/status', {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      return {
-        mode: 'CONFIG_UNAVAILABLE',
-        error:
-          (errBody as { error?: string }).error ||
-          `HTTP ${res.status} from status endpoint`,
-      };
-    }
-    const data = await res.json();
-    return resolveVoiceConfig(data, options);
+    const request = (async (): Promise<VoiceConfigResolution> => {
+      const res = await fetchFn('/api/sophia/status', {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        return {
+          mode: 'CONFIG_UNAVAILABLE',
+          error:
+            (errBody as { error?: string }).error ||
+            `HTTP ${res.status} from status endpoint`,
+        };
+      }
+      const data = await res.json();
+      return resolveVoiceConfig(data, options);
+    })();
+
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Voice status request timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
   } catch (err: any) {
     return {
       mode: 'CONFIG_UNAVAILABLE',
       error: err?.message || 'Network error fetching voice status',
     };
+  } finally {
+    if (timeout !== null) clearTimeout(timeout);
   }
 }

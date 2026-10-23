@@ -4,9 +4,11 @@ import { controlLayer } from '../../src/sofia/sophia/control';
 import { SophiaOS } from '../../src/sofia/sophia/SophiaOS';
 import { UserVoiceProfile } from '../../src/sofia/core/UserVoiceProfile';
 import { GeminiLiveProvider } from '../../src/sofia/sophia/voice/GeminiLiveProvider';
+import { ElevenLabsVoiceProvider } from '../../src/sofia/sophia/voice/ElevenLabsVoiceProvider';
 
 function makeAudioStub() {
   return {
+    onPlaybackStart: () => () => undefined,
     onPlaybackEnd: () => () => undefined,
     onPCM: () => () => undefined,
     interruptPlayback: () => undefined,
@@ -16,9 +18,116 @@ function makeAudioStub() {
   };
 }
 
+async function testAbortedBrowserSpeechDoesNotClaimListening() {
+  const originalWindow = (globalThis as any).window;
+  let listeningEvents = 0;
+
+  class AbortingSpeechRecognition {
+    onstart: (() => void) | null = null;
+    onend: (() => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onresult: ((event: unknown) => void) | null = null;
+    continuous = false;
+    interimResults = false;
+    lang = '';
+
+    start() {
+      queueMicrotask(() => {
+        this.onerror?.({ error: 'aborted' });
+        this.onend?.();
+      });
+    }
+
+    stop() {}
+  }
+
+  (globalThis as any).window = { SpeechRecognition: AbortingSpeechRecognition };
+  const provider = new ElevenLabsVoiceProvider(makeAudioStub() as unknown as AudioEngine);
+  provider.addEventListener('listening', () => listeningEvents++);
+
+  try {
+    await assert.rejects(provider.start(), /failed before listening \(aborted\)/);
+    assert.equal(provider.isActive(), false, 'aborted recognition must not leave the fallback active');
+    assert.equal(listeningEvents, 0, 'aborted recognition must not emit a false listening state');
+  } finally {
+    await provider.stop();
+    if (originalWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = originalWindow;
+  }
+}
+
+async function testStoppingCancelsPendingBrowserSpeechStartup() {
+  const originalWindow = (globalThis as any).window;
+
+  class PendingSpeechRecognition {
+    onstart: (() => void) | null = null;
+    onend: (() => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onresult: ((event: unknown) => void) | null = null;
+    continuous = false;
+    interimResults = false;
+    lang = '';
+
+    start() {}
+    stop() {}
+  }
+
+  (globalThis as any).window = { SpeechRecognition: PendingSpeechRecognition };
+  const provider = new ElevenLabsVoiceProvider(makeAudioStub() as unknown as AudioEngine);
+  const starting = provider.start();
+
+  try {
+    await Promise.resolve();
+    await provider.stop();
+    await assert.rejects(starting, /stopped before it started listening/);
+    assert.equal(provider.isActive(), false, 'stopping during startup must leave the provider inactive');
+  } finally {
+    if (originalWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = originalWindow;
+  }
+}
+
+async function testBrowserSpeechEmitsListeningAfterRecognitionStarts() {
+  const originalWindow = (globalThis as any).window;
+  let listeningEvents = 0;
+
+  class StartingSpeechRecognition {
+    onstart: (() => void) | null = null;
+    onend: (() => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onresult: ((event: unknown) => void) | null = null;
+    continuous = false;
+    interimResults = false;
+    lang = '';
+
+    start() {
+      setTimeout(() => this.onstart?.(), 10);
+    }
+
+    stop() {}
+  }
+
+  (globalThis as any).window = { SpeechRecognition: StartingSpeechRecognition };
+  const provider = new ElevenLabsVoiceProvider(makeAudioStub() as unknown as AudioEngine);
+  provider.addEventListener('listening', () => listeningEvents++);
+
+  try {
+    const starting = provider.start();
+    assert.equal(listeningEvents, 0, 'provider must wait for the browser recognizer to start');
+    await starting;
+    assert.equal(provider.isActive(), true, 'provider is active after recognition starts');
+    assert.equal(listeningEvents, 1, 'provider emits listening when browser recognition starts');
+  } finally {
+    await provider.stop();
+    if (originalWindow === undefined) delete (globalThis as any).window;
+    else (globalThis as any).window = originalWindow;
+  }
+}
+
 async function testGeminiSetupTimeout() {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = (globalThis as any).WebSocket;
+  let openedUrl = '';
 
   class SocketThatNeverCompletesSetup {
     static OPEN = 1;
@@ -28,7 +137,8 @@ async function testGeminiSetupTimeout() {
     onerror: ((event: unknown) => void) | null = null;
     onclose: ((event: { code: number }) => void) | null = null;
 
-    constructor() {
+    constructor(url: string) {
+      openedUrl = url;
       setTimeout(() => {
         this.readyState = SocketThatNeverCompletesSetup.OPEN;
         this.onopen?.({});
@@ -55,6 +165,11 @@ async function testGeminiSetupTimeout() {
 
   try {
     await assert.rejects(provider.start(), /live-setup-timeout:10/);
+    assert.match(
+      openedUrl,
+      /access_token=auth_tokens%2Ftest-token/,
+      'the full ephemeral token name, including auth_tokens/, must reach the Live WebSocket',
+    );
     assert.equal(provider.isActive(), false, 'a failed setup must not leave the provider active');
   } finally {
     await provider.stop();
@@ -152,6 +267,9 @@ function testGeminiInterruptKeepsAudioInputOpen() {
 async function main() {
   testBargeInAcceptsOrdinarySpeech();
   testGeminiInterruptKeepsAudioInputOpen();
+  await testAbortedBrowserSpeechDoesNotClaimListening();
+  await testStoppingCancelsPendingBrowserSpeechStartup();
+  await testBrowserSpeechEmitsListeningAfterRecognitionStarts();
   await testGeminiSetupTimeout();
   await testTextUsesCanonicalChatAndSurfacesErrors();
   console.log('PASS: live interaction timeouts, canonical text turns, honest failures, and barge-in thresholds');

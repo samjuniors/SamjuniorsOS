@@ -11,7 +11,7 @@
  */
 
 import assert from 'assert';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { SpendSettingsManager } from '../../src/lib/server/sophia/spend-settings';
 import { SafeModeManager } from '../../src/lib/server/sophia/stop-control';
 import { WorkflowScheduler } from '../../src/lib/server/workflow/scheduler';

@@ -18,7 +18,7 @@
  * Test-created rows (SQLite + .data JSON) are removed by exact ids in afterEach.
  */
 import { describe, test, expect, afterEach } from "bun:test";
-import { NextRequest } from "next/server";
+import { NextRequest } from '@/lib/server/http';
 import { POST as POST_ORCHESTRATE } from "../../src/app/api/orchestrate/route";
 import { POST as POST_ACTIONS } from "../../src/app/api/workflow/scheduling/actions/route";
 import { PrismaClient } from "@prisma/client";

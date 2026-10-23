@@ -8,7 +8,7 @@ import { ConversationAdapterRegistry } from '../../src/lib/server/ai';
 import { isExplanationQuery, buildDecisionLogEntry } from '../../src/lib/server/sophia/decision-log';
 import { GET as getWhyRoute } from '../../src/app/api/sofia/why/route';
 import { GET as getDecisionLogRoute } from '../../src/app/api/sofia/decision-log/route';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 
 console.log('\n======================================================');
 console.log('STARTING M1.6 MINIMAL DECISION LOG TEST SUITE');

@@ -28,7 +28,7 @@ export function Brand() {
 }
 
 /**
- * ConnectionIndicator — displays real-time Gemini Live API latency and stability.
+ * ConnectionIndicator — displays the active Sophia voice transport.
  */
 export function ConnectionIndicator({
   os,
@@ -38,15 +38,15 @@ export function ConnectionIndicator({
   onClick: () => void;
 }) {
   const [metrics, setMetrics] = useState<LiveConnectionMetrics>(() => {
-    return os?.getGeminiLiveMetrics() ?? {
+    return os?.getVoiceMetrics() ?? {
       isConnected: false,
       latencyMs: 0,
       stabilityPercent: 0,
       quality: 'offline',
       packetsSent: 0,
       packetsReceived: 0,
-      modelName: 'gemini-3.8-live',
-      voiceName: 'Aoede',
+      modelName: 'No active voice session',
+      voiceName: '—',
       history: [],
     };
   });
@@ -54,7 +54,7 @@ export function ConnectionIndicator({
   useEffect(() => {
     if (!os) return;
     const interval = setInterval(() => {
-      setMetrics(os.getGeminiLiveMetrics());
+      setMetrics(os.getVoiceMetrics());
     }, 600);
     return () => clearInterval(interval);
   }, [os]);
@@ -69,7 +69,7 @@ export function ConnectionIndicator({
   if (!isConn) {
     latBadgeStyle = 'border-white/10 bg-white/[0.02] text-white/40';
     dotBg = 'bg-neutral-500';
-  } else if (lat > 0 && lat < 90) {
+  } else if (lat === 0 || lat < 90) {
     latBadgeStyle = 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.12)]';
     dotBg = 'bg-emerald-400 shadow-[0_0_8px_#34d399]';
   } else if (lat < 180) {
@@ -84,8 +84,8 @@ export function ConnectionIndicator({
     <button
       type="button"
       onClick={onClick}
-      title="Gemini Live Real-time API Connection Latency & Stability. Click for Live Diagnostics."
-      aria-label={`Gemini Live API status: ${isConn ? 'Connected' : 'Standby'}, Latency ${lat} ms, Stability ${stab}%. Click for detailed diagnostics.`}
+      title="Sophia voice transport status. Click for Live Diagnostics."
+      aria-label={`Sophia voice transport: ${isConn ? 'Connected' : 'Standby'}${lat ? `, latest response ${lat} ms` : ''}${stab ? `, stability ${stab}%` : ''}. Click for detailed diagnostics.`}
       className={`group flex items-center gap-2 rounded-full border px-3 py-1.5 backdrop-blur-md transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/50 ${latBadgeStyle}`}
     >
       <div className="relative flex items-center justify-center">
@@ -95,14 +95,22 @@ export function ConnectionIndicator({
 
       <div className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-wider">
         <span className="font-semibold text-white/90 group-hover:text-sky-200">
-          Gemini Live
+          Sophia Voice
         </span>
         <span className="text-white/20">•</span>
         {isConn ? (
           <>
-            <span className="font-bold text-sky-200">{lat}ms</span>
-            <span className="text-white/20">•</span>
-            <span className="text-emerald-300">{stab}% stab</span>
+            {lat > 0 ? (
+              <>
+                <span className="font-bold text-sky-200">{lat}ms</span>
+                {stab > 0 && <span className="text-white/20">•</span>}
+              </>
+            ) : null}
+            {stab > 0 ? (
+              <span className="text-emerald-300">{stab}% stable</span>
+            ) : lat === 0 ? (
+              <span className="text-emerald-300">Connected</span>
+            ) : null}
           </>
         ) : (
           <span className="text-white/40">Standby</span>

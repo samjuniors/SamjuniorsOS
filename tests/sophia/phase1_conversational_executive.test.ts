@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { POST as agentChatHandler } from '../../src/app/api/agent-chat/route';
 import {
   SophiaContextAssembler,

@@ -11,7 +11,7 @@
  * no mocks of the auth path under test.
  */
 import { describe, test, expect, afterEach } from "bun:test";
-import { NextRequest } from "next/server";
+import { NextRequest } from '@/lib/server/http';
 import { GET } from "../../src/app/api/agents/runs/route";
 
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;

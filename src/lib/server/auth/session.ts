@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { timingSafeEqual } from 'crypto';
 
 /**

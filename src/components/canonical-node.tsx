@@ -1,4 +1,3 @@
-"use client";
 
 import React, { useId, useSyncExternalStore, type ReactNode } from "react";
 import {

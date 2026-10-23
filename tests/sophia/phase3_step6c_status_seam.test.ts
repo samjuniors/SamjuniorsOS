@@ -27,7 +27,7 @@
  */
 
 import assert from 'assert';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { sophiaStatusPayload } from '../../src/lib/server/sophia/sofiaui';
 import { GET as statusRoute } from '../../src/app/api/sophia/status/route';
 import { resolveVoiceConfig, fetchVoiceConfig } from '../../src/sofia/lib/voice-config';
@@ -206,10 +206,24 @@ async function runTests() {
         voiceGateway: true,
         liveWsUrl: 'ws://localhost:3001',
         legacyVoiceAllowed: false,
+        deepgram: true,
       });
       assert.strictEqual(r.mode, 'CANONICAL_GATEWAY');
       if (r.mode === 'CANONICAL_GATEWAY') {
         assert.strictEqual(r.liveWsUrl, 'ws://localhost:3001');
+        assert.strictEqual(r.deepgramConfigured, true);
+      }
+    });
+
+    test('Canonical gateway is distinguished from an available streaming STT provider', () => {
+      const r = resolveVoiceConfig({
+        voiceGateway: true,
+        liveWsUrl: 'ws://localhost:3001',
+        deepgram: false,
+      });
+      assert.strictEqual(r.mode, 'CANONICAL_GATEWAY');
+      if (r.mode === 'CANONICAL_GATEWAY') {
+        assert.strictEqual(r.deepgramConfigured, false);
       }
     });
 

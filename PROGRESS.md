@@ -51,8 +51,16 @@
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
 - **Progress:** 1/13 steps done.
+- **Completed Steps:**
+  - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
+    - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
+    - Encapsulated `CompanyStateStore` behind `CompanyBrain` with atomic collection-locked persistence for products, customers, attention items, employees, initiatives, and financial metrics.
+    - Retired volatile parallel in-memory module arrays (`serverRecentIntelligence`, `serverEngineeringIntelligence`) from `CompanyContextProvider`; routed all research and engineering intelligence into durable collection-locked storage (`company_intelligence.json`).
+    - Refactored `CompanyContextProvider` into a pure presentation formatter delegating all operational state, constitution, and intelligence to `CompanyBrain`.
+    - Updated `SophiaContextAssembler` (slice 1), `SophiaServerGateway` (domain: company_metrics), `greeting.ts`, and context retrieval/assembly defaults to route through `CompanyBrain`.
+    - Enforced strict segregation between Sophia Personal Mind and Company Brain: personal secrets never appear in Company Brain projections and company questions never cite personal stores.
+    - Landed with full test verification: `tests/platform/company_brain_single_path.test.ts` (9/9 PASS), `tests/sophia/m1_canonical_state_authority.test.ts` (7/7 PASS), `tests/sophia/m1_5_greeting_and_indicators.test.ts` (9/9 PASS), `tests/sophia/m1_9_smoke.test.ts` (6/6 PASS), `typecheck` (0 errors), `lint` (0 errors).
 - **Next Ready Steps:**
-  - G4.1 [platform]: Company Brain as the single read and write path; retire parallel legacy paths.
   - G4.4 [quality]: Memory retrieval benchmark as a regression gate in CI.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
 

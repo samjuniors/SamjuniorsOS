@@ -1,4 +1,3 @@
-"use client";
 
 import { ExecutionCanvas, type WorkflowNode, type WorkflowEdge } from "./execution-canvas";
 import { AgentGlyph, GoogleG, MemoryGlyph, SheetGlyph, TriggerGlyph } from "./glyphs";

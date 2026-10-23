@@ -1,4 +1,3 @@
-'use client';
 
 /**
  * ui/TheatrePanel.tsx — Phase 1: Theatre (World Monitor).

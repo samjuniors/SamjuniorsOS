@@ -1,4 +1,3 @@
-'use client';
 
 /**
  * src/sofia/ui/SofiaDashboard.tsx — Phase 2: Canonical Read-Only Sofia Dashboard.

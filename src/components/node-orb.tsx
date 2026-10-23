@@ -1,4 +1,3 @@
-"use client";
 
 import { ReactNode } from "react";
 import { StateKey, stateAccent } from "@/lib/tokens";

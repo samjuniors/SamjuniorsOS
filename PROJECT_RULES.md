@@ -1,4 +1,3 @@
-<!-- GSD Project Profile: WEB -->
 # PROJECT_RULES.md — GSD Canonical Rules
 
 > **Single Source of Truth** for the Get Shit Done methodology.

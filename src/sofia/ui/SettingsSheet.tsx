@@ -387,15 +387,6 @@ const TTS_VOICE_PROFILES: TTSVoiceProfile[] = [
   },
 ];
 
-const GEMINI_VOICES = [
-  { id: 'Aoede', label: 'Aoede (Female · Australian Friend / Warm & Engaging)' },
-  { id: 'Kore', label: 'Kore (Female · Relaxed & Natural)' },
-  { id: 'Zephyr', label: 'Zephyr (Female · Bright & Lively)' },
-  { id: 'Puck', label: 'Puck (Male · Friendly & Playful)' },
-  { id: 'Charon', label: 'Charon (Male · Deep & Resonant)' },
-  { id: 'Fenrir', label: 'Fenrir (Male · Calm & Authoritative)' },
-];
-
 const DEFAULT_ELEVENLABS_VOICES = [
   { id: 'bMxLr8fP6hzNRRi9nJxU', label: 'Sophia Custom (.env)' },
   { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel (Calm & Clear)' },
@@ -803,66 +794,29 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
             </div>
           </AccordionSection>
 
-          {/* ENVIRONMENT: GEMINI LIVE API & ASR BARGE-IN */}
+          {/* ENVIRONMENT: GOVERNED VOICE SESSION & ASR BARGE-IN */}
           <AccordionSection
-            title="Environment & Gemini Live Setup"
-            badge={controlLayer.pureGeminiLive ? 'Pure Gemini' : 'Configured'}
+            title="Environment & Voice Session"
+            badge="Governed"
             isOpen={sections.env}
             onToggle={() => toggleSection('env')}
           >
-            {/* Pure Gemini Live Master Mode */}
+            {/* Voice modality uses Sophia's authenticated canonical ingress. */}
             <div className="space-y-2.5 rounded-xl border border-sky-400/40 bg-gradient-to-b from-sky-950/40 to-sky-950/10 p-3 shadow-[0_0_16px_rgba(56,189,248,0.15)]">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="block size-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)] animate-pulse" />
-                  <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-sky-200">
-                    Pure Gemini Live API Mode
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={controlLayer.pureGeminiLive}
-                  onClick={() => {
-                    const next = !controlLayer.pureGeminiLive;
-                    controlLayer.setPureGeminiLive(next);
-                    if (next) {
-                      os.savePrefs({ provider: 'gemini-live' });
-                    }
-                    rerender();
-                  }}
-                  className={`relative h-5 w-9 rounded-full border transition-colors duration-200 ${
-                    controlLayer.pureGeminiLive
-                      ? 'border-sky-400/50 bg-sky-400/30 shadow-[0_0_10px_rgba(56,189,248,0.3)]'
-                      : 'border-white/10 bg-white/5'
-                  }`}
-                >
-                  <span
-                    className={`block size-3.5 rounded-full transition-transform duration-200 ${
-                      controlLayer.pureGeminiLive
-                        ? 'translate-x-4 bg-sky-300 shadow-[0_0_6px_rgba(125,211,252,0.8)]'
-                        : 'translate-x-0.5 bg-white/40'
-                    }`}
-                  />
-                </button>
+              <div className="flex items-center gap-2">
+                <span className="block size-2 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.9)]" />
+                <span className="text-[10px] uppercase tracking-[0.2em] font-semibold text-sky-200">
+                  One Sophia voice path
+                </span>
               </div>
 
               <p className="text-[8.5px] leading-relaxed text-sky-200/80">
-                Uses the Gemini Live API key for microphone streaming, brain reasoning, and voice output across the application. External split backends are bypassed.
+                Voice turns use the authenticated Live Gateway and Sophia's canonical turn executor. When streaming STT is unavailable, browser speech recognition sends the transcript to canonical Sophia chat.
               </p>
 
               <div className="flex items-center justify-between pt-1 border-t border-sky-400/15">
-                <span className="text-[8.5px] font-mono text-sky-300/70">Model: models/gemini-3.8-live</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void os.resetGeminiLiveSession();
-                    rerender();
-                  }}
-                  className="rounded-lg border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[8.5px] font-medium text-sky-200 hover:bg-sky-400/20 active:scale-95"
-                >
-                  Reset & Reconnect
-                </button>
+                <span className="text-[8.5px] font-mono text-sky-300/70">Ingress: authenticated Sophia session</span>
+                <span className="text-[8.5px] font-mono text-sky-300/70">Turn mode: local VAD</span>
               </div>
             </div>
 
@@ -883,13 +837,13 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
             {/* Environment Status Summary */}
             <div className="rounded-xl border border-white/10 bg-white/[0.02] p-2.5 font-mono text-[8.5px] space-y-1">
               <div className="flex justify-between text-white/60">
-                <span>API Protocol</span>
-                <span className="text-sky-300">WebSocket Bidi (PCM16)</span>
+                <span>Voice Ingress</span>
+                <span className="text-sky-300">Canonical Sophia</span>
               </div>
               <div className="flex justify-between text-white/60">
-                <span>Environment Key</span>
-                <span className={serverStatus?.gemini ? 'text-emerald-400' : 'text-amber-400'}>
-                  {serverStatus?.gemini ? 'GEMINI_API_KEY Configured' : 'Checking Key...'}
+                <span>Streaming STT</span>
+                <span className={serverStatus?.deepgram ? 'text-emerald-400' : 'text-amber-400'}>
+                  {serverStatus?.deepgram ? 'Deepgram Configured' : 'Browser Recognition Fallback'}
                 </span>
               </div>
             </div>
@@ -979,20 +933,15 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
 
             {/* Hearing / Provider */}
             <SegRow<ProviderPref>
-              label="Hearing & Voice Transport"
-              value={controlLayer.pureGeminiLive ? 'gemini-live' : p.provider}
+              label="Voice Session Mode"
+              value={p.provider === 'local' ? 'local' : 'auto'}
               onChange={(provider) => {
-                if (controlLayer.pureGeminiLive && provider !== 'gemini-live') {
-                  controlLayer.setPureGeminiLive(false);
-                }
                 os.savePrefs({ provider });
                 rerender();
               }}
               options={[
                 { id: 'auto', label: 'Auto' },
-                { id: 'gemini-live', label: 'Gemini' },
-                { id: 'deepgram', label: 'Deepgram' },
-                { id: 'elevenlabs', label: 'ElevenLabs' },
+                { id: 'local', label: 'Local' },
               ]}
             />
 
@@ -1089,35 +1038,6 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
                   <span>{testingVoice ? 'Playing…' : 'Play Sample'}</span>
                 </button>
               </div>
-            </div>
-
-            {/* Gemini Live Voice Selection */}
-            <div className="space-y-2 rounded-xl border border-sky-500/20 bg-sky-950/15 p-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] uppercase tracking-[0.2em] text-sky-200/70">Gemini Live Voice</span>
-                <span className="font-mono text-[8px] text-sky-300/60">
-                  {controlLayer.voiceName}
-                </span>
-              </div>
-              <select
-                value={controlLayer.voiceName}
-                onChange={(e) => {
-                  controlLayer.voiceName = e.target.value;
-                  controlLayer.saveControlPrefs();
-                  rerender();
-                  void os.applyVoiceSettings();
-                }}
-                className="w-full rounded-lg border border-white/10 bg-[#080d1a] px-2.5 py-1.5 text-[11px] text-white/90 outline-none focus:border-sky-400"
-              >
-                {GEMINI_VOICES.map((v) => (
-                  <option key={v.id} value={v.id} className="bg-[#080d1a] text-white">
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[8.5px] text-white/40">
-                Primary voice used for real-time live conversations with Gemini Live.
-              </p>
             </div>
 
             {/* Speaking Mouth Engine */}

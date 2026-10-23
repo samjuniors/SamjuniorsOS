@@ -13,7 +13,7 @@
  * Read-only route: creates no artifacts.
  */
 import { describe, test, expect, afterEach } from "bun:test";
-import { NextRequest } from "next/server";
+import { NextRequest } from '@/lib/server/http';
 import { GET } from "../../src/app/api/activity/route";
 
 // Restore the REAL authoritative SQLite before any test runs (combined runs

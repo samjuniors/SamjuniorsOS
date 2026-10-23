@@ -3,17 +3,15 @@
  *
  * Provides real-time visual inspection for:
  *   - Microphone Hardware & Capture (Live input VU level meter, sample rate, permissions)
- *   - Gemini Live Bidi Transport (WebSocket status, live token, packets sent/received)
- *   - Brain Intelligence Engine (Pure Gemini Live vs Multi-LLM)
- *   - Speech / Mouth Output (Gemini Flash Lite TTS / 24 kHz DAC, playback level)
+ *   - Active canonical voice transport and packet counters
+ *   - Speech / Mouth Output and playback level
  *   - WebGL Particle Geometry Renderer (FPS, density tier, active geometric form)
- *   - Interactive Quick Tests: "Test Mic", "Test Voice", and "Reset Gemini Live"
+ *   - Interactive Quick Tests: "Test Mic", "Test Voice", and "Restart Voice Session"
  */
 
-import { Activity, CheckCircle2, Mic, RefreshCw, Sparkles, Volume2, X, AlertTriangle } from 'lucide-react';
+import { Activity, CheckCircle2, Mic, RefreshCw, Volume2, X, AlertTriangle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { SophiaOS, DiagnosticsSnapshot } from '../sophia/SophiaOS';
-import { controlLayer } from '../sophia/control';
 
 export function DiagnosticsModal({
   os,
@@ -49,7 +47,7 @@ export function DiagnosticsModal({
     setVoiceTesting(false);
   };
 
-  const handleResetLive = async () => {
+  const handleRestartVoice = async () => {
     setResettingLive(true);
     await os.resetGeminiLiveSession();
     setResettingLive(false);
@@ -85,26 +83,6 @@ export function DiagnosticsModal({
 
         {/* Diagnostic Grid */}
         <div className="mt-4 space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-
-          {/* 1. Pure Gemini Live Status Banner */}
-          {controlLayer.pureGeminiLive && (
-            <div className="flex items-center justify-between rounded-xl border border-sky-400/40 bg-sky-500/10 p-3 shadow-[inset_0_0_12px_rgba(56,189,248,0.15)]">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-sky-300 animate-spin" />
-                <div>
-                  <p className="text-[10px] font-semibold tracking-wider text-sky-200 uppercase">
-                    Pure Gemini Live Mode Active
-                  </p>
-                  <p className="text-[8.5px] text-sky-200/70">
-                    All-in-one native audio & brain enabled. Other backends disabled.
-                  </p>
-                </div>
-              </div>
-              <span className="rounded-full bg-sky-400/20 px-2 py-0.5 font-mono text-[8.5px] font-medium text-sky-300">
-                All-In-One
-              </span>
-            </div>
-          )}
 
           {/* 2. Microphone Capture Section */}
           <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3.5">
@@ -167,13 +145,13 @@ export function DiagnosticsModal({
             </div>
           </div>
 
-          {/* 3. Gemini Live Bidi WebSocket Section */}
+          {/* 3. Active canonical voice transport */}
           <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity size={15} className={isLiveOk ? 'text-sky-400' : 'text-amber-400'} />
                 <span className="text-[10px] font-medium uppercase tracking-wider text-white/80">
-                  Gemini Live Bidi Stream
+                  Voice Transport
                 </span>
               </div>
               <span
@@ -191,7 +169,11 @@ export function DiagnosticsModal({
 
             <div className="mt-2.5 grid grid-cols-2 gap-2 text-[8.5px] font-mono text-white/60">
               <div className="rounded-lg bg-black/40 p-1.5 border border-white/5">
-                <p className="text-white/40 text-[7.5px]">MODEL</p>
+                <p className="text-white/40 text-[7.5px]">PROVIDER</p>
+                <p className="text-sky-200 truncate">{diag.live.provider}</p>
+              </div>
+              <div className="rounded-lg bg-black/40 p-1.5 border border-white/5">
+                <p className="text-white/40 text-[7.5px]">BRAIN</p>
                 <p className="text-sky-200 truncate">{diag.live.model}</p>
               </div>
               <div className="rounded-lg bg-black/40 p-1.5 border border-white/5">
@@ -211,12 +193,12 @@ export function DiagnosticsModal({
             <div className="mt-3 flex justify-end">
               <button
                 type="button"
-                onClick={handleResetLive}
+                onClick={handleRestartVoice}
                 disabled={resettingLive}
                 className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[9px] font-medium text-white/80 hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-white disabled:opacity-50"
               >
                 <RefreshCw size={12} className={resettingLive ? 'animate-spin' : ''} />
-                {resettingLive ? 'Resetting Link…' : 'Reset & Reconnect Gemini Live'}
+                {resettingLive ? 'Restarting Session…' : 'Restart Voice Session'}
               </button>
             </div>
           </div>

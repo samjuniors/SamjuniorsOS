@@ -15,7 +15,7 @@
  * (in-memory singleton + durable collections) and restores prior state.
  */
 import { describe, test, expect, afterEach, afterAll } from "bun:test";
-import { NextRequest } from "next/server";
+import { NextRequest } from '@/lib/server/http';
 import { GET, POST } from "../../src/app/api/epistemic/route";
 import { EpistemicClaimStore } from "../../src/lib/server/epistemic/claim-store";
 import { existsSync, readFileSync, writeFileSync } from "fs";

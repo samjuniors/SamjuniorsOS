@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from '@/lib/server/http';
 import {
   globalRateLimiter,
   getClientIdentifier,

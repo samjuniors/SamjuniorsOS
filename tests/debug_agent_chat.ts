@@ -1,5 +1,5 @@
 import { POST } from '../src/app/api/agent-chat/route';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 
 async function test() {
   const req = new NextRequest('http://localhost:3000/api/agent-chat', {

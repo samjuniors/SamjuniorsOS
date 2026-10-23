@@ -33,7 +33,7 @@ export interface LiveConnectionMetrics {
   isConnected: boolean;
   latencyMs: number;
   stabilityPercent: number;
-  quality: 'excellent' | 'good' | 'fair' | 'poor' | 'offline';
+  quality: 'excellent' | 'good' | 'fair' | 'poor' | 'unmeasured' | 'offline';
   packetsSent: number;
   packetsReceived: number;
   modelName: string;
@@ -124,8 +124,9 @@ export class GeminiLiveProvider extends VoiceProvider {
         ticket.token.startsWith('auth_tokens/') ||
         ticket.token.startsWith('ya29.');
       const param = isAuthToken ? 'access_token' : 'key';
-      const cleanToken = ticket.token.replace(/^auth_tokens\//, '');
-      const wsUrl = `${ticket.wsUrl}?${param}=${encodeURIComponent(cleanToken)}`;
+      // `auth_tokens/<id>` is the complete ephemeral token name expected by
+      // the Live API. Stripping the prefix turns it into an invalid credential.
+      const wsUrl = `${ticket.wsUrl}?${param}=${encodeURIComponent(ticket.token)}`;
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
       let settled = false;

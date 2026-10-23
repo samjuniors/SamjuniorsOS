@@ -151,7 +151,8 @@ export function deterministicIdHash(prefix: string, text: string): string {
   return `${prefix}-${(h >>> 0).toString(36)}`;
 }
 
-function truncateTitle(text: string, max = 50): string {
+function truncateTitle(text?: string | null, max = 50): string {
+  if (!text) return 'Untitled Workstream';
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
@@ -1185,9 +1186,9 @@ export async function getGraphOverview(): Promise<GraphDTO> {
     const claims = await EpistemicClaimStore.getInstance().listClaims({
       status: 'pending',
     });
-    claimsPendingCount = claims.length;
+    claimsPendingCount = claims?.length || 0;
     const facts = await EpistemicClaimStore.getInstance().listActiveFacts();
-    factsActiveCount = facts.length;
+    factsActiveCount = facts?.length || 0;
   } catch (err) {
     // Non-fatal if epistemic claims fail, but fail-closed if in authoritative mode
     throw new GraphReadError('epistemic-store', err);

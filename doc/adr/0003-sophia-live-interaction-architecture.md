@@ -76,7 +76,7 @@ We adopt a **Cascaded Streaming Pipeline over a Companion WebSocket Process** as
 
 | Component | Selected Technology | Pricing / Licensing | Role & Distinctions |
 | :--- | :--- | :--- | :--- |
-| **Activation Mode** | **Push-to-Talk (PTT) ONLY** | N/A | **Initial Scope Constraint:** Phase 4 initial implementation is strictly Push-to-Talk (holding `Spacebar` or mic button). Continuous listening and wake-words are excluded to eliminate acoustic feedback, room noise leakage, and echo cancellation overhead. |
+| **Activation Mode** | **Explicit session with VAD-segmented turns** | N/A | The founder starts the microphone session. Local VAD maps each speech segment to the existing PTT protocol. Always-on ambient listening without a user-started session remains excluded. |
 | **Client VAD** | **Silero VAD v5 (ONNX/WASM in Web Worker)** | Open-Source (MIT) | Sub-1ms inference latency per 30ms frame. Runs locally in the browser; filters background noise and provides instantaneous local mute of assistant audio upon user speech detection. |
 | **Host Transport** | **Companion Node.js WebSocket Process (Port 3001)** | In-house Node process | **Deployment Reality:** Standard Next.js App Router route handlers (`route.ts`) cannot host WebSockets directly. The WebSocket gateway runs as a dedicated TypeScript companion process (`npm run dev:ws` / standalone worker) sharing the same code, auth, and store modules. |
 | **Streaming STT** | **Deepgram Flux STT** | $0.39 / hour | Conversational speech recognition with native semantic turn-taking, preventing premature cutoffs during mid-thought pauses. |
@@ -142,10 +142,10 @@ Before writing code, the transport layer is fully specified:
 - **Rock-Solid Control Plane:** Retains 100% of existing authorization, constitutional verification, and multi-agent coordination.
 - **Zero Timing Guesswork:** Leverages Deepgram Flux's native conversational turn-taking and `SpeechInterrupted` event protocol.
 - **Safe Next.js Architecture:** Isolates streaming WebSockets into a companion process, preserving Next.js standalone builds and developer HMR stability.
-- **Safe Initial Scope:** Push-to-Talk eliminates audio feedback loops and room acoustic leakage.
+- **Explicit Capture Scope:** User-started sessions bound capture lifetime; local VAD gates speech-turn audio and the existing barge-in path mutes playback.
 
 ### Negative / Trade-offs
-- **Process Supervision:** Requires running a companion Node/TypeScript WebSocket process alongside Next.js (`npm run dev:ws` in dev; managed process or container companion in production).
+- **Process Supervision:** Requires a companion Node/TypeScript WebSocket process alongside Next.js; the local dev runner manages both, while production needs a managed companion process or container.
 - **Vendor Cost:** Deepgram Flux STT ($0.39/hr) and Flux TTS (~$0.045/1k chars) incur usage fees (~$5–$25/month for normal founder usage).
 
 ---
@@ -156,8 +156,27 @@ Before writing code, the transport layer is fully specified:
    - *Rejected:* Technically unsupported by Next.js App Router. Route handlers lack raw Node HTTP upgrade hooks.
 2. **Treating Aura-2 and Flux TTS Interchangeably:**
    - *Rejected:* Aura-2 lacks native conversational state and cannot provide native `SpeechInterrupted` character offset tracking.
-3. **Continuous Ambient Listening for v1:**
-   - *Rejected:* Creates false positives, acoustic echo loops, privacy concerns, and unnecessary streaming costs. PTT-only is strictly enforced for Phase 4.
+3. **Always-on Ambient Listening:**
+   - *Rejected:* Creates false positives, acoustic echo loops, privacy concerns, and unnecessary streaming costs. Voice capture starts only after an explicit user action.
+
+---
+
+## Founder-approved session-scoped voice amendment (2026-10-23)
+
+The integrated Sophia mic control starts an explicit hands-free session. While
+that session is active, the browser runs the existing deterministic acoustic
+VAD locally and maps each detected speech segment to `START_PTT` / `STOP_PTT`.
+It keeps a short in-memory onset pre-roll, sends no idle-room audio to the
+gateway, and closes a turn after an 800ms silence hangover. The session remains
+ephemeral and ends when Sophia is deactivated.
+
+This amends only the activation/turn segmentation detail. Audio still reaches
+the authenticated companion gateway and the same `executeSophiaTurn` ingress;
+the client does not gain an alternate brain, memory store, or side-effect
+authority. The existing local barge-in gate cuts playback and sends `INTERRUPT`
+before a new VAD turn starts. When Deepgram streaming STT is unavailable, the
+browser recognition fallback sends text to the authenticated canonical Sophia
+chat route.
 
 ---
 

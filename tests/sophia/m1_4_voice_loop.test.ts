@@ -26,7 +26,7 @@ import {
   type VoiceTurnLatencyRecord,
 } from '../../src/lib/server/sophia/voice-latency';
 import { ConversationAdapterRegistry } from '../../src/lib/server/ai';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { GET as getLatencyApi, POST as postLatencyApi } from '../../src/app/api/sofia/voice/latency/route';
 
 class MockAudioEngine {

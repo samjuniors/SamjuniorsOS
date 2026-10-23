@@ -16,7 +16,7 @@
  * Test-created heartbeat rows are removed by exact id in afterEach.
  */
 import { describe, test, expect, afterEach } from "bun:test";
-import { NextRequest } from "next/server";
+import { NextRequest } from '@/lib/server/http';
 import { POST } from "../../src/app/api/workflow/scheduling/route";
 import { GET as GET_STATUS } from "../../src/app/api/workflow/scheduling/status/route";
 import { PrismaClient } from "@prisma/client";

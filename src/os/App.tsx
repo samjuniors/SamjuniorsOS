@@ -1,8 +1,4 @@
-'use client';
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { Sparkles, LayoutGrid, Palette } from "lucide-react";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
@@ -11,35 +7,19 @@ import { syncFromServer } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
 import "@/sofia/sofia.css";
 
-/** The SOFIA display — the verbatim SofiaUI surface (src/sofia): the
- *  full-screen particle Sophia with her own HUD, chat, settings sheet,
- *  terminal, diagnostics, browser panel and boot entry. Client-only like
- *  the whole scene stack it carries (WebGL, WebAudio, speech); inside the
- *  shell it stays mounted for the session, hidden behind the OS surface,
- *  so her microphone and her voice keep running wherever the founder is
- *  working. Server seams are this repo's /api/sophia/* adapter routes,
- *  which delegate to the canonical flow. */
-const SofiaSurface = dynamic(() => import("@/sofia/App"), {
-  ssr: false,
-  loading: () => <div className="sofia-scope" aria-hidden="true" />,
-});
-
-// The shared voice widget imports a browser-only SofiaOS singleton.
-const SharedSophiaVoicePresence = dynamic(
-  () => import("./components/voice/SharedSophiaVoicePresence"),
-  { ssr: false },
-);
+const SofiaSurface = lazy(() => import("@/sofia/App"));
+const SharedSophiaVoicePresence = lazy(() => import("./components/voice/SharedSophiaVoicePresence"));
 
 type Tab = "sophia" | "os";
 
+interface AppProps {
+  onNavigate?: (path: string) => void;
+}
+
 /* --------------------------------------------------------------------- App */
 
-export default function App() {
-  // The Sophia surface is the entry experience of the OS (SofiaUI's boot
-  // contract: she is the interface); the SamJuniorsOS desktop is one
-  // switch away and stays fully functional.
+export default function App({ onNavigate }: AppProps = {}) {
   const [tab, setTab] = useState<Tab>("sophia");
-  const router = useRouter();
 
   // Apply persisted OS state after mount (hydration-safe: SSR and the first
   // client render both start from SEED; localStorage state lands post-mount),
@@ -81,7 +61,15 @@ export default function App() {
           {/* Route toggle: main canvas ⇄ design-system specimen (navigation, not a mode) */}
           <span aria-hidden="true" className="mx-0.5 h-3 w-px bg-white/10" />
           <button
-            onClick={() => { osSound.click(); router.push("/design-system/workflow"); }}
+            onClick={() => {
+              osSound.click();
+              if (onNavigate) {
+                onNavigate("/design-system/workflow");
+              } else {
+                window.history.pushState({}, '', "/design-system/workflow");
+                window.dispatchEvent(new PopStateEvent('popstate'));
+              }
+            }}
             title="Open the workflow design-system specimen"
             aria-label="Open the workflow design-system specimen"
             className="group flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-slate-400 transition-all duration-200 hover:text-cyan-100 active:scale-95"
@@ -101,7 +89,9 @@ export default function App() {
         className={`sofia-scope${tab === "sophia" ? "" : " sofia-scope-hidden"}`}
         aria-hidden={tab !== "sophia"}
       >
-        <SofiaSurface active={tab === "sophia"} />
+        <Suspense fallback={<div className="sofia-scope" aria-hidden="true" />}>
+          <SofiaSurface active={tab === "sophia"} />
+        </Suspense>
       </div>
 
       {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
@@ -112,7 +102,11 @@ export default function App() {
 
       {/* Same SofiaOS instance as the always-mounted full-screen SofiaUI.
           This shares Gemini Live audio, VAD, TTS, context and barge-in. */}
-      {tab !== "sophia" && <SharedSophiaVoicePresence />}
+      {tab !== "sophia" && (
+        <Suspense fallback={null}>
+          <SharedSophiaVoicePresence />
+        </Suspense>
+      )}
     </div>
   );
 }

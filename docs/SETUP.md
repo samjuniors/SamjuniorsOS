@@ -6,7 +6,7 @@ Verified against the working tree on 2026-10-21 on Windows 11 (Node 24, npm) and
 
 - **Dashboard:** http://localhost:3000 (the app runs on port 3000; the port is set in `scripts/dev.mjs`).
 - **COO chat:** Sophia Vance, through `POST /api/agent-chat`.
-- **Live companion WebSocket (optional):** port 3001, started separately with `dev:ws`.
+- **Live companion WebSocket:** port 3001; `npm run dev` starts it alongside Next.js for local voice sessions.
 
 ## Known issues to read before installing
 
@@ -38,11 +38,18 @@ Start the app:
 bun run dev                 # or: npm run dev
 ```
 
-Optional live companion, in a second terminal:
+For a standalone gateway process (for example, when running Next.js separately):
 
 ```bash
 bun run dev:ws              # port 3001, or LIVE_WS_PORT
 ```
+
+The local dev runner shares a temporary signing secret between Next.js and the
+companion process and enables the local gateway unless
+`SAMJUNIORS_VOICE_GATEWAY` is explicitly disabled. Add `DEEPGRAM_API_KEY` to
+`.env.local` for streamed speech recognition. Without that key, the browser
+uses its speech-recognition API and sends the transcript to the authenticated
+canonical Sophia chat endpoint.
 
 ## Verify
 

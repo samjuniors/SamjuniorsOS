@@ -159,7 +159,7 @@ export function BootScreen({ os, onEnter }: { os: SophiaOS; onEnter: () => void 
         </div>
 
         <p className="mt-7 text-[9px] font-mono text-white/30">
-          Powered by Gemini Live & Neural Audio
+          One Sophia · Governed Voice
         </p>
 
       </div>

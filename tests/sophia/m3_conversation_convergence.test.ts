@@ -2,7 +2,7 @@ import assert from 'assert';
 import path from 'path';
 import { readFileSync } from 'fs';
 import { randomUUID } from 'crypto';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { POST as sofiaAskPostHandler } from '../../src/app/api/sofia/ask/route';
 import { POST as agentChatPostHandler } from '../../src/app/api/agent-chat/route';
 import {

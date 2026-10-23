@@ -348,13 +348,13 @@ export function ChatPanel({
         <div className="m-3 mb-0 flex items-center justify-between rounded-xl border border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-[9.5px] font-mono tracking-wide text-sky-200 shadow-[inset_0_0_8px_rgba(56,189,248,0.15)]">
           <span className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse" />
-            <span>Gemini Live Stream Active</span>
+            <span>Sophia voice session active</span>
           </span>
-          <span className="text-[8px] font-semibold text-sky-300/60">gemini-3.8-live</span>
+          <span className="text-[8px] font-semibold text-sky-300/60">canonical ingress</span>
         </div>
       ) : (
         <div className="m-3 mb-0 rounded-xl border border-sky-400/20 bg-sky-400/[0.04] px-3 py-2 text-[10px] font-light leading-relaxed tracking-wide text-sky-200/70">
-          Connecting to Gemini Live stream… Type or speak your message below.
+          Start a Sophia voice session or type a message below.
         </div>
       )}
 

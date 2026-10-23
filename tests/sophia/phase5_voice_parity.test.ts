@@ -42,7 +42,7 @@
  * event-loop drain in this environment. process.exit carries the true code.
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { WebSocket } from 'ws';
 import { LiveInteractionServer } from '../../src/lib/server/live/server';
 import type { SophiaTurnExecutorFn } from '../../src/lib/server/live/server';

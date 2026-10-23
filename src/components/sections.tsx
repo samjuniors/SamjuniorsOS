@@ -1,4 +1,3 @@
-"use client";
 
 import { useState } from "react";
 import { Chip, Section, SubLabel } from "./primitives";

@@ -30,7 +30,7 @@
  *
  * Output contract: exactly one JSON line on stdout; non-zero exit on crash.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { POST } from '../../src/app/api/sofia/ask/route';
 import { ConversationStore } from '../../src/lib/server/conversation';
 

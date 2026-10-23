@@ -1,4 +1,3 @@
-"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { FxEngine, type FxColor, type FxDensity } from "@/lib/fx-engine";

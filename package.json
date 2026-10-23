@@ -1,13 +1,13 @@
 {
-  "name": "nextjs_tailwind_shadcn_ts",
+  "name": "samjuniors-os",
   "version": "0.2.1",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:ws": "tsx scripts/live-gateway.ts",
+    "dev": "tsx server.ts",
+    "build": "vite build",
+    "start": "tsx server.ts",
     "postinstall": "prisma generate",
-    "build": "prisma generate && next build && node scripts/copy-standalone.mjs",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
@@ -20,14 +20,10 @@
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
-    "typecheck": "tsc --noEmit",
-    "audit:deps": "node scripts/audit-deps.mjs",
-    "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose",
-    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs",
-    "deploy:staging": "npx tsx scripts/deploy-staging.ts",
-    "verify:deployment": "npx tsx scripts/verify-deployment.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
@@ -63,11 +59,13 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "dompurify": "^3.4.15",
+    "dotenv": "^16.4.7",
     "embla-carousel-react": "^8.6.0",
+    "express": "^4.21.2",
     "framer-motion": "^12.23.2",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.525.0",
-    "next": "^16.1.1",
+    "motion": "^14.6.0",
     "next-themes": "^0.4.6",
     "prisma": "^6.11.1",
     "react": "^19.0.0",
@@ -86,21 +84,23 @@
     "zod": "^4.0.2",
     "zustand": "^5.0.6"
   },
-  "optionalDependencies": {
-    "@next/swc-win32-x64-msvc": "^16.4.0"
-  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tailwindcss/vite": "^4.0.0",
     "@types/dompurify": "^3.2.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
     "bun-types": "^1.3.4",
     "eslint": "^9",
-    "eslint-config-next": "^16.1.1",
     "playwright": "^1.63.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vite": "^6.2.0"
   }
 }

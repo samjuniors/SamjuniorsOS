@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { randomUUID } from 'crypto';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import {
   SophiaMemoryStore,
   SophiaMemoryValidationError,

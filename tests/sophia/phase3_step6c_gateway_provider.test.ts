@@ -25,6 +25,7 @@ import { LiveTicketStore } from '../../src/lib/server/live/ticket-store';
 import type { SophiaTurnResult } from '../../src/lib/server/sophia/turn-executor';
 import type { STTProvider, CanonicalTranscriptEvent } from '../../src/lib/server/live/stt/types';
 import { AudioEngine } from '../../src/sofia/sophia/audio/AudioEngine';
+import { controlLayer } from '../../src/sofia/sophia/control';
 
 // Mock AudioEngine: faithfully implements the AudioEngine methods used by LiveGatewayVoiceProvider
 class MockAudioEngine {
@@ -98,6 +99,14 @@ class MockWebSocket extends EventEmitter {
       this.emit('error', err);
     }
   }
+}
+
+function pcmFrame(amplitude = 0, frequencyHz = 180): ArrayBuffer {
+  const samples = new Int16Array(640);
+  for (let i = 0; i < samples.length; i++) {
+    samples[i] = Math.round(Math.sin((2 * Math.PI * frequencyHz * i) / 16000) * amplitude * 32767);
+  }
+  return samples.buffer;
 }
 
 async function runTests() {
@@ -986,6 +995,93 @@ async function runTests() {
     const stopMsg = JSON.parse(lastWs!.sentMessages[2]);
     assert.strictEqual(stopMsg.type, 'STOP_PTT');
     assert.strictEqual(stopMsg.turnId, 'test_turn_101');
+
+    await p.stop();
+  });
+
+  await test('hands-free VAD sends speech turns only, auto-stops, interrupts pending turns, and rearms listening', async () => {
+    const audio = new MockAudioEngine() as any;
+    let lastWs: MockWebSocket | null = null;
+    const ttsRequests: Array<Record<string, unknown>> = [];
+    class CapturingWs extends MockWebSocket {
+      constructor(url: string) {
+        super(url);
+        lastWs = this;
+      }
+    }
+
+    const mockFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/api/auth/ws-ticket')) {
+        return { ok: true, json: async () => ({ ticket: 'ws_live_handsfree' }) };
+      }
+      if (String(input).includes('/api/sophia/mouth/speak')) {
+        ttsRequests.push(JSON.parse(String(init?.body)));
+      }
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+        json: async () => ({}),
+      };
+    }) as any;
+
+    const p = new LiveGatewayVoiceProvider(audio, 'ws://localhost:3001', {
+      fetchFn: mockFetch,
+      WebSocketClass: CapturingWs as any,
+    });
+    const listeningEvents: string[] = [];
+    p.addEventListener('listening', () => listeningEvents.push('listening'));
+
+    await p.start();
+    p.enableHandsFreeListening();
+    for (let i = 0; i < 8; i++) audio.pcmCallback!(pcmFrame());
+    assert.strictEqual(lastWs!.sentMessages.length, 0, 'silence must stay local and must not open a turn');
+
+    audio.pcmCallback!(pcmFrame(0.14));
+    audio.pcmCallback!(pcmFrame(0.14));
+    let controls = lastWs!.sentMessages
+      .filter((message: any) => typeof message === 'string')
+      .map((message: string) => JSON.parse(message));
+    assert.strictEqual(controls.filter((message: any) => message.type === 'START_PTT').length, 1);
+    assert.ok(lastWs!.sentMessages.some((message: any) => message instanceof ArrayBuffer), 'VAD onset pre-roll reaches STT');
+
+    for (let i = 0; i < 19; i++) audio.pcmCallback!(pcmFrame());
+    controls = lastWs!.sentMessages
+      .filter((message: any) => typeof message === 'string')
+      .map((message: string) => JSON.parse(message));
+    assert.strictEqual(controls.filter((message: any) => message.type === 'STOP_PTT').length, 0);
+    audio.pcmCallback!(pcmFrame());
+    controls = lastWs!.sentMessages
+      .filter((message: any) => typeof message === 'string')
+      .map((message: string) => JSON.parse(message));
+    assert.strictEqual(controls.filter((message: any) => message.type === 'STOP_PTT').length, 1, '800ms silence closes the turn');
+    const firstTurnId = controls.find((message: any) => message.type === 'START_PTT')?.turnId;
+    assert.strictEqual(controls.find((message: any) => message.type === 'STOP_PTT')?.turnId, firstTurnId);
+
+    audio.pcmCallback!(pcmFrame(0.14));
+    audio.pcmCallback!(pcmFrame(0.14));
+    controls = lastWs!.sentMessages
+      .filter((message: any) => typeof message === 'string')
+      .map((message: string) => JSON.parse(message));
+    const interruptIndex = controls.findIndex((message: any) => message.type === 'INTERRUPT' && message.turnId === firstTurnId);
+    const secondStartIndex = controls.findIndex((message: any, index: number) => index > interruptIndex && message.type === 'START_PTT');
+    assert.ok(interruptIndex >= 0 && secondStartIndex > interruptIndex, 'new speech interrupts the pending turn before starting the next one');
+    const secondTurnId = controls[secondStartIndex]?.turnId;
+
+    lastWs!.simulateServerMessage({ type: 'TRANSCRIPT_FINAL', turnId: secondTurnId, text: 'What is our current priority?' });
+    lastWs!.simulateServerMessage({ type: 'SOPHIA_RESPONSE', turnId: secondTurnId, reply: 'The current priority is the launch review.' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(listeningEvents.length >= 2, 'the provider returns to listening after canonical reply playback');
+    assert.strictEqual((p as any).activeTurnId, null, 'completed response releases its active turn');
+    assert.deepStrictEqual(ttsRequests[0], {
+      text: 'The current priority is the launch review.',
+      provider: controlLayer.pureGeminiLive ? 'gemini' : (controlLayer.mouthProvider || 'auto'),
+      voice: controlLayer.voiceName,
+      voiceId: controlLayer.elevenLabsVoiceId || 'bMxLr8fP6hzNRRi9nJxU',
+      modelId: controlLayer.elevenLabsModelId || 'eleven_turbo_v2_5',
+    }, 'gateway replies must use the same selected voice profile and TTS engine as the browser speech fallback');
+    assert.ok(p.getTrafficMetrics().packetsSent > 0);
+    assert.ok(p.getTrafficMetrics().packetsReceived >= 2);
 
     await p.stop();
   });

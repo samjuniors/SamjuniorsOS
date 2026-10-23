@@ -52,7 +52,7 @@
  */
 import fs from 'fs';
 import { randomUUID } from 'crypto';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import {
   captureSophiaMemoryCandidates,
   SophiaMemoryCaptureInput,

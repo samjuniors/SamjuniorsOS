@@ -50,7 +50,7 @@
  */
 
 import { WebSocket, WebSocketServer } from 'ws';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';

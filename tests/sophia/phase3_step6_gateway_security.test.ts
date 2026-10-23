@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { POST as wsTicketRoute } from '../../src/app/api/auth/ws-ticket/route';
 import { POST as liveSessionRoute } from '../../src/app/api/sophia/live/session/route';
 import { POST as liveResetRoute } from '../../src/app/api/sophia/live/reset/route';
@@ -215,12 +215,12 @@ async function run() {
 
     // Mock Google authTokens endpoint to fail
     globalThis.fetch = async (url: any) => {
-      if (String(url).includes('authTokens')) {
+      if (String(url).endsWith('/v1beta/auth_tokens')) {
         return new Response(JSON.stringify({ error: 'Google auth token service failure' }), {
           status: 500,
         });
       }
-      return originalFetch(url);
+      return new Response(JSON.stringify({ error: 'Unexpected live token endpoint' }), { status: 404 });
     };
 
     await test('live/session: dev mode NEVER leaks raw GEMINI_API_KEY when token minting fails', async () => {
@@ -263,24 +263,26 @@ async function run() {
       assert(!rawText.includes(SENSITIVE_KEY), 'RAW KEY MUST NOT LEAK IN PRODUCTION');
     });
 
-    // 3F. Route compatibility when Google authTokens succeeds
+    // 3F. Current v1beta token route and constrained WebSocket endpoint
     ENV.NODE_ENV = 'development';
     const MINTED_TOKEN_NAME = 'auth_tokens/ephemeral_live_token_778899aabbcc';
+    let tokenRequestUrl = '';
 
     globalThis.fetch = async (url: any) => {
-      if (String(url).includes('authTokens')) {
+      tokenRequestUrl = String(url);
+      if (tokenRequestUrl === 'https://generativelanguage.googleapis.com/v1beta/auth_tokens') {
         return new Response(JSON.stringify({ name: MINTED_TOKEN_NAME }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
       }
-      return originalFetch(url);
+      return new Response(JSON.stringify({ error: 'Unexpected live token endpoint' }), { status: 404 });
     };
 
-    await test('live/session: backward-compatible response returned when Google mints token', async () => {
+    await test('live/session: v1beta ephemeral token is paired with the constrained WebSocket', async () => {
       const res = await liveSessionRoute(
         makeReq('/api/sophia/live/session', {
-          body: { voice: 'Fenrir', model: 'models/gemini-3.8-live' },
+          body: { voice: 'Fenrir', model: 'models/client-model-must-be-ignored' },
         })
       );
       assert.strictEqual(res.status, 200, `expected 200 OK, got ${res.status}`);
@@ -288,7 +290,13 @@ async function run() {
       assert.strictEqual(data.token, MINTED_TOKEN_NAME, 'returns Google ephemeral token');
       assert.notStrictEqual(data.token, SENSITIVE_KEY, 'returned token is NOT raw api key');
       assert.strictEqual(data.voice, 'Fenrir', 'honors voice parameter');
-      assert.strictEqual(data.model, 'models/gemini-3.8-live', 'honors model parameter');
+      assert.strictEqual(tokenRequestUrl, 'https://generativelanguage.googleapis.com/v1beta/auth_tokens');
+      assert.strictEqual(
+        data.model,
+        ENV.GEMINI_LIVE_MODEL?.trim() || 'models/gemini-3.8-live',
+        'uses server-configured live model instead of client input',
+      );
+      assert.strictEqual(data.wsUrl.endsWith('BidiGenerateContentConstrained'), true);
       assert(typeof data.wsUrl === 'string', 'wsUrl present');
       assert(typeof data.createdAt === 'number', 'createdAt present');
       assert.strictEqual(data.expiresInSeconds, 1800, 'expiresInSeconds present');

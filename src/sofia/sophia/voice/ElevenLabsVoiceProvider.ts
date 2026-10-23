@@ -12,6 +12,9 @@ import { controlLayer } from '../control';
 import type { VoiceProviderId } from '../types';
 import { VoiceProvider } from './VoiceProvider';
 
+const SPEECH_RECOGNITION_START_TIMEOUT_MS = 5000;
+const MAX_CONSECUTIVE_ABORTS = 3;
+
 export class ElevenLabsVoiceProvider extends VoiceProvider {
   readonly id: VoiceProviderId = 'elevenlabs';
   private speakCtl: AbortController | null = null;
@@ -23,6 +26,8 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
   private restartTimeout: ReturnType<typeof setTimeout> | null = null;
   private detachPlaybackStart: (() => void) | null = null;
   private detachPlaybackEnd: (() => void) | null = null;
+  private consecutiveAbortedStarts = 0;
+  private cancelPendingRecognitionStart: ((error: Error) => void) | null = null;
 
   constructor(private audio: AudioEngine) {
     super();
@@ -55,8 +60,13 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       throw new Error('Browser WebSpeech not available in this environment');
     }
     this.active = true;
-    this.emit('listening', { source: this.id });
-    this.startSpeechRecognition();
+    try {
+      await this.startSpeechRecognition();
+    } catch (err) {
+      this.active = false;
+      this.stopSpeechRecognition();
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
@@ -66,16 +76,28 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
   }
 
   public rearmListening() {
-    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) return;
-    this.startSpeechRecognition();
+    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) {
+      return;
+    }
+    void this.startSpeechRecognition().catch((err: unknown) => {
+      if (!this.active) return;
+      this.active = false;
+      this.stopSpeechRecognition();
+      this.emit('error', {
+        code: 'webspeech-start-failed',
+        message: err instanceof Error ? err.message : String(err),
+        source: this.id,
+      });
+    });
   }
 
-  private startSpeechRecognition() {
-    if (typeof window === 'undefined') return;
+  private startSpeechRecognition(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return Promise.reject(new Error('Browser speech recognition requires a browser window'));
+    }
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) {
-      console.warn('[elevenlabs-provider] Browser WebSpeech not available in this environment');
-      return;
+      return Promise.reject(new Error('Browser WebSpeech not available in this environment'));
     }
 
     if (this.restartTimeout) {
@@ -101,113 +123,184 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       this.recognizer = null;
     }
 
-    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) return;
+    if (!this.active || this.busy || this.speaking || this.audio.isSpeaking) {
+      return Promise.resolve();
+    }
 
-    try {
-      const rec = new SpeechRec();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-US';
+    return new Promise<void>((resolve, reject) => {
+      let rec: any;
+      let started = false;
+      let settled = false;
+      const startupTimer = setTimeout(() => {
+        failBeforeListening(new Error(
+          `Browser speech recognition did not start within ${SPEECH_RECOGNITION_START_TIMEOUT_MS}ms`,
+        ));
+      }, SPEECH_RECOGNITION_START_TIMEOUT_MS);
 
-      rec.onstart = () => {
-        if (this.active && !this.speaking && !this.busy) {
-          this.emit('listening', { source: this.id });
+      const failBeforeListening = (error: Error) => {
+        if (started || settled) return;
+        settled = true;
+        clearTimeout(startupTimer);
+        if (this.cancelPendingRecognitionStart === failBeforeListening) {
+          this.cancelPendingRecognitionStart = null;
         }
+        if (this.recognizer === rec) this.recognizer = null;
+        if (rec) {
+          rec.onstart = null;
+          rec.onend = null;
+          rec.onerror = null;
+          rec.onresult = null;
+          try {
+            rec.stop();
+          } catch {
+            /* ignore */
+          }
+        }
+        reject(error);
       };
+      this.cancelPendingRecognitionStart = failBeforeListening;
 
-      rec.onresult = (e: any) => {
-        if (!this.active || this.speaking || this.busy || this.audio.isSpeaking) return;
-        let interim = '';
-        let final = '';
+      try {
+        rec = new SpeechRec();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = 'en-US';
 
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const item = e.results[i];
-          const text = item[0]?.transcript || '';
-          if (item.isFinal) final += text;
-          else interim += text;
-        }
+        rec.onstart = () => {
+          started = true;
+          clearTimeout(startupTimer);
+          if (!settled) {
+            settled = true;
+            this.cancelPendingRecognitionStart = null;
+            resolve();
+          }
+          if (this.active && !this.speaking && !this.busy) {
+            this.emit('listening', { source: this.id });
+          }
+        };
 
-        const currentText = (final || interim).trim();
-        if (currentText) {
-          this.pendingTranscript = currentText;
-          controlLayer.addUserTurn(currentText, Boolean(final));
-          this.emit('transcript', { role: 'user', text: currentText, final: Boolean(final), source: this.id });
-        }
+        rec.onresult = (e: any) => {
+          if (!this.active || this.speaking || this.busy || this.audio.isSpeaking) return;
+          let interim = '';
+          let final = '';
 
-        if (final.trim() && !this.busy && !this.speaking) {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const item = e.results[i];
+            const text = item[0]?.transcript || '';
+            if (item.isFinal) final += text;
+            else interim += text;
+          }
+
+          const currentText = (final || interim).trim();
+          if (currentText) {
+            this.consecutiveAbortedStarts = 0;
+            this.pendingTranscript = currentText;
+            controlLayer.addUserTurn(currentText, Boolean(final));
+            this.emit('transcript', { role: 'user', text: currentText, final: Boolean(final), source: this.id });
+          }
+
+          if (final.trim() && !this.busy && !this.speaking) {
+            if (this.interimDebounceTimer) {
+              clearTimeout(this.interimDebounceTimer);
+              this.interimDebounceTimer = null;
+            }
+            this.pendingTranscript = '';
+            this.stopSpeechRecognition();
+            void this.runTurn(final.trim());
+            return;
+          }
+
+          // Silence fallback for interim transcripts:
+          // If Chrome delays setting isFinal = true after speech ceases,
+          // trigger the turn after 850ms of silence so the user is never left hanging.
+          if (this.pendingTranscript.trim() && !this.busy && !this.speaking) {
+            if (this.interimDebounceTimer) clearTimeout(this.interimDebounceTimer);
+            this.interimDebounceTimer = setTimeout(() => {
+              if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
+                const textToCommit = this.pendingTranscript.trim();
+                this.pendingTranscript = '';
+                controlLayer.addUserTurn(textToCommit, true);
+                this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
+                this.stopSpeechRecognition();
+                void this.runTurn(textToCommit);
+              }
+            }, 850);
+          }
+        };
+
+        rec.onerror = (err: any) => {
+          const errType = err?.error;
+          if (errType !== 'no-speech' && this.active) {
+            console.warn('[elevenlabs-provider] Speech recognition notice:', errType);
+          }
+          if (errType === 'not-allowed' || errType === 'service-not-allowed') {
+            this.emit('error', { code: 'mic-permission-denied', message: errType, source: this.id });
+          }
+          if (errType === 'aborted' && this.active) {
+            this.consecutiveAbortedStarts++;
+            if (this.consecutiveAbortedStarts >= MAX_CONSECUTIVE_ABORTS) {
+              this.active = false;
+              this.emit('error', {
+                code: 'speech-recognition-aborted',
+                message: `Browser speech recognition aborted ${MAX_CONSECUTIVE_ABORTS} consecutive times`,
+                source: this.id,
+              });
+              if (!started) {
+                failBeforeListening(new Error('Browser speech recognition aborted before listening'));
+              } else {
+                this.stopSpeechRecognition();
+              }
+              return;
+            }
+          }
+          if (!started) {
+            failBeforeListening(new Error(`Browser speech recognition failed before listening (${errType || 'unknown'})`));
+          }
+        };
+
+        rec.onend = () => {
+          if (!started) {
+            failBeforeListening(new Error('Browser speech recognition ended before it started listening'));
+            return;
+          }
+          this.recognizer = null;
+          clearTimeout(startupTimer);
           if (this.interimDebounceTimer) {
             clearTimeout(this.interimDebounceTimer);
             this.interimDebounceTimer = null;
           }
-          this.pendingTranscript = '';
-          this.stopSpeechRecognition();
-          void this.runTurn(final.trim());
-          return;
-        }
 
-        // Silence fallback for interim transcripts:
-        // If Chrome delays setting isFinal = true after speech ceases,
-        // trigger the turn after 850ms of silence so the user is never left hanging.
-        if (this.pendingTranscript.trim() && !this.busy && !this.speaking) {
-          if (this.interimDebounceTimer) clearTimeout(this.interimDebounceTimer);
-          this.interimDebounceTimer = setTimeout(() => {
-            if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
-              const textToCommit = this.pendingTranscript.trim();
-              this.pendingTranscript = '';
-              controlLayer.addUserTurn(textToCommit, true);
-              this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
-              this.stopSpeechRecognition();
-              void this.runTurn(textToCommit);
-            }
-          }, 850);
-        }
-      };
+          // If onend fired while we had pending speech, commit it as a completed turn
+          if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
+            const textToCommit = this.pendingTranscript.trim();
+            this.pendingTranscript = '';
+            controlLayer.addUserTurn(textToCommit, true);
+            this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
+            void this.runTurn(textToCommit);
+            return;
+          }
 
-      rec.onerror = (err: any) => {
-        const errType = err?.error;
-        if (errType !== 'no-speech' && this.active) {
-          console.warn('[elevenlabs-provider] Speech recognition notice:', errType);
-        }
-        if (errType === 'not-allowed' || errType === 'service-not-allowed') {
-          this.emit('error', { code: 'mic-permission-denied', message: errType, source: this.id });
-        }
-      };
+          // Otherwise cleanly re-arm speech recognition with bounded backoff
+          if (this.active && !this.busy && !this.speaking && !this.audio.isSpeaking) {
+            if (this.restartTimeout) clearTimeout(this.restartTimeout);
+            this.restartTimeout = setTimeout(() => {
+              this.rearmListening();
+            }, 150);
+          }
+        };
 
-      rec.onend = () => {
-        this.recognizer = null;
-        if (this.interimDebounceTimer) {
-          clearTimeout(this.interimDebounceTimer);
-          this.interimDebounceTimer = null;
-        }
-
-        // If onend fired while we had pending speech, commit it as a completed turn
-        if (this.pendingTranscript.trim() && !this.busy && !this.speaking && this.active) {
-          const textToCommit = this.pendingTranscript.trim();
-          this.pendingTranscript = '';
-          controlLayer.addUserTurn(textToCommit, true);
-          this.emit('transcript', { role: 'user', text: textToCommit, final: true, source: this.id });
-          void this.runTurn(textToCommit);
-          return;
-        }
-
-        // Otherwise cleanly re-arm speech recognition with bounded backoff
-        if (this.active && !this.busy && !this.speaking && !this.audio.isSpeaking) {
-          if (this.restartTimeout) clearTimeout(this.restartTimeout);
-          this.restartTimeout = setTimeout(() => {
-            this.rearmListening();
-          }, 150);
-        }
-      };
-
-      rec.start();
-      this.recognizer = rec;
-    } catch (e) {
-      console.warn('[elevenlabs-provider] Error starting speech recognition:', e);
-      this.recognizer = null;
-    }
+        this.recognizer = rec;
+        rec.start();
+      } catch (err) {
+        failBeforeListening(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
   }
 
   private stopSpeechRecognition() {
+    this.cancelPendingRecognitionStart?.(
+      new Error('Browser speech recognition stopped before it started listening'),
+    );
     if (this.interimDebounceTimer) {
       clearTimeout(this.interimDebounceTimer);
       this.interimDebounceTimer = null;

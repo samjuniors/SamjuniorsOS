@@ -1,7 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 
 /**
  * ============================================================================

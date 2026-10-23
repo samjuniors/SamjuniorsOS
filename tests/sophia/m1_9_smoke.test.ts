@@ -25,7 +25,7 @@
 
 import assert from 'assert';
 import { EventEmitter } from 'events';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 
 // Server domain engines & stores
 import { getSofiaGreeting } from '../../src/lib/server/sophia/greeting';

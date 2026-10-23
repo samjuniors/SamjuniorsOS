@@ -24,7 +24,7 @@
  *
  * Output contract: exactly one JSON line on stdout; non-zero exit on crash.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import { SophiaMemoryStore } from '../../src/lib/server/sophia/personal-memory-store';
 import { SophiaContextAssembler } from '../../src/lib/server/sophia/context-assembly';
 import * as memoryRoute from '../../src/app/api/sofia/memory/route';

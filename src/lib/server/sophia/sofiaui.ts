@@ -104,7 +104,7 @@ export function sophiaStatusPayload() {
     voiceGateway:
       process.env.SAMJUNIORS_VOICE_GATEWAY === '1' ||
       process.env.SAMJUNIORS_VOICE_GATEWAY === 'true',
-    liveWsUrl: process.env.LIVE_WS_URL?.trim() || 'ws://localhost:3001',
+    liveWsUrl: process.env.LIVE_WS_URL?.trim() || 'ws://localhost:3000/api/live-ws',
     legacyVoiceAllowed: process.env.SAMJUNIORS_LEGACY_VOICE_ALLOWED === 'true',
     searchProviders: {
       tavily: Boolean(key('TAVILY_API_KEY')),

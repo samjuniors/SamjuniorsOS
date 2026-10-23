@@ -1,4 +1,3 @@
-'use client';
 
 /**
  * ui/VisionGlow.tsx — Phase 10: eyes you can see.

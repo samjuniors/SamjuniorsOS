@@ -2,7 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 import {
   ConversationStore,
   ConversationSecurityError,

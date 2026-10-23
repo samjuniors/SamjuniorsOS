@@ -13,6 +13,9 @@ export type SophiaTurnExecutorFn = (opts: ExecuteSophiaTurnOptions) => Promise<S
 
 export interface LiveServerOptions {
   port?: number;
+  server?: http.Server;
+  wss?: WebSocketServer;
+  skipConnectionHandler?: boolean;
   sessionManager?: LiveSessionManager;
   sttProviderFactory?: () => STTProvider;
   /**
@@ -51,32 +54,75 @@ export class LiveInteractionServer {
   private activeTurnExecutions: Map<WebSocket, { turnId: string; controller: AbortController }> = new Map();
 
   constructor(options: LiveServerOptions = {}) {
-    this.port = options.port || parseInt(process.env.LIVE_WS_PORT || '3001', 10);
+    this.port = options.port || parseInt(process.env.LIVE_WS_PORT || process.env.PORT || '3000', 10);
     this.sessionManager = options.sessionManager || LiveSessionManager.getInstance();
     this.sttProviderFactory = options.sttProviderFactory || (() => new DeepgramFluxProvider());
     this.turnExecutor = options.turnExecutor || executeSophiaTurn;
 
-    this.httpServer = http.createServer((req, res) => {
-      // Basic HTTP health check endpoint on companion server
-      if (req.url === '/health' || req.url === '/api/live/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'ok',
-          service: 'live-interaction-gateway',
-          activeClients: this.sessionManager.getActiveClientCount(),
-          timestamp: Date.now(),
-        }));
-        return;
+    if (options.server) {
+      this.httpServer = options.server;
+    } else {
+      this.httpServer = http.createServer((req, res) => {
+        // Basic HTTP health check endpoint on companion server
+        if (req.url === '/health' || req.url === '/api/live/health') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            status: 'ok',
+            service: 'live-interaction-gateway',
+            activeClients: this.sessionManager.getActiveClientCount(),
+            timestamp: Date.now(),
+          }));
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not Found' }));
+      });
+    }
+
+    if (options.wss) {
+      this.wss = options.wss;
+      if (!options.skipConnectionHandler) {
+        this.setupConnectionHandler();
       }
+    } else {
+      this.wss = new WebSocketServer({ noServer: true });
+      this.setupUpgradeHandler();
+    }
 
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not Found' }));
-    });
-
-    this.wss = new WebSocketServer({ noServer: true });
-
-    this.setupUpgradeHandler();
     this.setupHeartbeat();
+  }
+
+  public async handleConnectionWithAuth(ws: WebSocket, req: http.IncomingMessage): Promise<boolean> {
+    try {
+      const auth = await authenticateUpgrade(req);
+      if (!auth) {
+        return false;
+      }
+      this.handleConnection(ws, auth.founder.userId, auth.conversationId);
+      return true;
+    } catch (err) {
+      console.error('[LiveServer] Connection authentication error:', err);
+      return false;
+    }
+  }
+
+  private setupConnectionHandler(): void {
+    this.wss.on('connection', async (ws: WebSocket, req: http.IncomingMessage) => {
+      try {
+        const auth = await authenticateUpgrade(req);
+
+        if (!auth) {
+          ws.close(LIVE_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized: Live interaction requires verified Founder authority');
+          return;
+        }
+
+        this.handleConnection(ws, auth.founder.userId, auth.conversationId);
+      } catch (err) {
+        console.error('[LiveServer] Connection authentication error:', err);
+        ws.close(LIVE_CLOSE_CODES.INTERNAL_ERROR, 'Internal Server Error');
+      }
+    });
   }
 
   private setupUpgradeHandler(): void {

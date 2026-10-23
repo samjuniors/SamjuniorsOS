@@ -1,4 +1,3 @@
-'use client';
 
 /**
  * ui/ViewRail.tsx — Phase 1: view switcher rail.

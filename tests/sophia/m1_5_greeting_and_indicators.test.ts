@@ -4,7 +4,7 @@ import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approv
 import { AgentRunStore } from '../../src/lib/server/agents/run-store';
 import { controlLayer } from '../../src/sofia/sophia/control';
 import { GET as greetingRouteHandler } from '../../src/app/api/sofia/greeting/route';
-import { NextRequest } from 'next/server';
+import { NextRequest } from '@/lib/server/http';
 
 async function runTest(name: string, fn: () => Promise<void> | void) {
   try {
