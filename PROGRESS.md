@@ -33,8 +33,18 @@
 
 **Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
 - **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
-- **Progress:** 10/11 steps done (G0.3, G2.1, G2.2, G2.3, G2.4, G2.5, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
+- **Progress:** 11/11 steps done — MILESTONE M2 COMPLETE & PASSED QA (G0.3, G2.1, G2.2, G2.3, G2.4, G2.5, G2.6, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged; QA-M2 landed).
 - **Recent Deliveries:**
+  - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**
+    - Ran all automated suites across platforms: lint (0 errors), typecheck (0 errors), reachability, migrations, stores, leases, backup drill, deploy verification, security headers, and secret rotation.
+    - Verified all 5 founder test scenarios against running environment: T1 cloud reachability & mouth greeting, T2 host restart zero-loss data persistence, T3 disaster recovery drill (RPO = 0s, RTO = 0.02s), T4 fail-closed unauthenticated access refusal (401/403), T5 zero browser/bundle secret exposure.
+    - QA pass certified `PASS` in `.agent/product-kit/qa/M2.md` and landed on `main`.
+  - **G2.6 (Deploy Pipeline with Post-Deploy Verification of Live Environment):**
+    - Post-deploy live environment verification engine `scripts/verify-deployment.ts` probing `/api/health`, database connectivity, companion WebSocket gateway reachability, strict security headers (CSP, nosniff, frame protection, request ID), fail-closed executive auth boundaries, and SLA latency benchmark (< 1000ms P99).
+    - Staging deployment orchestrator `scripts/deploy-staging.ts` executing pre-flight audit, versioned SQLite migration deployment, build compilation, readiness polling, and post-deploy live verification.
+    - Added GitHub Actions deployment pipeline `.github/workflows/deploy-staging.yml` executing automated deploy and post-deploy live verification.
+    - Added npm script commands `"deploy:staging"` and `"verify:deployment"`.
+    - Automated test suite `tests/platform/deploy_pipeline_verification.test.ts` (5/5 PASS) verifying live checks, negative failure detection, pipeline execution, and zero-secret audit.
   - **G2.4 (Multi-instance Concurrency: Shared Leases Replace the PID Guard):**
     - Decoupled `InstanceConcurrencyGuard` from load-bearing single-process PID checks (`.data/instance.lock`); added `isPidGuardLoadBearing(): boolean` returning `false`.
     - Implemented database-backed shared leases via `acquireSharedInstanceLease`, `releaseSharedInstanceLease`, `startDatabaseHeartbeat`, and `stopDatabaseHeartbeat` using the `distributed_leases` table.
@@ -80,8 +90,7 @@
 - **Recorded Founder Decisions:**
   - **G0.3:** Option A selected — Single VPS with persistent volume & SQLite ($5–$20/mo), daily automated backups with 30-day retention, RPO < 24h, RTO < 2h (`ack/G0.3.json`).
   - **AUTH-2.3C:** Founder authorized proceeding with persistence migration under Option A (versioned SQLite migrations and moving `.data` JSON into SQLite).
-- **Next Steps Ready:**
-  - **G2.6:** Deploy pipeline with post-deploy verification of the live environment (final step of Milestone M2).
+- **Milestone M2 Status:** 11/11 steps completed. QA pass verified and certified. Ready for founder acceptance test and closure.
 
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
