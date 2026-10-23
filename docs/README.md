@@ -1,5 +1,9 @@
 # SamJuniorsOS Documentation Index & Map
 
+> [!IMPORTANT]
+> **Non-main MX.1 documentation reconciliation (2026-10-23):** See the [audit and full disposition ledger](audit/2026-10-23-mx1-documentation-reconciliation.md), [September technical audit archive](../archive/audits/2026-09/README.md) and [historical voice research archive](../archive/research/2026-09/README.md). [ADR 0007](../doc/adr/0007-stack-migration-vite-react-express.md) is an accepted migration decision, **not** proof that every implementation step has passed. Older Next.js topologies must be read as snapshots.
+
+
 This document serves as the master navigation guide across all specifications, architectural decision records, domain manuals, and historical records for SamJuniorsOS.
 
 ---

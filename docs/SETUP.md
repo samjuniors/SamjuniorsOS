@@ -1,5 +1,9 @@
 # Setting SamJuniorsOS up locally
 
+> [!WARNING]
+> **Setup transition — MX.1, 2026-10-23.** The Next.js-oriented commands below describe the earlier baseline and have not been clean-clone verified against the Vite/Express migration. Follow [ADR 0007](../doc/adr/0007-stack-migration-vite-react-express.md) and inspect the actual branch `package.json` / `scripts/dev.mjs`. Replace this setup only after the MX implementation and verification gates pass.
+
+
 Verified against the working tree on 2026-10-21 on Windows 11 (Node 24, npm) and on 2026-10-15 (Linux, Node 22, Bun 1.4.3).
 
 ## What you get

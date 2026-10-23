@@ -1,5 +1,9 @@
 # SamJuniorsOS + SOFIA
 
+> [!IMPORTANT]
+> **MX stack migration transition (2026-10-23, `step/MX.1`).** [ADR 0007](doc/adr/0007-stack-migration-vite-react-express.md) accepts Vite + React + Express + TypeScript. Next.js setup, build and runtime passages further down this README are **prior-baseline documentation**, not verified instructions for MX. Read the branch's current `package.json` and `scripts/dev.mjs`; preserve existing product/governance invariants.
+
+
 > **AI-Native Company Operating System**  
 > One app, one port. Autonomous executive workflows, persistent institutional memory, deterministic governance, and real-time multimodal intelligence.
 

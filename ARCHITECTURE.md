@@ -1,5 +1,9 @@
 # SamJuniorsOS Architecture
 
+> [!IMPORTANT]
+> **Runtime snapshot addendum — 2026-10-23, `step/MX.1`:** [ADR 0007](doc/adr/0007-stack-migration-vite-react-express.md) ratifies a Vite + React + Express + TypeScript migration. Existing Next.js file-tree, server and current-runtime sections in this document reflect the **pre-migration snapshot**, not independently verified MX implementation. The authority and governance invariants remain binding.
+
+
 **Document Type:** System Architecture Specification  
 **Status:** AUTHORITATIVE CANONICAL REFERENCE  
 **Repository Working Tree:** Reconciled to `main` @ `1c86599` (SAM-5 reconciliation committed directly to main, 2026-10-16)

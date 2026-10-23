@@ -1,4 +1,8 @@
 # PRODUCT.md — Product Definition
+
+> [!NOTE]
+> **Current-stack clarification — 2026-10-23, `step/MX.1`:** The founder's accepted product boundaries remain authoritative. Older Next.js implementation and October 16 repository-state descriptions below are historical snapshots; [ADR 0007](doc/adr/0007-stack-migration-vite-react-express.md) governs the Vite + Express transition. This addendum does not mark the migration complete. See the [documentation audit](docs/audit/2026-10-23-mx1-documentation-reconciliation.md).
+
 **Status:** Reconciled against the repository working tree (SAM-5 reconciliation committed directly to `main` at commit `1c86599`, 2026-10-16) and founder-locked strategic decisions. Supersedes all prior versions.
 
 ---
