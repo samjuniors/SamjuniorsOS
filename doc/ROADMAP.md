@@ -1,5 +1,12 @@
-# ROADMAP.md — SamJuniorsOS Phases
-**Status:** Current-state status updated 2026-10-16; historical sections may retain their original baseline dates. This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
+# ROADMAP.md — SamJuniorsOS Phases (Historical Baseline)
+
+> [!IMPORTANT]
+> **SUPERSEDED BY PRODUCT KIT MILESTONES (M0–M11):**  
+> This file documents the historical SAM-5 architectural phase roadmap (Phases 1 through 2.3B).  
+> The active, authoritative execution roadmap is governed milestone-by-milestone in [`.agent/product-kit/MILESTONES.md`](../.agent/product-kit/MILESTONES.md) and [`.agent/product-kit/MASTER_PROMPT.md`](../.agent/product-kit/MASTER_PROMPT.md).  
+> Per `AGENTS.md` and `MASTER_PROMPT.md`, active work follows the current milestone (`node .agent/product-kit/kit.mjs continue`).
+
+**Status:** Historical SAM-5 baseline (updated 2026-10-16). This file separates FOUNDATION / NEXT / LATER so scope cannot silently expand.
 
 **CURRENT STATUS:**
 - 2026-10-16: SAM-5 (SamJuniorsOS Repository & Project Reconciliation) accepted: reconciliation committed directly to `main` at `1c86599` (parent `aed87ba`; no PR was created or merged for that commit), followed by documentation hygiene PR #17 merged at `b8607f7`. Repository-state documentation was reconciled, the Phase 2.3A audit report restored on `main`, relative links fixed, and deployment-report backup custody qualified.

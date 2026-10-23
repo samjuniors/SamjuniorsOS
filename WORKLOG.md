@@ -1,5 +1,10 @@
 # WORKLOG.md - Canonical Operational History
 
+> [!NOTE]
+> For earlier historical sandbox and migration logs, see:
+> - [`archive/worklogs/worklog-migration.md`](archive/worklogs/worklog-migration.md) — Pre-reconciliation migration log
+> - [`archive/worklogs/worklog-sandbox-r0-r3.md`](archive/worklogs/worklog-sandbox-r0-r3.md) — R0–R3 sandbox exploration log
+
 ## Issue #11 — Phase 2.2.2: Bounded Executive Council Deliberation (2026-10-14)
 
 **Status:** COMPLETE on `phase/2.2.2-council-deliberation` (branched from merge commit `7fd66bf06fd79596d0e606872ec1cbdb7e2dcf42`, PR #10).
