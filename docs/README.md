@@ -1,5 +1,12 @@
 # SamJuniorsOS Documentation Index & Map
 
+> [!IMPORTANT]
+> **Branch-specific documentation notice (2026-10-23):** This reconciliation branch is based on `kit/integration` at `d209f67` and uses **Vite + Express**, not the older Next.js/two-process setup.
+> Use [current branch setup](setup/KIT_INTEGRATION.md) and the [voice source map](voice/README.md), not old `dev:ws` commands.
+> The [document audit](audit/KIT_INTEGRATION_DOCUMENT_RECONCILIATION_2026-10-23.md) classifies current, dated and superseded material; the [archive register](archive/README.md) lists **proposed** destinations. **Nothing has been moved or deleted.**
+
+
+
 This document serves as the master navigation guide across all specifications, architectural decision records, domain manuals, and historical records for SamJuniorsOS.
 
 ---
