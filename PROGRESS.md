@@ -33,8 +33,24 @@
 
 **Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
 - **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
-- **Progress:** 5/11 steps done (G0.3, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
+- **Progress:** 8/11 steps done (G0.3, G2.1, G2.2, G2.3, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged).
 - **Recent Deliveries:**
+  - **G2.1 (Provision Staging Hosting and Database per Infrastructure Decision):**
+    - Canonical `/api/health` route with database connectivity verification (`SELECT 1`), response latency tracking, and database mode reporting.
+    - Option A single-container `Dockerfile` and `docker-compose.staging.yml` with persistent volume mappings (`/app/db`, `/app/.data`, `/app/backups`), healthcheck monitoring, and daily automated backup cron runner.
+    - POSIX automated backup script `scripts/backup-sqlite.sh` with safe SQLite snapshotting and 30-day retention pruning per founder decision G0.3.
+    - Production/staging service supervisor `scripts/start-staging.mjs` orchestrating database schema initialization, standalone Next.js server, and WebSocket gateway companion.
+    - Recorded staging configuration template `.env.staging.example` and architectural specification `docs/architecture/STAGING_INFRASTRUCTURE.md` with zero secret exposure.
+    - Automated verification suite `tests/platform/staging_reachability.test.ts` (4/4 PASS).
+  - **G2.2 (Prisma with Versioned SQLite Migrations per Option A / 2.3B Design):**
+    - Expanded `prisma/schema.prisma` with Phase 2.3B relational models: `CompanyDecision` (mirroring `DecisionRecord`), `CouncilDeliberation` (mirroring `CouncilDeliberationRecord`), and communication domain models (`CommunicationContact`, `CommunicationOrganization`, `CommunicationMessage`, `CommunicationWebhookEvent`).
+    - Established versioned migrations directory `prisma/migrations/20261023043715_init_phase_2_3b/migration.sql` and `migration_lock.toml` pinning `provider = "sqlite"` per founder decision G0.3 and authorization AUTH-2.3C.
+    - Automated test suite `tests/platform/versioned_migrations.test.ts` (5/5 PASS) verifying lockfile, all 29 models, clean deployment to an empty database via `prisma migrate deploy`, and live table queries.
+  - **G2.3 (Migrate File-Backed Stores with Verified Parity):**
+    - Transactional migration engine `scripts/migrate-file-stores-to-sqlite.ts` covering decisions, council deliberations, conversations & chat messages, and personal memories.
+    - Guaranteed data integrity: preserved all canonical IDs, optimistic concurrency versions (`stateVersion`), cryptographic payload hashes (`approvedPayloadHash`), specialist critiques, and timestamps without alteration.
+    - Added npm script `"db:migrate:stores"` in `package.json`.
+    - Automated parity verification and rollback rehearsal suite `tests/platform/store_migration_parity.test.ts` (6/6 PASS) verifying 100% semantic parity, deep field hashes, rollback export fidelity, and live `.data/` migration.
   - **G3.4 (Security Headers, CSP, Request Limits, Rate Limiter, and CI Audit):**
     - Enforced Content Security Policy (CSP) and HTTP security headers (`nosniff`, `DENY` with `/prototype/` iframe exception, STS, Referrer-Policy, Permissions-Policy, `x-request-id`) on all responses including early error returns.
     - Implemented mutation body size limits (2MB standard, 10MB media/upload; 413 Payload Too Large).
@@ -48,8 +64,11 @@
 - **Recorded Founder Decisions:**
   - **G0.3:** Option A selected — Single VPS with persistent volume & SQLite ($5–$20/mo), daily automated backups with 30-day retention, RPO < 24h, RTO < 2h (`ack/G0.3.json`).
   - **AUTH-2.3C:** Founder authorized proceeding with persistence migration under Option A (versioned SQLite migrations and moving `.data` JSON into SQLite).
-- **Next Step Ready:**
-  - **G2.1:** Provision staging hosting and database per infrastructure decision.
+- **Next Steps Ready:**
+  - **G2.4:** Multi-instance concurrency: shared leases replace the PID guard.
+  - **G2.5:** Backup and restore drill meeting the decided RPO/RTO.
+  - **G2.6:** Deploy pipeline with post-deploy verification of the live environment.
+
 
 ## Previous — SAM-5: SamJuniorsOS Repository & Project Reconciliation
 

@@ -194,8 +194,11 @@ export class SophiaState {
       case 'listening':
         this._cognitiveState = 'listening';
         if (this._audioState === 'silent') {
-          if (this.is('focusing', 'rendering', 'wakeup', 'completed', 'ambient', 'idle')) {
-            this.transition('listening', { source: detail.source });
+          // A provider can recover from a failed/empty turn by emitting LISTENING
+          // directly after THINKING (without an audio response). Do not leave
+          // the UI stuck in THINKING when the provider's ears are active.
+          if (this.is('thinking', 'focusing', 'rendering', 'wakeup', 'completed', 'ambient', 'idle')) {
+            this.transition('listening', { source: detail.source }, true);
           }
         }
         break;
@@ -235,14 +238,14 @@ export class SophiaState {
       case 'audio_chunk':
         this._audioState = 'playing';
         if (this.is('thinking', 'listening', 'rendering', 'wakeup', 'completed', 'focusing', 'ambient', 'idle')) {
-          this.transition('speaking');
+          this.transition('speaking', {}, true);
         }
         break;
       case 'interrupted':
         this._cognitiveState = 'listening';
         this._audioState = 'silent';
         if (this.is('speaking', 'thinking', 'rendering', 'completed')) {
-          this.transition('listening', { reason: 'interrupted' });
+          this.transition('listening', { reason: 'interrupted' }, true);
         }
         break;
       case 'response_finished':
@@ -251,7 +254,7 @@ export class SophiaState {
         // If audio playback is still active or draining, remain SPEAKING until playback drains!
         if (this._audioState === 'silent') {
           if (this.is('speaking', 'thinking', 'rendering')) {
-            this.transition('completed', { reason: 'turn-complete' });
+            this.transition('completed', { reason: 'turn-complete' }, true);
           }
         }
         break;
@@ -261,16 +264,16 @@ export class SophiaState {
         // Natural end of utterance playback: now that audio has fully drained, settle state.
         if (this._cognitiveState === 'done') {
           if (this.is('speaking', 'thinking', 'rendering')) {
-            this.transition('completed', { reason: 'playback-drained' });
+            this.transition('completed', { reason: 'playback-drained' }, true);
           }
         } else if (this._cognitiveState === 'listening') {
           if (this.is('speaking')) {
-            this.transition('listening', { reason: 'playback-drained' });
+            this.transition('listening', { reason: 'playback-drained' }, true);
           }
         } else {
           // Robust recovery: if audio drained while still in speaking state, transition out
           if (this.is('speaking')) {
-            this.transition('completed', { reason: 'playback-drained' });
+            this.transition('completed', { reason: 'playback-drained' }, true);
           }
         }
         break;

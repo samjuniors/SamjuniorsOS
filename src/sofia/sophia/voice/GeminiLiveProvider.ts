@@ -196,6 +196,16 @@ export class GeminiLiveProvider extends VoiceProvider {
             });
             resolve();
           }
+        }).catch((err: unknown) => {
+          // A rejected tool/model message must not disappear as an unhandled
+          // promise while the UI keeps displaying THINKING indefinitely.
+          const message = err instanceof Error ? err.message : String(err);
+          console.error('[GeminiLiveProvider] Incoming message failed:', message);
+          if (!settled) {
+            fail(`live-message-processing: ${message}`);
+          } else {
+            this.emit('error', { code: 'live-message-processing', message, source: this.id });
+          }
         });
       };
     });

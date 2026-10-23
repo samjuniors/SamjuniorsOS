@@ -280,11 +280,13 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       }
     } catch (e: any) {
       this.busy = false;
-      this.emit('listening', { source: this.id });
-      this.rearmListening();
+      // Report the failed turn first. LISTENING must be the final state once
+      // the recognizer is rearmed, not overwritten by a late error event.
       if (e.name !== 'AbortError') {
         this.emit('error', { code: 'elevenlabs-turn', message: e.message, source: this.id });
       }
+      this.emit('listening', { source: this.id });
+      this.rearmListening();
     }
   }
 
