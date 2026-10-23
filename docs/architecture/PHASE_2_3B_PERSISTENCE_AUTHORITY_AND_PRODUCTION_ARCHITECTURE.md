@@ -18,11 +18,11 @@
 
 ### 1.1 Architectural Verdict
 1. **Current Production State Is Unverified & Indefensible for Multi-Host Scale:**  
-   The active repository code uses SQLite (`prisma/schema.prisma`, `DATABASE_URL=file:./db/custom.db`) alongside a suite of local JSON collections in `.data/*.json`. As documented in the Phase 2.3A Deployment Verification report (`docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (supporting report preserved on local-only backup branch `backup/phase-2.3a-deployment-verification`; not included in this branch or `main`, and remote backup availability is NOT VERIFIED)), active cloud deployment remains unknown and unverified from repository files alone. Four consequential business domains ([`DecisionStore`](src/lib/server/decision/store.ts), [`ConversationStore`](src/lib/server/conversation/store.ts), [`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts), and [`ExecutiveCouncilEngine`](src/lib/server/orchestration/council.ts)) depend strictly on local filesystem storage with zero database read paths. In-process locks rely on OS signal 0 (`process.kill(pid, 0)`), which fails completely across container boundaries.
+   The active repository code uses SQLite (`prisma/schema.prisma`, `DATABASE_URL=file:./db/custom.db`) alongside a suite of local JSON collections in `.data/*.json`. As documented in the Phase 2.3A Deployment Verification report (`docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (supporting report preserved on local-only backup branch `backup/phase-2.3a-deployment-verification`; not included in this branch or `main`, and remote backup availability is NOT VERIFIED)), active cloud deployment remains unknown and unverified from repository files alone. Four consequential business domains ([`DecisionStore`](../../src/lib/server/decision/store.ts), [`ConversationStore`](../../src/lib/server/conversation/store.ts), [`PersonalMemoryStore`](../../src/lib/server/sophia/personal-memory-store.ts), and [`ExecutiveCouncilEngine`](../../src/lib/server/orchestration/council.ts)) depend strictly on local filesystem storage with zero database read paths. In-process locks rely on OS signal 0 (`process.kill(pid, 0)`), which fails completely across container boundaries.
 2. **One Company Brain Architecture, Not a Monolithic Store:**  
    Authoritative company truth is owned by a governed federation of dedicated domain stores. The "Company Brain" is an architectural governance layer—deterministic verification gates, provenance contracts, context assemblers, and bounded read projections—not a monolithic `CompanyBrainStore` class or single database table.
 3. **Sophia Personal Mind Remains Strictly Founder-Scoped:**  
-   Per `AGENTS.md §6`, the founder's personal dialogue, sensory notes, and stylistic interaction preferences ([`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts)) are segregated from company truth. Personal memories are never authoritative company truth, never an authorization bypass, and never automatically promoted into company memory without explicit founder review and deterministic epistemic verification.
+   Per `AGENTS.md §6`, the founder's personal dialogue, sensory notes, and stylistic interaction preferences ([`PersonalMemoryStore`](../../src/lib/server/sophia/personal-memory-store.ts)) are segregated from company truth. Personal memories are never authoritative company truth, never an authorization bypass, and never automatically promoted into company memory without explicit founder review and deterministic epistemic verification.
 4. **Honest Migration & Rollback Semantics:**  
    No migration protocol can claim "zero data loss", "instant rollback", or "full semantic equivalence" prior to automated rehearsal, constraint validation, and end-to-end verification. A database transaction cannot atomically commit an external side effect (Stripe charge, GitHub push, Resend email). Rollback semantics must strictly account for both database mutations and external side effects. Pre-write rollback is valid only when zero database mutations and zero external side effects have occurred. External side effects must remain disabled during the canary cutover verification window. Once mutations or external side effects occur, configuration rollback alone is invalid and forward recovery or tested reverse change-capture is mandatory.
 
@@ -49,7 +49,7 @@ Every architectural finding, assertion, and claim in this specification is class
 
 ### 2.3 Explicit Methodological Rules
 - **Missing Deployment Manifest != Proof of Non-Deployment:** The absence of a Dockerfile, Terraform script, or GitHub Actions deployment workflow in the repository proves that deployment configuration is not version-controlled here; it does *not* prove that an operator has not deployed the application to a cloud container or VPS manually (see `docs/architecture/PHASE_2_3A_DEPLOYMENT_VERIFICATION.md` (local, untracked supporting report; not included in this branch and unavailable to reviewers)).
-- **Prisma "Authoritative" Mode != Proof of PostgreSQL or Durability:** The presence of `isAuthoritativeMode()` in [`src/lib/server/db/authority.ts`](src/lib/server/db/authority.ts) proves that an abstraction exists to require database presence; it does *not* prove that PostgreSQL is provisioned, connected, or backed up.
+- **Prisma "Authoritative" Mode != Proof of PostgreSQL or Durability:** The presence of `isAuthoritativeMode()` in [`src/lib/server/db/authority.ts`](../../src/lib/server/db/authority.ts) proves that an abstraction exists to require database presence; it does *not* prove that PostgreSQL is provisioned, connected, or backed up.
 - **Store Class Naming != Database Engine:** Class names prefixed with `Postgres*` (e.g. `PostgresAgentRunStore`) indicate target architecture, but in current code they execute against SQLite via Prisma.
 
 ---
@@ -58,15 +58,15 @@ Every architectural finding, assertion, and claim in this specification is class
 
 | ID | Finding / Claim | Classification | Evidence Source & Location | Confidence & Limitations | Architectural Implication |
 |---|---|---|---|---|---|
-| **EV-01** | Prisma datasource is configured for SQLite, not PostgreSQL. | **REPOSITORY EVIDENCE** | [`prisma/schema.prisma:16-19`](prisma/schema.prisma#L16-L19): `datasource db { provider = "sqlite" url = env("DATABASE_URL") }` | High confidence in repo state. Local dev uses `file:./db/custom.db`. | The system currently operates on SQLite. Any PostgreSQL transition requires schema provider changes and formal migrations. |
+| **EV-01** | Prisma datasource is configured for SQLite, not PostgreSQL. | **REPOSITORY EVIDENCE** | [`prisma/schema.prisma:16-19`](../../prisma/schema.prisma#L16-L19): `datasource db { provider = "sqlite" url = env("DATABASE_URL") }` | High confidence in repo state. Local dev uses `file:./db/custom.db`. | The system currently operates on SQLite. Any PostgreSQL transition requires schema provider changes and formal migrations. |
 | **EV-02** | No Prisma migrations directory exists in the repository. | **REPOSITORY EVIDENCE** | Repository filesystem check: no `prisma/migrations/` directory exists. Build script runs `prisma generate && next build`. | High confidence. Schema changes rely on `prisma db push` or clean regeneration. | A baseline migration must be established before production database deployment to ensure repeatable schema versions. |
-| **EV-03** | DecisionStore is 100% file-backed with zero Prisma mode. | **REPOSITORY EVIDENCE** | [`src/lib/server/decision/store.ts:6-8`](src/lib/server/decision/store.ts#L6-L8), [`:53-56`](src/lib/server/decision/store.ts#L53-L56): Persisted durably to `decisions.json` via `DurableFileStore`. | Confirmed in code. No Prisma model for `CompanyDecision` exists in `schema.prisma`. | Company decisions cannot be shared safely across separate container instances without a database table. |
-| **EV-04** | ConversationStore and PersonalMemoryStore do not read from database. | **REPOSITORY EVIDENCE** | [`src/lib/server/conversation/store.ts:593-596`](src/lib/server/conversation/store.ts#L593-L596); [`src/lib/server/sophia/personal-memory-store.ts:45-54`](src/lib/server/sophia/personal-memory-store.ts#L45-L54) | Confirmed in code. Prisma writes are write-only mirrors with swallowed errors. Reads are file-only. | In a multi-host deployment, conversations and personal memories diverge or disappear on container replacement. |
-| **EV-05** | AgentRunStore updates lifecycle status via upsert (mutable). | **REPOSITORY EVIDENCE** | [`src/lib/server/agents/run-store.ts:53-60`](src/lib/server/agents/run-store.ts#L53-L60): `await db.agentRun.upsert(...)` updating `status`, `durationMs`, `outputContent`. | Confirmed in code. Agent runs are mutable aggregates during execution, not strictly immutable records. | Must be classified as mutable during execution with immutable terminal states, not strictly append-only. |
-| **EV-06** | ScheduledWorkStore distinguishes mutable work from append heartbeats. | **REPOSITORY EVIDENCE** | [`src/lib/server/workflow/scheduler-store.ts:54-60`](src/lib/server/workflow/scheduler-store.ts#L54-L60): `ScheduledWorkItem` has `update()`, `cancel()`; `SchedulerHeartbeatRecord` is logged append-only. | Confirmed in code. Two separate entities exist within one store file. | Schema and concurrency design must treat work items as mutable state machines and heartbeats as append-only audit rows. |
-| **EV-07** | Local lock mechanism uses single-host OS process ID checks. | **REPOSITORY EVIDENCE** | [`src/lib/server/persistence/durable-file-store.ts:147`](src/lib/server/persistence/durable-file-store.ts#L147): `isProcessAlive(pid)` sends signal 0 via `process.kill(pid, 0)`. | Confirmed in code. PIDs are node-local and meaningless across containers or hosts. | Multi-host containerization without centralized database locking causes race conditions and lock-stealing. |
-| **EV-08** | Executive Council deliberations run on local disk only. | **REPOSITORY EVIDENCE** | [`src/lib/server/orchestration/council.ts:33`](src/lib/server/orchestration/council.ts#L33): Persisted to `.data/council_deliberations.json` via `DurableFileStore`. | Confirmed in code. No Prisma model exists in `schema.prisma`. | Executive Council deliberations, specialist critiques, and friction points are lost on container replacement. |
-| **EV-09** | InMemoryCommunicationStore is 100% ephemeral RAM. | **REPOSITORY EVIDENCE** | [`src/lib/server/communication/store.ts:25-32`](src/lib/server/communication/store.ts#L25-L32): Internal state held in 7 JavaScript `Map` objects. | Confirmed in code. Zero disk writes, zero database writes. | Every process restart or redeployment destroys all contacts, messages, drafts, and communication webhook events. |
+| **EV-03** | DecisionStore is 100% file-backed with zero Prisma mode. | **REPOSITORY EVIDENCE** | [`src/lib/server/decision/store.ts:6-8`](../../src/lib/server/decision/store.ts#L6-L8), [`:53-56`](../../src/lib/server/decision/store.ts#L53-L56): Persisted durably to `decisions.json` via `DurableFileStore`. | Confirmed in code. No Prisma model for `CompanyDecision` exists in `schema.prisma`. | Company decisions cannot be shared safely across separate container instances without a database table. |
+| **EV-04** | ConversationStore and PersonalMemoryStore do not read from database. | **REPOSITORY EVIDENCE** | [`src/lib/server/conversation/store.ts:593-596`](../../src/lib/server/conversation/store.ts#L593-L596); [`src/lib/server/sophia/personal-memory-store.ts:45-54`](../../src/lib/server/sophia/personal-memory-store.ts#L45-L54) | Confirmed in code. Prisma writes are write-only mirrors with swallowed errors. Reads are file-only. | In a multi-host deployment, conversations and personal memories diverge or disappear on container replacement. |
+| **EV-05** | AgentRunStore updates lifecycle status via upsert (mutable). | **REPOSITORY EVIDENCE** | [`src/lib/server/agents/run-store.ts:53-60`](../../src/lib/server/agents/run-store.ts#L53-L60): `await db.agentRun.upsert(...)` updating `status`, `durationMs`, `outputContent`. | Confirmed in code. Agent runs are mutable aggregates during execution, not strictly immutable records. | Must be classified as mutable during execution with immutable terminal states, not strictly append-only. |
+| **EV-06** | ScheduledWorkStore distinguishes mutable work from append heartbeats. | **REPOSITORY EVIDENCE** | [`src/lib/server/workflow/scheduler-store.ts:54-60`](../../src/lib/server/workflow/scheduler-store.ts#L54-L60): `ScheduledWorkItem` has `update()`, `cancel()`; `SchedulerHeartbeatRecord` is logged append-only. | Confirmed in code. Two separate entities exist within one store file. | Schema and concurrency design must treat work items as mutable state machines and heartbeats as append-only audit rows. |
+| **EV-07** | Local lock mechanism uses single-host OS process ID checks. | **REPOSITORY EVIDENCE** | [`src/lib/server/persistence/durable-file-store.ts:147`](../../src/lib/server/persistence/durable-file-store.ts#L147): `isProcessAlive(pid)` sends signal 0 via `process.kill(pid, 0)`. | Confirmed in code. PIDs are node-local and meaningless across containers or hosts. | Multi-host containerization without centralized database locking causes race conditions and lock-stealing. |
+| **EV-08** | Executive Council deliberations run on local disk only. | **REPOSITORY EVIDENCE** | [`src/lib/server/orchestration/council.ts:33`](../../src/lib/server/orchestration/council.ts#L33): Persisted to `.data/council_deliberations.json` via `DurableFileStore`. | Confirmed in code. No Prisma model exists in `schema.prisma`. | Executive Council deliberations, specialist critiques, and friction points are lost on container replacement. |
+| **EV-09** | InMemoryCommunicationStore is 100% ephemeral RAM. | **REPOSITORY EVIDENCE** | [`src/lib/server/communication/store.ts:25-32`](../../src/lib/server/communication/store.ts#L25-L32): Internal state held in 7 JavaScript `Map` objects. | Confirmed in code. Zero disk writes, zero database writes. | Every process restart or redeployment destroys all contacts, messages, drafts, and communication webhook events. |
 | **EV-10** | Active cloud deployment location and provider. | **UNKNOWN** | Inspection of the committed repository found no cloud manifests, Terraform files, or CI/CD deployment jobs. The separately referenced Phase 2.3A deployment-verification report is local and untracked, so it is not independently reviewable from this branch. | The committed repository does not establish deployment infrastructure. Runtime hosting may exist outside GitHub version control; no deployment conclusion is inferred from the missing report. | Architecture recommendations must not assume a specific vendor cloud without founder confirmation. |
 | **EV-11** | External side effects cannot commit atomically with database transactions. | **INFERRED** | Fundamental distributed systems principle: database commits and network RPCs (Stripe, GitHub, Resend) lack two-phase commit (2PC). | Provable engineering fact. Network partitions can cause split-brain outcomes. | Reliability architecture must implement Transactional Outbox, Idempotency, and Unknown-Outcome status probes. |
 | **EV-12** | SQLite WAL mode cannot safely support multi-host network mounts. | **INFERRED** | SQLite documentation: POSIX advisory locks and shared memory (`-shm`) over network filesystems (NFS/EFS/CIFS) are unreliable and corrupt databases. | Official SQLite design specification. | Multi-host horizontal autoscaling requires a dedicated network database (PostgreSQL), not SQLite on shared network storage. |
@@ -111,7 +111,7 @@ Every architectural finding, assertion, and claim in this specification is class
 Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contract governing ownership, lifecycle, and mutation boundaries.
 
 ### 5.1 Decision Domain
-- **Store Owner:** [`DecisionStore`](src/lib/server/decision/store.ts).
+- **Store Owner:** [`DecisionStore`](../../src/lib/server/decision/store.ts).
 - **Contract:** Manages company governance decisions (`DecisionRecord`).
 - **Authority Boundary:** Single server-side authority for company policy and governance decisions.
 - **Write Semantics:** Mutable aggregate with optimistic version control (`stateVersion`). Transitions are appended to an internal `transitions` array. Cryptographic binding (`approvedPayloadHash`) is recalculated on approval.
@@ -119,7 +119,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** Relational PostgreSQL table `company_decisions` with versioned row locks.
 
 ### 5.2 Epistemic Truth Domain
-- **Store Owner:** [`EpistemicClaimStore`](src/lib/server/epistemic/claim-store.ts).
+- **Store Owner:** [`EpistemicClaimStore`](../../src/lib/server/epistemic/claim-store.ts).
 - **Contract:** Governs evidence, signals, probationary claims, and canonical company facts.
 - **Authority Boundary:** Sole arbiter of corporate truth. Vector search or LLM generation cannot declare facts.
 - **Write Semantics:**
@@ -130,7 +130,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL tables with foreign key constraints, temporal queries (`asOf`), and immutable evidence ledgers.
 
 ### 5.3 Operational State Domain
-- **Store Owner:** [`CompanyStateStore`](src/lib/server/state/state-store.ts).
+- **Store Owner:** [`CompanyStateStore`](../../src/lib/server/state/state-store.ts).
 - **Contract:** Holds high-level organizational structure, initiatives, and financial model state.
 - **Authority Boundary:** Governs company operational configuration. Raw transactions remain with external providers.
 - **Write Semantics:** Mutable document/relational record with optimistic concurrency.
@@ -138,7 +138,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** Governed relational row with version checks; external financial figures derived from verified epistemic signals.
 
 ### 5.4 Canonical Knowledge Domain
-- **Store Owner:** [`CompanyKnowledgeStore`](src/lib/server/knowledge/knowledge-store.ts).
+- **Store Owner:** [`CompanyKnowledgeStore`](../../src/lib/server/knowledge/knowledge-store.ts).
 - **Contract:** Governs canonical company specifications, architecture documents, and SOPs.
 - **Authority Boundary:** Authoritative reference for internal operational procedures.
 - **Write Semantics:** Replaceable/versioned content with SHA-256 fingerprints.
@@ -146,7 +146,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL table with full-text search indexing and revision tracking.
 
 ### 5.5 Precedent Memory Domain
-- **Store Owner:** [`CompanyMemoryStore`](src/lib/server/memory/memory-store.ts).
+- **Store Owner:** [`CompanyMemoryStore`](../../src/lib/server/memory/memory-store.ts).
 - **Contract:** Governs historical institutional precedent and non-factual narrative memory.
 - **Authority Boundary:** Precedent context only. Explicitly non-evidence; cannot override Canonical Facts.
 - **Write Semantics:** Append-oriented with optional soft deprecation.
@@ -154,7 +154,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL table with founder categorization tags.
 
 ### 5.6 Workflow Execution Domain
-- **Store Owner:** [`WorkflowStore`](src/lib/server/workflow/store.ts).
+- **Store Owner:** [`WorkflowStore`](../../src/lib/server/workflow/store.ts).
 - **Contract:** Governs workflow definitions and multi-step instance execution states.
 - **Authority Boundary:** Orchestrates autonomous AI employee execution pipelines.
 - **Write Semantics:**
@@ -164,7 +164,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL tables with atomic step claiming (`SELECT FOR UPDATE SKIP LOCKED` or CAS version updates).
 
 ### 5.7 Scheduling & Heartbeat Domain
-- **Store Owner:** [`ScheduledWorkStore`](src/lib/server/workflow/scheduler-store.ts).
+- **Store Owner:** [`ScheduledWorkStore`](../../src/lib/server/workflow/scheduler-store.ts).
 - **Contract:** Coordinates recurring background work and scheduler evaluation logs.
 - **Authority Boundary:** 24/7 background continuity engine.
 - **Write Semantics:**
@@ -174,7 +174,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL tables with distributed execution leases and time-partitioned heartbeat logs.
 
 ### 5.8 Authorization & Audit Domain
-- **Store Owner:** [`ApprovalStore`](src/lib/server/authorization/approval-store.ts) / [`AuditStore`](src/lib/server/authorization/approval-store.ts#L49).
+- **Store Owner:** [`ApprovalStore`](../../src/lib/server/authorization/approval-store.ts) / [`AuditStore`](../../src/lib/server/authorization/approval-store.ts#L49).
 - **Contract:** Governs founder approval gates and immutable side-effect execution audits.
 - **Authority Boundary:** Strict fail-closed boundary for external side effects.
 - **Write Semantics:**
@@ -184,7 +184,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL tables with single-use consumption constraints (`consumedAt` CAS) and append-only audit enforcement.
 
 ### 5.9 Durable Agent Run Domain
-- **Store Owner:** [`AgentRunStore`](src/lib/server/agents/run-store.ts).
+- **Store Owner:** [`AgentRunStore`](../../src/lib/server/agents/run-store.ts).
 - **Contract:** Traces model prompts, execution duration, token spend, structured output, and errors.
 - **Authority Boundary:** Diagnostic and audit trail of autonomous agent activities.
 - **Write Semantics:** Mutable aggregate during lifecycle execution (status updates from `running` to `completed` or `failed` via upsert), immutable once terminal.
@@ -192,7 +192,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL table with foreign key linkages to workflow instances and epistemic claims.
 
 ### 5.10 Executive Council Deliberation Domain
-- **Store Owner:** [`ExecutiveCouncilEngine`](src/lib/server/orchestration/council.ts).
+- **Store Owner:** [`ExecutiveCouncilEngine`](../../src/lib/server/orchestration/council.ts).
 - **Contract:** Coordinates bounded peer review between specialists (Researcher, PM, Finance) and COO mediation.
 - **Authority Boundary:** Multi-agent deliberation governance.
 - **Write Semantics:** Mutable during active review rounds, immutable upon final mediation ruling.
@@ -200,7 +200,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** Relational PostgreSQL table `council_deliberations` with structured JSONB critique fields.
 
 ### 5.11 Coordination & Distributed Lease Domain
-- **Store Owner:** [`LeaseManager`](src/lib/server/coordination/lease-manager.ts).
+- **Store Owner:** [`LeaseManager`](../../src/lib/server/coordination/lease-manager.ts).
 - **Contract:** Provides distributed mutual exclusion for workers and scheduler loops.
 - **Authority Boundary:** Prevents split-brain concurrent execution across processes.
 - **Write Semantics:** Highly mutable transient rows (`holderId`, `acquiredAt`, `expiresAt`).
@@ -208,7 +208,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL table utilizing atomic conditional updates and fencing tokens.
 
 ### 5.12 Conversation & Chat Domain
-- **Store Owner:** [`ConversationStore`](src/lib/server/conversation/store.ts).
+- **Store Owner:** [`ConversationStore`](../../src/lib/server/conversation/store.ts).
 - **Contract:** Manages conversational dialogue threads and chat message history.
 - **Authority Boundary:** Conversational interface between Founder and Sophia.
 - **Write Semantics:**
@@ -218,7 +218,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL tables `conversations` and `chat_messages` with paginated retrieval.
 
 ### 5.13 Sophia Personal Mind Domain
-- **Store Owner:** [`PersonalMemoryStore`](src/lib/server/sophia/personal-memory-store.ts).
+- **Store Owner:** [`PersonalMemoryStore`](../../src/lib/server/sophia/personal-memory-store.ts).
 - **Contract:** Stores founder interaction preferences, pacing notes, and personal dialogue context.
 - **Authority Boundary:** Strictly founder-scoped. Segregated completely from Company Brain authority.
 - **Write Semantics:** Mutable finite state machine (`PROPOSED` -> `ACTIVE` -> `DEPRECATED` / `REVOKED` / `PURGED`).
@@ -226,7 +226,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** PostgreSQL table `sophia_memories` isolated by `founderId` with zero promotion pathways to company facts.
 
 ### 5.14 Communication Domain
-- **Store Owner:** [`InMemoryCommunicationStore`](src/lib/server/communication/store.ts).
+- **Store Owner:** [`InMemoryCommunicationStore`](../../src/lib/server/communication/store.ts).
 - **Contract:** Manages internal CRM models: contacts, organizations, conversations, messages, and drafts.
 - **Authority Boundary:** Inbound/outbound communication staging.
 - **Write Semantics:** Mutable CRM entities with audit logs.
@@ -234,7 +234,7 @@ Every persistence domain in SamJuniorsOS must adhere to an explicit, typed contr
 - **Target State:** Relational PostgreSQL tables `comm_contacts`, `comm_messages`, and `comm_webhook_events`.
 
 ### 5.15 Live Ephemeral Ticket Domain
-- **Store Owner:** [`LiveTicketStore`](src/lib/server/live/ticket-store.ts).
+- **Store Owner:** [`LiveTicketStore`](../../src/lib/server/live/ticket-store.ts).
 - **Contract:** Single-use 60-second tickets authorizing WebSocket connection upgrades.
 - **Authority Boundary:** Ephemeral transport security.
 - **Write Semantics:** Transient key-value with immediate consumption or TTL eviction.
@@ -255,28 +255,28 @@ To replace the oversimplified four-tier classification, every persistence domain
 
 | Domain & Owner | Canonical Authority | Write Semantics | Consistency Model | Durability Requirements | Retention & Deletion Policy | Sensitivity & Auth Boundary | Transaction & Concurrency | Backup & Restore | Failure Behavior & Recovery | Current Implementation | Proposed Target Behavior | Evidence & Confidence |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Decisions** (`DecisionStore`) | Canonical | Mutable (stateVersion + transitions) | Optimistic Concurrency | High (survive redeploys) | Permanent corporate record | Highly Sensitive (Founder only) | Atomic CAS on version, collection lock | Snapshot + PITR | Fail-closed on lock timeout; in-memory cache | `.data/decisions.json` | PostgreSQL table `company_decisions` | **REPOSITORY EVIDENCE** ([`src/lib/server/decision/store.ts`](src/lib/server/decision/store.ts)) |
-| **Epistemic Sources & Signals** (`EpistemicClaimStore`) | Canonical | Immutable | Append-Only (Idempotent by hash) | High | Permanent audit evidence | Restricted internal | Unique hash constraint | Snapshot + immutable archive | Duplicate insert ignored; SHA-256 check | SQLite via Prisma | PostgreSQL tables `epistemic_sources`, `signals` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Epistemic Claims** (`EpistemicClaimStore`) | Canonical | Mutable (status transitions) | Eventual / Sequential | Moderate | Retained with claim history | Restricted internal | Atomic status update | Standard snapshot | Re-evaluable via verification policy | SQLite via Prisma | PostgreSQL table `epistemic_claims` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Canonical Facts** (`EpistemicClaimStore`) | Canonical | Mutable (supersession pointers) | Transactional Supersession | Critical | Permanent (superseded marked) | High (Company Truth) | Atomic predecessor / successor link | Continuous WAL, PITR | Rollback to predecessor fact if invalid | SQLite via Prisma | PostgreSQL table `canonical_facts` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](src/lib/server/epistemic/claim-store.ts)) |
-| **Operational State** (`CompanyStateStore`) | Canonical | Mutable | Optimistic Concurrency | High | Overwritten on strategic update | Executive only | Version check on update | Standard snapshot | Fallback to default state seeds | In-memory + `.data/company_state.json` | PostgreSQL table `company_state` | **REPOSITORY EVIDENCE** ([`src/lib/server/state/state-store.ts`](src/lib/server/state/state-store.ts)) |
-| **Company Knowledge** (`CompanyKnowledgeStore`) | Canonical | Replaceable / Versioned | Optimistic Concurrency | High | Version history retained | Company Internal | Content-hash uniqueness | Standard snapshot | Re-seed from markdown baseline | SQLite via Prisma + file cache | PostgreSQL table `company_knowledge` | **REPOSITORY EVIDENCE** ([`src/lib/server/knowledge/knowledge-store.ts`](src/lib/server/knowledge/knowledge-store.ts)) |
-| **Company Memory** (`CompanyMemoryStore`) | Canonical | Append-oriented | Best-Effort / Eventual | Moderate | Soft deprecation supported | Company Internal | Simple insert / update | Standard snapshot | Loss causes precedent amnesia, not crash | SQLite via Prisma + file cache | PostgreSQL table `company_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/memory/memory-store.ts`](src/lib/server/memory/memory-store.ts)) |
-| **Workflow Definitions** (`WorkflowStore`) | Canonical | Versioned / Immutable | Immutable per version | High | Retained across executions | Engineering / Admin | Unique `(id, version)` constraint | Standard snapshot | System cannot start if definitions missing | SQLite via Prisma | PostgreSQL table `workflow_definitions` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
-| **Workflow Instances** (`WorkflowStore`) | Canonical | Mutable (state machine) | Strict Transactional (CAS) | Critical | Retain active & completed runs | Founder & Autonomous Engine | Atomic step claiming, version CAS | Continuous WAL, PITR | In-flight steps fail-safe, rehydrate on boot | SQLite via Prisma | PostgreSQL table `workflow_instances` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](src/lib/server/workflow/store.ts)) |
-| **Scheduled Work Items** (`ScheduledWorkStore`) | Canonical | Mutable | Transactional state machine | High | Retained for execution trail | System Scheduler | Lease-guarded atomic claims | Standard snapshot | Missed cron items detected on boot | SQLite via Prisma | PostgreSQL table `scheduled_work_items` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
-| **Scheduler Heartbeats** (`ScheduledWorkStore`) | Audit Ledger | Append-Only | Append-Only | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: audit compliance, disk storage cost, query index performance. | System Internal | Append-only insert | Standard snapshot | Missed heartbeat alerts founder | SQLite via Prisma | PostgreSQL table `scheduler_heartbeats` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](src/lib/server/workflow/scheduler-store.ts)) |
-| **Approval Records** (`ApprovalStore`) | Canonical | Mutable (consumption state) | Strict Transactional (CAS) | Critical | Permanent governance audit | Founder Sovereign | Single-use CAS (`consumedAt IS NULL`) | Continuous WAL, PITR | Fails closed; requires fresh approval | SQLite via Prisma | PostgreSQL table `approval_records` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
-| **Side Effect Audits** (`AuditStore`) | Audit Ledger | Immutable | Append-Only | Critical | Permanent immutable ledger | Compliance / Founder | Append-only insert (no updates) | Continuous WAL, immutable replica | Alert on audit write failure; halt action | SQLite via Prisma | PostgreSQL table `side_effect_audits` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](src/lib/server/authorization/approval-store.ts)) |
-| **Agent Runs** (`AgentRunStore`) | Execution History | Mutable during run, then immutable | Optimistic / Upsert | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (30–90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: LLM token audit trails, storage overhead, debugging needs. | Internal Engineering | Upsert on `runId` | Standard snapshot | Interrupted run marked `failed` on reboot | SQLite via Prisma (upsert) | PostgreSQL table `agent_runs` | **REPOSITORY EVIDENCE** ([`src/lib/server/agents/run-store.ts`](src/lib/server/agents/run-store.ts)) |
-| **Council Deliberations** (`ExecutiveCouncilEngine`) | Canonical | Mutable during review, then sealed | Optimistic Concurrency | High | Permanent strategic record | Founder & Executive | Collection lock during deliberation | Standard snapshot | Interrupted deliberation marks `degraded` | `.data/council_deliberations.json` | PostgreSQL table `council_deliberations` | **REPOSITORY EVIDENCE** ([`src/lib/server/orchestration/council.ts`](src/lib/server/orchestration/council.ts)) |
-| **Distributed Leases** (`LeaseManager`) | Transient Coordination | Highly Mutable | Strict Transactional (Fencing) | Low (TTL bounded) | Auto-expiring TTL | System Workers | Atomic conditional acquire/renew | Not required | Expired lease reclaimed by standby worker | SQLite via Prisma | PostgreSQL table `distributed_leases` | **REPOSITORY EVIDENCE** ([`src/lib/server/coordination/lease-manager.ts`](src/lib/server/coordination/lease-manager.ts)) |
-| **Conversations & Messages** (`ConversationStore`) | Canonical | Append-Only Messages, Mutable Threads | Transactional Append | High | Retained until founder tombstone | Founder Confidential | Idempotency key uniqueness check | Standard snapshot | Tombstones prevent resurrected state | `.data/conversations.json`, `chat_messages.json` | PostgreSQL tables `conversations`, `chat_messages` | **REPOSITORY EVIDENCE** ([`src/lib/server/conversation/store.ts`](src/lib/server/conversation/store.ts)) |
-| **Sophia Personal Memories** (`PersonalMemoryStore`) | Canonical (Personal) | Mutable (lifecycle FSM) | Optimistic Concurrency | High | Founder explicit revocation | Founder Confidential (Isolated) | Founder ID tenant isolation | Standard snapshot | Isolated from Company Brain | `.data/sophia_memories.json` | PostgreSQL table `sophia_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/sophia/personal-memory-store.ts`](src/lib/server/sophia/personal-memory-store.ts)) |
-| **Communications** (`InMemoryCommunicationStore`) | Ephemeral / Staging | Mutable | In-Memory (No isolation) | Zero today (High target) | None today | Founder & Communication Worker | None today | None today | Process restart loses all CRM state | Ephemeral JavaScript `Map` | PostgreSQL tables `comm_*` | **REPOSITORY EVIDENCE** ([`src/lib/server/communication/store.ts`](src/lib/server/communication/store.ts)) |
-| **Live WS Tickets** (`LiveTicketStore`) | Ephemeral Handshake | Replaceable (60s TTL) | In-Memory | Zero (Ephemeral) | Expired every 60 seconds | Ephemeral Gateway | Single-use consumption | None required | Expired ticket forces client re-auth | In-memory JavaScript `Map` | In-memory RAM Map / Redis | **REPOSITORY EVIDENCE** ([`src/lib/server/live/ticket-store.ts`](src/lib/server/live/ticket-store.ts)) |
-| **Dependency Relations** (`DependencyRelationStore`) | Projection | Replaceable / Rebuildable | Derived from Facts | Rebuildable | Dropped and rebuilt at will | Internal Index | Deterministic extraction pass | Not required | Deterministically rebuilt from Facts | In-memory index | PostgreSQL table `dependency_relations` | **REPOSITORY EVIDENCE** ([`src/lib/server/retrieval/dependency-relation-store.ts`](src/lib/server/retrieval/dependency-relation-store.ts)) |
-| **GraphDTO Read Model** (`read-model.ts`) | Projection | Stateless Projection | Deterministic Read Model | Rebuildable | In-memory projection | Read-Only Surface | Read-only database query | Not required | Pure function of database state | Stateless code function | Stateless code function | **REPOSITORY EVIDENCE** ([`src/lib/server/graph/read-model.ts`](src/lib/server/graph/read-model.ts)) |
+| **Decisions** (`DecisionStore`) | Canonical | Mutable (stateVersion + transitions) | Optimistic Concurrency | High (survive redeploys) | Permanent corporate record | Highly Sensitive (Founder only) | Atomic CAS on version, collection lock | Snapshot + PITR | Fail-closed on lock timeout; in-memory cache | `.data/decisions.json` | PostgreSQL table `company_decisions` | **REPOSITORY EVIDENCE** ([`src/lib/server/decision/store.ts`](../../src/lib/server/decision/store.ts)) |
+| **Epistemic Sources & Signals** (`EpistemicClaimStore`) | Canonical | Immutable | Append-Only (Idempotent by hash) | High | Permanent audit evidence | Restricted internal | Unique hash constraint | Snapshot + immutable archive | Duplicate insert ignored; SHA-256 check | SQLite via Prisma | PostgreSQL tables `epistemic_sources`, `signals` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](../../src/lib/server/epistemic/claim-store.ts)) |
+| **Epistemic Claims** (`EpistemicClaimStore`) | Canonical | Mutable (status transitions) | Eventual / Sequential | Moderate | Retained with claim history | Restricted internal | Atomic status update | Standard snapshot | Re-evaluable via verification policy | SQLite via Prisma | PostgreSQL table `epistemic_claims` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](../../src/lib/server/epistemic/claim-store.ts)) |
+| **Canonical Facts** (`EpistemicClaimStore`) | Canonical | Mutable (supersession pointers) | Transactional Supersession | Critical | Permanent (superseded marked) | High (Company Truth) | Atomic predecessor / successor link | Continuous WAL, PITR | Rollback to predecessor fact if invalid | SQLite via Prisma | PostgreSQL table `canonical_facts` | **REPOSITORY EVIDENCE** ([`src/lib/server/epistemic/claim-store.ts`](../../src/lib/server/epistemic/claim-store.ts)) |
+| **Operational State** (`CompanyStateStore`) | Canonical | Mutable | Optimistic Concurrency | High | Overwritten on strategic update | Executive only | Version check on update | Standard snapshot | Fallback to default state seeds | In-memory + `.data/company_state.json` | PostgreSQL table `company_state` | **REPOSITORY EVIDENCE** ([`src/lib/server/state/state-store.ts`](../../src/lib/server/state/state-store.ts)) |
+| **Company Knowledge** (`CompanyKnowledgeStore`) | Canonical | Replaceable / Versioned | Optimistic Concurrency | High | Version history retained | Company Internal | Content-hash uniqueness | Standard snapshot | Re-seed from markdown baseline | SQLite via Prisma + file cache | PostgreSQL table `company_knowledge` | **REPOSITORY EVIDENCE** ([`src/lib/server/knowledge/knowledge-store.ts`](../../src/lib/server/knowledge/knowledge-store.ts)) |
+| **Company Memory** (`CompanyMemoryStore`) | Canonical | Append-oriented | Best-Effort / Eventual | Moderate | Soft deprecation supported | Company Internal | Simple insert / update | Standard snapshot | Loss causes precedent amnesia, not crash | SQLite via Prisma + file cache | PostgreSQL table `company_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/memory/memory-store.ts`](../../src/lib/server/memory/memory-store.ts)) |
+| **Workflow Definitions** (`WorkflowStore`) | Canonical | Versioned / Immutable | Immutable per version | High | Retained across executions | Engineering / Admin | Unique `(id, version)` constraint | Standard snapshot | System cannot start if definitions missing | SQLite via Prisma | PostgreSQL table `workflow_definitions` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](../../src/lib/server/workflow/store.ts)) |
+| **Workflow Instances** (`WorkflowStore`) | Canonical | Mutable (state machine) | Strict Transactional (CAS) | Critical | Retain active & completed runs | Founder & Autonomous Engine | Atomic step claiming, version CAS | Continuous WAL, PITR | In-flight steps fail-safe, rehydrate on boot | SQLite via Prisma | PostgreSQL table `workflow_instances` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/store.ts`](../../src/lib/server/workflow/store.ts)) |
+| **Scheduled Work Items** (`ScheduledWorkStore`) | Canonical | Mutable | Transactional state machine | High | Retained for execution trail | System Scheduler | Lease-guarded atomic claims | Standard snapshot | Missed cron items detected on boot | SQLite via Prisma | PostgreSQL table `scheduled_work_items` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](../../src/lib/server/workflow/scheduler-store.ts)) |
+| **Scheduler Heartbeats** (`ScheduledWorkStore`) | Audit Ledger | Append-Only | Append-Only | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: audit compliance, disk storage cost, query index performance. | System Internal | Append-only insert | Standard snapshot | Missed heartbeat alerts founder | SQLite via Prisma | PostgreSQL table `scheduler_heartbeats` | **REPOSITORY EVIDENCE** ([`src/lib/server/workflow/scheduler-store.ts`](../../src/lib/server/workflow/scheduler-store.ts)) |
+| **Approval Records** (`ApprovalStore`) | Canonical | Mutable (consumption state) | Strict Transactional (CAS) | Critical | Permanent governance audit | Founder Sovereign | Single-use CAS (`consumedAt IS NULL`) | Continuous WAL, PITR | Fails closed; requires fresh approval | SQLite via Prisma | PostgreSQL table `approval_records` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](../../src/lib/server/authorization/approval-store.ts)) |
+| **Side Effect Audits** (`AuditStore`) | Audit Ledger | Immutable | Append-Only | Critical | Permanent immutable ledger | Compliance / Founder | Append-only insert (no updates) | Continuous WAL, immutable replica | Alert on audit write failure; halt action | SQLite via Prisma | PostgreSQL table `side_effect_audits` | **REPOSITORY EVIDENCE** ([`src/lib/server/authorization/approval-store.ts`](../../src/lib/server/authorization/approval-store.ts)) |
+| **Agent Runs** (`AgentRunStore`) | Execution History | Mutable during run, then immutable | Optimistic / Upsert | Moderate | **UNDECIDED — ILLUSTRATIVE PROPOSAL** (30–90 days proposed) — FOUNDER DECISION REQUIRED. Decision factors: LLM token audit trails, storage overhead, debugging needs. | Internal Engineering | Upsert on `runId` | Standard snapshot | Interrupted run marked `failed` on reboot | SQLite via Prisma (upsert) | PostgreSQL table `agent_runs` | **REPOSITORY EVIDENCE** ([`src/lib/server/agents/run-store.ts`](../../src/lib/server/agents/run-store.ts)) |
+| **Council Deliberations** (`ExecutiveCouncilEngine`) | Canonical | Mutable during review, then sealed | Optimistic Concurrency | High | Permanent strategic record | Founder & Executive | Collection lock during deliberation | Standard snapshot | Interrupted deliberation marks `degraded` | `.data/council_deliberations.json` | PostgreSQL table `council_deliberations` | **REPOSITORY EVIDENCE** ([`src/lib/server/orchestration/council.ts`](../../src/lib/server/orchestration/council.ts)) |
+| **Distributed Leases** (`LeaseManager`) | Transient Coordination | Highly Mutable | Strict Transactional (Fencing) | Low (TTL bounded) | Auto-expiring TTL | System Workers | Atomic conditional acquire/renew | Not required | Expired lease reclaimed by standby worker | SQLite via Prisma | PostgreSQL table `distributed_leases` | **REPOSITORY EVIDENCE** ([`src/lib/server/coordination/lease-manager.ts`](../../src/lib/server/coordination/lease-manager.ts)) |
+| **Conversations & Messages** (`ConversationStore`) | Canonical | Append-Only Messages, Mutable Threads | Transactional Append | High | Retained until founder tombstone | Founder Confidential | Idempotency key uniqueness check | Standard snapshot | Tombstones prevent resurrected state | `.data/conversations.json`, `chat_messages.json` | PostgreSQL tables `conversations`, `chat_messages` | **REPOSITORY EVIDENCE** ([`src/lib/server/conversation/store.ts`](../../src/lib/server/conversation/store.ts)) |
+| **Sophia Personal Memories** (`PersonalMemoryStore`) | Canonical (Personal) | Mutable (lifecycle FSM) | Optimistic Concurrency | High | Founder explicit revocation | Founder Confidential (Isolated) | Founder ID tenant isolation | Standard snapshot | Isolated from Company Brain | `.data/sophia_memories.json` | PostgreSQL table `sophia_memories` | **REPOSITORY EVIDENCE** ([`src/lib/server/sophia/personal-memory-store.ts`](../../src/lib/server/sophia/personal-memory-store.ts)) |
+| **Communications** (`InMemoryCommunicationStore`) | Ephemeral / Staging | Mutable | In-Memory (No isolation) | Zero today (High target) | None today | Founder & Communication Worker | None today | None today | Process restart loses all CRM state | Ephemeral JavaScript `Map` | PostgreSQL tables `comm_*` | **REPOSITORY EVIDENCE** ([`src/lib/server/communication/store.ts`](../../src/lib/server/communication/store.ts)) |
+| **Live WS Tickets** (`LiveTicketStore`) | Ephemeral Handshake | Replaceable (60s TTL) | In-Memory | Zero (Ephemeral) | Expired every 60 seconds | Ephemeral Gateway | Single-use consumption | None required | Expired ticket forces client re-auth | In-memory JavaScript `Map` | In-memory RAM Map / Redis | **REPOSITORY EVIDENCE** ([`src/lib/server/live/ticket-store.ts`](../../src/lib/server/live/ticket-store.ts)) |
+| **Dependency Relations** (`DependencyRelationStore`) | Projection | Replaceable / Rebuildable | Derived from Facts | Rebuildable | Dropped and rebuilt at will | Internal Index | Deterministic extraction pass | Not required | Deterministically rebuilt from Facts | In-memory index | PostgreSQL table `dependency_relations` | **REPOSITORY EVIDENCE** ([`src/lib/server/retrieval/dependency-relation-store.ts`](../../src/lib/server/retrieval/dependency-relation-store.ts)) |
+| **GraphDTO Read Model** (`read-model.ts`) | Projection | Stateless Projection | Deterministic Read Model | Rebuildable | In-memory projection | Read-Only Surface | Read-only database query | Not required | Pure function of database state | Stateless code function | Stateless code function | **REPOSITORY EVIDENCE** ([`src/lib/server/graph/read-model.ts`](../../src/lib/server/graph/read-model.ts)) |
 
 ---
 
@@ -383,7 +383,7 @@ Next.js serverless functions or container autoscaling can rapidly exhaust Postgr
 ```
 
 ### 8.3 Idempotency Lifecycle & State Machine
-Per [`src/lib/server/idempotency/state-machine.ts`](src/lib/server/idempotency/state-machine.ts), operations execute through a formal finite state machine:
+Per [`src/lib/server/idempotency/state-machine.ts`](../../src/lib/server/idempotency/state-machine.ts), operations execute through a formal finite state machine:
 1. **Unregistered -> In Progress:** Worker claims `(idempotencyKey, payloadHash, ttlMs)`. Concurrent executions with identical payload receive `OperationInProgressError` and fail closed.
 2. **Payload Binding Guard:** If an identical key arrives with a different `payloadHash`, the system throws `IdempotencyPayloadMismatchError` (guards against parameter tampering).
 3. **In Progress -> Completed / Failed:** Successful execution writes results and timestamps. Unrecoverable failures record error messages.
