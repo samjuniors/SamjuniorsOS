@@ -4,6 +4,8 @@ Audit reports are **dated evidence**. Use each report's branch, date, test scope
 
 ## Documentation governance
 
+- [2026-10-23 `kit/integration` repository hygiene and CI follow-up](2026-10-23-kit-integration-repository-hygiene.md) — source-linked Vite/Express CI changes, security audit, 39 failing legacy suites, staged/deployment blockers and rollback gates.
+
 - [2026-10-23 `kit/integration` documentation audit](2026-10-23-kit-integration-documentation-audit.md) — inventory, source-of-truth classification, archiving decisions, safe research relocation and verification gate. This audit did **not** inspect the default branch or claim runtime test success.
 
 ## Dated technical audits
