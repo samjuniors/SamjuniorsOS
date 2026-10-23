@@ -1,0 +1,8 @@
+{
+  "id": "G2.6",
+  "doneAt": "2026-10-23T05:38:27.482Z",
+  "agent": "lead",
+  "branch": "main",
+  "commit": "845497a0e39114884d3d77829fd30f39856233bf",
+  "evidence": "Deploy pipeline scripts/deploy-staging.ts and .github/workflows/deploy-staging.yml implemented; live post-deploy verification scripts/verify-deployment.ts verified across health, DB, security headers, fail-closed auth, and websocket companion; 5/5 pass in tests/platform/deploy_pipeline_verification.test.ts"
+}
