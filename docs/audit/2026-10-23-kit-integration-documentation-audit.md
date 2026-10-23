@@ -54,3 +54,16 @@
 - Verify all rewritten relative links from the changed documents on this branch, `npm run typecheck`/`npm run lint` if local tooling is available, and check active setup on a fresh checkout.
 - A full repository-wide internal/external link crawler, local diff against any unpushed user changes, and runtime install verification have **NOT RUN** in this connector-only audit.
 - **Gate: HOLD before mass archiving, deleting source files, removing code, or changing ratified architecture.** Obtain actual reference scan and content owners' review, then propose a second reversible batch with a rollback list.
+
+
+## Reconciliation execution and verified preservation (on isolated branch)
+
+**Document changes:** refreshed `README.md` and `docs/README.md`; replaced `docs/SETUP.md` with branch-specific Express/Vite instructions; archived the complete previous setup under `docs/archive/legacy-setup-nextjs-2026-10-23.md`; added `docs/archive/README.md`, `docs/research/README.md`, and `docs/audit/README.md`; added a historical warning to the voice patch note; relocated Phase 4C STT research with a compatibility pointer at its original path; updated only the research reference paths in ADR-0003 and ADR-0004.
+
+**Verified via live GitHub reads:**
+- Full STT research copy is **byte-for-byte text-identical** and retains Git blob SHA `d91f878fbf804e1fd95fdb92205f316f3538fb79`.
+- Archived setup includes **all 7,162 characters** of the earlier setup guide, unchanged, following an archival banner.
+- Cross-checked **99 internal Markdown links** from 12 touched documents against the inspected tracked tree plus new paths: **zero missing destinations**. This is a targeted verification, **not** a full repository-wide link scan.
+- Non-default audit branch comparison against `kit/integration`: only documentation files added/modified; **no tracked file removed**. The original accepted ADR content was preserved apart from two research-path reference replacements.
+
+**Unverified:** full-tree reference integrity, anchor resolution, generated-document pipeline, local unpushed edits, CI, runtime correctness, production deployment, voice conversation reliability, and source-of-truth synchronization with product-kit milestone tooling. These remain review gates and must not be marked passed.
