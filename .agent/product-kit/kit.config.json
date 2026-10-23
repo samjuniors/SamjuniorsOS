@@ -2,7 +2,10 @@
   "mainBranch": "main",
   "integrationBranch": "kit/integration",
   "remote": "origin",
-  "checks": [],
+  "checks": [
+    "npm run typecheck",
+    "npm run lint"
+  ],
   "ci": {
     "mode": "off",
     "timeoutMinutes": 25,
