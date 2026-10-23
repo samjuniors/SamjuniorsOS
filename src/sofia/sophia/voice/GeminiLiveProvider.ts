@@ -570,10 +570,8 @@ export class GeminiLiveProvider extends VoiceProvider {
     this.hasModelTextInTurn = false;
     this.clearTextTurnTimer();
     this.audio.interruptPlayback();
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
-      this.stats.packetsSent++;
-    }
+    // Do not send audioStreamEnd here. The capture stream stays open so a
+    // barge-in can continue sending the user's utterance after local playback stops.
   }
 
   private handleClosed(code?: number) {

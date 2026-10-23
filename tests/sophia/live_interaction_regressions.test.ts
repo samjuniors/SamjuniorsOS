@@ -122,8 +122,8 @@ async function testTextUsesCanonicalChatAndSurfacesErrors() {
 }
 
 function testBargeInAcceptsOrdinarySpeech() {
-  assert.equal(bargeInThreshold(0), 0.12);
-  assert.equal(bargeInThreshold(1), 0.24);
+  assert.equal(bargeInThreshold(0), 0.10);
+  assert.equal(bargeInThreshold(1), 0.15);
   assert.ok(bargeInThreshold(0.5) < 0.48, 'barge-in threshold must be below the old speech-blocking floor');
 
   const voice = new UserVoiceProfile();
@@ -138,8 +138,20 @@ function testBargeInAcceptsOrdinarySpeech() {
   );
 }
 
+function testGeminiInterruptKeepsAudioInputOpen() {
+  const sent: string[] = [];
+  const provider = new GeminiLiveProvider(makeAudioStub() as unknown as AudioEngine);
+  (provider as any).ws = {
+    readyState: 1,
+    send: (message: string) => sent.push(message),
+  };
+  provider.interrupt();
+  assert.deepEqual(sent, [], 'interrupt must not end the mic stream before the user finishes speaking');
+}
+
 async function main() {
   testBargeInAcceptsOrdinarySpeech();
+  testGeminiInterruptKeepsAudioInputOpen();
   await testGeminiSetupTimeout();
   await testTextUsesCanonicalChatAndSurfacesErrors();
   console.log('PASS: live interaction timeouts, canonical text turns, honest failures, and barge-in thresholds');
