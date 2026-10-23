@@ -48,6 +48,15 @@ try {
     throw new Error('Failed to parse npm audit output');
   }
 
+  // Print the resolved package and advisory ranges to distinguish a stale
+  // registry report from an actually vulnerable installed build. Never
+  // suppress a critical finding based only on a version string.
+  const dompurifyPath = path.join(cwd, 'node_modules', 'dompurify', 'package.json');
+  if (fs.existsSync(dompurifyPath)) {
+    const installed = JSON.parse(fs.readFileSync(dompurifyPath, 'utf8'));
+    console.log('[audit-deps] Installed DOMPurify:', installed.version);
+  }
+
   const unmitigatedCritical = [];
 
   for (const [pkgName, pkgData] of Object.entries(auditJson.vulnerabilities || {})) {
@@ -66,6 +75,8 @@ try {
               name: pkgName,
               title: item.title || 'Critical vulnerability',
               url: advisoryUrl,
+              auditRange: pkgData.range || null,
+              advisoryRange: item.range || null,
             });
           }
         }
@@ -76,7 +87,7 @@ try {
   if (unmitigatedCritical.length > 0) {
     console.error(`✗ FAIL: ${unmitigatedCritical.length} unmitigated critical vulnerability/vulnerabilities detected:`);
     for (const v of unmitigatedCritical) {
-      console.error(`  - [${v.name}] ${v.title} (${v.url})`);
+      console.error(`  - [${v.name}] ${v.title} (${v.url}); audited range: ${v.auditRange}; advisory range: ${v.advisoryRange}`);
     }
     process.exit(1);
   }
