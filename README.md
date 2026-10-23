@@ -47,7 +47,7 @@ SamJuniorsOS is the authoritative control surface and nervous system of SamJunio
 
 ## Quickstart
 
-SamJuniorsOS runs out of the box with zero required external keys using built-in SQLite persistence and fallback browser speech synthesis.
+**Branch-specific startup (`kit/integration`):** `npm run dev` executes `tsx server.ts` (Express with Vite middleware), and `npm run build` executes `vite build`. The [current setup guide](docs/SETUP.md) and [documentation audit](docs/audit/2026-10-23-kit-integration-documentation-audit.md) supersede old Next.js/`dev:ws` instructions **for this branch**. External AI/voice keys are optional for parts of the interface, but live provider capability requires configuration; a greeting alone is not an end-to-end voice test.
 
 ### 1. Prerequisites
 - **Node.js** v20+ or **Bun** v1.1+
@@ -55,7 +55,7 @@ SamJuniorsOS runs out of the box with zero required external keys using built-in
 
 ### 2. Environment Configuration & Database Sync
 
-Copy the example environment file for both Next.js and Prisma:
+Copy the example environment file for the Express/Vite server and Prisma:
 
 ```bash
 # Clone the repository
@@ -66,13 +66,12 @@ cd SamjuniorsOS
 npm install
 # (or: bun install)
 
-# Configure environment (Prisma reads .env; Next.js reads .env.local and .env)
+# Configure environment (server.ts loads .env.local / .env; Prisma reads DATABASE_URL)
 cp .env.example .env
 cp .env.example .env.local
 
-# Initialize local SQLite database
-npm run db:push
-# (or: bun run db:push)
+# Initialize ONLY a disposable fresh local database (db:push uses --accept-data-loss)
+# npm run db:push
 ```
 
 Configure any desired API keys in `.env.local` (see [Environment Variables](#environment-variables) below).
@@ -80,22 +79,16 @@ Configure any desired API keys in `.env.local` (see [Environment Variables](#env
 ### 3. Running the Development Server
 
 ```bash
-# Start Next.js development server
+# Start the Express/Vite server (tsx server.ts)
 npm run dev
 # (or: bun run dev)
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 4. Running the Live Companion WebSocket Gateway (Optional)
+### 4. Live Companion WebSocket on this branch
 
-For real-time low-latency bidirectional voice and companion streaming:
-
-```bash
-npm run dev:ws
-# (or: bun run dev:ws)
-```
-Default gateway port: `3001` (configurable via `LIVE_WS_PORT`).
+The companion WebSocket is attached by `server.ts` at **`/api/live-ws`** on the same HTTP port (`3000` by default). On `kit/integration` the `dev:ws` script does **not** exist. Configure provider keys in your local environment before testing live speech. See [voice migration provenance](docs/voice/SHARED-SOFIA-VOICE-PATCH.md) and [current setup](docs/SETUP.md); do not reapply the old standalone patch.
 
 ---
 
@@ -112,7 +105,7 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 - `CRON_TRIGGER_SECRET`: Machine credential for automated scheduler heartbeat ticks.
 
 ### Multimodal Brain & Speech Chains
-- `GEMINI_API_KEY`: Powers real-time live vision and audio streaming on the live companion WebSocket server (`dev:ws` on port 3001).
+- `GEMINI_API_KEY`: Enables Gemini features for supported voice/model routes. The branch's integrated companion WebSocket is `/api/live-ws` on the application port; availability still requires live testing.
 - **Executive AI Provider:** Executive reasoning and COO chat (`POST /api/agent-chat`, `/api/orchestrate`) route through `ServerAgentExecutor` via the server AI provider (`src/lib/server/ai/zai-client.ts`), falling back honestly to deterministic analysis with `liveAi: false` when unconfigured.
 - `DEEPGRAM_API_KEY`: High-fidelity real-time transcription (Nova-3).
 - `ELEVENLABS_API_KEY`: Neural speech synthesis and Scribe transcription.
@@ -140,18 +133,20 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 ## Available Scripts
 
+These reflect the inspected `kit/integration` `package.json`, not earlier Next.js scripts.
+
 | Script | Command | Purpose |
 |---|---|---|
-| `dev` | `npm run dev` | Runs the full Next.js development server on port 3000. |
-| `dev:ws` | `npm run dev:ws` | Runs the live companion WebSocket server on port 3001. |
-| `build` | `npm run build` | Generates Prisma client, builds Next.js production bundle, and copies standalone assets. |
-| `start` | `npm run start` | Boots standalone production server. |
-| `test` | `npm test` | Runs the canonical test runner discovering all 71 test suites. |
-| `typecheck` | `npm run typecheck` | Runs TypeScript type checking via `tsc --noEmit`. |
-| `lint` | `npm run lint` | Runs ESLint verification across the repository. |
-| `scan:secrets`| `npm run scan:secrets` | Runs Gitleaks secret detection across commits using `.gitleaks.toml`. |
-| `db:push` | `npm run db:push` | Pushes Prisma schema changes directly to SQLite database. |
-| `db:generate`| `npm run db:generate` | Regenerates Prisma TypeScript client. |
+| `dev` | `npm run dev` | Starts `tsx server.ts` with Express + Vite dev middleware (port 3000 by default). |
+| `build` | `npm run build` | Runs `vite build`; production/server integration needs separate verification. |
+| `start` | `npm run start` | Starts `tsx server.ts` (set and verify production environment explicitly). |
+| `test` | `npm test` | Runs repository test runner; total passing suites not verified by this audit. |
+| `typecheck` | `npm run typecheck` | Runs `tsc --noEmit`. |
+| `lint` | `npm run lint` | Runs ESLint. |
+| `db:push` | `npm run db:push` | Prisma schema push **with `--accept-data-loss`**; only for reviewed disposable databases. |
+| `db:generate` | `npm run db:generate` | Generates Prisma client. |
+
+**Not present in this branch's scripts:** `dev:ws`, `scan:secrets`. Do not copy those commands from historical setup guides.
 
 ---
 
@@ -159,7 +154,10 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 - **[`AGENTS.md`](AGENTS.md)** — Canonical engineering guardrails, architecture rules, and source of truth.
 - **[`docs/SETUP.md`](docs/SETUP.md)** — In-depth setup guide, speech provider configuration, and troubleshooting.
-- **[`docs/architecture/`](docs/architecture/)** — Architecture Decision Records (ADRs) and subsystem specs.
+- **[`docs/README.md`](docs/README.md)** — Reconciled documentation map, dated history and archive navigation.
+- **[`doc/adr/`](doc/adr/README.md)** — Accepted Architecture Decision Records.
+- **[`docs/architecture/`](docs/architecture/)** — System architecture, acceptance reports and subsystem specs.
+- **[`docs/archive/`](docs/archive/README.md)** — Historical setup and audit navigation.
 
 ---
 
