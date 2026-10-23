@@ -29,12 +29,34 @@
   - Fixed SQLite Error 14 database file creation and synchronized Prisma schema.
   - Whole-path verification: `npm run smoke:m1` passes all 6/6 phases cleanly.
 
-## Now — Active Milestone M2 (Sofia works when your PC is off)
+## Milestone M2 — Sofia works when your PC is off (CLOSED)
 
-**Baseline:** `kit/integration` with Milestone M0 and Milestone M1 closed.
-- **Goal:** Sofia operates 24/7 even when the founder's PC is powered down or offline. Background scheduler, inbound webhooks, and attention queues remain durable and active in authoritative cloud execution.
-- **Progress:** 11/11 steps done — MILESTONE M2 COMPLETE & PASSED QA (G0.3, G2.1, G2.2, G2.3, G2.4, G2.5, G2.6, G2.7, G3.1, G3.4, G3.5 completed; AUTH-2.3C acknowledged; QA-M2 landed).
-- **Recent Deliveries:**
+- **Status:** CLOSED on 2026-10-23 (11/11 steps complete, founder accepted with `ack/MS-M2.json`).
+- **Founder Acceptance Quote:** `"close it and start next"`
+- **Steps Verified & Closed:** G0.3, G2.1, G2.2, G2.3, G2.4, G2.5, G2.6, G2.7, G3.1, G3.4, G3.5.
+- **Capabilities Delivered:**
+  - Sofia operates 24/7 in cloud execution with durable state when the local PC is off.
+  - Option A single-container hosting (`Dockerfile`, `docker-compose.staging.yml`) and `/api/health` monitoring.
+  - Relational persistence with versioned SQLite migrations in `prisma/migrations/`.
+  - Transactional store migration (`db:migrate:stores`) with deep cryptographic hash parity.
+  - Multi-instance concurrency via distributed shared leases on SQLite.
+  - Automated backup and restore engine (`db:backup`, `db:restore`) with measured RPO 0s (< 24h) and RTO 0.025s (< 2h).
+  - Production staging deploy pipeline (`deploy:staging`) with live post-deploy verification (`verify:deployment`).
+  - Security headers, CSP, mutation body limits, sliding-window rate limiter, and dependency audit in CI.
+  - Client bundle secret scanner with zero credentials exposed to browser; production secret rotation runbook.
+  - Full QA pass (`QA-M2`) passing all 5 founder test scenarios.
+
+## Now — Active Milestone M3 (Sofia remembers you and knows your company)
+
+**Baseline:** Milestone M2 closed on `main`.
+- **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
+- **Progress:** 1/13 steps done.
+- **Next Ready Steps:**
+  - G4.1 [platform]: Company Brain as the single read and write path; retire parallel legacy paths.
+  - G4.4 [quality]: Memory retrieval benchmark as a regression gate in CI.
+  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
+
+## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**
     - Ran all automated suites across platforms: lint (0 errors), typecheck (0 errors), reachability, migrations, stores, leases, backup drill, deploy verification, security headers, and secret rotation.
     - Verified all 5 founder test scenarios against running environment: T1 cloud reachability & mouth greeting, T2 host restart zero-loss data persistence, T3 disaster recovery drill (RPO = 0s, RTO = 0.02s), T4 fail-closed unauthenticated access refusal (401/403), T5 zero browser/bundle secret exposure.
