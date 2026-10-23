@@ -25,6 +25,10 @@ interface LiveSessionTicket {
   voice?: string;
 }
 
+const LIVE_SESSION_REQUEST_TIMEOUT_MS = 15_000;
+const LIVE_SETUP_TIMEOUT_MS = 15_000;
+const LIVE_TEXT_TURN_TIMEOUT_MS = 60_000;
+
 export interface LiveConnectionMetrics {
   isConnected: boolean;
   latencyMs: number;
@@ -57,6 +61,8 @@ export class GeminiLiveProvider extends VoiceProvider {
   private firstAudioPlayedTime = 0;
   private lastUserVoiceTime = 0;
   private latencyHistory: number[] = [24, 28, 22, 26, 25, 29, 23];
+  private textTurnTimer: ReturnType<typeof setTimeout> | null = null;
+  private setupTimeoutMs = LIVE_SETUP_TIMEOUT_MS;
 
   public stats = {
     connectedAt: 0,
@@ -103,6 +109,7 @@ export class GeminiLiveProvider extends VoiceProvider {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ voice }),
+      signal: AbortSignal.timeout(LIVE_SESSION_REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -122,16 +129,21 @@ export class GeminiLiveProvider extends VoiceProvider {
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
       let settled = false;
+      const setupTimer = setTimeout(() => {
+        fail(`live-setup-timeout:${this.setupTimeoutMs}`);
+      }, this.setupTimeoutMs);
 
       const fail = (msg: string) => {
         if (!settled) {
           settled = true;
-          if (this.ws) {
-            try {
-              this.ws.close();
-            } catch {
-              /* noop */
-            }
+          clearTimeout(setupTimer);
+          this.setupDone = false;
+          this.active = false;
+          if (this.ws === ws) this.ws = null;
+          try {
+            ws.close();
+          } catch {
+            /* noop */
           }
           reject(new Error(msg));
         }
@@ -188,6 +200,7 @@ export class GeminiLiveProvider extends VoiceProvider {
         void this.handleMessage(ev.data, () => {
           if (!settled) {
             settled = true;
+            clearTimeout(setupTimer);
             this.setupDone = true;
             this.active = true;
             this.stats.connectedAt = Date.now();
@@ -291,7 +304,9 @@ export class GeminiLiveProvider extends VoiceProvider {
         if (!controlLayer.asrInterruption) {
           return;
         }
-        this.suppressStaleAudio = true;
+        // WebSocket messages are ordered: this event is the fence after the
+        // cancelled response, so the next generated turn can be accepted.
+        this.suppressStaleAudio = false;
         this.activeResponseId = null;
         this.modelTurnFinished = false;
         this.playbackLive = false;
@@ -303,10 +318,7 @@ export class GeminiLiveProvider extends VoiceProvider {
         this.emit('listening', { source: this.id });
         return;
       }
-      if (sc.modelTurn) {
-        if (this.suppressStaleAudio) {
-          return;
-        }
+      if (sc.modelTurn && !this.suppressStaleAudio) {
         if (this.activeResponseId === null) {
           this.activeResponseId = this.nextResponseId++;
           this.modelTurnFinished = false;
@@ -368,6 +380,7 @@ export class GeminiLiveProvider extends VoiceProvider {
         this.emit('transcript', { role: 'sophia', text: this.outBuf, final: false, source: this.id });
       }
       if (sc.turnComplete || sc.generationComplete) {
+        this.clearTextTurnTimer();
         this.suppressStaleAudio = false;
         this.flushTranscripts(true);
         this.modelTurnFinished = true;
@@ -468,23 +481,41 @@ export class GeminiLiveProvider extends VoiceProvider {
     this.speechEndTime = performance.now();
     controlLayer.addUserTurn(trimmed, true);
     this.emit('transcript', { role: 'user', text: trimmed, final: true, source: this.id });
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.setupDone) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.setupDone) {
+      this.emit('error', {
+        code: 'live-not-ready',
+        message: 'The live session is not ready to accept a text turn.',
+        source: this.id,
+      });
+      return;
+    }
     this.emit('thinking', { source: this.id });
+    this.armTextTurnTimeout();
     this.lastSendTime = performance.now();
-    this.ws.send(
-      JSON.stringify({
-        clientContent: {
-          turns: [
-            {
-              role: 'user',
-              parts: [{ text: trimmed }],
-            },
-          ],
-          turnComplete: true,
-        },
-      }),
-    );
-    this.stats.packetsSent++;
+    try {
+      this.ws.send(
+        JSON.stringify({
+          clientContent: {
+            turns: [
+              {
+                role: 'user',
+                parts: [{ text: trimmed }],
+              },
+            ],
+            turnComplete: true,
+          },
+        }),
+      );
+      this.stats.packetsSent++;
+    } catch (err) {
+      this.clearTextTurnTimer();
+      this.emit('error', {
+        code: 'live-send-failed',
+        message: err instanceof Error ? err.message : String(err),
+        source: this.id,
+      });
+      this.emit('listening', { source: this.id });
+    }
   }
 
   sendPrompt(promptText: string) {
@@ -537,6 +568,7 @@ export class GeminiLiveProvider extends VoiceProvider {
     this.playbackLive = false;
     this.responseLive = false;
     this.hasModelTextInTurn = false;
+    this.clearTextTurnTimer();
     this.audio.interruptPlayback();
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
@@ -545,6 +577,7 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   private handleClosed(code?: number) {
+    this.clearTextTurnTimer();
     screenVisionBridge.registerFrameCallback(null);
     const wasActive = this.active;
     this.active = false;
@@ -572,6 +605,7 @@ export class GeminiLiveProvider extends VoiceProvider {
   }
 
   async stop(): Promise<void> {
+    this.clearTextTurnTimer();
     screenVisionBridge.registerFrameCallback(null);
     this.active = false;
     this.setupDone = false;
@@ -601,5 +635,25 @@ export class GeminiLiveProvider extends VoiceProvider {
   async reset(): Promise<void> {
     await this.stop();
     await this.start();
+  }
+
+  private armTextTurnTimeout() {
+    this.clearTextTurnTimer();
+    this.textTurnTimer = setTimeout(() => {
+      this.textTurnTimer = null;
+      this.interrupt();
+      this.emit('error', {
+        code: 'live-turn-timeout',
+        message: `No response was received within ${LIVE_TEXT_TURN_TIMEOUT_MS}ms.`,
+        source: this.id,
+      });
+      this.emit('listening', { source: this.id });
+    }, LIVE_TEXT_TURN_TIMEOUT_MS);
+  }
+
+  private clearTextTurnTimer() {
+    if (!this.textTurnTimer) return;
+    clearTimeout(this.textTurnTimer);
+    this.textTurnTimer = null;
   }
 }

@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   try {
-    return await sophiaChatTurn(founder.userId, body);
+    return await sophiaChatTurn(founder.userId, body, req.signal);
   } catch (err) {
     console.error('[sophia-ui] chat turn failed:', (err as Error)?.message ?? err);
     return NextResponse.json({ error: (err as Error)?.message || 'Chat turn failed' }, { status: 500 });

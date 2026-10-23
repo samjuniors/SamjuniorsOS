@@ -311,9 +311,11 @@ export class UserVoiceProfile extends EventTarget {
       if (!asrInterruptionEnabled) {
         return false;
       }
-      // If barge-in is enabled, require HIGH CONFIDENCE that the enrolled user is speaking directly to her
+      // If barge-in is enabled, require a voiced user sample, but use the same
+      // practical RMS floor as enrollment. The previous 0.06 gate suppressed
+      // normal conversational speech on many laptop microphones.
       const evalResult = this.evaluateSpeaker(features);
-      return evalResult.isUser && features.rms > 0.06;
+      return evalResult.isUser && features.rms > 0.025;
     }
 
     // ── Scenario B: Standby / Listening ─────────────────────────────────────

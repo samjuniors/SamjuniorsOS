@@ -20,6 +20,13 @@ type MicStatusHandler = (status: MicStatus, errorMsg?: string) => void;
 
 export type MicStatus = 'idle' | 'requesting' | 'capturing' | 'denied' | 'error';
 
+/** Mic level is smoothed RMS × 5.5; playback level is output RMS × 3.2. */
+export function bargeInThreshold(playbackLevel: number): number {
+  const level = Number.isFinite(playbackLevel) ? Math.max(0, playbackLevel) : 0;
+  // Keep enough margin over speaker echo while allowing normal speech levels.
+  return Math.max(0.12, Math.min(0.24, level * 0.3 + 0.08));
+}
+
 const CAPTURE_WORKLET = `
 class SophiCapture extends AudioWorkletProcessor {
   constructor() {
@@ -162,10 +169,9 @@ export class AudioEngine {
     const dt = Math.min(100, Math.max(1, now - this.lastBargeCheck));
     this.lastBargeCheck = now;
 
-    // Acoustic echo suppression:
-    // When audio plays through speakers, mic picks up echo proportional to playRms.
-    // True user speech directly in front of the mic must significantly exceed the echo.
-    const dynamicThreshold = Math.max(0.48, this.playRms * 0.95 + 0.26);
+    // Acoustic echo suppression: scale the threshold modestly with output
+    // level. The old 0.48 minimum exceeded ordinary mic speech levels.
+    const dynamicThreshold = bargeInThreshold(this.playRms);
 
     if (this._mic > dynamicThreshold) {
       this.speechStreakMs += dt;
