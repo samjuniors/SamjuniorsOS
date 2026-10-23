@@ -1,0 +1,56 @@
+services:
+  samjuniors-os:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: samjuniors-os:staging
+    container_name: samjuniors-os-staging
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Next.js Application & Health Endpoint
+      - "3001:3001"   # Sophia Live WebSocket Companion Server
+    volumes:
+      # Persistent volume mounts per Option A architecture (G0.3 decision)
+      - ./db:/app/db
+      - ./.data:/app/.data
+      - ./backups:/app/backups
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/db/custom.db
+      - DATABASE_MODE=authoritative
+      - PORT=3000
+      - LIVE_WS_PORT=3001
+      - APP_URL=${APP_URL:-http://localhost:3000}
+    env_file:
+      - .env.staging
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # Periodic backup runner service per G0.3: daily automated backups with 30-day retention
+  backup-cron:
+    image: alpine:3.19
+    container_name: samjuniors-backup-staging
+    restart: unless-stopped
+    volumes:
+      - ./db:/backup-source/db:ro
+      - ./.data:/backup-source/.data:ro
+      - ./backups:/backups
+      - ./scripts/backup-sqlite.sh:/usr/local/bin/backup-sqlite.sh:ro
+    environment:
+      - DB_DIR=/backup-source/db
+      - DATA_DIR=/backup-source/.data
+      - BACKUP_DIR=/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache sqlite tar bash
+        chmod +x /usr/local/bin/backup-sqlite.sh
+        echo "0 2 * * * /usr/local/bin/backup-sqlite.sh >> /backups/backup.log 2>&1" > /etc/crontabs/root
+        echo "[backup-cron] Initializing scheduled daily backup at 02:00..."
+        /usr/local/bin/backup-sqlite.sh
+        crond -f -l 2

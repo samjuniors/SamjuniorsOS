@@ -1,0 +1,8 @@
+{
+  "id": "G2.1",
+  "doneAt": "2026-10-23T04:30:16.051Z",
+  "agent": "lead",
+  "branch": "step/G2.1",
+  "commit": "d66d887ec937f85b2adaacf73f693a32cc563bef",
+  "evidence": "Tests pass in tests/platform/staging_reachability.test.ts; /api/health returns 200 with DB connected; staging Dockerfile and compose authored with persistent volumes and 30-day backup cron; configuration recorded without secrets."
+}
