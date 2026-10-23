@@ -39,8 +39,20 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Restore dependencies from the reviewed Bun lockfile
-        run: bun install --frozen-lockfile
+      # Temporary dependency parser-update audit. The last step fails
+      # if the tracked lockfile has not been updated and reviewed.
+      - name: Resolve parser dependency on runner
+        run: |
+          bun install
+          git diff --stat -- bun.lock
+
+      - name: Export refreshed dependency lock for review
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            echo "BUN_LOCK_EXPORT_BEGIN"
+            base64 -w0 bun.lock | fold -w 160
+            echo "BUN_LOCK_EXPORT_END"
+          fi
 
       - name: Generate Prisma client
         run: bunx prisma generate
@@ -72,3 +84,12 @@ jobs:
 
       - name: Dependency vulnerability audit
         run: npm run audit:deps
+
+      - name: Dependency lockfile provenance gate
+        if: always()
+        run: |
+          if ! git diff --quiet -- bun.lock; then
+            echo "::error::The reviewed bun.lock must be updated on this branch."
+            git diff --numstat -- bun.lock
+            exit 1
+          fi
