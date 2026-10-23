@@ -554,3 +554,152 @@ model SophiaMemory {
   @@index([founderId, idempotencyKey])
   @@map("sophia_memories")
 }
+
+// ---------------------------------------------------------
+// 14. NATIVE DECISION WORKFLOW (PHASE 2.3B / PHASE 2.1)
+// ---------------------------------------------------------
+
+model CompanyDecision {
+  decisionId             String    @id
+  creationRequestId      String    @unique
+  stateVersion           Int       @default(1)
+  title                  String
+  problemStatement       String
+  proposedAction         String
+  category               String    // "strategic" | "financial" | "product" | "governance" | "operational"
+  proposer               String
+  accountableOwner       String
+  evidenceFactIds        Json      @default(dbgenerated("'[]'"))
+  assumptions            Json      @default(dbgenerated("'[]'"))
+  uncertainty            Json      @default(dbgenerated("'{}'"))
+  impact                 String    // "low" | "medium" | "high" | "critical"
+  reversibility          String    // "reversible" | "partially_reversible" | "irreversible"
+  status                 String    @default("proposed") // "proposed", "under_review", "pending_approval", "approved", "executing", "resolved", "rejected", "withdrawn", "superseded", "intervention_required"
+  approvalRequired       Boolean   @default(true)
+  decidedBy              String?
+  decidedAt              DateTime?
+  decisionReason         String?
+  approvedPayloadHash    String?
+  approvalId             String?
+  linkedWorkflowId       String?
+  outcome                Json?
+  supersedesDecisionId   String?
+  supersededByDecisionId String?
+  cancellationState      Json?
+  transitions            Json      @default(dbgenerated("'[]'"))
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([status, category])
+  @@index([creationRequestId])
+  @@index([proposer])
+  @@map("company_decisions")
+}
+
+// ---------------------------------------------------------
+// 15. EXECUTIVE COUNCIL DELIBERATION (PHASE 2.3B / PHASE 2.2.2)
+// ---------------------------------------------------------
+
+model CouncilDeliberation {
+  id                    String    @id
+  deliberationId        String?
+  idempotencyKey        String    @unique
+  leaseStatus           String    @default("in_progress") // "in_progress", "completed", "degraded", "unknown_outcome"
+  claimedByPid          Int?
+  claimedAt             DateTime  @default(now())
+  expiresAt             DateTime
+  fingerprint           String
+  directive             String?
+  status                String?
+  verdict               String?
+  result                Json?
+  orphanedProviderCalls Json      @default(dbgenerated("'[]'"))
+  error                 String?
+  reconciledAt          DateTime?
+  reconciliationReason  String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([leaseStatus, expiresAt])
+  @@index([fingerprint])
+  @@map("council_deliberations")
+}
+
+// ---------------------------------------------------------
+// 16. COMMUNICATION DOMAIN (PHASE 2.3B / PHASE 12.4)
+// ---------------------------------------------------------
+
+model CommunicationContact {
+  id                String   @id
+  name              String
+  email             String   @unique
+  organizationId    String?
+  organizationName  String?
+  role              String?
+  title             String?
+  verificationState String   @default("unverified") // "verified" | "unverified" | "provisional"
+  sourceProvenance  Json?
+  metadata          Json     @default(dbgenerated("'{}'"))
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([email])
+  @@index([organizationId])
+  @@map("communication_contacts")
+}
+
+model CommunicationOrganization {
+  id        String   @id
+  name      String
+  domain    String?
+  industry  String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("communication_organizations")
+}
+
+model CommunicationMessage {
+  id                  String   @id
+  conversationId      String
+  threadId            String?
+  channel             String   @default("email") // "email" | "slack" | "webhook" | "sms" | "in_app"
+  sender              Json     @default(dbgenerated("'{}'"))
+  recipients          Json     @default(dbgenerated("'[]'"))
+  cc                  Json     @default(dbgenerated("'[]'"))
+  bcc                 Json     @default(dbgenerated("'[]'"))
+  subject             String
+  bodyContent         String
+  bodyMimeType        String   @default("text/plain")
+  direction           String   @default("outbound") // "inbound" | "outbound" | "internal"
+  deliveryStatus      String   @default("draft") // "draft" | "pending_approval" | "queued" | "sending" | "delivered" | "failed" | "bounced"
+  sourceProvenance    Json?
+  externalProviderRef String?
+  executionRef        String?
+  evidenceRef         String?
+  error               String?
+  timestamp           DateTime @default(now())
+  createdAt           DateTime @default(now())
+
+  @@index([conversationId, timestamp])
+  @@index([deliveryStatus])
+  @@map("communication_messages")
+}
+
+model CommunicationWebhookEvent {
+  id          String    @id
+  provider    String    // "stripe" | "resend" | "github"
+  eventType   String
+  payloadHash String
+  payload     Json      @default(dbgenerated("'{}'"))
+  processed   Boolean   @default(false)
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  @@index([provider, eventType])
+  @@index([payloadHash])
+  @@map("communication_webhook_events")
+}
+
