@@ -150,7 +150,11 @@ async function resolveSurfaceConversation(founderId: string): Promise<string> {
  * One SofiaUI chat turn over the canonical executor. Response shape mirrors
  * SofiaUI's /api/sophia/chat: { text, toolCalls, brain, sources }.
  */
-export async function sophiaChatTurn(founderId: string, body: SophiaChatBody): Promise<Response> {
+export async function sophiaChatTurn(
+  founderId: string,
+  body: SophiaChatBody,
+  signal?: AbortSignal,
+): Promise<Response> {
   const lastUser = String(body.lastUser ?? '').trim();
   if (!lastUser) {
     return Response.json({ error: 'Missing lastUser message.' }, { status: 400 });
@@ -169,6 +173,7 @@ export async function sophiaChatTurn(founderId: string, body: SophiaChatBody): P
     turnId,
     executeDirective: true, // live founder interaction — same default as the canonical surfaces
     ingress: 'sophia_ui',
+    signal,
   });
 
   if (!result.success || !result.reply) {
@@ -397,7 +402,11 @@ export async function sophiaSpeak(body: SophiaSpeakBody): Promise<Response> {
     // 3. Destination ladder tier 1: ElevenLabs when a valid key exists (unpinned)
     if (elevenKey() && pin !== 'zai' && pin !== 'local') {
       try {
-        return await speakWithElevenLabs(text, ELEVEN_VOICE_ID, 'eleven_flash_v2_5');
+        return await speakWithElevenLabs(
+          text,
+          body.voiceId || ELEVEN_VOICE_ID,
+          body.modelId || 'eleven_flash_v2_5',
+        );
       } catch (err) {
         console.warn('[sophia-ui] elevenlabs speak failed, falling to neural:', (err as Error).message);
       }

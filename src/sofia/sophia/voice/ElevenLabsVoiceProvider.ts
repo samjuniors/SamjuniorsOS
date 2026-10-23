@@ -342,43 +342,14 @@ export class ElevenLabsVoiceProvider extends VoiceProvider {
       this.emit('listening', { source: this.id });
       this.rearmListening();
     } catch (e: any) {
-      if (e.name !== 'AbortError' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          const u = new SpeechSynthesisUtterance(text);
-          u.onstart = () => {
-            this.speaking = true;
-            this.emit('audio_started', { source: this.id });
-          };
-          u.onend = () => {
-            this.speaking = false;
-            this.busy = false;
-            this.emit('response_finished', { source: this.id });
-            this.emit('playback_finished', { source: this.id });
-            this.emit('listening', { source: this.id });
-            this.rearmListening();
-          };
-          u.onerror = () => {
-            this.speaking = false;
-            this.busy = false;
-            this.emit('response_finished', { source: this.id });
-            this.emit('playback_finished', { source: this.id });
-            this.emit('listening', { source: this.id });
-            this.rearmListening();
-          };
-          window.speechSynthesis.speak(u);
-          return;
-        } catch {
-          /* fallback error handled below */
-        }
+      if (e.name !== 'AbortError') {
+        this.emit('error', { code: 'mouth-error', message: e.message, source: this.id });
       }
       this.speaking = false;
       this.busy = false;
       this.emit('playback_finished', { source: this.id });
       this.emit('listening', { source: this.id });
       this.rearmListening();
-      if (e.name !== 'AbortError') {
-        this.emit('error', { code: 'mouth-error', message: e.message, source: this.id });
-      }
     }
   }
 

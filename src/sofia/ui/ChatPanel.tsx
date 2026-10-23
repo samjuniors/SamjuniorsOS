@@ -29,7 +29,7 @@ export function ChatPanel({
 }: {
   status: OSStatus;
   onClose: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string) => void | Promise<void>;
 }) {
   const [turns, setTurns] = useState<Turn[]>(() => [...controlLayer.history]);
   const [text, setText] = useState('');
@@ -39,6 +39,7 @@ export function ChatPanel({
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [expandedWhyTurn, setExpandedWhyTurn] = useState<number | null>(null);
   const [isFrozen, setIsFrozen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -223,8 +224,14 @@ export function ChatPanel({
       setIsTranslating(false);
     }
 
-    setText('');
-    onSend(finalMessage);
+    setSendError(null);
+    try {
+      await onSend(finalMessage);
+      setText('');
+    } catch (err) {
+      setText(v);
+      setSendError(err instanceof Error ? err.message : 'Sophia could not complete that turn.');
+    }
   };
 
   return (
@@ -312,6 +319,8 @@ export function ChatPanel({
           </button>
         </div>
       </header>
+
+      {sendError && <p role="alert" className="mx-3 mt-2 rounded-lg border border-rose-400/30 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">{sendError}</p>}
 
       {/* M1.7 Safe Mode Frozen Banner */}
       {isFrozen && (

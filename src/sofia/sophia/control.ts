@@ -93,14 +93,16 @@ export class ControlLayer extends EventTarget {
     this.dispatchEvent(new CustomEvent('reset'));
   }
   
-  /** Pure Gemini Live All-in-One mode toggle */
-  pureGeminiLive = true;
+  /** Pure Gemini Live All-in-One mode toggle. Keep the configured Sophia path as the default. */
+  pureGeminiLive = false;
 
   /** Automatic Speech Recognition (ASR) Barge-in Interruption toggle */
   asrInterruption = true;
 
   /** Selective Voice Focus / Crowd Noise Rejection — listens only to enrolled user in a crowd */
-  crowdFilterEnabled = true;
+  // Voiceprint filtering is opt-in: an uncalibrated profile must not suppress
+  // ordinary speech or barge-in on a fresh installation.
+  crowdFilterEnabled = false;
 
   voiceProfile = 'au-female';
   voiceName = 'Aoede';

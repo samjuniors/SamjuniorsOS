@@ -1067,24 +1067,11 @@ export class SophiaOS extends EventTarget {
       const buf = await res.arrayBuffer();
       await this.audio.playEncoded(buf);
     } catch (err) {
-      console.warn('[SophiaOS] Neural TTS speak fallback note:', err);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        await new Promise<void>((resolve) => {
-          const u = new SpeechSynthesisUtterance(trimmed);
-          try {
-            const voices = window.speechSynthesis.getVoices();
-            const chosen =
-              voices.find((v) => v.lang.includes('AU') || /australia|catherine|karen|susan|zira|female/i.test(v.name)) ||
-              voices.find((v) => /female/i.test(v.name));
-            if (chosen) u.voice = chosen;
-          } catch {
-            /* ignore voice lookup failure */
-          }
-          u.onend = () => resolve();
-          u.onerror = () => resolve();
-          window.speechSynthesis.speak(u);
-        });
-      }
+      const message = err instanceof Error ? err.message : String(err);
+      // Keep one selected voice across turns. Browser speech synthesis can
+      // silently substitute a different system voice when neural TTS fails.
+      this.pushLog('error', `voice output unavailable: ${message}`);
+      this.dispatchEvent(new CustomEvent('voice-error', { detail: { message } }));
     }
   }
 
@@ -1096,36 +1083,17 @@ export class SophiaOS extends EventTarget {
       return;
     }
 
-    // Auto-connect Gemini Live WebSocket session if not already connected
-    if (!this.activeProvider || !this.activeProvider.isActive()) {
-      try {
-        this.pushLog('info', 'Opening Gemini Live WebSocket stream for text session…');
-        await this.activate('chat');
-      } catch (err: any) {
-        console.warn('[SophiaOS] Gemini Live WebSocket session connect note:', err);
-      }
-    }
-
-    // If Gemini Live WebSocket is active, send turn directly over WebSocket!
-    if (this.activeProvider?.isActive()) {
-      this.pushLog('event', 'gemini-live: streaming text turn over WebSocket…');
-      this.activeProvider.sendText(t);
-      this.armPostTurn();
-      return;
-    }
-
-    // Secondary fallback to HTTP chat endpoint if WebSocket is unreachable
     controlLayer.addUserTurn(t, true);
     this.dispatchEvent(new CustomEvent('transcript', { detail: { role: 'user', text: t, final: true } }));
 
-    this.setStatus('live');
     this.state.transition('thinking', { source: 'text' }, true);
-    this.pushLog('event', 'brain: thinking…');
+    this.pushLog('event', 'sophia: processing text through the canonical turn pipeline…');
 
     try {
       const res = await fetch('/api/sophia/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(90_000),
         body: JSON.stringify({
           lastUser: t,
           history: controlLayer.history.slice(-16),
@@ -1138,7 +1106,8 @@ export class SophiaOS extends EventTarget {
       });
 
       if (!res.ok) {
-        throw new Error(`chat-endpoint:${res.status}`);
+        const error = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(error.error || `Sophia chat failed (HTTP ${res.status})`);
       }
 
       const out = (await res.json()) as {
@@ -1152,25 +1121,12 @@ export class SophiaOS extends EventTarget {
         decisionLog?: any;
       };
 
-      let generatedImg: { url: string; prompt: string } | undefined;
+      const answer = typeof out.text === 'string' ? out.text.trim() : '';
+      if (!answer) throw new Error('Sophia returned no answer for this turn.');
 
-      for (const tc of out.toolCalls ?? []) {
-        if (tc.name === 'generate_image') {
-          this.state.transition('rendering', { source: 'tool' }, true);
-          this.pushLog('event', 'visual: generating image via Imagen 3…');
-        }
-        const toolRes = await controlLayer.execute(tc);
-        if (tc.name === 'generate_image' && toolRes.status === 'success' && typeof toolRes.url === 'string') {
-          generatedImg = { url: toolRes.url, prompt: String(toolRes.prompt || '') };
-          this.pushLog('event', 'visual: image generated successfully');
-        }
-      }
-
-      if (out.text || generatedImg) {
-        const spoken = out.text || (generatedImg ? "I've generated that image for you." : "");
+      {
+        const spoken = answer;
         controlLayer.addSophiaTurn(spoken, true, {
-          imageUrl: generatedImg?.url,
-          imagePrompt: generatedImg?.prompt,
           sources: out.sources,
           liveAi: out.liveAi,
           fallback: out.fallback,
@@ -1183,8 +1139,6 @@ export class SophiaOS extends EventTarget {
             role: 'sophia',
             text: spoken,
             final: true,
-            imageUrl: generatedImg?.url,
-            imagePrompt: generatedImg?.prompt,
             sources: out.sources,
           }
         }));
@@ -1193,13 +1147,13 @@ export class SophiaOS extends EventTarget {
         await this.speakText(spoken);
       }
 
-      this.state.transition('idle', { source: 'text' }, true);
-      this.armPostTurn();
+      this.state.transition(this.activeProvider?.isActive() ? 'listening' : 'idle', { source: 'text' }, true);
+      if (this.activeProvider?.isActive()) this.armPostTurn();
     } catch (err) {
-      console.warn('[SophiaOS] Brain/mouth processing error:', err);
-      this.pushLog('error', `processing error: ${(err as Error).message}`);
-      controlLayer.addSophiaTurn("I am here and listening. How can I assist you?", true);
-      this.state.transition('idle', { source: 'text' }, true);
+      const message = err instanceof Error ? err.message : String(err);
+      this.pushLog('error', `Sophia text turn failed: ${message}`);
+      this.state.transition(this.activeProvider?.isActive() ? 'listening' : 'idle', { source: 'text', reason: 'request-failed' }, true);
+      throw new Error(message);
     }
   }
 
