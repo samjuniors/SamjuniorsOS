@@ -1,0 +1,202 @@
+{
+  "step": "MX.2",
+  "date": "2026-10-24",
+  "timestamp": "2026-10-24T05:23:27.206Z",
+  "environment": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "cpus": 24,
+    "cpuModel": "13th Gen Intel(R) Core(TM) i7-13700K",
+    "nodeVersion": "v24.16.0"
+  },
+  "provider": "LiveGatewayVoiceProvider (Gemini Live / Deepgram / ElevenLabs interface seams)",
+  "methodology": "M1.4 voice-loop push-to-talk protocol: PTT release -> STT transcript -> Sophia response -> TTS synthesis -> audio playback start",
+  "sampleCount": 25,
+  "metrics": {
+    "unit": "milliseconds",
+    "p50EndToEndFromStopMs": 79,
+    "p95EndToEndFromStopMs": 90.8,
+    "p99EndToEndFromStopMs": 94.04,
+    "minEndToEndFromStopMs": 66,
+    "maxEndToEndFromStopMs": 95,
+    "meanEndToEndFromStopMs": 79
+  },
+  "records": [
+    {
+      "turnIndex": 1,
+      "turnId": "mx2_baseline_turn_1_1792819404080",
+      "endToEndFromStopMs": 76,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32
+    },
+    {
+      "turnIndex": 2,
+      "turnId": "mx2_baseline_turn_2_1792819404199",
+      "endToEndFromStopMs": 84,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 31
+    },
+    {
+      "turnIndex": 3,
+      "turnId": "mx2_baseline_turn_3_1792819404314",
+      "endToEndFromStopMs": 71,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 31
+    },
+    {
+      "turnIndex": 4,
+      "turnId": "mx2_baseline_turn_4_1792819404441",
+      "endToEndFromStopMs": 90,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 48
+    },
+    {
+      "turnIndex": 5,
+      "turnId": "mx2_baseline_turn_5_1792819404577",
+      "endToEndFromStopMs": 77,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 36
+    },
+    {
+      "turnIndex": 6,
+      "turnId": "mx2_baseline_turn_6_1792819404706",
+      "endToEndFromStopMs": 91,
+      "sttLatencyMs": 24,
+      "cognitionLatencyMs": 35
+    },
+    {
+      "turnIndex": 7,
+      "turnId": "mx2_baseline_turn_7_1792819404842",
+      "endToEndFromStopMs": 66,
+      "sttLatencyMs": 11,
+      "cognitionLatencyMs": 32
+    },
+    {
+      "turnIndex": 8,
+      "turnId": "mx2_baseline_turn_8_1792819404945",
+      "endToEndFromStopMs": 80,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 34
+    },
+    {
+      "turnIndex": 9,
+      "turnId": "mx2_baseline_turn_9_1792819405072",
+      "endToEndFromStopMs": 90,
+      "sttLatencyMs": 19,
+      "cognitionLatencyMs": 35
+    },
+    {
+      "turnIndex": 10,
+      "turnId": "mx2_baseline_turn_10_1792819405199",
+      "endToEndFromStopMs": 73,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 27
+    },
+    {
+      "turnIndex": 11,
+      "turnId": "mx2_baseline_turn_11_1792819405311",
+      "endToEndFromStopMs": 69,
+      "sttLatencyMs": 17,
+      "cognitionLatencyMs": 31
+    },
+    {
+      "turnIndex": 12,
+      "turnId": "mx2_baseline_turn_12_1792819405428",
+      "endToEndFromStopMs": 66,
+      "sttLatencyMs": 14,
+      "cognitionLatencyMs": 31
+    },
+    {
+      "turnIndex": 13,
+      "turnId": "mx2_baseline_turn_13_1792819405544",
+      "endToEndFromStopMs": 85,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 36
+    },
+    {
+      "turnIndex": 14,
+      "turnId": "mx2_baseline_turn_14_1792819405662",
+      "endToEndFromStopMs": 75,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 28
+    },
+    {
+      "turnIndex": 15,
+      "turnId": "mx2_baseline_turn_15_1792819405784",
+      "endToEndFromStopMs": 79,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 29
+    },
+    {
+      "turnIndex": 16,
+      "turnId": "mx2_baseline_turn_16_1792819405910",
+      "endToEndFromStopMs": 85,
+      "sttLatencyMs": 20,
+      "cognitionLatencyMs": 34
+    },
+    {
+      "turnIndex": 17,
+      "turnId": "mx2_baseline_turn_17_1792819406042",
+      "endToEndFromStopMs": 71,
+      "sttLatencyMs": 20,
+      "cognitionLatencyMs": 33
+    },
+    {
+      "turnIndex": 18,
+      "turnId": "mx2_baseline_turn_18_1792819406177",
+      "endToEndFromStopMs": 86,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 38
+    },
+    {
+      "turnIndex": 19,
+      "turnId": "mx2_baseline_turn_19_1792819406310",
+      "endToEndFromStopMs": 79,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32
+    },
+    {
+      "turnIndex": 20,
+      "turnId": "mx2_baseline_turn_20_1792819406439",
+      "endToEndFromStopMs": 75,
+      "sttLatencyMs": 15,
+      "cognitionLatencyMs": 26
+    },
+    {
+      "turnIndex": 21,
+      "turnId": "mx2_baseline_turn_21_1792819406562",
+      "endToEndFromStopMs": 67,
+      "sttLatencyMs": 20,
+      "cognitionLatencyMs": 26
+    },
+    {
+      "turnIndex": 22,
+      "turnId": "mx2_baseline_turn_22_1792819406688",
+      "endToEndFromStopMs": 78,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32
+    },
+    {
+      "turnIndex": 23,
+      "turnId": "mx2_baseline_turn_23_1792819406812",
+      "endToEndFromStopMs": 81,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 35
+    },
+    {
+      "turnIndex": 24,
+      "turnId": "mx2_baseline_turn_24_1792819406933",
+      "endToEndFromStopMs": 95,
+      "sttLatencyMs": 24,
+      "cognitionLatencyMs": 41
+    },
+    {
+      "turnIndex": 25,
+      "turnId": "mx2_baseline_turn_25_1792819407077",
+      "endToEndFromStopMs": 82,
+      "sttLatencyMs": 14,
+      "cognitionLatencyMs": 37
+    }
+  ]
+}
