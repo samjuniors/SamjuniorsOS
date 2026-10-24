@@ -275,7 +275,7 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 
 ## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
 
-- **Status:** ACTIVE (5/7 steps completed).
+- **Status:** ACTIVE (6/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -314,4 +314,12 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
       - Documented in `doc/comparison/2026-10-24-voice-loop-latency-post-migration.md` and `.json`.
     - Verified spoken-turn response loop, typing coexistence, and mid-reply stop control cancellation in `tests/voice/live_conversation.test.ts`, `tests/sophia/m1_4_voice_loop.test.ts`, and `tests/sophia/m1_7_stop_control.test.ts`.
     - Passed independent verification (`.agent/product-kit/handoffs/MX.5.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.6 (Cutover: Next.js is removed; one dev, build and start command; checks, CI and setup docs use the new commands):**
+    - Verified zero residual Next.js runtime, `next.config.*`, or `.next` artifacts.
+    - Standardized single-command workflow: `npm run dev` (starts unified Express + Vite on :3000), `npm run build` (outputs to `dist/`), `npm start` (serves `dist/` and `/api/*` + `/api/live-ws`).
+    - Updated documentation in `docs/SETUP.md` and `README.md` to remove obsolete port 3001/Next.js references.
+    - Added `npm run scan:client-secrets` step to `.github/workflows/ci.yml`.
+    - Verified whole-path Milestone M1 smoke test (`npm run test:smoke`): ALL 6/6 PHASES PASSED cleanly.
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.6.verify.md`).
     - Landed on `kit/integration`.
