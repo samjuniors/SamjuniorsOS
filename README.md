@@ -80,22 +80,19 @@ Configure any desired API keys in `.env.local` (see [Environment Variables](#env
 ### 3. Running the Development Server
 
 ```bash
-# Start Next.js development server
+# Start unified Express + Vite development server
 npm run dev
 # (or: bun run dev)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) in your browser. Live voice streaming gateway is mounted at `ws://localhost:3000/api/live-ws`.
 
-### 4. Running the Live Companion WebSocket Gateway (Optional)
-
-For real-time low-latency bidirectional voice and companion streaming:
+### 4. Building and Running in Production
 
 ```bash
-npm run dev:ws
-# (or: bun run dev:ws)
+npm run build               # builds static frontend into dist/
+npm start                   # boots production Express server with dist/ static serving
 ```
-Default gateway port: `3001` (configurable via `LIVE_WS_PORT`).
 
 ---
 
@@ -142,14 +139,15 @@ See [`.env.example`](.env.example) for the complete annotated configuration. Key
 
 | Script | Command | Purpose |
 |---|---|---|
-| `dev` | `npm run dev` | Runs the full Next.js development server on port 3000. |
-| `dev:ws` | `npm run dev:ws` | Runs the live companion WebSocket server on port 3001. |
-| `build` | `npm run build` | Generates Prisma client, builds Next.js production bundle, and copies standalone assets. |
-| `start` | `npm run start` | Boots standalone production server. |
-| `test` | `npm test` | Runs the canonical test runner discovering all 71 test suites. |
+| `dev` | `npm run dev` | Runs the unified Express + Vite development server on port 3000. |
+| `build` | `npm run build` | Compiles production static frontend bundle into `dist/`. |
+| `start` | `npm run start` | Boots the compiled Express server with static asset hosting and WebSocket gateway. |
+| `test` | `npm test` | Runs the canonical test runner discovering all test suites. |
+| `test:smoke` | `npm run test:smoke` | Runs the Milestone M1 Whole-Path Smoke Test across all 6 phases. |
 | `typecheck` | `npm run typecheck` | Runs TypeScript type checking via `tsc --noEmit`. |
 | `lint` | `npm run lint` | Runs ESLint verification across the repository. |
 | `scan:secrets`| `npm run scan:secrets` | Runs Gitleaks secret detection across commits using `.gitleaks.toml`. |
+| `scan:client-secrets`| `npm run scan:client-secrets` | Scans client static bundles and source files for leaked production credentials. |
 | `db:push` | `npm run db:push` | Pushes Prisma schema changes directly to SQLite database. |
 | `db:generate`| `npm run db:generate` | Regenerates Prisma TypeScript client. |
 

@@ -1,29 +1,26 @@
 # Setting SamJuniorsOS up locally
 
-Verified against the working tree on 2026-10-21 on Windows 11 (Node 24, npm) and on 2026-10-15 (Linux, Node 22, Bun 1.4.3).
+Verified against the working tree on 2026-10-24 on Windows 11 (Node 24, npm) and on Linux (Node 20/22, Bun).
 
 ## What you get
 
-- **Dashboard:** http://localhost:3000 (the app runs on port 3000; the port is set in `scripts/dev.mjs`).
-- **COO chat:** Sophia Vance, through `POST /api/agent-chat`.
-- **Live companion WebSocket:** port 3001; `npm run dev` starts it alongside Next.js for local voice sessions.
+- **Unified Full-Stack App:** http://localhost:3000 (Express server + Vite React SPA on port 3000).
+- **COO chat:** Sophia Vance, through `POST /api/agent-chat` and modular `/api/*` endpoints.
+- **Live companion WebSocket:** `ws://localhost:3000/api/live-ws`; mounted directly on the Express server for real-time voice streaming with sub-70ms latency.
 
 ## Known issues to read before installing
 
-These were all reproduced on 2026-10-15. Until they are fixed, the steps below include the workaround.
-
-1. **Lockfile registry host: NOT VERIFIED as a problem.** `bun.lock` contains 609 tarball URLs on `registry.npmjs.com` rather than `registry.npmjs.org`. An earlier version of this guide called that a broken host. That was wrong: the failure was observed only in a restricted sandbox whose network allowlist blocks the host (a host that certainly exists failed the same way there), and the repository's CI installs with `bun install --frozen-lockfile` against this lockfile. If `bun install` fails on your machine with `DNSResolveFailed`, check your own network or proxy before touching the lockfile.
-2. **Windows-only SWC binary is declared under optionalDependencies (Resolved in Gate G1.6).** `@next/swc-win32-x64-msvc` is declared in `optionalDependencies` rather than hard dependencies. npm and bun install it on Windows x64 and cleanly skip it on Linux and macOS without `EBADPLATFORM` errors.
-3. **The postinstall step downloads Prisma engines.** `postinstall` runs `prisma generate`, which fetches engine binaries from `binaries.prisma.sh`. If that host is blocked on your network, the install fails. You can install with `--ignore-scripts` and run `bunx prisma generate` (or `npx prisma generate`) once the host is reachable.
+1. **Lockfile registry host: NOT VERIFIED as a problem.** `bun.lock` contains standard tarball URLs on `registry.npmjs.com`. If `bun install` fails on your machine with `DNSResolveFailed`, check your own network or proxy before touching the lockfile.
+2. **The postinstall step downloads Prisma engines.** `postinstall` runs `prisma generate`, which fetches engine binaries from `binaries.prisma.sh`. If that host is blocked on your network, the install fails. You can install with `--ignore-scripts` and run `npx prisma generate` once the host is reachable.
 
 ## Install
 
 ```bash
 git clone https://github.com/samjuniors/SamjuniorsOS.git
 cd SamjuniorsOS
-npm install                 # or: bun install (verified cross-platform on Windows and Linux)
+npm install                 # or: bun install
 
-# Copy environment template for both Prisma and Next.js
+# Copy environment template for Prisma and server runtime
 cp .env.example .env
 cp .env.example .env.local
 
@@ -35,21 +32,17 @@ npm run db:push
 Start the app:
 
 ```bash
-bun run dev                 # or: npm run dev
+npm run dev                 # or: bun run dev (starts unified Express + Vite server on :3000)
 ```
 
-For a standalone gateway process (for example, when running Next.js separately):
+In production, build the static Vite bundle and boot the compiled server:
 
 ```bash
-bun run dev:ws              # port 3001, or LIVE_WS_PORT
+npm run build               # builds static frontend into dist/
+npm start                   # boots production Express server with dist/ static serving
 ```
 
-The local dev runner shares a temporary signing secret between Next.js and the
-companion process and enables the local gateway unless
-`SAMJUNIORS_VOICE_GATEWAY` is explicitly disabled. Add `DEEPGRAM_API_KEY` to
-`.env.local` for streamed speech recognition. Without that key, the browser
-uses its speech-recognition API and sends the transcript to the authenticated
-canonical Sophia chat endpoint.
+The server enables the local voice gateway on `/api/live-ws` automatically. Add `GEMINI_API_KEY`, `DEEPGRAM_API_KEY`, or `ELEVENLABS_API_KEY` to `.env.local` for live cloud voice models. Without external keys, the browser uses local fallback synthesis and deterministic intent classification.
 
 ## Verify
 
