@@ -20,7 +20,8 @@
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:deps": "node scripts/audit-deps.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
