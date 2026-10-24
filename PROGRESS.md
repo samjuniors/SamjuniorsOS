@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 3/13 steps done.
+- **Progress:** 4/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -73,8 +73,13 @@
     - Built explicit remote reconciliation engine `reconcileUnknownOperation(key)` that queries upstream GitHub state to resolve unknown outcomes truthfully to `completed` or `failed`.
     - Built idempotent webhook ingestion with duplicate delivery deduplication and epistemic capture into `CompanyBrain`.
     - Verified with dedicated automated suite `tests/platform/github_adapter.test.ts` (6/6 PASS), 104/104 passing canonical test suites, 6/6 smoke test phases passing, and zero static analysis errors.
+  - **G4.4 (Memory retrieval benchmark as a regression gate in CI):**
+    - Codified authoritative recorded baseline `benchmark/memory-retrieval/ci-baseline.json` pinned to verified `M5.3-A3` zero-failure metrics, canonical SHA-256 fixture digest (`40e53f15...`), and failing thresholds: `maxOverallFailures: 0`, `minOverallRenderRecall: 1.00`, `minOverallUnionRecall: 0.90`, and zero authority/boundary/founder-scope violations.
+    - Built automated regression gate engine `benchmark/memory-retrieval/verify-ci-gate.ts` executing the 13-query benchmark battery, comparing results against baseline thresholds, and failing closed (exit code 1) on any regression.
+    - Registered `"benchmark:memory"` in `package.json` and added the memory retrieval benchmark regression gate step to GitHub Actions CI (`.github/workflows/ci.yml`).
+    - Added automated verification suite `tests/platform/memory_benchmark_gate.test.ts` (7/7 PASS) verifying real benchmark compliance against baseline thresholds, simulated failure fail-closed detection, recall drop detection, and boundary leak detection.
+    - Verified 105/105 executable canonical test suites passing, full M1 smoke test passing, and zero static analysis errors.
 - **Next Ready Steps:**
-  - G4.4 [quality]: Memory retrieval benchmark as a regression gate in CI.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
 
 ## Milestone M2 Archive Details
