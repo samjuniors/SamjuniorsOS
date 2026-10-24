@@ -1,6 +1,9 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { execSync } from 'node:child_process';
 import { NextRequest } from '@/lib/server/http';
 import {
@@ -17,7 +20,7 @@ import {
   RATE_LIMIT_POLICIES,
   getClientIdentifier,
 } from '../../src/lib/server/security/rate-limiter';
-import nextConfig from '../../next.config';
+import { securityHeadersMiddleware } from '../../src/server/middleware';
 
 /**
  * ============================================================================
@@ -381,14 +384,14 @@ async function runTests() {
     );
   });
 
-  await test('4.4 next.config.ts defines server-level security headers for static assets', async () => {
-    assert.ok(typeof nextConfig.headers === 'function', 'next.config.ts must export headers()');
-    const headerConfigs = await nextConfig.headers();
-    assert.ok(Array.isArray(headerConfigs), 'headers() must return an array');
-    const rootConfig = headerConfigs.find((h: any) => h.source === '/:path*');
-    assert.ok(rootConfig, 'Must configure /:path* headers');
-
-    const headerKeys = rootConfig.headers.map((h: any) => h.key);
+  await test('4.4 securityHeadersMiddleware defines server-level security headers for static assets and API', async () => {
+    const headers: Record<string, string> = {};
+    const mockReq: any = { headers: {} };
+    const mockRes: any = {
+      setHeader: (k: string, v: string) => { headers[k] = v; },
+    };
+    securityHeadersMiddleware(mockReq, mockRes, () => {});
+    const headerKeys = Object.keys(headers);
     assert.ok(headerKeys.includes('X-Content-Type-Options'));
     assert.ok(headerKeys.includes('Strict-Transport-Security'));
     assert.ok(headerKeys.includes('Referrer-Policy'));

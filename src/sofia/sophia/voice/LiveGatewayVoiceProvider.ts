@@ -693,7 +693,7 @@ export class LiveGatewayVoiceProvider extends VoiceProvider {
   }
 
   private finishTurn(turnId: string): void {
-    if (this.activeTurnId !== turnId) return;
+    if (this.activeTurnId && this.activeTurnId !== turnId) return;
     this.activeTurnId = null;
     this.interruptedTurnIds.delete(turnId);
     this.isTransmitting = false;

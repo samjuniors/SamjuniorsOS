@@ -89,7 +89,9 @@ export class CompanyMemoryStore implements ICompanyMemoryStore {
       const persisted = DurableFileStore.getInstance().readCollection<CompanyMemory>('company_memories');
       const loaded = Object.values(persisted);
       if (loaded.length > 0) {
-        this.memories = loaded;
+        const loadedIds = new Set(loaded.map((m) => m.id));
+        const seeds = INITIAL_COMPANY_MEMORIES.filter((s) => !loadedIds.has(s.id));
+        this.memories = [...loaded, ...seeds];
       }
     } catch {
       // fallback

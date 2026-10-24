@@ -66,17 +66,18 @@ type AskBody = {
  * the TTS pipeline receive roughly the cadence the old streaming path had.
  */
 function chunkReply(reply: string): string[] {
+  const parts = reply.match(/[^.!?…\r\n]+(?:[.!?…\r\n]+|$)/g) || [reply]
   const chunks: string[] = []
   let buf = ''
-  for (const part of reply.split(/(?<=[.!?…])\s+/)) {
-    if (buf && (buf + ' ' + part).length > 180) {
-      chunks.push(buf.trim())
+  for (const part of parts) {
+    if (buf && (buf + part).length > 180) {
+      chunks.push(buf)
       buf = part
     } else {
-      buf = buf ? `${buf} ${part}` : part
+      buf += part
     }
   }
-  if (buf.trim()) chunks.push(buf.trim())
+  if (buf) chunks.push(buf)
   return chunks.length ? chunks : [reply]
 }
 

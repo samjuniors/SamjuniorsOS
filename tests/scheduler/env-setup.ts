@@ -14,6 +14,9 @@
  * artifacts from the real DB in that case.
  */
 import { copyFileSync, rmSync } from "fs";
+import { beforeEach } from "bun:test";
+import { SpendSettingsManager } from "../../src/lib/server/sophia/spend-settings";
+import { CompanyMemoryStore, INITIAL_COMPANY_MEMORIES } from "../../src/lib/server/memory/memory-store";
 
 const TEST_DB = "/tmp/samjuniors-4a-scheduler-test.db";
 try {
@@ -25,5 +28,14 @@ try {
 process.env.DATABASE_URL = `file:${TEST_DB}`;
 delete process.env.DATABASE_MODE;
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
+
+// In scheduler test suites, ensure autonomous spend cap and canonical seed memories are restored
+beforeEach(() => {
+  SpendSettingsManager.getInstance().resetForTest({
+    dailySpendCapUsd: 1000,
+    currentDailySpendUsd: 0,
+  });
+  CompanyMemoryStore.getInstance().setMemories([...INITIAL_COMPANY_MEMORIES]);
+});
 
 export {};

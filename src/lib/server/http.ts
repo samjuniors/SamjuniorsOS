@@ -114,7 +114,9 @@ export class NextResponse extends Response {
   }
 
   static next(_init?: any): NextResponse {
-    return new NextResponse(null, { status: 200 });
+    const res = new NextResponse(null, { status: 200 });
+    res.headers.set('x-middleware-next', '1');
+    return res;
   }
 }
 

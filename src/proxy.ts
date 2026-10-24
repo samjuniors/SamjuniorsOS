@@ -252,10 +252,7 @@ export function proxy(req: NextRequest) {
       }
 
       // MACHINE AUTHENTICATION — scheduler heartbeat POST admission
-      if (
-        pathname === "/api/workflow/scheduling" &&
-        req.method === "POST"
-      ) {
+      if (req.nextUrl.pathname === "/api/workflow/scheduling" && req.method === "POST") {
         const cronSecret = process.env.CRON_TRIGGER_SECRET;
         const presentedCronSecret = req.headers.get("x-cron-secret");
         if (

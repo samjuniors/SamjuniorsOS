@@ -1,5 +1,8 @@
 import assert from 'assert';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { readFileSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { NextRequest } from '@/lib/server/http';
