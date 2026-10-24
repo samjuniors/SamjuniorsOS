@@ -275,7 +275,7 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 
 ## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
 
-- **Status:** ACTIVE (3/7 steps completed).
+- **Status:** ACTIVE (4/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -299,4 +299,11 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Configured single command server startup via `tsx server.ts` (`npm start` and `npm run dev`).
     - Confirmed 100% test pass rate across 99/99 executable suites without regressions.
     - Passed independent verification (`.agent/product-kit/handoffs/MX.3.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.4 (Vite + React app: screens move one by one, Sofia screen first):**
+    - Verified Vite SPA client-side routing (`src/App.tsx`) supporting the full SamJuniorsOS desktop/cockpit and design system without server components.
+    - Verified static production build compilation (`npm run build`) generating `dist/` in ~3.6s.
+    - Updated client bundle secret scanner (`scripts/scan-client-bundle-secrets.mjs`) to scan `dist/` artifacts and confirmed zero secret leaks (Q-SEC-4).
+    - Authored automated test suite `tests/frontend/vite_frontend.test.ts` verifying build invariants, zero `next/*` imports, zero private `process.env` references, and passing bundle scan.
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.4.verify.md`).
     - Landed on `kit/integration`.
