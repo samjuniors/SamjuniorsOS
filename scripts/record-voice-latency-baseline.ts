@@ -207,7 +207,7 @@ async function runVoiceLoopBenchmark() {
       endToEndFromStopMs: r.endToEndFromStopMs,
       sttLatencyMs: r.sttLatencyMs,
       cognitionLatencyMs: r.cognitionLatencyMs,
-      ttsSynthesisAndAudioStartMs: r.ttsSynthesisAndAudioStartMs,
+      ttsSynthesisAndAudioStartMs: r.ttsLatencyMs,
     })),
   };
 
@@ -245,7 +245,7 @@ async function runVoiceLoopBenchmark() {
 ${records
   .map(
     (r, idx) =>
-      `| ${idx + 1} | \`${r.turnId.slice(0, 24)}...\` | ${r.sttLatencyMs ?? '-'} ms | ${r.cognitionLatencyMs ?? '-'} ms | ${r.ttsSynthesisAndAudioStartMs ?? '-'} ms | **${r.endToEndFromStopMs} ms** |`
+      `| ${idx + 1} | \`${r.turnId.slice(0, 24)}...\` | ${r.sttLatencyMs ?? '-'} ms | ${r.cognitionLatencyMs ?? '-'} ms | ${r.ttsLatencyMs ?? '-'} ms | **${r.endToEndFromStopMs} ms** |`
   )
   .join('\n')}
 
