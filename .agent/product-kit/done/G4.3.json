@@ -1,0 +1,8 @@
+{
+  "id": "G4.3",
+  "doneAt": "2026-10-24T11:13:58.294Z",
+  "agent": "antigravity",
+  "branch": "step/G4.3",
+  "commit": "99cd122d1edd44630435149375dfbdc8cb0b8421",
+  "evidence": "tests/platform/github_adapter.test.ts (6/6 pass); npm test (104/104 pass); unknown-outcome handling with UnknownExternalResultError; remote reconciliation via reconcileUnknownOperation; duplicate delivery idempotent deduplication"
+}
