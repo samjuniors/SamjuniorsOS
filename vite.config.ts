@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    entries: ['index.html', 'src/**/*.{ts,tsx}'],
+    entries: ['index.html', 'src/main.tsx', 'src/os/**/*.{ts,tsx}', 'src/sofia/**/*.{ts,tsx}'],
   },
   server: {
     port: 3000,

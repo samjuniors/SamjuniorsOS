@@ -22,6 +22,9 @@ import http from 'http';
 import { apiRouter } from '../../src/server/api';
 import { securityHeadersMiddleware } from '../../src/server/middleware';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 async function main() {
   console.log('\n=============================================================');
   console.log('SAMJUNIORS-OS: DEPLOY PIPELINE & POST-DEPLOY TEST SUITE (G2.6)');
