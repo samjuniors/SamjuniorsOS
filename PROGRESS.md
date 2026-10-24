@@ -275,7 +275,7 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 
 ## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
 
-- **Status:** ACTIVE (2/7 steps completed).
+- **Status:** ACTIVE (3/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -292,4 +292,11 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Re-ran M1.9 smoke test (`npm run test:smoke`): ALL 6/6 PHASES PASSED cleanly.
     - Strictly maintained invariant: zero application code changed in `src/`.
     - Passed independent verification (`.agent/product-kit/handoffs/MX.2.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.3 (Express server: the server-side code moves out of Next into a framework-free TypeScript server):**
+    - Verified all 74 `route.ts` endpoints registered in `src/server/api.ts` via web-standard Request/Response adapters.
+    - Authored live Express test suite `tests/server/express_server.test.ts` asserting health diagnostics, security headers (CSP, HSTS, X-Content-Type-Options), rate limiting, fail-closed auth, and WebSocket readiness on `/api/live-ws`.
+    - Configured single command server startup via `tsx server.ts` (`npm start` and `npm run dev`).
+    - Confirmed 100% test pass rate across 99/99 executable suites without regressions.
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.3.verify.md`).
     - Landed on `kit/integration`.
