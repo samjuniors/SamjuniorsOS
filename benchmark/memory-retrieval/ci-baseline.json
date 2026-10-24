@@ -1,0 +1,49 @@
+{
+  "baselineId": "M5.3-A3",
+  "description": "Authoritative zero-failure baseline for SamJuniorsOS memory retrieval architecture",
+  "fixtureDigest": "40e53f1581def28371af8f050bc5ba85eaf58a47cbb86a4f449fad1beef719fb",
+  "queryCount": 13,
+  "thresholds": {
+    "maxOverallFailures": 0,
+    "minOverallUnionRecall": 0.90,
+    "minOverallRenderRecall": 1.00,
+    "maxAuthorityFailures": 0,
+    "maxGraphCandidateFailures": 0,
+    "maxBoundaryViolations": 0,
+    "maxFounderScopeViolations": 0,
+    "perCategory": {
+      "TEMPORAL": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "CHANGE_DETECTION": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "MULTI_HOP": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "ENTITY_CENTRIC": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "CONTRADICTION_SUPERSESSION": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "EPISODIC": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "PERSONAL_MEMORY": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      },
+      "COMPANY_AUTHORITY": {
+        "maxFailures": 0,
+        "minRenderRecall": 1.00
+      }
+    }
+  }
+}
