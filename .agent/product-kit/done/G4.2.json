@@ -1,0 +1,8 @@
+{
+  "id": "G4.2",
+  "doneAt": "2026-10-24T10:47:57.799Z",
+  "agent": "antigravity",
+  "branch": "step/G4.2",
+  "commit": "032dba23b490675bffbadf147a256fbb207e23fd",
+  "evidence": "Artifact model with versions, provenance and approval linkage verified in tests/platform/artifact_model.test.ts (7/7 passed); 103/103 test suites passed"
+}

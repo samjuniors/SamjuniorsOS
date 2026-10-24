@@ -3,6 +3,7 @@ import { registerRoute } from './adapter';
 import { rateLimitMiddleware } from './middleware';
 
 import * as rootRoute from '../app/api/route';
+import * as artifactsRoute from '../app/api/artifacts/route';
 import * as activityRoute from '../app/api/activity/route';
 import * as advisorRoute from '../app/api/advisor/route';
 import * as agent_chatRoute from '../app/api/agent-chat/route';
@@ -83,6 +84,7 @@ export const apiRouter = Router();
 apiRouter.use(rateLimitMiddleware);
 
 registerRoute(apiRouter, '/', rootRoute);
+registerRoute(apiRouter, '/artifacts', artifactsRoute);
 registerRoute(apiRouter, '/activity', activityRoute);
 registerRoute(apiRouter, '/advisor', advisorRoute);
 registerRoute(apiRouter, '/agent-chat', agent_chatRoute);

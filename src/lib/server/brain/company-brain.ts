@@ -48,6 +48,16 @@ import { AgentRunStore } from '@/lib/server/agents/run-store';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { INITIAL_RESEARCH } from '@/lib/os-data';
 import { CompanyContextProvider } from '@/lib/server/context/company-context';
+import {
+  ArtifactRecord,
+  ArtifactVersionRecord,
+  CreateArtifactInput,
+  CreateArtifactVersionInput,
+  ArtifactApprovalLinkage,
+  ArtifactStatus,
+} from '@/types/artifact';
+import { ArtifactStore } from '@/lib/server/artifacts/artifact-store';
+
 
 export class CompanyBrain implements ICompanyBrain {
   private static instance: CompanyBrain | null = null;
@@ -58,6 +68,7 @@ export class CompanyBrain implements ICompanyBrain {
   private epistemicStore: EpistemicClaimStore;
   private runStore: AgentRunStore;
   private fileStore: DurableFileStore;
+  private artifactStore: ArtifactStore;
 
   // Governed intelligence persistence collection name
   private readonly intelligenceCollection = 'company_intelligence';
@@ -70,6 +81,7 @@ export class CompanyBrain implements ICompanyBrain {
     this.epistemicStore = EpistemicClaimStore.getInstance();
     this.runStore = AgentRunStore.getInstance();
     this.fileStore = DurableFileStore.getInstance();
+    this.artifactStore = ArtifactStore.getInstance();
   }
 
   public static getInstance(): CompanyBrain {
@@ -82,6 +94,7 @@ export class CompanyBrain implements ICompanyBrain {
   public static resetInstance(): void {
     CompanyBrain.instance = null;
     CompanyStateStore.resetInstance();
+    ArtifactStore.resetInstance();
   }
 
   public getStateStore(): CompanyStateStore {
@@ -295,6 +308,39 @@ export class CompanyBrain implements ICompanyBrain {
         'Verifiable provenance tracking for all specialist findings.',
       ],
     };
+  }
+
+
+  // =========================================================================
+  // 6. VERSIONED ARTIFACTS (Gate G4.2)
+  // =========================================================================
+
+  public async createArtifact(input: CreateArtifactInput): Promise<ArtifactRecord> {
+    return this.artifactStore.createArtifact(input);
+  }
+
+  public async addArtifactVersion(idOrSlug: string, input: CreateArtifactVersionInput): Promise<ArtifactRecord> {
+    return this.artifactStore.addVersion(idOrSlug, input);
+  }
+
+  public async getArtifact(idOrSlug: string): Promise<ArtifactRecord | null> {
+    return this.artifactStore.getArtifact(idOrSlug);
+  }
+
+  public async getArtifactVersion(idOrSlug: string, version: number): Promise<ArtifactVersionRecord | null> {
+    return this.artifactStore.getArtifactVersion(idOrSlug, version);
+  }
+
+  public async listArtifacts(filter?: { kind?: string; status?: ArtifactStatus; tag?: string }): Promise<ArtifactRecord[]> {
+    return this.artifactStore.listArtifacts(filter);
+  }
+
+  public async bindArtifactApproval(
+    idOrSlug: string,
+    version: number,
+    linkage: ArtifactApprovalLinkage
+  ): Promise<ArtifactRecord> {
+    return this.artifactStore.bindApproval(idOrSlug, version, linkage);
   }
 
   public async getCanonicalContext(): Promise<FullCompanyContext> {
