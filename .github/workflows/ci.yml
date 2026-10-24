@@ -62,3 +62,6 @@ jobs:
 
       - name: Run canonical test suite
         run: npm test
+
+      - name: Memory retrieval benchmark regression gate (G4.4)
+        run: npm run benchmark:memory

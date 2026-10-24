@@ -19,6 +19,7 @@
     "db:reconcile-tombstones": "npx tsx scripts/reconcile-tombstones.ts",
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
+    "benchmark:memory": "node --import tsx benchmark/memory-retrieval/verify-ci-gate.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "typecheck": "tsc --noEmit",
     "audit:deps": "node scripts/audit-deps.mjs",

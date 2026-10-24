@@ -8,6 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
+if (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === '') {
+  process.env.DATABASE_URL = 'file:./db/custom.db';
+}
+
 function walk(dir) {
   let results = [];
   const list = fs.readdirSync(dir);
