@@ -11,6 +11,9 @@
 
 import assert from 'assert';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import fs from 'fs';
 import os from 'os';
 import crypto from 'crypto';

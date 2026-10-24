@@ -21,7 +21,11 @@
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "typecheck": "tsc --noEmit",
-    "audit:deps": "node scripts/audit-deps.mjs"
+    "audit:deps": "node scripts/audit-deps.mjs",
+    "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose",
+    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs",
+    "deploy:staging": "npx tsx scripts/deploy-staging.ts",
+    "verify:deployment": "npx tsx scripts/verify-deployment.ts"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

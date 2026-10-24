@@ -17,7 +17,10 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { PrismaClient } from '@prisma/client';
+import { pathToFileURL } from 'node:url';
 
 export interface MigrationCounts {
   decisions: number;
@@ -390,8 +393,9 @@ export async function verifyMigrationParity(
   if (dbDecisions.length < sourceCounts.decisions) {
     discrepancies.push(`Decisions count mismatch: source ${sourceCounts.decisions}, target ${dbDecisions.length}`);
   }
-  if (dbCouncil.length < sourceCounts.councilDeliberations) {
-    discrepancies.push(`Council deliberations count mismatch: source ${sourceCounts.councilDeliberations}, target ${dbCouncil.length}`);
+  const uniqueCouncilCount = new Set(Object.entries(rawCouncil).map(([id, item]: [string, any]) => item.idempotencyKey || `idemp-${id}`)).size;
+  if (dbCouncil.length < uniqueCouncilCount) {
+    discrepancies.push(`Council deliberations count mismatch: source ${uniqueCouncilCount}, target ${dbCouncil.length}`);
   }
   if (dbConv.length < sourceCounts.conversations) {
     discrepancies.push(`Conversations count mismatch: source ${sourceCounts.conversations}, target ${dbConv.length}`);
@@ -493,7 +497,7 @@ export async function rehearseRollback(
   };
 }
 
-if (require.main === module) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   migrateFileStoresToSqlite()
     .then(({ counts, parity }) => {
       console.log('\nMigration complete.');

@@ -13,6 +13,9 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { execSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
 import {
