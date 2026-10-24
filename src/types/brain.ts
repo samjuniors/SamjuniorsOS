@@ -3,8 +3,8 @@
  * 
  * Defines the contract for the single authoritative Company Brain.
  * All operational state, governed knowledge, company precedents (memory),
- * governance decisions, and canonical facts are accessed and mutated
- * through this unified interface.
+ * governance decisions, canonical facts, and versioned artifacts are
+ * accessed and mutated through this unified interface.
  */
 
 import {
@@ -31,6 +31,14 @@ import {
 } from './context';
 import { DecisionRecord, DecisionFilter } from './decision';
 import { CanonicalFact, EpistemicClaim } from './epistemic';
+import {
+  ArtifactRecord,
+  ArtifactVersionRecord,
+  CreateArtifactInput,
+  CreateArtifactVersionInput,
+  ArtifactApprovalLinkage,
+  ArtifactStatus,
+} from './artifact';
 
 export interface FullCompanyContext extends CompanyExecutiveContextSnapshot {
   activeWorkstreams?: OrchestrationRun[];
@@ -67,6 +75,14 @@ export interface ICompanyBrain extends ICompanyStateStore {
   queryMemories(query: string, limit?: number): Promise<RetrievedHistoricalMemory[]>;
   getActiveFacts(): Promise<CanonicalFact[]>;
   listClaims(): Promise<EpistemicClaim[]>;
+
+  // Versioned Artifacts (Gate G4.2)
+  createArtifact(input: CreateArtifactInput): Promise<ArtifactRecord>;
+  addArtifactVersion(idOrSlug: string, input: CreateArtifactVersionInput): Promise<ArtifactRecord>;
+  getArtifact(idOrSlug: string): Promise<ArtifactRecord | null>;
+  getArtifactVersion(idOrSlug: string, version: number): Promise<ArtifactVersionRecord | null>;
+  listArtifacts(filter?: { kind?: string; status?: ArtifactStatus; tag?: string }): Promise<ArtifactRecord[]>;
+  bindArtifactApproval(idOrSlug: string, version: number, linkage: ArtifactApprovalLinkage): Promise<ArtifactRecord>;
 
   // Intelligence
   recordIntelligence(topic: ResearchTopic): Promise<void>;

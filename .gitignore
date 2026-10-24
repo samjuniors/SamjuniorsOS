@@ -79,7 +79,7 @@ prisma/db/
 tool-results/
 qa-shots/
 upload/
-artifacts/
+/artifacts/
 
 # R0 secrets hygiene (sandbox union, D5): local env explicit entry.
 # (.env is already covered by `.env*` above; listed for clarity.)
