@@ -275,7 +275,7 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 
 ## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
 
-- **Status:** ACTIVE (1/7 steps completed).
+- **Status:** ACTIVE (2/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -285,4 +285,11 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Specified Electron architecture with utility process isolation (`contextIsolation: true`, `nodeIntegration: false`) marked NOT VERIFIED until MX.7.
     - Re-evaluated infrastructure decision G0.3 against long-running Node.js streaming services (Option A affirmed; no budget change needed).
     - Passed independent verification (`.agent/product-kit/handoffs/MX.1.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.2 (Baseline before changing anything: API contract tests for every route & latency snapshot):**
+    - Authored canonical API contract test suite `tests/api/api_routes_contract.test.ts` dynamically verifying all 74 `route.ts` handlers across 9 functional domains with fail-closed production security assertions.
+    - Created voice-loop latency benchmark runner `scripts/record-voice-latency-baseline.ts` and captured pre-migration baseline over 25 consecutive turns: median (p50) **79 ms**, 95th percentile (p95) **90.8 ms** (documented in `doc/baseline/2026-10-24-voice-loop-latency.md` and `.json`).
+    - Re-ran M1.9 smoke test (`npm run test:smoke`): ALL 6/6 PHASES PASSED cleanly.
+    - Strictly maintained invariant: zero application code changed in `src/`.
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.2.verify.md`).
     - Landed on `kit/integration`.
