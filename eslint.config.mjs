@@ -1,10 +1,12 @@
 import { dirname } from "path";
 import { fileURLToPath } from "url";
+import tseslint from "typescript-eslint";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const eslintConfig = [
+const eslintConfig = tseslint.config(
+  ...tseslint.configs.recommended,
   {
     rules: {
       // TypeScript rules
@@ -14,6 +16,9 @@ const eslintConfig = [
       "@typescript-eslint/ban-ts-comment": "off",
       "@typescript-eslint/prefer-as-const": "off",
       "@typescript-eslint/no-unused-disable-directive": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-empty-object-type": "off",
+      "@typescript-eslint/no-this-alias": "off",
 
       // React rules
       "react-hooks/exhaustive-deps": "off",
@@ -75,7 +80,7 @@ const eslintConfig = [
       ".zscripts/**",
       "mini-services/**",
     ],
-  },
-];
+  }
+);
 
 export default eslintConfig;
