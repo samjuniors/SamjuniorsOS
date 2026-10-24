@@ -273,9 +273,9 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 - Branch remains unmerged and undeployed, stopped for Founder review.
 
 
-## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
+## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ALL STEPS COMPLETE — PENDING QA PASS)
 
-- **Status:** ACTIVE (6/7 steps completed).
+- **Status:** ALL 7 STEPS COMPLETE (7/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -322,4 +322,13 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Added `npm run scan:client-secrets` step to `.github/workflows/ci.yml`.
     - Verified whole-path Milestone M1 smoke test (`npm run test:smoke`): ALL 6/6 PHASES PASSED cleanly.
     - Passed independent verification (`.agent/product-kit/handoffs/MX.6.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.7 (Desktop shell proof: a minimal Electron app that opens the Vite build, runs on Windows, and packages into an installer):**
+    - Installed `electron@43.3.0` and `electron-builder` as devDependencies after explicit Founder authorization.
+    - Implemented `electron/main.cjs` with single-instance lock, random per-launch loopback auth token, process-isolated child server spawn, and CSP header injection.
+    - Implemented `electron/preload.cjs` with typed `desktopAPI` context bridge (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`).
+    - Updated `server.ts` with loopback binding and conditional per-launch token gate (`DESKTOP_AUTH_TOKEN`).
+    - Configured `electron-builder.json` targeting Windows NSIS installer (`release/SamJuniorsOS-Setup-0.2.1.exe`) and unpacked bundle (`release/win-unpacked/SamJuniorsOS.exe`).
+    - Authored automated test suite `tests/platform/desktop_shell.test.ts` (12/12 assertions passing).
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.7.verify.md`).
     - Landed on `kit/integration`.
