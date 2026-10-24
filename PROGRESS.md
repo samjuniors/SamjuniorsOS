@@ -332,3 +332,12 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Authored automated test suite `tests/platform/desktop_shell.test.ts` (12/12 assertions passing).
     - Passed independent verification (`.agent/product-kit/handoffs/MX.7.verify.md`).
     - Landed on `kit/integration`.
+  - **QA-MX (Milestone QA Pass):**
+    - Ran full QA pass (`QA-MX`) covering checks and founder test steps:
+      - Checks: `npm run typecheck` (0 errors), `npm run lint` (0 errors), `npm run scan:client-secrets` (0 secrets across 5 files), `npm test` (102/102 test suites passing, 0 failures).
+      - M1 whole-path smoke test (`npm run test:smoke`): ALL 6/6 PHASES PASSED cleanly.
+      - Start command verification: `npm start` serves full-stack app on `:3000` with live WebSocket gateway on `/api/live-ws`.
+      - Voice loop latency comparison: pre-migration p50 = 79 ms / p95 = 90.8 ms vs. post-migration p50 = 62 ms (-17 ms) / p95 = 62.8 ms (-28 ms).
+      - Zero `.next` residue and reconciled docs.
+      - QA report documented in `.agent/product-kit/qa/MX.md` with verdict PASS (T4 marked FOUNDER-ONLY).
+    - Landed on `kit/integration`.
