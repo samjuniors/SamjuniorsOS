@@ -1,0 +1,8 @@
+{
+  "id": "MX.5",
+  "doneAt": "2026-10-24T06:16:23.658Z",
+  "agent": "antigravity",
+  "branch": "step/MX.5",
+  "commit": "5994fe585b07845148311d0f5c85b25bf519c3e7",
+  "evidence": "scripts/record-voice-latency-post-migration.ts recorded 25 turns: p50 62ms vs 79ms baseline; tests/voice/live_conversation.test.ts passed all 3 tests"
+}
