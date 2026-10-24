@@ -273,10 +273,19 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 - Branch remains unmerged and undeployed, stopped for Founder review.
 
 
-## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ALL STEPS COMPLETE — PENDING QA PASS)
+## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (CLOSED)
 
-- **Status:** ALL 7 STEPS COMPLETE (7/7 steps completed).
+- **Status:** CLOSED on 2026-10-24 (7/7 steps complete + QA-MX pass, founder accepted with `ack/MS-MX.json`).
+- **Founder Acceptance Quote:** `"ok close it for now"`
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
+- **Capabilities Delivered:**
+  - Standardized unified Express + TypeScript backend (`server.ts`, `src/server/api.ts`) supporting all 74 HTTP API routes and live WebSocket streaming gateway on `/api/live-ws`.
+  - Replaced Next.js frontend with Vite + React SPA (`src/App.tsx`, `index.html`) compiling static production bundle into `dist/` in < 4s with 0 private secret leaks (`npm run scan:client-secrets`).
+  - Recorded 25-turn latency comparison showing voice-loop median latency dropped from **79 ms** to **62 ms** (**-17 ms improvement**) and p95 dropped from **90.8 ms** to **62.8 ms** (**-28 ms improvement**).
+  - Cleaned up obsolete Next.js dependencies, configs, and caching directories with zero `.next` remnants.
+  - Standardized single-port command workflow: `npm run dev` (:3000), `npm run build` (`dist/`), `npm start` (:3000).
+  - Delivered desktop shell proof with Electron wrapper and unsigned Windows NSIS installer (`release/SamJuniorsOS-Setup-0.2.1.exe`) and unpacked bundle (`release/win-unpacked/SamJuniorsOS.exe`) guarded by loopback binding and conditional per-launch token gate (`DESKTOP_AUTH_TOKEN`).
+  - Executed full QA pass (`QA-MX`) and canonical test runner (102/102 passing test suites) with whole-path Milestone M1 smoke test cleanly passing all 6/6 phases.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
     - Authored ADR 0007 in `doc/adr/0007-stack-migration-vite-react-express.md`.
