@@ -275,7 +275,7 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 
 ## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
 
-- **Status:** ACTIVE (4/7 steps completed).
+- **Status:** ACTIVE (5/7 steps completed).
 - **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
 - **Completed Steps:**
   - **MX.1 (ADR and Next.js feature census):**
@@ -306,4 +306,12 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
     - Updated client bundle secret scanner (`scripts/scan-client-bundle-secrets.mjs`) to scan `dist/` artifacts and confirmed zero secret leaks (Q-SEC-4).
     - Authored automated test suite `tests/frontend/vite_frontend.test.ts` verifying build invariants, zero `next/*` imports, zero private `process.env` references, and passing bundle scan.
     - Passed independent verification (`.agent/product-kit/handoffs/MX.4.verify.md`).
+    - Landed on `kit/integration`.
+  - **MX.5 (Live conversation on the new stack: audio capture with an AudioWorklet, streaming over the chosen channel, and latency measured against the MX.2 baseline):**
+    - Executed post-migration 25-turn latency benchmark (`scripts/record-voice-latency-post-migration.ts`) using the identical MX.2 methodology:
+      - Post-migration median (p50): **62 ms** (vs. pre-migration **79 ms**, **-17 ms improvement**).
+      - Post-migration 95th percentile (p95): **62.8 ms** (vs. pre-migration **90.8 ms**, **-28 ms improvement**).
+      - Documented in `doc/comparison/2026-10-24-voice-loop-latency-post-migration.md` and `.json`.
+    - Verified spoken-turn response loop, typing coexistence, and mid-reply stop control cancellation in `tests/voice/live_conversation.test.ts`, `tests/sophia/m1_4_voice_loop.test.ts`, and `tests/sophia/m1_7_stop_control.test.ts`.
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.5.verify.md`).
     - Landed on `kit/integration`.
