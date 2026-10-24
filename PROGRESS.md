@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 2/13 steps done.
+- **Progress:** 3/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -66,8 +66,14 @@
     - Integrated artifact capabilities directly into `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) and registered `/api/artifacts` route in `src/server/api.ts`.
     - Verified with dedicated automated suite `tests/platform/artifact_model.test.ts` (7/7 PASS) covering creation, duplicate slug prevention, version appending, approval binding, payload hash mismatch fail-closed security, and simulated process restart persistence.
     - Verified 103/103 executable canonical test suites passing, zero client secret leaks, and full M1 smoke test passing.
+  - **G4.3 (GitHub adapter with idempotency key and unknown-outcome handling):**
+    - Implemented `GitHubAdapter` (`src/lib/server/integrations/github-adapter.ts`) providing robust external integration contracts guarded by `IdempotencyStore`.
+    - Deterministic SHA-256 canonical payload hashing prevents duplicated API issue creation mutations while guaranteeing identical responses on re-dispatched requests.
+    - Enforced unknown-outcome handling: 5xx server errors, gateway timeouts, and network connection drops (ECONNRESET) transition the operation to `'unknown'` state and throw `UnknownExternalResultError`, strictly blocking blind duplicate retries.
+    - Built explicit remote reconciliation engine `reconcileUnknownOperation(key)` that queries upstream GitHub state to resolve unknown outcomes truthfully to `completed` or `failed`.
+    - Built idempotent webhook ingestion with duplicate delivery deduplication and epistemic capture into `CompanyBrain`.
+    - Verified with dedicated automated suite `tests/platform/github_adapter.test.ts` (6/6 PASS), 104/104 passing canonical test suites, 6/6 smoke test phases passing, and zero static analysis errors.
 - **Next Ready Steps:**
-  - G4.3 [platform]: GitHub adapter with idempotency key and unknown-outcome handling.
   - G4.4 [quality]: Memory retrieval benchmark as a regression gate in CI.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
 
