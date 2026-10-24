@@ -34,7 +34,10 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 | Command | Use |
 |---|---|
 | `recover` | After any stop: what is finished, what was interrupted, what is not on main yet, what is next. Read-only. `install-hook` makes Claude Code run it at every session start |
-| `checkpoint` | In a step worktree: secret scan, commit, push the step branch (never main) |
+| `checkpoint [--all]` | Secret scan, commit, push the step branch (never main). `--all` does every worktree: run it before leaving a computer |
+| `reconcile` | On a new computer or folder copy: restore worktrees, claims and branches from the remote |
+| `layout check` / `report` / `init` | Keep files where `LAYOUT.md` says |
+| `migrate-folder` | Rename `.agent/` to `.agents/` and fix every path that mentions it |
 | `sync` | Push commits that sit on the integration branch but not on the remote (decisions, PROGRESS.md), after the checks and CI pass |
 | `ci check` / `ci wait` | Check that `gh` and the workflows are ready; wait for CI on a branch |
 | `land <ID>` | Lead only: bring the integration branch into the step, wait for CI, run the checks, merge, push, clean up |

@@ -255,7 +255,7 @@
           "title": "Cutover: Next.js is removed; one dev, build and start command; checks, CI and setup docs use the new commands",
           "lane": "quality",
           "type": "work",
-          "exit": "Next, its config and the .next folder are gone from the repository; a clean clone runs install, test, build and start with the documented commands on the founder's Windows PC; kit.config.json checks and the CI workflow use the new commands and pass; docs/SETUP.md and the README describe only the new commands; the M1 smoke test passes.",
+          "exit": "Next, its config and the .next folder are gone from the repository; a clean clone runs install, test, build and start with the documented commands on the founder's Windows PC; kit.config.json checks and the CI workflow use the new commands and pass; docs/SETUP.md and the README describe only the new commands; the M1 smoke test passes; `layout init` has been run, and a proposal to gather scattered documents into docs/ (what moves where, every link updated) is shown to the founder, with nothing moved until they say yes.",
           "slice_of": "",
           "defers": "nothing",
           "deps": [

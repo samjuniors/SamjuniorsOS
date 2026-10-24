@@ -1,7 +1,7 @@
-<!-- kit-version: 2 -->
+<!-- kit-version: 3 -->
 # Master prompt
 
-kit-version: 2
+kit-version: 3
 
 Paste everything below the line into a fresh agent session at the repository root. The same prompt starts a new run, resumes an interrupted one, and replaces any earlier copy of this prompt.
 
@@ -18,7 +18,7 @@ A **step** is the unit of work. A **milestone** is what the founder tests, and i
 
 **If the founder only says "continue"** (or "next", or anything like it): run `node .agent/product-kit/kit.mjs continue` and do exactly what it prints. Do not ask the founder which gate, milestone or step to work on.
 
-**If the founder says "recover", "where was I", "what's the last", or work stopped unexpectedly:** run `node .agent/product-kit/kit.mjs recover`, tell the founder in three lines what is finished, what was interrupted and what is next, then run `continue`. In Claude Code, `install-hook` makes this run by itself at every session start.
+**If the founder says "recover", "where was I", "new computer", "what's the last", or work stopped unexpectedly:** run `node .agent/product-kit/kit.mjs recover`, tell the founder in three lines what is finished, what was interrupted and what is next, then run `continue`. In Claude Code, `install-hook` makes this run by itself at every session start. If it says NEW COMPUTER, run `reconcile` first (`PROTOCOL.md` section 16). Before the founder leaves a computer, or says "stop", run `checkpoint --all`.
 
 **Start, every time:**
 1. Read `AGENTS.md`, `CLAUDE.md`, `PRODUCT.md`, `PROGRESS.md`, `CONTINUE.md`, and `.agent/product-kit/README.md`, `VISION.md`, `PROTOCOL.md`, `QUALITY_BAR.md`, `CAPABILITIES.md`.
@@ -39,6 +39,7 @@ A **step** is the unit of work. A **milestone** is what the founder tests, and i
 - The stack is Vite + React + Express + TypeScript (founder decision `STACK-VITE-EXPRESS`). Milestone MX performs the move; until it is closed, do not start new features on Next.js-only APIs, and after it, never reintroduce them.
 - Build for one founder. Keep the scale-later seams (G2.7, Q-SCALE-1) but implement nothing multi-founder.
 - Sofia's memory, decisions, team and tools follow `VISION.md` section 5. Never weaken a rule there to make a step easier.
+- Files go where `LAYOUT.md` says, and only there. `done` and `land` refuse new files outside it. Never create loose documents, backups, notes or screenshots at the repository root or in random folders. Documents go in `docs/`, kit state in the kit folder.
 - Do not fabricate results. If you did not run it, write NOT VERIFIED.
 - If you find a problem outside your step, record it in `.agent/product-kit/findings/` and move on. Fix it automatically only if `PROTOCOL.md` section 4 allows it.
 - Need a skill, plugin or MCP you do not have? Follow `CAPABILITIES.md`: research it, write a capability request, continue with other work.

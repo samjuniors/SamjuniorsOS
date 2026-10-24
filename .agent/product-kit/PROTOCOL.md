@@ -140,3 +140,16 @@ The QA pass reduces what the founder meets; it does not replace the founder's te
 ## 14. Stack
 
 The founder decided (`ack STACK-VITE-EXPRESS`) to move the app from Next.js to Vite + React + Express + TypeScript, so the same server can run in the cloud and inside a desktop app, and live conversation gets a direct streaming path. Milestone MX does the move, one slice at a time, with the old app working until parity is shown. Rules while it is open: no new feature depends on a Next-only API; contract tests from MX.2 are the definition of parity; latency is measured with the same method before and after, and no improvement is claimed without the numbers. Whether the move makes live interaction faster is unknown until MX.5 measures it. After MX closes, `doctor` flags Next.js leftovers in the docs.
+
+## 15. Layout
+
+`LAYOUT.md` is the map of where each kind of file goes. Agents never create documents, notes, backups or screenshots outside it. Run `layout init` once per repository, then `layout check` before `done`; `done` and `land` repeat the check and refuse new files outside the map. Existing scatter is reported (`layout report`, `doctor`) and tidied only with the founder's yes.
+
+## 16. Switching computers
+
+Only what is in git survives a switch. Uncommitted work, unpushed commits, claims, installed dependencies, `.env` secrets and local databases stay on the old computer.
+
+**Leaving a computer (or when the founder says "stop"):** run `checkpoint --all`. It scans every step and QA worktree for secrets, commits, and pushes each branch. Do not leave until every line says pushed.
+
+**Arriving on a computer:** clone the repository if needed, then `git switch kit/integration` (the kit lives on the integration branch until the first `milestone ship`; the default branch may not have it). Run `recover`. If it says NEW COMPUTER, run `reconcile`. It repairs and prunes stale worktree records, fetches, switches to the integration branch and fast-forwards it, restores every pushed step and QA branch as a local branch with a worktree and a claim, warns about branches that exist only on this computer, and records this computer so the notice stops. Then install dependencies, copy secrets from the founder's password manager, run `gh auth login` if CI waiting is on, and run `continue`. Claude Code's SessionStart hook shows the NEW COMPUTER notice automatically. NOT VERIFIED on Windows paths or a real second computer; tested only with a fresh clone on Linux.
+

@@ -9,6 +9,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, renameSync, statSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { hostname } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const kitDir = path.dirname(fileURLToPath(import.meta.url));
@@ -16,14 +17,16 @@ const git = (args, cwd = kitDir) => execFileSync('git', args, { cwd, encoding: '
 const root = git(['rev-parse', '--show-toplevel']);
 const commonDir = path.resolve(kitDir, git(['rev-parse', '--git-common-dir']));
 const claimsDir = path.join(commonDir, 'kit', 'claims');
+const deviceFile = path.join(commonDir, 'kit', 'device.json');   // local to this computer, never committed
 
-const KIT_VERSION = 2;
+const KIT_VERSION = 3;
 // Optional local settings: kit.config.json { integrationBranch (steps land here), mainBranch (released here at milestone ship), remote, checks: [shell commands that must pass before anything lands], ci: { mode: off|wait }, lean, secretScanIgnore: [paths] }
 const cfgFile = path.join(kitDir, 'kit.config.json');
 const cfg = { mainBranch: 'main', integrationBranch: 'kit/integration', remote: 'origin', checks: [], secretScanIgnore: [], ci: {}, lean: {}, ...(existsSync(cfgFile) ? (() => { try { return JSON.parse(readFileSync(cfgFile, 'utf8')); } catch (e) { console.error(`kit: kit.config.json is not valid JSON (${e.message}). Fix it; nothing was changed.`); process.exit(1); } })() : {}) };
 
 cfg.ci = { mode: 'off', timeoutMinutes: 25, startWaitMinutes: 4, pollSeconds: 20, ...cfg.ci };      // mode: "off" or "wait" (wait for GitHub Actions through the gh CLI)
 cfg.lean = { maxFilesPerStep: 15, maxAddedLines: 800, ...cfg.lean };
+cfg.layout = { docRoots: ['docs'], extraDocRoots: [], allowedTopLevel: [], ...cfg.layout };   // where files may be added; see LAYOUT.md
 const trunk = cfg.integrationBranch;   // where finished steps land. Equal to mainBranch means direct mode.
 
 const data = JSON.parse(readFileSync(path.join(kitDir, 'gates.json'), 'utf8'));
@@ -207,6 +210,56 @@ function leanStats(cwd) {
 }
 const SECTION = (t, name) => (t.match(new RegExp(`^## ${name}[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, 'm')) ?? [])[1] ?? '';
 const filled = (text, min = 8) => { const v = String(text ?? '').trim(); return v.length >= min && !v.startsWith('<'); };
+// ---- layout contract: where new files may go (heuristic; flags NEW strays, does not reorganize old ones) ----
+const KIT_REL = path.relative(root, kitDir).split(path.sep).join('/');
+const KIT_SUBDIRS = new Set(['ack', 'briefs', 'capability-requests', 'done', 'findings', 'handoffs', 'qa', 'archive']);
+const COMMON_DIRS = new Set(['src', 'server', 'web', 'client', 'shared', 'tests', 'test', 'e2e', 'scripts', 'public', 'docs', 'prisma', 'electron', 'packages', 'apps', 'assets', 'types', 'tools', '.github', '.vscode', '.husky', '.claude', '.codex', '.agents', '.agent']);
+const TOOLING_ROOT = /^(\.[\w.-]+|.*\.config\.[cm]?[jt]s|tsconfig[\w.-]*\.json|package(-lock)?\.json|pnpm-[\w.-]+|yarn\.lock|index\.html|Dockerfile[\w.-]*|docker-compose[\w.-]*|LICENSE.*|README\.md|CHANGELOG\.md|[\w.-]*\.(lock|toml))$/;
+const STRAY = [/\.(bak|orig|rej|tmp|swp)$/i, /~$/, /(^|\/)(untitled|new file)[^/]*$/i, /(^|\/)[^/]*\bcopy\b[^/]*\.(md|txt)$/i, /(^|\/)screenshot[^/]*\.(png|jpe?g)$/i, /\.log$/i, /(^|\/)\.DS_Store$/, /(^|\/)Thumbs\.db$/i];
+const BUILD_OUT = /^(\.next|dist|build|coverage|out|release)\//;
+const DOC_EXT = /\.(md|mdx|txt|pdf|docx?)$/i;
+const DOC_OK_ANYWHERE = /(^|\/)(README|CHANGELOG|LICENSE|CONTRIBUTING|CODEOWNERS)(\.md)?$/i;
+const DOC_OK_DIRS = /(^|\/)(tests?|__tests__|e2e|fixtures|public|assets|prompts|content|prisma|node_modules)\//;
+function layoutProblems(files) {
+  const roots = [...cfg.layout.docRoots, ...cfg.layout.extraDocRoots, KIT_REL, '.agents', '.agent', '.claude', '.codex', '.github'];
+  const out = []; const seenTop = new Set();
+  for (const f of files.filter(Boolean)) {
+    const top = f.split('/')[0];
+    if (STRAY.some((re) => re.test(f))) { out.push(`${f}: stray or temporary file; delete it or keep it out of git`); continue; }
+    if (BUILD_OUT.test(f)) { out.push(`${f}: build output must not be committed`); continue; }
+    if (f.startsWith(`${KIT_REL}/`)) { const sub = f.slice(KIT_REL.length + 1).split('/')[0]; if (f.slice(KIT_REL.length + 1).includes('/') && !KIT_SUBDIRS.has(sub)) out.push(`${f}: unknown folder inside the kit; kit state goes in ${[...KIT_SUBDIRS].join(', ')}`); continue; }
+    if (!f.includes('/')) {
+      if (!cfg.layout.allowedTopLevel.includes(f) && !TOOLING_ROOT.test(f)) out.push(`${f}: new file at the repository root; ${DOC_EXT.test(f) ? `documents go in ${cfg.layout.docRoots[0]}/` : 'put it in the folder that owns it'}`);
+      continue;
+    }
+    if (!COMMON_DIRS.has(top) && !cfg.layout.allowedTopLevel.includes(top) && !seenTop.has(top)) { seenTop.add(top); out.push(`${top}/: new top-level folder; use an existing one, or the founder adds it to layout.allowedTopLevel in kit.config.json`); }
+    if (DOC_EXT.test(f) && !DOC_OK_ANYWHERE.test(f) && !DOC_OK_DIRS.test(f) && !roots.some((r) => f.startsWith(`${r}/`))) out.push(`${f}: document outside ${cfg.layout.docRoots[0]}/; move it there`);
+  }
+  return out;
+}
+const addedFiles = (cwd) => {
+  const base = tryGit(['merge-base', 'HEAD', trunk], cwd);
+  const a1 = base.ok ? tryGit(['diff', '--name-only', '--diff-filter=A', base.out], cwd).out.split('\n') : [];
+  const a2 = tryGit(['ls-files', '--others', '--exclude-standard'], cwd).out.split('\n');
+  return [...new Set([...a1, ...a2].filter(Boolean))];
+};
+// ---- this computer ----
+const readDevice = () => { try { return JSON.parse(readFileSync(deviceFile, 'utf8')); } catch { return null; } };
+const deviceNote = () => { const d = readDevice(); return !d ? 'FIRST SESSION on this checkout (new computer, new clone, or a copied folder): run "reconcile" before anything else' : d.host !== hostname() ? `this folder was last used on "${d.host}" and this computer is "${hostname()}": run "reconcile"` : null; };
+function checkpointAt(cwd, quiet) {
+  const br = branchOf(cwd);
+  if (!/^(step|qa)\//.test(br)) { if (!quiet) die(`checkpoint saves work on a step or QA branch; you are on "${br}". ${[trunk, cfg.mainBranch].includes(br) ? `Work never happens directly on ${br}.` : ''}`); return `skipped ${cwd} (on ${br})`; }
+  const id = br.split('/').slice(1).join('/');
+  const hits = secretHits(cwd);
+  if (hits.length) { const m = `possible secrets found in ${br}; nothing was committed. Remove them or add the file to .gitignore (values are not shown):\n  ${hits.join('\n  ')}`; if (!quiet) die(m); return m; }
+  const msgs = [];
+  if (dirtyCount(cwd)) { git(['add', '-A'], cwd); git(['commit', '-m', `wip(${id}): checkpoint ${new Date().toISOString()}`], cwd); msgs.push(`committed a checkpoint on ${br}`); } else msgs.push(`nothing uncommitted on ${br}`);
+  if (readClaim(id.replace(/^QA-/, ''))) cmds.heartbeat({ pos: [id.replace(/^QA-/, '')], flags: {} });
+  if (!hasRemote()) msgs.push(`no remote "${cfg.remote}": committed locally only`);
+  else if (!syncAcked()) msgs.push('not pushed: pushing needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC)');
+  else { const r = tryGit(['push', '-u', cfg.remote, br], cwd); if (!r.ok) { const m = `committed locally, but the push of ${br} failed (never force it):\n${r.out}`; if (!quiet) die(m); msgs.push(m); } else msgs.push(`pushed ${br} to ${cfg.remote}; ${trunk} and ${cfg.mainBranch} are untouched`); }
+  return msgs.join('; ');
+}
 const finishedNotLanded = () => [...done].filter((id) => branchExists(`step/${id}`) && !isMerged(`step/${id}`));
 const qaFile = (mid) => { for (const base of [kitDir, ...worktreeList().filter((w) => w.branch === `refs/heads/qa/${mid}`).map((w) => path.join(w.worktree, '.agent', 'product-kit'))]) { const f = path.join(base, 'qa', `${mid}.md`); if (existsSync(f)) return f; } return null; };
 function qaProblems(m, file) {
@@ -265,7 +318,7 @@ function doctorHits() {
     }
   };
   for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f); }
-  for (const d of ['docs', 'doc', '.agent', '.claude']) walk(path.join(root, d), 0);
+  for (const d of ['docs', 'doc', path.basename(path.dirname(kitDir)), '.claude']) walk(path.join(root, d), 0);
   const stale = [...STALE];
   if (acks.has('MS-MX')) stale.push([/\bnext (dev|build|start)\b|\.next\b|app router|getServerSideProps|next\/(image|font|link)/i, 'the stack is now Vite + React + Express + TypeScript (milestone MX); update this to the new commands and layout']);
   const hits = [];
@@ -403,6 +456,7 @@ const cmds = {
         if (over) need(filled((hf.match(/^Size justification:\s*(.+)$/m) ?? [])[1], 15), `${s.id} is larger than the lean limits or adds dependencies or big new files. Either split it, or add a line "Size justification: <why this is the smallest complete change>" to the handoff.`);
       }
     }
+    { const lp = layoutProblems(addedFiles(root)); need(!lp.length, `${lp.length} new file(s) outside the layout (LAYOUT.md):\n  ${lp.slice(0, 15).join('\n  ')}\nMove or delete them, then run done again.`); }
     const rec = { id: s.id, doneAt: new Date().toISOString(), agent: readClaim(s.id).agent, branch: git(['rev-parse', '--abbrev-ref', 'HEAD'], root), commit: git(['rev-parse', 'HEAD'], root), evidence: ev };
     writeFileSync(path.join(kitDir, 'done', `${s.id}.json`), JSON.stringify(rec, null, 2) + '\n');
     console.log(`Wrote done/${s.id}.json. Commit it together with the work. The claim stays until the lead integrates and runs "release".`);
@@ -646,24 +700,16 @@ const cmds = {
   },
 
   // ---- kit v2: git sync, recover, QA pass, doctor ----
-  checkpoint() {
-    const br = branchOf();
-    need(/^(step|qa)\//.test(br), `checkpoint saves work on a step or QA branch; you are on "${br}". ${[trunk, cfg.mainBranch].includes(br) ? `Work never happens directly on ${br}.` : ''}`);
-    const id = br.split('/').slice(1).join('/');
-    const hits = secretHits(root);
-    need(!hits.length, `possible secrets found; nothing was committed. Remove them or add the file to .gitignore (values are not shown):\n  ${hits.join('\n  ')}`);
-    if (dirtyCount()) {
-      git(['add', '-A'], root);
-      git(['commit', '-m', `wip(${id}): checkpoint ${new Date().toISOString()}`], root);
-      console.log(`Committed a checkpoint on ${br}.`);
-    } else console.log(`Nothing uncommitted on ${br}.`);
-    if (readClaim(id)) cmds.heartbeat({ pos: [id], flags: {} });
-    if (!hasRemote()) return console.log(`No remote "${cfg.remote}": the checkpoint is committed locally only.`);
-    if (!syncAcked()) return console.log('Not pushed: pushing needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC). The checkpoint is committed locally.');
-    const r = tryGit(['push', '-u', cfg.remote, br], root);
-    need(r.ok, `committed locally, but the push of ${br} failed (never force it):\n${r.out}`);
-    console.log(`Pushed ${br} to ${cfg.remote}. main is untouched.`);
+  checkpoint(a) {
+    if (a?.flags?.all) {
+      const wts = worktreeList().filter((w) => /^refs\/heads\/(step|qa)\//.test(w.branch ?? ''));
+      need(wts.length, 'no step or QA worktrees to checkpoint');
+      for (const w of wts) console.log(`${w.branch.replace('refs/heads/', '')}: ${checkpointAt(w.worktree, true)}`);
+      return console.log('Safe to switch computers once every line above says pushed (or nothing uncommitted and already pushed). Then run "reconcile" on the other computer.');
+    }
+    console.log(checkpointAt(root, false));
   },
+
 
   land(a) {
     const id = a.pos[0];
@@ -693,6 +739,10 @@ const cmds = {
         if (behind && ahead) die(`local ${trunk} and ${cfg.remote}/${trunk} have both moved (local +${ahead}, remote +${behind}). Someone else pushed. Do not force anything: stop and tell the founder what each side holds (git log --oneline ${trunk}..${cfg.remote}/${trunk}).`);
         if (behind) { git(['merge', '--ff-only', `${cfg.remote}/${trunk}`], root); console.log(`Fast-forwarded ${trunk} by ${behind} commit(s) from ${cfg.remote}.`); }
       }
+    }
+    if (!(typeof a.flags['allow-layout'] === 'string' && a.flags['allow-layout'].length > 9)) {
+      const lp = layoutProblems(addedFiles(wt ? wt.worktree : root));
+      need(!lp.length, `${lp.length} new file(s) outside the layout (LAYOUT.md):\n  ${lp.slice(0, 15).join('\n  ')}\nMove them, or pass --allow-layout "<the founder's reason>" if the founder approved them.`);
     }
     // 1. Bring main into the step branch first, so any conflict is resolved on the step branch and main stays untouched.
     if (wt) {
@@ -782,6 +832,114 @@ const cmds = {
     console.log(`Make sure each workflow runs on pushes to ${trunk} and step/** (or all branches). Then set "ci": { "mode": "wait" } in kit.config.json. NOT VERIFIED: the kit has not seen your real runs yet.`);
   },
 
+  reconcile() {
+    const L = [];
+    const say = (x) => { L.push(x); console.log(x); };
+    tryGit(['worktree', 'repair'], root);
+    tryGit(['worktree', 'prune'], root);
+    if (hasRemote()) { const f = tryGit(['fetch', '--prune', cfg.remote], root); say(f.ok ? `Fetched ${cfg.remote}.` : `WARNING: fetch failed: ${f.out}`); }
+    const rt = `${cfg.remote}/${trunk}`;
+    const remoteTrunk = hasRemote() && tryGit(['rev-parse', '--verify', '--quiet', rt], root).ok;
+    if (branchOf() !== trunk) {
+      if (dirtyCount()) say(`WARNING: this checkout is on "${branchOf()}" with uncommitted files, so it was not switched to ${trunk}. Commit or checkpoint them first.`);
+      else if (branchExists(trunk)) { git(['switch', trunk], root); say(`Switched to ${trunk}.`); }
+      else if (remoteTrunk) { git(['switch', '-c', trunk, '--track', rt], root); say(`Created ${trunk} from ${rt}.`); }
+      else say(`WARNING: no branch "${trunk}" here or on ${cfg.remote}. Create it from ${cfg.mainBranch} (git switch -c ${trunk}).`);
+    }
+    if (branchOf() === trunk && remoteTrunk && dirtyCount() === 0) {
+      const [behind, ahead] = git(['rev-list', '--left-right', '--count', `${rt}...${trunk}`], root).split(/\s+/).map(Number);
+      if (behind && ahead) say(`WARNING: ${trunk} and ${rt} have both moved (local +${ahead}, remote +${behind}). Do not force anything; tell the founder.`);
+      else if (behind) { git(['merge', '--ff-only', rt], root); say(`Fast-forwarded ${trunk} by ${behind} commit(s).`); }
+      else if (ahead) say(`${trunk} has ${ahead} commit(s) not on ${cfg.remote}: run "sync" (or they exist only on this computer).`);
+    }
+    // Step and QA branches that exist on the remote: bring each back as a local branch with a worktree and a claim.
+    const remoteBranches = hasRemote() ? tryGit(['for-each-ref', '--format=%(refname:short)', `refs/remotes/${cfg.remote}/step`, `refs/remotes/${cfg.remote}/qa`], root).out.split('\n').filter(Boolean).map((r) => r.slice(cfg.remote.length + 1)) : [];
+    const adopted = [], merged = [], problems = [];
+    for (const b of remoteBranches) {
+      const id = b.split('/').slice(1).join('/');
+      if (branchExists(b) && isMerged(b)) { merged.push(b); continue; }
+      if (!branchExists(b)) git(['branch', '--track', b, `${cfg.remote}/${b}`], root);
+      else {
+        const [behind, ahead] = git(['rev-list', '--left-right', '--count', `${cfg.remote}/${b}...${b}`], root).split(/\s+/).map(Number);
+        const inWt = worktreeList().find((w) => w.branch === `refs/heads/${b}`);
+        if (behind && ahead) { problems.push(`${b}: this computer and ${cfg.remote} both have new commits (+${ahead} here, +${behind} there). Decide with the founder; nothing was changed.`); continue; }
+        if (behind && !inWt) git(['branch', '-f', b, `${cfg.remote}/${b}`], root);
+        else if (behind && inWt && dirtyCount(inWt.worktree) === 0) git(['merge', '--ff-only', `${cfg.remote}/${b}`], inWt.worktree);
+      }
+      let wt = worktreeList().find((w) => w.branch === `refs/heads/${b}`)?.worktree;
+      if (!wt) {
+        wt = worktreePath(id);
+        mkdirSync(path.dirname(wt), { recursive: true });
+        const r = tryGit(['worktree', 'add', wt, b], root);
+        if (!r.ok) { problems.push(`${b}: could not create worktree: ${r.out}`); continue; }
+      }
+      if (b.startsWith('step/') && steps.has(id) && !done.has(id) && !readClaim(id)) {
+        mkdirSync(path.join(claimsDir, id), { recursive: true });
+        const now = new Date().toISOString();
+        writeFileSync(path.join(claimsDir, id, 'claim.json'), JSON.stringify({ step: id, agent: `resumed-${hostname()}`, branch: b, worktree: wt, claimedAt: now, heartbeatAt: now }, null, 2));
+      }
+      adopted.push(`${b} -> ${wt}`);
+    }
+    if (adopted.length) say(`Restored ${adopted.length} step/QA branch(es) with worktrees:\n  ${adopted.join('\n  ')}\nEach needs its dependencies installed (for example npm install) before work resumes.`);
+    if (merged.length) say(`Already merged, safe to ignore (land and ship delete these): ${merged.join(', ')}`);
+    for (const x of problems) say(`WARNING: ${x}`);
+    const localOnly = tryGit(['branch', '--list', 'step/*', 'qa/*', '--format=%(refname:short)'], root).out.split('\n').filter(Boolean).filter((b) => hasRemote() && !remoteBranches.includes(b) && !isMerged(b));
+    if (localOnly.length) say(`WARNING: these branches exist only on this computer (never pushed): ${localOnly.join(', ')}. Run "checkpoint --all" soon.`);
+    if (existsSync(path.join(root, '.env.example')) && !existsSync(path.join(root, '.env'))) say('Reminder: .env.example exists but .env does not. Secrets are never in git; copy them from your password manager.');
+    say('Reminder on a new computer: install Node and dependencies, run "gh auth login" if CI waiting is on, and re-run the app once. Uncommitted work and unpushed commits on the OLD computer cannot be recovered from here.');
+    mkdirSync(path.dirname(deviceFile), { recursive: true });
+    writeFileSync(deviceFile, JSON.stringify({ host: hostname(), reconciledAt: new Date().toISOString(), kitVersion: KIT_VERSION }, null, 2));
+    console.log('\nNext: node .agent/product-kit/kit.mjs recover, then continue.');
+  },
+
+  layout(a) {
+    const sub = a.pos[0];
+    need(['check', 'init', 'report'].includes(sub), 'usage: layout check | layout report | layout init');
+    if (sub === 'init') {
+      const tops = [...new Set(tryGit(['ls-files'], root).out.split('\n').filter(Boolean).map((f) => f.split('/')[0]))];
+      const f = cfgFile; const cur = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {};
+      cur.layout = { ...(cur.layout ?? {}), allowedTopLevel: [...new Set([...(cur.layout?.allowedTopLevel ?? []), ...tops])].sort() };
+      writeFileSync(f, JSON.stringify(cur, null, 2) + '\n');
+      return console.log(`Recorded ${tops.length} existing top-level entries as allowed. From now on a NEW top-level file or folder is flagged. Commit kit.config.json. The founder decides whether scattered old docs move (see LAYOUT.md).`);
+    }
+    const files = sub === 'report' ? tryGit(['ls-files'], root).out.split('\n') : addedFiles(root);
+    const probs = layoutProblems(files);
+    if (!probs.length) return console.log(`layout ${sub}: ${sub === 'report' ? 'every tracked file is where LAYOUT.md says' : 'no new file outside the layout'}.`);
+    console.log(`layout ${sub}: ${probs.length} file(s) outside the layout (${sub === 'report' ? 'existing files, informational: moving them is a founder decision' : 'fix before done and land'}):\n  ${probs.slice(0, 40).join('\n  ')}${probs.length > 40 ? `\n  ... and ${probs.length - 40} more` : ''}`);
+    if (sub === 'check') process.exit(1);
+  },
+
+  'migrate-folder'(a) {
+    const from = path.basename(path.dirname(kitDir));
+    const to = typeof a.flags.to === 'string' ? a.flags.to : '.agents';
+    need(path.dirname(path.dirname(kitDir)) === root, `the kit must sit directly under the repository root (found ${KIT_REL})`);
+    need(from !== to, `the kit is already in ${to}`);
+    need(/^\.[a-z][a-z0-9-]*$/.test(to), 'the new folder name must look like .agents');
+    need(branchOf() === trunk && dirtyCount() === 0, `run this from a clean ${trunk} checkout`);
+    const busy = worktreeList().filter((w) => /^refs\/heads\/(step|qa)\//.test(w.branch ?? ''));
+    need(!busy.length, `finish and land in-flight work first (worktrees: ${busy.map((w) => w.branch.replace('refs/heads/', '')).join(', ')}); moving the folder under them would break their branches`);
+    const move = (src, dst) => {
+      if (!existsSync(dst)) { mkdirSync(path.dirname(dst), { recursive: true }); git(['mv', src, dst], root); return; }
+      need(statSync(src).isDirectory() && statSync(dst).isDirectory(), `${path.relative(root, dst)} already exists; resolve by hand`);
+      for (const n of readdirSync(src)) move(path.join(src, n), path.join(dst, n));
+    };
+    move(path.join(root, from), path.join(root, to));
+    rmSync(path.join(root, from), { recursive: true, force: true });
+    const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(?<![\\w])${esc}(?![\\w])`, 'g');
+    const newKit = path.join(root, to, 'product-kit');
+    const targets = [];
+    const walk = (d, depth) => { if (depth > 6 || !existsSync(d)) return; for (const n of readdirSync(d)) { if (['node_modules', '.git', 'archive', 'done', 'ack', 'handoffs'].includes(n)) continue; const f = path.join(d, n); if (statSync(f).isDirectory()) walk(f, depth + 1); else if (/\.(md|json|mjs|txt)$/i.test(n)) targets.push(f); } };
+    walk(path.join(root, to), 0); walk(path.join(root, '.claude'), 0); walk(path.join(root, 'docs'), 0); walk(path.join(root, 'doc'), 0);
+    for (const n of ['AGENTS.md', 'CLAUDE.md', 'CONTINUE.md', 'README.md']) if (existsSync(path.join(root, n))) targets.push(path.join(root, n));
+    let changed = 0;
+    for (const f of new Set(targets)) { const t = readFileSync(f, 'utf8'); if (re.test(t)) { re.lastIndex = 0; writeFileSync(f, t.replace(re, to)); changed++; } re.lastIndex = 0; }
+    git(['add', '-A'], root);
+    git(['commit', '-m', `chore(kit): move ${from} to ${to}`], root);
+    console.log(`Moved ${from} to ${to} and updated ${changed} file(s) that mentioned the old path (PROGRESS.md and history files are left alone). Committed.\nNow: node ${to}/product-kit/kit.mjs validate, then doctor, then install-hook, then sync.`);
+    void newKit;
+  },
+
   recover(a) {
     const hook = !!a.flags.hook;
     const L = [];
@@ -796,6 +954,8 @@ const cmds = {
       })();
       out(`== SamjuniorsOS recover (kit v${KIT_VERSION}) ==`);
       out(`Checkout: ${root}  branch: ${br}  uncommitted files: ${dirtyCount()}  remote: ${remoteState}${/ahead/.test(remoteState) && !/ 0 ahead/.test(remoteState) ? '  -> run "sync"' : ''}`);
+      const dn = deviceNote();
+      if (dn) out(`NEW COMPUTER? ${dn}.`);
       if (br !== trunk) out(`WARNING: the main checkout is on "${br}" but steps land on "${trunk}". Switch back: git switch ${trunk}`);
       if (activeMs) { const ids = msStepIds(activeMs); out(`Active milestone: ${activeMs.id} ${activeMs.title}  (${ids.filter((i) => done.has(i)).length}/${ids.length} steps done)`); }
       else out('All milestones are closed.');
@@ -823,7 +983,7 @@ const cmds = {
       const bad = doctorHits();
       if (bad.length) out(`Stale instructions found in ${new Set(bad.map((x) => x.file)).size} file(s): run "doctor".`);
       out('');
-      out('Next: tell the founder in 3 lines where things stand, then run:  node .agent/product-kit/kit.mjs continue');
+      out(dn ? 'Next: run  node .agent/product-kit/kit.mjs reconcile  and then continue. Before leaving a computer, run  checkpoint --all.' : 'Next: tell the founder in 3 lines where things stand, then run:  node .agent/product-kit/kit.mjs continue');
       out('The order of work is the active milestone, never a gate. This command changed nothing.');
     } catch (e) {
       out(`recover could not finish: ${e.message}`);
@@ -864,6 +1024,8 @@ const cmds = {
 
   doctor(a) {
     const hits = doctorHits();
+    const lay = layoutProblems(tryGit(['ls-files'], root).out.split('\n'));
+    if (lay.length) console.log(`doctor (info): ${lay.length} existing file(s) sit outside the layout in LAYOUT.md. Nothing is wrong with the kit; moving them is a founder decision. Run "layout report" for the list.\n`);
     if (!hits.length) return console.log(`doctor: no stale instructions found (kit v${KIT_VERSION}).`);
     console.log(`doctor: ${hits.length} place(s) still carry older kit wording. Fix each with the smallest edit that keeps the rest of the file as it is, then run doctor again.\n`);
     for (const h of hits) console.log(`${h.file}:${h.line}  ${h.why}\n    ${h.text}`);
@@ -875,14 +1037,17 @@ const cmds = {
     const f = path.join(dir, 'settings.json');
     let s = {};
     if (existsSync(f)) { try { s = JSON.parse(readFileSync(f, 'utf8')); } catch { die(`${f} is not valid JSON; fix it first. Nothing was changed.`); } }
-    const command = 'node .agent/product-kit/kit.mjs recover --hook';
+    const command = `node ${KIT_REL}/kit.mjs recover --hook`;
     s.hooks ??= {};
     s.hooks.SessionStart ??= [];
+    s.hooks.SessionStart = s.hooks.SessionStart.map((e) => ({ ...e, hooks: (e.hooks ?? []).filter((h) => !(/product-kit\/kit\.mjs recover --hook/.test(h.command ?? '') && h.command !== command)) })).filter((e) => (e.hooks ?? []).length);
     if (s.hooks.SessionStart.some((e) => (e.hooks ?? []).some((h) => h.command === command))) console.log('SessionStart hook already installed.');
     else { s.hooks.SessionStart.push({ matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command }] }); mkdirSync(dir, { recursive: true }); writeFileSync(f, JSON.stringify(s, null, 2) + '\n'); console.log(`Added the SessionStart hook to ${path.relative(root, f)}.`); }
     const cmdFile = path.join(dir, 'commands', 'recover.md');
     if (!existsSync(cmdFile)) { mkdirSync(path.dirname(cmdFile), { recursive: true }); writeFileSync(cmdFile, '---\ndescription: Where did we stop? Show what is finished, what is in progress and what is next\n---\n\nRun `node .agent/product-kit/kit.mjs recover`. Tell me in three lines what is finished, what was interrupted, and what is next. Then run `node .agent/product-kit/kit.mjs continue` and do what it prints.\n'); console.log(`Added the /recover command at ${path.relative(root, cmdFile)}.`); }
-    console.log('Commit both files. NOT VERIFIED: the hook runs only in Claude Code; other agents use "recover" by hand (see MASTER_PROMPT.md).');
+    const skl = path.join(dir, 'skills', 'product-kit', 'SKILL.md');
+    if (!existsSync(skl)) { mkdirSync(path.dirname(skl), { recursive: true }); writeFileSync(skl, `---\nname: product-kit\ndescription: Use for the SamjuniorsOS roadmap, resuming work (recover, continue), landing steps, QA passes and founder decisions. Pointer only; the real skill is in ${path.dirname(KIT_REL)}/skills/product-kit/SKILL.md\n---\n\nRead ${path.dirname(KIT_REL)}/skills/product-kit/SKILL.md and ${KIT_REL}/MASTER_PROMPT.md, then follow them.\n`); console.log(`Added a Claude Code skill pointer at ${path.relative(root, skl)}.`); }
+    console.log('Commit these files. NOT VERIFIED: the hook runs only in Claude Code; other agents use "recover" by hand (see MASTER_PROMPT.md).');
   },
 
   validate() {
@@ -977,7 +1142,7 @@ function renderMilestones() {
 
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd || !cmds[cmd]) {
-  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | recover [--hook] | status | next [--lane L] [--n 4] | resume | validate | render | doctor [--strict]\n  qa start <M> | qa check <M> | checkpoint | land <ID|QA-M> | sync | ci check | ci wait [branch] | install-hook\n  milestone status | verify <M> | ship <M> | close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
+  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | recover [--hook] | status | next [--lane L] [--n 4] | resume | validate | render | doctor [--strict]\n  qa start <M> | qa check <M> | checkpoint [--all] | reconcile | layout check|report|init | migrate-folder [--to .agents] | land <ID|QA-M> | sync | ci check | ci wait [branch] | install-hook\n  milestone status | verify <M> | ship <M> | close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
   process.exit(cmd ? 1 : 0);
 }
 cmds[cmd](parse(rest));
