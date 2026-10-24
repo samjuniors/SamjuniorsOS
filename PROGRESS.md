@@ -271,3 +271,18 @@ Decision Workflow Phase 2.2.1: Decision-Aware Company Context COMPLETE on `audit
 - Independent TypeScript validation passed (zero errors in stores, runbooks, and test suites).
 - Documented explicit engineering distinctions between verified test coverage, simulated fault coverage, unverified hardware/kernel crashes, and backup quiesce requirements.
 - Branch remains unmerged and undeployed, stopped for Founder review.
+
+
+## Milestone MX — A faster, desktop-ready stack: Vite + React + Express (ACTIVE)
+
+- **Status:** ACTIVE (1/7 steps completed).
+- **Goal:** Move the app from Next.js to a Vite + React front end and an Express + TypeScript server, so live conversation has a direct streaming path and the same server runs in the cloud and inside a Windows desktop app (.exe) later.
+- **Completed Steps:**
+  - **MX.1 (ADR and Next.js feature census):**
+    - Authored ADR 0007 in `doc/adr/0007-stack-migration-vite-react-express.md`.
+    - Enumerated all 68 Next.js route handlers, layouts, env variables, and edge proxy middleware with exact Express/Vite replacements.
+    - Decided on full-duplex WebSockets (`ws` at `/api/live-ws`) over SSE for low-latency 16kHz PCM audio streaming and barge-in.
+    - Specified Electron architecture with utility process isolation (`contextIsolation: true`, `nodeIntegration: false`) marked NOT VERIFIED until MX.7.
+    - Re-evaluated infrastructure decision G0.3 against long-running Node.js streaming services (Option A affirmed; no budget change needed).
+    - Passed independent verification (`.agent/product-kit/handoffs/MX.1.verify.md`).
+    - Landed on `kit/integration`.
