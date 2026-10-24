@@ -20,7 +20,12 @@
     "test": "node scripts/test-runner.mjs",
     "test:smoke": "npx tsx tests/sophia/m1_9_smoke.test.ts",
     "smoke:m1": "npx tsx tests/sophia/m1_9_smoke.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:deps": "node scripts/audit-deps.mjs",
+    "scan:secrets": "gitleaks detect --config .gitleaks.toml --verbose",
+    "scan:client-secrets": "node scripts/scan-client-bundle-secrets.mjs",
+    "deploy:staging": "npx tsx scripts/deploy-staging.ts",
+    "verify:deployment": "npx tsx scripts/verify-deployment.ts"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",
@@ -58,7 +63,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.17",
     "dotenv": "^16.4.7",
     "embla-carousel-react": "^8.6.0",
     "express": "^4.21.2",
@@ -81,7 +86,7 @@
     "vaul": "^1.1.2",
     "ws": "^8.21.3",
     "z-ai-web-dev-sdk": "^0.0.18",
-    "zod": "^4.0.2",
+    "zod": "^4.6.7",
     "zustand": "^5.0.6"
   },
   "devDependencies": {
@@ -101,6 +106,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
+    "typescript-eslint": "^8.72.0",
     "vite": "^6.2.0"
   }
 }

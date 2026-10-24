@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const LIVE_WS =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
 
 export async function POST(req: NextRequest) {
   const founder = await getAuthenticatedFounder(req);
@@ -44,7 +44,8 @@ export async function POST(req: NextRequest) {
   try {
     const b = (await req.json()) as { voice?: string; model?: string };
     if (b.voice) voice = b.voice;
-    if (b.model) modelOverride = b.model;
+    // Server configuration governs live model selection per Phase 3 Step 6B
+    if (process.env.GEMINI_LIVE_MODEL?.trim()) modelOverride = process.env.GEMINI_LIVE_MODEL.trim();
   } catch {
     /* empty body is fine */
   }
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   const expiresInSeconds = 1800;
   try {
-    const res = await fetch('https://generativelanguage.googleapis.com/v1alpha/authTokens', {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
       method: 'POST',
       headers: { 'x-goog-api-key': apiKey, 'content-type': 'application/json' },
       body: JSON.stringify({

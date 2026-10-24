@@ -1,6 +1,9 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 
 /**
  * ============================================================================
@@ -54,12 +57,20 @@ async function runTests() {
     );
   });
 
-  await test('1.2 @next/swc-win32-x64-msvc is declared in optionalDependencies', () => {
+  await test('1.2 @next/swc-win32-x64-msvc is declared in optionalDependencies or Next.js retired', () => {
     const pkg = JSON.parse(read('package.json'));
-    assert.ok(
-      pkg.optionalDependencies?.['@next/swc-win32-x64-msvc'],
-      'win32-specific binary must be in optionalDependencies'
-    );
+    if (pkg.dependencies?.next) {
+      assert.ok(
+        pkg.optionalDependencies?.['@next/swc-win32-x64-msvc'],
+        'win32-specific binary must be in optionalDependencies when Next.js is present'
+      );
+    } else {
+      assert.strictEqual(
+        pkg.dependencies?.['@next/swc-win32-x64-msvc'],
+        undefined,
+        'win32-specific binary must not be in normal dependencies'
+      );
+    }
   });
 
   await test('1.3 package.json declares canonical scripts', () => {

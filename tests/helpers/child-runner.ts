@@ -2,6 +2,8 @@ import { fork, ChildProcess, execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
 
 export interface ChildRunOptions {
   env?: Record<string, string>;

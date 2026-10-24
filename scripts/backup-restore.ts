@@ -15,6 +15,7 @@ import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
+import { pathToFileURL } from 'node:url';
 
 export interface BackupManifest {
   version: string;
@@ -288,7 +289,7 @@ async function cli() {
   }
 }
 
-if (require.main === module) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   cli().catch((err) => {
     console.error('Error:', err);
     process.exit(1);

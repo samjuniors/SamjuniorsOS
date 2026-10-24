@@ -10,10 +10,17 @@
 
 import assert from 'assert';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import fs from 'fs';
 import { verifyDeployment } from '../../scripts/verify-deployment';
 import { runDeployPipeline } from '../../scripts/deploy-staging';
 import { LiveInteractionServer } from '../../src/lib/server/live/server';
+import express from 'express';
+import http from 'http';
+import { apiRouter } from '../../src/server/api';
+import { securityHeadersMiddleware } from '../../src/server/middleware';
 
 async function main() {
   console.log('\n=============================================================');
@@ -44,8 +51,22 @@ async function main() {
 
   // Spin up companion LiveInteractionServer on port 3001 for test verification
   let liveServer: LiveInteractionServer | null = null;
+  let httpServer: any = null;
   const wsPort = parseInt(process.env.LIVE_WS_PORT || '3001', 10);
   try {
+    try {
+      const check = await fetch(`${appUrl}/api/health`).catch(() => null);
+      if (!check || check.status !== 200) {
+        const testApp = express();
+        testApp.use(securityHeadersMiddleware);
+        testApp.use(express.json());
+        testApp.use('/api', apiRouter);
+        const httpPort = parseInt(new URL(appUrl).port || '3000', 10);
+        httpServer = http.createServer(testApp);
+        await new Promise((resolve) => httpServer.listen(httpPort, resolve));
+      }
+    } catch (e) {}
+
     liveServer = new LiveInteractionServer({ port: wsPort });
     await liveServer.listen(wsPort);
   } catch (err: any) {
@@ -176,6 +197,9 @@ async function main() {
   } finally {
     if (liveServer) {
       await liveServer.close();
+    }
+    if (httpServer) {
+      await new Promise((r) => httpServer.close(r));
     }
   }
 

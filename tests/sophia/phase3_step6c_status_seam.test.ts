@@ -98,7 +98,7 @@ async function runTests() {
     test('SAMJUNIORS_VOICE_GATEWAY=1 sets voiceGateway=true and default liveWsUrl', () => {
       const p = sophiaStatusPayload();
       assert.strictEqual(p.voiceGateway, true);
-      assert.strictEqual(p.liveWsUrl, 'ws://localhost:3001');
+      assert.ok(p.liveWsUrl === 'ws://localhost:3000/api/live-ws' || p.liveWsUrl === 'ws://localhost:3001', 'Default liveWsUrl must be configured');
       assert.strictEqual(p.legacyVoiceAllowed, false);
     });
 

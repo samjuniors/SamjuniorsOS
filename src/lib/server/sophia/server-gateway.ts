@@ -427,7 +427,7 @@ export class SophiaServerGateway {
       }
 
       const returnScopes = opts.context.scopes ?? (sanitizedProposal.domain === 'personal' || sanitizedProposal.route === 'recall-personal' ? ['personal_mind'] : ['company_brain']);
-      const returnSources = opts.context.sources && opts.context.sources.length > 0 ? opts.context.sources : provenances;
+      const returnSources = Array.from(new Set([...(opts.context.sources || []), ...provenances]));
 
       return {
         success: true,

@@ -98,7 +98,10 @@ function parse(argv) {
 const die = (m) => { console.error(`kit: ${m}`); process.exit(1); };
 const need = (cond, m) => { if (!cond) die(m); };
 const stepOrDie = (id) => { const s = steps.get(id); need(s, `unknown step "${id}"`); return s; };
-const worktreePath = (id) => path.join(path.dirname(root), `${path.basename(root)}-wt`, id);
+const worktreePath = (id) =>
+  process.env.KIT_WORKTREE_DIR
+    ? path.join(path.resolve(process.env.KIT_WORKTREE_DIR), id)
+    : path.join(root, '.agent', 'worktrees', id);
 
 function pickReady(list, n) {
   const picked = [];

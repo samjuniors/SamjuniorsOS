@@ -55,7 +55,7 @@ jobs:
         run: npm run typecheck
 
       - name: Production build
-        run: npx next build
+        run: npm run build
 
       - name: Run canonical test suite
         run: npm test

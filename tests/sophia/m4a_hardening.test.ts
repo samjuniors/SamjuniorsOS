@@ -1,3 +1,4 @@
+import { spawnTestChild } from '../helpers/child-runner';
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';

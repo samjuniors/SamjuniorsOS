@@ -239,7 +239,7 @@ export class WorkflowRuntime {
       }
 
       let dependenciesMet = true;
-      for (const depId of stepDef.dependencies) {
+      for (const depId of (stepDef.dependencies || [])) {
         const depState = instance.stepStates[depId];
         if (!depState || depState.status !== 'completed') {
           dependenciesMet = false;
@@ -249,7 +249,7 @@ export class WorkflowRuntime {
 
       // Check inputs existing (simulated for now by checking previous outputs if specified in dependencies)
       let inputsMet = true;
-      for (const inputKey of stepDef.inputReferences) {
+      for (const inputKey of (stepDef.inputReferences || [])) {
         let found = false;
         if (instance.outputs && instance.outputs[inputKey] !== undefined) {
           found = true;

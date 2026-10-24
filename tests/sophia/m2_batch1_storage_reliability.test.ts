@@ -309,7 +309,7 @@ async function main() {
     });
 
     await runTest('3.2: Orphaned temp files older than 60s are cleaned up by store initialization', async () => {
-      const staleTemp = path.join(dataDir, 'test_cleanup.json.tmp.12345.abcde');
+      const staleTemp = path.join(dataDir, 'test_cleanup.json.tmp.999999.abcde');
       fs.writeFileSync(staleTemp, 'stale partial data');
       const oldTime = (Date.now() - 70_000) / 1000;
       fs.utimesSync(staleTemp, oldTime, oldTime);

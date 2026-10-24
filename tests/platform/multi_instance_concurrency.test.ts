@@ -11,6 +11,9 @@
 
 import assert from 'assert';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import fs from 'fs';
 import os from 'os';
 import { execSync, fork } from 'child_process';
@@ -398,7 +401,7 @@ async function main() {
     // ------------------------------------------------------------------------
     await test('TEST 9: Real child process holding lease killed via SIGKILL is cleanly taken over upon TTL', async () => {
       const resourceKey = 'instance:real-subprocess-test';
-      const subprocessScript = path.join(repoRoot, 'tests', 'platform', '_scratch_subworker.js');
+      const subprocessScript = path.join(repoRoot, 'tests', 'platform', '_scratch_subworker.cjs');
 
       try {
         // Create a standalone child script inside repo root so @prisma/client resolves

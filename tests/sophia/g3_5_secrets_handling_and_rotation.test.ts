@@ -1,6 +1,9 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 import { NextRequest } from '@/lib/server/http';
 import { proxy } from '../../src/proxy';
 import { runClientBundleScan } from '../../scripts/scan-client-bundle-secrets.mjs';
