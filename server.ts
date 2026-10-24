@@ -20,6 +20,7 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const isDev = process.env.NODE_ENV !== 'production';
 const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '127.0.0.1';
 process.env.LIVE_WS_PORT = PORT.toString();
 
 // Initialize dev credentials & gateway configuration
@@ -62,6 +63,20 @@ const liveServer = new LiveInteractionServer({ server, wss, skipConnectionHandle
 
 // Global security headers
 app.use(securityHeadersMiddleware);
+
+// Desktop per-launch token validation (active only when running as local desktop shell)
+const desktopToken = process.env.DESKTOP_AUTH_TOKEN;
+if (desktopToken) {
+  app.use((req: Request, res: Response, next) => {
+    if (req.path.startsWith('/api')) {
+      const incomingToken = req.headers['x-desktop-token'] || req.query.desktop_token;
+      if (incomingToken !== desktopToken) {
+        return res.status(403).json({ error: 'Desktop per-launch token required or invalid' });
+      }
+    }
+    next();
+  });
+}
 
 // Body parsers
 app.use(express.json({ limit: '20mb' }));
@@ -187,6 +202,15 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 // WebSocket Live Voice Endpoint (/api/live-ws)
 wss.on('connection', async (clientWs: WebSocket, req: http.IncomingMessage) => {
   const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+
+  // In desktop mode, verify desktop per-launch token
+  if (desktopToken) {
+    const incomingToken = req.headers['x-desktop-token'] || url.searchParams.get('desktop_token');
+    if (incomingToken !== desktopToken) {
+      clientWs.close(LIVE_CLOSE_CODES.UNAUTHORIZED, 'Unauthorized: Invalid desktop per-launch token');
+      return;
+    }
+  }
 
   // If a ticket is provided (e.g. from tests or internal session token)
   if (url.searchParams.has('ticket') && url.searchParams.get('ticket') !== 'sofia') {
@@ -381,7 +405,10 @@ const shutdown = async (signal: string) => {
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
+  if (desktopToken) {
+    console.log(`🔒 [SamJuniorsOS] Desktop session bound to loopback ${HOST} with per-launch token validation active.`);
+  }
   console.log(`\n🚀 [SamJuniorsOS] Full-Stack App running at http://localhost:${PORT}`);
   console.log(`🎙️ [SamJuniorsOS] Live Voice WebSocket gateway active at ws://localhost:${PORT}/api/live-ws\n`);
 });

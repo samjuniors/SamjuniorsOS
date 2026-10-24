@@ -1,0 +1,8 @@
+{
+  "id": "MX.7",
+  "doneAt": "2026-10-24T09:59:50.410Z",
+  "agent": "antigravity",
+  "branch": "step/MX.7",
+  "commit": "bded988d31faf639f5ab4b67aeb1b7381d3690fc",
+  "evidence": "electron-builder generated release/SamJuniorsOS-Setup-0.2.1.exe; tests/platform/desktop_shell.test.ts passed 12/12; contextIsolation true, nodeIntegration false, CSP configured, per-launch token verified; cloud build unaffected"
+}

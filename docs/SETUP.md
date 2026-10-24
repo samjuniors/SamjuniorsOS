@@ -12,6 +12,7 @@ Verified against the working tree on 2026-10-24 on Windows 11 (Node 24, npm) and
 
 1. **Lockfile registry host: NOT VERIFIED as a problem.** `bun.lock` contains standard tarball URLs on `registry.npmjs.com`. If `bun install` fails on your machine with `DNSResolveFailed`, check your own network or proxy before touching the lockfile.
 2. **The postinstall step downloads Prisma engines.** `postinstall` runs `prisma generate`, which fetches engine binaries from `binaries.prisma.sh`. If that host is blocked on your network, the install fails. You can install with `--ignore-scripts` and run `npx prisma generate` once the host is reachable.
+3. **Platform-specific binaries under optionalDependencies (Resolved in Gate G1.6).** Native platform-specific packages are declared under optionalDependencies, ensuring cross-platform installs on Windows, Linux, and macOS proceed cleanly without `EBADPLATFORM` errors.
 
 ## Install
 

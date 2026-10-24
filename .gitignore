@@ -116,3 +116,8 @@ samjuniors-kit-bundle*/
 # Untracked legacy uploads & scratch
 /Uploaded/
 /project-setup/
+
+# Desktop installer artifacts
+release/
+*.exe
+*.blockmap
