@@ -99,7 +99,8 @@ function findFiles(dir, extensions = ['.js', '.mjs', '.html', '.json']) {
 
 export function runClientBundleScan(options = {}) {
   const activeSecrets = options.secrets || getActiveSecrets();
-  const searchDirs = options.targetDirs || [staticDir, publicDir];
+  const distDir = path.join(cwd, "dist");
+  const searchDirs = options.targetDirs || [distDir, staticDir, publicDir];
 
   const filesToScan = [];
   for (const d of searchDirs) {
