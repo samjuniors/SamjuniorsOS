@@ -1,4 +1,5 @@
 import assert from 'assert';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
@@ -109,32 +110,36 @@ function runChild(
   script = 'tests/sophia/k2-memory-child.ts'
 ): Promise<any> {
   return new Promise((resolve, reject) => {
-    // @ts-ignore — Bun global exists when the suite runs under bun
-    const proc = Bun.spawn(['bun', script, ...args], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: { ...process.env, ...env },
+    const proc = spawn(
+      process.execPath,
+      ['--experimental-test-module-mocks', '--import', 'tsx', script, ...args],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, ...env },
+      }
+    );
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
     });
-    new Response(proc.stdout)
-      .text()
-      .then((out) =>
-        proc.exited.then((code) => {
-          if (code !== 0) {
-            return new Response(proc.stderr)
-              .text()
-              .then((errText) =>
-                reject(new Error(`child (${args.join(' ')}) exited ${code}; stderr: ${errText.slice(0, 500)}`))
-              );
-          }
-          const lines = out.trim().split('\n').filter((l: string) => l.trim());
-          const last = lines[lines.length - 1];
-          try {
-            resolve(JSON.parse(last));
-          } catch {
-            reject(new Error(`child (${args.join(' ')}) emitted no JSON line; stdout: ${out.slice(0, 500)}`));
-          }
-        })
-      );
+    proc.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    proc.on('error', reject);
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`child (${args.join(' ')}) exited ${code}; stderr: ${stderr.slice(0, 500)}`));
+        return;
+      }
+      const lines = stdout.trim().split('\n').filter((line) => line.trim());
+      const last = lines[lines.length - 1];
+      try {
+        resolve(JSON.parse(last));
+      } catch {
+        reject(new Error(`child (${args.join(' ')}) emitted no JSON line; stdout: ${stdout.slice(0, 500)}`));
+      }
+    });
   });
 }
 

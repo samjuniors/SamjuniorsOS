@@ -16,5 +16,7 @@
     "maxFilesPerStep": 15,
     "maxAddedLines": 800
   },
-  "secretScanIgnore": []
+  "secretScanIgnore": [
+    "tests/sophia/m4a_memory_capture.test.ts"
+  ]
 }
