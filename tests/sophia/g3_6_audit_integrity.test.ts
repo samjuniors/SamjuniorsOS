@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   const originalBytes = fs.existsSync(auditFile) ? fs.readFileSync(auditFile) : null;
   const markerExisted = fs.existsSync(initializedMarker);
   const originalCache = new Map(store.audits);
+  let startingChain: SideEffectAuditRecord[] = [];
 
   const fixture = (id: string): SideEffectAuditRecord => ({
     id,
@@ -30,18 +31,22 @@ async function main(): Promise<void> {
   });
 
   try {
+    startingChain = await store.list();
     const writes = await Promise.all(
       Array.from({ length: 8 }, (_, index) => store.record(fixture(`g36-chain-${index}`)))
     );
     const chain = await store.list();
-    assert.equal(chain.length, 8, 'concurrent local appends all persist');
+    assert.equal(chain.length, startingChain.length + 8, 'concurrent local appends all persist');
     assert.deepEqual(
       chain.map((record) => record.chainSequence).sort((a, b) => (a ?? 0) - (b ?? 0)),
-      [1, 2, 3, 4, 5, 6, 7, 8],
+      Array.from({ length: startingChain.length + 8 }, (_, index) => index + 1),
       'concurrent appends receive one contiguous sequence without forking'
     );
     assert.ok(writes.every((record) => record.previousHash && record.recordHash), 'each persisted record has chain hashes');
-    assert.ok(chain.some((record) => record.id === writes[7].id), 'a valid persisted chain reloads and verifies');
+    assert.ok(
+      writes.every((write) => chain.some((record) => record.id === write.id)),
+      'every concurrent append persists in the reloaded chain'
+    );
 
     const persisted = fileStore.readCollection<SideEffectAuditRecord>('audits');
     persisted['g36-chain-0'].reason = 'tampered reason';
