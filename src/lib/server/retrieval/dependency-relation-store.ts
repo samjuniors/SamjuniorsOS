@@ -179,6 +179,33 @@ export class DependencyRelationStore {
     }
   }
 
+  /**
+   * Delete every derived edge for a fact when that fact is deleted/purged.
+   * Ensures no derived copy remains after fact deletion.
+   */
+  public async deleteRelationsForFact(factId: string): Promise<number> {
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const res = await db.dependencyRelation.deleteMany({
+        where: { sourceFactId: factId },
+      });
+      return res.count;
+    }
+    let count = 0;
+    for (const [id, rel] of [...this.relations.entries()]) {
+      if (rel.sourceFactId === factId) {
+        this.relations.delete(id);
+        try {
+          DurableFileStore.getInstance().deleteItem(COLLECTION, id);
+        } catch {
+          // best-effort file cleanup
+        }
+        count++;
+      }
+    }
+    return count;
+  }
+
   /** Full deterministic rebuild from the canonical fact set (recovery). */
   public async rebuildFromFacts(facts: CanonicalFact[]): Promise<void> {
     if (isAuthoritativeMode()) {

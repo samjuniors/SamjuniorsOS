@@ -102,7 +102,7 @@ export function selectFactsForReadMode(
   }
   return pool
     .sort((a, b) => {
-      if (b.promotedAt !== a.promotedAt) return b.promotedAt.localeCompare(a.promotedAt);
+      const pa = a.promotedAt || ''; const pb = b.promotedAt || ''; if (pb !== pa) return pb.localeCompare(pa);
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     })
     .map((f) => ({ ...f }));

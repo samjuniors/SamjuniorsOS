@@ -1146,6 +1146,14 @@ export class ConversationStore {
     newTombstone.prismaReconciled = prismaDeleted;
     this.fileStore.saveItemStrict(CONVERSATION_TOMBSTONES_COLLECTION, id, newTombstone, { lockStrict: true, timeoutMs: lockTimeoutMs });
 
+    // 8. G11.4: Purge derived consolidated memories so no derived copies survive
+    try {
+      const { purgeDerivedMemoriesForConversation } = await import('../memory/consolidation');
+      await purgeDerivedMemoriesForConversation(id, founderId);
+    } catch (err) {
+      console.error('[ConversationStore] failed to purge derived consolidated memories:', err);
+    }
+
     return {
       success: true,
       deleted: true,
