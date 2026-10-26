@@ -640,3 +640,24 @@ R@5 0.5, Q8 rank 1, D8b adversarial stale pair UNCHANGED (old
 high-overlap still outranks the newer correction — recency never overrides
 overlap), planted rank 1 at all scales, selection ≈25 ms @ 10,000
 memories (limit 250 ms), full path ≈90 ms.
+
+## 17. G11.2 memory write policy (2026-10-26)
+
+This policy implements the G11.1 boundary with the existing authorities. It does not create another memory store or make an LLM the write authority.
+
+### Type and owner map
+
+| Memory class | Existing owner | Allowed write path and consent | Size and retention behavior |
+|---|---|---|---|
+| Personal semantic context (preferences, interaction patterns, personal context) | `SophiaMemory` / Personal Mind | A founder-direct write uses the authenticated governed memory route. Conversation capture is only an untrusted proposal: `MemoryGate` can reject it or create `PENDING_REVIEW`; only explicit Founder activation can make it retrievable. | At most 3 extracted candidates per turn; content at most 2,000 characters; provenance at most 500 characters; list requests capped at 50. No age-based expiry or total-record cap is implemented. Founder lifecycle actions archive/reject or delete. |
+| Company semantic facts | Epistemic claims and canonical facts in Company Brain | Source-backed claims go through the existing epistemic verification/promotion path. Personal Mind writes reject company-fact types and company-domain content. A remembered item is not a verified fact. | No G11.2-specific content-size or age limit was found for company facts. Supersession preserves history. Do not invent a TTL or delete authoritative evidence here. |
+| Episodic interaction history | `ConversationStore` and its messages | User turns are persisted as conversation history; retrieval derives advisory episodic context from that history. No separate generated-summary write path is established by G11.2. | Episodic lookup examines up to 20 recent conversations, returns up to 3 hits by default, and includes at most 4 matched messages per hit. This bounds recall, not stored history. Conversation deletion uses the existing governed deletion/tombstone path. No age-based expiry is implemented. |
+| Procedural reference notes | `CompanyKnowledge` (SOP/architecture/reference content) | Keep these as company reference material, not Personal Mind. A model proposal must not directly mutate canonical procedures. A separate founder-confirmation contract for procedural writes is **NOT VERIFIED** in the current code; G11.2 adds none. | No G11.2-specific content-size or age limit was found. Do not silently delete or expire procedures; retain current version/hash and existing governance. |
+
+### Limits and non-goals
+
+The deterministic limits above are verified in the cited code and tests; page and retrieval caps do not bound total stored rows or bytes. Current code has no global memory byte quota, per-owner record ceiling, or time-to-live. G11.2 therefore adopts **no automatic age-based deletion**: unconfirmed personal candidates stay out of recall and await Founder review; existing Founder archive/reject/delete operations govern Personal Mind lifecycle; conversations use explicit deletion; company truth keeps its evidence and explicit supersession history. A global quota, timed candidate expiry, generated episodic summaries, or automatic pruning would need a measured policy and a separate implementation decision (the consolidation/forgetting work is G11.4).
+
+Consent and authority are separate: a user utterance can support an untrusted personal candidate but is not consent to activate it; company facts and procedures remain in their own governed owners; no memory content grants authorization.
+
+**Evidence:** `src/lib/server/sophia/memory-extractor.ts`, `memory-gate.ts`, `personal-memory-store.ts`, `memory-lifecycle.ts`; `src/lib/server/conversation/store.ts`; `tests/sophia/k2_personal_memory.test.ts`, `m4a_memory_capture.test.ts`, `m4b1_lifecycle.test.ts`, and `m52_retrieval_hygiene.test.ts`. Unverified product behavior is called out above rather than inferred from schema fields.

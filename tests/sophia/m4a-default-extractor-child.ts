@@ -14,7 +14,7 @@
  *
  * This child runs the REAL DEFAULT production path with NO injected
  * extractor — only the z-ai SDK's chat completion (the network boundary) is
- * faked via Bun's module mock, registered BEFORE any src import:
+ * faked via Node's built-in module mock, registered BEFORE any src import:
  *
  *   captureSophiaMemoryCandidates(input)   <- NO options
  *     -> SophiaMemoryExtractor.extract    (REAL, receiver-sensitive:
@@ -33,7 +33,7 @@
  * Output contract: exactly one JSON line on stdout; non-zero exit on crash.
  */
 import { randomUUID } from 'crypto';
-import { mock } from 'bun:test';
+import { mock } from 'node:test';
 
 /** What the (faked) model provider returns for the extraction request. */
 const FIXED_MODEL_REPLY = JSON.stringify({
@@ -50,19 +50,21 @@ const FIXED_MODEL_REPLY = JSON.stringify({
 // Mock ONLY the provider SDK — and BEFORE importing anything from src.
 // zai-client lazily `await import('z-ai-web-dev-sdk')` at first generateText
 // call, so the mock intercepts the live module resolution.
-mock.module('z-ai-web-dev-sdk', () => ({
-  default: {
-    create: async () => ({
-      chat: {
-        completions: {
-          create: async () => ({
-            choices: [{ message: { content: FIXED_MODEL_REPLY } }],
-          }),
+mock.module('z-ai-web-dev-sdk', {
+  exports: {
+    default: {
+      create: async () => ({
+        chat: {
+          completions: {
+            create: async () => ({
+              choices: [{ message: { content: FIXED_MODEL_REPLY } }],
+            }),
+          },
         },
-      },
-    }),
+      }),
+    },
   },
-}));
+});
 
 // Keep stdout pure for the one-line JSON output contract: any library log
 // (capture events, provider probes) goes to stderr instead.
