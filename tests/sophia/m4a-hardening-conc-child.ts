@@ -24,6 +24,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { SophiaMemoryStore } from '../../src/lib/server/sophia/personal-memory-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
 
@@ -98,7 +99,7 @@ async function main() {
     // in the writable .data dir, so lock acquisition itself succeeds and the
     // FAILURE happens exactly at the atomic-write step.
     const store = SophiaMemoryStore.getInstance();
-    fs.mkdirSync(path.join(process.cwd(), '.data', 'sophia_memories.json'), { recursive: true });
+    fs.mkdirSync(path.join(getTestDataDir(), 'sophia_memories.json'), { recursive: true });
     try {
       await store.createMemory({
         founderId: 'founder_failwrite_probe',

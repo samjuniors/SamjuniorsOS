@@ -10,6 +10,7 @@
 import assert from 'node:assert';
 import path from 'node:path';
 import fs from 'node:fs';
+import { getTestDataDir } from '../helpers/test-data';
 import { CompanyBrain } from '@/lib/server/brain/company-brain';
 import { CompanyContextProvider } from '@/lib/server/context/company-context';
 import { SophiaContextAssembler } from '@/lib/server/sophia/context-assembly';
@@ -19,7 +20,12 @@ import { SophiaServerGateway } from '@/lib/server/sophia/server-gateway';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { ProductFeature, CustomerDeal, AttentionItem, CompanyInitiative, FinanceMetric, ResearchTopic } from '@/types/os';
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
+assert.strictEqual(
+  DurableFileStore.getInstance().getDataDir(),
+  DATA_DIR,
+  'Durable stores must use the isolated test-data directory when configured',
+);
 
 const TOUCHED_DATA_FILES = [
   'company_state.json',

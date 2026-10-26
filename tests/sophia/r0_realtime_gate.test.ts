@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { NextRequest } from '@/lib/server/http';
 
 /**
@@ -25,7 +26,7 @@ import { NextRequest } from '@/lib/server/http';
  * the denial tests, then restored.
  */
 
-const AUDITS_FILE = path.resolve(process.cwd(), '.data', 'audits.json');
+const AUDITS_FILE = path.join(getTestDataDir(), 'audits.json');
 
 import { POST as realtimeTurn } from '../../src/app/api/realtime/turn/route';
 import { SideEffectAuthorizationGate } from '../../src/lib/server/authorization/gate';

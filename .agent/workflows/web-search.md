@@ -25,7 +25,7 @@ Search the web to gather information for technical decisions, API documentation,
 Parse the user's request into a focused search query.
 
 **Good queries:**
-- Specific: "Next.js 14 app router authentication best practices"
+- Specific: "Express.js API authentication best practices"
 - Targeted: "Prisma vs Drizzle ORM comparison 2024"
 - Actionable: "how to fix CORS error Express.js"
 

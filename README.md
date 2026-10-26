@@ -55,7 +55,7 @@ SamJuniorsOS runs out of the box with zero required external keys using built-in
 
 ### 2. Environment Configuration & Database Sync
 
-Copy the example environment file for both Next.js and Prisma:
+Copy the example environment file for the Express server and Prisma:
 
 ```bash
 # Clone the repository
@@ -66,7 +66,7 @@ cd SamjuniorsOS
 npm install
 # (or: bun install)
 
-# Configure environment (Prisma reads .env; Next.js reads .env.local and .env)
+# Configure environment (server.ts loads .env.local and .env; Prisma reads .env)
 cp .env.example .env
 cp .env.example .env.local
 

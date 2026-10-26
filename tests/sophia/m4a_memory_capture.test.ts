@@ -2,6 +2,7 @@ import assert from 'assert';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { randomUUID } from 'crypto';
 import { NextRequest } from '@/lib/server/http';
 import {
@@ -92,7 +93,7 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
 
 function readCollectionFile<T>(name: string): Record<string, T> {
   const p = path.join(DATA_DIR, `${name}.json`);

@@ -36,6 +36,7 @@
     "dist",
     "old",
     "upload",
-    "tests"
+    "tests",
+    "prisma/db"
   ]
 }

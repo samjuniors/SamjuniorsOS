@@ -4,7 +4,9 @@
   "remote": "origin",
   "checks": [
     "npm run typecheck",
-    "npm run lint"
+    "npm run lint",
+    "npm test",
+    "npm run build"
   ],
   "ci": {
     "mode": "off",
@@ -18,5 +20,57 @@
   },
   "secretScanIgnore": [
     "tests/sophia/m4a_memory_capture.test.ts"
-  ]
+  ],
+  "layout": {
+    "allowedTopLevel": [
+      "\"doc",
+      ".agent",
+      ".claude",
+      ".env.example",
+      ".env.staging.example",
+      ".github",
+      ".gitignore",
+      ".gitleaks.toml",
+      "AGENTS.md",
+      "ARCHITECTURE.md",
+      "CAPABILITY_REGISTRY.md",
+      "CLAUDE.md",
+      "CONTINUE.md",
+      "DESIGN.md",
+      "Dockerfile",
+      "GSD-STYLE.md",
+      "PRODUCT.md",
+      "PROGRESS.md",
+      "PROJECT_RULES.md",
+      "README.md",
+      "VERSION",
+      "WORKLOG.md",
+      "adapters",
+      "archive",
+      "benchmark",
+      "bun.lock",
+      "components.json",
+      "doc",
+      "docker-compose.staging.yml",
+      "docs",
+      "electron",
+      "electron-builder.json",
+      "eslint.config.mjs",
+      "index.html",
+      "metadata.json",
+      "mini-services",
+      "model_capabilities.yaml",
+      "old",
+      "package.json",
+      "prisma",
+      "public",
+      "scripts",
+      "server.ts",
+      "src",
+      "tests",
+      "tsconfig.json",
+      "vite-env.d.ts",
+      "vite.config.ts"
+    ]
+  }
 }

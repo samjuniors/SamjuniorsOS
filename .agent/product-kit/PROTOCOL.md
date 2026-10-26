@@ -151,5 +151,29 @@ Only what is in git survives a switch. Uncommitted work, unpushed commits, claim
 
 **Leaving a computer (or when the founder says "stop"):** run `checkpoint --all`. It scans every step and QA worktree for secrets, commits, and pushes each branch. Do not leave until every line says pushed.
 
+**Moving the whole disk (for example an SSD) keeps uncommitted work, claims and the journal, because they live in the folder.** Only the paths change (a different drive letter, for instance). `reconcile` re-links the step worktrees to the new location and keeps their uncommitted files; then continue.
+
 **Arriving on a computer:** clone the repository if needed, then `git switch kit/integration` (the kit lives on the integration branch until the first `milestone ship`; the default branch may not have it). Run `recover`. If it says NEW COMPUTER, run `reconcile`. It repairs and prunes stale worktree records, fetches, switches to the integration branch and fast-forwards it, restores every pushed step and QA branch as a local branch with a worktree and a claim, warns about branches that exist only on this computer, and records this computer so the notice stops. Then install dependencies, copy secrets from the founder's password manager, run `gh auth login` if CI waiting is on, and run `continue`. Claude Code's SessionStart hook shows the NEW COMPUTER notice automatically. NOT VERIFIED on Windows paths or a real second computer; tested only with a fresh clone on Linux.
+
+## 17. Delegation: alone or with helpers
+
+Every step starts with a written decision in the handoff (`Delegation decision`): alone or helpers, why, which roles, and whether this tool can start sub-agents. `done` refuses a blank or placeholder decision, and refuses "helpers" when a chosen role was never started (unless `Helpers not started because:` explains).
+
+The kit cannot make a tool start sub-agents. What it does: forces the decision, defines the roles and their limits, gives each helper its own worktree and branch, checks that a helper touched only its scope before merging it, and prints a ready card. A tool that can start sub-agents gives the card to one (`install-hook` adds `kit-researcher`, `kit-tester`, `kit-debugger` and `kit-reviewer` for Claude Code). A tool that cannot: the founder opens another chat in the same folder and pastes the card.
+
+| Role | Does | May change |
+|---|---|---|
+| researcher | settles unknowns: what exists, what the platform gives, options, risks | only its report |
+| tester | writes tests and runs the real checks against the running product while the step is built | test files and its report |
+| debugger | finds the root cause of a failure that resisted two attempts; fixes it with a regression test | source and test files, and its report |
+| reviewer | reviews the diff against the exit evidence, the quality bar and the smallest-change ladder | only its report |
+| implementer | builds a separate part | only the paths it was given |
+
+Commands: `team <ID>` explains; `helper start <ID> <role> --agent NAME [--paths a/,b/]` creates `helper/<ID>-<role>` from the step branch and prints the card; `helper land <ID> <role>` (from the step's worktree) checks scope and report, merges, and removes the helper. A helper never pushes or merges itself. Reports go in `handoffs/<ID>.research.md`, `.test.md`, `.debug.md`, `.review.md`.
+
+Use helpers when work truly runs in parallel; otherwise default to alone, because helpers cost usage and can conflict. The verifier of section 5 stays a separate session either way.
+
+## 18. Last work, for any agent or chat
+
+Every successful `claim`, `done`, `land`, `checkpoint`, `qa`, `sync`, `ack`, `milestone` and `helper` command is written to a journal inside `.git/kit/` (on this disk). `note <ID> --doing "..." --next "..."` adds what you were in the middle of; it is also written into the step's handoff under `Where I stopped`, so it travels with the branch. `recover` shows the last events, each in-flight worktree with its changed files, and the latest note. Write a note before you stop, switch tasks, or run low on context.
 
