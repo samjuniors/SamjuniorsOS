@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 9/13 steps done.
+- **Progress:** 10/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -109,8 +109,17 @@
     - Verified with memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.36s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
     - Verified all 89 test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.5 (Role Brains: per-employee memory projected from the Company Brain plus the employee's own working and experience memory):**
+    - Codified `RoleBrainMemoryRecord`, `RoleBrainProjectedContext`, `IRoleBrain`, and `RoleBrainMemoryScope` in `src/types/role-brain.ts` (re-exported via `src/types/brain.ts`).
+    - Added `RoleBrainMemory` model in `prisma/schema.prisma` with compound indexes on `[agentId, memoryScope, updatedAt]` and `[agentId, taskContext]`. Created versioned SQLite migration `prisma/migrations/20261026170000_role_brain_memories/migration.sql` and verified via `tests/platform/versioned_migrations.test.ts`.
+    - Implemented `RoleBrainStore` (`src/lib/server/brain/role-brain-store.ts`) with dual-mode storage (authoritative Prisma DB + durable collection fallback) and strict fail-closed cross-agent security: any unauthorized cross-employee read/write throws 403 `RoleBrainSecurityError`.
+    - Implemented `RoleBrain` runtime and registry (`src/lib/server/brain/role-brain.ts`) providing per-employee working memory (task-scoped scratchpad), experience memory, and deterministic Company Brain context projection with SHA-256 integrity hash.
+    - Verified strict boundaries: employee Role Brains cannot access Founder Personal Mind (`SophiaMemoryStore`), one employee cannot read another employee's working memory, and Role Brain memories never become authoritative company truth unless promoted.
+    - Authored dedicated test suite `tests/sophia/g11_5_role_brains.test.ts` (13/13 PASS across 6 isolation, projection, and durability groups).
+    - Verified memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.45s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
+    - Verified full canonical test suite (90 passed, 0 failed, 20 skipped), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G11.5 [platform]: Role Brains: per-employee memory projected from the Company Brain plus the employee's own working and experience memory.
   - G11.6 [security]: Memory poisoning and cross-scope leakage tests.
   - G11.7 [quality]: Continuity evaluation: Sofia remembers across a restart and across a compaction without losing what mattered.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
