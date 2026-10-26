@@ -339,19 +339,24 @@ function doctorHits() {
   const walk = (dir, depth) => {
     if (depth > 3 || !existsSync(dir)) return;
     for (const n of readdirSync(dir)) {
-      if (['node_modules', '.git', 'archive', 'kit-bundle', 'product-kit'].includes(n)) continue;
+      if (['node_modules', '.git', 'archive', 'audit', 'adr', 'kit-bundle', 'product-kit', 'research', 'worktrees'].includes(n)) continue;
       const f = path.join(dir, n);
       const st = statSync(f);
       if (st.isDirectory()) walk(f, depth + 1);
-      else if (/\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f);
+      else if (/\.(md|txt)$/i.test(n) && !['PROGRESS.md', 'WORKLOG.md'].includes(n)) files.push(f);
     }
   };
-  for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && n !== 'PROGRESS.md') files.push(f); }
+  for (const n of readdirSync(root)) { const f = path.join(root, n); if (statSync(f).isFile() && /\.(md|txt)$/i.test(n) && !['PROGRESS.md', 'WORKLOG.md'].includes(n)) files.push(f); }
   for (const d of ['docs', 'doc', path.basename(path.dirname(kitDir)), '.claude']) walk(path.join(root, d), 0);
   const stale = [...STALE];
   if (acks.has('MS-MX')) stale.push([/\bnext (dev|build|start)\b|\.next\b|app router|getServerSideProps|next\/(image|font|link)/i, 'the stack is now Vite + React + Express + TypeScript (milestone MX); update this to the new commands and layout']);
   const hits = [];
-  for (const f of new Set(files)) readFileSync(f, 'utf8').split('\n').forEach((line, i) => { for (const [re, why] of stale) if (re.test(line)) hits.push({ file: path.relative(root, f), line: i + 1, why, text: line.trim().slice(0, 140) }); });
+  const historical = /^(?:\.agent\/worktrees\/|WORKLOG\.md$|docs\/audit\/|docs\/research\/|doc\/adr\/|doc\/AUDIT(?:\s|\/)|docs\/architecture\/(?:PHASE_|ADR-|[^/]*_EVALUATION))/i;
+  for (const f of new Set(files)) {
+    const rel = path.relative(root, f).replaceAll('\\', '/');
+    if (historical.test(rel)) continue;
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => { for (const [re, why] of stale) if (re.test(line)) hits.push({ file: path.relative(root, f), line: i + 1, why, text: line.trim().slice(0, 140) }); });
+  }
   const mp = path.join(kitDir, 'MASTER_PROMPT.md');
   if (!existsSync(mp) || !readFileSync(mp, 'utf8').includes(`kit-version: ${KIT_VERSION}`)) hits.push({ file: '.agent/product-kit/MASTER_PROMPT.md', line: 1, why: `not kit version ${KIT_VERSION}; apply the update patch`, text: '' });
   return hits;

@@ -69,7 +69,7 @@ The repository structure reflects clean canonical boundaries with historical art
 ```
 SamjuniorsOS/
 ├── src/
-│   ├── app/                      # Next.js 16 App Router shell & HTTP API routes
+│   ├── app/                      # API route modules mounted by src/server/api.ts; Vite entry is src/main.tsx
 │   │   ├── api/                  # Authenticated server API endpoints
 │   │   │   ├── activity/         # Authoritative Activity projection
 │   │   │   ├── agents/           # Workforce roster & durable agent run records
@@ -285,7 +285,7 @@ The visual design system is documented in `DESIGN.md` and implemented across `sr
 
 ### Current Implementation (Working Repository Tree)
 - **Live Companion Server (`src/lib/server/live/server.ts`):** Dedicated Node.js WebSocket server running on port 3001 (or `LIVE_WS_PORT`).
-- **Ticket Authentication (`/api/auth/ws-ticket`):** Single-use, 60-second ephemeral tickets issued by authenticated Next.js routes.
+- **Ticket Authentication (`/api/auth/ws-ticket`):** Single-use, 60-second ephemeral tickets issued by the authenticated Express API router.
 - **Audio Ingress Pipeline (`src/lib/client/live/`):** 
   - AudioWorklet resampler converting microphone hardware inputs to 16 kHz mono Int16 PCM (512 samples / 32ms per frame).
   - Deterministic acoustic heuristic VAD (`SileroVadEngine`) gating transmission during silence.
