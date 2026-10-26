@@ -1,13 +1,13 @@
 # ADR 0011: Memory scopes, access, and evolution
 
-**Status:** DRAFT — founder approval required; no approval is recorded by this ADR.
+**Status:** APPROVED — founder approved as written on 2026-10-26.
 **Date:** 2026-10-26
 **Decision owner:** Founder
 **Scope:** G11.1 memory architecture decision; no runtime implementation.
 
 ## STATUS
 
-Proposed for founder review. G11.1 is not approved or complete until the founder's decision is recorded in their own words by the kit workflow.
+Approved by the founder on 2026-10-26. Exact founder words: “Approve as written.” This approval covers the architecture decisions and boundaries in this ADR. It does not claim that the distinct immutable per-read access ledger exists or authorize runtime changes outside the roadmap steps and boundaries recorded here.
 
 ## DECISION
 
@@ -96,4 +96,4 @@ No migration or runtime change. This ADR documents reuse of the current records 
 
 ## NEXT ACTION
 
-Founder: review and explicitly approve, reject, or amend this draft. Until the founder’s own words are recorded, status remains **DRAFT — approval pending**, G11.1 is not done, and no memory implementation step may treat this proposal as approved architecture.
+This ADR is approved as written. Follow-on memory steps may implement within these boundaries. Any second store requires a separate ADR approved by the founder. The separate immutable per-read access ledger remains NOT VERIFIED and is not authorized or claimed by this decision.
