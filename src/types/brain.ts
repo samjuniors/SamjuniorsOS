@@ -94,3 +94,5 @@ export interface ICompanyBrain extends ICompanyStateStore {
   getCanonicalContext(): Promise<FullCompanyContext>;
   formatForRoleContext(role: AgentRole | 'advisor', context: FullCompanyContext): string;
 }
+
+export * from './role-brain';
