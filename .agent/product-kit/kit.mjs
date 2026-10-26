@@ -19,7 +19,7 @@ const commonDir = path.resolve(kitDir, git(['rev-parse', '--git-common-dir']));
 const claimsDir = path.join(commonDir, 'kit', 'claims');
 const deviceFile = path.join(commonDir, 'kit', 'device.json');   // local to this computer, never committed
 
-const KIT_VERSION = 3;
+const KIT_VERSION = 4;
 // Optional local settings: kit.config.json { integrationBranch (steps land here), mainBranch (released here at milestone ship), remote, checks: [shell commands that must pass before anything lands], ci: { mode: off|wait }, lean, secretScanIgnore: [paths] }
 const cfgFile = path.join(kitDir, 'kit.config.json');
 const cfg = { mainBranch: 'main', integrationBranch: 'kit/integration', remote: 'origin', checks: [], secretScanIgnore: [], ci: {}, lean: {}, ...(existsSync(cfgFile) ? (() => { try { return JSON.parse(readFileSync(cfgFile, 'utf8')); } catch (e) { console.error(`kit: kit.config.json is not valid JSON (${e.message}). Fix it; nothing was changed.`); process.exit(1); } })() : {}) };
@@ -101,10 +101,9 @@ function parse(argv) {
 const die = (m) => { console.error(`kit: ${m}`); process.exit(1); };
 const need = (cond, m) => { if (!cond) die(m); };
 const stepOrDie = (id) => { const s = steps.get(id); need(s, `unknown step "${id}"`); return s; };
-const worktreePath = (id) =>
-  process.env.KIT_WORKTREE_DIR
-    ? path.join(path.resolve(process.env.KIT_WORKTREE_DIR), id)
-    : path.join(root, '.agent', 'worktrees', id);
+// Always relative to the MAIN checkout, even when called from inside a step worktree.
+const mainRoot = () => (git(['worktree', 'list', '--porcelain'], root).split('\n').find((l) => l.startsWith('worktree ')) ?? `worktree ${root}`).slice(9);
+const worktreePath = (id) => path.join(path.dirname(mainRoot()), `${path.basename(mainRoot())}-wt`, id);
 
 function pickReady(list, n) {
   const picked = [];
@@ -248,7 +247,7 @@ const readDevice = () => { try { return JSON.parse(readFileSync(deviceFile, 'utf
 const deviceNote = () => { const d = readDevice(); return !d ? 'FIRST SESSION on this checkout (new computer, new clone, or a copied folder): run "reconcile" before anything else' : d.host !== hostname() ? `this folder was last used on "${d.host}" and this computer is "${hostname()}": run "reconcile"` : null; };
 function checkpointAt(cwd, quiet) {
   const br = branchOf(cwd);
-  if (!/^(step|qa)\//.test(br)) { if (!quiet) die(`checkpoint saves work on a step or QA branch; you are on "${br}". ${[trunk, cfg.mainBranch].includes(br) ? `Work never happens directly on ${br}.` : ''}`); return `skipped ${cwd} (on ${br})`; }
+  if (!/^(step|qa|helper)\//.test(br)) { if (!quiet) die(`checkpoint saves work on a step or QA branch; you are on "${br}". ${[trunk, cfg.mainBranch].includes(br) ? `Work never happens directly on ${br}.` : ''}`); return `skipped ${cwd} (on ${br})`; }
   const id = br.split('/').slice(1).join('/');
   const hits = secretHits(cwd);
   if (hits.length) { const m = `possible secrets found in ${br}; nothing was committed. Remove them or add the file to .gitignore (values are not shown):\n  ${hits.join('\n  ')}`; if (!quiet) die(m); return m; }
@@ -259,6 +258,36 @@ function checkpointAt(cwd, quiet) {
   else if (!syncAcked()) msgs.push('not pushed: pushing needs the founder\'s GIT-SYNC authorization (ack GIT-SYNC)');
   else { const r = tryGit(['push', '-u', cfg.remote, br], cwd); if (!r.ok) { const m = `committed locally, but the push of ${br} failed (never force it):\n${r.out}`; if (!quiet) die(m); msgs.push(m); } else msgs.push(`pushed ${br} to ${cfg.remote}; ${trunk} and ${cfg.mainBranch} are untouched`); }
   return msgs.join('; ');
+}
+// ---- memory of the last work: an append-only journal on this disk (survives other agents, chats and computers that share the folder) ----
+const journalFile = path.join(commonDir, 'kit', 'journal.jsonl');
+function logEvent(type, id, text, extra = {}) {
+  try { mkdirSync(path.dirname(journalFile), { recursive: true }); writeFileSync(journalFile, JSON.stringify({ t: new Date().toISOString(), type, id: id ?? null, host: hostname(), text: String(text ?? '').slice(0, 400), ...extra }) + '\n', { flag: 'a' }); } catch { /* the journal is best effort */ }
+}
+const readJournal = () => { try { return readFileSync(journalFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+// ---- helper roles: who may touch what while several agents work on one step ----
+const TEST_PATH = /(^|\/)(tests?|__tests__|e2e|fixtures)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+const ROLES = {
+  researcher: { report: 'research', brief: 'Find out what the step needs before or while it is built: what already exists in the codebase, what the platform or installed dependencies already do, the options, the risks. Recommend one option. Do not change code.', scope: 'only your report file' },
+  tester: { report: 'test', brief: 'Write the tests the exit evidence needs and run the real checks against the running product. Report what passes, what fails and what you could not check. Do not change application code.', scope: 'test files (tests/, e2e/, *.test.*, *.spec.*) and your report file' },
+  debugger: { report: 'debug', brief: 'Find the root cause of a failing behaviour and fix it with the smallest change plus a regression test. Report the cause, the fix and the evidence.', scope: 'any source or test file, plus your report file' },
+  reviewer: { report: 'review', brief: 'Review the diff against the exit evidence, the quality bar and the smallest-change ladder. Name code that could be deleted or reused. Do not change code.', scope: 'only your report file' },
+  implementer: { report: null, brief: 'Build a separate part of the step, only in the paths you were given.', scope: 'only the paths you were given (--paths)' },
+};
+const helperBranch = (id, role) => `helper/${id}-${role}`;
+function outOfScope(role, id, files, paths) {
+  const rep = ROLES[role].report ? `${KIT_REL}/handoffs/${id}.${ROLES[role].report}.md` : null;
+  return files.filter((f) => {
+    if (f === rep) return false;
+    if (role === 'tester') return !TEST_PATH.test(f);
+    if (role === 'debugger') return f.startsWith(`${KIT_REL}/`);
+    if (role === 'implementer') return !paths.some((x) => f === x || f.startsWith(x.endsWith('/') ? x : `${x}/`));
+    return true;
+  });
+}
+function roleCard(id, role, wt, title, exit, paths) {
+  const r = ROLES[role];
+  return `ROLE: ${role} for step ${id} (${title})\nWork only in this folder: ${wt}\nBranch: ${helperBranch(id, role)} (branched from step/${id})\nYour job: ${r.brief}\nThe step must achieve: ${exit}\nYou may change only: ${r.scope}${paths?.length ? ` (${paths.join(', ')})` : ''}\n${r.report ? `Write your report to ${KIT_REL}/handoffs/${id}.${r.report}.md: what you did, what you found, evidence, and what is unknown (write NOT VERIFIED for anything you did not run).\n` : ''}Rules: follow AGENTS.md; do not push or merge; run "node ${KIT_REL}/kit.mjs checkpoint" often; never touch files outside your scope; when finished, tell the lead you are done.`;
 }
 const finishedNotLanded = () => [...done].filter((id) => branchExists(`step/${id}`) && !isMerged(`step/${id}`));
 const qaFile = (mid) => { for (const base of [kitDir, ...worktreeList().filter((w) => w.branch === `refs/heads/qa/${mid}`).map((w) => path.join(w.worktree, '.agent', 'product-kit'))]) { const f = path.join(base, 'qa', `${mid}.md`); if (existsSync(f)) return f; } return null; };
@@ -401,7 +430,7 @@ const cmds = {
     }
     const now = new Date().toISOString();
     writeFileSync(path.join(claimsDir, s.id, 'claim.json'), JSON.stringify({ step: s.id, agent, branch, worktree: wt, claimedAt: now, heartbeatAt: now }, null, 2));
-    console.log(`Claimed ${s.id} for ${agent}\nworktree: ${wt}\nbranch:   ${branch}\nexit:     ${s.exit}\nRun "heartbeat ${s.id}" at least every ${STALE_MS / 60000 / 2} minutes.`);
+    console.log(`Claimed ${s.id} for ${agent}\nworktree: ${wt}\nbranch:   ${branch}\nexit:     ${s.exit}\nRun "heartbeat ${s.id}" at least every ${STALE_MS / 60000 / 2} minutes.\nBefore coding, decide: alone or helpers? Write it in the handoff (Delegation decision); "team ${s.id}" shows the roles.`);
   },
 
   heartbeat(a) {
@@ -419,7 +448,7 @@ const cmds = {
     mkdirSync(path.join(kitDir, 'handoffs'), { recursive: true });
     const h = path.join(kitDir, 'handoffs', `${s.id}.md`);
     const v = path.join(kitDir, 'handoffs', `${s.id}.verify.md`);
-    if (!existsSync(h)) writeFileSync(h, `# ${s.id}: ${s.title}\n\nExit evidence required: ${s.exit}\n\n<!-- kit-v2 -->\n\n## Plan\n(5 to 10 lines before coding: files to touch, checks to run, what you will not do.)\n\n## Smallest-change ladder\nNeeded: <why this has to exist at all, in one line>\nAlready in codebase: <what you searched for and the files you found, or \"nothing found\" with the search>\nPlatform or dependency: <what the platform or an installed dependency already does that you used, or what you checked>\nNot built: <what you deliberately left out>\nAdded: <new files, abstractions and dependencies, each with the reason, or \"none\">\n\n## What changed\n\n## Why\n\n## Verification\n(commands run and their results)\n\n## Shortcuts taken\n(each one with its limit and when to upgrade, or "none")\n\n## Remaining risks\n\n## Findings opened\n`);
+    if (!existsSync(h)) writeFileSync(h, `# ${s.id}: ${s.title}\n\nExit evidence required: ${s.exit}\n\n<!-- kit-v2 -->\n<!-- kit-v4 -->\n\n## Delegation decision\nAlone or helpers: <alone or helpers>\nWhy: <one line: why this step does or does not need other agents working at the same time>\nRoles: <for helpers: researcher, tester, debugger, reviewer, implementer; otherwise none>\nHost can start sub-agents: <yes, no or unknown>\n\n## Plan\n(5 to 10 lines before coding: files to touch, checks to run, what you will not do.)\n\n## Smallest-change ladder\nNeeded: <why this has to exist at all, in one line>\nAlready in codebase: <what you searched for and the files you found, or \"nothing found\" with the search>\nPlatform or dependency: <what the platform or an installed dependency already does that you used, or what you checked>\nNot built: <what you deliberately left out>\nAdded: <new files, abstractions and dependencies, each with the reason, or \"none\">\n\n## What changed\n\n## Why\n\n## Verification\n(commands run and their results)\n\n## Shortcuts taken\n(each one with its limit and when to upgrade, or "none")\n\n## Remaining risks\n\n## Findings opened\n`);
     if (!existsSync(v)) writeFileSync(v, `# Independent verification of ${s.id}\n\nVerifier: <your agent name; it must differ from the implementer's>\n\nYou did not write this change. Read the exit evidence in gates.json and the diff, then run the checks yourself.\n\n## Exit evidence met\n(for each item: yes or no, and the command you ran)\n\n## Over-engineering check\n<!-- kit-v2 -->\nAnswer: <name code in this diff that could be deleted or replaced by something that already exists, or write \"none found\" and say what you compared it against>\n\n## Problems found\n\n## Verdict\n(replace this line with the one-word result)\n`);
     console.log(`Templates ready:\n  .agent/product-kit/handoffs/${s.id}.md (implementer)\n  .agent/product-kit/handoffs/${s.id}.verify.md (a second agent session fills this)`);
   },
@@ -445,6 +474,20 @@ const cmds = {
     need(who.toLowerCase() !== String(readClaim(s.id).agent).toLowerCase(), `the verifier (${who}) must be a different agent session from the implementer (${readClaim(s.id).agent})`);
     need(/##\s*Verdict[\s\S]*?\bPASS\b/.test(vt) && !/##\s*Verdict[\s\S]*?\bFAIL\b/.test(vt), `${s.id}.verify.md needs a Verdict of PASS`);
     const hf = readFileSync(path.join(kitDir, 'handoffs', `${s.id}.md`), 'utf8');
+    if (hf.includes('<!-- kit-v4 -->')) {
+      const d = SECTION(hf, 'Delegation decision');
+      const get = (k) => (d.match(new RegExp(`^${k}:\\s*(.+)$`, 'm')) ?? [])[1]?.trim() ?? '';
+      const mode = get('Alone or helpers').toLowerCase();
+      need(['alone', 'helpers'].includes(mode), `${s.id}.md: "Alone or helpers:" must say alone or helpers (PROTOCOL.md section 17)`);
+      need(filled(get('Why'), 15), `${s.id}.md: the delegation decision needs a "Why:" of at least a sentence`);
+      need(['yes', 'no', 'unknown'].includes(get('Host can start sub-agents').toLowerCase()), `${s.id}.md: "Host can start sub-agents:" must say yes, no or unknown`);
+      if (mode === 'helpers') {
+        const roles = get('Roles').toLowerCase().split(/[,\s]+/).filter((r) => ROLES[r]);
+        need(roles.length, `${s.id}.md: name the helper roles (${Object.keys(ROLES).join(', ')})`);
+        const started = new Set(readJournal().filter((e) => e.type === 'helper-start' && e.id === s.id).map((e) => e.role));
+        for (const r of roles) need(started.has(r) || /^Helpers not started because:\s*\S.{14,}/m.test(hf), `${s.id}.md: you chose a ${r} helper but never started one (helper start ${s.id} ${r} --agent NAME). If it turned out unnecessary, add a line "Helpers not started because: <reason>"`);
+      }
+    }
     if (hf.includes('<!-- kit-v2 -->')) {
       const lad = SECTION(hf, 'Smallest-change ladder');
       for (const k of ['Needed', 'Already in codebase', 'Platform or dependency', 'Not built', 'Added']) need(filled((lad.match(new RegExp(`^${k}:\\s*(.+)$`, 'm')) ?? [])[1], 4), `${s.id}.md: the smallest-change ladder needs a real answer for "${k}:" (PROTOCOL.md section 3)`);
@@ -599,7 +642,7 @@ const cmds = {
       tryGit(['worktree', 'prune'], root);
       const left = [];
       const names = (o) => o.split('\n').map((l) => l.replace(/^[*+ ]+/, '').trim()).filter(Boolean);
-      for (const b of names(tryGit(['branch', '--list', 'step/*', 'qa/*'], root).out)) {
+      for (const b of names(tryGit(['branch', '--list', 'step/*', 'qa/*', 'helper/*'], root).out)) {
         if (isMerged(b)) { if (hasRemote() && tryGit(['ls-remote', '--exit-code', '--heads', cfg.remote, b], root).ok) tryGit(['push', cfg.remote, '--delete', b], root); tryGit(['branch', '-d', b], root); }
         else left.push(b);
       }
@@ -660,7 +703,7 @@ const cmds = {
     const out = git(['worktree', 'list', '--porcelain'], root).split('\n\n').map((b) => Object.fromEntries(b.split('\n').map((l) => l.split(/ (.*)/s).slice(0, 2))));
     let any = false;
     for (const w of out) {
-      if (!w.branch || !/^refs\/heads\/(step|qa)\//.test(w.branch)) continue;
+      if (!w.branch || !/^refs\/heads\/(step|qa|helper)\//.test(w.branch)) continue;
       any = true;
       let dirty = '?';
       try { dirty = git(['status', '--porcelain'], w.worktree).split('\n').filter(Boolean).length; } catch { /* worktree missing */ }
@@ -702,7 +745,7 @@ const cmds = {
   // ---- kit v2: git sync, recover, QA pass, doctor ----
   checkpoint(a) {
     if (a?.flags?.all) {
-      const wts = worktreeList().filter((w) => /^refs\/heads\/(step|qa)\//.test(w.branch ?? ''));
+      const wts = worktreeList().filter((w) => /^refs\/heads\/(step|qa|helper)\//.test(w.branch ?? ''));
       need(wts.length, 'no step or QA worktrees to checkpoint');
       for (const w of wts) console.log(`${w.branch.replace('refs/heads/', '')}: ${checkpointAt(w.worktree, true)}`);
       return console.log('Safe to switch computers once every line above says pushed (or nothing uncommitted and already pushed). Then run "reconcile" on the other computer.');
@@ -832,10 +875,71 @@ const cmds = {
     console.log(`Make sure each workflow runs on pushes to ${trunk} and step/** (or all branches). Then set "ci": { "mode": "wait" } in kit.config.json. NOT VERIFIED: the kit has not seen your real runs yet.`);
   },
 
+  note(a) {
+    const id = a.pos[0] && a.pos[0] !== '-' ? a.pos[0] : (branchOf().match(/^(?:step|qa|helper)\/(.+)$/) ?? [])[1] ?? 'general';
+    need(filled(a.flags.doing, 10) && filled(a.flags.next, 10), 'note needs --doing "<what you were doing>" and --next "<the very next action>" (add --blocked "<why>" when stuck)');
+    logEvent('note', id, a.flags.doing, { next: a.flags.next, blocked: typeof a.flags.blocked === 'string' ? a.flags.blocked : undefined });
+    const h = path.join(kitDir, 'handoffs', `${id}.md`);
+    if (existsSync(h)) {
+      const t = readFileSync(h, 'utf8').replace(/^## Where I stopped[\s\S]*?(?=^## |(?![\s\S]))/m, '').trimEnd();
+      writeFileSync(h, `${t}\n\n## Where I stopped (${new Date().toISOString()})\nDoing: ${a.flags.doing}\nNext: ${a.flags.next}\n${typeof a.flags.blocked === 'string' ? `Blocked: ${a.flags.blocked}\n` : ''}`);
+    }
+    console.log(`Noted for ${id}. Any agent or chat that runs "recover" will see it.`);
+  },
+
+  team(a) {
+    const s = stepOrDie(a.pos[0]);
+    console.log(`Delegation for ${s.id}: ${s.title}\n\nDecide before you code, and write it in the handoff (Delegation decision). Default to ALONE when the step is small, in one area, and inside the lean limits. Use helpers when the work really runs in parallel:\n  researcher  an unknown to settle (what exists, what the platform gives, options and risks) while you start\n  tester      the exit evidence needs a real test suite or runs against the live app, while you build\n  debugger    a failure resisted two attempts of yours; give it only the failure\n  reviewer    a second look at the diff for size, reuse and the quality bar\n  implementer a clearly separate part in its own paths\nHelpers cost time and usage, and they can conflict: every helper has its own worktree and may touch only its scope.\n\nTo start one: node ${KIT_REL}/kit.mjs helper start ${s.id} <role> --agent NAME [--paths a/,b/]\nIt prints a ready card. If your tool can start sub-agents, give the card to one. If it cannot, open another chat in this folder and paste the card there; the founder can run the helper chats side by side.\nTo bring the work back (run from the step's worktree): node ${KIT_REL}/kit.mjs helper land ${s.id} <role>`);
+  },
+
+  helper(a) {
+    const [sub, id, role] = a.pos;
+    need(['start', 'land', 'list'].includes(sub), 'usage: helper start <ID> <role> --agent NAME [--paths a/,b/] | helper land <ID> <role> | helper list <ID>');
+    const s = stepOrDie(id);
+    if (sub === 'list') { const dir = path.join(claimsDir, `${id}.helpers`); return console.log(existsSync(dir) ? readdirSync(dir).map((f) => { const m = JSON.parse(readFileSync(path.join(dir, f), 'utf8')); return `${m.role}  ${m.agent}  ${m.worktree}`; }).join('\n') || 'no helpers' : 'no helpers'); }
+    need(ROLES[role], `role must be one of ${Object.keys(ROLES).join(', ')}`);
+    const hb = helperBranch(id, role), metaDir = path.join(claimsDir, `${id}.helpers`), metaFile = path.join(metaDir, `${role}.json`);
+    if (sub === 'start') {
+      need(typeof a.flags.agent === 'string', 'helper start needs --agent NAME');
+      need(branchExists(`step/${id}`) && readClaim(id), `step ${id} must be claimed first (claim ${id} --agent NAME)`);
+      const paths = typeof a.flags.paths === 'string' ? a.flags.paths.split(',').map((x) => x.trim()).filter(Boolean) : [];
+      need(role !== 'implementer' || paths.length, 'an implementer needs --paths the part it may build');
+      need(!branchExists(hb), `${hb} already exists (resume it, or land it)`);
+      const wt = worktreePath(`${id}.${role}`);
+      mkdirSync(path.dirname(wt), { recursive: true });
+      git(['worktree', 'add', '-b', hb, wt, `step/${id}`], root);
+      mkdirSync(metaDir, { recursive: true });
+      writeFileSync(metaFile, JSON.stringify({ step: id, role, agent: a.flags.agent, branch: hb, worktree: wt, paths, startedAt: new Date().toISOString() }, null, 2));
+      logEvent('helper-start', id, `${role} started by ${a.flags.agent}`, { role });
+      return console.log(`Helper ready.\n\n${roleCard(id, role, wt, s.title, s.exit, paths)}`);
+    }
+    const stepWt = worktreeList().find((w) => w.branch === `refs/heads/step/${id}`);
+    need(stepWt, `no worktree for step/${id}; run helper land from the step's worktree owner`);
+    need(branchExists(hb) && existsSync(metaFile), `no helper ${role} for ${id}`);
+    const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    const hw = worktreeList().find((w) => w.branch === `refs/heads/${hb}`);
+    if (hw) need(dirtyCount(hw.worktree) === 0, `the ${role} helper has uncommitted work in ${hw.worktree}; ask it to run checkpoint`);
+    need(dirtyCount(stepWt.worktree) === 0, `the step worktree ${stepWt.worktree} has uncommitted work; checkpoint it first`);
+    const base = git(['merge-base', `step/${id}`, hb], root);
+    const files = git(['diff', '--name-only', `${base}..${hb}`], root).split('\n').filter(Boolean);
+    const bad = outOfScope(role, id, files, meta.paths ?? []);
+    need(!bad.length, `the ${role} helper changed files outside its scope (${ROLES[role].scope}):\n  ${bad.join('\n  ')}\nAsk it to undo those changes, then land again.`);
+    if (ROLES[role].report) need(tryGit(['cat-file', '-e', `${hb}:${KIT_REL}/handoffs/${id}.${ROLES[role].report}.md`], root).ok, `the ${role} helper wrote no report at ${KIT_REL}/handoffs/${id}.${ROLES[role].report}.md`);
+    const m = tryGit(['merge', '--no-ff', '-m', `helper(${role}): ${id}`, hb], stepWt.worktree);
+    if (!m.ok) { tryGit(['merge', '--abort'], stepWt.worktree); die(`merging ${hb} into step/${id} conflicted and was aborted. The helper should merge step/${id} into its branch and resolve there (PROTOCOL.md section 11), then land again.`); }
+    if (hw) tryGit(['worktree', 'remove', hw.worktree], root);
+    if (hasRemote() && tryGit(['ls-remote', '--exit-code', '--heads', cfg.remote, hb], root).ok) tryGit(['push', cfg.remote, '--delete', hb], root);
+    if (tryGit(['merge-base', '--is-ancestor', hb, `step/${id}`], root).ok) tryGit(['branch', '-D', hb], root);   // merged into the step branch, so safe
+    else tryGit(['branch', '-d', hb], root);
+    rmSync(metaFile, { force: true });
+    logEvent('helper-land', id, `${role} merged (${files.length} file(s))`, { role });
+    console.log(`Merged the ${role} helper into step/${id} (${files.length} file(s)). Read its report before you continue.`);
+  },
+
   reconcile() {
     const L = [];
     const say = (x) => { L.push(x); console.log(x); };
-    tryGit(['worktree', 'repair'], root);
+    { const sib = path.dirname(worktreePath('x')); const dirs = existsSync(sib) ? readdirSync(sib).map((n) => path.join(sib, n)).filter((d) => existsSync(path.join(d, '.git'))) : []; tryGit(['worktree', 'repair', ...dirs], root); }
     tryGit(['worktree', 'prune'], root);
     if (hasRemote()) { const f = tryGit(['fetch', '--prune', cfg.remote], root); say(f.ok ? `Fetched ${cfg.remote}.` : `WARNING: fetch failed: ${f.out}`); }
     const rt = `${cfg.remote}/${trunk}`;
@@ -853,7 +957,7 @@ const cmds = {
       else if (ahead) say(`${trunk} has ${ahead} commit(s) not on ${cfg.remote}: run "sync" (or they exist only on this computer).`);
     }
     // Step and QA branches that exist on the remote: bring each back as a local branch with a worktree and a claim.
-    const remoteBranches = hasRemote() ? tryGit(['for-each-ref', '--format=%(refname:short)', `refs/remotes/${cfg.remote}/step`, `refs/remotes/${cfg.remote}/qa`], root).out.split('\n').filter(Boolean).map((r) => r.slice(cfg.remote.length + 1)) : [];
+    const remoteBranches = hasRemote() ? tryGit(['for-each-ref', '--format=%(refname:short)', `refs/remotes/${cfg.remote}/step`, `refs/remotes/${cfg.remote}/qa`, `refs/remotes/${cfg.remote}/helper`], root).out.split('\n').filter(Boolean).map((r) => r.slice(cfg.remote.length + 1)) : [];
     const adopted = [], merged = [], problems = [];
     for (const b of remoteBranches) {
       const id = b.split('/').slice(1).join('/');
@@ -883,7 +987,7 @@ const cmds = {
     if (adopted.length) say(`Restored ${adopted.length} step/QA branch(es) with worktrees:\n  ${adopted.join('\n  ')}\nEach needs its dependencies installed (for example npm install) before work resumes.`);
     if (merged.length) say(`Already merged, safe to ignore (land and ship delete these): ${merged.join(', ')}`);
     for (const x of problems) say(`WARNING: ${x}`);
-    const localOnly = tryGit(['branch', '--list', 'step/*', 'qa/*', '--format=%(refname:short)'], root).out.split('\n').filter(Boolean).filter((b) => hasRemote() && !remoteBranches.includes(b) && !isMerged(b));
+    const localOnly = tryGit(['branch', '--list', 'step/*', 'qa/*', 'helper/*', '--format=%(refname:short)'], root).out.split('\n').filter(Boolean).filter((b) => hasRemote() && !remoteBranches.includes(b) && !isMerged(b));
     if (localOnly.length) say(`WARNING: these branches exist only on this computer (never pushed): ${localOnly.join(', ')}. Run "checkpoint --all" soon.`);
     if (existsSync(path.join(root, '.env.example')) && !existsSync(path.join(root, '.env'))) say('Reminder: .env.example exists but .env does not. Secrets are never in git; copy them from your password manager.');
     say('Reminder on a new computer: install Node and dependencies, run "gh auth login" if CI waiting is on, and re-run the app once. Uncommitted work and unpushed commits on the OLD computer cannot be recovered from here.');
@@ -916,7 +1020,7 @@ const cmds = {
     need(from !== to, `the kit is already in ${to}`);
     need(/^\.[a-z][a-z0-9-]*$/.test(to), 'the new folder name must look like .agents');
     need(branchOf() === trunk && dirtyCount() === 0, `run this from a clean ${trunk} checkout`);
-    const busy = worktreeList().filter((w) => /^refs\/heads\/(step|qa)\//.test(w.branch ?? ''));
+    const busy = worktreeList().filter((w) => /^refs\/heads\/(step|qa|helper)\//.test(w.branch ?? ''));
     need(!busy.length, `finish and land in-flight work first (worktrees: ${busy.map((w) => w.branch.replace('refs/heads/', '')).join(', ')}); moving the folder under them would break their branches`);
     const move = (src, dst) => {
       if (!existsSync(dst)) { mkdirSync(path.dirname(dst), { recursive: true }); git(['mv', src, dst], root); return; }
@@ -963,18 +1067,22 @@ const cmds = {
       out(`Last finished: ${recent.length ? recent.map((r) => `${r.id} (${ago(r.doneAt)})`).join(', ') : 'nothing yet'}`);
       const unlanded = finishedNotLanded();
       if (unlanded.length) out(`Finished but NOT on ${trunk} yet: ${unlanded.join(', ')}  -> run "land <ID>" for each (from the main checkout)`);
+      const jr = readJournal();
+      if (jr.length) { out('Last events (newest first):'); for (const e of jr.slice(-6).reverse()) out(`  ${ago(e.t)}  ${e.type}${e.id ? ` ${e.id}` : ''}${e.text ? `: ${e.text}` : ''}${e.next ? `  -> next: ${e.next}` : ''}${e.blocked ? `  (blocked: ${e.blocked})` : ''}`); }
       out('In progress:');
       let any = false;
       for (const w of worktreeList()) {
         const b = (w.branch ?? '').replace('refs/heads/', '');
-        if (!/^(step|qa)\//.test(b)) continue;
+        if (!/^(step|qa|helper)\//.test(b)) continue;
         any = true;
         const id = b.split('/')[1];
         const c = readClaim(id.replace(/^QA-/, ''));
         let dirty = '?', last = 'n/a';
         try { dirty = dirtyCount(w.worktree); last = git(['log', '-1', '--format=%cr: %s'], w.worktree); } catch { /* missing worktree */ }
         const pushed = tryGit(['rev-parse', '--verify', '--quiet', `${cfg.remote}/${b}`], root).ok ? 'pushed' : 'not pushed';
-        out(`  ${b}  ${c ? `${c.agent}, ${c.stale ? 'STALE' : 'fresh'}` : 'no claim'}  uncommitted: ${dirty}  last commit ${last}  ${pushed}\n    ${w.worktree}`);
+        const files = tryGit(['status', '--porcelain'], w.worktree).out.split('\n').filter(Boolean).slice(0, 5).map((l) => l.trim());
+        const note = [...jr].reverse().find((e) => e.type === 'note' && e.id === id);
+        out(`  ${b}  ${c ? `${c.agent}, ${c.stale ? 'STALE' : 'fresh'}` : b.startsWith('helper/') ? 'helper' : 'no claim'}  uncommitted: ${dirty}  last commit ${last}  ${pushed}\n    ${w.worktree}${files.length ? `\n    changed: ${files.join(' | ')}` : ''}${note ? `\n    last note ${ago(note.t)}: ${note.text}  -> next: ${note.next}` : ''}`);
       }
       if (!any) out('  none');
       const fdir = path.join(kitDir, 'findings');
@@ -1045,6 +1153,10 @@ const cmds = {
     else { s.hooks.SessionStart.push({ matcher: 'startup|resume|clear|compact', hooks: [{ type: 'command', command }] }); mkdirSync(dir, { recursive: true }); writeFileSync(f, JSON.stringify(s, null, 2) + '\n'); console.log(`Added the SessionStart hook to ${path.relative(root, f)}.`); }
     const cmdFile = path.join(dir, 'commands', 'recover.md');
     if (!existsSync(cmdFile)) { mkdirSync(path.dirname(cmdFile), { recursive: true }); writeFileSync(cmdFile, '---\ndescription: Where did we stop? Show what is finished, what is in progress and what is next\n---\n\nRun `node .agent/product-kit/kit.mjs recover`. Tell me in three lines what is finished, what was interrupted, and what is next. Then run `node .agent/product-kit/kit.mjs continue` and do what it prints.\n'); console.log(`Added the /recover command at ${path.relative(root, cmdFile)}.`); }
+    for (const role of ['researcher', 'tester', 'debugger', 'reviewer']) {
+      const af = path.join(dir, 'agents', `kit-${role}.md`);
+      if (!existsSync(af)) { mkdirSync(path.dirname(af), { recursive: true }); writeFileSync(af, `---\nname: kit-${role}\ndescription: Helper for a kit step. ${ROLES[role].brief.split('.')[0]}.\n---\n\nYou are the ${role} helper for one step. ${ROLES[role].brief}\nYou may change only: ${ROLES[role].scope}. Follow the card the lead gives you (it names your folder and report file). Never push or merge. Write NOT VERIFIED for anything you did not run.\n`); console.log(`Added the Claude Code sub-agent ${path.relative(root, af)}.`); }
+    }
     const skl = path.join(dir, 'skills', 'product-kit', 'SKILL.md');
     if (!existsSync(skl)) { mkdirSync(path.dirname(skl), { recursive: true }); writeFileSync(skl, `---\nname: product-kit\ndescription: Use for the SamjuniorsOS roadmap, resuming work (recover, continue), landing steps, QA passes and founder decisions. Pointer only; the real skill is in ${path.dirname(KIT_REL)}/skills/product-kit/SKILL.md\n---\n\nRead ${path.dirname(KIT_REL)}/skills/product-kit/SKILL.md and ${KIT_REL}/MASTER_PROMPT.md, then follow them.\n`); console.log(`Added a Claude Code skill pointer at ${path.relative(root, skl)}.`); }
     console.log('Commit these files. NOT VERIFIED: the hook runs only in Claude Code; other agents use "recover" by hand (see MASTER_PROMPT.md).');
@@ -1135,14 +1247,16 @@ function renderMilestones() {
       for (const s of m.steps) L.push(`| ${s.id} | ${s.lane} | ${s.title} | ${s.slice_of || '-'} | ${s.defers} |`);
       L.push('');
     }
-    L.push(`**Gate steps:** ${m.uses.length ? m.uses.join(', ') : 'none'}`, '');
+    L.push(`**Gate steps:** ${(m.uses ?? []).length ? m.uses.join(', ') : 'none'}`, '');
   }
   writeFileSync(path.join(kitDir, 'MILESTONES.md'), L.join('\n'));
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
 if (!cmd || !cmds[cmd]) {
-  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | recover [--hook] | status | next [--lane L] [--n 4] | resume | validate | render | doctor [--strict]\n  qa start <M> | qa check <M> | checkpoint [--all] | reconcile | layout check|report|init | migrate-folder [--to .agents] | land <ID|QA-M> | sync | ci check | ci wait [branch] | install-hook\n  milestone status | verify <M> | ship <M> | close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
+  console.log(`usage: node .agent/product-kit/kit.mjs <command>\n  continue | recover [--hook] | status | next [--lane L] [--n 4] | resume | validate | render | doctor [--strict]\n  qa start <M> | qa check <M> | note --doing --next | team <ID> | helper start|land|list | checkpoint [--all] | reconcile | layout check|report|init | migrate-folder [--to .agents] | land <ID|QA-M> | sync | ci check | ci wait [branch] | install-hook\n  milestone status | verify <M> | ship <M> | close <M> --quote "..." [--dry-run]\n  claim <ID> --agent NAME [--takeover] [--base REF] | heartbeat <ID> | release <ID>\n  scaffold <ID> | done <ID> --evidence "..." | decide <ID> --quote "..." | ack <KEY> --quote "..."`);
   process.exit(cmd ? 1 : 0);
 }
-cmds[cmd](parse(rest));
+const parsed = parse(rest);
+cmds[cmd](parsed);
+if (['claim', 'done', 'land', 'checkpoint', 'qa', 'milestone', 'reconcile', 'sync', 'ack', 'decide', 'release', 'scaffold', 'migrate-folder'].includes(cmd)) logEvent(cmd, ['qa', 'milestone'].includes(cmd) ? parsed.pos[1] : parsed.pos[0], parsed.pos.join(' '));

@@ -6,6 +6,8 @@ One place per kind of file. Kit commands write only to the places below, and `do
 |---|---|---|
 | Agent instructions (binding) | `AGENTS.md` at the root. `CLAUDE.md` at the root is the Claude Code adapter and may be a short pointer | the founder, small edits by agents |
 | Kit tool, roadmap, protocol, quality bar | `.agents/product-kit/` | the kit |
+| Helper reports | `.agents/product-kit/handoffs/<ID>.research.md`, `.test.md`, `.debug.md`, `.review.md` | helpers |
+| Last-work journal | `.git/kit/journal.jsonl` (local, never committed) | kit commands |
 | Kit state | `.agents/product-kit/` subfolders: `done`, `ack`, `handoffs`, `findings`, `qa`, `briefs`, `capability-requests`, `archive` | kit commands |
 | Skills | `.agents/skills/<name>/SKILL.md` | the kit, the founder |
 | Claude Code adapters (hook, `/recover`, skill pointer) | `.claude/` | `install-hook` |
