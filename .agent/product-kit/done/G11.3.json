@@ -1,0 +1,8 @@
+{
+  "id": "G11.3",
+  "doneAt": "2026-10-26T10:09:00.495Z",
+  "agent": "worker-retrieval",
+  "branch": "step/G11.3",
+  "commit": "d667ec4be7e5ad9f9d1a7b51c319267c78ed32a1",
+  "evidence": "Retrieval benchmark verified against recorded baseline M5.3-A3 (13 queries, zero regressions, 100% render recall); sourceIds: string[] added to all recalled slices, assembled context, and turn results; honest 'I do not remember' verified on empty personal and company queries with sourceIds: []"
+}
