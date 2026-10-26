@@ -652,6 +652,44 @@ export class CompanyKnowledgeStore implements ICompanyKnowledgeStore {
     return results.slice(0, limit);
   }
 
+  public async deleteKnowledge(documentId: string): Promise<boolean> {
+    await this.ensurePrismaSeeded();
+    const cleanId = (documentId || '').trim();
+    if (!cleanId) return false;
+
+    if (isAuthoritativeMode()) {
+      const db = await requireAuthoritativeDatabase();
+      const res = await db.companyKnowledge.deleteMany({
+        where: { id: cleanId },
+      });
+      return res.count > 0;
+    }
+
+    const beforeLen = this.knowledgeItems.length;
+    this.knowledgeItems = this.knowledgeItems.filter(
+      (k) => k.documentId !== cleanId && k.id !== cleanId
+    );
+    const removed = this.knowledgeItems.length < beforeLen;
+    if (removed) {
+      try {
+        DurableFileStore.getInstance().deleteItem('company_knowledge', cleanId);
+      } catch {
+        // file cleanup best effort
+      }
+    }
+    // Best-effort Prisma mirror delete
+    try {
+      if ((prisma as any)?.companyKnowledge) {
+        await (prisma as any).companyKnowledge.deleteMany({
+          where: { id: cleanId },
+        });
+      }
+    } catch {
+      // Non-fatal if DB is offline or unset in local mode
+    }
+    return removed;
+  }
+
   private buildRowMetadata(item: CompanyKnowledgeItem): any {
     return {
       documentId: item.documentId,
