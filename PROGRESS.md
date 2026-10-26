@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 8/13 steps done.
+- **Progress:** 9/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -98,10 +98,21 @@
     - Added dedicated test suite `tests/sophia/g11_3_scope_aware_retrieval.test.ts` (10/10 PASS) verifying retrieval benchmark baseline integrity against `M5.3-A3`, slice and aggregate source ID attribution, scope isolation (`personal_only`, `company_only`, `none`), and honest abstentions.
     - Verified with zero retrieval benchmark regressions (`npm run benchmark:memory`: 13 queries, 100% mean render recall, 92.1% union recall, 0 failures, 0 boundary violations), clean canonical test suite execution (87 passed, 0 failed, 20 skipped), `typecheck` (0 errors), `lint` (0 errors), and `layout check` (PASS).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.4 (Consolidation and forgetting: episodic into semantic, contradiction and supersession handling, deletion that removes derived copies):**
+    - Implemented `DependencyRelationStore.deleteRelationsForFact(factId)` to purge all derived `DEPENDS_ON` relations when a canonical fact is deleted.
+    - Implemented `deleteFact(id)` across `IEpistemicClaimStore`, `PostgresEpistemicStore`, and `EpistemicClaimStore` with cascading derived relation cleanup and safe `promotedAt` sorting.
+    - Implemented `deleteKnowledge(id)` across `ICompanyKnowledgeStore` and `CompanyKnowledgeStore` with cache, file store, and database mirror deletion.
+    - Created memory consolidation engine `src/lib/server/memory/consolidation.ts`: `consolidateConversationToMemory` consolidates episodic turns into semantic personal memory with explicit provenance (`sourceConversationId`, `sourceTurnIds`, `consolidatedAt`, `derivedFrom`) in `SophiaMemoryStore`.
+    - Implemented `purgeDerivedMemoriesForConversation(conversationId, founderId)` and wired it into `ConversationStore.deleteConversation` (step 8) so that deleting a conversation purges all derived consolidated memories (zero ghost copies survive).
+    - Verified supersession and contradiction handling: superseded facts and personal memories are excluded from active fact queries, active relations, and active context slices.
+    - Authored comprehensive test suite `tests/sophia/g11_4_consolidation_and_forgetting.test.ts` (12/12 PASS).
+    - Verified with memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.36s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
+    - Verified all 89 test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G11.4 [platform]: Consolidation and forgetting: episodic into semantic, contradiction and supersession handling, deletion that removes derived copies.
   - G11.5 [platform]: Role Brains: per-employee memory projected from the Company Brain plus the employee's own working and experience memory.
   - G11.6 [security]: Memory poisoning and cross-scope leakage tests.
+  - G11.7 [quality]: Continuity evaluation: Sofia remembers across a restart and across a compaction without losing what mattered.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
 
 ## Milestone M2 Archive Details
