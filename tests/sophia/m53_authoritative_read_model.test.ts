@@ -1,10 +1,10 @@
 import assert from 'assert';
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { CanonicalFact } from '../../src/types/epistemic';
 import { spawnTestChild, runPrismaCommand } from '../helpers/child-runner';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl } from '../helpers/test-database';
 
 /**
  * ============================================================================
@@ -36,9 +36,10 @@ import { spawnTestChild, runPrismaCommand } from '../helpers/child-runner';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'samjuniors-m53-auth-'));
+const scratch = fs.mkdtempSync(path.join(getTestDatabaseDir(), 'm53-auth-'));
 const dbFile = path.join(scratch, 'authoritative.db');
-process.env.DATABASE_URL = `file:${dbFile}`;
+const dbUrl = toSchemaRelativeSqliteUrl(dbFile);
+process.env.DATABASE_URL = dbUrl;
 process.env.DATABASE_MODE = 'authoritative';
 // NODE_ENV is typed read-only in @types/node; the audit-mandated test-safe
 // cast keeps the assignment while satisfying tsc (runtime behavior under bun
@@ -49,7 +50,7 @@ runPrismaCommand(
   ['db', 'push', '--schema', 'prisma/schema.prisma', '--skip-generate', '--accept-data-loss'],
   {
     cwd: REPO_ROOT,
-    env: { ...process.env, DATABASE_URL: `file:${dbFile}` },
+    env: { ...process.env, DATABASE_URL: dbUrl },
     stdio: 'pipe',
   }
 );

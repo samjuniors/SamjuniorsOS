@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { InMemoryIdempotencyStore } from '../../src/lib/server/idempotency/store';
 import { OperationInProgressError } from '../../src/lib/server/idempotency/state-machine';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
@@ -26,7 +27,7 @@ import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-
  * Local-mode store (in-memory + DurableFileStore primary per ADR 0002).
  */
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
 const IDEMPOTENCY_FILE = path.join(DATA_DIR, 'idempotency_records.json');
 
 let passed = 0;

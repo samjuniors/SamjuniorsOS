@@ -4,7 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-import os from 'os';
+import { getTestDataDir } from '../helpers/test-data';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl } from '../helpers/test-database';
 import {
   CompanyKnowledgeStore,
   CANONICAL_COMPANY_KNOWLEDGE,
@@ -44,12 +45,13 @@ import { spawnTestChild, runPrismaCommand } from '../helpers/child-runner';
  * test 8 exercises authoritative mode against a throwaway SQLite database.
  */
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'company_knowledge.json');
 const KNOWLEDGE_INITIALIZED_FILE = `${KNOWLEDGE_FILE}.initialized`;
-// Throwaway database for the authoritative-mode test (absolute path — Prisma
-// resolves relative SQLite paths against prisma/).
-const AUTHORITY_DB = path.join(os.tmpdir(), `m2-knowledge-authority-${process.pid}.db`);
+// Throwaway database stays inside the runner's scratch directory so Prisma CLI
+// can address it with a schema-relative SQLite URL on Windows.
+const AUTHORITY_DB = path.join(getTestDatabaseDir(), `m2-knowledge-authority-${process.pid}.db`);
+const AUTHORITY_DB_URL = toSchemaRelativeSqliteUrl(AUTHORITY_DB);
 
 let passed = 0;
 let failed = 0;
@@ -86,7 +88,7 @@ async function runAuthorityChild(mode: string): Promise<any> {
   const res = await spawnTestChild(scriptPath, [mode], {
     env: {
       DATABASE_MODE: 'authoritative',
-      DATABASE_URL: `file:${AUTHORITY_DB}`,
+      DATABASE_URL: AUTHORITY_DB_URL,
     },
   });
   if (res.exitCode !== 0) {
@@ -324,7 +326,7 @@ async function runTests() {
       runPrismaCommand(
         ['db', 'push', '--schema', 'prisma/schema.prisma', '--accept-data-loss', '--skip-generate'],
         {
-          env: { ...process.env, DATABASE_URL: `file:${AUTHORITY_DB}` },
+          env: { ...process.env, DATABASE_URL: AUTHORITY_DB_URL },
           stdio: 'pipe',
           timeoutMs: 120_000,
         }

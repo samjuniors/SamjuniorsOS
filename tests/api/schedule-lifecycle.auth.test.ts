@@ -23,6 +23,8 @@ import { POST as POST_ORCHESTRATE } from "../../src/app/api/orchestrate/route";
 import { POST as POST_ACTIONS } from "../../src/app/api/workflow/scheduling/actions/route";
 import { PrismaClient } from "@prisma/client";
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
+import { getTestDataDir } from '../helpers/test-data';
 
 // Restore the REAL authoritative SQLite before any test runs (combined runs
 // may have pointed DATABASE_URL at a throwaway copy).
@@ -48,7 +50,7 @@ const createdInstanceIds: string[] = [];
 const createdDefinitionIds: string[] = [];
 
 function pruneDurableCollection(collection: string, ids: string[]): void {
-  const file = `.data/${collection}.json`;
+  const file = join(getTestDataDir(), `${collection}.json`);
   try {
     if (!existsSync(file) || ids.length === 0) return;
     const raw = JSON.parse(readFileSync(file, "utf-8"));

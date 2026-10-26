@@ -14,6 +14,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getTestDataDir } from '../helpers/test-data';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl, toRuntimeSqliteUrl } from '../helpers/test-database';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { execSync } from 'node:child_process';
@@ -28,8 +30,8 @@ const repoRoot = path.resolve(__dirname, '../../');
 const fixtureDir = path.join(repoRoot, 'tests', 'fixtures', 'g2_3_seed');
 const exportDir = path.join(repoRoot, 'tests', 'fixtures', 'g2_3_export');
 const testDbName = `test_parity_${Date.now()}.db`;
-const testDbPath = path.join(repoRoot, 'prisma', 'db', testDbName);
-const testDbUrl = `file:${testDbPath.replace(/\\/g, '/')}`;
+const testDbPath = path.join(getTestDatabaseDir(), testDbName);
+const testDbUrl = toSchemaRelativeSqliteUrl(testDbPath);
 
 async function runParitySuite() {
   console.log('--- [Test Suite] G2.3 Store Migration Parity & Rollback Rehearsal ---');
@@ -46,7 +48,7 @@ async function runParitySuite() {
   console.log('   ✓ Database deployed with versioned migrations');
 
   const prisma = new PrismaClient({
-    datasources: { db: { url: testDbUrl } },
+    datasources: { db: { url: toRuntimeSqliteUrl(testDbPath) } },
   });
 
   try {
@@ -271,7 +273,7 @@ async function runParitySuite() {
 
     // 6. Test migration of live repository .data/
     console.log('6. Validating migration against live repository .data/ directory...');
-    const liveDataDir = path.join(repoRoot, '.data');
+    const liveDataDir = getTestDataDir();
     if (existsSync(liveDataDir)) {
       const liveResult = await migrateFileStoresToSqlite({
         prisma,

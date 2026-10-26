@@ -15,10 +15,10 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import fs from 'fs';
-import os from 'os';
 import crypto from 'crypto';
 import { execSync } from 'child_process';
 import { PrismaClient } from '@prisma/client';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl, toRuntimeSqliteUrl } from '../helpers/test-database';
 import {
   createBackup,
   restoreBackup,
@@ -31,7 +31,7 @@ async function main() {
   console.log('SAMJUNIORS-OS: BACKUP & RESTORE DISASTER DRILL (G2.5)');
   console.log('=============================================================\n');
 
-  const tempSuiteRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'samjuniors-g25-drill-'));
+  const tempSuiteRoot = fs.mkdtempSync(path.join(getTestDatabaseDir(), 'g25-drill-'));
   const testDbDir = path.join(tempSuiteRoot, 'db');
   const testDataDir = path.join(tempSuiteRoot, '.data');
   const testBackupDir = path.join(tempSuiteRoot, 'backups');
@@ -43,7 +43,7 @@ async function main() {
   fs.mkdirSync(testBackupDir, { recursive: true });
 
   const testDbPath = path.join(testDbDir, 'custom.db');
-  const normalizedTestDbUrl = `file:${testDbPath.replace(/\\/g, '/')}`;
+  const normalizedTestDbUrl = toSchemaRelativeSqliteUrl(testDbPath);
 
   process.env.DATABASE_URL = normalizedTestDbUrl;
   process.env.DATABASE_MODE = 'authoritative';
@@ -58,7 +58,7 @@ async function main() {
   console.log('[DRILL SETUP] Database schema deployed cleanly.\n');
 
   const prisma = new PrismaClient({
-    datasources: { db: { url: normalizedTestDbUrl } },
+    datasources: { db: { url: toRuntimeSqliteUrl(testDbPath) } },
   });
 
   let passed = 0;
@@ -321,8 +321,8 @@ async function main() {
     // STEP 7: Verify Database Integrity & Prisma Queries on Restored Tables
     // ------------------------------------------------------------------------
     await step('7. Verify PRAGMA integrity_check and query all restored domain models', async () => {
-      const cleanDbUrl = `file:${cleanDbPath.replace(/\\/g, '/')}`;
-      const restoredPrisma = new PrismaClient({ datasources: { db: { url: cleanDbUrl } } });
+      const cleanDbUrl = toSchemaRelativeSqliteUrl(cleanDbPath);
+      const restoredPrisma = new PrismaClient({ datasources: { db: { url: toRuntimeSqliteUrl(cleanDbPath) } } });
 
       try {
         // PRAGMA check

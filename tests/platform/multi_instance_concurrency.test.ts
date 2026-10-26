@@ -15,9 +15,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import fs from 'fs';
-import os from 'os';
 import { execSync, fork } from 'child_process';
 import { PrismaClient } from '@prisma/client';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl, toRuntimeSqliteUrl } from '../helpers/test-database';
 import { InstanceConcurrencyGuard } from '../../src/lib/server/persistence/instance-guard';
 import {
   DatabaseDistributedLeaseManager,
@@ -34,10 +34,9 @@ async function main() {
   console.log('SAMJUNIORS-OS: MULTI-INSTANCE CONCURRENCY SUITE (G2.4)');
   console.log('======================================================\n');
 
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'samjuniors-g24-concurrency-'));
+  const tempDir = fs.mkdtempSync(path.join(getTestDatabaseDir(), 'g24-concurrency-'));
   const testDbFile = path.join(tempDir, 'concurrency_test.db');
-  const normalizedDbPath = testDbFile.replace(/\\/g, '/');
-  const testDbUrl = `file:${normalizedDbPath}`;
+  const testDbUrl = toSchemaRelativeSqliteUrl(testDbFile);
 
   // Configure environment to authoritative mode pointing to dedicated test database
   process.env.DATABASE_URL = testDbUrl;
@@ -57,7 +56,7 @@ async function main() {
   console.log('[SUITE SETUP] Migrations applied successfully.\n');
 
   const prisma = new PrismaClient({
-    datasources: { db: { url: testDbUrl } },
+    datasources: { db: { url: toRuntimeSqliteUrl(testDbFile) } },
   });
 
   let passed = 0;
@@ -409,7 +408,7 @@ async function main() {
           subprocessScript,
           `
           const { PrismaClient } = require('@prisma/client');
-          const prisma = new PrismaClient({ datasources: { db: { url: ${JSON.stringify(testDbUrl)} } } });
+          const prisma = new PrismaClient({ datasources: { db: { url: ${JSON.stringify(toRuntimeSqliteUrl(testDbFile))} } } });
           async function run() {
             const now = new Date();
             const expiresAt = new Date(now.getTime() + 1200);

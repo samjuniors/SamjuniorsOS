@@ -34,6 +34,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import os from 'os';
 import { randomUUID } from 'crypto';
 import { NextRequest } from '@/lib/server/http';
@@ -197,7 +198,7 @@ async function main() {
   const observations: TurnObservation[] = [];
 
   console.log('M4-A HARDENING — REDUCED POST-FIX OBSERVATION');
-  console.log(`Existing store record count: ${Object.keys((() => { try { return JSON.parse(fs.readFileSync(path.join(process.cwd(), '.data/sophia_memories.json'), 'utf-8')); } catch { return {}; } })()).length}`);
+  console.log(`Existing store record count: ${Object.keys((() => { try { return JSON.parse(fs.readFileSync(path.join(getTestDataDir(), 'sophia_memories.json'), 'utf-8')); } catch { return {}; } })()).length}`);
 
   // Idempotent re-runs: clear previous observation founders (obs data only).
   for (const obsFounder of ['founder_hard_obs_ctx', 'founder_hard_obs_long', 'founder_hard_obs_ra', 'founder_hard_obs_rd', 'founder_hard_obs_rs']) {

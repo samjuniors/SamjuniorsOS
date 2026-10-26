@@ -2,6 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
+import { getTestDataDir } from '../helpers/test-data';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { randomUUID } from 'crypto';
@@ -79,7 +80,7 @@ async function runTest(name: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
 const MEM_FILE = path.join(DATA_DIR, 'sophia_memories.json');
 
 function readCollectionFile<T>(name: string): Record<string, T> {

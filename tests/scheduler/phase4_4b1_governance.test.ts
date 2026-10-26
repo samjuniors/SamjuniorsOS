@@ -76,6 +76,7 @@ import type { FounderApprovalRecord } from "../../src/types/authorization";
 import type { ScheduledWorkItem } from "../../src/types/scheduling";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { getTestDataDir } from '../helpers/test-data';
 
 /* ----------------------------------------------------------- artifact hygiene */
 
@@ -105,7 +106,7 @@ const createdScheduleIds = new Set<string>();
 
 function durableCollectionPath(collection: string): string | null {
   try {
-    const dir = (gate as any) && join(process.cwd(), ".data");
+    const dir = (gate as any) && getTestDataDir();
     if (!existsSync(dir)) return null;
     const p = join(dir, `${collection}.json`);
     return existsSync(p) ? p : null;
