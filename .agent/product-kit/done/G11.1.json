@@ -1,0 +1,8 @@
+{
+  "id": "G11.1",
+  "doneAt": "2026-10-26T04:26:43.273Z",
+  "agent": "lead",
+  "branch": "step/G11.1",
+  "commit": "156423ccf3464fa6953be8261cd5ffbcf8e1070b",
+  "evidence": "Founder approved the ADR as written; independent verification PASS at f6582d5, with current citations and scope-by-reader matrix. Documentation-only work; runtime ledger remains NOT VERIFIED."
+}
