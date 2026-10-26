@@ -703,3 +703,30 @@ model CommunicationWebhookEvent {
   @@map("communication_webhook_events")
 }
 
+
+
+// ---------------------------------------------------------
+// 19. ROLE BRAIN MEMORY (G11.5 / M3)
+// ---------------------------------------------------------
+// Per-employee working and experience memory for AI employees
+// (Dr. Aris Thorne/researcher, Maya Lin/pm, Julian Cruz/finance, Sophia/coo).
+// INVARIANTS:
+//  - Strictly bound to employeeRole / agentId.
+//  - Cross-employee reads fail closed.
+//  - Personal Mind memories are NEVER stored or accessed here.
+//  - Never becomes company truth unless explicitly promoted via epistemic pipeline.
+model RoleBrainMemory {
+  id          String   @id @default(uuid())
+  agentId     String   // "researcher" | "pm" | "finance" | "coo"
+  memoryScope String   // "working" | "experience"
+  content     String
+  taskContext String?  // optional taskId or workflowInstanceId
+  provenance  String   // e.g. "task_run:<runId>" | "employee_note"
+  metadata    Json     @default(dbgenerated("'{}'"))
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([agentId, memoryScope, updatedAt])
+  @@index([agentId, taskContext])
+  @@map("role_brain_memories")
+}
