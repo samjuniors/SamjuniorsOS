@@ -1,0 +1,8 @@
+{
+  "id": "G11.5",
+  "doneAt": "2026-10-26T11:39:01.531Z",
+  "agent": "worker-role-brains",
+  "branch": "step/G11.5",
+  "commit": "03264f4d06f79966a9d4b4291b3106de05a17986",
+  "evidence": "All 13 Role Brain isolation and projection tests in tests/sophia/g11_5_role_brains.test.ts pass cleanly. Cross-employee memory reads, writes, and clears fail closed with 403 RoleBrainSecurityError. Personal Mind memories are strictly invisible to Role Brains and employee context assembly. Projections from Company Brain produce deterministic SHA-256 hashes and update deterministically when Company Brain state changes. Subjective role memories never enter company truth stores. Versioned migrations test passes against empty database with 30 application tables. Memory retrieval benchmark passes with zero regressions against M5.3-A3 baseline in 1.45s. Typecheck, lint, and layout check all pass with 0 errors."
+}
