@@ -630,11 +630,24 @@ async function main() {
       (err: any) => err instanceof SophiaMemoryValidationError,
       'company-fact-flavored types are rejected — this store is not the Company Brain'
     );
+    for (const memoryType of ['SEMANTIC_FACT', 'EPISODIC_SUMMARY', 'PROCEDURAL_NOTE']) {
+      await assert.rejects(
+        store.createMemory({ founderId: founderA, memoryType: memoryType as any, content: 'x' }),
+        (err: any) => err instanceof SophiaMemoryValidationError,
+        `${memoryType} must use its existing Company Brain or ConversationStore owner, not Personal Mind`
+      );
+    }
     await assert.rejects(
       store.createMemory({ founderId: founderA, memoryType: 'INTERACTION_PREFERENCE', content: '' }),
       (err: any) => err instanceof SophiaMemoryValidationError,
       'empty content rejected'
     );
+    const exactBound = await store.createMemory({
+      founderId: founderA,
+      memoryType: 'INTERACTION_PREFERENCE',
+      content: 'x'.repeat(2000),
+    });
+    assert.strictEqual(exactBound.content.length, 2000, 'the documented content bound is inclusive');
     await assert.rejects(
       store.createMemory({
         founderId: founderA,
