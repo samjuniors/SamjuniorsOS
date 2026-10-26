@@ -88,6 +88,7 @@ export interface SophiaTurnResult {
   cancelled?: boolean;
   scopes?: MemoryScope[];
   sources?: string[];
+  sourceIds?: string[];
   decisionLog?: SophiaDecisionLogEntry;
 }
 
@@ -164,6 +165,7 @@ async function cancelledTurnResult(
     error: 'Turn cancelled before completion',
     scopes: [],
     sources: [],
+    sourceIds: [],
     decisionLog: cancelLog,
   };
 }
@@ -369,6 +371,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         scopes: [],
         sources: ['SafeModeManager'],
+        sourceIds: [],
       };
     }
 
@@ -386,6 +389,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       cancelled: true,
       scopes: [],
       sources: ['SafeModeManager'],
+      sourceIds: [],
     };
   }
 
@@ -436,6 +440,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
           ingress: opts.ingress ?? 'live_voice',
           scopes: [],
           sources: ['SafeModeManager'],
+          sourceIds: [],
           decisionLog: stopLog,
         },
       }, founderId);
@@ -454,6 +459,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       cancelled: true,
       scopes: [],
       sources: ['SafeModeManager'],
+      sourceIds: [],
     };
   }
 
@@ -500,6 +506,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
           ingress: opts.ingress ?? 'live_voice',
           scopes: [],
           sources: ['SpendSettingsManager'],
+          sourceIds: [],
           decisionLog: capLog,
         },
       }, founderId);
@@ -519,6 +526,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       cancelled: true,
       scopes: [],
       sources: ['SpendSettingsManager'],
+      sourceIds: [],
     };
   }
 
@@ -550,6 +558,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         cancelled: existingAssistantMessage.metadata?.cancelled === true,
         scopes: existingAssistantMessage.metadata?.scopes,
         sources: existingAssistantMessage.metadata?.sources,
+        sourceIds: existingAssistantMessage.metadata?.sourceIds,
         decisionLog: existingAssistantMessage.metadata?.decisionLog,
       };
     }
@@ -653,6 +662,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: [],
               sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
+              sourceIds: priorLog ? [priorLog.id] : [],
               decisionLog: explanationLog,
             },
           },
@@ -673,6 +683,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         scopes: [],
         sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
+        sourceIds: priorLog ? [priorLog.id] : [],
         decisionLog: explanationLog,
       };
     }
@@ -757,6 +768,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: ['personal_mind'],
               sources: ['SophiaMemoryStore'],
+              sourceIds: [],
               decisionLog: abstainLog,
             },
           },
@@ -777,6 +789,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         scopes: ['personal_mind'],
         sources: ['SophiaMemoryStore'],
+        sourceIds: [],
         decisionLog: abstainLog,
       };
     }
@@ -823,6 +836,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: ['company_brain'],
               sources: ['CompanyKnowledgeStore'],
+              sourceIds: [],
               decisionLog: abstainLog,
             },
           },
@@ -843,6 +857,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         liveAi: false,
         scopes: ['company_brain'],
         sources: ['CompanyKnowledgeStore'],
+        sourceIds: [],
         decisionLog: abstainLog,
       };
     }
@@ -897,6 +912,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
       const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
       const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
+      const returnSourceIds: string[] = executionResult.sourceIds ?? assembledContext.sourceIds ?? [];
       const refuseLog = buildDecisionLogEntry({
         turnId: cleanTurnId,
         conversationId: conversation.id,
@@ -927,6 +943,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: returnScopes,
               sources: returnSources,
+              sourceIds: returnSourceIds,
               decisionLog: refuseLog,
             },
           },
@@ -948,6 +965,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         error: executionResult.error,
         scopes: returnScopes,
         sources: returnSources,
+        sourceIds: returnSourceIds,
         decisionLog: refuseLog,
       };
     }
@@ -963,6 +981,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
 
     const returnScopes: MemoryScope[] = executionResult.scopes ?? assembledContext.scopes ?? [];
     const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
+    const returnSourceIds: string[] = executionResult.sourceIds ?? assembledContext.sourceIds ?? [];
 
     const outcome: DecisionOutcome =
       executionResult.proposal.kind === 'refuse' || route === 'refuse'
@@ -1010,6 +1029,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
               ingress: opts.ingress ?? 'live_voice',
               scopes: returnScopes,
               sources: returnSources,
+              sourceIds: returnSourceIds,
               decisionLog,
             },
           },
@@ -1068,6 +1088,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       error: executionResult.error,
       scopes: returnScopes,
       sources: returnSources,
+      sourceIds: returnSourceIds,
       decisionLog,
     };
     } finally {
