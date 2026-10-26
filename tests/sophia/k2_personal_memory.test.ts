@@ -692,6 +692,11 @@ async function main() {
       assert.strictEqual(rowAfter.active, false, 'mirror reflects the update');
 
       await store.deleteMemory(founderA, mem.id);
+      assert.strictEqual(
+        readCollectionFile<any>('sophia_memories')[mem.id],
+        undefined,
+        'deletion removes the authoritative durable-file copy'
+      );
       const rowGone = await (prisma as any).sophiaMemory.findUnique({ where: { id: mem.id } });
       assert.strictEqual(rowGone, null, 'mirror row deleted with the file record');
       prismaRowsCreated.pop();

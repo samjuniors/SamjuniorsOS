@@ -12,6 +12,8 @@
  */
 
 import { DurableFileStore } from '../persistence/durable-file-store';
+import { InMemoryAuditStore } from '../authorization/approval-store';
+import { verifyAuditChain } from '../authorization/audit-integrity';
 import { SafeModeManager } from './stop-control';
 import { SideEffectAuditRecord } from '@/types/authorization';
 
@@ -386,7 +388,7 @@ export class SpendSettingsManager {
     };
 
     try {
-      DurableFileStore.getInstance().saveItemStrict('audits', auditId, auditRecord);
+      await InMemoryAuditStore.getInstance().record(auditRecord);
     } catch (err) {
       console.error('[SpendSettingsManager] Failed to persist audit record to audits collection:', err);
     }
@@ -398,7 +400,7 @@ export class SpendSettingsManager {
   public getSpendAuditHistory(): SideEffectAuditRecord[] {
     try {
       const all = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
-      return Object.values(all)
+      return verifyAuditChain(Object.values(all))
         .filter((a) => a.actionName === 'update_model_spend_cap')
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     } catch {

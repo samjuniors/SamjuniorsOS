@@ -161,6 +161,10 @@ export interface AuthorizationDecision {
 
 export interface SideEffectAuditRecord {
   id: string;
+  /** Monotonic position and SHA-256 predecessor binding in the append-only audit ledger. */
+  chainSequence?: number;
+  previousHash?: string;
+  recordHash?: string;
   timestamp: string;
   requestId: string;
   employeeRole: AgentRole | 'advisor' | 'system';
