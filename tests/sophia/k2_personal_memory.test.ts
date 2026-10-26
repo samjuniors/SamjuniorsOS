@@ -665,10 +665,35 @@ async function main() {
     assert.strictEqual(unknownDelete.status, 404, 'route DELETE of unknown memory is 404');
   });
 
+  const dbAvailable = await isDatabaseAvailable();
+
+  // --------------------------------------------------------------------------
+  // T18a — durable-file deletion is always checked, including without Prisma
+  // --------------------------------------------------------------------------
+  await runTest('T18a: delete removes the durable-file copy with or without Prisma', async () => {
+    const mem = await store.createMemory({
+      founderId: founderA,
+      memoryType: 'INTERACTION_PREFERENCE',
+      content: `K2 deletion check ${randomUUID().slice(0, 8)}`,
+    });
+    if (dbAvailable) prismaRowsCreated.push(mem.id);
+
+    await store.deleteMemory(founderA, mem.id);
+    assert.strictEqual(
+      readCollectionFile<any>('sophia_memories')[mem.id],
+      undefined,
+      'deletion removes the authoritative durable-file copy'
+    );
+
+    if (dbAvailable) {
+      const rowGone = await (prisma as any).sophiaMemory.findUnique({ where: { id: mem.id } });
+      assert.strictEqual(rowGone, null, 'deletion removes the optional Prisma mirror row');
+    }
+  });
+
   // --------------------------------------------------------------------------
   // T18 — Prisma dual-write mirrors rows (opportunistic, current contract)
   // --------------------------------------------------------------------------
-  const dbAvailable = await isDatabaseAvailable();
   if (!dbAvailable) {
     console.log('  [SKIP] T18: DATABASE_URL unavailable — Prisma mirror pin skipped');
   } else {
@@ -692,11 +717,6 @@ async function main() {
       assert.strictEqual(rowAfter.active, false, 'mirror reflects the update');
 
       await store.deleteMemory(founderA, mem.id);
-      assert.strictEqual(
-        readCollectionFile<any>('sophia_memories')[mem.id],
-        undefined,
-        'deletion removes the authoritative durable-file copy'
-      );
       const rowGone = await (prisma as any).sophiaMemory.findUnique({ where: { id: mem.id } });
       assert.strictEqual(rowGone, null, 'mirror row deleted with the file record');
       prismaRowsCreated.pop();
