@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 7/13 steps done.
+- **Progress:** 8/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -89,9 +89,20 @@
     - Fixed Windows SQLite path resolution across `versioned_migrations`, `store_migration_parity`, `backup_restore_drill`, and `multi_instance_concurrency` suites.
     - Verified with independent verification (PASS) across `k2_personal_memory.test.ts`, `m4a_memory_capture.test.ts`, and `m4b1_lifecycle.test.ts`.
     - Landed on `kit/integration` with full canonical test suite green (86 passed, 0 failed, 20 skipped).
+  - **G11.3 (Scope-aware retrieval: budgeted recall, ranking, source attribution, and an honest 'I do not remember'):**
+    - Implemented typed source attribution across all memory partitions (`src/lib/server/sophia/types.ts`): added `sourceIds?: string[]` to `SophiaContextSlice`, `SophiaAssembledContext`, `ValidatedSophiaCommand`, `SophiaExecutionResult`, and `SophiaTurnResult`.
+    - Updated `SophiaContextAssembler.assemble` (`src/lib/server/sophia/context-assembly.ts`) to extract and attach slice-level `sourceIds` for every recalled item across canonical operational state, active workflows, pending governance gates, recent change records, canonical facts, historical superseded facts, dependency chains, unverified claims, company knowledge, company precedent, recent activity, personal mind, and episodic memory.
+    - Computed aggregate deduplicated `sourceIds` on `SophiaAssembledContext`.
+    - Updated `executeSophiaTurn` (`src/lib/server/sophia/turn-executor.ts`) to thread `sourceIds` into `SophiaTurnResult`, persist `sourceIds` in `ChatMessageRecord.metadata`, and return `sourceIds: []` on honest abstention turns (`recall-personal` and `recall-company`).
+    - Forwarded `sourceIds` through SofiaUI (`src/lib/server/sophia/sofiaui.ts`) and SSE streaming (`src/app/api/sofia/ask/route.ts`) endpoints.
+    - Added dedicated test suite `tests/sophia/g11_3_scope_aware_retrieval.test.ts` (10/10 PASS) verifying retrieval benchmark baseline integrity against `M5.3-A3`, slice and aggregate source ID attribution, scope isolation (`personal_only`, `company_only`, `none`), and honest abstentions.
+    - Verified with zero retrieval benchmark regressions (`npm run benchmark:memory`: 13 queries, 100% mean render recall, 92.1% union recall, 0 failures, 0 boundary violations), clean canonical test suite execution (87 passed, 0 failed, 20 skipped), `typecheck` (0 errors), `lint` (0 errors), and `layout check` (PASS).
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G11.3 [platform]: Scope-aware retrieval: budgeted recall, ranking, source attribution, and an honest 'I do not remember'.
-  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`).
+  - G11.4 [platform]: Consolidation and forgetting: episodic into semantic, contradiction and supersession handling, deletion that removes derived copies.
+  - G11.5 [platform]: Role Brains: per-employee memory projected from the Company Brain plus the employee's own working and experience memory.
+  - G11.6 [security]: Memory poisoning and cross-scope leakage tests.
+  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
 
 ## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**
