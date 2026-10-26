@@ -289,7 +289,14 @@ function roleCard(id, role, wt, title, exit, paths) {
   const r = ROLES[role];
   return `ROLE: ${role} for step ${id} (${title})\nWork only in this folder: ${wt}\nBranch: ${helperBranch(id, role)} (branched from step/${id})\nYour job: ${r.brief}\nThe step must achieve: ${exit}\nYou may change only: ${r.scope}${paths?.length ? ` (${paths.join(', ')})` : ''}\n${r.report ? `Write your report to ${KIT_REL}/handoffs/${id}.${r.report}.md: what you did, what you found, evidence, and what is unknown (write NOT VERIFIED for anything you did not run).\n` : ''}Rules: follow AGENTS.md; do not push or merge; run "node ${KIT_REL}/kit.mjs checkpoint" often; never touch files outside your scope; when finished, tell the lead you are done.`;
 }
-const finishedNotLanded = () => [...done].filter((id) => branchExists(`step/${id}`) && !isMerged(`step/${id}`));
+const finishedNotLanded = () => {
+  const branches = tryGit(['for-each-ref', '--format=%(refname:short)', 'refs/heads/step'], root).out.split('\n').filter(Boolean);
+  const merged = new Set(tryGit(['branch', '--merged', 'HEAD', '--format=%(refname:short)'], root).out.split('\n').filter(Boolean));
+  return branches.filter((branch) => {
+    const id = branch.slice('step/'.length);
+    return steps.has(id) && !merged.has(branch) && (done.has(id) || tryGit(['cat-file', '-e', `${branch}:${KIT_REL}/done/${id}.json`], root).ok);
+  }).map((branch) => branch.slice('step/'.length));
+};
 const qaFile = (mid) => { for (const base of [kitDir, ...worktreeList().filter((w) => w.branch === `refs/heads/qa/${mid}`).map((w) => path.join(w.worktree, '.agent', 'product-kit'))]) { const f = path.join(base, 'qa', `${mid}.md`); if (existsSync(f)) return f; } return null; };
 function qaProblems(m, file) {
   const t = readFileSync(file, 'utf8');
@@ -394,7 +401,8 @@ const cmds = {
 
   next(a) {
     const n = Number(a.flags.n ?? 4);
-    const ready = [...steps.values()].filter((s) => stateOf(s).k === 'ready' && !touchConflict(s) && (!a.flags.lane || s.lane === a.flags.lane));
+    const unlanded = new Set(finishedNotLanded());
+    const ready = [...steps.values()].filter((s) => !unlanded.has(s.id) && stateOf(s).k === 'ready' && !touchConflict(s) && (!a.flags.lane || s.lane === a.flags.lane));
     const picked = [];
     const lanesUsed = new Set();
     for (const pass of [0, 1]) {
@@ -550,7 +558,8 @@ const cmds = {
       console.log('');
     }
     if (fresh.length) console.log(`Already in progress by another agent: ${fresh.map((c) => `${c.step} (${c.agent})`).join(', ')}\n`);
-    const ready = ids.map((id) => steps.get(id)).filter((s) => stateOf(s).k === 'ready' && !touchConflict(s));
+    const unlandedIds = new Set(unlanded);
+    const ready = ids.map((id) => steps.get(id)).filter((s) => !unlandedIds.has(s.id) && stateOf(s).k === 'ready' && !touchConflict(s));
     const picked = pickReady(ready, Math.max(0, 4 - stale.length - fresh.length));
     if (picked.length) {
       console.log(`${k++}. Start these ready steps (one agent session each, in parallel):`);
@@ -564,7 +573,10 @@ const cmds = {
     }
     if (asks.size) {
       console.log(`${k++}. Ask the founder, in plain words, and keep working on everything else meanwhile:`);
-      for (const [key, title] of asks) console.log(`   ${key}: ${title}${briefFor(key) ? `\n      brief: ${briefFor(key)}` : ''}\n      record the answer: node .agent/product-kit/kit.mjs decide ${key} --quote "<their exact words>"`);
+      for (const [key, title] of asks) {
+        const record = steps.get(key)?.type === 'decision' ? `decide ${key}` : `ack ${key}`;
+        console.log(`   ${key}: ${title}${briefFor(key) ? `\n      brief: ${briefFor(key)}` : ''}\n      record the answer: node .agent/product-kit/kit.mjs ${record} --quote "<their exact words>"`);
+      }
       console.log('');
     }
     if (n === ids.length) {

@@ -303,6 +303,9 @@
           "exit": "Tamper test fails closed; deletion flow leaves no resurrectable copy in any store. Include hash-chained or otherwise tamper-evident audit (none was found in the code on 2026-10-20).",
           "deps": [
             "G3.1"
+          ],
+          "needs": [
+            "G3.6-ANCHOR"
           ]
         }
       ]
