@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 4/13 steps done.
+- **Progress:** 7/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -79,8 +79,19 @@
     - Registered `"benchmark:memory"` in `package.json` and added the memory retrieval benchmark regression gate step to GitHub Actions CI (`.github/workflows/ci.yml`).
     - Added automated verification suite `tests/platform/memory_benchmark_gate.test.ts` (7/7 PASS) verifying real benchmark compliance against baseline thresholds, simulated failure fail-closed detection, recall drop detection, and boundary leak detection.
     - Verified 105/105 executable canonical test suites passing, full M1 smoke test passing, and zero static analysis errors.
+  - **G11.1 (ADR: memory architecture - scopes, partition and access rules, owner-scoped keys, provenance, confidence and supersession fields):**
+    - Authoritative ADR in `docs/architecture/SOPHIA_MEMORY_ARCHITECTURE.md` codifying memory scopes, partition rules, provenance, and supersession models across Personal Mind, Company Brain, and role brains.
+    - Verified by independent reviewer (PASS) and ratified.
+  - **G11.2 (Memory types and write policy: semantic facts, episodic summaries, procedural notes; consent rules; size and retention limits):**
+    - Established explicit memory ownership/write policy and verified limits in `docs/architecture/SOPHIA_MEMORY_ARCHITECTURE.md`.
+    - Extended K-2 regression suite to enforce rejection of company-fact, episodic, and procedural types from Personal Mind, pinning the inclusive 2,000-character boundary.
+    - Added Node-compatible child runner for M4-A memory capture regression under canonical test runner.
+    - Fixed Windows SQLite path resolution across `versioned_migrations`, `store_migration_parity`, `backup_restore_drill`, and `multi_instance_concurrency` suites.
+    - Verified with independent verification (PASS) across `k2_personal_memory.test.ts`, `m4a_memory_capture.test.ts`, and `m4b1_lifecycle.test.ts`.
+    - Landed on `kit/integration` with full canonical test suite green (86 passed, 0 failed, 20 skipped).
 - **Next Ready Steps:**
-  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
+  - G11.3 [platform]: Scope-aware retrieval: budgeted recall, ranking, source attribution, and an honest 'I do not remember'.
+  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`).
 
 ## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**
