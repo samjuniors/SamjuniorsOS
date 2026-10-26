@@ -103,7 +103,7 @@ const need = (cond, m) => { if (!cond) die(m); };
 const stepOrDie = (id) => { const s = steps.get(id); need(s, `unknown step "${id}"`); return s; };
 // Always relative to the MAIN checkout, even when called from inside a step worktree.
 const mainRoot = () => (git(['worktree', 'list', '--porcelain'], root).split('\n').find((l) => l.startsWith('worktree ')) ?? `worktree ${root}`).slice(9);
-const worktreePath = (id) => path.join(path.dirname(mainRoot()), `${path.basename(mainRoot())}-wt`, id);
+const worktreePath = (id) => worktreeList().find((w) => w.branch === `refs/heads/step/${id}`)?.worktree ?? path.join(path.dirname(mainRoot()), `${path.basename(mainRoot())}-wt`, id);
 
 function pickReady(list, n) {
   const picked = [];
@@ -417,22 +417,22 @@ const cmds = {
     need(st.k === 'ready' || (st.k === 'stale-claim' && a.flags.takeover), `step ${s.id} is "${st.k}"${st.why ? ` (${st.why})` : ''}; only ready steps can be claimed (stale claims need --takeover)`);
     const clash = touchConflict(s);
     need(!clash, `step ${s.id} touches files that step ${clash?.step} (${clash?.agent}) also touches; do it after that claim is released`);
-    if (st.k === 'stale-claim') rmSync(path.join(claimsDir, s.id), { recursive: true, force: true });
-    mkdirSync(claimsDir, { recursive: true });
-    try { mkdirSync(path.join(claimsDir, s.id)); } catch (e) { die(`step ${s.id} was claimed by someone else just now`); }
     const wt = worktreePath(s.id);
     const branch = `step/${s.id}`;
     try {
       mkdirSync(path.dirname(wt), { recursive: true });
-      if (existsSync(wt)) { /* resuming: reuse the existing worktree */ }
+      if (worktreeList().some((w) => w.worktree === wt && w.branch === `refs/heads/${branch}`)) { /* resuming: reuse the registered worktree */ }
       else {
+        need(!existsSync(wt), `worktree path ${wt} exists but is not registered for ${branch}; preserve it and reconcile the worktree list first`);
         const hasBranch = (() => { try { git(['rev-parse', '--verify', branch], root); return true; } catch { return false; } })();
         git(hasBranch ? ['worktree', 'add', wt, branch] : ['worktree', 'add', '-b', branch, wt, a.flags.base ?? 'HEAD'], root);
       }
     } catch (e) {
-      rmSync(path.join(claimsDir, s.id), { recursive: true, force: true });
       die(`could not create worktree: ${e.stderr || e.message}`);
     }
+    if (st.k === 'stale-claim') rmSync(path.join(claimsDir, s.id), { recursive: true, force: true });
+    mkdirSync(claimsDir, { recursive: true });
+    try { mkdirSync(path.join(claimsDir, s.id)); } catch (e) { die(`step ${s.id} was claimed by someone else just now`); }
     const now = new Date().toISOString();
     writeFileSync(path.join(claimsDir, s.id, 'claim.json'), JSON.stringify({ step: s.id, agent, branch, worktree: wt, claimedAt: now, heartbeatAt: now }, null, 2));
     console.log(`Claimed ${s.id} for ${agent}\nworktree: ${wt}\nbranch:   ${branch}\nexit:     ${s.exit}\nRun "heartbeat ${s.id}" at least every ${STALE_MS / 60000 / 2} minutes.\nBefore coding, decide: alone or helpers? Write it in the handoff (Delegation decision); "team ${s.id}" shows the roles.`);
