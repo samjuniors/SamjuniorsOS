@@ -332,7 +332,7 @@ const STALE = [
   [/gate[- ]wise|gate[- ]by[- ]gate/i, 'the order of work is milestones, not gates; say "continue"'],
   [/\bnext gate\b|\bstart gate\b|\bwork on gate\b/i, 'agents never pick a gate; "continue" decides'],
   [/\back\s+<?gate/i, 'gates close when their steps are done; founders accept milestones'],
-  [/(do not|never|no) (push|merge to main)/i, 'check: pushing and merging are allowed only through checkpoint, land, sync and milestone ship, after ack GIT-SYNC'],
+  [/\b(?:do not|never|no)\s+(?:(?:push|merge)(?:\s+or\s+(?:push|merge))?)\s+to main\b/i, 'check: main releases happen only through milestone ship; integration and step pushes use authorized kit commands after ack GIT-SYNC'],
 ];
 function doctorHits() {
   const files = [];
