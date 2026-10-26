@@ -9,4 +9,5 @@
 - `5-kit-v3.mbox` applied cleanly.
 - Staffing decision before the v4 patch step: working alone. `git am --3way 'samjuniors-kit-bundle-v4/kit-bundle/patches/6-kit-v4.mbox'` failed; `git am --abort` was run as required.
 - Exact patch error: `sha1 information is lacking or useless (.agent/product-kit/kit.mjs).` followed by `could not build fake ancestor`; Git reported the patch failed at 0001, commit `feat(kit): v4 - last-work journal and notes, delegation decision, scoped helper roles`.
-- Paused after the failed step, as directed. The fallback history check and copy path have not been attempted; resume only after the founder decides how to proceed.
+- The founder approved resuming with the fallback. Staffing decision for the history audit and conditional preview copy: working alone.
+- The fallback history check has not yet been attempted. Copy the preview files only if every listed source file's history contains kit commits only; otherwise stop.
