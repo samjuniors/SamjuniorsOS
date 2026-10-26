@@ -33,6 +33,7 @@ export interface SophiaContextSlice {
   provenance: string;
   content: string;
   isStale?: boolean;
+  sourceIds?: string[];
 }
 
 export interface SophiaAssembledContext {
@@ -44,6 +45,7 @@ export interface SophiaAssembledContext {
   degradedStores?: string[];
   scopes?: MemoryScope[];
   sources?: string[];
+  sourceIds?: string[];
   tokenBreakdown?: {
     operationalState?: number;
     activeWorkflows?: number;
@@ -194,6 +196,7 @@ export type ValidatedSophiaCommand =
       reply: string;
       scopes?: MemoryScope[];
       sources?: string[];
+      sourceIds?: string[];
     }
   | {
       type: 'RESOLVED_INFORMATION';
@@ -201,6 +204,7 @@ export type ValidatedSophiaCommand =
       provenance: string[];
       scopes?: MemoryScope[];
       sources?: string[];
+      sourceIds?: string[];
     }
   | {
       type: 'DISPATCH_INSPECTION';
@@ -285,4 +289,5 @@ export interface SophiaExecutionResult {
   intent?: string;
   scopes?: MemoryScope[];
   sources?: string[];
+  sourceIds?: string[];
 }
