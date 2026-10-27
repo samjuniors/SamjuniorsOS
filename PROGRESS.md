@@ -85,6 +85,15 @@
     - Verified all 111 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.1.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.2 (Router: model proposes a route with confidence, deterministic validation, deterministic fallback):**
+    - Created 68-item curated labelled evaluation dataset in `benchmark/router/labelled-set.json` spanning all 10 canonical routes, boundary conditions, adversarial prompt injections, and malformed model outputs.
+    - Built comprehensive router evaluation engine in `benchmark/router/evaluate.ts` producing per-route accuracy breakdown, confusion matrix, and fail-closed validation metrics recorded in `benchmark/router/results/router-accuracy-report.json` (100.0% overall accuracy, 100.0% accuracy across every route, 6/6 fail-closed malformed test validations).
+    - Updated `SophiaIntentClassifier.route()` system prompt and output schema to include all 10 canonical routes.
+    - Refined deterministic `fallbackRouteAnalysis()` pattern recognition for plural financial metrics (`gross margins`), canonical facts/ledger queries, conversational pleasantries, and ensured Personal Mind schedule queries take precedence over general cron scheduling.
+    - Authored dedicated verification suite `tests/sophia/g12_2_router_evaluation.test.ts` (11/11 PASS).
+    - Verified all 112 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.2.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 ### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
