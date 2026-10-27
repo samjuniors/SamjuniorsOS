@@ -128,8 +128,16 @@
     - Verified artifact contamination resistance: company artifacts and graph projections strip personal notes.
     - Verified all 110 test suites pass (109 passed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.7 (Continuity evaluation: remembers last week, invents nothing, survives restart and redeploy):**
+    - Codified founder-approved continuity thresholds (`FOUNDER_APPROVED_CONTINUITY_THRESHOLDS`: 100% survival, 0% hallucination, 100% honest abstention, 0% superseded recall, 0% boundary leak, 0% deleted resurrection, 0% adversarial poison) and DTOs in `src/types/continuity.ts`.
+    - Implemented scripted multi-session continuity evaluation engine in `scripts/evaluate-continuity.ts` executing 6 core continuity scenarios across Session 1 ("last week", 7-day-old history) and Session 2 ("recent updates, supersessions, and deletions").
+    - Implemented cold process restart child runner `tests/sophia/g11_7_continuity_child.ts` verifying persistence and cold restart durability under a fresh Node.js runtime reading solely from persistent database and durable storage.
+    - Authored automated test suite `tests/sophia/g11_7_continuity_evaluation.test.ts` (3/3 PASS) validating 100% scenario pass rates, 100% pre/post concordance, zero regressions against thresholds, and fail-closed threshold behavior.
+    - Added canonical npm script `"eval:continuity": "npx tsx scripts/evaluate-continuity.ts"` to `package.json`.
+    - Verified full canonical test suite (110 passed, 0 failed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G11.7.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G11.7 [quality]: Continuity evaluation: Sofia remembers across a restart and across a compaction without losing what mattered.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
 
 ## Milestone M2 Archive Details
