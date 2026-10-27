@@ -153,7 +153,7 @@ ${opts.context.formattedContext}
 Output a JSON code block with your proposal:
 \`\`\`json
 {
-  "route": "converse" | "recall-personal" | "recall-company" | "ask-clarify" | "refuse", // optional router taxonomy
+  "route": "converse" | "recall-personal" | "recall-company" | "research" | "use-tool" | "delegate" | "schedule" | "ask-clarify" | "propose-for-approval" | "refuse", // optional router taxonomy
   "kind": "conversation" | "informational_query" | "operational_inspection" | "directive_proposal" | "steering_proposal" | "approval_proposal" | "clarification_prompt" | "refuse",
   "confidence": 0.0 - 1.0,
   "reason": "short explanation of contextual intent",
@@ -550,9 +550,9 @@ Output a JSON code block with your proposal:
     }
 
     // 6. Epistemic / Company Metrics / Knowledge / Precedent / Activity Informational Queries
-    const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margin|cash|revenue|financial|arr)\b/i.test(clean);
-    const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?)\b/i.test(clean);
-    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec)\b/i.test(clean);
+    const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margins?|cash|revenue|financial|arr)\b/i.test(clean);
+    const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?|canonical (facts?|claims?)|ledger)\b/i.test(clean);
+    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec|pricing tier)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
     const hasConversationContext = context?.slices.some(s => s.authority === 'CONVERSATIONAL_RECORD') ?? false;
@@ -718,8 +718,8 @@ You must classify the Founder's utterance into exactly one of the following 10 a
 === REQUIRED JSON OUTPUT FORMAT ===
 \`\`\`json
 {
-  "route": "converse" | "recall-personal" | "recall-company" | "ask-clarify" | "refuse",
-  "kind": "conversation" | "informational_query" | "clarification_prompt" | "refuse",
+  "route": "converse" | "recall-personal" | "recall-company" | "research" | "use-tool" | "delegate" | "schedule" | "ask-clarify" | "propose-for-approval" | "refuse",
+  "kind": "conversation" | "informational_query" | "directive_proposal" | "approval_proposal" | "steering_proposal" | "clarification_prompt" | "research_proposal" | "tool_call_proposal" | "schedule_proposal" | "refuse",
   "confidence": 0.0 - 1.0,
   "reason": "short explanation of route decision",
   "reply": "Conversational reply text when route is converse or refuse",
@@ -845,7 +845,7 @@ You must classify the Founder's utterance into exactly one of the following 10 a
 
     // Scheduling -> schedule
     const isRecurringFinancial = /\brecurring\s+(revenue|mrr|arr|billing|charge|expense|cost)\b/i.test(clean);
-    const scheduleMatch = !isRecurringFinancial && (
+    const scheduleMatch = !isRecurringFinancial && !this.isPersonalQuery(clean) && (
       /\b(schedule|recurrence|recurring (schedule|task|job|run|check|workflow|meeting|reminder|event|cron)|cron|every (day|week|month|morning|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i.test(clean) ||
       /^(schedule|set a schedule|run every|create a schedule)\b/i.test(clean)
     );
@@ -921,9 +921,9 @@ You must classify the Founder's utterance into exactly one of the following 10 a
     }
 
     // Company query -> recall-company
-    const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margin|cash|revenue|financial|arr)\b/i.test(clean);
-    const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?)\b/i.test(clean);
-    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec)\b/i.test(clean);
+    const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margins?|cash|revenue|financial|arr)\b/i.test(clean);
+    const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?|canonical (facts?|claims?)|ledger)\b/i.test(clean);
+    const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec|pricing tier)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
 
@@ -940,7 +940,8 @@ You must classify the Founder's utterance into exactly one of the following 10 a
     }
 
     // Conversational greeting -> converse
-    const isGreeting = /^(hello|hi|hey|good morning|good evening|good afternoon|how are you|how's it going|greetings)\b/i.test(clean);
+    const isGreeting = /^(hello|hi|hey|good morning|good evening|good afternoon|how are you|how's it going|greetings|thanks|thank you|much appreciated)\b/i.test(clean) ||
+                       /\b(making a fresh pot of coffee|just checking in|checking in|long day ahead|working session|turnaround on that summary)\b/i.test(clean);
     if (isGreeting) {
       const proposal: CandidateIntentProposal = {
         kind: 'conversation',
