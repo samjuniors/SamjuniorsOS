@@ -36,6 +36,10 @@ export interface ExecuteSophiaTurnOptions {
    */
   route?: SophiaRoute;
   /**
+   * Dynamic token budget limit (G12.3).
+   */
+  budgetLimit?: number;
+  /**
    * Ingress channel label recorded on the persisted assistant message
    * (observability only — never an authority signal). Defaults to
    * 'live_voice'; the SOFIA ask surface passes 'sofia_ask'.
@@ -713,7 +717,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         scope = 'personal_only';
       } else if (route === 'recall-company') {
         scope = 'company_only';
-      } else if (route === 'converse' || route === 'refuse') {
+      } else if (route === 'converse' || route === 'refuse' || route === 'ask-clarify') {
         scope = 'none';
       } else {
         scope = 'company_only';
@@ -721,13 +725,16 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
 
     // 6. Context Assembly: deterministic, multi-source, authority-classified
-    //    (M3 K-2 / M1.3: scope-aware context partition ensures personal memories
-    //    are read ONLY for personal queries, and Company Brain ONLY for company queries.)
+    //    (M3 K-2 / M1.3 / G12.3: scope-aware context partition per route ensures
+    //    personal memories are read ONLY for personal queries, and Company Brain
+    //    ONLY for company queries. Route and scope are both passed.)
     const assembledContext = await SophiaContextAssembler.assemble({
       message: cleanMessage,
       history: historyItems,
       founderId,
       scope,
+      route,
+      budgetLimit: opts.budgetLimit,
     });
 
     // Check for Personal Mind empty result (M1.3: honest abstention)

@@ -922,16 +922,17 @@ You must classify the Founder's utterance into exactly one of the following 10 a
 
     // Company query -> recall-company
     const isMetricsQuery = /\b(mrr|burn|burn rate|runway|gross margins?|cash|revenue|financial|arr)\b/i.test(clean);
+    const isCompanyStateQuery = /\b(strategic initiatives?|initiatives?|company status|operational standing|company state|standing|health)\b/i.test(clean);
     const isEpistemicQuery = /\b(did we verify|is it verified|fact check|proven|falsified|evidence|verified evidence|claims?|canonical (facts?|claims?)|ledger)\b/i.test(clean);
     const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec|pricing tier)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
 
-    if (isMetricsQuery || isEpistemicQuery || isKnowledgeQuery || isPrecedentQuery || isActivityQuery) {
+    if (isMetricsQuery || isCompanyStateQuery || isEpistemicQuery || isKnowledgeQuery || isPrecedentQuery || isActivityQuery) {
       const proposal: CandidateIntentProposal = {
         kind: 'informational_query',
         route: 'recall-company',
-        domain: isMetricsQuery ? 'company_metrics' : isEpistemicQuery ? 'epistemic_fact' : 'general',
+        domain: isMetricsQuery || isCompanyStateQuery ? 'company_metrics' : isEpistemicQuery ? 'epistemic_fact' : 'general',
         query: message,
         confidence: 0.90,
         reason: 'Deterministic routing: query references Company Brain operational state, facts, or knowledge.',
