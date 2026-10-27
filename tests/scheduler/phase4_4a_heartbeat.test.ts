@@ -317,7 +317,9 @@ describe("Phase 4.4A — scheduler heartbeat behavior (evaluateDueWork)", () => 
 
     const p1 = s1.evaluateDueWork();
     // let s1 reach the in-flight execution before s2 starts
-    await new Promise((r) => setTimeout(r, 25));
+    while (!runtime.releaseExecution) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
     const r2 = await s2.evaluateDueWork();
 
     expect(r2.processedCount).toBe(1);
