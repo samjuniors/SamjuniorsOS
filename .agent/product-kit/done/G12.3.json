@@ -1,0 +1,8 @@
+{
+  "id": "G12.3",
+  "doneAt": "2026-10-27T11:38:51.309Z",
+  "agent": "lead",
+  "branch": "kit/integration",
+  "commit": "da5ddab2e91f2c812f873fc629460713018116a5",
+  "evidence": "Tests show company questions never pull personal memory unless the founder asked, and every answer can list which scopes it read (19/19 checks in g12_3_context_assembly_per_route.test.ts PASS; gsd-verifier independent verification PASS)."
+}
