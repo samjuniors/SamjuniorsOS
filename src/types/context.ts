@@ -213,6 +213,7 @@ export interface ICompanyKnowledgeStore {
   getKnowledgeById(id: string): Promise<CompanyKnowledgeItem | null>;
   addKnowledge(item: CompanyKnowledgeItem): Promise<void>;
   queryKnowledge(params: KnowledgeQueryParams): Promise<RetrievedKnowledgeItem[]>;
+  deleteKnowledge(id: string): Promise<boolean>;
 }
 
 export interface MemoryQueryParams {

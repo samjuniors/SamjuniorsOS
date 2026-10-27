@@ -649,6 +649,7 @@ export class SophiaContextAssembler {
         authority: 'AUTHORITATIVE_OPERATIONAL_STATE',
         provenance: 'CompanyBrain (canonical operational state)',
         content,
+        sourceIds: initiatives.slice(0, 3).map((i) => String(i.id)),
       });
     } catch (err) {
       degradedStores.push('CompanyBrain');
@@ -659,6 +660,7 @@ export class SophiaContextAssembler {
         provenance: 'CompanyBrain (Offline)',
         content: 'Authoritative operational telemetry is currently unavailable.',
         isStale: true,
+        sourceIds: [],
       });
     }
 
@@ -695,6 +697,7 @@ export class SophiaContextAssembler {
         authority: 'ACTIVE_WORKFLOW_STATE',
         provenance: 'AgentRunStore',
         content,
+        sourceIds: [...activeRuns.map((r) => r.runId), ...recentCompleted.map((r) => r.runId)],
       });
     } catch (err) {
       degradedStores.push('AgentRunStore');
@@ -704,6 +707,7 @@ export class SophiaContextAssembler {
         provenance: 'AgentRunStore',
         content: 'Workstream state currently unavailable.',
         isStale: true,
+        sourceIds: [],
       });
     }
 
@@ -727,6 +731,7 @@ export class SophiaContextAssembler {
           authority: 'PENDING_GOVERNANCE_STATE',
           provenance: 'InMemoryApprovalStore / SideEffectAuthorizationGate',
           content,
+          sourceIds: pending.slice(0, 3).map((a) => String(a.id)),
         });
       }
     } catch (err) {
@@ -909,6 +914,7 @@ export class SophiaContextAssembler {
             authority: 'CHANGE_RECORD',
             provenance: 'Derived windowed enumeration over EpistemicClaimStore/CompanyMemoryStore/CompanyKnowledgeStore/CompanyBrain',
             content,
+            sourceIds: changes.slice(0, 16).map((c) => String(c.id)),
           });
         }
       } catch (err) {
@@ -969,6 +975,7 @@ export class SophiaContextAssembler {
           authority: 'CANONICAL_FACT',
           provenance: 'EpistemicClaimStore / CanonicalFact',
           content,
+          sourceIds: facts.slice(0, 3).map((f) => String(f.id)),
         });
       }
 
@@ -1008,6 +1015,7 @@ export class SophiaContextAssembler {
               authority: 'SUPERSEDED_FACT',
               provenance: 'EpistemicClaimStore / CanonicalFact (superseded — historical projection)',
               content,
+              sourceIds: historical.map((f) => String(f.id)),
             });
           }
         } catch (err) {
@@ -1076,6 +1084,7 @@ export class SophiaContextAssembler {
                   authority: 'CANONICAL_FACT',
                   provenance: 'DependencyRelationStore / CanonicalFact (derived DEPENDS_ON index)',
                   content,
+                  sourceIds: depFacts.slice(0, 4).map((f) => String(f.id)),
                 });
                 retrievalHit = true;
               }
@@ -1105,6 +1114,7 @@ export class SophiaContextAssembler {
           authority: 'UNVERIFIED_CLAIM',
           provenance: 'EpistemicClaimStore / EpistemicClaim',
           content,
+          sourceIds: pendingClaims.slice(0, 3).map((c) => String(c.id)),
         });
       }
     } catch (err) {
@@ -1147,6 +1157,7 @@ export class SophiaContextAssembler {
             authority: 'COMPANY_KNOWLEDGE',
             provenance: 'CompanyKnowledgeStore',
             content,
+            sourceIds: knowledgeItems.map((k) => String(k.documentId)),
           });
         }
       } catch (err) {
@@ -1177,6 +1188,7 @@ export class SophiaContextAssembler {
             authority: 'HISTORICAL_PRECEDENT',
             provenance: 'CompanyMemoryStore',
             content,
+            sourceIds: memoryItems.map((m) => String(m.memoryId)),
           });
         }
       } catch (err) {
@@ -1202,6 +1214,7 @@ export class SophiaContextAssembler {
             authority: 'RECENT_ACTIVITY',
             provenance: 'ActivityProjection (Derived from authoritative control plane)',
             content,
+            sourceIds: projection.events.map((e) => String(e.id)),
           });
         }
       } catch (err) {
@@ -1252,6 +1265,7 @@ export class SophiaContextAssembler {
             authority: 'PERSONAL_MIND_MEMORY',
             provenance: 'SophiaMemoryStore (founder-scoped personal memory — contextual only, never company authority)',
             content,
+            sourceIds: personalMemories.map((m) => String(m.id)),
           });
         }
       } catch (err) {
@@ -1312,6 +1326,7 @@ export class SophiaContextAssembler {
             authority: 'EPISODIC_MEMORY',
             provenance: 'ConversationStore (founder-scoped interaction records — contextual only, never company authority)',
             content,
+            sourceIds: episodicHits.map((h) => String(h.conversationId)),
           });
         }
       } catch (err) {
@@ -1340,6 +1355,7 @@ export class SophiaContextAssembler {
         authority: 'CONVERSATIONAL_RECORD',
         provenance: 'Client Request Body (Untrusted dialogue context)',
         content,
+        sourceIds: [],
       });
     }
 
@@ -1356,6 +1372,17 @@ export class SophiaContextAssembler {
 
     const scopes: MemoryScope[] = [];
     const sourcesSet = new Set<string>();
+    const sourceIdsSet = new Set<string>();
+
+    for (const slice of slices) {
+      if (slice.sourceIds) {
+        for (const id of slice.sourceIds) {
+          if (id && id.trim()) {
+            sourceIdsSet.add(id.trim());
+          }
+        }
+      }
+    }
 
     if (includePersonal) {
       const personalSlice = slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
@@ -1390,6 +1417,7 @@ export class SophiaContextAssembler {
       tokenBreakdown,
       scopes,
       sources: Array.from(sourcesSet),
+      sourceIds: Array.from(sourceIdsSet),
     };
   }
 }

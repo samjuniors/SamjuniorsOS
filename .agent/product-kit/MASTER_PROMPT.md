@@ -1,7 +1,7 @@
-<!-- kit-version: 3 -->
+<!-- kit-version: 4 -->
 # Master prompt
 
-kit-version: 3
+kit-version: 4
 
 Paste everything below the line into a fresh agent session at the repository root. The same prompt starts a new run, resumes an interrupted one, and replaces any earlier copy of this prompt.
 
@@ -39,6 +39,8 @@ A **step** is the unit of work. A **milestone** is what the founder tests, and i
 - The stack is Vite + React + Express + TypeScript (founder decision `STACK-VITE-EXPRESS`). Milestone MX performs the move; until it is closed, do not start new features on Next.js-only APIs, and after it, never reintroduce them.
 - Build for one founder. Keep the scale-later seams (G2.7, Q-SCALE-1) but implement nothing multi-founder.
 - Sofia's memory, decisions, team and tools follow `VISION.md` section 5. Never weaken a rule there to make a step easier.
+- Leave a trail. After every meaningful chunk, and always before you stop, switch tasks or run low on context, run `node .agent/product-kit/kit.mjs note <ID> --doing "..." --next "..."`. Any other agent or chat that runs `recover` will pick up exactly there.
+- Decide on helpers before you code: alone, or helpers (researcher, tester, debugger, reviewer, implementer)? Write the decision and the reason in the handoff. If your tool cannot start sub-agents, say so and use `team` / `helper start` to give the founder ready cards for parallel chats. Default to alone for small steps (`PROTOCOL.md` section 17).
 - Files go where `LAYOUT.md` says, and only there. `done` and `land` refuse new files outside it. Never create loose documents, backups, notes or screenshots at the repository root or in random folders. Documents go in `docs/`, kit state in the kit folder.
 - Do not fabricate results. If you did not run it, write NOT VERIFIED.
 - If you find a problem outside your step, record it in `.agent/product-kit/findings/` and move on. Fix it automatically only if `PROTOCOL.md` section 4 allows it.

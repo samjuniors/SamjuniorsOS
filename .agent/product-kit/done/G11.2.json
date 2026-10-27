@@ -1,0 +1,8 @@
+{
+  "id": "G11.2",
+  "doneAt": "2026-10-26T06:20:11.244Z",
+  "agent": "codex-g11-2",
+  "branch": "step/G11.2",
+  "commit": "639a2862dacd204d7553fe6f69641833892bf289",
+  "evidence": "M4-A, K-2, M4-B.1 canonical tests PASS; typecheck and lint PASS; layout and diff checks PASS; independent verifier PASS."
+}

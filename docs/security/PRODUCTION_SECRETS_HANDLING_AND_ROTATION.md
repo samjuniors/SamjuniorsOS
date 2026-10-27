@@ -11,7 +11,7 @@
 
 In accordance with `AGENTS.md` (Section 11) and the OWASP Agentic Threat Model (`docs/security/OWASP_AGENTIC_AND_LLM_THREAT_MODEL.md`):
 
-1. **Zero Client Secrets:** Production secrets, provider API keys, and database credentials must never reach client-accessible assets (`.next/static`, `public/`, or client components). All client assets are automatically scanned by `scripts/scan-client-bundle-secrets.mjs` (`npm run scan:client-secrets`).
+1. **Zero Client Secrets:** Production secrets, provider API keys, and database credentials must never reach client-accessible assets (`dist/assets`, `public/`, or client components). All client assets are automatically scanned by `scripts/scan-client-bundle-secrets.mjs` (`npm run scan:client-secrets`).
 2. **Fail-Closed Storage:** No secret is ever committed to Git or pushed to remote repositories. Secrets exist solely in isolated server-side environment variables or protected production secret vaults.
 3. **Least Privilege Ingress:** Machine credentials (e.g. `x-cron-secret`) admit exactly one path (`POST /api/workflow/scheduling`) and can never impersonate a Founder session.
 4. **Constant-Time Verification:** All secret comparisons in middleware and route handlers use constant-time XOR comparison to prevent side-channel timing leaks.

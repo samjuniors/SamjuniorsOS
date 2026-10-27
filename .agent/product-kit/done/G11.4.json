@@ -1,0 +1,8 @@
+{
+  "id": "G11.4",
+  "doneAt": "2026-10-26T10:51:22.467Z",
+  "agent": "worker-consolidation",
+  "branch": "step/G11.4",
+  "commit": "762481424bddb0688c3ee1798cc9a2671fe1c144",
+  "evidence": "All 12 consolidation and forgetting tests in tests/sophia/g11_4_consolidation_and_forgetting.test.ts pass cleanly. Superseded facts are excluded from current truth (active queries, listActiveFacts, context assembly). Deletion purges derived copies: fact deletion purges derived DEPENDS_ON relations, conversation deletion purges derived consolidated memories from SophiaMemoryStore, and deleted documents return null across all recall paths. Memory retrieval benchmark passes with zero regressions against M5.3-A3 baseline in 1.36s (100% render recall, 92.1% union recall, 0 violations). All 89 test suites pass cleanly with 0 typecheck and 0 lint errors."
+}

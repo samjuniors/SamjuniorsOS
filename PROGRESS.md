@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 4/13 steps done.
+- **Progress:** 10/13 steps done.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -79,8 +79,66 @@
     - Registered `"benchmark:memory"` in `package.json` and added the memory retrieval benchmark regression gate step to GitHub Actions CI (`.github/workflows/ci.yml`).
     - Added automated verification suite `tests/platform/memory_benchmark_gate.test.ts` (7/7 PASS) verifying real benchmark compliance against baseline thresholds, simulated failure fail-closed detection, recall drop detection, and boundary leak detection.
     - Verified 105/105 executable canonical test suites passing, full M1 smoke test passing, and zero static analysis errors.
+  - **G11.1 (ADR: memory architecture - scopes, partition and access rules, owner-scoped keys, provenance, confidence and supersession fields):**
+    - Authoritative ADR in `docs/architecture/SOPHIA_MEMORY_ARCHITECTURE.md` codifying memory scopes, partition rules, provenance, and supersession models across Personal Mind, Company Brain, and role brains.
+    - Verified by independent reviewer (PASS) and ratified.
+  - **G11.2 (Memory types and write policy: semantic facts, episodic summaries, procedural notes; consent rules; size and retention limits):**
+    - Established explicit memory ownership/write policy and verified limits in `docs/architecture/SOPHIA_MEMORY_ARCHITECTURE.md`.
+    - Extended K-2 regression suite to enforce rejection of company-fact, episodic, and procedural types from Personal Mind, pinning the inclusive 2,000-character boundary.
+    - Added Node-compatible child runner for M4-A memory capture regression under canonical test runner.
+    - Fixed Windows SQLite path resolution across `versioned_migrations`, `store_migration_parity`, `backup_restore_drill`, and `multi_instance_concurrency` suites.
+    - Verified with independent verification (PASS) across `k2_personal_memory.test.ts`, `m4a_memory_capture.test.ts`, and `m4b1_lifecycle.test.ts`.
+    - Landed on `kit/integration` with full canonical test suite green (86 passed, 0 failed, 20 skipped).
+  - **G11.3 (Scope-aware retrieval: budgeted recall, ranking, source attribution, and an honest 'I do not remember'):**
+    - Implemented typed source attribution across all memory partitions (`src/lib/server/sophia/types.ts`): added `sourceIds?: string[]` to `SophiaContextSlice`, `SophiaAssembledContext`, `ValidatedSophiaCommand`, `SophiaExecutionResult`, and `SophiaTurnResult`.
+    - Updated `SophiaContextAssembler.assemble` (`src/lib/server/sophia/context-assembly.ts`) to extract and attach slice-level `sourceIds` for every recalled item across canonical operational state, active workflows, pending governance gates, recent change records, canonical facts, historical superseded facts, dependency chains, unverified claims, company knowledge, company precedent, recent activity, personal mind, and episodic memory.
+    - Computed aggregate deduplicated `sourceIds` on `SophiaAssembledContext`.
+    - Updated `executeSophiaTurn` (`src/lib/server/sophia/turn-executor.ts`) to thread `sourceIds` into `SophiaTurnResult`, persist `sourceIds` in `ChatMessageRecord.metadata`, and return `sourceIds: []` on honest abstention turns (`recall-personal` and `recall-company`).
+    - Forwarded `sourceIds` through SofiaUI (`src/lib/server/sophia/sofiaui.ts`) and SSE streaming (`src/app/api/sofia/ask/route.ts`) endpoints.
+    - Added dedicated test suite `tests/sophia/g11_3_scope_aware_retrieval.test.ts` (10/10 PASS) verifying retrieval benchmark baseline integrity against `M5.3-A3`, slice and aggregate source ID attribution, scope isolation (`personal_only`, `company_only`, `none`), and honest abstentions.
+    - Verified with zero retrieval benchmark regressions (`npm run benchmark:memory`: 13 queries, 100% mean render recall, 92.1% union recall, 0 failures, 0 boundary violations), clean canonical test suite execution (87 passed, 0 failed, 20 skipped), `typecheck` (0 errors), `lint` (0 errors), and `layout check` (PASS).
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.4 (Consolidation and forgetting: episodic into semantic, contradiction and supersession handling, deletion that removes derived copies):**
+    - Implemented `DependencyRelationStore.deleteRelationsForFact(factId)` to purge all derived `DEPENDS_ON` relations when a canonical fact is deleted.
+    - Implemented `deleteFact(id)` across `IEpistemicClaimStore`, `PostgresEpistemicStore`, and `EpistemicClaimStore` with cascading derived relation cleanup and safe `promotedAt` sorting.
+    - Implemented `deleteKnowledge(id)` across `ICompanyKnowledgeStore` and `CompanyKnowledgeStore` with cache, file store, and database mirror deletion.
+    - Created memory consolidation engine `src/lib/server/memory/consolidation.ts`: `consolidateConversationToMemory` consolidates episodic turns into semantic personal memory with explicit provenance (`sourceConversationId`, `sourceTurnIds`, `consolidatedAt`, `derivedFrom`) in `SophiaMemoryStore`.
+    - Implemented `purgeDerivedMemoriesForConversation(conversationId, founderId)` and wired it into `ConversationStore.deleteConversation` (step 8) so that deleting a conversation purges all derived consolidated memories (zero ghost copies survive).
+    - Verified supersession and contradiction handling: superseded facts and personal memories are excluded from active fact queries, active relations, and active context slices.
+    - Authored comprehensive test suite `tests/sophia/g11_4_consolidation_and_forgetting.test.ts` (12/12 PASS).
+    - Verified with memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.36s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
+    - Verified all 89 test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.5 (Role Brains: per-employee memory projected from the Company Brain plus the employee's own working and experience memory):**
+    - Codified `RoleBrainMemoryRecord`, `RoleBrainProjectedContext`, `IRoleBrain`, and `RoleBrainMemoryScope` in `src/types/role-brain.ts` (re-exported via `src/types/brain.ts`).
+    - Added `RoleBrainMemory` model in `prisma/schema.prisma` with compound indexes on `[agentId, memoryScope, updatedAt]` and `[agentId, taskContext]`. Created versioned SQLite migration `prisma/migrations/20261026170000_role_brain_memories/migration.sql` and verified via `tests/platform/versioned_migrations.test.ts`.
+    - Implemented `RoleBrainStore` (`src/lib/server/brain/role-brain-store.ts`) with dual-mode storage (authoritative Prisma DB + durable collection fallback) and strict fail-closed cross-agent security: any unauthorized cross-employee read/write throws 403 `RoleBrainSecurityError`.
+    - Implemented `RoleBrain` runtime and registry (`src/lib/server/brain/role-brain.ts`) providing per-employee working memory (task-scoped scratchpad), experience memory, and deterministic Company Brain context projection with SHA-256 integrity hash.
+    - Verified strict boundaries: employee Role Brains cannot access Founder Personal Mind (`SophiaMemoryStore`), one employee cannot read another employee's working memory, and Role Brain memories never become authoritative company truth unless promoted.
+    - Authored dedicated test suite `tests/sophia/g11_5_role_brains.test.ts` (13/13 PASS across 6 isolation, projection, and durability groups).
+    - Verified memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.45s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
+    - Verified full canonical test suite (90 passed, 0 failed, 20 skipped), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.6 (Memory poisoning and cross-scope leakage tests):**
+    - Authored dedicated security test suite `tests/sophia/g11_6_memory_poisoning_and_leakage.test.ts` (27/27 PASS across 5 isolation, poisoning, and leakage groups).
+    - Verified adversarial memory poisoning rejection: candidate memories containing instruction override, prompt injection, fake authority directives, or secret-like content are flagged by `MemoryGate` (`FLAGGED_ADVERSARIAL_INJECTION`, `UNAUTHORIZED_TYPE`, `SECRET_LIKE_CONTENT`) and never committed to durable personal or company memory.
+    - Verified founder personal mind vs. employee boundary: personal canary items in `SophiaMemoryStore` never leak into AI employee task contexts (`ContextAssemblyService.assembleContextForTask` across `researcher`, `pm`, `finance`, `coo`, and `advisor` roles).
+    - Verified epistemic boundary enforcement: unverified claims cannot bypass epistemic gates into authoritative company facts.
+    - Verified cross-employee Role Brain isolation: unauthorized cross-agent reads/writes throw 403 `RoleBrainSecurityError`.
+    - Verified artifact contamination resistance: company artifacts and graph projections strip personal notes.
+    - Verified all 110 test suites pass (109 passed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.7 (Continuity evaluation: remembers last week, invents nothing, survives restart and redeploy):**
+    - Codified founder-approved continuity thresholds (`FOUNDER_APPROVED_CONTINUITY_THRESHOLDS`: 100% survival, 0% hallucination, 100% honest abstention, 0% superseded recall, 0% boundary leak, 0% deleted resurrection, 0% adversarial poison) and DTOs in `src/types/continuity.ts`.
+    - Implemented scripted multi-session continuity evaluation engine in `scripts/evaluate-continuity.ts` executing 6 core continuity scenarios across Session 1 ("last week", 7-day-old history) and Session 2 ("recent updates, supersessions, and deletions").
+    - Implemented cold process restart child runner `tests/sophia/g11_7_continuity_child.ts` verifying persistence and cold restart durability under a fresh Node.js runtime reading solely from persistent database and durable storage.
+    - Authored automated test suite `tests/sophia/g11_7_continuity_evaluation.test.ts` (3/3 PASS) validating 100% scenario pass rates, 100% pre/post concordance, zero regressions against thresholds, and fail-closed threshold behavior.
+    - Added canonical npm script `"eval:continuity": "npx tsx scripts/evaluate-continuity.ts"` to `package.json`.
+    - Verified full canonical test suite (110 passed, 0 failed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G11.7.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end.
+  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
 
 ## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**

@@ -80,7 +80,10 @@ export class DurableFileStore {
   private readonly asyncLocalStorage = new AsyncLocalStorage<Map<string, number>>();
 
   private constructor() {
-    this.dataDir = path.resolve(process.cwd(), '.data');
+    const testRepoRoot = process.env.SAMJUNIORS_TEST_REPO_ROOT;
+    const isTestRunnerRepoCwd = !!testRepoRoot && path.resolve(process.cwd()) === path.resolve(testRepoRoot);
+    const testDataDir = isTestRunnerRepoCwd ? process.env.SAMJUNIORS_TEST_DATA_DIR : undefined;
+    this.dataDir = path.resolve(testDataDir || path.join(process.cwd(), '.data'));
     if (!fs.existsSync(this.dataDir)) {
       try {
         fs.mkdirSync(this.dataDir, { recursive: true });

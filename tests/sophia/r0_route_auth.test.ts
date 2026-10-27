@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { NextRequest } from '@/lib/server/http';
 
 /**
@@ -33,7 +34,7 @@ import { NextRequest } from '@/lib/server/http';
  *      unauthenticated request never reaches route logic).
  */
 
-const AUDITS_FILE = path.resolve(process.cwd(), '.data', 'audits.json');
+const AUDITS_FILE = path.join(getTestDataDir(), 'audits.json');
 
 // Phase 5 (parity-gated retirement): the legacy SOFIA voice-tab routes are
 // 410-gone by default (SAMJUNIORS_VOICE_LEGACY unset). This suite pins the

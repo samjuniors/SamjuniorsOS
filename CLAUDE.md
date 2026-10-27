@@ -31,7 +31,7 @@ If `PRODUCT.md` is already filled and real code exists, this is not a fresh proj
 Before filling this in by asking, inspect the repo: `package.json` / `pyproject.toml` / `Cargo.toml` / equivalent for stack and commands, existing CI config for build/lint/test invocations, README and ADRs for source of truth and frozen decisions, and whatever's already connected for tooling. Populate every field you can determine this way. Only ask the founder for what genuinely can't be discovered — e.g. a deploy target that isn't configured yet, or a decision that was never written down anywhere.
 
 ```text
-Stack:            <e.g. Next.js 15 / TypeScript / Postgres>
+Stack:            Vite + React + Express + TypeScript
 Package manager:  <npm / pnpm / uv / cargo>
 Build command:    <>
 Test command:     <>
@@ -232,13 +232,3 @@ Prefer `/compact` over `/clear` when context is getting heavy mid-task — compa
 
 **Understand → Plan → Implement → Verify → Review → Simplify.**
 Not: Guess → Code → Hope.
-
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->

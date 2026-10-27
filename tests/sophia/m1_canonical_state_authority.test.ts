@@ -1,6 +1,7 @@
 import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
+import { getTestDataDir } from '../helpers/test-data';
 import { SophiaContextAssembler, SophiaServerGateway, TurnStopwatch } from '../../src/lib/server/sophia';
 import { CompanyStateStore } from '../../src/lib/server/state/state-store';
 import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
@@ -31,7 +32,7 @@ import {
  * synthetic proposals (no live-LLM dependency).
  */
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
+const DATA_DIR = getTestDataDir();
 
 /**
  * P2 FOLLOW-UP (test isolation): every .data file this suite touches is

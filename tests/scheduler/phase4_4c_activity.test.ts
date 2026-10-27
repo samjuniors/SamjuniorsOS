@@ -64,6 +64,7 @@ import type { FounderApprovalRecord } from "../../src/types/authorization";
 import type { ScheduledWorkItem } from "../../src/types/scheduling";
 import { PrismaClient } from "@prisma/client";
 import { v4 as uuidv4 } from "uuid";
+import { getTestDataDir } from '../helpers/test-data';
 
 /* ----------------------------------------------------------- artifact hygiene */
 
@@ -96,7 +97,7 @@ const createdRunIds = new Set<string>();
 const TEST_DB = "/tmp/samjuniors-4a-scheduler-test.db";
 
 function pruneDurableCollection(collection: string, ids: Set<string>): void {
-  const file = join(process.cwd(), ".data", `${collection}.json`);
+  const file = join(getTestDataDir(), `${collection}.json`);
   try {
     if (!existsSync(file) || ids.size === 0) return;
     const raw = JSON.parse(readFileSync(file, "utf-8"));

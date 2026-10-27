@@ -79,7 +79,7 @@ Requires: G1
 | G3.3 | security | work | Untrusted-ingress regression tests: transcripts, webhooks, tool output, screen text | G3.1 | Automated tests show injected instructions in each channel cannot trigger a side effect without the approval gate. |
 | G3.4 | security | work | Rate limits, request size limits, security headers and CSP, dependency audit in CI | G1.2 | Headers verified on a running build; limits tested; audit step in CI. |
 | G3.5 | security | work | Production secrets handling and rotation procedure | - | No secret reaches the client bundle (verified by scan); written rotation runbook tested once. |
-| G3.6 | security | work | Audit-log integrity, retention and deletion flows verified end to end | G3.1 | Tamper test fails closed; deletion flow leaves no resurrectable copy in any store. Include hash-chained or otherwise tamper-evident audit (none was found in the code on 2026-10-20). |
+| G3.6 | security | work | Audit-log integrity, retention and deletion flows verified end to end | G3.1, needs G3.6-ANCHOR | Tamper test fails closed; deletion flow leaves no resurrectable copy in any store. Include hash-chained or otherwise tamper-evident audit (none was found in the code on 2026-10-20). |
 
 ## G4 - Single company brain
 

@@ -188,6 +188,7 @@ export async function sophiaChatTurn(
     toolCalls: [] as Array<{ name: string; args: Record<string, unknown> }>,
     brain: 'sophia-os',
     sources: (result.sources || []).map((s) => ({ title: s, url: '' })),
+    sourceIds: result.sourceIds || [],
     scopes: result.scopes || [],
     conversationId: result.conversationId,
     liveAi: result.liveAi,

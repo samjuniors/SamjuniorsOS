@@ -44,6 +44,7 @@ import { CompanyMemoryStore } from "../../src/lib/server/memory/memory-store";
 import { OperationalLearningLoop } from "../../src/lib/server/memory/learning-loop";
 import { SideEffectAuthorizationGate } from "../../src/lib/server/authorization/gate";
 import { v4 as uuidv4 } from "uuid";
+import { getTestDataDir } from '../helpers/test-data';
 
 /* ----------------------------------------------------------- artifact hygiene */
 
@@ -72,7 +73,7 @@ async function snapshotInitialMemories() {
 let initialMemories: Awaited<ReturnType<typeof snapshotInitialMemories>> = [];
 
 function pruneDurableCollection(collection: string, ids: Set<string>): void {
-  const file = join(process.cwd(), ".data", `${collection}.json`);
+  const file = join(getTestDataDir(), `${collection}.json`);
   try {
     if (!existsSync(file) || ids.size === 0) return;
     const raw = JSON.parse(readFileSync(file, "utf-8"));

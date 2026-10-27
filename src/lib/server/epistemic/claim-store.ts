@@ -77,6 +77,8 @@ export interface IEpistemicClaimStore {
     supersededById: string,
     opts?: { supersededAt?: string }
   ): Promise<void>;
+  /** G11.4 — delete a fact and prune all derived index records. */
+  deleteFact(id: string): Promise<boolean>;
 }
 
 /**
@@ -573,6 +575,17 @@ export class PostgresEpistemicStore implements IEpistemicClaimStore {
     }
   }
 
+  public async deleteFact(id: string): Promise<boolean> {
+    const db = await requireAuthoritativeDatabase();
+    try {
+      await DependencyRelationStore.getInstance().deleteRelationsForFact(id);
+    } catch (err) {
+      console.error('[PostgresEpistemicStore] failed to prune derived dependency relations:', err);
+    }
+    const res = await db.canonicalFact.deleteMany({ where: { id } });
+    return res.count > 0;
+  }
+
   private mapPrismaToClaim(c: any): EpistemicClaim {
     return {
       id: c.id,
@@ -797,7 +810,7 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     if (filter?.subject) {
       result = result.filter((f) => f.subject.toLowerCase() === filter.subject!.toLowerCase());
     }
-    return result.sort((a, b) => b.promotedAt.localeCompare(a.promotedAt));
+    return result.sort((a, b) => (b.promotedAt || '').localeCompare(a.promotedAt || ''));
   }
 
   /**
@@ -811,7 +824,7 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
     }
     return Array.from(this.facts.values())
       .sort((a, b) => {
-        if (b.promotedAt !== a.promotedAt) return b.promotedAt.localeCompare(a.promotedAt);
+        const pa = a.promotedAt || ''; const pb = b.promotedAt || ''; if (pb !== pa) return pb.localeCompare(pa);
         return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
       })
       .map((f) => ({ ...f }));
@@ -896,6 +909,27 @@ export class EpistemicClaimStore implements IEpistemicClaimStore {
         supersededAt: eventTime,
       };
       await this.saveFact(updatedFact);
+      try {
+        await DependencyRelationStore.getInstance().markRelationsStaleForFact(factId);
+      } catch {}
     }
+  }
+
+  public async deleteFact(id: string): Promise<boolean> {
+    if (isAuthoritativeMode()) {
+      return PostgresEpistemicStore.getInstance().deleteFact(id);
+    }
+    const existed = this.facts.delete(id);
+    if (existed) {
+      try {
+        DurableFileStore.getInstance().deleteItem('canonical_facts', id);
+      } catch {}
+      try {
+        await DependencyRelationStore.getInstance().deleteRelationsForFact(id);
+      } catch (err) {
+        console.error('[EpistemicClaimStore] failed to prune derived dependency relations:', err);
+      }
+    }
+    return existed;
   }
 }

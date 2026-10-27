@@ -16,6 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { execSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl, toRuntimeSqliteUrl } from '../helpers/test-database';
 
 const repoRoot = path.resolve(__dirname, '../../');
 const prismaDir = path.join(repoRoot, 'prisma');
@@ -108,8 +109,8 @@ async function runSuite() {
   // 4. Test clean migration against an empty database
   console.log('4. Testing prisma migrate deploy against an empty database...');
   const testDbName = `test_g2_2_${Date.now()}.db`;
-  const testDbPath = path.join(prismaDir, 'db', testDbName);
-  const testDbUrl = `file:${testDbPath.replace(/\\/g, '/')}`;
+  const testDbPath = path.join(getTestDatabaseDir(), testDbName);
+  const testDbUrl = toSchemaRelativeSqliteUrl(testDbPath);
 
   try {
     if (existsSync(testDbPath)) {
@@ -131,7 +132,7 @@ async function runSuite() {
     console.log('5. Querying freshly migrated database tables...');
     const prisma = new PrismaClient({
       datasources: {
-        db: { url: testDbUrl },
+        db: { url: toRuntimeSqliteUrl(testDbPath) },
       },
     });
 

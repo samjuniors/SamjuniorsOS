@@ -92,7 +92,7 @@ export async function runDeployPipeline(options: DeployPipelineOptions = {}): Pr
     // STAGE 2: Database Migration Deployment (Prisma Migrate Deploy)
     // ------------------------------------------------------------------------
     await executeStage('2. Apply pending database migrations (prisma migrate deploy)', async () => {
-      const dbUrl = process.env.DATABASE_URL || 'file:./prisma/db/custom.db';
+      const dbUrl = process.env.DATABASE_URL || 'file:./db/custom.db';
       try {
         execSync('npx prisma migrate deploy', {
           cwd: repoRoot,

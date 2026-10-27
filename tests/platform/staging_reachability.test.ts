@@ -1,10 +1,38 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
-const dbPath = path.resolve(process.cwd(), 'prisma/db/custom.db');
+import { resolveSqliteDatabaseUrl } from '@/lib/server/db/database-url';
+import { getTestDatabaseDir, toSchemaRelativeSqliteUrl } from '../helpers/test-database';
+
+const projectRoot = process.cwd();
+const schemaDirectory = path.join(projectRoot, 'prisma');
+const relativeUrl = resolveSqliteDatabaseUrl('file:./db/custom.db', schemaDirectory);
+assert.strictEqual(
+  relativeUrl,
+  `file:${path.resolve(schemaDirectory, 'db/custom.db').replace(/\\/g, '/')}`,
+  'Relative SQLite URLs must resolve from the Prisma schema directory',
+);
+assert.strictEqual(
+  resolveSqliteDatabaseUrl('file:./db/custom.db?connection_limit=1', schemaDirectory),
+  `file:${path.resolve(schemaDirectory, 'db/custom.db').replace(/\\/g, '/')}?connection_limit=1`,
+  'SQLite URL parameters must survive path resolution',
+);
+assert.strictEqual(
+  resolveSqliteDatabaseUrl('postgresql://localhost:5432/samjuniors', projectRoot),
+  'postgresql://localhost:5432/samjuniors',
+  'Non-SQLite URLs must remain unchanged',
+);
+const absoluteUrl = `file:${path.resolve(schemaDirectory, 'db/absolute.db').replace(/\\/g, '/')}`;
+assert.strictEqual(
+  resolveSqliteDatabaseUrl(absoluteUrl, schemaDirectory),
+  absoluteUrl,
+  'Absolute SQLite URLs must remain unchanged',
+);
+
+const dbPath = path.join(getTestDatabaseDir(), 'custom.db');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, '/')}`;
+  process.env.DATABASE_URL = toSchemaRelativeSqliteUrl(dbPath);
 }
 import { GET as healthHandler } from '@/app/api/health/route';
 

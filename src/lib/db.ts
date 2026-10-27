@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client'
+import path from 'node:path';
+import { resolveSqliteDatabaseUrl } from './server/db/database-url';
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
@@ -6,7 +8,11 @@ const globalForPrisma = globalThis as unknown as {
 
 function getPrismaClient(): PrismaClient {
   if (!globalForPrisma.prisma) {
+    const repositoryRoot = process.env.SAMJUNIORS_TEST_REPO_ROOT || process.cwd();
+    const schemaDirectory = path.join(repositoryRoot, 'prisma');
+    const databaseUrl = resolveSqliteDatabaseUrl(process.env.DATABASE_URL, schemaDirectory);
     globalForPrisma.prisma = new PrismaClient({
+      ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {}),
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     });
   }

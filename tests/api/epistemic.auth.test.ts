@@ -20,6 +20,7 @@ import { GET, POST } from "../../src/app/api/epistemic/route";
 import { EpistemicClaimStore } from "../../src/lib/server/epistemic/claim-store";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import { getTestDataDir } from '../helpers/test-data';
 
 // Restore the REAL authoritative SQLite before any test runs (combined runs
 // may have pointed DATABASE_URL at a throwaway copy).
@@ -62,7 +63,7 @@ const initialVerifications = new Map(claimStore.verifications);
 const createdClaimIds = new Set<string>();
 
 function pruneDurableCollection(collection: string, ids: Set<string>): void {
-  const file = join(process.cwd(), ".data", `${collection}.json`);
+  const file = join(getTestDataDir(), `${collection}.json`);
   try {
     if (!existsSync(file) || ids.size === 0) return;
     const raw = JSON.parse(readFileSync(file, "utf-8"));

@@ -35,6 +35,8 @@ Run from any checkout or worktree: `node .agent/product-kit/kit.mjs <command>`
 |---|---|
 | `recover` | After any stop: what is finished, what was interrupted, what is not on main yet, what is next. Read-only. `install-hook` makes Claude Code run it at every session start |
 | `checkpoint [--all]` | Secret scan, commit, push the step branch (never main). `--all` does every worktree: run it before leaving a computer |
+| `note --doing --next` | Leave a trail for the next agent or chat; `recover` shows it |
+| `team <ID>` / `helper start|land|list` | Decide alone-or-helpers; start and merge scoped helpers (researcher, tester, debugger, reviewer, implementer) |
 | `reconcile` | On a new computer or folder copy: restore worktrees, claims and branches from the remote |
 | `layout check` / `report` / `init` | Keep files where `LAYOUT.md` says |
 | `migrate-folder` | Rename `.agent/` to `.agents/` and fix every path that mentions it |
