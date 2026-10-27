@@ -46,11 +46,32 @@
   - Client bundle secret scanner with zero credentials exposed to browser; production secret rotation runbook.
   - Full QA pass (`QA-M2`) passing all 5 founder test scenarios.
 
-## Now — Active Milestone M3 (Sofia remembers you and knows your company)
+## Milestone M3 — Sofia remembers you and knows your company (CLOSED)
 
-**Baseline:** Milestone M2 closed on `main`.
-- **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 12/12 steps done. QA pass complete (`QA-M3`). Ready for founder verification.
+- **Status:** CLOSED on 2026-10-27 (12/12 steps complete, founder accepted with `ack/MS-M3.json`).
+- **Founder Acceptance Quote:** `"close"`
+- **Steps Verified & Closed:** G4.1, G4.2, G4.3, G4.4, G11.1, G11.2, G11.3, G11.4, G11.5, G11.6, G11.7, G3.3.
+- **Capabilities Delivered:**
+  - Unified `CompanyBrain` as single authoritative read/write interface for company operational state, knowledge, precedents, and epistemic facts.
+  - First-class versioned Artifact model with SHA-256 tamper-evident integrity hashes and immutable version history.
+  - Idempotent GitHub external adapter with deterministic request hashing, unknown-outcome handling, and reconciliation.
+  - Memory retrieval benchmark regression gate integrated into CI against M5.3-A3 zero-failure baseline.
+  - ADR & write policies for owner-scoped memory partitioning, consent rules, and size/retention limits.
+  - Scope-aware retrieval with slice and aggregate source ID attribution and honest "I do not remember" abstentions.
+  - Memory consolidation and forgetting engine (episodic turns into semantic facts, contradiction and supersession handling, cascading deletion of derived memories).
+  - Role Brains providing per-employee isolated working/experience memory projected from Company Brain.
+  - Memory poisoning immunity rejecting prompt injection and instruction overrides at MemoryGate; strict personal vs. employee context isolation.
+  - Continuity evaluation harness (`eval:continuity`) executing 6 core scenarios with 100% concordance across cold process restarts.
+  - Untrusted ingress sanitization across transcripts, webhooks, and tool outputs.
+  - Full QA pass (`QA-M3`) passing all automated checks and all 6 founder walkthrough scenarios.
+
+## Now — Active Milestone M4 (Sofia decides well, and you can stop her)
+
+**Baseline:** Milestone M3 closed on `main`.
+- **Goal:** The full decision engine, the autonomy policy, the kill switch, and spend limits you control.
+- **Steps in M4:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6.
+
+### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
