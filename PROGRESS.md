@@ -71,6 +71,21 @@
 - **Goal:** The full decision engine, the autonomy policy, the kill switch, and spend limits you control.
 - **Steps in M4:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6.
 
+### Milestone M4 Progress:
+- **Completed Steps:**
+  - **G12.1 (Decision contract and route taxonomy: converse, recall personal, recall company, research, use tool, delegate, schedule, ask to clarify, propose for approval, refuse):**
+    - Codified 10 canonical routes in `src/types/decision.ts` (`SOPHIA_ROUTES`: `converse`, `recall-personal`, `recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `ask-clarify`, `propose-for-approval`, `refuse`).
+    - Added strict memory scope isolation: `RouteMemoryScope` (`personal`, `company`, `role_brain`, `none`), guaranteeing `personal` scope is solely accessible via `recall-personal`.
+    - Added side-effect classifications: `RouteSideEffectClass` (`read_only`, `internal_write`, `external_reversible`, `external_hard_to_reverse`, `financial_legal`, `destructive_security`).
+    - Codified `DECISION_ROUTE_TAXONOMY` with entry conditions, allowed scopes, side effects, and human-in-the-loop requirements for every route.
+    - Authored authoritative ADR in `docs/architecture/ADR-008-decision-contract-and-route-taxonomy.md`.
+    - Extended existing single router (`SophiaIntentClassifier.route()`) to recognize all 10 routes and fail closed to `ask-clarify` (`clarification_prompt`) on unknown routes or malformed output; preserved zero secondary routers invariant.
+    - Updated `fallbackRouteAnalysis()` with deterministic pattern matching for all 10 routes.
+    - Authored dedicated test suite `tests/sophia/g12_1_decision_contract_and_route_taxonomy.test.ts` (19/19 PASS).
+    - Verified all 111 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.1.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+
 ### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
