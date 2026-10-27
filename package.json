@@ -29,7 +29,8 @@
     "verify:deployment": "npx tsx scripts/verify-deployment.ts",
     "desktop:dev": "electron .",
     "desktop:pack": "vite build && electron-builder --win --dir",
-    "desktop:dist": "vite build && electron-builder --win nsis"
+    "desktop:dist": "vite build && electron-builder --win nsis",
+    "eval:continuity": "npx tsx scripts/evaluate-continuity.ts"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

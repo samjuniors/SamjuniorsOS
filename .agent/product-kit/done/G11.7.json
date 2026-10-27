@@ -1,0 +1,8 @@
+{
+  "id": "G11.7",
+  "doneAt": "2026-10-27T06:41:30.943Z",
+  "agent": "lead",
+  "branch": "step/G11.7",
+  "commit": "53e6d581257d26bd947fc1ee75ace022132e287d",
+  "evidence": "Scripted multi-session continuity evaluation in scripts/evaluate-continuity.ts and tests/sophia/g11_7_continuity_evaluation.test.ts passes all 6 scenarios before and after cold process restart with 100% concordance against founder-approved thresholds; verified by independent-verifier."
+}
