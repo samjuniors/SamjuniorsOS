@@ -94,6 +94,17 @@
     - Verified all 112 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.2.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.3 (Context assembly per route: choose memory scopes and budget, attach sources, enforce the Personal and Company partition):**
+    - Implemented route-bound memory partition isolation in `src/lib/server/sophia/context-assembly.ts` with `getPartitionLimitsForRoute()` and `scaleLimitsToBudget()`.
+    - Enforced strict partition rules: company routes (`recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `propose-for-approval`) strictly zero-allocate and bar Personal Mind retrieval (`personalMind: 0`, `includePersonal: false`), preventing personal memory canary leakage even when `founderId` or `scope: "all"` is supplied.
+    - `recall-personal` strictly zeroes company partitions (`includeCompany: false`).
+    - Conversational and control routes (`converse`, `ask-clarify`, `refuse`) assemble zero memory slices (`scopes: []`, `sources: []`).
+    - Updated `src/lib/server/sophia/turn-executor.ts` to forward `route` and `budgetLimit` to `SophiaContextAssembler.assemble`, correct scope mapping for `ask-clarify` to `none`, and attach typed `scopes`, `sources`, `sourceIds`, formatted attribution footer `[Scopes: ... | Sources: ...]`, and `decisionLog` to `ChatMessageRecord.metadata`.
+    - Updated `src/lib/server/sophia/intent-classifier.ts` deterministic fallback router with `isCompanyStateQuery` regex to route company status and strategic initiatives questions directly to `recall-company`.
+    - Added comprehensive automated verification suite `tests/sophia/g12_3_context_assembly_per_route.test.ts` (19/19 PASS).
+    - Verified all 113 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.3.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 ### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
