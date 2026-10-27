@@ -50,7 +50,7 @@
 
 **Baseline:** Milestone M2 closed on `main`.
 - **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 10/13 steps done.
+- **Progress:** 12/12 steps done. QA pass complete (`QA-M3`). Ready for founder verification.
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -137,8 +137,22 @@
     - Verified full canonical test suite (110 passed, 0 failed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G11.7.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **QA-M3 (Milestone M3 Complete Quality Assurance Pass):**
+    - Ran all automated checks across the workspace: typecheck (0 errors), lint (0 errors), canonical test runner (110 passed, 0 failed, 1 skipped browser E2E, 275.69s), and production build (`dist/` Vite SPA build succeeded in 4.23s).
+    - Resolved Windows / relative SQLite database URL path resolution across scheduler suites (`tests/scheduler/env-setup.ts`, `tests/scheduler/phase4_4c_activity.test.ts`).
+    - Verified all 6 founder test scenarios against running application via `npm run eval:continuity`:
+      - T1: Temporal continuity: recalls 7-day-old personal preference in a fresh Node process after restart (100% recall).
+      - T2: Supersession correction: recalls updated $49 price, 0% stale recall of superseded $29 fact.
+      - T3: Scope-isolated company grounding: cites ARR and target customer with provenance, 0% personal memory leakage.
+      - T4: Honest abstention: explicitly states "I do not remember" on unrecorded facts, 0% hallucination.
+      - T5: Cascading deletion: deleting a note leaves 0 trace in database or assembled context.
+      - T6: Adversarial immunity: untrusted prompt injection rejected by MemoryGate with 0 presence in storage or context.
+    - Verified running UI quality bar items (Q-UX-2, Q-UX-3, Q-UX-5, Q-A11Y-1).
+    - Certified `PASS` in `.agent/product-kit/qa/M3.md` and landed on `kit/integration`.
 - **Next Ready Steps:**
-  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
+  - Founder testing and acceptance quote for Milestone M3 (`node .agent/product-kit/kit.mjs milestone close M3 --quote "..."`).
+  - Milestone M3 ship to main (`node .agent/product-kit/kit.mjs milestone ship M3`).
+  - Milestone M4 ("Sofia decides well, and you can stop her").
 
 ## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**
