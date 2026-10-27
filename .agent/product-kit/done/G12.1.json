@@ -1,0 +1,8 @@
+{
+  "id": "G12.1",
+  "doneAt": "2026-10-27T08:36:19.807Z",
+  "agent": "lead",
+  "branch": "step/G12.1",
+  "commit": "e67c1a2353c89365bced7e229d1cb49d40327eaf",
+  "evidence": "10-route taxonomy and contract codified in src/types/decision.ts, src/lib/server/sophia/types.ts, and intent-classifier.ts. ADR-008 authored. Verified by tests/sophia/g12_1_decision_contract_and_route_taxonomy.test.ts (19/19 pass) and independent verifier PASS."
+}
