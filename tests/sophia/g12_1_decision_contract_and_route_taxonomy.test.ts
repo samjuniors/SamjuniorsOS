@@ -361,7 +361,7 @@ async function runTests() {
   });
 
   await test('5.2. ADR-008 exists and documents the 10-route taxonomy', () => {
-    const adrPath = path.resolve(__dirname, '../../doc/adr/0008-decision-contract-and-route-taxonomy.md');
+    const adrPath = path.resolve(__dirname, '../../docs/architecture/ADR-008-decision-contract-and-route-taxonomy.md');
     assert.ok(fs.existsSync(adrPath), `ADR-008 must exist at ${adrPath}`);
     const adrContent = fs.readFileSync(adrPath, 'utf8');
 
