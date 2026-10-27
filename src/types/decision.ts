@@ -186,3 +186,192 @@ export interface DecisionFilter {
   accountableOwner?: string;
   impact?: DecisionImpact;
 }
+
+
+/**
+ * ============================================================================
+ * DECISION ROUTE TAXONOMY CONTRACT (G12.1 / Milestone M4)
+ * ============================================================================
+ * Authoritative 10-Route Decision Taxonomy for Sophia.
+ * Defines explicit entry conditions, allowed memory scopes, and side-effect classes.
+ */
+export const SOPHIA_ROUTES = [
+  'converse',
+  'recall-personal',
+  'recall-company',
+  'research',
+  'use-tool',
+  'delegate',
+  'schedule',
+  'ask-clarify',
+  'propose-for-approval',
+  'refuse',
+] as const;
+
+export type SophiaRoute = (typeof SOPHIA_ROUTES)[number];
+
+export type RouteMemoryScope = 'personal' | 'company' | 'role_brain' | 'none';
+
+export type RouteSideEffectClass =
+  | 'read_only'
+  | 'internal_write'
+  | 'external_reversible'
+  | 'external_hard_to_reverse'
+  | 'financial_legal'
+  | 'destructive_security';
+
+export interface DecisionRouteDefinition {
+  route: SophiaRoute;
+  title: string;
+  description: string;
+  entryConditions: readonly string[];
+  allowedMemoryScopes: readonly RouteMemoryScope[];
+  sideEffectClass: RouteSideEffectClass;
+  requiresFounderApproval: boolean;
+}
+
+export const DECISION_ROUTE_TAXONOMY: Record<SophiaRoute, DecisionRouteDefinition> = {
+  converse: {
+    route: 'converse',
+    title: 'Conversational Dialogue',
+    description: 'Casual chat, greetings, pleasantries, banter, open-ended discussion with zero side-effects.',
+    entryConditions: [
+      'Utterance is general conversational chat, greeting, or open dialogue not seeking structured operational action or data query.',
+      'No specific personal facts, company metrics, or mutations are requested.',
+    ],
+    allowedMemoryScopes: ['none'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  'recall-personal': {
+    route: 'recall-personal',
+    title: 'Personal Mind Recall',
+    description: 'Retrieval of Founder personal preferences, habits, personal notes, or private schedule.',
+    entryConditions: [
+      'Utterance explicitly references Founder personal habits, preferences, private notes, family/pets, or personal routines.',
+      'Directly targets the Personal Mind store.',
+    ],
+    allowedMemoryScopes: ['personal'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  'recall-company': {
+    route: 'recall-company',
+    title: 'Company Brain Recall',
+    description: 'Retrieval of company operational state, financial metrics (MRR/ARR/burn/runway), canonical facts, SOPs, PRDs, precedent, or activity.',
+    entryConditions: [
+      'Utterance queries company status, metrics, verified facts, knowledge, active workflows, or past incident precedents.',
+      'Targets authoritative Company Brain without requesting multi-step external research.',
+    ],
+    allowedMemoryScopes: ['company'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  research: {
+    route: 'research',
+    title: 'Deep Domain Research',
+    description: 'Multi-source fact-finding, market exploration, literature review, or analytical synthesis without external mutations.',
+    entryConditions: [
+      'Utterance requests broad investigation, market analysis, competitor breakdown, or synthesis of external or technical domain knowledge.',
+      'Does not execute mutations, external communication, or financial transactions.',
+    ],
+    allowedMemoryScopes: ['company', 'role_brain'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  'use-tool': {
+    route: 'use-tool',
+    title: 'Deterministic Tool Execution',
+    description: 'Invocation of an authorized tool or workspace reader (e.g. GitHub read, file system inspection, database query).',
+    entryConditions: [
+      'Utterance requires inspecting or interacting with a system, repository, or tool interface directly.',
+      'Action maps to a registered deterministic tool capability.',
+    ],
+    allowedMemoryScopes: ['company'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  delegate: {
+    route: 'delegate',
+    title: 'Specialist Role Delegation',
+    description: 'Assignment of a structured directive or workflow to an AI employee specialist (researcher, pm, finance, coo).',
+    entryConditions: [
+      'Utterance commissions a multi-step project, council directive, PRD drafting, financial modeling, or specialist deliverable.',
+      'Requires asynchronous multi-step execution beyond an immediate conversational turn.',
+    ],
+    allowedMemoryScopes: ['company', 'role_brain'],
+    sideEffectClass: 'internal_write',
+    requiresFounderApproval: false,
+  },
+  schedule: {
+    route: 'schedule',
+    title: 'Workflow Automation Scheduling',
+    description: 'Creation, modification, pausing, or management of recurring workflows (ScheduledWorkItem) and heartbeats.',
+    entryConditions: [
+      'Utterance requests recurring schedule, cron cadence, timed execution, or periodic monitoring routine.',
+      'Configures background scheduled execution.',
+    ],
+    allowedMemoryScopes: ['company'],
+    sideEffectClass: 'internal_write',
+    requiresFounderApproval: false,
+  },
+  'ask-clarify': {
+    route: 'ask-clarify',
+    title: 'Structured Clarification',
+    description: 'Presentation of structured options when intent is ambiguous, parameters are missing, or model output is invalid.',
+    entryConditions: [
+      'Utterance has open scope boundaries, references multiple candidate targets, or lacks necessary parameters.',
+      'Upstream model generation failed JSON parsing, route validation, or confidence bounds (fail-closed fallback).',
+    ],
+    allowedMemoryScopes: ['none'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+  'propose-for-approval': {
+    route: 'propose-for-approval',
+    title: 'Governance Gate Proposal',
+    description: 'Formal proposal of high-impact side effects, external mutations, financial expenditures, or production deploys for Founder sign-off.',
+    entryConditions: [
+      'Action crosses a governance side-effect boundary: financial expenditure, production deploy, external customer message, or destructive operation.',
+      'Requires explicit cryptographic founder sign-off before proceeding.',
+    ],
+    allowedMemoryScopes: ['company'],
+    sideEffectClass: 'external_hard_to_reverse',
+    requiresFounderApproval: true,
+  },
+  refuse: {
+    route: 'refuse',
+    title: 'Security Refusal',
+    description: 'Deterministic rejection of hostile prompt injections, privilege escalations, gate bypasses, or out-of-bounds actions.',
+    entryConditions: [
+      'Utterance matches adversarial prompt injection patterns, attempts system override, or seeks unauthorized gate bypass.',
+      'Request violates SamJuniorsOS governance invariants or confidentiality boundaries.',
+    ],
+    allowedMemoryScopes: ['none'],
+    sideEffectClass: 'read_only',
+    requiresFounderApproval: false,
+  },
+};
+
+/**
+ * Validates whether an unknown value is a recognized SophiaRoute.
+ */
+export function isKnownSophiaRoute(route: unknown): route is SophiaRoute {
+  return typeof route === 'string' && (SOPHIA_ROUTES as readonly string[]).includes(route);
+}
+
+/**
+ * Retrieves the full taxonomy definition for a canonical SophiaRoute.
+ */
+export function getRouteDefinition(route: SophiaRoute): DecisionRouteDefinition {
+  return DECISION_ROUTE_TAXONOMY[route];
+}
+
+/**
+ * Checks if a specific memory scope is permitted for the given route.
+ */
+export function isRouteMemoryScopeAllowed(route: SophiaRoute, scope: RouteMemoryScope): boolean {
+  const def = DECISION_ROUTE_TAXONOMY[route];
+  if (!def) return false;
+  return def.allowedMemoryScopes.includes(scope);
+}

@@ -996,7 +996,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       turnId: cleanTurnId,
       conversationId: conversation.id,
       query: cleanMessage,
-      route,
+      route: route || 'converse',
       scopes: returnScopes,
       confidence: classificationResult.proposal.confidence,
       outcome,

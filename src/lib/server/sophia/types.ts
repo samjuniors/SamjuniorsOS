@@ -95,15 +95,33 @@ export type EntityResolutionResult<T> =
  * Authoritative 5-Route Minimal Router taxonomy for Sophia (M1.2 / G12.1).
  * The model proposes; deterministic policy disposes.
  */
-export const SOPHIA_ROUTES = [
-  'converse',
-  'recall-personal',
-  'recall-company',
-  'ask-clarify',
-  'refuse',
-] as const;
+import type {
+  SophiaRoute,
+  RouteMemoryScope,
+  RouteSideEffectClass,
+  DecisionRouteDefinition,
+} from '../../../types/decision';
+import {
+  SOPHIA_ROUTES,
+  DECISION_ROUTE_TAXONOMY,
+  isKnownSophiaRoute,
+  getRouteDefinition,
+  isRouteMemoryScopeAllowed,
+} from '../../../types/decision';
 
-export type SophiaRoute = (typeof SOPHIA_ROUTES)[number];
+export {
+  SOPHIA_ROUTES,
+  DECISION_ROUTE_TAXONOMY,
+  isKnownSophiaRoute,
+  getRouteDefinition,
+  isRouteMemoryScopeAllowed,
+};
+export type {
+  SophiaRoute,
+  RouteMemoryScope,
+  RouteSideEffectClass,
+  DecisionRouteDefinition,
+};
 
 export interface SophiaRouteResult {
   route: SophiaRoute;
@@ -181,6 +199,32 @@ export type CandidateIntentProposal =
       kind: 'refuse';
       route?: 'refuse';
       reply: string;
+      confidence: number;
+      reason: string;
+    }
+  | {
+      kind: 'research_proposal';
+      route?: SophiaRoute;
+      topic: string;
+      sources?: string[];
+      depth?: 'quick' | 'deep';
+      confidence: number;
+      reason: string;
+    }
+  | {
+      kind: 'tool_call_proposal';
+      route?: SophiaRoute;
+      toolName: string;
+      parameters?: Record<string, unknown>;
+      confidence: number;
+      reason: string;
+    }
+  | {
+      kind: 'schedule_proposal';
+      route?: SophiaRoute;
+      title: string;
+      intervalMinutes?: number;
+      recurrenceRule?: string;
       confidence: number;
       reason: string;
     };
