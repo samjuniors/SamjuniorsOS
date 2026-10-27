@@ -1,0 +1,8 @@
+{
+  "id": "G11.6",
+  "doneAt": "2026-10-27T05:53:02.053Z",
+  "agent": "lead",
+  "branch": "step/G11.6",
+  "commit": "f33c70968e3c2cb7e65521910ec54cc2855d8af1",
+  "evidence": "Automated tests in tests/sophia/g11_6_memory_poisoning_and_leakage.test.ts pass 27/27 assertions across 5 groups showing untrusted text cannot become trusted memory and personal facts never appear in company artifacts or employee context, failing closed; verified by independent-verifier."
+}
