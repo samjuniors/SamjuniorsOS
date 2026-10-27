@@ -40,7 +40,7 @@ import "./env-setup";
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync, readFileSync } from "fs";
 import { tmpdir } from "os";
-import { join, resolve } from "path";
+import { join, resolve, isAbsolute } from "path";
 import { WorkflowScheduler } from "../../src/lib/server/workflow/scheduler";
 import { InMemoryScheduledWorkStore } from "../../src/lib/server/workflow/scheduler-store";
 import { InMemoryLeaseManager } from "../../src/lib/server/coordination/lease-manager";
@@ -94,7 +94,16 @@ const createdDefinitionIds = new Set<string>();
 const createdScheduleIds = new Set<string>();
 const createdRunIds = new Set<string>();
 
-const TEST_DB = "/tmp/samjuniors-4a-scheduler-test.db";
+const TEST_DB = (() => {
+  const url = process.env.DATABASE_URL;
+  if (!url || !url.startsWith("file:")) return "/tmp/samjuniors-4a-scheduler-test.db";
+  const raw = url.slice("file:".length);
+  if (isAbsolute(raw)) return raw;
+  const repoRoot = process.env.SAMJUNIORS_TEST_REPO_ROOT || process.cwd();
+  const fromPrisma = resolve(repoRoot, "prisma", raw);
+  if (existsSync(fromPrisma)) return fromPrisma;
+  return resolve(repoRoot, raw);
+})();
 
 function pruneDurableCollection(collection: string, ids: Set<string>): void {
   const file = join(getTestDataDir(), `${collection}.json`);
@@ -719,7 +728,7 @@ describe("Phase 4.4C — Activity survives a REAL process restart", () => {
           cwd: restartDir,
           env: {
             ...process.env,
-            DATABASE_URL: `file:${join(restartDir, "restart.db")}`,
+            DATABASE_URL: `file:${join(restartDir, "restart.db").replace(/\\/g, "/")}`,
           },
         }
       );
