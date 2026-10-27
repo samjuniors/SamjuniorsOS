@@ -119,8 +119,16 @@
     - Verified memory retrieval benchmark regression gate (`npm run benchmark:memory` PASS in 1.45s against M5.3-A3 baseline; 0 failures, 100% render recall, 92.1% union recall, 0 violations).
     - Verified full canonical test suite (90 passed, 0 failed, 20 skipped), 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G11.6 (Memory poisoning and cross-scope leakage tests):**
+    - Authored dedicated security test suite `tests/sophia/g11_6_memory_poisoning_and_leakage.test.ts` (27/27 PASS across 5 isolation, poisoning, and leakage groups).
+    - Verified adversarial memory poisoning rejection: candidate memories containing instruction override, prompt injection, fake authority directives, or secret-like content are flagged by `MemoryGate` (`FLAGGED_ADVERSARIAL_INJECTION`, `UNAUTHORIZED_TYPE`, `SECRET_LIKE_CONTENT`) and never committed to durable personal or company memory.
+    - Verified founder personal mind vs. employee boundary: personal canary items in `SophiaMemoryStore` never leak into AI employee task contexts (`ContextAssemblyService.assembleContextForTask` across `researcher`, `pm`, `finance`, `coo`, and `advisor` roles).
+    - Verified epistemic boundary enforcement: unverified claims cannot bypass epistemic gates into authoritative company facts.
+    - Verified cross-employee Role Brain isolation: unauthorized cross-agent reads/writes throw 403 `RoleBrainSecurityError`.
+    - Verified artifact contamination resistance: company artifacts and graph projections strip personal notes.
+    - Verified all 110 test suites pass (109 passed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Landed on `kit/integration` and pushed to `origin`.
 - **Next Ready Steps:**
-  - G11.6 [security]: Memory poisoning and cross-scope leakage tests.
   - G11.7 [quality]: Continuity evaluation: Sofia remembers across a restart and across a compaction without losing what mattered.
   - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
 
