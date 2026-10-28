@@ -46,11 +46,78 @@
   - Client bundle secret scanner with zero credentials exposed to browser; production secret rotation runbook.
   - Full QA pass (`QA-M2`) passing all 5 founder test scenarios.
 
-## Now — Active Milestone M3 (Sofia remembers you and knows your company)
+## Milestone M3 — Sofia remembers you and knows your company (CLOSED)
 
-**Baseline:** Milestone M2 closed on `main`.
-- **Goal:** Persistent personal and company memory, kept apart, that survives restarts and can forget.
-- **Progress:** 10/13 steps done.
+- **Status:** CLOSED on 2026-10-27 (12/12 steps complete, founder accepted with `ack/MS-M3.json`).
+- **Founder Acceptance Quote:** `"close"`
+- **Steps Verified & Closed:** G4.1, G4.2, G4.3, G4.4, G11.1, G11.2, G11.3, G11.4, G11.5, G11.6, G11.7, G3.3.
+- **Capabilities Delivered:**
+  - Unified `CompanyBrain` as single authoritative read/write interface for company operational state, knowledge, precedents, and epistemic facts.
+  - First-class versioned Artifact model with SHA-256 tamper-evident integrity hashes and immutable version history.
+  - Idempotent GitHub external adapter with deterministic request hashing, unknown-outcome handling, and reconciliation.
+  - Memory retrieval benchmark regression gate integrated into CI against M5.3-A3 zero-failure baseline.
+  - ADR & write policies for owner-scoped memory partitioning, consent rules, and size/retention limits.
+  - Scope-aware retrieval with slice and aggregate source ID attribution and honest "I do not remember" abstentions.
+  - Memory consolidation and forgetting engine (episodic turns into semantic facts, contradiction and supersession handling, cascading deletion of derived memories).
+  - Role Brains providing per-employee isolated working/experience memory projected from Company Brain.
+  - Memory poisoning immunity rejecting prompt injection and instruction overrides at MemoryGate; strict personal vs. employee context isolation.
+  - Continuity evaluation harness (`eval:continuity`) executing 6 core scenarios with 100% concordance across cold process restarts.
+  - Untrusted ingress sanitization across transcripts, webhooks, and tool outputs.
+  - Full QA pass (`QA-M3`) passing all automated checks and all 6 founder walkthrough scenarios.
+
+## Now — Active Milestone M4 (Sofia decides well, and you can stop her)
+
+**Baseline:** Milestone M3 closed on `main`.
+- **Goal:** The full decision engine, the autonomy policy, the kill switch, and spend limits you control.
+- **Steps in M4:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6.
+
+### Milestone M4 Progress:
+- **Completed Steps:**
+  - **G12.1 (Decision contract and route taxonomy: converse, recall personal, recall company, research, use tool, delegate, schedule, ask to clarify, propose for approval, refuse):**
+    - Codified 10 canonical routes in `src/types/decision.ts` (`SOPHIA_ROUTES`: `converse`, `recall-personal`, `recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `ask-clarify`, `propose-for-approval`, `refuse`).
+    - Added strict memory scope isolation: `RouteMemoryScope` (`personal`, `company`, `role_brain`, `none`), guaranteeing `personal` scope is solely accessible via `recall-personal`.
+    - Added side-effect classifications: `RouteSideEffectClass` (`read_only`, `internal_write`, `external_reversible`, `external_hard_to_reverse`, `financial_legal`, `destructive_security`).
+    - Codified `DECISION_ROUTE_TAXONOMY` with entry conditions, allowed scopes, side effects, and human-in-the-loop requirements for every route.
+    - Authored authoritative ADR in `docs/architecture/ADR-008-decision-contract-and-route-taxonomy.md`.
+    - Extended existing single router (`SophiaIntentClassifier.route()`) to recognize all 10 routes and fail closed to `ask-clarify` (`clarification_prompt`) on unknown routes or malformed output; preserved zero secondary routers invariant.
+    - Updated `fallbackRouteAnalysis()` with deterministic pattern matching for all 10 routes.
+    - Authored dedicated test suite `tests/sophia/g12_1_decision_contract_and_route_taxonomy.test.ts` (19/19 PASS).
+    - Verified all 111 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.1.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.2 (Router: model proposes a route with confidence, deterministic validation, deterministic fallback):**
+    - Created 68-item curated labelled evaluation dataset in `benchmark/router/labelled-set.json` spanning all 10 canonical routes, boundary conditions, adversarial prompt injections, and malformed model outputs.
+    - Built comprehensive router evaluation engine in `benchmark/router/evaluate.ts` producing per-route accuracy breakdown, confusion matrix, and fail-closed validation metrics recorded in `benchmark/router/results/router-accuracy-report.json` (100.0% overall accuracy, 100.0% accuracy across every route, 6/6 fail-closed malformed test validations).
+    - Updated `SophiaIntentClassifier.route()` system prompt and output schema to include all 10 canonical routes.
+    - Refined deterministic `fallbackRouteAnalysis()` pattern recognition for plural financial metrics (`gross margins`), canonical facts/ledger queries, conversational pleasantries, and ensured Personal Mind schedule queries take precedence over general cron scheduling.
+    - Authored dedicated verification suite `tests/sophia/g12_2_router_evaluation.test.ts` (11/11 PASS).
+    - Verified all 112 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.2.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.3 (Context assembly per route: choose memory scopes and budget, attach sources, enforce the Personal and Company partition):**
+    - Implemented route-bound memory partition isolation in `src/lib/server/sophia/context-assembly.ts` with `getPartitionLimitsForRoute()` and `scaleLimitsToBudget()`.
+    - Enforced strict partition rules: company routes (`recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `propose-for-approval`) strictly zero-allocate and bar Personal Mind retrieval (`personalMind: 0`, `includePersonal: false`), preventing personal memory canary leakage even when `founderId` or `scope: "all"` is supplied.
+    - `recall-personal` strictly zeroes company partitions (`includeCompany: false`).
+    - Conversational and control routes (`converse`, `ask-clarify`, `refuse`) assemble zero memory slices (`scopes: []`, `sources: []`).
+    - Updated `src/lib/server/sophia/turn-executor.ts` to forward `route` and `budgetLimit` to `SophiaContextAssembler.assemble`, correct scope mapping for `ask-clarify` to `none`, and attach typed `scopes`, `sources`, `sourceIds`, formatted attribution footer `[Scopes: ... | Sources: ...]`, and `decisionLog` to `ChatMessageRecord.metadata`.
+    - Updated `src/lib/server/sophia/intent-classifier.ts` deterministic fallback router with `isCompanyStateQuery` regex to route company status and strategic initiatives questions directly to `recall-company`.
+    - Added comprehensive automated verification suite `tests/sophia/g12_3_context_assembly_per_route.test.ts` (19/19 PASS).
+    - Verified all 113 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.3.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.5 (Routing evaluation and calibration: reliability curve and Brier score per route; thresholds that trigger clarification):**
+    - Codified authoritative confidence clarification thresholds in `src/types/decision.ts` (`DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS`) and helper `getRouteClarificationThreshold(route, overrides)`.
+    - Extended `SophiaRouteResult` in `src/lib/server/sophia/types.ts` with `divertedFromRoute`, `clarificationThreshold`, and `isLowConfidenceClarification`.
+    - Implemented low-confidence clarification gate in `src/lib/server/sophia/intent-classifier.ts` (`SophiaIntentClassifier.route()`): model proposals with confidence strictly below route threshold divert to `'ask-clarify'` with `lowConfidenceClarification()` proposal explaining threshold gap, asking the founder before taking action (Q-DEC-3).
+    - Implemented routing calibration engine in `benchmark/router/calibration.ts` calculating Brier score ($(1/N)\sum(p_i - y_i)^2$), 5-bin reliability curves, Expected Calibration Error (ECE), and Maximum Calibration Error (MCE), outputting durable report `benchmark/router/results/router-calibration-report.json`.
+    - Established authoritative CI baseline in `benchmark/router/results/ci-baseline.json` and CI regression runner `benchmark/router/verify-ci-gate.ts` (25/25 checks pass: 100% accuracy, 0.0407 Brier score <= 0.1500, 0.1540 ECE <= 0.2000, 0.4917 MCE <= 0.5500, 0 low-confidence execution leaks, 100% fail-closed on malformed inputs).
+    - Authored automated verification test suite `tests/sophia/g12_5_routing_evaluation_and_calibration.test.ts` (13/13 PASS).
+    - Verified all 114 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.5.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+
+
+### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
   - **G4.1 (Company Brain as the single read and write path; retire parallel legacy paths):**
     - Established unified `CompanyBrain` (`src/lib/server/brain/company-brain.ts`, `src/types/brain.ts`) as the single authoritative read/write interface for company operational state, knowledge, precedents, decisions, and epistemic facts.
@@ -137,8 +204,22 @@
     - Verified full canonical test suite (110 passed, 0 failed, 1 skipped browser E2E), 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G11.7.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **QA-M3 (Milestone M3 Complete Quality Assurance Pass):**
+    - Ran all automated checks across the workspace: typecheck (0 errors), lint (0 errors), canonical test runner (110 passed, 0 failed, 1 skipped browser E2E, 275.69s), and production build (`dist/` Vite SPA build succeeded in 4.23s).
+    - Resolved Windows / relative SQLite database URL path resolution across scheduler suites (`tests/scheduler/env-setup.ts`, `tests/scheduler/phase4_4c_activity.test.ts`).
+    - Verified all 6 founder test scenarios against running application via `npm run eval:continuity`:
+      - T1: Temporal continuity: recalls 7-day-old personal preference in a fresh Node process after restart (100% recall).
+      - T2: Supersession correction: recalls updated $49 price, 0% stale recall of superseded $29 fact.
+      - T3: Scope-isolated company grounding: cites ARR and target customer with provenance, 0% personal memory leakage.
+      - T4: Honest abstention: explicitly states "I do not remember" on unrecorded facts, 0% hallucination.
+      - T5: Cascading deletion: deleting a note leaves 0 trace in database or assembled context.
+      - T6: Adversarial immunity: untrusted prompt injection rejected by MemoryGate with 0 presence in storage or context.
+    - Verified running UI quality bar items (Q-UX-2, Q-UX-3, Q-UX-5, Q-A11Y-1).
+    - Certified `PASS` in `.agent/product-kit/qa/M3.md` and landed on `kit/integration`.
 - **Next Ready Steps:**
-  - G3.6 [security]: Audit-log integrity, retention and deletion flows verified end to end (in progress in `.agent/worktrees/G3.6`, blocked on founder decision for `G3.6-ANCHOR`).
+  - Founder testing and acceptance quote for Milestone M3 (`node .agent/product-kit/kit.mjs milestone close M3 --quote "..."`).
+  - Milestone M3 ship to main (`node .agent/product-kit/kit.mjs milestone ship M3`).
+  - Milestone M4 ("Sofia decides well, and you can stop her").
 
 ## Milestone M2 Archive Details
   - **QA-M2 (Milestone M2 Complete Quality Assurance Pass):**

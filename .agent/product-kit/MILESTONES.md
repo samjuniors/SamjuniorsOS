@@ -10,8 +10,8 @@ Work happens one milestone at a time. When a milestone is finished the agent ask
 | M1 First Sofia you can talk to | Open the Sofia screen, get greeted, talk by voice or text, ask about yourself and about the company, stop her, and set a spend cap. | 10 | G0.8 |
 | MX A faster, desktop-ready stack: Vite + React + Express | Start the app with one command, see the same Sofia screen, talk to her and compare measured latency before and after, run the M1 test again, and install a first Windows build. | 7 | - |
 | M2 Sofia works when your PC is off | Turn off your PC and still reach and talk to Sofia from another device; restart the cloud host and lose nothing. | 11 | G0.3 |
-| M3 Sofia remembers you and knows your company | Tell her something, restart everything, and ask again; ask company questions with sources; delete a memory and see it gone. | 13 | - |
-| M4 Sofia decides well, and you can stop her | See why she chose each action, make her ask when unsure, stop everything, and change limits in settings. | 10 | G0.7 |
+| M3 Sofia remembers you and knows your company | Tell her something, restart everything, and ask again; ask company questions with sources; delete a memory and see it gone. | 12 | - |
+| M4 Sofia decides well, and you can stop her | See why she chose each action, make her ask when unsure, stop everything, and change limits in settings. | 11 | G0.7 |
 | M5 Cockpit and voice that feel finished | Use the cockpit, interrupt Sofia mid-sentence, approve by panel and see voice refused, and check accessibility and speed. | 18 | G0.2 |
 | M6 Tools, skills and MCP | Connect one tool and see Sofia use it with your approval; see that nothing installs itself. | 7 | - |
 | M7 Sofia's first employee | Approve a hire, give the employee a task, and read its structured result and the team view. | 9 | G0.6 |
@@ -120,7 +120,7 @@ Persistent personal and company memory, kept apart, that survives restarts and c
 
 **Not included yet:** No employees yet, so no per-employee memory in use
 
-**Gate steps:** G4.1, G4.2, G4.3, G4.4, G11.1, G11.2, G11.3, G11.4, G11.5, G11.6, G11.7, G3.3, G3.6
+**Gate steps:** G4.1, G4.2, G4.3, G4.4, G11.1, G11.2, G11.3, G11.4, G11.5, G11.6, G11.7, G3.3
 
 ## M4 - Sofia decides well, and you can stop her
 
@@ -136,7 +136,7 @@ The full decision engine, the autonomy policy, the kill switch, and spend limits
 
 **Not included yet:** Tools and employees are not connected yet
 
-**Gate steps:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2
+**Gate steps:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6
 
 ## M5 - Cockpit and voice that feel finished
 

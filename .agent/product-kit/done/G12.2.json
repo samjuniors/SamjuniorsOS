@@ -1,0 +1,8 @@
+{
+  "id": "G12.2",
+  "doneAt": "2026-10-27T10:00:59.235Z",
+  "agent": "lead",
+  "branch": "step/G12.2",
+  "commit": "665fa11d45a417a30a833432f30bc716a48c675c",
+  "evidence": "68-item labelled set in benchmark/router/labelled-set.json; router evaluation harness in benchmark/router/evaluate.ts recording 100% accuracy in benchmark/router/results/router-accuracy-report.json; verified by tests/sophia/g12_2_router_evaluation.test.ts (11/11 pass) and independent verifier PASS."
+}

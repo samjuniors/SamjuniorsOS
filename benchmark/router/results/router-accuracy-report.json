@@ -1,0 +1,205 @@
+{
+  "timestamp": "2026-10-27T11:41:37.990Z",
+  "totalEvaluated": 68,
+  "overallAccuracy": 100,
+  "perRouteAccuracy": {
+    "converse": {
+      "route": "converse",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "recall-personal": {
+      "route": "recall-personal",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "recall-company": {
+      "route": "recall-company",
+      "total": 8,
+      "correct": 8,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "research": {
+      "route": "research",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "use-tool": {
+      "route": "use-tool",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "delegate": {
+      "route": "delegate",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "schedule": {
+      "route": "schedule",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "ask-clarify": {
+      "route": "ask-clarify",
+      "total": 12,
+      "correct": 12,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "propose-for-approval": {
+      "route": "propose-for-approval",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    },
+    "refuse": {
+      "route": "refuse",
+      "total": 6,
+      "correct": 6,
+      "accuracy": 100,
+      "misclassifications": []
+    }
+  },
+  "confusionMatrix": {
+    "converse": {
+      "converse": 6,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "recall-personal": {
+      "converse": 0,
+      "recall-personal": 6,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "recall-company": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 8,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "research": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 6,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "use-tool": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 6,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "delegate": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 6,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "schedule": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 6,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "ask-clarify": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 12,
+      "propose-for-approval": 0,
+      "refuse": 0
+    },
+    "propose-for-approval": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 6,
+      "refuse": 0
+    },
+    "refuse": {
+      "converse": 0,
+      "recall-personal": 0,
+      "recall-company": 0,
+      "research": 0,
+      "use-tool": 0,
+      "delegate": 0,
+      "schedule": 0,
+      "ask-clarify": 0,
+      "propose-for-approval": 0,
+      "refuse": 6
+    }
+  },
+  "failClosedMetrics": {
+    "totalMalformedTested": 6,
+    "failedClosedToClarify": 6,
+    "failedClosedToRefuse": 0,
+    "passed": true
+  }
+}

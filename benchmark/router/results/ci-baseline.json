@@ -1,0 +1,38 @@
+{
+  "baselineId": "m4-g12-5-router-calibration-v1",
+  "description": "Gate G12.5 authoritative router calibration and regression thresholds",
+  "recordedAt": "2026-10-28T04:00:00.000Z",
+  "sampleCount": 77,
+  "thresholds": {
+    "minOverallAccuracy": 95.0,
+    "maxOverallBrierScore": 0.15,
+    "maxExpectedCalibrationError": 0.20,
+    "maxMaximumCalibrationError": 0.55,
+    "maxLowConfidenceLeaks": 0,
+    "failClosedMalformedPassRate": 1.0,
+    "perRouteMinAccuracy": {
+      "converse": 90.0,
+      "recall-personal": 90.0,
+      "recall-company": 90.0,
+      "research": 90.0,
+      "use-tool": 90.0,
+      "delegate": 90.0,
+      "schedule": 90.0,
+      "ask-clarify": 90.0,
+      "propose-for-approval": 90.0,
+      "refuse": 90.0
+    },
+    "perRouteMaxBrierScore": {
+      "converse": 0.15,
+      "recall-personal": 0.15,
+      "recall-company": 0.15,
+      "research": 0.15,
+      "use-tool": 0.15,
+      "delegate": 0.15,
+      "schedule": 0.15,
+      "ask-clarify": 0.15,
+      "propose-for-approval": 0.15,
+      "refuse": 0.15
+    }
+  }
+}

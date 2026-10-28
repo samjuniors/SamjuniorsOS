@@ -25,6 +25,7 @@ import {
   traverseDependents,
 } from '../retrieval/dependency-relations';
 import { SophiaAssembledContext, SophiaContextSlice, MemoryScope } from './types';
+import { SophiaRoute } from '@/types/decision';
 
 /**
  * ============================================================================
@@ -56,7 +57,7 @@ import { SophiaAssembledContext, SophiaContextSlice, MemoryScope } from './types
  */
 
 // Initial engineering budget ceilings per partition (characters ≈ tokens * 4)
-const PARTITION_LIMITS = {
+export const DEFAULT_PARTITION_LIMITS = {
   operationalState: 1000,    // ~250 tokens
   activeWorkflows: 1200,     // ~300 tokens
   pendingGovernance: 1200,   // ~300 tokens
@@ -66,24 +67,219 @@ const PARTITION_LIMITS = {
   historicalPrecedent: 800,  // ~200 tokens
   recentActivity: 800,       // ~200 tokens
   dialogueHistory: 1000,     // ~250 tokens
-  // M5.2 additions — small, bounded partitions for the new deterministic
-  // retrieval projections. The dynamic-payload ceiling is preserved by
-  // keeping each new partition in line with the existing 500–1400 range and
-  // by their intent gates (a turn renders at most one of the temporal
-  // projections; the episodic slice is founder-scoped and match-gated).
-  changeRecord: 2100,        // ~525 tokens (windowed change enumeration, WINDOW intent only; bounded at 16 entries)
-  supersededFacts: 500,      // ~125 tokens (historical fact projection, HISTORY intent only)
-  episodicMemory: 600,       // ~150 tokens (founder-scoped past-conversation recall)
-  // M5.3-C — bounded dependency-chain projection (dependency-intent queries
-  // whose anchors resolve; edges cite their source facts; active facts only).
-  dependencyPath: 900,       // ~225 tokens (bounded at 8 edges + 4 facts)
-  // P2 follow-up (context starvation): 600 chars admitted only ~3 short
-  // memories after wrapper overhead — the deterministic retrieval policy
-  // (below) is useless if the render budget starves whatever it selects.
-  // 1200 chars (~300 tokens) is in line with the other partitions
-  // (800–1400) and roughly doubles effective capacity for short memories.
-  personalMind: 1200,         // ~300 tokens (M3 K-2 founder personal context)
+  changeRecord: 2100,        // ~525 tokens
+  supersededFacts: 500,      // ~125 tokens
+  episodicMemory: 600,       // ~150 tokens
+  dependencyPath: 900,       // ~225 tokens
+  personalMind: 1200,        // ~300 tokens
 };
+
+export const PARTITION_LIMITS = DEFAULT_PARTITION_LIMITS;
+
+export type PartitionName = keyof typeof DEFAULT_PARTITION_LIMITS;
+
+function scaleLimitsToBudget(
+  limits: typeof DEFAULT_PARTITION_LIMITS,
+  budgetLimitTokens: number
+): typeof DEFAULT_PARTITION_LIMITS {
+  const maxTotalChars = budgetLimitTokens * 4;
+  const currentTotal = Object.values(limits).reduce((acc, v) => acc + v, 0);
+
+  if (currentTotal <= maxTotalChars || currentTotal === 0) {
+    return { ...limits };
+  }
+
+  const ratio = maxTotalChars / currentTotal;
+  const scaled = { ...limits };
+  for (const key of Object.keys(scaled)) {
+    if (scaled[key] > 0) {
+      scaled[key] = Math.max(100, Math.floor(scaled[key] * ratio));
+    }
+  }
+  return scaled;
+}
+
+export function getPartitionLimitsForRoute(
+  route?: SophiaRoute,
+  budgetLimitTokens?: number
+): typeof DEFAULT_PARTITION_LIMITS {
+  const base: typeof DEFAULT_PARTITION_LIMITS = { ...DEFAULT_PARTITION_LIMITS };
+
+  if (!route) {
+    if (budgetLimitTokens && budgetLimitTokens > 0) {
+      return scaleLimitsToBudget(base, budgetLimitTokens);
+    }
+    return base;
+  }
+
+  let routeLimits: typeof DEFAULT_PARTITION_LIMITS;
+
+  switch (route) {
+    case 'converse':
+    case 'ask-clarify':
+    case 'refuse':
+      routeLimits = {
+        operationalState: 0,
+        activeWorkflows: 0,
+        pendingGovernance: 0,
+        canonicalFacts: 0,
+        unverifiedClaims: 0,
+        companyKnowledge: 0,
+        historicalPrecedent: 0,
+        recentActivity: 0,
+        dialogueHistory: 1000,
+        changeRecord: 0,
+        supersededFacts: 0,
+        episodicMemory: 0,
+        dependencyPath: 0,
+        personalMind: 0,
+      };
+      break;
+
+    case 'recall-personal':
+      routeLimits = {
+        operationalState: 0,
+        activeWorkflows: 0,
+        pendingGovernance: 0,
+        canonicalFacts: 0,
+        unverifiedClaims: 0,
+        companyKnowledge: 0,
+        historicalPrecedent: 0,
+        recentActivity: 0,
+        dialogueHistory: 1000,
+        changeRecord: 0,
+        supersededFacts: 0,
+        episodicMemory: 0,
+        dependencyPath: 0,
+        personalMind: 2000,
+      };
+      break;
+
+    case 'recall-company':
+      routeLimits = {
+        operationalState: 1200,
+        activeWorkflows: 800,
+        pendingGovernance: 800,
+        canonicalFacts: 1400,
+        unverifiedClaims: 800,
+        companyKnowledge: 1800,
+        historicalPrecedent: 800,
+        recentActivity: 600,
+        dialogueHistory: 800,
+        changeRecord: 2100,
+        supersededFacts: 500,
+        episodicMemory: 600,
+        dependencyPath: 900,
+        personalMind: 0,
+      };
+      break;
+
+    case 'research':
+      routeLimits = {
+        operationalState: 400,
+        activeWorkflows: 400,
+        pendingGovernance: 400,
+        canonicalFacts: 1600,
+        unverifiedClaims: 1000,
+        companyKnowledge: 2400,
+        historicalPrecedent: 800,
+        recentActivity: 400,
+        dialogueHistory: 800,
+        changeRecord: 1200,
+        supersededFacts: 600,
+        episodicMemory: 600,
+        dependencyPath: 1200,
+        personalMind: 0,
+      };
+      break;
+
+    case 'use-tool':
+      routeLimits = {
+        operationalState: 1400,
+        activeWorkflows: 1400,
+        pendingGovernance: 600,
+        canonicalFacts: 1000,
+        unverifiedClaims: 400,
+        companyKnowledge: 1000,
+        historicalPrecedent: 600,
+        recentActivity: 800,
+        dialogueHistory: 800,
+        changeRecord: 1000,
+        supersededFacts: 400,
+        episodicMemory: 400,
+        dependencyPath: 800,
+        personalMind: 0,
+      };
+      break;
+
+    case 'delegate':
+      routeLimits = {
+        operationalState: 1200,
+        activeWorkflows: 1600,
+        pendingGovernance: 800,
+        canonicalFacts: 1000,
+        unverifiedClaims: 600,
+        companyKnowledge: 1200,
+        historicalPrecedent: 600,
+        recentActivity: 800,
+        dialogueHistory: 800,
+        changeRecord: 1000,
+        supersededFacts: 400,
+        episodicMemory: 400,
+        dependencyPath: 600,
+        personalMind: 0,
+      };
+      break;
+
+    case 'schedule':
+      routeLimits = {
+        operationalState: 800,
+        activeWorkflows: 1800,
+        pendingGovernance: 1200,
+        canonicalFacts: 800,
+        unverifiedClaims: 400,
+        companyKnowledge: 800,
+        historicalPrecedent: 400,
+        recentActivity: 600,
+        dialogueHistory: 800,
+        changeRecord: 800,
+        supersededFacts: 400,
+        episodicMemory: 400,
+        dependencyPath: 400,
+        personalMind: 0,
+      };
+      break;
+
+    case 'propose-for-approval':
+      routeLimits = {
+        operationalState: 1400,
+        activeWorkflows: 1000,
+        pendingGovernance: 2000,
+        canonicalFacts: 1000,
+        unverifiedClaims: 600,
+        companyKnowledge: 800,
+        historicalPrecedent: 600,
+        recentActivity: 600,
+        dialogueHistory: 800,
+        changeRecord: 1000,
+        supersededFacts: 400,
+        episodicMemory: 400,
+        dependencyPath: 600,
+        personalMind: 0,
+      };
+      break;
+
+    default:
+      routeLimits = base;
+      break;
+  }
+
+  if (budgetLimitTokens && budgetLimitTokens > 0) {
+    return scaleLimitsToBudget(routeLimits, budgetLimitTokens);
+  }
+
+  return routeLimits;
+}
 
 /**
  * P2 FOLLOW-UP (context starvation — deterministic retrieval policy):
@@ -416,8 +612,10 @@ export function selectPersonalMindMemories<
 }
 
 function clamp(text: string, maxChars: number): string {
+  if (maxChars <= 0) return '';
   if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars - 25).trimEnd()}\n[TRUNCATED TO BUDGET]`;
+  const truncateAt = Math.max(0, maxChars - 25);
+  return `${text.slice(0, truncateAt).trimEnd()}\n[TRUNCATED TO BUDGET]`;
 }
 
 function estimateTokens(text: string): number {
@@ -502,38 +700,86 @@ function renderPersonalMindContainer(
   return [openTag, securityLine, ...blocks, closeTag].join('\n');
 }
 
+export interface SophiaAssembleOptions {
+  message: string;
+  history?: Array<{ sender: string; text: string }>;
+  includeFullTelemetry?: boolean;
+  /**
+   * Authenticated founder principal (M3 K-2). When present and non-empty,
+   * the founder's active personal memories are rendered as an explicitly
+   * labeled PERSONAL_MIND_MEMORY slice. NEVER trust a client-supplied
+   * founderId — callers must pass the authenticated session principal only.
+   */
+  founderId?: string;
+  /**
+   * Scope-aware context partition (M1.3 / G12.3).
+   * - 'personal_only': reads only Personal Mind (SophiaMemoryStore); Company Brain is strictly excluded.
+   * - 'company_only': reads only Company Brain; Personal Mind is strictly excluded.
+   * - 'none': neither personal mind nor company brain is read.
+   * - 'all': reads all eligible slices (default).
+   */
+  scope?: 'all' | 'personal_only' | 'company_only' | 'none';
+  /**
+   * Canonical decision route (G12.1 / G12.3).
+   * When provided, enforces the route's allowed memory scopes and budget distribution.
+   */
+  route?: SophiaRoute;
+  /**
+   * Optional custom dynamic token budget limit (default ~1,800 tokens).
+   */
+  budgetLimit?: number;
+}
+
 export class SophiaContextAssembler {
   /**
    * Assembles the contextual projection for the current turn.
    */
-  public static async assemble(opts: {
-    message: string;
-    history?: Array<{ sender: string; text: string }>;
-    includeFullTelemetry?: boolean;
-    /**
-     * Authenticated founder principal (M3 K-2). When present and non-empty,
-     * the founder's active personal memories are rendered as an explicitly
-     * labeled PERSONAL_MIND_MEMORY slice. NEVER trust a client-supplied
-     * founderId — callers must pass the authenticated session principal only.
-     */
-    founderId?: string;
-    /**
-     * Scope-aware context partition (M1.3 / G12.3).
-     * - 'personal_only': reads only Personal Mind (SophiaMemoryStore); Company Brain is strictly excluded.
-     * - 'company_only': reads only Company Brain; Personal Mind is strictly excluded.
-     * - 'none': neither personal mind nor company brain is read.
-     * - 'all': reads all eligible slices (default).
-     */
-    scope?: 'all' | 'personal_only' | 'company_only' | 'none';
-  }): Promise<SophiaAssembledContext> {
+  public static async assemble(opts: SophiaAssembleOptions): Promise<SophiaAssembledContext> {
     const slices: SophiaContextSlice[] = [];
     const degradedStores: string[] = [];
     let retrievalHit = false;
     const tokenBreakdown: SophiaAssembledContext['tokenBreakdown'] = {};
 
-    const requestedScope = opts.scope ?? 'all';
-    const includeCompany = requestedScope === 'all' || requestedScope === 'company_only';
-    const includePersonal = requestedScope === 'all' || requestedScope === 'personal_only';
+    const limits = getPartitionLimitsForRoute(opts.route, opts.budgetLimit);
+
+    let includeCompany = false;
+    let includePersonal = false;
+
+    if (opts.route) {
+      switch (opts.route) {
+        case 'converse':
+        case 'ask-clarify':
+        case 'refuse':
+          includeCompany = false;
+          includePersonal = false;
+          break;
+        case 'recall-personal':
+          includeCompany = false;
+          includePersonal = true;
+          break;
+        case 'recall-company':
+        case 'research':
+        case 'use-tool':
+        case 'delegate':
+        case 'schedule':
+        case 'propose-for-approval':
+          includeCompany = true;
+          includePersonal = false;
+          break;
+      }
+      if (opts.scope === 'none') {
+        includeCompany = false;
+        includePersonal = false;
+      } else if (opts.scope === 'company_only') {
+        includePersonal = false;
+      } else if (opts.scope === 'personal_only') {
+        includeCompany = false;
+      }
+    } else {
+      const requestedScope = opts.scope ?? 'all';
+      includeCompany = requestedScope === 'all' || requestedScope === 'company_only';
+      includePersonal = requestedScope === 'all' || requestedScope === 'personal_only';
+    }
 
     const isCasual = isCasualGreeting(opts.message);
 
@@ -641,7 +887,7 @@ export class SophiaContextAssembler {
         operationalLines.push('Active Strategic Initiatives: None currently registered in Company HQ.');
       }
 
-      const content = clamp(operationalLines.join('\n'), PARTITION_LIMITS.operationalState);
+      const content = clamp(operationalLines.join('\n'), limits.operationalState);
       tokenBreakdown.operationalState = estimateTokens(content);
 
       slices.push({
@@ -689,7 +935,7 @@ export class SophiaContextAssembler {
         workflowLines.push('No workflows currently in flight. Council is idle and available for directives.');
       }
 
-      const content = clamp(workflowLines.join('\n'), PARTITION_LIMITS.activeWorkflows);
+      const content = clamp(workflowLines.join('\n'), limits.activeWorkflows);
       tokenBreakdown.activeWorkflows = estimateTokens(content);
 
       slices.push({
@@ -723,7 +969,7 @@ export class SophiaContextAssembler {
         const approvalLines = pending.slice(0, 3).map((a) =>
           `  - [${a.id}] Action: "${a.actionName}" | Class: ${a.classification} | Role: ${a.employeeRole} | Requested: ${a.requestedAt}`
         );
-        const content = clamp(approvalLines.join('\n'), PARTITION_LIMITS.pendingGovernance);
+        const content = clamp(approvalLines.join('\n'), limits.pendingGovernance);
         tokenBreakdown.pendingGovernance = estimateTokens(content);
 
         slices.push({
@@ -906,7 +1152,7 @@ export class SophiaContextAssembler {
               `(window anchored to the newest recorded event; authoritative records above remain the sources of truth):`,
             ...changes.slice(0, 16).map((c) => c.line),
           ];
-          const content = clamp(changeLines.join('\n'), PARTITION_LIMITS.changeRecord);
+          const content = clamp(changeLines.join('\n'), limits.changeRecord);
           tokenBreakdown.changeRecord = estimateTokens(content);
 
           slices.push({
@@ -967,7 +1213,7 @@ export class SophiaContextAssembler {
         const header = factsFallback
           ? 'Canonical Verified Facts (no query match — newest active facts):'
           : 'Canonical Verified Facts (query-matched):';
-        const content = clamp([header, ...factLines].join('\n'), PARTITION_LIMITS.canonicalFacts);
+        const content = clamp([header, ...factLines].join('\n'), limits.canonicalFacts);
         tokenBreakdown.canonicalFacts = estimateTokens(content);
 
         slices.push({
@@ -1007,7 +1253,7 @@ export class SophiaContextAssembler {
                 `  - [FACT-${f.id}] "${f.statement}" (Superseded by [FACT-${f.supersededById}], promoted ${f.promotedAt})`
               ),
             ];
-            const content = clamp(historicalLines.join('\n'), PARTITION_LIMITS.supersededFacts);
+            const content = clamp(historicalLines.join('\n'), limits.supersededFacts);
             tokenBreakdown.supersededFacts = estimateTokens(content);
 
             slices.push({
@@ -1075,7 +1321,7 @@ export class SophiaContextAssembler {
                     `Dependent canonical facts:`,
                     ...factLines,
                   ].join('\n'),
-                  PARTITION_LIMITS.dependencyPath
+                  limits.dependencyPath
                 );
                 tokenBreakdown.dependencyPath = estimateTokens(content);
 
@@ -1106,7 +1352,7 @@ export class SophiaContextAssembler {
             `  - [CLAIM-${c.id}] "${c.statement}" (Status: [${c.verificationStatus.toUpperCase()}], Confidence: ${c.confidence})`
           ),
         ];
-        const content = clamp(claimLines.join('\n'), PARTITION_LIMITS.unverifiedClaims);
+        const content = clamp(claimLines.join('\n'), limits.unverifiedClaims);
         tokenBreakdown.unverifiedClaims = estimateTokens(content);
 
         slices.push({
@@ -1149,7 +1395,7 @@ export class SophiaContextAssembler {
               : '';
             return `[${k.documentId}] "${k.title}" (Category: ${k.category})${historicalTag}:\n${k.summary || k.contentSnippet || k.fullContent}`;
           });
-          const content = clamp(kLines.join('\n\n'), PARTITION_LIMITS.companyKnowledge);
+          const content = clamp(kLines.join('\n\n'), limits.companyKnowledge);
           tokenBreakdown.companyKnowledge = estimateTokens(content);
 
           slices.push({
@@ -1180,7 +1426,7 @@ export class SophiaContextAssembler {
               `  - Precedent [${m.memoryId}]: Action "${m.approvedAction}" -> Outcome: "${m.executionOutcome}" (Evidence: ${(m.evidenceReferences || []).join(', ') || 'historical'})`
             ),
           ];
-          const content = clamp(mLines.join('\n'), PARTITION_LIMITS.historicalPrecedent);
+          const content = clamp(mLines.join('\n'), limits.historicalPrecedent);
           tokenBreakdown.historicalPrecedent = estimateTokens(content);
 
           slices.push({
@@ -1206,7 +1452,7 @@ export class SophiaContextAssembler {
           const actLines = projection.events.map((e) =>
             `  - [${e.at}] ${e.summary} (Actor: ${e.actor})`
           );
-          const content = clamp(actLines.join('\n'), PARTITION_LIMITS.recentActivity);
+          const content = clamp(actLines.join('\n'), limits.recentActivity);
           tokenBreakdown.recentActivity = estimateTokens(content);
 
           slices.push({
@@ -1257,7 +1503,7 @@ export class SophiaContextAssembler {
         if (personalMemories.length > 0) {
           // Self-bounded, always well-formed container (see helper): the
           // closing tag is guaranteed within the partition budget.
-          const content = renderPersonalMindContainer(personalMemories, PARTITION_LIMITS.personalMind);
+          const content = renderPersonalMindContainer(personalMemories, limits.personalMind);
           tokenBreakdown.personalMind = estimateTokens(content);
 
           slices.push({
@@ -1318,7 +1564,7 @@ export class SophiaContextAssembler {
               eLines.push(`      ${sender}: ${clean}`);
             }
           }
-          const content = clamp(eLines.join('\n'), PARTITION_LIMITS.episodicMemory);
+          const content = clamp(eLines.join('\n'), limits.episodicMemory);
           tokenBreakdown.episodicMemory = estimateTokens(content);
 
           slices.push({
@@ -1347,7 +1593,7 @@ export class SophiaContextAssembler {
       });
 
       const rawContent = boundedTurns.join('\n');
-      const content = clamp(rawContent, PARTITION_LIMITS.dialogueHistory);
+      const content = clamp(rawContent, limits.dialogueHistory);
       tokenBreakdown.dialogueHistory = estimateTokens(content);
 
       slices.push({
@@ -1389,7 +1635,7 @@ export class SophiaContextAssembler {
       if (personalSlice) {
         scopes.push('personal_mind');
         sourcesSet.add('SophiaMemoryStore');
-      } else if (requestedScope === 'personal_only') {
+      } else if (opts.route === 'recall-personal' || opts.scope === 'personal_only') {
         scopes.push('personal_mind');
         sourcesSet.add('SophiaMemoryStore');
       }
@@ -1402,7 +1648,14 @@ export class SophiaContextAssembler {
       if (companySlices.length > 0) {
         scopes.push('company_brain');
         companySlices.forEach((s) => sourcesSet.add(s.provenance));
-      } else if (requestedScope === 'company_only') {
+      } else if (
+        opts.scope === 'company_only' ||
+        (opts.route &&
+          opts.route !== 'converse' &&
+          opts.route !== 'ask-clarify' &&
+          opts.route !== 'refuse' &&
+          opts.route !== 'recall-personal')
+      ) {
         scopes.push('company_brain');
       }
     }

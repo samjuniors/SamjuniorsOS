@@ -337,8 +337,7 @@
         "G11.5",
         "G11.6",
         "G11.7",
-        "G3.3",
-        "G3.6"
+        "G3.3"
       ],
       "founder_test": [
         "Tell her a fact about you; restart everything; ask next day. She remembers.",
@@ -367,7 +366,8 @@
         "G12.6",
         "G12.7",
         "G12.8",
-        "G3.2"
+        "G3.2",
+        "G3.6"
       ],
       "founder_test": [
         "Ask for something needing a tool or a delegate. She shows the route she chose and why.",
