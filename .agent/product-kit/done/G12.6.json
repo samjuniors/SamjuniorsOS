@@ -1,0 +1,8 @@
+{
+  "id": "G12.6",
+  "doneAt": "2026-10-28T04:55:10.639Z",
+  "agent": "antigravity",
+  "branch": "step/G12.6",
+  "commit": "c02ffef3749718a1cc15bb474b84820d108331a7",
+  "evidence": "Prisma model DecisionLogEntry mapped to decision_logs table; DecisionLogStore query and replay engine; 'why did you do that' citations from authoritative log entries; fail-closed 'no log entry means no action' enforced in turn-executor; 18 automated tests pass, typecheck and lint pass."
+}
