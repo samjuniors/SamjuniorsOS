@@ -163,6 +163,16 @@
     - Verified all 100 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.7.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.8 (Settings for autonomy and spend limits: editable in the app and enforced deterministically; with no value set, no autonomous model spend runs):**
+    - Centralized deterministic spend gate in `ServerAgentExecutor` (`src/lib/server/agents/executor.ts`): evaluates `SpendSettingsManager.getInstance().canExecuteAutonomousSpend()`. If disallowed (cap unset or exceeded), blocks execution before calling LLM providers, saving `status: 'halted'`, 0ms duration, and unverified provenance to `AgentRunStore`.
+    - Integrated in-flight worker task tracking with `SpendSettingsManager`: registers `AbortController`s during task execution and races LLM generations against the abort signal.
+    - Extended `SpendSettingsManager` (`src/lib/server/sophia/spend-settings.ts`): lowering the spend cap below current spend, lowering below previous cap, or clearing to UNSET (`null`) aborts running tasks mid-flight and triggers `SafeModeManager.triggerStop()`.
+    - API route parity: enhanced `GET`/`POST` `/api/sofia/spend` (and `/api/sophia/spend`) to return and update spend limits and autonomy rules; added dedicated `GET`/`POST` `/api/sofia/autonomy` (and `/api/sophia/autonomy`) for autonomy policy rule inspection and elevation with founder attribution, registered in Express server `src/server/api.ts`.
+    - App UI Settings enhancements: added complete Autonomy Limits controls, level badges (L0–L4), founder quote input, and save button in `src/sofia/ui/SettingsSheet.tsx` and `src/components/SettingsDrawer.tsx`; added live daily cap display and preset controls in `src/os/components/os/DesktopOS.tsx`.
+    - Authored comprehensive automated test suite `tests/sophia/g12_8_autonomy_and_spend_settings.test.ts` (6/6 phases pass covering UI & route contracts, unset cap strict prohibition, interactive spend tracking, mid-flight worker halting upon lowering cap, tamper-evident founder audit logging, and deterministic autonomy policy elevation).
+    - Verified all 101 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.8.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 
 ### Milestone M3 Implementation Archive Details:
