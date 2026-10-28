@@ -6,6 +6,9 @@ import {
   SophiaRoute,
   SophiaRouteResult,
   SOPHIA_ROUTES,
+  getRouteClarificationThreshold,
+  getRouteDefinition,
+  RouteClarificationThresholds,
 } from './types';
 
 /**
@@ -620,6 +623,32 @@ Output a JSON code block with your proposal:
   }
 
   /**
+   * Factory: clarification proposal when model proposed an action route with confidence
+   * below its calibrated clarification threshold (Gate G12.5 / Q-DEC-3).
+   */
+  public static lowConfidenceClarification(
+    message: string,
+    proposedRoute: SophiaRoute,
+    confidence: number,
+    threshold: number
+  ): CandidateIntentProposal {
+    const routeDef = getRouteDefinition(proposedRoute);
+    const title = routeDef ? routeDef.title : proposedRoute;
+    return {
+      kind: 'clarification_prompt',
+      route: 'ask-clarify',
+      ambiguityReason: `Proposed route "${proposedRoute}" confidence (${confidence.toFixed(2)}) is below the required reliability threshold (${threshold.toFixed(2)}). Asking for confirmation before taking action.`,
+      structuredOptions: [
+        `Confirm ${title}: proceed with ${proposedRoute}`,
+        'Treat as conversational inquiry without execution',
+        'Revise or cancel request',
+      ],
+      confidence,
+      reason: `Low confidence (${confidence.toFixed(2)} < ${threshold.toFixed(2)}) on route '${proposedRoute}'; asking instead of acting.`,
+    };
+  }
+
+  /**
    * Evaluates if a query specifically targets the Founder's Personal Mind
    * (personal preferences, habits, personal notes, personal schedule).
    */
@@ -653,6 +682,7 @@ Output a JSON code block with your proposal:
     tone?: 'professional' | 'casual' | 'flirty';
     customPrompt?: string;
     customGenerator?: (options: GenerateOptions) => Promise<string>;
+    clarificationThresholds?: RouteClarificationThresholds;
   }): Promise<SophiaRouteResult> {
     const clean = opts.message.trim().toLowerCase();
 
@@ -776,6 +806,29 @@ You must classify the Founder's utterance into exactly one of the following 10 a
         const sanitized = this.sanitizeProposal(parsed, opts.message, candidateRoute);
         sanitized.route = candidateRoute;
 
+        // Gate G12.5 / Q-DEC-3: Low confidence routes ask instead of acting
+        const threshold = getRouteClarificationThreshold(candidateRoute, opts.clarificationThresholds);
+        if (candidateRoute !== 'ask-clarify' && sanitized.confidence < threshold) {
+          console.warn(`[SophiaIntentClassifier.route] Proposed route '${candidateRoute}' confidence ${sanitized.confidence.toFixed(2)} is below threshold ${threshold.toFixed(2)}; diverting to ask-clarify.`);
+          const clarifyProposal = this.lowConfidenceClarification(
+            opts.message,
+            candidateRoute,
+            sanitized.confidence,
+            threshold
+          );
+          return {
+            route: 'ask-clarify',
+            proposal: clarifyProposal,
+            liveAi: false,
+            confidence: sanitized.confidence,
+            reason: clarifyProposal.reason,
+            divertedFromRoute: candidateRoute,
+            clarificationThreshold: threshold,
+            isLowConfidenceClarification: true,
+            rawOutput,
+          };
+        }
+
         return {
           route: candidateRoute,
           proposal: sanitized,
@@ -805,7 +858,27 @@ You must classify the Founder's utterance into exactly one of the following 10 a
     }
 
     // Deterministic fallback routing when model generation throws
-    return this.fallbackRouteAnalysis(opts.message, opts.context);
+    const fallbackRes = this.fallbackRouteAnalysis(opts.message, opts.context);
+    const fallbackThreshold = getRouteClarificationThreshold(fallbackRes.route, opts.clarificationThresholds);
+    if (fallbackRes.route !== 'ask-clarify' && fallbackRes.confidence < fallbackThreshold) {
+      const clarifyProposal = this.lowConfidenceClarification(
+        opts.message,
+        fallbackRes.route,
+        fallbackRes.confidence,
+        fallbackThreshold
+      );
+      return {
+        route: 'ask-clarify',
+        proposal: clarifyProposal,
+        liveAi: false,
+        confidence: fallbackRes.confidence,
+        reason: clarifyProposal.reason,
+        divertedFromRoute: fallbackRes.route,
+        clarificationThreshold: fallbackThreshold,
+        isLowConfidenceClarification: true,
+      };
+    }
+    return fallbackRes;
   }
 
   /**

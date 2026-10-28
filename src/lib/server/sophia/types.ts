@@ -107,6 +107,9 @@ import {
   isKnownSophiaRoute,
   getRouteDefinition,
   isRouteMemoryScopeAllowed,
+  DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS,
+  getRouteClarificationThreshold,
+  type RouteClarificationThresholds,
 } from '../../../types/decision';
 
 export {
@@ -115,12 +118,15 @@ export {
   isKnownSophiaRoute,
   getRouteDefinition,
   isRouteMemoryScopeAllowed,
+  DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS,
+  getRouteClarificationThreshold,
 };
 export type {
   SophiaRoute,
   RouteMemoryScope,
   RouteSideEffectClass,
   DecisionRouteDefinition,
+  RouteClarificationThresholds,
 };
 
 export interface SophiaRouteResult {
@@ -129,6 +135,9 @@ export interface SophiaRouteResult {
   liveAi: boolean;
   confidence: number;
   reason: string;
+  divertedFromRoute?: SophiaRoute;
+  clarificationThreshold?: number;
+  isLowConfidenceClarification?: boolean;
   rawOutput?: string;
 }
 

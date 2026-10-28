@@ -375,3 +375,39 @@ export function isRouteMemoryScopeAllowed(route: SophiaRoute, scope: RouteMemory
   if (!def) return false;
   return def.allowedMemoryScopes.includes(scope);
 }
+
+/**
+ * Authoritative default confidence thresholds that trigger clarification (Gate G12.5 / Q-DEC-3).
+ * When proposed route confidence is strictly below its threshold, Sophia diverts to 'ask-clarify'
+ * instead of executing the action.
+ */
+export const DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS: Record<SophiaRoute, number> = {
+  'propose-for-approval': 0.80,
+  schedule: 0.75,
+  delegate: 0.75,
+  'use-tool': 0.70,
+  'recall-company': 0.65,
+  'recall-personal': 0.65,
+  research: 0.65,
+  refuse: 0.70,
+  converse: 0.60,
+  'ask-clarify': 0.0,
+};
+
+export type RouteClarificationThresholds = Partial<Record<SophiaRoute, number>> | number;
+
+/**
+ * Returns the effective clarification threshold for a route, applying optional overrides.
+ */
+export function getRouteClarificationThreshold(
+  route: SophiaRoute,
+  overrides?: RouteClarificationThresholds
+): number {
+  if (typeof overrides === 'number') {
+    return overrides;
+  }
+  if (overrides && typeof overrides[route] === 'number') {
+    return overrides[route]!;
+  }
+  return DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS[route] ?? 0.70;
+}
