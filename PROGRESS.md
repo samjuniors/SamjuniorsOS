@@ -65,13 +65,30 @@
   - Untrusted ingress sanitization across transcripts, webhooks, and tool outputs.
   - Full QA pass (`QA-M3`) passing all automated checks and all 6 founder walkthrough scenarios.
 
-## Now — Active Milestone M4 (Sofia decides well, and you can stop her)
+## Milestone M4 — Sofia decides well, and you can stop her (CLOSED)
 
-**Baseline:** Milestone M3 closed on `main`.
-- **Goal:** The full decision engine, the autonomy policy, the kill switch, and spend limits you control.
-- **Steps in M4:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6.
+- **Status:** CLOSED on 2026-10-28 (11/11 steps complete, founder accepted with `ack/MS-M4.json`).
+- **Founder Acceptance Quote:** `"CLOSE M4 AND CHECKPINT ALL"`
+- **Steps Verified & Closed:** G0.7, G12.1, G12.2, G12.3, G12.4, G12.5, G12.6, G12.7, G12.8, G3.2, G3.6.
+- **Capabilities Delivered:**
+  - 10-route canonical decision contract (`converse`, `recall-personal`, `recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `ask-clarify`, `propose-for-approval`, `refuse`) with strict memory partition isolation and side-effect taxonomy.
+  - Fail-closed router evaluation and calibration benchmark against curated labeled dataset with 100% route accuracy and deterministic fallbacks.
+  - Route-bound context assembly enforcing zero-allocation Canary-protected personal memory partitioning on company routes.
+  - Deterministic Autonomy Policy Engine (Action Class x Autonomy Level x Sliding-Window Budgets) with fail-closed founder elevation requiring cryptographic proof and quotes.
+  - Routing calibration and confusion matrix monitoring with automated confidence thresholds.
+  - Unified decision log and explanation view ("why") exposing immutable rationale, scopes read, and confidence.
+  - Safe mode and kill switch: instantaneous freezing of autonomous workers and workflows mid-flight via voice or UI panel, dropping to read-only mode with zero model dependency.
+  - Deterministic spend settings: unset cap blocks all autonomous model spend; lowering cap halts active tasks mid-flight; tamper-evident audit ledger with SHA-256 hash chaining.
+  - Comprehensive threat modeling against OWASP Top 10 for Agentic Applications and LLM Top 10.
+  - WORM audit-log integrity checkpoints detecting truncation, tampering, and gaps.
+  - Full QA pass (`QA-M4`) passing all automated checks and 6 founder walkthrough scenarios.
 
-### Milestone M4 Progress:
+## Now — Active Milestone M5 (Cockpit and voice that feel finished)
+
+- **Baseline:** Milestone M4 closed on `kit/integration`.
+- **Goal:** The cockpit you look at all day, and voice that feels like talking to a person in the room.
+
+### Milestone M4 Archive Details:
 - **Completed Steps:**
   - **G12.1 (Decision contract and route taxonomy: converse, recall personal, recall company, research, use tool, delegate, schedule, ask to clarify, propose for approval, refuse):**
     - Codified 10 canonical routes in `src/types/decision.ts` (`SOPHIA_ROUTES`: `converse`, `recall-personal`, `recall-company`, `research`, `use-tool`, `delegate`, `schedule`, `ask-clarify`, `propose-for-approval`, `refuse`).
