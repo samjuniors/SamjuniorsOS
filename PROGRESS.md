@@ -152,6 +152,17 @@
     - Verified all 99 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.4.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.7 (Kill switch and safe mode: one command by voice or panel freezes autonomous action and drops to read-only):**
+    - Enhanced `SafeModeManager` (`src/lib/server/sophia/stop-control.ts`) with active worker registry (`registerActiveWorker`, `unregisterActiveWorker`, `getActiveWorkersCount`), immediately aborting all registered worker `AbortController`s upon `triggerStop()`.
+    - Integrated worker cancellation in `ServerAgentExecutor` (`src/lib/server/agents/executor.ts`): pre-check blocks immediate execution in safe mode with `status: 'halted'` without contacting models, and in-flight execution races LLM generations against the abort signal, persisting halted runs in `AgentRunStore`.
+    - Integrated workflow cancellation in `WorkflowRuntime` (`src/lib/server/workflow/runtime.ts`): registers step abort controllers with `SafeModeManager`, catches stop control aborts, and transitions steps cleanly and atomically to `status: 'cancelled'`.
+    - Enforced read-only mode during freeze in `AutonomyPolicyEngine` (`src/lib/server/authorization/autonomy-policy.ts`): allows `read` actions (`SAFE_MODE_READ_ONLY_PERMITTED`) while requiring approval or forbidding all mutations (`SAFE_MODE_AUTONOMY_FROZEN`).
+    - Enforced read-only mode during freeze in `SideEffectPolicyEvaluator` (`src/lib/server/authorization/policy-evaluator.ts`): allows `read_only` actions while denying all mutations with `DENIED_SAFE_MODE_FROZEN`.
+    - Added defensive handling in activity projection (`src/lib/server/activity/projection.ts`) for missing workflow objectives.
+    - Authored comprehensive automated drill suite `tests/sophia/g12_7_kill_switch_safe_mode.test.ts` (6/6 phases pass covering voice & panel stop triggers, mid-run worker halting with `AgentRunStore` recording, mid-run workflow step halting with `WorkflowStore` recording, read-only enforcement, zero model dependency drill when model provider is down, and tamper-evident audit trail verification).
+    - Verified all 100 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.7.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 
 ### Milestone M3 Implementation Archive Details:
