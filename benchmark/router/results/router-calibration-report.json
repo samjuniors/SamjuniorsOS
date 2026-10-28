@@ -1,0 +1,675 @@
+{
+  "timestamp": "2026-10-28T04:04:32.471Z",
+  "totalEvaluated": 77,
+  "overallAccuracy": 100,
+  "overallBrierScore": 0.0407,
+  "overallECE": 0.154,
+  "overallMCE": 0.4917,
+  "overallReliabilityCurve": {
+    "bins": [
+      {
+        "binIndex": 0,
+        "binLower": 0,
+        "binUpper": 0.2,
+        "count": 0,
+        "meanConfidence": 0.1,
+        "empiricalAccuracy": 0,
+        "calibrationError": 0.1
+      },
+      {
+        "binIndex": 1,
+        "binLower": 0.2,
+        "binUpper": 0.4,
+        "count": 0,
+        "meanConfidence": 0.3,
+        "empiricalAccuracy": 0,
+        "calibrationError": 0.3
+      },
+      {
+        "binIndex": 2,
+        "binLower": 0.4,
+        "binUpper": 0.6,
+        "count": 6,
+        "meanConfidence": 0.5083,
+        "empiricalAccuracy": 1,
+        "calibrationError": 0.4917
+      },
+      {
+        "binIndex": 3,
+        "binLower": 0.6,
+        "binUpper": 0.8,
+        "count": 10,
+        "meanConfidence": 0.675,
+        "empiricalAccuracy": 1,
+        "calibrationError": 0.325
+      },
+      {
+        "binIndex": 4,
+        "binLower": 0.8,
+        "binUpper": 1,
+        "count": 61,
+        "meanConfidence": 0.9072,
+        "empiricalAccuracy": 1,
+        "calibrationError": 0.0928
+      }
+    ],
+    "expectedCalibrationError": 0.154,
+    "maximumCalibrationError": 0.4917
+  },
+  "perRouteCalibration": {
+    "converse": {
+      "route": "converse",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.0225,
+      "clarificationThreshold": 0.6,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.85,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.15
+          }
+        ],
+        "expectedCalibrationError": 0.15,
+        "maximumCalibrationError": 0.15
+      }
+    },
+    "recall-personal": {
+      "route": "recall-personal",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.01,
+      "clarificationThreshold": 0.65,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.9,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.1
+          }
+        ],
+        "expectedCalibrationError": 0.1,
+        "maximumCalibrationError": 0.1
+      }
+    },
+    "recall-company": {
+      "route": "recall-company",
+      "sampleCount": 8,
+      "correctCount": 8,
+      "accuracy": 100,
+      "brierScore": 0.01,
+      "clarificationThreshold": 0.65,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 8,
+            "meanConfidence": 0.9,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.1
+          }
+        ],
+        "expectedCalibrationError": 0.1,
+        "maximumCalibrationError": 0.1
+      }
+    },
+    "research": {
+      "route": "research",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.01,
+      "clarificationThreshold": 0.65,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.9,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.1
+          }
+        ],
+        "expectedCalibrationError": 0.1,
+        "maximumCalibrationError": 0.1
+      }
+    },
+    "use-tool": {
+      "route": "use-tool",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.0144,
+      "clarificationThreshold": 0.7,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.88,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.12
+          }
+        ],
+        "expectedCalibrationError": 0.12,
+        "maximumCalibrationError": 0.12
+      }
+    },
+    "delegate": {
+      "route": "delegate",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.0064,
+      "clarificationThreshold": 0.75,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.92,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.08
+          }
+        ],
+        "expectedCalibrationError": 0.08,
+        "maximumCalibrationError": 0.08
+      }
+    },
+    "schedule": {
+      "route": "schedule",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.01,
+      "clarificationThreshold": 0.75,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.9,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.1
+          }
+        ],
+        "expectedCalibrationError": 0.1,
+        "maximumCalibrationError": 0.1
+      }
+    },
+    "ask-clarify": {
+      "route": "ask-clarify",
+      "sampleCount": 12,
+      "correctCount": 12,
+      "accuracy": 100,
+      "brierScore": 0.0585,
+      "clarificationThreshold": 0,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 7,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 5,
+            "meanConfidence": 0.88,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.12
+          }
+        ],
+        "expectedCalibrationError": 0.225,
+        "maximumCalibrationError": 0.3
+      }
+    },
+    "propose-for-approval": {
+      "route": "propose-for-approval",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.0025,
+      "clarificationThreshold": 0.8,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.95,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.05
+          }
+        ],
+        "expectedCalibrationError": 0.05,
+        "maximumCalibrationError": 0.05
+      }
+    },
+    "refuse": {
+      "route": "refuse",
+      "sampleCount": 6,
+      "correctCount": 6,
+      "accuracy": 100,
+      "brierScore": 0.0001,
+      "clarificationThreshold": 0.7,
+      "reliabilityCurve": {
+        "bins": [
+          {
+            "binIndex": 0,
+            "binLower": 0,
+            "binUpper": 0.2,
+            "count": 0,
+            "meanConfidence": 0.1,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.1
+          },
+          {
+            "binIndex": 1,
+            "binLower": 0.2,
+            "binUpper": 0.4,
+            "count": 0,
+            "meanConfidence": 0.3,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.3
+          },
+          {
+            "binIndex": 2,
+            "binLower": 0.4,
+            "binUpper": 0.6,
+            "count": 0,
+            "meanConfidence": 0.5,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.5
+          },
+          {
+            "binIndex": 3,
+            "binLower": 0.6,
+            "binUpper": 0.8,
+            "count": 0,
+            "meanConfidence": 0.7,
+            "empiricalAccuracy": 0,
+            "calibrationError": 0.7
+          },
+          {
+            "binIndex": 4,
+            "binLower": 0.8,
+            "binUpper": 1,
+            "count": 6,
+            "meanConfidence": 0.99,
+            "empiricalAccuracy": 1,
+            "calibrationError": 0.01
+          }
+        ],
+        "expectedCalibrationError": 0.01,
+        "maximumCalibrationError": 0.01
+      }
+    }
+  },
+  "clarificationThresholds": {
+    "propose-for-approval": 0.8,
+    "schedule": 0.75,
+    "delegate": 0.75,
+    "use-tool": 0.7,
+    "recall-company": 0.65,
+    "recall-personal": 0.65,
+    "research": 0.65,
+    "refuse": 0.7,
+    "converse": 0.6,
+    "ask-clarify": 0
+  },
+  "lowConfidenceClarificationMetrics": {
+    "totalTested": 9,
+    "divertedToClarify": 9,
+    "lowConfidenceLeaks": 0,
+    "passed": true
+  },
+  "failClosedMetrics": {
+    "totalMalformedTested": 6,
+    "failedClosedToClarify": 6,
+    "failedClosedToRefuse": 0,
+    "passed": true
+  }
+}
