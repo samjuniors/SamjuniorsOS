@@ -128,6 +128,16 @@
     - Verified all 115 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.6.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G3.6 (Audit-log integrity, retention and deletion flows verified end to end):**
+    - Resolved Problem 1 (Anchor Verification & Tail Truncation): Defined `AuditCheckpoint`, `IAuditAnchorProvider`, `InMemoryAuditAnchorProvider`, and `FileAuditAnchorProvider` in `src/lib/server/authorization/audit-integrity.ts`.
+    - Implemented immutable file-backed WORM checkpoints in `.data/audit_anchors/` using atomic exclusive create flags (`O_CREAT | O_EXCL`), read-back verification, contiguous sequence gap detection, and `verifyHeadSync` detecting suffix/tail truncation, ledger wipe, and sequence gap tampering.
+    - Resolved Problem 2 (Store Integration & Idempotency): Integrated anchor checkpointing into `PostgresAuditStore.record` and `InMemoryAuditStore.record`. `list` operations verify complete cryptographic chain and head anchor checkpoint. Handled idempotent re-recording of existing sealed entries without chain disruption. Dynamic anchor directory binding keeps test environments isolated.
+    - Resolved Problem 3 (Spend Settings Fail-Closed Integration): In `SpendSettingsManager.updateSpendCap` (`src/lib/server/sophia/spend-settings.ts`), moved `logAuditRecord` before `persistSettings` so audit failure halts mutation fail-closed. `getSpendAuditHistory` propagates `AuditIntegrityError` directly without swallowing errors.
+    - Resolved Problem 4 (Personal Mind Deletion Mirror): Verified end-to-end deletion flow in `tests/sophia/k2_personal_memory.test.ts` (T18a and T18) leaving zero resurrectable copies across durable storage (`personal_memories.json`) and relational Prisma mirrors (`SophiaMemory`).
+    - Authored comprehensive 8-phase test suite `tests/sophia/g3_6_audit_integrity.test.ts` (8/8 PASS) verifying interior modification detection, suffix/tail truncation detection, ledger wipe detection, anchor mutation/gap detection, legacy history rejection, spend cap fail-closed, and authoritative Prisma store verification.
+    - Verified all 98 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G3.6.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 
 ### Milestone M3 Implementation Archive Details:
