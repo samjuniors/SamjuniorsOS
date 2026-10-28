@@ -730,3 +730,41 @@ model RoleBrainMemory {
   @@index([agentId, taskContext])
   @@map("role_brain_memories")
 }
+
+
+// ---------------------------------------------------------
+// 20. DECISION ENGINE & LOGS (G12.6 / M4)
+// ---------------------------------------------------------
+// Authoritative, immutable record of every routing, governance, and
+// execution decision made by Sophia or AI specialists.
+// INVARIANTS:
+//  - "No log entry means no action" fail-closed rule.
+//  - Explanation queries ("why did you do that") cite authoritative entry IDs.
+//  - Tracks inputs, route, confidence, policy results, and outcomes.
+model DecisionLogEntry {
+  id                          String   @id // e.g. "dlog-<uuid>"
+  turnId                      String?
+  messageId                   String?
+  conversationId              String
+  actor                       String   @default("sophia") // "sophia" | "founder" | agent id
+  query                       String   // Input utterance / directive
+  route                       String   // SophiaRoute (converse, recall-personal, recall-company, research, use-tool, delegate, schedule, ask-clarify, propose-for-approval, refuse)
+  confidence                  Float    // Calibrated route confidence (0.0 - 1.0)
+  divertedFromRoute           String?  // Route before threshold diversion if low confidence
+  isLowConfidenceClarification Boolean  @default(false)
+  policyResult                Json     @default(dbgenerated("'{}'")) // Deterministic autonomy policy evaluation { actionClass, autonomyLevel, decision, limitsChecked, reasons }
+  outcome                     String   // "answered" | "clarification_requested" | "proposed_for_approval" | "delegated" | "scheduled" | "executed" | "refused" | "error" | "cancelled"
+  scopes                      Json     @default(dbgenerated("'[]'")) // MemoryScope[]: ["company_brain"], ["personal_mind"], etc.
+  sources                     Json     @default(dbgenerated("'[]'")) // Knowledge / memory / tool sources consulted
+  reasoning                   String   // Rationale or explanation of the decision
+  executionRef                String?  // Linked workflowInstanceId, agentRunId, or approvalId
+  replayPayload               Json?    // Serialized snapshot of inputs and context for deterministic replay
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@index([conversationId, createdAt])
+  @@index([route, createdAt])
+  @@index([outcome])
+  @@index([turnId])
+  @@map("decision_logs")
+}

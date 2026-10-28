@@ -411,3 +411,40 @@ export function getRouteClarificationThreshold(
   }
   return DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS[route] ?? 0.70;
 }
+
+
+/**
+ * Deterministic autonomy policy outcome evaluation (Gate G12.4 / G12.6).
+ */
+export type DecisionPolicyEvaluation = 'auto' | 'needs_approval' | 'forbidden';
+
+/**
+ * Autonomy and governance policy result recorded on every decision log entry (Gate G12.6).
+ */
+export interface DecisionPolicyResult {
+  actionClass?: string;
+  autonomyLevel?: number;
+  decision?: DecisionPolicyEvaluation;
+  limitsChecked?: {
+    spendCapUsd?: number;
+    currentSpendUsd?: number;
+    withinLimits?: boolean;
+    [key: string]: any;
+  };
+  reasons?: string[];
+  [key: string]: any;
+}
+
+/**
+ * Canonical outcome kind for decision logs (Gate G12.6).
+ */
+export type DecisionLogOutcomeKind =
+  | 'answered'
+  | 'clarification_requested'
+  | 'proposed_for_approval'
+  | 'delegated'
+  | 'scheduled'
+  | 'executed'
+  | 'refused'
+  | 'error'
+  | 'cancelled';
