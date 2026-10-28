@@ -10,9 +10,11 @@ import {
   DecisionOutcome,
   buildDecisionLogEntry,
   isExplanationQuery,
+  extractExplanationQueryLogId,
   formatDecisionLogExplanation,
   formatNoDecisionLogExplanation,
 } from './decision-log';
+import { DecisionLogStore } from './decision-log-store';
 import {
   SafeModeManager,
   isStopCommand,
@@ -627,14 +629,22 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
 
     // Explanation Query Check (M1.6 / G12.6):
     // If the founder asks "why did you do that" (or equivalent explanation query),
-    // cite the previous turn's decision log entry directly from ConversationStore.
+    // cite the previous turn's decision log entry directly from DecisionLogStore.
     if (isExplanationQuery(cleanMessage)) {
-      const priorLog = await convStore.getLatestDecisionLog(conversation.id, founderId);
+      const citedId = extractExplanationQueryLogId(cleanMessage);
+      const decStore = DecisionLogStore.getInstance();
+      const priorLog = citedId
+        ? (await decStore.getDecision(citedId)) ||
+          (await decStore.getDecisionByTurnId(conversation.id, citedId)) ||
+          (await convStore.getDecisionLog(conversation.id, citedId, founderId))
+        : (await decStore.getLatestDecision(conversation.id)) ||
+          (await convStore.getLatestDecisionLog(conversation.id, founderId));
+
       const explanationReply = priorLog
         ? formatDecisionLogExplanation(priorLog)
-        : formatNoDecisionLogExplanation();
+        : formatNoDecisionLogExplanation(citedId || undefined);
 
-      const explanationLog = buildDecisionLogEntry({
+      const explanationLog = await decStore.recordDecision({
         turnId: cleanTurnId,
         conversationId: conversation.id,
         query: cleanMessage,
@@ -703,8 +713,9 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
 
     // Route & Scope determination for scope-aware context partition (M1.3 / G12.3)
     let route = opts.route;
+    let routeResult: any = undefined;
     if (!route) {
-      const routeResult = await SophiaIntentClassifier.route({
+      routeResult = await SophiaIntentClassifier.route({
         message: cleanMessage,
         history: historyItems,
       });
@@ -999,17 +1010,38 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         ? 'answered'
         : 'error';
 
-    const decisionLog = buildDecisionLogEntry({
-      turnId: cleanTurnId,
-      conversationId: conversation.id,
-      query: cleanMessage,
-      route: route || 'converse',
-      scopes: returnScopes,
-      confidence: classificationResult.proposal.confidence,
-      outcome,
-      sources: returnSources,
-      reasoning: classificationResult.proposal.reason || `Processed turn with route ${route}`,
-    });
+    let decisionLog: SophiaDecisionLogEntry;
+    try {
+      decisionLog = await DecisionLogStore.getInstance().recordDecision({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: route || 'converse',
+        scopes: returnScopes,
+        confidence: classificationResult.proposal.confidence,
+        divertedFromRoute: routeResult?.divertedFromRoute,
+        isLowConfidenceClarification: routeResult?.isLowConfidenceClarification,
+        policyResult: {
+          actionClass: executionResult.proposal.kind,
+          autonomyLevel: 1,
+          decision: executionResult.success ? 'auto' : 'needs_approval',
+        },
+        outcome,
+        sources: returnSources,
+        reasoning: classificationResult.proposal.reason || `Processed turn with route ${route}`,
+      });
+    } catch (logErr: any) {
+      console.error('[SophiaTurnExecutor] Decision log recording failed (fail-closed):', logErr);
+      return {
+        success: false,
+        reply: '[Sophia Vance • COO]\nAction aborted: failed to record authoritative decision log entry (fail-closed invariant: no log entry means no action).',
+        conversationId: conversation.id,
+        intent: 'refuse',
+        directiveExecuted: false,
+        liveAi: false,
+        error: `Decision log recording failed: ${logErr.message}`,
+      };
+    }
 
     // 9. Persist assistant turn to durable storage with assistant idempotency key
     //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
