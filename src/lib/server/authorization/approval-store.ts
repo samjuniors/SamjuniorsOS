@@ -12,6 +12,43 @@ import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { InstanceConcurrencyGuard } from '@/lib/server/persistence/instance-guard';
 import { ApprovalAlreadyConsumedError } from '@/lib/server/workflow/state-machine';
+import { appendAuditChainRecord, AuditIntegrityError, verifyAuditChain, AuditAnchorRegistry, buildAuditCheckpoint } from './audit-integrity';
+
+function toPrismaAuditData(audit: SideEffectAuditRecord) {
+  return {
+    id: audit.id,
+    requestId: audit.requestId || null,
+    approvalId: audit.approvalId,
+    workflowInstanceId: audit.workflowInstanceId,
+    stepId: audit.stepId,
+    employeeRole: audit.employeeRole,
+    classification: audit.actionClassification,
+    actionType: audit.actionName || 'UNKNOWN',
+    targetSystem: audit.target?.targetSystem || 'internal',
+    // The deployed schema has no dedicated chain columns. Keep the complete
+    // immutable record in its existing JSON payload column without a migration.
+    payload: { __samjuniorsAuditLedger: audit } as any,
+    decisionOutcome: audit.decision,
+    reason: audit.reason,
+    executionReference: audit.executionReference,
+    timestamp: new Date(audit.timestamp),
+  };
+}
+
+function verifyPrismaAuditRowMatchesRecord(row: any, audit: SideEffectAuditRecord): void {
+  if (
+    row.id !== audit.id ||
+    row.employeeRole !== audit.employeeRole ||
+    row.classification !== audit.actionClassification ||
+    row.actionType !== (audit.actionName || 'UNKNOWN') ||
+    row.decisionOutcome !== audit.decision ||
+    row.reason !== audit.reason ||
+    (row.executionReference ?? undefined) !== audit.executionReference ||
+    new Date(row.timestamp).toISOString() !== audit.timestamp
+  ) {
+    throw new AuditIntegrityError(`Audit database columns do not match the sealed record "${audit.id}".`);
+  }
+}
 
 /**
  * Interface defining the Approval Store contract.
@@ -355,52 +392,51 @@ export class PostgresAuditStore implements IAuditStore {
 
   public async record(audit: SideEffectAuditRecord): Promise<SideEffectAuditRecord> {
     const db = await requireAuthoritativeDatabase();
-    await db.sideEffectAudit.create({
-      data: {
-        id: audit.id,
-        requestId: audit.requestId || null,
-        approvalId: audit.approvalId,
-        workflowInstanceId: audit.workflowInstanceId,
-        stepId: audit.stepId,
-        employeeRole: audit.employeeRole,
-        classification: audit.actionClassification,
-        actionType: audit.actionName || 'UNKNOWN',
-        targetSystem: audit.target?.targetSystem || 'internal',
-        payload: (audit.target?.metadata as any) ?? {},
-        decisionOutcome: audit.decision,
-        reason: audit.reason,
-        executionReference: audit.executionReference,
-        timestamp: new Date(audit.timestamp),
-      },
+    const guard = InstanceConcurrencyGuard.getInstance();
+    const holderId = `audit-chain-${process.pid}-${uuidv4()}`;
+    const resourceKey = 'audit-ledger:append';
+    await guard.acquireSharedInstanceLease({
+      resourceKey,
+      holderId,
+      ttlMs: 30_000,
+      heartbeatIntervalMs: 5_000,
+      failClosed: true,
     });
-
-    return JSON.parse(JSON.stringify(audit));
+    try {
+      const rows = await db.sideEffectAudit.findMany({ orderBy: [{ timestamp: 'asc' }, { id: 'asc' }] });
+      const current = rows.map((row: any) => this.mapPrismaToAudit(row));
+      const existing = current.find((r) => r.id === audit.id);
+      if (existing) {
+        return JSON.parse(JSON.stringify(existing));
+      }
+      const sealed = appendAuditChainRecord(audit, current);
+      await db.sideEffectAudit.create({ data: toPrismaAuditData(sealed) });
+      const checkpoint = buildAuditCheckpoint(sealed);
+      await AuditAnchorRegistry.getInstance().getProvider().publishCheckpoint(checkpoint);
+      return JSON.parse(JSON.stringify(sealed));
+    } finally {
+      await guard.releaseSharedInstanceLease(resourceKey, holderId);
+    }
   }
 
   public async get(id: string): Promise<SideEffectAuditRecord | null> {
-    const db = await requireAuthoritativeDatabase();
-    const found = await db.sideEffectAudit.findUnique({
-      where: { id },
-    });
-    if (!found) return null;
-    return this.mapPrismaToAudit(found);
+    await requireAuthoritativeDatabase();
+    const records = await this.list();
+    return records.find((record) => record.id === id) ?? null;
   }
 
   public async list(filter?: AuditFilter): Promise<SideEffectAuditRecord[]> {
     const db = await requireAuthoritativeDatabase();
-    const where: any = {};
-    if (filter?.workflowInstanceId) where.workflowInstanceId = filter.workflowInstanceId;
-    if (filter?.stepId) where.stepId = filter.stepId;
-    if (filter?.employeeRole) where.employeeRole = filter.employeeRole;
-    if (filter?.classification) where.classification = filter.classification;
-    if (filter?.decision) where.decisionOutcome = filter.decision;
-
-    const records = await db.sideEffectAudit.findMany({
-      where,
-      orderBy: { timestamp: 'desc' },
-    });
-
-    let results = records.map((r) => this.mapPrismaToAudit(r));
+    // Verify the whole ledger before filtering so a query cannot hide a broken link.
+    const records = await db.sideEffectAudit.findMany({ orderBy: [{ timestamp: 'asc' }, { id: 'asc' }] });
+    const all = verifyAuditChain(records.map((r: any) => this.mapPrismaToAudit(r)));
+    let results = all.filter((a) =>
+      (!filter?.workflowInstanceId || a.workflowInstanceId === filter.workflowInstanceId) &&
+      (!filter?.stepId || a.stepId === filter.stepId) &&
+      (!filter?.employeeRole || a.employeeRole === filter.employeeRole) &&
+      (!filter?.classification || a.actionClassification === filter.classification) &&
+      (!filter?.decision || a.decision === filter.decision)
+    );
     if (filter?.executedOnly) {
       results = results.filter((a) => a.executed === true);
     }
@@ -408,6 +444,11 @@ export class PostgresAuditStore implements IAuditStore {
   }
 
   private mapPrismaToAudit(r: any): SideEffectAuditRecord {
+    const sealedRecord = r.payload?.__samjuniorsAuditLedger;
+    if (sealedRecord) {
+      verifyPrismaAuditRowMatchesRecord(r, sealedRecord);
+      return sealedRecord as SideEffectAuditRecord;
+    }
     return {
       id: r.id,
       requestId: r.requestId || uuidv4(),
@@ -840,14 +881,10 @@ export class InMemoryAuditStore implements IAuditStore {
   }
 
   public loadFromDurableStorage(): void {
-    try {
-      const persisted = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
-      for (const [id, record] of Object.entries(persisted)) {
-        this.audits.set(id, record);
-      }
-    } catch {
-      // fallback
-    }
+    const persisted = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
+    const records = verifyAuditChain(Object.values(persisted));
+    this.audits.clear();
+    for (const record of records) this.audits.set(record.id, record);
   }
 
   public clear(): void {
@@ -857,6 +894,7 @@ export class InMemoryAuditStore implements IAuditStore {
     this.audits.clear();
     try {
       DurableFileStore.getInstance().clearCollection('audits');
+      AuditAnchorRegistry.getInstance().getProvider().clearForTest?.();
     } catch {
       // fallback
     }
@@ -867,31 +905,31 @@ export class InMemoryAuditStore implements IAuditStore {
       return PostgresAuditStore.getInstance().record(audit);
     }
 
-    const clone = JSON.parse(JSON.stringify(audit));
-    // Disk authoritative: persist before mutating cache
-    DurableFileStore.getInstance().saveItemStrict('audits', audit.id, clone);
-    this.audits.set(audit.id, clone);
+    const fileStore = DurableFileStore.getInstance();
+    const clone = fileStore.withCollectionLock('audits', () => {
+      const persisted = fileStore.readCollection<SideEffectAuditRecord>('audits');
+      if (persisted[audit.id]) {
+        const existing = persisted[audit.id];
+        this.audits.set(existing.id, existing);
+        return JSON.parse(JSON.stringify(existing));
+      }
+      const sealed = appendAuditChainRecord(audit, Object.values(persisted));
+      fileStore.saveItemStrict('audits', sealed.id, sealed);
+      const checkpoint = buildAuditCheckpoint(sealed);
+      const provider = AuditAnchorRegistry.getInstance().getProvider();
+      if ('publishCheckpointSync' in provider) {
+        (provider as any).publishCheckpointSync(checkpoint);
+      }
+      this.audits.set(sealed.id, sealed);
+      return JSON.parse(JSON.stringify(sealed));
+    });
+
+    const checkpoint = buildAuditCheckpoint(clone);
+    await AuditAnchorRegistry.getInstance().getProvider().publishCheckpoint(checkpoint);
 
     if (process.env.DATABASE_URL) {
       try {
-        await prisma.sideEffectAudit.create({
-          data: {
-            id: audit.id,
-            requestId: audit.requestId || null,
-            approvalId: audit.approvalId,
-            workflowInstanceId: audit.workflowInstanceId,
-            stepId: audit.stepId,
-            employeeRole: audit.employeeRole,
-            classification: audit.actionClassification,
-            actionType: audit.actionName || 'UNKNOWN',
-            targetSystem: audit.target?.targetSystem || 'internal',
-            payload: (audit.target?.metadata as any) ?? {},
-            decisionOutcome: audit.decision,
-            reason: audit.reason,
-            executionReference: audit.executionReference,
-            timestamp: new Date(audit.timestamp),
-          },
-        });
+        await prisma.sideEffectAudit.create({ data: toPrismaAuditData(clone) });
       } catch {
         // Fallback
       }
@@ -915,7 +953,8 @@ export class InMemoryAuditStore implements IAuditStore {
       return PostgresAuditStore.getInstance().list(filter);
     }
 
-    let list = Array.from(this.audits.values());
+    this.loadFromDurableStorage();
+    let list = verifyAuditChain(this.audits.values());
 
     if (filter?.workflowInstanceId) {
       list = list.filter((a) => a.workflowInstanceId === filter.workflowInstanceId);

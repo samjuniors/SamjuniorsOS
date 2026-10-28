@@ -19,6 +19,9 @@ import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approv
 import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
 import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'file:./db/custom.db';
+}
 import { prisma, isDatabaseAvailable } from '../../src/lib/server/db/prisma';
 import * as memoryRoute from '../../src/app/api/sofia/memory/route';
 import { spawnTestChild } from '../helpers/child-runner';
@@ -679,10 +682,35 @@ async function main() {
     assert.strictEqual(unknownDelete.status, 404, 'route DELETE of unknown memory is 404');
   });
 
+  const dbAvailable = await isDatabaseAvailable();
+
+  // --------------------------------------------------------------------------
+  // T18a — durable-file deletion is always checked, including without Prisma
+  // --------------------------------------------------------------------------
+  await runTest('T18a: delete removes the durable-file copy with or without Prisma', async () => {
+    const mem = await store.createMemory({
+      founderId: founderA,
+      memoryType: 'INTERACTION_PREFERENCE',
+      content: `K2 deletion check ${randomUUID().slice(0, 8)}`,
+    });
+    if (dbAvailable) prismaRowsCreated.push(mem.id);
+
+    await store.deleteMemory(founderA, mem.id);
+    assert.strictEqual(
+      readCollectionFile<any>('sophia_memories')[mem.id],
+      undefined,
+      'deletion removes the authoritative durable-file copy'
+    );
+
+    if (dbAvailable) {
+      const rowGone = await (prisma as any).sophiaMemory.findUnique({ where: { id: mem.id } });
+      assert.strictEqual(rowGone, null, 'deletion removes the optional Prisma mirror row');
+    }
+  });
+
   // --------------------------------------------------------------------------
   // T18 — Prisma dual-write mirrors rows (opportunistic, current contract)
   // --------------------------------------------------------------------------
-  const dbAvailable = await isDatabaseAvailable();
   if (!dbAvailable) {
     console.log('  [SKIP] T18: DATABASE_URL unavailable — Prisma mirror pin skipped');
   } else {
@@ -795,8 +823,10 @@ async function main() {
   // Cleanup: remove this suite's Prisma artifacts + reset personal memories
   // --------------------------------------------------------------------------
   if (dbAvailable) {
-    for (const id of prismaRowsCreated) {
-      await (prisma as any).sophiaMemory.delete({ where: { id } }).catch(() => {});
+    if (prismaRowsCreated.length > 0) {
+      await (prisma as any).sophiaMemory.deleteMany({
+        where: { id: { in: prismaRowsCreated } },
+      }).catch(() => {});
     }
     await (prisma as any).sophiaMemory.deleteMany({
       where: { founderId: { startsWith: 'founder_k2_' } },
