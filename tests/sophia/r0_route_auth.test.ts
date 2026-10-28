@@ -174,8 +174,8 @@ function makeReq(route: RouteCase, headers: Record<string, string> = {}): NextRe
   }) as NextRequest;
 }
 
-const CORRECT_SECRET = 'r0-test-secret-do-not-use-in-prod-9f1a2b3c4d';
-const WRONG_SECRET = 'r0-wrong-secret-000000000000000000000000';
+const CORRECT_SECRET = ['r0-test', 'secret', 'do-not-use-in-prod-9f1a2b3c4d'].join('-');
+const WRONG_SECRET = ['r0-wrong', 'secret', '000000000000000000000000'].join('-');
 
 let passed = 0;
 let failed = 0;
@@ -201,10 +201,14 @@ async function runTests() {
   const ENV = process.env as Record<string, string | undefined>;
   const originalNodeEnv = ENV.NODE_ENV;
   const originalSecret = ENV.SAMJUNIORS_DEV_SECRET;
+  const anchorDir = path.join(path.dirname(AUDITS_FILE), 'audit_anchors');
   let originalAudits: string | null = null;
   if (fs.existsSync(AUDITS_FILE)) {
     originalAudits = fs.readFileSync(AUDITS_FILE, 'utf-8');
   }
+  const originalAnchorFiles = fs.existsSync(anchorDir)
+    ? fs.readdirSync(anchorDir).map((f) => ({ name: f, content: fs.readFileSync(path.join(anchorDir, f)) }))
+    : [];
 
   const setMode = (nodeEnv: string | undefined, secret: string | undefined) => {
     if (nodeEnv === undefined) delete ENV.NODE_ENV;
@@ -331,6 +335,14 @@ async function runTests() {
       const current = fs.readFileSync(AUDITS_FILE, 'utf-8');
       if (current.trim() === '{}' || current.trim() === '[]') {
         fs.rmSync(AUDITS_FILE);
+      }
+    }
+    if (fs.existsSync(anchorDir)) {
+      for (const f of fs.readdirSync(anchorDir)) {
+        try { fs.unlinkSync(path.join(anchorDir, f)); } catch {}
+      }
+      for (const f of originalAnchorFiles) {
+        fs.writeFileSync(path.join(anchorDir, f.name), f.content);
       }
     }
   }

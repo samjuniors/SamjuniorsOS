@@ -93,10 +93,14 @@ async function runTests() {
   const ENV = process.env as Record<string, string | undefined>;
   const originalNodeEnv = ENV.NODE_ENV;
   const originalSecret = ENV.SAMJUNIORS_DEV_SECRET;
+  const anchorDir = path.join(path.dirname(AUDITS_FILE), 'audit_anchors');
   let originalAudits: string | null = null;
   if (fs.existsSync(AUDITS_FILE)) {
     originalAudits = fs.readFileSync(AUDITS_FILE, 'utf-8');
   }
+  const originalAnchorFiles = fs.existsSync(anchorDir)
+    ? fs.readdirSync(anchorDir).map((f) => ({ name: f, content: fs.readFileSync(path.join(anchorDir, f)) }))
+    : [];
 
   const setMode = (nodeEnv: string | undefined, secret: string | undefined) => {
     if (nodeEnv === undefined) delete ENV.NODE_ENV;
@@ -257,6 +261,15 @@ async function runTests() {
         fs.rmSync(AUDITS_FILE);
       }
     }
+    if (fs.existsSync(anchorDir)) {
+      for (const f of fs.readdirSync(anchorDir)) {
+        try { fs.unlinkSync(path.join(anchorDir, f)); } catch {}
+      }
+      for (const f of originalAnchorFiles) {
+        fs.writeFileSync(path.join(anchorDir, f.name), f.content);
+      }
+    }
+    InMemoryAuditStore.getInstance().audits.clear();
   }
 
   console.log('\n======================================================');

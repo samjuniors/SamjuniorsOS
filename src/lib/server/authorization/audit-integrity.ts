@@ -194,22 +194,26 @@ export class InMemoryAuditAnchorProvider implements IAuditAnchorProvider {
  * Create-if-absent (O_EXCL | O_CREAT) ensures no existing checkpoint can be overwritten.
  */
 export class FileAuditAnchorProvider implements IAuditAnchorProvider {
-  private anchorDir: string;
+  private customDir?: string;
 
   constructor(customDir?: string) {
-    if (customDir) {
-      this.anchorDir = customDir;
-    } else {
-      const dataDir = DurableFileStore.getInstance().getDataDir();
-      this.anchorDir = path.join(dataDir, 'audit_anchors');
-    }
-    if (!fs.existsSync(this.anchorDir)) {
-      fs.mkdirSync(this.anchorDir, { recursive: true });
+    this.customDir = customDir;
+    const dir = this.anchorDir;
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
   }
 
+  public get anchorDir(): string {
+    return this.customDir ?? path.join(DurableFileStore.getInstance().getDataDir(), 'audit_anchors');
+  }
+
   private getFilePath(sequence: number): string {
-    return path.join(this.anchorDir, `${String(sequence).padStart(10, '0')}.json`);
+    const dir = this.anchorDir;
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return path.join(dir, `${String(sequence).padStart(10, '0')}.json`);
   }
 
   public async publishCheckpoint(checkpoint: AuditCheckpoint): Promise<void> {

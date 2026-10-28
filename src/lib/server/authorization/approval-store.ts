@@ -405,6 +405,10 @@ export class PostgresAuditStore implements IAuditStore {
     try {
       const rows = await db.sideEffectAudit.findMany({ orderBy: [{ timestamp: 'asc' }, { id: 'asc' }] });
       const current = rows.map((row: any) => this.mapPrismaToAudit(row));
+      const existing = current.find((r) => r.id === audit.id);
+      if (existing) {
+        return JSON.parse(JSON.stringify(existing));
+      }
       const sealed = appendAuditChainRecord(audit, current);
       await db.sideEffectAudit.create({ data: toPrismaAuditData(sealed) });
       const checkpoint = buildAuditCheckpoint(sealed);
@@ -904,6 +908,11 @@ export class InMemoryAuditStore implements IAuditStore {
     const fileStore = DurableFileStore.getInstance();
     const clone = fileStore.withCollectionLock('audits', () => {
       const persisted = fileStore.readCollection<SideEffectAuditRecord>('audits');
+      if (persisted[audit.id]) {
+        const existing = persisted[audit.id];
+        this.audits.set(existing.id, existing);
+        return JSON.parse(JSON.stringify(existing));
+      }
       const sealed = appendAuditChainRecord(audit, Object.values(persisted));
       fileStore.saveItemStrict('audits', sealed.id, sealed);
       const checkpoint = buildAuditCheckpoint(sealed);
@@ -934,7 +943,6 @@ export class InMemoryAuditStore implements IAuditStore {
       return PostgresAuditStore.getInstance().get(id);
     }
 
-    this.loadFromDurableStorage();
     const record = this.audits.get(id);
     if (!record) return null;
     return JSON.parse(JSON.stringify(record));
