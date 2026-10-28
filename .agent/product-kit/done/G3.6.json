@@ -1,8 +1,8 @@
 {
   "id": "G3.6",
-  "doneAt": "2026-10-28T05:26:24.124Z",
+  "doneAt": "2026-10-28T06:12:00.000Z",
   "agent": "antigravity",
   "branch": "step/G3.6",
-  "commit": "b1442638b99bbb7f9e56340b508977494e151ba9",
-  "evidence": "Tamper test fails closed covering interior modification, sequence gap, tail truncation, ledger wipe, and legacy rejection; deletion flow verified leaving no resurrectable copy across durable files and Prisma mirrors; hash-chained audit with FileAuditAnchorProvider WORM checkpoints; spend settings fail-closed; all 8 test phases pass."
+  "commit": "96ad7546984c5933728b23e77a978d68c450af69",
+  "evidence": "Tamper test fails closed covering interior modification, sequence gap, tail truncation, ledger wipe, and legacy rejection; deletion flow verified leaving no resurrectable copy across durable files and Prisma mirrors; hash-chained audit with FileAuditAnchorProvider WORM checkpoints; spend settings fail-closed; all 8 test phases pass; 98 canonical test suites pass with 0 failures."
 }
