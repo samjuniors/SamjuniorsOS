@@ -26,6 +26,7 @@ export interface FreezeState {
   reason?: string;
   source?: 'voice' | 'panel' | 'api' | 'system';
   haltedTurnsCount?: number;
+  haltedWorkersCount?: number;
   frozenJobsCount?: number;
 }
 
@@ -42,6 +43,7 @@ export interface StopControlResult {
   reason: string;
   source: 'voice' | 'panel' | 'api' | 'system';
   haltedTurnsCount: number;
+  haltedWorkersCount: number;
   frozenJobsCount: number;
 }
 
@@ -82,6 +84,7 @@ export class SafeModeManager {
   };
 
   private inFlightTurns = new Map<string, AbortController>();
+  private activeWorkers = new Map<string, AbortController>();
   private activeSchedulers = new Set<FreezableScheduler>();
   private auditLog: FreezeAuditEntry[] = [];
 
@@ -128,6 +131,27 @@ export class SafeModeManager {
   public unregisterInFlightTurn(key: string): void {
     this.inFlightTurns.delete(key);
   }
+  /**
+   * Registers an active worker or background task controller.
+   */
+  public registerActiveWorker(workerId: string, controller: AbortController): void {
+    this.activeWorkers.set(workerId, controller);
+  }
+
+  /**
+   * Unregisters an active worker controller upon task completion or error.
+   */
+  public unregisterActiveWorker(workerId: string): void {
+    this.activeWorkers.delete(workerId);
+  }
+
+  /**
+   * Returns current count of registered active workers.
+   */
+  public getActiveWorkersCount(): number {
+    return this.activeWorkers.size;
+  }
+
 
   /**
    * Registers a freezable workflow scheduler.
@@ -164,6 +188,18 @@ export class SafeModeManager {
       }
     }
     this.inFlightTurns.clear();
+    // 1b. Immediately abort all active workers and background tasks
+    let haltedWorkersCount = 0;
+    for (const [key, controller] of this.activeWorkers.entries()) {
+      try {
+        controller.abort(new Error(`Worker execution halted by Stop Control: ${reason}`));
+        haltedWorkersCount++;
+      } catch {
+        // ignore errors on already settled abort controllers
+      }
+    }
+    this.activeWorkers.clear();
+
 
     // 2. Freeze all active schedulers and workflow background jobs
     let frozenJobsCount = 0;
@@ -184,6 +220,7 @@ export class SafeModeManager {
       reason,
       source,
       haltedTurnsCount,
+      haltedWorkersCount,
       frozenJobsCount,
     };
 
@@ -195,7 +232,7 @@ export class SafeModeManager {
       actor,
       reason,
       source,
-      metadata: { haltedTurnsCount, frozenJobsCount },
+      metadata: { haltedTurnsCount, haltedWorkersCount, frozenJobsCount },
     });
 
     return {
@@ -205,6 +242,7 @@ export class SafeModeManager {
       reason,
       source,
       haltedTurnsCount,
+      haltedWorkersCount,
       frozenJobsCount,
     };
   }
@@ -262,6 +300,7 @@ export class SafeModeManager {
   public resetForTesting(): void {
     this.state = { isFrozen: false };
     this.inFlightTurns.clear();
+    this.activeWorkers.clear();
     this.activeSchedulers.clear();
     this.auditLog = [];
   }

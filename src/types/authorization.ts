@@ -105,7 +105,8 @@ export type AuthorizationReasonCode =
   | 'UNKNOWN_EXTERNAL_RESULT'
   | 'FOUNDER_MANUAL_RECONCILIATION'
   | 'AUDIT_RECONCILED'
-  | 'FOUNDER_AUTONOMY_LEVEL_UPDATED';
+  | 'FOUNDER_AUTONOMY_LEVEL_UPDATED'
+  | 'DENIED_SAFE_MODE_FROZEN';
 
 export interface FounderApprovalRecord {
   id: string;

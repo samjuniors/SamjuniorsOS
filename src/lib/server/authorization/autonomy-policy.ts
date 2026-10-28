@@ -30,6 +30,7 @@ import { SideEffectClassification } from '@/types/authorization';
 import { RouteSideEffectClass } from '@/types/decision';
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { InMemoryAuditStore } from './approval-store';
+import { SafeModeManager } from '../sophia/stop-control';
 
 export class UnauthorizedAutonomyMutationError extends Error {
   constructor(message: string) {
@@ -193,6 +194,29 @@ export class AutonomyPolicyEngine {
         actionClass: context.actionClass,
         reasonCode: 'AUTONOMY_UNKNOWN_ACTION_CLASS',
         reason: `Unknown action class "${context.actionClass}"; fails closed as forbidden.`,
+        evaluatedAt,
+      };
+    }
+
+    // Safe Mode Freeze Check: when Safe Mode is triggered, all autonomous actions
+    // freeze and the system drops to read-only.
+    if (SafeModeManager.getInstance().isFrozen()) {
+      if (context.actionClass === 'read') {
+        return {
+          effect: 'auto',
+          level: 'L3',
+          actionClass: 'read',
+          reasonCode: 'SAFE_MODE_READ_ONLY_PERMITTED',
+          reason: 'System is in Safe Mode: read-only actions are permitted.',
+          evaluatedAt,
+        };
+      }
+      return {
+        effect: 'needs_approval',
+        level: rule.currentLevel,
+        actionClass: context.actionClass,
+        reasonCode: 'SAFE_MODE_AUTONOMY_FROZEN',
+        reason: `System is frozen under Safe Mode / Kill Switch. Autonomous execution for "${context.actionClass}" is suspended; dropped to read-only mode.`,
         evaluatedAt,
       };
     }
