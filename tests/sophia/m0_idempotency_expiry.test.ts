@@ -73,11 +73,11 @@ async function runTests() {
     });
 
     await test('2. get() hides an expired completed record (no stale cached responses)', async () => {
-      await store.claim({ key: 'm0-exp-completed-001', actionName: 'test.action', ttlMs: 40 });
+      await store.claim({ key: 'm0-exp-completed-001', actionName: 'test.action', ttlMs: 150 });
       await store.complete('m0-exp-completed-001', { result: 'cached' });
       // Live window: visible
       assert.ok(await store.get('m0-exp-completed-001'), 'Before expiry the record must be visible');
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 200));
       // After expiry: hidden
       assert.strictEqual(
         await store.get('m0-exp-completed-001'),

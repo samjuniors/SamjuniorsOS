@@ -104,7 +104,8 @@ export type AuthorizationReasonCode =
   | 'OPERATION_IN_PROGRESS'
   | 'UNKNOWN_EXTERNAL_RESULT'
   | 'FOUNDER_MANUAL_RECONCILIATION'
-  | 'AUDIT_RECONCILED';
+  | 'AUDIT_RECONCILED'
+  | 'FOUNDER_AUTONOMY_LEVEL_UPDATED';
 
 export interface FounderApprovalRecord {
   id: string;

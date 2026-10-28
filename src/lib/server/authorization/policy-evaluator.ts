@@ -6,6 +6,8 @@ import {
   SideEffectClassification,
 } from '@/types/authorization';
 import { InMemoryApprovalStore } from './approval-store';
+import { AutonomyPolicyEngine } from './autonomy-policy';
+import { AutonomyEvaluationContext, AutonomyEvaluationResult } from '@/types/autonomy';
 
 /**
  * Deterministic Side-Effect Policy Evaluator.
@@ -17,6 +19,14 @@ export class SideEffectPolicyEvaluator {
 
   constructor(approvalStore?: InMemoryApprovalStore) {
     this.approvalStore = approvalStore || InMemoryApprovalStore.getInstance();
+  }
+
+  /**
+   * Evaluate action against the deterministic Autonomy Policy Table (G12.4).
+   * Determines whether the action is 'auto', 'needs_approval', or 'forbidden'.
+   */
+  public evaluateAutonomy(context: AutonomyEvaluationContext): AutonomyEvaluationResult {
+    return AutonomyPolicyEngine.getInstance().evaluate(context);
   }
 
   /**

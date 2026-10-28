@@ -1,0 +1,8 @@
+{
+  "id": "G12.4",
+  "doneAt": "2026-10-28T07:20:59.101Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "7dd574010d31d6a4b74d28c6290a4cb3d71f49f2",
+  "evidence": "Table-driven matrix tests across 7 action classes and 5 autonomy levels pass; G0.7 baseline table verified; model/persona mutation blocked with UnauthorizedAutonomyMutationError; elevation requires recorded founder decision; rolling sliding-window budgets enforced; independent review passed with PASS verdict"
+}
