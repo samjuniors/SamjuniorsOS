@@ -146,7 +146,8 @@ function boundMostRecent<T>(
 
 /* ------------------------------------------------------------- derivation */
 
-function truncate(text: string, max = 64): string {
+function truncate(text: string | undefined | null, max = 64): string {
+  if (!text || typeof text !== 'string') return '';
   const t = text.trim();
   if (t.length <= max) return t;
   return `${t.slice(0, max - 1).trimEnd()}…`;
@@ -187,13 +188,14 @@ function workstreamOf(directive: string): {
 
 /** Instance-only workstream provenance (no run group): mirrors the read-model
  *  'wf' cross-reference. */
-function instanceWorkstreamOf(instanceId: string, objective: string): {
+function instanceWorkstreamOf(instanceId: string, objective?: string): {
   workstreamId: string;
   workstreamTitle: string;
 } {
+  const obj = objective || instanceId;
   return {
     workstreamId: deterministicIdHash('wf', instanceId),
-    workstreamTitle: truncate(objective),
+    workstreamTitle: truncate(obj),
   };
 }
 

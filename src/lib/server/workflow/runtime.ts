@@ -12,6 +12,7 @@ import { SideEffectAuthorizationGate } from '../authorization/gate';
 import { validateStepTransition, validateInstanceTransition } from './state-machine';
 import { generateLogicalIdempotencyKey } from '../idempotency/state-machine';
 import { v4 as uuidv4 } from 'uuid';
+import { SafeModeManager } from '../sophia/stop-control';
 
 /**
  * PHASE 4.4B.1 — Scheduled occurrence context.
@@ -594,6 +595,11 @@ export class WorkflowRuntime {
       throw new Error(`Side-effect execution prevented by authorization gate: ${gateEvaluation.reason}`);
     }
 
+    // Safe Mode Freeze Check: prevent executing steps while system is frozen
+    if (SafeModeManager.getInstance().isFrozen()) {
+      throw new Error(`Step execution blocked: System is frozen under Safe Mode (${SafeModeManager.getInstance().getFreezeStatus().reason || 'Stop Control active'})`);
+    }
+
     // Atomically claim the step before execution
     const claimResult = await this.store.claimStepAtomic(
       instanceId,
@@ -602,6 +608,10 @@ export class WorkflowRuntime {
       instance.stateVersion
     );
     const expectedVersion = claimResult.instance.stateVersion;
+
+    const workerKey = `wf-step:${instanceId}:${stepId}`;
+    const stepAbortController = new AbortController();
+    SafeModeManager.getInstance().registerActiveWorker(workerKey, stepAbortController);
 
     try {
       const executionRef = `exec-${instanceId}-${stepId}-${Date.now()}`;
@@ -645,6 +655,7 @@ export class WorkflowRuntime {
               stepId,
               occurrenceId: occurrenceContext?.occurrenceId,
               occurrenceNumber: occurrenceContext?.occurrenceNumber,
+              signal: stepAbortController.signal,
             },
             `Execute workflow step: ${stepDef.name}`
           );
@@ -700,19 +711,22 @@ export class WorkflowRuntime {
       await this.evaluateReadiness(instanceId);
 
     } catch (error: any) {
-      // Transition to failed
+      const isAborted = stepAbortController.signal.aborted || /halted by stop control|aborted/i.test(error?.message || '');
+      const targetStatus: WorkflowStepStatus = isAborted ? 'cancelled' : 'failed';
       await this.store.transitionStepAtomic(
         instanceId,
         stepId,
-        'failed',
+        targetStatus,
         expectedVersion,
         {
-          error: error.message || 'Execution failed'
+          error: error.message || (isAborted ? 'Step halted by Stop Control / Safe Mode' : 'Execution failed')
         }
       );
 
       // Evaluate instance status after step transition
       await this.evaluateInstanceStatus(instanceId);
+    } finally {
+      SafeModeManager.getInstance().unregisterActiveWorker(workerKey);
     }
   }
 

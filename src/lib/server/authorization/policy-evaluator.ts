@@ -7,6 +7,7 @@ import {
 } from '@/types/authorization';
 import { InMemoryApprovalStore } from './approval-store';
 import { AutonomyPolicyEngine } from './autonomy-policy';
+import { SafeModeManager } from '../sophia/stop-control';
 import { AutonomyEvaluationContext, AutonomyEvaluationResult } from '@/types/autonomy';
 
 /**
@@ -37,6 +38,27 @@ export class SideEffectPolicyEvaluator {
     existingApproval?: FounderApprovalRecord | null
   ): Promise<AuthorizationDecision> {
     const evaluatedAt = new Date().toISOString();
+
+    // 0. Safe Mode Freeze Check: when Safe Mode is active, system drops to read-only.
+    // Read-only operations are permitted; all mutations and side-effects are denied.
+    if (SafeModeManager.getInstance().isFrozen()) {
+      if (request.classification === 'read_only') {
+        return {
+          effect: 'allowed',
+          reasonCode: 'READ_ONLY_ALLOWED',
+          reason: 'Read-only operation allowed while system is in Safe Mode.',
+          evaluatedAt,
+          evaluator: 'central_side_effect_gate',
+        };
+      }
+      return {
+        effect: 'denied',
+        reasonCode: 'DENIED_SAFE_MODE_FROZEN',
+        reason: `Safe Mode is active: system is in read-only mode and side effect "${request.actionName}" (${request.classification}) is frozen.`,
+        evaluatedAt,
+        evaluator: 'central_side_effect_gate',
+      };
+    }
 
     // 1. Advisor Autonomy & Execution Ban
     // The Advisor role has no side-effect or external tool execution authority under any circumstance.

@@ -7,6 +7,7 @@ import { SERVER_AGENTS, ServerAgentDefinition } from './definitions';
 import { AgentRunStore, AgentRunRecord } from './run-store';
 import { EpistemicPipeline } from '../epistemic/pipeline';
 import { v4 as uuidv4 } from 'uuid';
+import { SafeModeManager } from '../sophia/stop-control';
 
 export interface AgentExecutionContext {
   directive: string;
@@ -76,6 +77,49 @@ export class ServerAgentExecutor {
     const agentDef = SERVER_AGENTS[agentId] || SERVER_AGENTS.coo;
     const timestamp = new Date().toISOString();
     const formattedTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const safeMode = SafeModeManager.getInstance();
+    if (safeMode.isFrozen()) {
+      const freezeReason = `Task execution blocked: System is frozen under Safe Mode (${safeMode.getFreezeStatus().reason || 'Stop Control active'})`;
+      const failProvenance: OutputProvenance = {
+        agentId,
+        agentName: agentDef.name,
+        taskId: `task-${context.protocolStep}-${agentId}`,
+        protocolStep: context.protocolStep,
+        timestamp,
+        isVerified: false,
+        evidenceBasis: 'unverified',
+        workflowInstanceId: context.workflowInstanceId,
+        stepId: context.stepId,
+        occurrenceId: context.occurrenceId,
+        occurrenceNumber: context.occurrenceNumber,
+      };
+      await AgentRunStore.getInstance().saveRun({
+        runId,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        taskTitle: context.taskTitle,
+        directive: context.directive,
+        status: 'halted',
+        durationMs: 0,
+        outputContent: freezeReason,
+        provenance: failProvenance,
+        error: freezeReason,
+        timestamp,
+      });
+      return {
+        success: false,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        statusMessage: `[${agentDef.name}] ${freezeReason}.`,
+        outputContent: freezeReason,
+        runId,
+        provenance: failProvenance,
+        error: freezeReason,
+      };
+    }
 
     // Cancellation check: Fail closed if abort signal was already triggered
     if (context.signal?.aborted) {
@@ -246,10 +290,23 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
     executionAttempt: {
       const model = 'zai-llm';
       try {
-        const parsed = await generateJson({
-          system: systemInstruction,
-          messages: [{ role: 'user', content: fullPrompt }],
+        const abortPromise = new Promise<never>((_, reject) => {
+          if (context.signal?.aborted) {
+            reject(new Error((context.signal.reason as string) || 'Task execution aborted via AbortSignal'));
+          } else if (context.signal) {
+            context.signal.addEventListener('abort', () => {
+              reject(new Error((context.signal?.reason as string) || 'Task execution aborted via AbortSignal'));
+            }, { once: true });
+          }
         });
+
+        const parsed = await Promise.race([
+          generateJson({
+            system: systemInstruction,
+            messages: [{ role: 'user', content: fullPrompt }],
+          }),
+          abortPromise,
+        ]);
 
         const basis: EvidenceBasis = (parsed.evidenceBasis as EvidenceBasis) || 'model_reasoning';
         const durationMs = Date.now() - startTime;
@@ -341,7 +398,11 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
     }
 
     const durationMs = Date.now() - startTime;
-    const errorOutput = `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`;
+    const isAborted = context.signal?.aborted || lastError?.message?.includes('aborted') || lastError?.message?.includes('Halted by Stop Control');
+    const runStatus = isAborted ? 'halted' : 'failed';
+    const errorOutput = isAborted
+      ? `**Task Halted**: Task "${context.taskTitle}" was halted mid-run by Stop Control / Safe Mode.`
+      : `**Execution Error**: Task "${context.taskTitle}" failed to execute through the agent runtime: ${lastError?.message || 'Upstream provider unavailable'}.`;
     const failProvenance: OutputProvenance = {
       agentId,
       agentName: agentDef.name,
@@ -366,7 +427,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       protocolStep: context.protocolStep,
       taskTitle: context.taskTitle,
       directive: context.directive,
-      status: 'failed',
+      status: runStatus,
       durationMs,
       outputContent: errorOutput,
       provenance: failProvenance,
@@ -379,7 +440,7 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       agentId,
       agentName: agentDef.name,
       protocolStep: context.protocolStep,
-      statusMessage: `[${agentDef.name}] Task execution failed due to API communication error: ${lastError?.message || 'Unknown error'}.`,
+      statusMessage: isAborted ? `[${agentDef.name}] Task halted mid-run: ${lastError?.message || 'Stop Control active'}.` : `[${agentDef.name}] Task execution failed due to API communication error: ${lastError?.message || 'Unknown error'}.`,
       outputContent: errorOutput,
       retrievedContext,
       assembledContext,
