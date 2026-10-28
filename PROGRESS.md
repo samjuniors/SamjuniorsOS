@@ -105,6 +105,17 @@
     - Verified all 113 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.3.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.5 (Routing evaluation and calibration: reliability curve and Brier score per route; thresholds that trigger clarification):**
+    - Codified authoritative confidence clarification thresholds in `src/types/decision.ts` (`DEFAULT_ROUTE_CLARIFICATION_THRESHOLDS`) and helper `getRouteClarificationThreshold(route, overrides)`.
+    - Extended `SophiaRouteResult` in `src/lib/server/sophia/types.ts` with `divertedFromRoute`, `clarificationThreshold`, and `isLowConfidenceClarification`.
+    - Implemented low-confidence clarification gate in `src/lib/server/sophia/intent-classifier.ts` (`SophiaIntentClassifier.route()`): model proposals with confidence strictly below route threshold divert to `'ask-clarify'` with `lowConfidenceClarification()` proposal explaining threshold gap, asking the founder before taking action (Q-DEC-3).
+    - Implemented routing calibration engine in `benchmark/router/calibration.ts` calculating Brier score ($(1/N)\sum(p_i - y_i)^2$), 5-bin reliability curves, Expected Calibration Error (ECE), and Maximum Calibration Error (MCE), outputting durable report `benchmark/router/results/router-calibration-report.json`.
+    - Established authoritative CI baseline in `benchmark/router/results/ci-baseline.json` and CI regression runner `benchmark/router/verify-ci-gate.ts` (25/25 checks pass: 100% accuracy, 0.0407 Brier score <= 0.1500, 0.1540 ECE <= 0.2000, 0.4917 MCE <= 0.5500, 0 low-confidence execution leaks, 100% fail-closed on malformed inputs).
+    - Authored automated verification test suite `tests/sophia/g12_5_routing_evaluation_and_calibration.test.ts` (13/13 PASS).
+    - Verified all 114 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.5.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+
 
 ### Milestone M3 Implementation Archive Details:
 - **Completed Steps:**
