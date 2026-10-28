@@ -272,6 +272,23 @@ export async function runRouterCalibration(options?: {
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
+
+  if (fs.existsSync(outputFile)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+      const { timestamp: _t1, ...currentData } = report;
+      const { timestamp: _t2, ...existingData } = existing;
+      if (JSON.stringify(currentData) === JSON.stringify(existingData)) {
+        if (!options?.silent) {
+          printCalibrationReport(existing);
+        }
+        return existing;
+      }
+    } catch {
+      // ignore parse error, write fresh
+    }
+  }
+
   fs.writeFileSync(outputFile, JSON.stringify(report, null, 2), 'utf8');
 
   if (!options?.silent) {
