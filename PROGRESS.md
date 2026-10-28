@@ -115,6 +115,19 @@
     - Verified all 114 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.5.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.6 (Decision log and explanation: inputs, route, confidence, policy result and outcome for every decision):**
+    - Codified authoritative `DecisionLogEntry` Prisma schema in `prisma/schema.prisma` mapped to `decision_logs` with all required fields (inputs, route, confidence, divertedFromRoute, policyResult, outcome, scopes, sources, reasoning, executionRef, replayPayload) and indexes.
+    - Synchronized SQLite schema via `prisma generate` and `prisma db push`.
+    - Added decision types in `src/types/decision.ts` (`DecisionPolicyEvaluation`, `DecisionPolicyResult`, `DecisionLogOutcomeKind`).
+    - Extended formatting and extraction helpers in `src/lib/server/sophia/decision-log.ts` (`formatDecisionLogExplanation`, `formatNoDecisionLogExplanation`, `extractExplanationQueryLogId`).
+    - Authored authoritative singleton `DecisionLogStore` in `src/lib/server/sophia/decision-log-store.ts` supporting `recordDecision`, `getDecision`, `getDecisionByTurnId`, `getLatestDecision`, `queryDecisions` (with conversation, route, outcome, actor, time range, and pagination filters), `replayDecision` (deterministic replay without side-effects), and fail-closed persistence with Prisma, local `DurableFileStore`, and in-memory cache.
+    - Enforced fail-closed invariant "no log entry means no action" in `src/lib/server/sophia/turn-executor.ts`; downstream execution immediately aborts if decision log writing fails; explanation queries cite authoritative decision log entries.
+    - Updated `src/lib/server/conversation/store.ts` with backward-compatible delegation to `DecisionLogStore`.
+    - Updated REST endpoints in `src/app/api/sofia/decision-log/route.ts`, `src/app/api/sofia/why/route.ts`, and `src/app/api/sophia/*` aliases.
+    - Authored comprehensive automated test suite `tests/sophia/g12_6_decision_log_and_explanation.test.ts` (18/18 PASS).
+    - Verified all 115 executable canonical test suites pass cleanly, 0 typecheck errors, 0 lint errors, and production build succeeds.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.6.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 
 ### Milestone M3 Implementation Archive Details:
