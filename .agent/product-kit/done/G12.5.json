@@ -1,0 +1,8 @@
+{
+  "id": "G12.5",
+  "doneAt": "2026-10-28T04:12:02.738Z",
+  "agent": "antigravity",
+  "branch": "step/G12.5",
+  "commit": "c4b0cc93b3b93243cc3ec3c00736fd0eed00d25d",
+  "evidence": "tests/sophia/g12_5_routing_evaluation_and_calibration.test.ts (13/13 pass); benchmark/router/verify-ci-gate.ts (25/25 pass); durable report with Brier scores and reliability curves in results/router-calibration-report.json; low-confidence routes ask instead of acting with zero leaks"
+}
