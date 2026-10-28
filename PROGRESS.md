@@ -173,6 +173,16 @@
     - Verified all 101 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G12.8.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **QA-M4 (Milestone M4 Complete Quality Assurance Pass):**
+    - Ran all automated checks across platforms: typecheck (0 errors), lint (0 errors), full test runner (101 passed suites, 0 failed, 19 Bun-divergent suites skipped per PROGRESS.md), and Vite SPA production build (0 errors).
+    - Verified all 6 founder test steps against the running system:
+      - T1 Tool & Delegation transparency: querying GitHub commits or delegating market analysis to Dr. Aris Thorne routes correctly (`use-tool`, `delegate`) and transparently surfaces immutable decision rationale in the UI.
+      - T2 Clarification on ambiguous intent: vague or malformed queries fail closed to `ask-clarify` (`clarification_prompt`), prompting the founder before executing.
+      - T3 Kill switch & Safe Mode freeze: voice "stop" command and emergency panel trigger Safe Mode instantaneously, aborting in-flight worker AbortControllers mid-flight, dropping policy to read-only, and requiring authenticated resume confirmation with zero model dependency.
+      - T4 Deterministic spend limits: unset daily cap (`null`) deterministically prohibits autonomous model spend; lowering cap below spend halts in-flight workers mid-flight and triggers Safe Mode.
+      - T5 Adversarial prompt injection defense: untrusted instructions inside documents are quarantined by MemoryGate and UntrustedIngressGuard with zero side-effect execution.
+      - T6 Autonomy level governance: raising action class autonomy without authenticated Founder session, valid decision ID, and founder quote is strictly impossible (403 fail-closed).
+    - QA pass certified PASS in `.agent/product-kit/qa/M4.md` and landed on `kit/integration`.
 
 
 ### Milestone M3 Implementation Archive Details:
