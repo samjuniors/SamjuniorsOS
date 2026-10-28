@@ -138,6 +138,20 @@
     - Verified all 98 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G3.6.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G12.4 (Autonomy policy engine: deterministic table of action class x autonomy level x limits deciding auto, needs approval, or forbidden):**
+    - Codified autonomy types in `src/types/autonomy.ts`: `AutonomyLevel` (`'L0' | 'L1' | 'L2' | 'L3' | 'L4'`), `AutonomyActionClass` (`read`, `draft`, `internal_write`, `external_reversible`, `external_hard_to_reverse`, `financial_legal`, `destructive_security`), `AutonomyDecisionEffect` (`'auto' | 'needs_approval' | 'forbidden'`), `AutonomyPolicyRule`, `RollingActionBudgetRecord`, and `AutonomyEvaluationResult`.
+    - Added `'FOUNDER_AUTONOMY_LEVEL_UPDATED'` to `AuthorizationReasonCode` in `src/types/authorization.ts`.
+    - Implemented `AutonomyPolicyEngine` singleton in `src/lib/server/authorization/autonomy-policy.ts` providing deterministic evaluation of Action Class x Autonomy Level x Resource Limits.
+    - Initialized with ratified `G0.7` baseline policy table (read/draft at L3 auto; internal_write at L2 needs approval; external_reversible at L2 needs approval; external_hard_to_reverse at L2 needs approval; financial_legal at L1 needs approval; destructive_security at L0 forbidden).
+    - Implemented rolling sliding-window action budgets (borrowed from Latch / AgentPolicy / AgentLedger open-source patterns) tracking consumption per role and action class within time windows, transitioning to `needs_approval` (`AUTONOMY_BUDGET_EXCEEDED`) upon exhaustion.
+    - Implemented fail-closed elevation policy in `setAutonomyLevel`: strictly requires authenticated Founder session, valid recorded Founder decision ID, and Founder quote. LLM models, non-founder callers, and AI personas are strictly blocked with `UnauthorizedAutonomyMutationError`.
+    - Integrated with immutable audit store (`InMemoryAuditStore`) emitting cryptographic SHA-256 hash-chained `autonomy.level_update` records on level change.
+    - Exposed `evaluateAutonomy(context)` on `SideEffectPolicyEvaluator` in `src/lib/server/authorization/policy-evaluator.ts` delegating to `AutonomyPolicyEngine.evaluate()`.
+    - Tuned `tests/sophia/m0_idempotency_expiry.test.ts` test 2 timing window to prevent I/O scheduling jitter.
+    - Authored comprehensive automated test suite `tests/sophia/g12_4_autonomy_policy.test.ts` (6/6 phases pass covering 35 matrix combinations, G0.7 baseline table, rolling sliding-window budgets, tamper protection, founder elevation, and policy evaluator integration).
+    - Verified all 99 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G12.4.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
 
 
 ### Milestone M3 Implementation Archive Details:
