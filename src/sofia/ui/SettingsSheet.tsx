@@ -459,6 +459,22 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
   const [savingSpendCap, setSavingSpendCap] = useState(false);
   const [spendNotice, setSpendNotice] = useState<string | null>(null);
 
+  // G12.8 Autonomy Settings State
+  const [autonomyRules, setAutonomyRules] = useState<Record<string, any>>({
+    read: { currentLevel: 'L3' },
+    draft: { currentLevel: 'L3' },
+    internal_write: { currentLevel: 'L2' },
+    external_reversible: { currentLevel: 'L2' },
+    external_hard_to_reverse: { currentLevel: 'L2' },
+    financial_legal: { currentLevel: 'L1' },
+    destructive_security: { currentLevel: 'L0' },
+  });
+  const [selectedActionClass, setSelectedActionClass] = useState<string>('internal_write');
+  const [selectedLevel, setSelectedLevel] = useState<string>('L2');
+  const [founderQuoteInput, setFounderQuoteInput] = useState<string>('Founder updated autonomy limits in settings.');
+  const [savingAutonomy, setSavingAutonomy] = useState<boolean>(false);
+  const [autonomyNotice, setAutonomyNotice] = useState<string | null>(null);
+
   const fetchSpend = () => {
     fetch('/api/sofia/spend')
       .then((r) => r.json())
@@ -473,6 +489,9 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
             isCapReached: d.isCapReached,
           });
           setSpendCapInput(d.settings.dailySpendCapUsd !== null && d.settings.dailySpendCapUsd !== undefined ? String(d.settings.dailySpendCapUsd) : '');
+          if (d.autonomyRules) {
+            setAutonomyRules(d.autonomyRules);
+          }
         }
       })
       .catch(() => undefined);
@@ -481,6 +500,36 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
   useEffect(() => {
     fetchSpend();
   }, []);
+
+  const handleUpdateAutonomyLevel = async (actionClass: string, newLevel: string) => {
+    setSavingAutonomy(true);
+    try {
+      const res = await fetch('/api/sofia/autonomy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actionClass,
+          newLevel,
+          founderQuote: founderQuoteInput || 'Founder updated autonomy limit in settings.',
+          founderDecisionId: `decision-settings-${Date.now()}`,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.autonomyRules) {
+        setAutonomyRules(data.autonomyRules);
+        setAutonomyNotice(data.message || `Autonomy for ${actionClass} updated to ${newLevel}`);
+        setTimeout(() => setAutonomyNotice(null), 3000);
+      } else {
+        setAutonomyNotice(`Error: ${data.error || 'Failed to update autonomy'}`);
+        setTimeout(() => setAutonomyNotice(null), 4000);
+      }
+    } catch (err: any) {
+      setAutonomyNotice(`Error: ${err.message}`);
+      setTimeout(() => setAutonomyNotice(null), 4000);
+    } finally {
+      setSavingAutonomy(false);
+    }
+  };
 
   const handleUpdateSpendCap = async (newVal: number | null) => {
     setSavingSpendCap(true);
@@ -791,6 +840,92 @@ export function SettingsSheet({ os, status, onClose }: { os: SophiaOS; status: O
               {spendNotice && (
                 <p className="text-[8.5px] text-sky-300 transition-opacity">{spendNotice}</p>
               )}
+
+              {/* G12.8 Autonomy Policy Section */}
+              <div data-testid="autonomy-settings-section" className="mt-3 pt-3 border-t border-white/[0.08] space-y-2">
+                <div>
+                  <p className="text-[10px] font-normal uppercase tracking-[0.2em] text-white/80">Autonomy Limits & Action Classes</p>
+                  <p className="text-[8.5px] font-light text-white/40">
+                    Deterministic boundaries deciding auto, needs approval, or forbidden.
+                  </p>
+                </div>
+
+                {/* Rules Badges */}
+                <div className="grid grid-cols-2 gap-1.5 text-[8.5px]">
+                  {Object.entries(autonomyRules).map(([cls, rule]: [string, any]) => (
+                    <div
+                      key={cls}
+                      onClick={() => {
+                        setSelectedActionClass(cls);
+                        if (rule.currentLevel) setSelectedLevel(rule.currentLevel);
+                      }}
+                      className={`flex items-center justify-between p-1.5 rounded border cursor-pointer transition ${
+                        selectedActionClass === cls
+                          ? 'border-sky-400 bg-sky-400/20 text-white'
+                          : 'border-white/10 bg-black/20 text-white/70 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="truncate capitalize">{cls.replace(/_/g, ' ')}</span>
+                      <span className={`px-1 py-0.5 rounded font-mono font-bold text-[8px] ${
+                        rule.currentLevel === 'L0' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+                        rule.currentLevel === 'L1' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                        rule.currentLevel === 'L2' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                        'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}>
+                        {rule.currentLevel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Level Selector & Update Form */}
+                <div className="space-y-1.5 rounded-lg border border-white/10 bg-black/30 p-2 text-[9px]">
+                  <div className="flex items-center justify-between text-white/60">
+                    <span>Editing: <strong className="text-white capitalize">{selectedActionClass.replace(/_/g, ' ')}</strong></span>
+                    <span>Current: <strong className="text-sky-300 font-mono">{autonomyRules[selectedActionClass]?.currentLevel || 'L2'}</strong></span>
+                  </div>
+
+                  <div className="flex gap-1 pt-1">
+                    {['L0', 'L1', 'L2', 'L3', 'L4'].map((lvl) => (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => setSelectedLevel(lvl)}
+                        className={`flex-1 py-1 rounded font-mono text-[8.5px] border transition ${
+                          selectedLevel === lvl
+                            ? 'border-sky-400 bg-sky-400/30 text-white shadow-[0_0_6px_rgba(56,189,248,0.4)]'
+                            : 'border-white/10 bg-white/5 text-white/60 hover:text-white'
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Founder decision quote (required for elevation)"
+                    value={founderQuoteInput}
+                    onChange={(e) => setFounderQuoteInput(e.target.value)}
+                    data-testid="founder-quote-input"
+                    className="w-full rounded border border-white/10 bg-white/5 py-1 px-2 text-[9px] text-white placeholder-white/30 focus:border-sky-400 focus:outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => void handleUpdateAutonomyLevel(selectedActionClass, selectedLevel)}
+                    disabled={savingAutonomy}
+                    data-testid="save-autonomy-button"
+                    className="w-full rounded border border-sky-400/40 bg-sky-400/20 py-1 text-[9px] font-medium text-sky-200 transition hover:bg-sky-400/30 disabled:opacity-50"
+                  >
+                    {savingAutonomy ? 'Updating Autonomy…' : `Update ${selectedActionClass.replace(/_/g, ' ')} to ${selectedLevel}`}
+                  </button>
+
+                  {autonomyNotice && (
+                    <p data-testid="autonomy-notice" className="text-[8.5px] text-sky-300 text-center">{autonomyNotice}</p>
+                  )}
+                </div>
+              </div>
             </div>
           </AccordionSection>
 

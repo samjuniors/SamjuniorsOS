@@ -1,0 +1,8 @@
+{
+  "id": "G12.8",
+  "doneAt": "2026-10-28T08:53:22.705Z",
+  "agent": "antigravity",
+  "branch": "step/G12.8",
+  "commit": "57e17aeffe60b0b43da542d9829149638476bf87",
+  "evidence": "tests/sophia/g12_8_autonomy_and_spend_settings.test.ts 6/6 passed; test-runner.mjs 101 passed; typecheck, lint, build clean; independent review PASS in .agent/product-kit/handoffs/G12.8.verify.md"
+}
