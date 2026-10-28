@@ -1,0 +1,8 @@
+{
+  "id": "G12.7",
+  "doneAt": "2026-10-28T08:10:38.358Z",
+  "agent": "antigravity",
+  "branch": "kit/integration",
+  "commit": "66fff5a20cb5e1cf35c34e3996593a7600daf9c3",
+  "evidence": "Drill passes: stop works mid-run, active workers and workflow steps halt cleanly via AbortSignal; state is recorded in AgentRunStore (status halted) and WorkflowStore (status cancelled); SafeModeManager records audit entry; system drops to read-only mode permitting read operations while denying mutations; works 100% deterministically with model provider unavailable; independent review passed with PASS verdict"
+}
