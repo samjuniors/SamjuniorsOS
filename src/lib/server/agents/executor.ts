@@ -8,6 +8,7 @@ import { AgentRunStore, AgentRunRecord } from './run-store';
 import { EpistemicPipeline } from '../epistemic/pipeline';
 import { v4 as uuidv4 } from 'uuid';
 import { SafeModeManager } from '../sophia/stop-control';
+import { SpendSettingsManager } from '../sophia/spend-settings';
 
 export interface AgentExecutionContext {
   directive: string;
@@ -118,6 +119,54 @@ export class ServerAgentExecutor {
         runId,
         provenance: failProvenance,
         error: freezeReason,
+      };
+    }
+
+    // G12.8 Spend Cap Gate: With no spend cap set, no autonomous model spend runs.
+    // When cap is reached, autonomous work halts deterministically before model invocation.
+    const spendManager = SpendSettingsManager.getInstance();
+    const autoSpendCheck = spendManager.canExecuteAutonomousSpend();
+    if (!autoSpendCheck.allowed) {
+      const spendError = autoSpendCheck.message || 'Task execution blocked: Autonomous model spend is disabled (no spend cap configured or spend cap reached)';
+      const failProvenance: OutputProvenance = {
+        agentId,
+        agentName: agentDef.name,
+        taskId: `task-${context.protocolStep}-${agentId}`,
+        protocolStep: context.protocolStep,
+        timestamp,
+        isVerified: false,
+        evidenceBasis: 'unverified',
+        workflowInstanceId: context.workflowInstanceId,
+        stepId: context.stepId,
+        occurrenceId: context.occurrenceId,
+        occurrenceNumber: context.occurrenceNumber,
+      };
+
+      await AgentRunStore.getInstance().saveRun({
+        runId,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        taskTitle: context.taskTitle,
+        directive: context.directive,
+        status: 'halted',
+        durationMs: 0,
+        outputContent: spendError,
+        provenance: failProvenance,
+        error: spendError,
+        timestamp,
+      });
+
+      return {
+        success: false,
+        agentId,
+        agentName: agentDef.name,
+        protocolStep: context.protocolStep,
+        statusMessage: `[${agentDef.name}] ${spendError}.`,
+        outputContent: spendError,
+        runId,
+        provenance: failProvenance,
+        error: spendError,
       };
     }
 
@@ -287,15 +336,27 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
 
     let lastError: any = null;
 
+    const taskAbortController = new AbortController();
+    if (context.signal) {
+      if (context.signal.aborted) {
+        taskAbortController.abort(context.signal.reason);
+      } else {
+        context.signal.addEventListener('abort', () => {
+          taskAbortController.abort(context.signal?.reason);
+        }, { once: true });
+      }
+    }
+    spendManager.registerRunningTask(runId, taskAbortController, context.taskTitle);
+
     executionAttempt: {
       const model = 'zai-llm';
       try {
         const abortPromise = new Promise<never>((_, reject) => {
-          if (context.signal?.aborted) {
-            reject(new Error((context.signal.reason as string) || 'Task execution aborted via AbortSignal'));
-          } else if (context.signal) {
-            context.signal.addEventListener('abort', () => {
-              reject(new Error((context.signal?.reason as string) || 'Task execution aborted via AbortSignal'));
+          if (taskAbortController.signal.aborted) {
+            reject(new Error((taskAbortController.signal.reason as string) || 'Task execution aborted via AbortSignal'));
+          } else {
+            taskAbortController.signal.addEventListener('abort', () => {
+              reject(new Error((taskAbortController.signal.reason as string) || 'Task execution aborted via AbortSignal'));
             }, { once: true });
           }
         });
@@ -360,6 +421,14 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
           parsed.reviewFingerprint = context.upstreamContext.reviewFingerprint;
         }
 
+        // G12.8: Record autonomous model spend
+        spendManager.recordSpend({
+          amountUsd: 0.005,
+          type: 'autonomous',
+          taskId: runId,
+          model,
+        });
+
         await AgentRunStore.getInstance().saveRun({
           runId,
           agentId,
@@ -394,11 +463,13 @@ Return ONLY raw valid JSON with no markdown wrapping.`;
       } catch (err: any) {
         lastError = err;
         break executionAttempt;
+      } finally {
+        spendManager.unregisterRunningTask(runId);
       }
     }
 
     const durationMs = Date.now() - startTime;
-    const isAborted = context.signal?.aborted || lastError?.message?.includes('aborted') || lastError?.message?.includes('Halted by Stop Control');
+    const isAborted = taskAbortController.signal.aborted || context.signal?.aborted || /halted by stop control|aborted|spend cap/i.test(lastError?.message || '');
     const runStatus = isAborted ? 'halted' : 'failed';
     const errorOutput = isAborted
       ? `**Task Halted**: Task "${context.taskTitle}" was halted mid-run by Stop Control / Safe Mode.`

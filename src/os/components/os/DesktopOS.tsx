@@ -3,7 +3,7 @@ import {
   Battery, BatteryCharging, Bell, ChevronLeft, ChevronRight, Clock, Maximize2, Mic2, Minus, Monitor,
   Settings as Gear, Volume2, VolumeX, Wifi, WifiOff, X, Search, Power, User, SunMoon, Sparkles, Bot,
   PanelRightClose, Command as CommandIcon, RefreshCw, Image as ImageIcon, LayoutGrid, CheckCircle2, Scale, Activity,
-  Building2, AlertTriangle, RotateCcw,
+  Building2, AlertTriangle, RotateCcw, DollarSign,
 } from "lucide-react";
 import FlowDesktop from "../FlowDesktop";
 import BootLock from "./BootLock";
@@ -138,6 +138,36 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
   const [notifsOn, setNotifsOn] = useState(true);
   const [h12, setH12] = useState(true);
   const [voice, setVoice] = useState(false);
+  const [spendCap, setSpendCap] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pop === "settings") {
+      fetch("/api/sofia/spend")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.settings) {
+            setSpendCap(d.settings.dailySpendCapUsd);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, [pop]);
+
+  const updateSpendCap = async (newVal: number | null) => {
+    try {
+      const res = await fetch("/api/sofia/spend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spendCap: newVal }),
+      });
+      const d = await res.json();
+      if (d.success && d.settings) {
+        setSpendCap(d.settings.dailySpendCapUsd);
+      }
+    } catch {
+      // safe noop
+    }
+  };
 
   const [toasts, setToasts] = useState<{ id: number; t: string; d: string }[]>([]);
   const nid = useRef(1);
@@ -487,6 +517,35 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
                   <Volume2 size={14} className="text-slate-400" />
                   <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="slider h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-cyan-300/20" />
                   <span className="w-8 text-right font-mono text-[10.5px] font-bold text-cyan-200">{Math.round(volume * 100)}</span>
+                </div>
+              </div>
+              <div className="mb-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">
+                <div className="mb-1.5 flex items-center justify-between text-[9.5px] font-bold uppercase tracking-[0.2em] text-cyan-200/60">
+                  <span>Spend & Autonomy</span>
+                  <DollarSign size={13} className="text-cyan-300" />
+                </div>
+                <div className="flex items-center justify-between py-1 text-[12px] text-slate-200">
+                  <span>Daily Model Cap</span>
+                  <span className="font-mono text-cyan-300">
+                    {spendCap !== null ? `${spendCap.toFixed(2)}/day` : 'UNSET (Disabled)'}
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  {[5, 10, 25].map((preset) => (
+                    <button
+                      key={preset}
+                      onClick={() => void updateSpendCap(preset)}
+                      className="flex-1 rounded border border-white/10 bg-white/5 py-1 text-[10px] font-mono text-slate-300 hover:border-cyan-400 hover:text-white"
+                    >
+                      ${preset}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => void updateSpendCap(null)}
+                    className="flex-1 rounded border border-white/10 bg-white/5 py-1 text-[10px] text-slate-400 hover:text-white"
+                  >
+                    Clear
+                  </button>
                 </div>
               </div>
               <div className="mb-3 rounded-xl border border-white/8 bg-white/[0.015] p-3">

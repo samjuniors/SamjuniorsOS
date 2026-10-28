@@ -240,6 +240,10 @@ export class SpendSettingsManager {
     this.runningTasks.delete(taskId);
   }
 
+  public getRunningTasksCount(): number {
+    return this.runningTasks.size;
+  }
+
   /**
    * Aborts all currently running autonomous tasks.
    */
@@ -321,6 +325,7 @@ export class SpendSettingsManager {
     const currentSpend = this.settings.currentDailySpendUsd;
     const isLoweredBelowCurrent = newCap !== null && newCap <= currentSpend;
     const isLowered = previousCap !== null && newCap !== null && newCap < previousCap;
+    const isUnset = previousCap !== null && newCap === null;
 
     // Durably log the Founder's change to the audit store (fail-closed before persisting setting change)
     await this.logAuditRecord({
@@ -329,7 +334,7 @@ export class SpendSettingsManager {
       previousCapUsd: previousCap,
       newCapUsd: newCap,
       currentSpendUsd: currentSpend,
-      reason: args.reason || (isLowered ? 'Lowered model spend cap in settings' : 'Updated model spend cap in settings'),
+      reason: args.reason || (isLowered ? 'Lowered model spend cap in settings' : isUnset ? 'Cleared model spend cap in settings' : 'Updated model spend cap in settings'),
     });
 
     this.settings.dailySpendCapUsd = newCap;
@@ -338,8 +343,10 @@ export class SpendSettingsManager {
     this.persistSettings(this.settings);
 
     // Lowering the cap stops a running task
-    if (isLoweredBelowCurrent || isLowered) {
-      const stopReason = `Spend cap lowered to ${newCap?.toFixed(2)} (current spend: ${currentSpend.toFixed(2)}). Halting active tasks.`;
+    if (isLoweredBelowCurrent || isLowered || isUnset) {
+      const stopReason = isUnset
+        ? `Spend cap cleared to UNSET (current spend: ${currentSpend.toFixed(2)}). Halting autonomous tasks.`
+        : `Spend cap lowered to ${newCap?.toFixed(2)} (current spend: ${currentSpend.toFixed(2)}). Halting active tasks.`;
       await SafeModeManager.getInstance().triggerStop({
         source: 'system',
         reason: stopReason,
