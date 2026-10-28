@@ -322,23 +322,7 @@ export class SpendSettingsManager {
     const isLoweredBelowCurrent = newCap !== null && newCap <= currentSpend;
     const isLowered = previousCap !== null && newCap !== null && newCap < previousCap;
 
-    this.settings.dailySpendCapUsd = newCap;
-    this.settings.updatedAt = new Date().toISOString();
-    this.settings.updatedBy = args.founderId;
-    this.persistSettings(this.settings);
-
-    // Lowering the cap stops a running task
-    if (isLoweredBelowCurrent || isLowered) {
-      const stopReason = `Spend cap lowered to $${newCap?.toFixed(2)} (current spend: $${currentSpend.toFixed(2)}). Halting active tasks.`;
-      await SafeModeManager.getInstance().triggerStop({
-        source: 'system',
-        reason: stopReason,
-        founderId: args.founderId,
-      });
-      this.stopRunningTasks(stopReason);
-    }
-
-    // Durably log the Founder's change to the audit store
+    // Durably log the Founder's change to the audit store (fail-closed before persisting setting change)
     await this.logAuditRecord({
       action: 'spend_cap_updated',
       actorId: args.founderId,
@@ -347,6 +331,22 @@ export class SpendSettingsManager {
       currentSpendUsd: currentSpend,
       reason: args.reason || (isLowered ? 'Lowered model spend cap in settings' : 'Updated model spend cap in settings'),
     });
+
+    this.settings.dailySpendCapUsd = newCap;
+    this.settings.updatedAt = new Date().toISOString();
+    this.settings.updatedBy = args.founderId;
+    this.persistSettings(this.settings);
+
+    // Lowering the cap stops a running task
+    if (isLoweredBelowCurrent || isLowered) {
+      const stopReason = `Spend cap lowered to ${newCap?.toFixed(2)} (current spend: ${currentSpend.toFixed(2)}). Halting active tasks.`;
+      await SafeModeManager.getInstance().triggerStop({
+        source: 'system',
+        reason: stopReason,
+        founderId: args.founderId,
+      });
+      this.stopRunningTasks(stopReason);
+    }
 
     return { ...this.settings };
   }
@@ -387,25 +387,17 @@ export class SpendSettingsManager {
       executed: true,
     };
 
-    try {
-      await InMemoryAuditStore.getInstance().record(auditRecord);
-    } catch (err) {
-      console.error('[SpendSettingsManager] Failed to persist audit record to audits collection:', err);
-    }
+    await InMemoryAuditStore.getInstance().record(auditRecord);
   }
 
   /**
    * Retrieves audit log history of spend cap modifications.
    */
   public getSpendAuditHistory(): SideEffectAuditRecord[] {
-    try {
-      const all = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
-      return verifyAuditChain(Object.values(all))
-        .filter((a) => a.actionName === 'update_model_spend_cap')
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    } catch {
-      return [];
-    }
+    const all = DurableFileStore.getInstance().readCollection<SideEffectAuditRecord>('audits');
+    return verifyAuditChain(Object.values(all))
+      .filter((a) => a.actionName === 'update_model_spend_cap')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
   /**

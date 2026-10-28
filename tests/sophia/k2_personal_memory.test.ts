@@ -19,6 +19,9 @@ import { InMemoryApprovalStore } from '../../src/lib/server/authorization/approv
 import { CompanyMemoryStore } from '../../src/lib/server/memory/memory-store';
 import { EpistemicClaimStore } from '../../src/lib/server/epistemic/claim-store';
 import { DurableFileStore } from '../../src/lib/server/persistence/durable-file-store';
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'file:./db/custom.db';
+}
 import { prisma, isDatabaseAvailable } from '../../src/lib/server/db/prisma';
 import * as memoryRoute from '../../src/app/api/sofia/memory/route';
 import { spawnTestChild } from '../helpers/child-runner';
@@ -820,8 +823,10 @@ async function main() {
   // Cleanup: remove this suite's Prisma artifacts + reset personal memories
   // --------------------------------------------------------------------------
   if (dbAvailable) {
-    for (const id of prismaRowsCreated) {
-      await (prisma as any).sophiaMemory.delete({ where: { id } }).catch(() => {});
+    if (prismaRowsCreated.length > 0) {
+      await (prisma as any).sophiaMemory.deleteMany({
+        where: { id: { in: prismaRowsCreated } },
+      }).catch(() => {});
     }
     await (prisma as any).sophiaMemory.deleteMany({
       where: { founderId: { startsWith: 'founder_k2_' } },

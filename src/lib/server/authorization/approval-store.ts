@@ -12,7 +12,7 @@ import { isAuthoritativeMode, requireAuthoritativeDatabase } from '@/lib/server/
 import { DurableFileStore } from '@/lib/server/persistence/durable-file-store';
 import { InstanceConcurrencyGuard } from '@/lib/server/persistence/instance-guard';
 import { ApprovalAlreadyConsumedError } from '@/lib/server/workflow/state-machine';
-import { appendAuditChainRecord, AuditIntegrityError, verifyAuditChain } from './audit-integrity';
+import { appendAuditChainRecord, AuditIntegrityError, verifyAuditChain, AuditAnchorRegistry, buildAuditCheckpoint } from './audit-integrity';
 
 function toPrismaAuditData(audit: SideEffectAuditRecord) {
   return {
@@ -407,6 +407,8 @@ export class PostgresAuditStore implements IAuditStore {
       const current = rows.map((row: any) => this.mapPrismaToAudit(row));
       const sealed = appendAuditChainRecord(audit, current);
       await db.sideEffectAudit.create({ data: toPrismaAuditData(sealed) });
+      const checkpoint = buildAuditCheckpoint(sealed);
+      await AuditAnchorRegistry.getInstance().getProvider().publishCheckpoint(checkpoint);
       return JSON.parse(JSON.stringify(sealed));
     } finally {
       await guard.releaseSharedInstanceLease(resourceKey, holderId);
@@ -888,6 +890,7 @@ export class InMemoryAuditStore implements IAuditStore {
     this.audits.clear();
     try {
       DurableFileStore.getInstance().clearCollection('audits');
+      AuditAnchorRegistry.getInstance().getProvider().clearForTest?.();
     } catch {
       // fallback
     }
@@ -903,9 +906,17 @@ export class InMemoryAuditStore implements IAuditStore {
       const persisted = fileStore.readCollection<SideEffectAuditRecord>('audits');
       const sealed = appendAuditChainRecord(audit, Object.values(persisted));
       fileStore.saveItemStrict('audits', sealed.id, sealed);
+      const checkpoint = buildAuditCheckpoint(sealed);
+      const provider = AuditAnchorRegistry.getInstance().getProvider();
+      if ('publishCheckpointSync' in provider) {
+        (provider as any).publishCheckpointSync(checkpoint);
+      }
       this.audits.set(sealed.id, sealed);
       return JSON.parse(JSON.stringify(sealed));
     });
+
+    const checkpoint = buildAuditCheckpoint(clone);
+    await AuditAnchorRegistry.getInstance().getProvider().publishCheckpoint(checkpoint);
 
     if (process.env.DATABASE_URL) {
       try {
