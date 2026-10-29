@@ -18,14 +18,14 @@ body {
 :root {
   /* Canonical CVL Token Aliases for OS Shell Surface Compatibility */
   --os-bg: var(--cvl-void);
-  --os-surface: var(--cvl-panel);
-  --os-surface-raised: var(--cvl-panel-2);
-  --os-line: var(--cvl-line);
-  --os-line-strong: var(--cvl-running);
+  --os-surface: var(--bg-surface);
+  --os-surface-raised: var(--bg-chrome);
+  --os-line: var(--border-default);
+  --os-line-strong: var(--border-accent);
   --os-ink: var(--cvl-text);
   --os-muted: var(--cvl-muted);
-  --os-cyan: var(--cvl-running);
-  --os-amber: var(--cvl-signal);
+  --os-cyan: var(--accent-cyan-400);
+  --os-amber: var(--semantic-warning);
 }
 
 button,

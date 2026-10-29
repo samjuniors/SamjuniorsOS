@@ -14,11 +14,11 @@ import type {
 /* ------------------------------------------------------------------ Helpers & Status Badges */
 
 const statusColor: Record<SurfaceStatus, { dot: string; text: string; bg: string }> = {
-  healthy: { dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]", text: "text-emerald-300", bg: "bg-emerald-500/10 border-emerald-500/30" },
-  active: { dot: "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]", text: "text-cyan-300", bg: "bg-cyan-500/10 border-cyan-500/30" },
-  waiting: { dot: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]", text: "text-amber-300", bg: "bg-amber-500/10 border-amber-500/30" },
-  blocked: { dot: "bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.6)]", text: "text-rose-300", bg: "bg-rose-500/10 border-rose-500/30" },
-  offline: { dot: "bg-slate-500", text: "text-slate-400", bg: "bg-white/[0.04] border-white/10" },
+  healthy: { dot: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]", text: "text-emerald-300", bg: "bg-emerald-500/10 border-emerald-500/30" },
+  active: { dot: "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]", text: "text-cyan-300", bg: "bg-cyan-500/10 border-cyan-500/30" },
+  waiting: { dot: "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.8)]", text: "text-amber-300", bg: "bg-amber-500/10 border-amber-500/30" },
+  blocked: { dot: "bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]", text: "text-rose-300", bg: "bg-rose-500/10 border-rose-500/30" },
+  offline: { dot: "bg-slate-600", text: "text-slate-400", bg: "bg-white/[0.04] border-white/10" },
   neutral: { dot: "bg-slate-400", text: "text-slate-300", bg: "bg-white/[0.04] border-white/10" },
 };
 
@@ -713,7 +713,7 @@ export function InspectorSurface({
   onTabChange?: (tabId: string) => void;
 }) {
   return (
-    <div className="h-full flex flex-col rounded-2xl border border-cyan-500/30 bg-[#081120]/95 backdrop-blur-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="h-full flex flex-col rounded-2xl border border-cyan-500/30 bg-[var(--bg-chrome)]/95 border-white/12 backdrop-blur-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
       <div className="p-4 border-b border-white/[0.08] flex items-start justify-between bg-white/[0.03]">
         <div>
           <div className="flex items-center gap-2">

@@ -561,7 +561,7 @@ function ExecutionTrailOverlay({ n }: { n: FlowNode }) {
 
   return (
     <div
-      className="pointer-events-none absolute z-20 rounded-2xl border border-cyan-300/20 bg-[#06101e]/94 p-2.5 shadow-[0_16px_44px_-14px_rgba(0,0,0,0.85)] backdrop-blur-md"
+      className="pointer-events-none absolute z-20 rounded-2xl border border-cyan-300/20 bg-[#060c18]/95 p-2.5 shadow-[0_16px_44px_-14px_rgba(0,0,0,0.85)] backdrop-blur-md"
       style={{
         left: n.x - width / 2,
         top: n.y + n.h / 2 + 18,
@@ -801,20 +801,20 @@ function Phase4NodeCard({
 
 function SpatialCardOverlay({ card }: { card: SpatialCard }) {
   const toneClasses = card.tone === "amber"
-    ? "border-amber-400/40 bg-[#120d04]/94 text-amber-200 shadow-[0_8px_28px_rgba(245,158,11,0.3)]"
+    ? "border-amber-400/40 bg-[#060c18]/95 text-amber-200 shadow-[0_8px_28px_rgba(245,158,11,0.3)]"
     : card.tone === "rose"
-    ? "border-rose-400/40 bg-[#140608]/94 text-rose-200 shadow-[0_8px_28px_rgba(244,63,94,0.3)]"
+    ? "border-rose-400/40 bg-[#060c18]/95 text-rose-200 shadow-[0_8px_28px_rgba(244,63,94,0.3)]"
     : card.tone === "emerald"
-    ? "border-emerald-400/40 bg-[#04140c]/94 text-emerald-200 shadow-[0_8px_28px_rgba(16,185,129,0.3)]"
+    ? "border-emerald-400/40 bg-[#060c18]/95 text-emerald-200 shadow-[0_8px_28px_rgba(16,185,129,0.3)]"
     : "border-cyan-400/40 bg-[#06101e]/94 text-cyan-200 shadow-[0_8px_28px_rgba(56,189,248,0.3)]";
 
   const dotClass = card.tone === "amber"
-    ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.9)]"
+    ? "bg-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.8)]"
     : card.tone === "rose"
-    ? "bg-rose-400 shadow-[0_0_10px_rgba(251,113,133,0.9)]"
+    ? "bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]"
     : card.tone === "emerald"
-    ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]"
-    : "bg-cyan-400 shadow-[0_0_10px_rgba(56,189,248,0.9)]";
+    ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+    : "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]";
 
   return (
     <div
@@ -849,9 +849,9 @@ function StateDot({ state }: { state: Agent["state"] }) {
   // Canonical execution-language agent-state dots: working=green (on it),
   // waiting=amber (decision), idle=cyan (available), offline=neutral.
   const c = state === "working"
-    ? `${EXECUTION_LANGUAGE.completed.fill} shadow-[0_0_8px_rgba(34,217,122,0.9)]`
+    ? `${EXECUTION_LANGUAGE.completed.fill} shadow-[0_0_8px_rgba(52,211,153,0.8)]`
     : state === "waiting"
-    ? `${EXECUTION_LANGUAGE.approval.fill} shadow-[0_0_8px_rgba(255,196,102,0.9)]`
+    ? `${EXECUTION_LANGUAGE.approval.fill} shadow-[0_0_8px_rgba(252,211,77,0.8)]`
     : state === "offline"
     ? EXECUTION_LANGUAGE.idle.fill
     : `${EXECUTION_LANGUAGE.running.fill} shadow-[0_0_8px_rgba(102,209,255,0.8)]`;

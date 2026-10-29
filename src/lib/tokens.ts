@@ -11,9 +11,9 @@ export type StateKey =
 export const stateAccent: Record<StateKey, string> = {
   idle: "#6b7c93",
   running: "#38bdf8",
-  signal: "#f59e0b",
+  signal: "#fcd34d",
   completed: "#34d399",
-  blocked: "#f43f5e",
+  blocked: "#fb7185",
   approval: "#a78bfa",
 };
 
@@ -36,18 +36,18 @@ export const stateCaption: Record<StateKey, string> = {
 };
 
 export const fallbackTokens = [
-  { category: "surface", name: "void", value: "#05070c", note: "page base" },
-  { category: "surface", name: "canvas", value: "#080c14", note: "grid field" },
-  { category: "surface", name: "panel", value: "#0b111b", note: "card body" },
-  { category: "surface", name: "line", value: "#182233", note: "hairline border" },
+  { category: "surface", name: "void", value: "#01040a", note: "page base" },
+  { category: "surface", name: "deep", value: "#03060d", note: "lock / boot base" },
+  { category: "surface", name: "surface", value: "#050a14", note: "window surface" },
+  { category: "surface", name: "chrome", value: "#060c18", note: "chrome / bar" },
   { category: "text", name: "primary", value: "#e6edf7", note: "headings" },
   { category: "text", name: "muted", value: "#7d8ca3", note: "body copy" },
   { category: "text", name: "dim", value: "#4d5c72", note: "eyebrow labels" },
   { category: "state", name: "idle", value: "#6b7c93", note: "dormant node" },
   { category: "state", name: "running", value: "#38bdf8", note: "active conduit" },
-  { category: "state", name: "signal", value: "#f59e0b", note: "external action" },
+  { category: "state", name: "signal", value: "#fcd34d", note: "external action" },
   { category: "state", name: "completed", value: "#34d399", note: "sealed result" },
-  { category: "state", name: "blocked", value: "#f43f5e", note: "severed edge" },
+  { category: "state", name: "blocked", value: "#fb7185", note: "severed edge" },
   { category: "state", name: "approval", value: "#a78bfa", note: "authority gate" },
   { category: "motion", name: "orbit", value: "12000ms linear", note: "halo rotation" },
   { category: "motion", name: "pulse", value: "2600ms ease-in-out", note: "breathing ring" },
@@ -75,20 +75,20 @@ export const fallbackStates: {
 
 export const WORKFLOW_COLORS = {
   primary: "#38bdf8",
-  processing: "#f59e0b",
+  processing: "#fcd34d",
   success: "#34d399",
-  error: "#f43f5e",
+  error: "#fb7185",
   neutral: "#6b7c93",
   borderDefault: "#182233",
   borderSubtle: "#101726",
-  bgVoid: "#05070c",
-  bgSurface: "#0b111b",
-  bgPanel: "#0b111b",
+  bgVoid: "#01040a",
+  bgSurface: "#050a14",
+  bgPanel: "#050a14",
   textPrimary: "#e6edf7",
   textMuted: "#7d8ca3",
   textDim: "#4d5c72",
   accentPurple: "#a78bfa",
-  accentCyan: "#38bdf8",
+  accentCyan: "#67e8f9",
 } as const;
 
 export type WorkflowColorKey = keyof typeof WORKFLOW_COLORS;
@@ -188,11 +188,11 @@ export type ExecutionLanguageKey = keyof typeof EXECUTION_LANGUAGE;
 
 export const ENTITY_IDENTITY = {
   founder: "#38bdf8",
-  sophia: "#fb923c",
-  thorne: "#38bdf8",
+  sophia: "#67e8f9",
+  thorne: "#c084fc",
   cruz: "#34d399",
-  lin: "#c084fc",
-  approval: "#fbbf24",
+  lin: "#fcd34d",
+  approval: "#fcd34d",
   verifier: "#34d399",
   verifierBlocked: "#fb7185",
   vault: "#34d399",

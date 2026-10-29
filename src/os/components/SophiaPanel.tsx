@@ -304,10 +304,10 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
           onClick={() => setOpen(true)}
           className={`flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] font-medium tracking-wide backdrop-blur-xl transition-all duration-300 active:scale-95 ${
             hasDecisions
-              ? "border-amber-300/40 bg-[#0c1524]/90 text-amber-100 shadow-[0_0_24px_-4px_rgba(251,191,36,0.35)]"
+              ? "border-amber-300/40 bg-[#060c18]/90 text-amber-100 shadow-[0_0_24px_-4px_rgba(252,211,77,0.4)]"
               : hasAttention || hasMemories
-              ? "border-cyan-300/30 bg-[#081220]/90 text-cyan-100 shadow-[0_0_20px_-4px_rgba(56,189,248,0.3)]"
-              : "border-white/10 bg-[#040a14]/75 text-slate-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)] hover:border-cyan-300/30 hover:text-white"
+              ? "border-cyan-300/30 bg-[#060c18]/90 text-cyan-100 shadow-[0_0_20px_-4px_rgba(56,189,248,0.3)]"
+              : "border-white/10 bg-[#050a14]/75 text-slate-300 shadow-[0_4px_20px_rgba(0,0,0,0.5)] hover:border-cyan-300/30 hover:text-white"
           }`}
         >
           {hasDecisions ? (
@@ -336,7 +336,7 @@ export default function SophiaPanel({ settings, onChange, onSpeak }: Props) {
 
   return (
     <div className="pointer-events-auto relative z-20 w-[310px] max-w-[calc(100vw-2rem)]" style={{ animation: "os-in 220ms cubic-bezier(.16,1,.3,1)" }}>
-      <div className="overflow-hidden rounded-2xl border border-cyan-200/15 bg-[#050c18]/92 shadow-[0_16px_50px_-10px_rgba(0,0,0,0.8),0_0_30px_-10px_rgba(56,189,248,0.3)] backdrop-blur-2xl">
+      <div className="overflow-hidden rounded-2xl border border-cyan-200/15 bg-[#060c18]/95 shadow-[0_16px_50px_-10px_rgba(0,0,0,0.8),0_0_30px_-10px_rgba(56,189,248,0.3)] backdrop-blur-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-4 py-3">
           <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/90">
