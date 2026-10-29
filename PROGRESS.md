@@ -120,6 +120,25 @@
     - Verified all 121 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G5.1.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G5.2 (UX flows for Cockpit, Decisions, Approvals and Activity including empty, loading and error states):**
+    - Extended `src/os/lib/surfaceSchema.ts` with typed contracts for `ApprovalData` and `CockpitData`.
+    - Enhanced `src/os/lib/osStore.ts`:
+      - Added ephemeral sync status tracking (`syncStatus`, `activitySyncStatus`, `syncError`, `activitySyncError`) excluded from local storage persistence.
+      - Cleanly partitioned genuine strategic governance decisions (`openDecisions`, `!d.approvalId`) from cryptographic side-effect authorization gates (`openApprovals`, `!!d.approvalId`).
+      - Exported selectors `openApprovals`, `syncStatusState`, `activitySyncStatusState`, and actions `setSyncStatus`, `setActivitySyncStatus`.
+    - Updated `src/os/lib/runtime.ts` `syncFromServer()` to dispatch live synchronization transitions (`loading`, `synced`, `error`) across core and additive activity feeds.
+    - Implemented dedicated surfaces in `src/os/components/surfaces/StandardSurfaces.tsx`:
+      - `ApprovalSurface`: displays amber status seal (`waiting`), requesting employee role, payload binding preview (SHA-256 bound tuple hash), prominent voice refusal advisory notice (*"Voice authorization refused: Consequential side-effects require authenticated visual panel sign-off per security policy"*), and Approve / Reject actions wired to server decision endpoints.
+      - `CockpitSurface`: combines daily model spend counter vs cap ($X / $Y Cap), scheduler heartbeat status (Active/Fresh vs Delayed), unhandled attention items deck, and server-origin active workstreams.
+    - Integrated complete UX flows with Loading, Empty, and Error states (with retry actions) into `src/os/components/FlowDesktop.tsx`:
+      - `AttentionList`: Loading ("Synchronizing company operational state..."), Error ("Telemetry Stream Disrupted" + retry), Empty ("All operations nominal").
+      - `DecisionList`: Loading ("Retrieving open decision briefs..."), Error ("Governance Queue Inaccessible" + retry), Empty ("No open decisions").
+      - `ApprovalList`: Dedicated rail card with Loading ("Verifying pending cryptographic authorization gates..."), Error ("Authorization Gate Unreachable" + retry), Empty ("No pending approvals").
+      - `CompanyActivityList`: Loading ("Streaming immutable audit ledger..."), Error ("Audit Stream Unavailable" + retry), Empty ("No activity recorded").
+    - Authored automated regression suite `tests/frontend/fol_surface_states.test.ts` (16/16 PASS).
+    - Verified 100% pass across all 122 executable canonical test suites under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G5.2.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
