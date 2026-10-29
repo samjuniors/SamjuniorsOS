@@ -662,6 +662,28 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // -------------------------------------------------------------
+    // 12. Voice Approval Refusal Gate (AGENTS.md & FOL v1 Invariant)
+    // Consequential side effects CANNOT be approved through voice.
+    // -------------------------------------------------------------
+    if (
+      /\b(?:approve|authorize|sign\s*off)\b/i.test(lowerMsg) &&
+      /\b(?:pr|pull\s*request|github|transfer|payment|action|side\s*effect|change|deploy|deployment|merge|decision|that|this|it|all)\b/i.test(lowerMsg)
+    ) {
+      return NextResponse.json({
+        success: true,
+        turnId,
+        sessionId,
+        providerId: 'governance-gate',
+        modelUsed: 'deterministic-voice-refusal-v1',
+        isDirective: false,
+        reply: 'Consequential actions cannot be approved by voice. Please sign off on the Approvals panel.',
+        action: { type: 'voice_approval_refused' },
+        durationMs: 10,
+        detectedIntent: 'voice_approval_refusal',
+      });
+    }
+
     // Determine if utterance is a company directive requiring Council orchestration
     const isDirective =
       userSpokenText.length > 0 &&
