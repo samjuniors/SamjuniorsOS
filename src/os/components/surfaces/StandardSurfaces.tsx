@@ -4,6 +4,8 @@ import type {
   AttentionData,
   WorkData,
   DecisionData,
+  ApprovalData,
+  CockpitData,
   ActivityEvent,
   MetricItem,
   TimelineMilestone,
@@ -407,6 +409,224 @@ export function DecisionSurface({
         <div className="mt-2.5 flex items-center gap-2 text-[11px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded">
           <span>✓ {decision.status}:</span>
           <span className="font-semibold text-white">{decision.chosen ?? "Confirmed"}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ------------------------------------------------------------------ 4b. ApprovalSurface */
+
+export function ApprovalSurface({
+  approval,
+  onDecide,
+}: {
+  approval: ApprovalData;
+  onDecide?: (action: "approve" | "reject") => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAction = async (action: "approve" | "reject") => {
+    if (submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (onDecide) {
+        await onDecide(action);
+      } else if (action === "approve") {
+        approval.onApprove?.();
+      } else {
+        approval.onReject?.();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isPending = approval.status === "pending";
+
+  return (
+    <div className="rounded-xl border border-amber-400/30 bg-amber-400/[0.06] hover:bg-amber-400/10 p-3.5 backdrop-blur-md transition-all">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-amber-400 text-xs shrink-0">🛡️</span>
+          <StatusPill status="waiting" label="Waiting on Founder" />
+          <span className="text-[10px] font-mono text-slate-400 truncate">
+            {approval.employeeRole}
+          </span>
+        </div>
+        <span className="text-[10px] font-mono text-slate-500 shrink-0">
+          {new Date(approval.requestedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
+
+      <div className="mt-2 min-w-0">
+        <h4 className="text-xs font-bold text-slate-100 font-mono tracking-tight break-all">
+          {approval.actionName}
+        </h4>
+        {approval.classification && (
+          <span className="inline-block mt-0.5 text-[9.5px] font-mono uppercase tracking-wider text-amber-300/80">
+            {approval.classification} {approval.workflowInstanceId ? `· ${approval.workflowInstanceId}` : ""}
+          </span>
+        )}
+      </div>
+
+      {(approval.notes || approval.target?.summary) && (
+        <p className="text-[11px] text-slate-300 mt-2 leading-relaxed bg-black/50 p-2 rounded-lg border border-white/[0.08]">
+          {approval.target?.summary || approval.notes}
+        </p>
+      )}
+
+      {/* Cryptographic Payload Binding Preview */}
+      <div className="mt-2.5 p-2 rounded-lg bg-black/40 border border-white/[0.06] space-y-1">
+        <div className="flex items-center justify-between text-[9.5px] font-mono">
+          <span className="text-slate-400 uppercase tracking-wider">Payload Binding:</span>
+          <span className="text-cyan-300 font-semibold truncate max-w-[170px]" title={approval.payloadHash ?? "SHA-256 bound tuple"}>
+            {approval.payloadHash ? `SHA-256: ${approval.payloadHash.slice(0, 16)}…` : "SHA-256 bound tuple"}
+          </span>
+        </div>
+        {approval.workflowObjective && (
+          <div className="text-[9.5px] font-mono text-slate-400 truncate">
+            Objective: {approval.workflowObjective}
+          </div>
+        )}
+      </div>
+
+      {/* Security Voice Refusal Notice (Invariant: 0% Voice Approval) */}
+      <div className="mt-2 px-2 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-200/90 flex items-start gap-1.5 leading-snug">
+        <span className="shrink-0 text-amber-400">⚠️</span>
+        <span>Voice authorization refused: Consequential side-effects require authenticated visual panel sign-off per security policy.</span>
+      </div>
+
+      {error && (
+        <div className="mt-2 text-[10px] font-mono text-rose-300 bg-rose-500/10 border border-rose-500/30 p-1.5 rounded">
+          Gate refusal: {error}
+        </div>
+      )}
+
+      {isPending ? (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => handleAction("reject")}
+            className="px-3 py-1 rounded-lg text-xs font-medium font-mono uppercase tracking-wider bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {submitting ? "..." : "Reject"}
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => handleAction("approve")}
+            className="px-3.5 py-1 rounded-lg text-xs font-semibold font-mono uppercase tracking-wider bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.2)] transition-all active:scale-95 disabled:opacity-50"
+          >
+            {submitting ? "..." : "Approve"}
+          </button>
+        </div>
+      ) : (
+        <div className={`mt-2.5 flex items-center gap-2 text-[11px] font-mono px-2 py-1 rounded border ${
+          approval.status === "approved"
+            ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30"
+            : "text-rose-300 bg-rose-500/10 border-rose-500/30"
+        }`}>
+          <span>{approval.status === "approved" ? "✓ Approved" : "✕ Rejected"} by Founder</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ 4c. CockpitSurface */
+
+export function CockpitSurface({
+  data,
+  onHandleAttention,
+  onSelectWork,
+  onRetry,
+}: {
+  data: CockpitData;
+  onHandleAttention?: (id: string) => void;
+  onSelectWork?: (id: string) => void;
+  onRetry?: () => void;
+}) {
+  if (data.loading) {
+    return <LoadingState message="Synchronizing company operational state..." />;
+  }
+
+  if (data.error) {
+    return (
+      <ErrorState
+        title="Telemetry Stream Disrupted"
+        message={data.error || "Could not synchronize state with authoritative server."}
+        onRetry={onRetry ?? data.onRetry}
+      />
+    );
+  }
+
+  const hasAttention = data.attentionItems.length > 0;
+  const hasWork = data.activeWorkstreams.length > 0;
+
+  if (!hasAttention && !hasWork && data.health.status === "healthy") {
+    return (
+      <EmptyState
+        title="All operations nominal"
+        description="All operations nominal. No unhandled alerts or pending decisions."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Telemetry Spend & Heartbeat Summary */}
+      <div className="p-2.5 rounded-xl border border-white/[0.08] bg-white/[0.02] flex items-center justify-between text-xs font-mono">
+        <div>
+          <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Daily Model Spend:</span>
+          <span className="text-slate-100 font-bold">
+            ${data.health.modelSpendUsd.toFixed(2)} / ${data.health.dailySpendCapUsd.toFixed(2)} Cap
+          </span>
+        </div>
+        <div className="text-right">
+          <span className="text-slate-400 text-[10px] uppercase tracking-wider block">Heartbeat:</span>
+          <span className={`text-[10.5px] uppercase font-semibold ${data.health.heartbeatFresh ? "text-emerald-400" : "text-amber-400"}`}>
+            {data.health.heartbeatFresh ? "● Active / Fresh" : "▲ Delayed"}
+          </span>
+        </div>
+      </div>
+
+      {/* Attention Deck */}
+      {hasAttention ? (
+        <div className="space-y-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 px-1">
+            Attention Items ({data.attentionItems.length})
+          </div>
+          {data.attentionItems.map((a) => (
+            <AttentionSurface
+              key={a.id}
+              attention={a}
+              onResolve={onHandleAttention ? () => onHandleAttention(a.id) : undefined}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          title="All operations nominal"
+          description="All operations nominal. No unhandled alerts or pending decisions."
+        />
+      )}
+
+      {/* Active Workstreams */}
+      {hasWork && (
+        <div className="space-y-1.5 mt-2">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 px-1">
+            Active Workstreams ({data.activeWorkstreams.length})
+          </div>
+          {data.activeWorkstreams.map((w) => (
+            <WorkSurface key={w.id} work={w} compact />
+          ))}
         </div>
       )}
     </div>

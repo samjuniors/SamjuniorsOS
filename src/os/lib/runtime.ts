@@ -633,16 +633,23 @@ let syncing: Promise<void> | null = null;
  *  browser-session supplement. */
 export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> {
   if (syncing) return syncing;
+  os.setSyncStatus("loading");
+  os.setActivitySyncStatus("loading");
   syncing = (async () => {
     try {
       const [roster, runs, approvals, activity, epistemic] = await Promise.all([
         fetchRoster(),
         fetchRuns(),
         fetchApprovals(),
-        fetchActivity().catch((err) => {
+        fetchActivity().then((act) => {
+          os.setActivitySyncStatus("synced");
+          return act;
+        }).catch((err) => {
           // Activity is additive to the core sync: an activity-specific failure
           // must not take down roster/runs/approvals sync. Honest signal only.
-          os.log(`Company activity unavailable: ${err instanceof Error ? err.message : String(err)}`);
+          const msg = err instanceof Error ? err.message : String(err);
+          os.setActivitySyncStatus("error", msg);
+          os.log(`Company activity unavailable: ${msg}`);
           return null;
         }),
         fetchEpistemicBoard().catch((err) => {
@@ -656,10 +663,13 @@ export async function syncFromServer(opts?: { quiet?: boolean }): Promise<void> 
       applyServerReadModel({ roster, runs, approvals });
       if (activity) os.setServerActivity(activity.map(serverActivityToEvent));
       if (epistemic) os.setServerEpistemic(epistemic);
+      os.setSyncStatus("synced");
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      os.setSyncStatus("error", msg);
       if (!opts?.quiet) {
         // Honest signal — never fake a successful sync.
-        os.log(`Server sync unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        os.log(`Server sync unavailable: ${msg}`);
       }
       throw err;
     } finally {
