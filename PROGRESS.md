@@ -88,6 +88,20 @@
 - **Baseline:** Milestone M4 closed on `kit/integration`.
 - **Goal:** The cockpit you look at all day, and voice that feels like talking to a person in the room.
 
+### Milestone M5 Progress:
+- **Completed Steps:**
+  - **G8.1 (Design-system audit against the canonical visual language and fix drift):**
+    - Performed comprehensive audit against `DESIGN.md` Section 2 (Colors, Borders, Accents, Semantics, Glows, Agent Tints), Section 3 (Typography), and Section 5 (Surfaces).
+    - Fixed root token drift: updated `--bg-void` from drifted `#05070c` to canonical `#01040a`; exposed canonical background token family (`--bg-deep: #03060d`, `--bg-surface: #050a14`, `--bg-chrome: #060c18`, `--bg-glass: rgba(4, 10, 20, 0.70)`) and border tokens (`--border-subtle`, `--border-default`, `--border-elevated`, `--border-accent`) in `src/app/globals.css`.
+    - Harmonized semantic signals and glows: aligned warning/needs-you to Amber 300 `#fcd34d` with `rgba(252, 211, 77, 0.8)` glow across CSS, `src/lib/tokens.ts`, and `src/os/components/surfaces/StandardSurfaces.tsx`.
+    - Fixed agent tint and glow inversions in `src/os/lib/osStore.ts` and `src/lib/tokens.ts`: aligned Sophia to Cyan 300 (`#67e8f9`), Dr. Aris Thorne (Research) to Violet 300 (`#c084fc`), Maya Lin (Operations/PM) to Amber 300 (`#fcd34d`), and Julian Cruz (Finance) to Emerald 300 (`#34d399`).
+    - Added universal `.tnum` (`tabular-nums`) and standard glass surface utility classes (`.glass-panel`, `.glass-popover`, `.glass-modal`, `.glass-card`) matching `DESIGN.md` specifications.
+    - Reconciled component styles across `FlowDesktop.tsx`, `SophiaPanel.tsx`, `PersonaModal.tsx`, and `StandardSurfaces.tsx`, eliminating arbitrary dark navy hex variations in favor of canonical tokens.
+    - Added comprehensive automated regression test `tests/design-system/visual_language_tokens.test.ts` (5/5 PASS).
+    - Verified all 121 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G8.1.verify.md`).
+    - Landed on `kit/integration` and pushed to `origin`.
+
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
   - **G12.1 (Decision contract and route taxonomy: converse, recall personal, recall company, research, use tool, delegate, schedule, ask to clarify, propose for approval, refuse):**
