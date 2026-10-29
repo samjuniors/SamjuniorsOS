@@ -34,6 +34,7 @@ import {
   verifyApprovalPayloadBinding,
 } from "@/lib/server/authorization/payload-binding";
 import { DecisionStore } from "@/lib/server/decision/store";
+import { DurableFileStore } from "@/lib/server/persistence/durable-file-store";
 import { ConstitutionalVerifier } from "@/lib/server/orchestration/verifier";
 import { ExecutiveCouncilEngine } from "@/lib/server/orchestration/council";
 import { ServerAgentExecutor, AgentExecutionContext, AgentExecutionResult } from "@/lib/server/agents/executor";
@@ -47,6 +48,8 @@ function req(url: string, init?: RequestInit): NextRequest {
 }
 
 describe("Gate G5.3 — Founder Operating Loop v1 Vertical Slice (End-to-End Real Data)", () => {
+  let createdDecisionId: string | undefined;
+
   beforeEach(() => {
     delete process.env.SAMJUNIORS_DEV_SECRET;
   });
@@ -456,8 +459,6 @@ describe("Gate G5.3 — Founder Operating Loop v1 Vertical Slice (End-to-End Rea
   // JOURNEY 4 (J4): Strategic Decision Resolution & Branching
   // ==========================================================================
   describe("Journey 4 (J4): Strategic Decision Resolution & Branching", () => {
-    let createdDecisionId: string;
-
     test("4.1 Registers strategic decision brief via POST /api/decisions", async () => {
       const decisionPayload = {
         title: "Choose Database Hosting Model for Production",
@@ -585,12 +586,23 @@ describe("Gate G5.3 — Founder Operating Loop v1 Vertical Slice (End-to-End Rea
   });
 
   afterAll(async () => {
-    // Test hygiene: Purge test decisions to keep canonical .data/decisions.json pristine
-    const dataCandidates = [
-      path.resolve(process.cwd(), ".data/decisions.json"),
-      path.resolve(process.cwd(), "prisma/db/.data/decisions.json"),
-    ];
-    for (const p of dataCandidates) {
+    // 1. Explicitly delete test decision record from DurableFileStore
+    try {
+      if (createdDecisionId) {
+        DurableFileStore.getInstance().deleteItemStrict("decisions", createdDecisionId);
+      }
+    } catch {}
+
+    // 2. Test hygiene: Purge test decisions to keep canonical decisions.json pristine across all possible locations
+    const candidateDirs = [
+      DurableFileStore.getInstance().getDataDir(),
+      process.env.SAMJUNIORS_TEST_DATA_DIR,
+      path.resolve(process.cwd(), ".data"),
+      path.resolve(process.cwd(), "prisma/db/.data"),
+    ].filter(Boolean) as string[];
+
+    for (const dir of candidateDirs) {
+      const p = path.join(dir, "decisions.json");
       if (fs.existsSync(p)) {
         try {
           const content = JSON.parse(fs.readFileSync(p, "utf8"));
@@ -602,5 +614,8 @@ describe("Gate G5.3 — Founder Operating Loop v1 Vertical Slice (End-to-End Rea
         } catch {}
       }
     }
+
+    // 3. Reset DecisionStore singleton
+    DecisionStore.resetInstance();
   });
 });
