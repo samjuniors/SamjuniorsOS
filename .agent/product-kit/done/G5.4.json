@@ -1,0 +1,8 @@
+{
+  "id": "G5.4",
+  "doneAt": "2026-10-29T10:04:42.992Z",
+  "agent": "Sofia",
+  "branch": "step/G5.4",
+  "commit": "37d11e2693606c78ad5b47f4ecf28ae494196e1b",
+  "evidence": "Automated tests pass in CI for every journey; if the browser tool cannot launch, record why and use an alternative."
+}
