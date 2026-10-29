@@ -53,7 +53,42 @@ export interface DecisionData {
   at: number;
   status: import("./osStore").DecisionStatus;
   chosen?: string;
+  approvalId?: string;
   onDecide?: (option: string) => void;
+}
+
+export interface ApprovalData {
+  id: string;
+  actionName: string;
+  classification?: string;
+  workflowInstanceId?: string;
+  stepId?: string;
+  employeeRole: string;
+  requestedAt: number;
+  notes?: string;
+  target?: { summary?: string; targetSystem?: string };
+  workflowObjective?: string;
+  payloadHash?: string;
+  payloadPreview?: Record<string, unknown> | string;
+  status: "pending" | "approved" | "rejected";
+  submitting?: boolean;
+  onApprove?: () => void;
+  onReject?: () => void;
+}
+
+export interface CockpitData {
+  attentionItems: AttentionData[];
+  health: {
+    status: SurfaceStatus;
+    modelSpendUsd: number;
+    dailySpendCapUsd: number;
+    heartbeatFresh: boolean;
+    lastHeartbeat?: string | number;
+  };
+  activeWorkstreams: WorkData[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export interface ActivityEvent {
@@ -169,6 +204,7 @@ export function decisionToDecisionData(d: Decision, onDecide?: (opt: string) => 
     at: d.at,
     status: d.status,
     chosen: d.chosen,
+    approvalId: d.approvalId,
     onDecide,
   };
 }

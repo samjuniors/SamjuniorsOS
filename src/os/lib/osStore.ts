@@ -88,7 +88,13 @@ export type LiveVoiceState = {
   error: string | null;
 };
 
+export type SyncStatus = "idle" | "loading" | "error" | "synced";
+
 export type OSState = {
+  syncStatus: SyncStatus;
+  syncError: string | null;
+  activitySyncStatus: SyncStatus;
+  activitySyncError: string | null;
   attention: AttentionItem[];
   decisions: Decision[];
   work: Workstream[];
@@ -188,6 +194,10 @@ const SEED: OSState = {
   activity: [],
   epistemic: null,
   dismissed: [],
+  syncStatus: "idle",
+  syncError: null,
+  activitySyncStatus: "idle",
+  activitySyncError: null,
   liveVoice: {
     enabled: false,
     status: 'disconnected',
@@ -253,6 +263,10 @@ function load(): OSState {
       company: { ...SEED.company, ...(saved.company ?? {}) },
       sophia: "idle",
       sessionStart: Date.now(),
+      syncStatus: "idle",
+      syncError: null,
+      activitySyncStatus: "idle",
+      activitySyncError: null,
     };
   } catch {
     return SEED;
@@ -264,7 +278,8 @@ function load(): OSState {
 // after mount via rehydrate() (avoids the server/client branch mismatch).
 let state: OSState = SEED;
 let cachedAttention = state.attention.filter((a) => !a.handled);
-let cachedDecisions = state.decisions.filter((d) => d.status === "open");
+let cachedDecisions = state.decisions.filter((d) => d.status === "open" && !d.approvalId);
+let cachedApprovals = state.decisions.filter((d) => d.status === "open" && Boolean(d.approvalId));
 let cachedWork = state.work.filter((w) => w.state !== "done");
 let hydrated = false;
 
@@ -280,7 +295,8 @@ function rehydrate() {
 
 function updateCaches() {
   cachedAttention = state.attention.filter((a) => !a.handled);
-  cachedDecisions = state.decisions.filter((d) => d.status === "open");
+  cachedDecisions = state.decisions.filter((d) => d.status === "open" && !d.approvalId);
+  cachedApprovals = state.decisions.filter((d) => d.status === "open" && Boolean(d.approvalId));
   cachedWork = state.work.filter((w) => w.state !== "done");
 }
 
@@ -296,7 +312,8 @@ function persist() {
     // Phase 4.4E: same rule for the epistemic board projection — governed
     // epistemic state (claims/facts/memories) is server-authoritative only.
     // Phase 4C-C: liveVoice state is completely ephemeral.
-    const { sophia: _s, sessionStart: _t, activity: _a, epistemic: _e, liveVoice: _lv, ...rest } = state;
+    const { sophia: _s, sessionStart: _t, activity: _a, epistemic: _e, liveVoice: _lv, syncStatus: _ss, syncError: _se, activitySyncStatus: _as, activitySyncError: _ae, ...rest } = state;
+    void _ss; void _se; void _as; void _ae;
     void _s; void _t; void _a; void _e; void _lv;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch { /* storage unavailable */ }
@@ -425,6 +442,8 @@ export const os = {
   /** Append an honest activity-log entry (rendered in the activity surface). */
   log(text: string) { log(text); },
 
+  setSyncStatus(status: SyncStatus, error: string | null = null) { set({ syncStatus: status, syncError: error }); },
+  setActivitySyncStatus(status: SyncStatus, error: string | null = null) { set({ activitySyncStatus: status, activitySyncError: error }); },
   setSophia(mode: SophiaMode) { if (state.sophia !== mode) set({ sophia: mode }); },
   setLastSaid(text: string) { set({ lastSaid: text }); },
 
@@ -690,5 +709,8 @@ export function agentName(id: string) {
 
 export function openAttention(_s: OSState) { return cachedAttention; }
 export function openDecisions(_s: OSState) { return cachedDecisions; }
+export function openApprovals(_s: OSState) { return cachedApprovals; }
+export function syncStatusState(s: OSState) { return { status: s.syncStatus, error: s.syncError }; }
+export function activitySyncStatusState(s: OSState) { return { status: s.activitySyncStatus, error: s.activitySyncError }; }
 export function activeWork(_s: OSState) { return cachedWork; }
 export function liveVoiceState(s: OSState) { return s.liveVoice; }

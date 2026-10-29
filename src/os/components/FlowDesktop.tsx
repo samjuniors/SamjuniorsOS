@@ -9,10 +9,10 @@ import {
 import { FlowEngine, WORLD, REGIONS, deriveGraph, mapGraphDTOToFlowModel, perimeterForNode, type FlowNode, type FlowEdge, type SpatialCard } from "../lib/flow";
 import { osSound } from "../lib/osAudio";
 import {
-  os, useOS, openAttention, openDecisions, activeWork, agentName,
+  os, useOS, openAttention, openDecisions, openApprovals, syncStatusState, activitySyncStatusState, activeWork, agentName,
   type AttentionKind, type Agent, STAGES,
 } from "../lib/osStore";
-import { MetricSurface, TimelineSurface, ActivitySurface } from "./surfaces/StandardSurfaces";
+import { LoadingState, EmptyState, ErrorState, MetricSurface, TimelineSurface, ActivitySurface, ApprovalSurface } from "./surfaces/StandardSurfaces";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 import {
   Phase4Node,
@@ -36,7 +36,7 @@ import {
 } from "@/components/glyphs";
 import type { GraphDTO } from "@/types/graph";
 import type { SchedulerStatusProjection } from "@/types/scheduling";
-import { fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, epistemicAction, refreshEpistemicBoard, type ScheduleListItem } from "../lib/runtime";
+import { syncFromServer, fetchGraphOverview, decideApproval, fetchSchedulerStatus, createScheduledDirective, fetchSchedules, applyScheduleAction, epistemicAction, refreshEpistemicBoard, type ScheduleListItem } from "../lib/runtime";
 
 /* ------------------------------------------------------------- node meta */
 
@@ -904,7 +904,29 @@ function timeAgo(t: number) {
 
 function AttentionList() {
   const items = useOS(openAttention);
-  if (!items.length) return <p className="py-1 text-[12px] text-slate-500">Nothing needs you right now.</p>;
+  const sync = useOS(syncStatusState);
+
+  if (sync.status === "loading" && items.length === 0) {
+    return <LoadingState message="Synchronizing company operational state..." />;
+  }
+  if (sync.status === "error" && items.length === 0) {
+    return (
+      <ErrorState
+        title="Telemetry Stream Disrupted"
+        message={sync.error || "Could not synchronize state with authoritative server."}
+        onRetry={() => syncFromServer().catch(() => undefined)}
+      />
+    );
+  }
+  if (!items.length) {
+    return (
+      <EmptyState
+        title="All operations nominal"
+        description="All operations nominal. No unhandled alerts or pending decisions."
+      />
+    );
+  }
+
   return (
     <ul className="space-y-1.5">
       {items.map((a) => (
@@ -924,6 +946,7 @@ function AttentionList() {
 
 function DecisionList({ onVoice }: { onVoice?: (on: boolean) => void }) {
   const items = useOS(openDecisions);
+  const sync = useOS(syncStatusState);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const decide = (id: string, opt: string) => {
@@ -936,23 +959,43 @@ function DecisionList({ onVoice }: { onVoice?: (on: boolean) => void }) {
       if (v && v.trim()) os.setCompany({ focus: v.trim() });
     }
   };
+
+  if (sync.status === "loading" && items.length === 0) {
+    return <LoadingState message="Retrieving open decision briefs..." />;
+  }
+  if (sync.status === "error" && items.length === 0) {
+    return (
+      <ErrorState
+        title="Governance Queue Inaccessible"
+        message="Failed to retrieve decision inbox. Governance queue inaccessible."
+        onRetry={() => syncFromServer().catch(() => undefined)}
+      />
+    );
+  }
+
   return (
     <div>
-      {!items.length && <p className="py-1 text-[12px] text-slate-500">No open decisions.</p>}
-      <ul className="space-y-2">
-        {items.map((d) => (
-          <li key={d.id} className="rounded-xl border border-cyan-200/15 bg-cyan-300/[0.04] p-2.5">
-            <div className="text-[12.5px] font-medium text-white">{d.title}</div>
-            {d.context && <div className="mt-0.5 text-[11px] leading-snug text-slate-400">{d.context}</div>}
-            <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">raised by {agentName(d.raisedBy)} · {timeAgo(d.at)}</div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {d.options.map((opt, i) => (
-                <button key={opt} onClick={() => decide(d.id, opt)} className={`rounded-md border px-2 py-1 text-[10.5px] uppercase tracking-[0.12em] transition active:scale-95 ${i === 0 ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/25" : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25"}`}>{opt}</button>
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
+      {!items.length ? (
+        <EmptyState
+          title="No open decisions"
+          description="No open decisions. The company is operating within verified parameters."
+        />
+      ) : (
+        <ul className="space-y-2">
+          {items.map((d) => (
+            <li key={d.id} className="rounded-xl border border-cyan-200/15 bg-cyan-300/[0.04] p-2.5">
+              <div className="text-[12.5px] font-medium text-white">{d.title}</div>
+              {d.context && <div className="mt-0.5 text-[11px] leading-snug text-slate-400">{d.context}</div>}
+              <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">raised by {agentName(d.raisedBy)} · {timeAgo(d.at)}</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {d.options.map((opt, i) => (
+                  <button key={opt} onClick={() => decide(d.id, opt)} className={`rounded-md border px-2 py-1 text-[10.5px] uppercase tracking-[0.12em] transition active:scale-95 ${i === 0 ? "border-cyan-300/40 bg-cyan-400/15 text-cyan-100 hover:bg-cyan-400/25" : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/25"}`}>{opt}</button>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       {adding ? (
         <form onSubmit={(e) => { e.preventDefault(); if (draft.trim()) { os.addDecision(draft.trim()); osSound.open(); } setDraft(""); setAdding(false); }} className="mt-2 flex items-center gap-2 rounded-lg border border-cyan-200/30 bg-white/[0.03] px-2 py-1.5">
           <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => { if (!draft.trim()) setAdding(false); }} placeholder="What needs deciding?" className="w-full bg-transparent text-[12px] text-white outline-none placeholder:text-slate-500" />
@@ -961,6 +1004,55 @@ function DecisionList({ onVoice }: { onVoice?: (on: boolean) => void }) {
       ) : (
         <button onClick={() => setAdding(true)} className="mt-2 w-full rounded-lg border border-dashed border-white/10 px-2 py-1.5 text-[11px] text-slate-500 transition hover:border-cyan-200/30 hover:text-cyan-100">+ Raise a decision</button>
       )}
+    </div>
+  );
+}
+
+function ApprovalList() {
+  const approvals = useOS(openApprovals);
+  const sync = useOS(syncStatusState);
+
+  if (sync.status === "loading" && approvals.length === 0) {
+    return <LoadingState message="Verifying pending cryptographic authorization gates..." />;
+  }
+  if (sync.status === "error" && approvals.length === 0) {
+    return (
+      <ErrorState
+        title="Authorization Gate Unreachable"
+        message="Authorization gate unreachable. Consequential operations held locked."
+        onRetry={() => syncFromServer().catch(() => undefined)}
+      />
+    );
+  }
+  if (!approvals.length) {
+    return (
+      <EmptyState
+        title="No pending approvals"
+        description="No pending approvals. Zero consequential actions are waiting for sign-off."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {approvals.map((d) => (
+        <ApprovalSurface
+          key={d.id}
+          approval={{
+            id: d.approvalId || d.id,
+            actionName: d.title,
+            classification: "Consequential Action",
+            employeeRole: agentName(d.raisedBy),
+            requestedAt: d.at,
+            notes: d.context,
+            status: "pending",
+          }}
+          onDecide={(action) => {
+            osSound.click();
+            os.resolveDecision(d.id, action);
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -995,12 +1087,26 @@ function WorkforceList({ onOpen }: { onOpen: (id: string) => void }) {
  *  supplement and is never presented as company history. */
 function CompanyActivityList() {
   const activity = useOS((s) => s.activity);
+  const actSync = useOS(activitySyncStatusState);
+
+  if (actSync.status === "loading" && activity.length === 0) {
+    return <LoadingState message="Streaming immutable audit ledger..." />;
+  }
+  if (actSync.status === "error" && activity.length === 0) {
+    return (
+      <ErrorState
+        title="Audit Stream Unavailable"
+        message="Audit stream unavailable. System activity view temporarily disconnected."
+        onRetry={() => syncFromServer().catch(() => undefined)}
+      />
+    );
+  }
   if (activity.length === 0) {
     return (
-      <p className="py-2 text-[11.5px] leading-snug text-slate-500">
-        No company activity recorded yet. Real executions, approvals and
-        automation lifecycle events will appear here — nothing is simulated.
-      </p>
+      <EmptyState
+        title="No activity recorded"
+        description="No activity recorded for this period."
+      />
     );
   }
   return (
@@ -1387,6 +1493,7 @@ export default function FlowDesktop({
 
   const attention = useOS(openAttention);
   const decisions = useOS(openDecisions);
+  const approvals = useOS(openApprovals);
   const work = useOS(activeWork);
   const agents = useOS((s) => s.agents);
   const company = useOS((s) => s.company);
@@ -2982,6 +3089,11 @@ export default function FlowDesktop({
           <div className="w-[248px] max-lg:w-[266px]">
             <SideCard title="Decisions" icon={<Scale size={13} />} count={decisions.length} tone="amber">
               <DecisionList onVoice={onVoice} />
+            </SideCard>
+          </div>
+          <div className="w-[248px] max-lg:w-[266px]">
+            <SideCard title="Approvals" icon={<ShieldAlert size={13} />} count={approvals.length} tone="amber">
+              <ApprovalList />
             </SideCard>
           </div>
           <div className="w-[248px] max-lg:w-[266px]">
