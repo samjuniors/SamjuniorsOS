@@ -1,0 +1,8 @@
+{
+  "id": "G5.2",
+  "doneAt": "2026-10-29T08:40:15.605Z",
+  "agent": "Sofia",
+  "branch": "step/G5.2",
+  "commit": "f719b2d1680abcb7e5b3c0fd285c03cda48817f4",
+  "evidence": "Flows implemented against server state only; every state designed; no fabricated data."
+}
