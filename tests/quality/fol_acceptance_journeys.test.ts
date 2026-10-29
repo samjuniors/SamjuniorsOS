@@ -1,17 +1,21 @@
-import { describe, it, expect } from "vitest";
-import * as fs from "fs";
-import * as path from "path";
+import { describe, test, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specification", () => {
   const docPath = path.resolve(__dirname, "../../docs/FOL_V1_ACCEPTANCE_JOURNEYS.md");
 
-  it("1. Acceptance journeys specification document must exist and be non-empty", () => {
-    expect(fs.existsSync(docPath), `Expected document to exist at: ${docPath}`).toBe(true);
+  test("1. Acceptance journeys specification document must exist and be non-empty", () => {
+    expect(fs.existsSync(docPath)).toBe(true);
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content.length).toBeGreaterThan(1500);
   });
 
-  it("2. Document must formally reference governing authority and ratified decision G0.2", () => {
+  test("2. Document must formally reference governing authority and ratified decision G0.2", () => {
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content).toContain("G0.2");
     expect(content).toContain("Option C");
@@ -20,7 +24,7 @@ describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specificat
     expect(content).toContain("VISION.md");
   });
 
-  it("3. Document must define all five core acceptance journeys (J1 through J5)", () => {
+  test("3. Document must define all five core acceptance journeys (J1 through J5)", () => {
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content).toMatch(/Journey 1 \(J1\):.*Cockpit/i);
     expect(content).toMatch(/Journey 2 \(J2\):.*Executive Directive/i);
@@ -29,7 +33,7 @@ describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specificat
     expect(content).toMatch(/Journey 5 \(J5\):.*Epistemic Truth.*Crash Recovery/i);
   });
 
-  it("4. Document must specify non-negotiable security and governance invariants", () => {
+  test("4. Document must specify non-negotiable security and governance invariants", () => {
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content).toContain("SHA-256");
     expect(content).toContain("payloadHash");
@@ -39,7 +43,7 @@ describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specificat
     expect(content).toContain("Company Brain");
   });
 
-  it("5. Document must define quantitative measurable success metrics", () => {
+  test("5. Document must define quantitative measurable success metrics", () => {
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content).toContain("Measurable Success Metrics");
     expect(content).toMatch(/1500/);
@@ -48,7 +52,7 @@ describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specificat
     expect(content).toMatch(/100%\s*server-authoritative/i);
   });
 
-  it("6. Document must specify Loading, Empty, and Error states for all four surfaces", () => {
+  test("6. Document must specify Loading, Empty, and Error states for all four surfaces", () => {
     const content = fs.readFileSync(docPath, "utf-8");
     expect(content).toContain("Cockpit");
     expect(content).toContain("Decisions");
