@@ -1,24 +1,107 @@
 @import "tailwindcss";
 
 :root {
-  --cvl-void: #05070c;
-  --cvl-canvas: #080c14;
-  --cvl-panel: #0b111b;
-  --cvl-panel-2: #0e1522;
-  --cvl-line: #182233;
-  --cvl-line-soft: #131c2a;
+  /* Canonical Design Tokens (DESIGN.md Section 2) */
+  --bg-void: #01040a;
+  --bg-deep: #03060d;
+  --bg-surface: #050a14;
+  --bg-chrome: #060c18;
+  --bg-glass: rgba(4, 10, 20, 0.70);
+  --bg-glass-subtle: rgba(255, 255, 255, 0.02);
+  --bg-glass-hover: rgba(255, 255, 255, 0.04);
+
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-elevated: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(103, 232, 249, 0.35);
+
+  --accent-cyan-300: #67e8f9;
+  --accent-cyan-400: #22d3ee;
+  --accent-sky-400: #38bdf8;
+  --accent-sky-500: #0ea5e9;
+
+  --semantic-active: #34d399;
+  --semantic-warning: #fcd34d;
+  --semantic-blocked: #fb7185;
+  --semantic-offline: #475569;
+
+  --glow-active: rgba(52, 211, 153, 0.8);
+  --glow-warning: rgba(252, 211, 77, 0.8);
+  --glow-blocked: rgba(244, 63, 94, 0.8);
+  --glow-working: rgba(52, 211, 153, 0.9);
+  --glow-waiting: rgba(252, 211, 77, 0.9);
+  --glow-cyan: rgba(56, 189, 248, 0.45);
+
+  /* Canonical Agent Tints & Glows (DESIGN.md Section 2) */
+  --agent-sophia: #67e8f9;
+  --agent-sophia-glow: rgba(56, 189, 248, 0.4);
+  --agent-research: #c084fc;
+  --agent-research-glow: rgba(168, 85, 247, 0.4);
+  --agent-operations: #fcd34d;
+  --agent-operations-glow: rgba(251, 146, 60, 0.4);
+  --agent-finance: #34d399;
+  --agent-finance-glow: rgba(52, 211, 153, 0.4);
+  --agent-comms: #fb7185;
+  --agent-comms-glow: rgba(244, 63, 94, 0.4);
+
+  /* Canonical CVL Token Aliases */
+  --cvl-void: var(--bg-void);
+  --cvl-canvas: var(--bg-deep);
+  --cvl-panel: var(--bg-surface);
+  --cvl-panel-2: #08101e;
+  --cvl-line: var(--border-default);
+  --cvl-line-soft: var(--border-subtle);
   --cvl-text: #e6edf7;
   --cvl-muted: #7d8ca3;
   --cvl-dim: #4d5c72;
 
   --cvl-idle: #6b7c93;
-  --cvl-running: #38bdf8;
-  --cvl-signal: #f59e0b;
-  --cvl-completed: #34d399;
-  --cvl-blocked: #f43f5e;
+  --cvl-running: var(--accent-sky-400);
+  --cvl-signal: var(--semantic-warning);
+  --cvl-completed: var(--semantic-active);
+  --cvl-blocked: var(--semantic-blocked);
   --cvl-approval: #a78bfa;
 
   --cvl-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, monospace;
+}
+
+/* Canonical Surfaces (DESIGN.md Section 5) */
+.glass-panel {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-elevated);
+  border-radius: 16px;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 0 60px -15px var(--glow-cyan);
+}
+
+.glass-popover {
+  background: rgba(8, 16, 30, 0.95);
+  border: 1px solid var(--border-elevated);
+  border-radius: 16px;
+  backdrop-filter: blur(48px);
+  -webkit-backdrop-filter: blur(48px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 24px 60px rgba(0, 0, 0, 0.8);
+}
+
+.glass-modal {
+  background: rgba(7, 14, 28, 0.95);
+  border: 1px solid var(--border-elevated);
+  border-radius: 24px;
+  backdrop-filter: blur(48px);
+  -webkit-backdrop-filter: blur(48px);
+  box-shadow: 0 0 50px -10px var(--agent-sophia-glow), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.glass-card {
+  background: var(--bg-glass-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 html,

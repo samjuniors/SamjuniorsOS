@@ -145,7 +145,7 @@ const AGENTS: Agent[] = [
     canDo: ["Market landscape assessment", "Technical feasibility modeling", "Risk matrix evaluation", "Competitive analysis"],
     tools: ["Market intelligence", "Repository research", "Risk evaluation"],
     escalates: "A failed verification, blocked workflow, or action requiring Founder approval.",
-    state: "ready", tint: "text-amber-300", glow: "rgba(251,146,60,0.4)",
+    state: "ready", tint: "text-violet-300", glow: "rgba(168,85,247,0.4)",
   },
   {
     id: "maya", name: "Maya Lin", role: "Principal Product Manager",
@@ -153,7 +153,7 @@ const AGENTS: Agent[] = [
     canDo: ["Draft PRDs & specifications", "Design user workflows", "Define acceptance criteria", "Prioritize backlogs"],
     tools: ["PRD engine", "Workflow architecture", "Acceptance criteria"],
     escalates: "Deploying unverified code or bypassing human-in-the-loop triggers.",
-    state: "ready", tint: "text-emerald-300", glow: "rgba(52,211,153,0.35)",
+    state: "ready", tint: "text-amber-300", glow: "rgba(251,146,60,0.4)",
   },
   {
     id: "julian", name: "Julian Cruz", role: "Chief Financial Analyst",
@@ -161,7 +161,7 @@ const AGENTS: Agent[] = [
     canDo: ["Unit economics modeling", "Compute burn projections", "Pricing tier analysis", "Capital efficiency audits"],
     tools: ["Unit economics engine", "Pricing simulator", "Margin guardrails"],
     escalates: "Any live financial mutation or pricing change without Founder authorization.",
-    state: "ready", tint: "text-violet-300", glow: "rgba(167,139,250,0.35)",
+    state: "ready", tint: "text-emerald-300", glow: "rgba(52,211,153,0.4)",
   },
 ];
 

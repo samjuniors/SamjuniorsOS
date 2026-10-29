@@ -42,7 +42,7 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 backdrop-blur-md sm:p-4" onClick={close} style={{ animation: "os-fade 180ms ease" }}>
       <div
-        className="relative flex max-h-[90vh] w-[460px] max-w-[94vw] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#070e1c]/95 backdrop-blur-2xl"
+        className="relative flex max-h-[90vh] w-[460px] max-w-[94vw] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#060c18]/95 backdrop-blur-2xl"
         onClick={(e) => e.stopPropagation()}
         style={{ boxShadow: `0 0 50px -10px ${agent.glow}, inset 0 1px 0 rgba(255,255,255,0.15)`, animation: "mac-zoom-in 260ms cubic-bezier(0.16, 1, 0.3, 1)" }}
       >
