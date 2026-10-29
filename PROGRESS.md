@@ -139,6 +139,22 @@
     - Verified 100% pass across all 122 executable canonical test suites under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G5.2.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G5.3 (Implement the loop vertical slice end to end with real data):**
+    - Implemented core vertical slice endpoints backed by real server state and durable database persistence:
+      - `GET /api/system/health`: server telemetry, DB connectivity check (`SELECT 1`), latency, and uptime.
+      - `GET /api/attention`: authenticated founder endpoint returning live attention deck items from `CompanyStateStore` merged with pending approval items from `SideEffectAuthorizationGate`.
+      - `GET /api/decisions`, `POST /api/decisions`: authenticated founder endpoints to list and register strategic decision briefs backed by `DecisionStore` and `DecisionLifecycleService`.
+      - `POST /api/decisions/:id/resolve`: authenticated founder endpoint to advance and resolve decision briefs through lifecycle state machine with optimistic concurrency control (`expectedStateVersion`).
+      - Deterministic voice approval refusal gate in `src/app/api/realtime/turn/route.ts`: intercepts voice approval directives on consequential side effects and returns explicit refusal quote (*"Consequential actions cannot be approved by voice. Please sign off on the Approvals panel."*), guaranteeing 0% voice approval rate.
+    - Authored comprehensive integration test suite `tests/quality/fol_vertical_slice.test.ts` (15/15 tests passing, 143 assertions):
+      - Journey 1 (J1): Cockpit morning ingress with health latency <= 1500 ms, authentic attention deck items, and daily model spend tracking.
+      - Journey 2 (J2): Directive classification, Executive Council deliberation (Thorne, Maya, Julian, Sophia COO), and `ConstitutionalVerifier` margin floor check (85% >= 80%).
+      - Journey 3 (J3): Cryptographic SHA-256 bound approvals, 1-bit tamper detection fail-closed, voice approval refusal (0% voice authorization), and idempotent panel approval commits to audit ledger.
+      - Journey 4 (J4): Strategic decision registration, resolution via `/api/decisions/:id/resolve`, and durable persistence.
+      - Journey 5 (J5): Epistemic truth and process crash recovery preserving 100% of pending approvals and zero activity sequence drift.
+    - Verified 100% pass across all 123 executable canonical test suites under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G5.3.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
