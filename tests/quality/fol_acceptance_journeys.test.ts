@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 describe("Gate G5.1 — Founder Operating Loop v1 Acceptance Journeys Specification", () => {
-  const docPath = path.resolve(__dirname, "../../doc/FOL_V1_ACCEPTANCE_JOURNEYS.md");
+  const docPath = path.resolve(__dirname, "../../docs/FOL_V1_ACCEPTANCE_JOURNEYS.md");
 
   it("1. Acceptance journeys specification document must exist and be non-empty", () => {
     expect(fs.existsSync(docPath), `Expected document to exist at: ${docPath}`).toBe(true);
