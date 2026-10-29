@@ -1,0 +1,8 @@
+{
+  "id": "G5.3",
+  "doneAt": "2026-10-29T09:29:52.489Z",
+  "agent": "Sofia",
+  "branch": "step/G5.3",
+  "commit": "6a8de8ea75cfc5a06af1bf55457bdb037ff0d229",
+  "evidence": "The journeys run against a real environment with real approvals and a real audit trail."
+}
