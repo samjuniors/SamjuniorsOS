@@ -155,6 +155,18 @@
     - Verified 100% pass across all 123 executable canonical test suites under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G5.3.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G5.4 (End-to-end browser tests for every journey):**
+    - Authored automated browser test suite in `tests/e2e/fol_browser_journeys.test.ts` (14/14 tests passing, 58 assertions) covering Section 0 diagnostics and Journeys J1–J5:
+      - Section 0: Browser tool launch capability check; persists diagnostic metadata to `.data/browser_launch_diagnostic.json` (timestamp, tool, failure reason, environment, alternativeStrategy) when browser binary cannot launch, triggering headless alternative runner.
+      - Journey 1 (J1): Cockpit morning ingress with health latency <= 1500 ms, DOM `CockpitSurface` render with spend counter, and operational states (Loading, Empty, Error with retry).
+      - Journey 2 (J2): Executive directive turn ingress with immediate conversational receipt quote, Council orchestration (Thorne, Maya, Julian, Sophia COO), and `ConstitutionalVerifier` margin floor check (85% >= 80%).
+      - Journey 3 (J3): Cryptographic SHA-256 bound approvals, amber seal ("Waiting on Founder"), prominent Voice Refusal Notice, 1-bit tamper detection fail-closed, voice approval rejection (0% voice authorization), and idempotent panel approval committing to audit ledger.
+      - Journey 4 (J4): Strategic decision registration, visual surface separation, option resolution via `/api/decisions/:id/resolve`, and durable persistence.
+      - Journey 5 (J5): Epistemic truth and process crash recovery preserving 100% of pending approvals without state loss, and chronological Activity projection.
+    - Updated `tests/e2e/founder_operating_loop.browser.test.ts` to use dynamic artifact paths and record launch diagnostics when browser or server is unreachable, avoiding uncaught process crashes.
+    - Verified 100% pass across all 124 executable canonical test suites under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G5.4.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
