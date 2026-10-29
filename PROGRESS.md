@@ -101,6 +101,25 @@
     - Verified all 121 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G8.1.verify.md`).
     - Landed on `kit/integration` and pushed to `origin`.
+  - **G0.2 (DECISION: ratify the Founder Operating Loop v1 release direction):**
+    - Founder formally ratified Option C: "Ratify FOL with recorded amendments as the thin first slice of the vision".
+    - Recorded decision in `.agent/product-kit/done/G0.2.json` with founder quote: `"CONTINUE USE RECOMENDED (Option C: Ratify FOL with recorded amendments as the thin first slice of the vision)"`.
+    - Unblocked core loop steps (G5.1, G5.2, G5.3, G5.4) and responsive layout / Android path decision (G8.4).
+    - Committed and pushed to `origin/kit/integration`.
+  - **G5.1 (Write acceptance journeys and success metrics for the v1 loop):**
+    - Authored authoritative specification in `docs/FOL_V1_ACCEPTANCE_JOURNEYS.md` detailing 5 core acceptance journeys:
+      - J1: Cockpit Morning Ingress & Situational Awareness (honest real-state greeting, attention deck triage, spend counter).
+      - J2: Executive Directive to Structured Council Deliberation (Dr. Thorne, Maya Lin, Julian Cruz, deterministic ConstitutionalVerifier).
+      - J3: Consequential Action & Cryptographic Approval Gate (SHA-256 canonical tuple hashing `payloadHash`, fail-closed gate, strict voice refusal for approvals).
+      - J4: Strategic Decision Resolution & Branching (Decisions Inbox, durable records, event propagation).
+      - J5: Epistemic Truth, Durable Audit & Crash Recovery (zero state loss, append-only ledger integrity).
+    - Defined quantitative success criteria ($P_{95} \le 1500$ ms Cockpit latency, $P_{95} \le 800$ ms decision dispatch, 100% fail-closed side effect gate, 0% voice approval rate, 100% SHA-256 payload binding).
+    - Specified complete UI operational state matrices (Loading, Empty, Error) for Cockpit, Decisions, Approvals, and Activity.
+    - Authored automated regression suite `tests/quality/fol_acceptance_journeys.test.ts` (6/6 PASS).
+    - Hardened test runner hygiene (`scripts/test-runner.mjs`) and scheduler test teardowns (`tests/scheduler/phase4_4b1_governance.test.ts`, `tests/scheduler/phase4_4c_activity.test.ts`) restoring `audit_anchors` across runs, resolving multi-suite anchor chain divergence.
+    - Verified all 121 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G5.1.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
