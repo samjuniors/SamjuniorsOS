@@ -1,0 +1,8 @@
+{
+  "id": "G5.1",
+  "doneAt": "2026-10-29T07:36:19.568Z",
+  "agent": "Sofia",
+  "branch": "kit/integration",
+  "commit": "843ca05fbe3f8c59f22d9d96581aec9f8bc40995",
+  "evidence": "doc/FOL_V1_ACCEPTANCE_JOURNEYS.md; vitest tests/quality/fol_acceptance_journeys.test.ts passing (6/6); typecheck clean"
+}

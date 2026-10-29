@@ -44,7 +44,7 @@
  */
 import "./env-setup";
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { WorkflowScheduler } from "../../src/lib/server/workflow/scheduler";
@@ -99,6 +99,11 @@ try {
 } catch {
   /* store shape differs — best-effort only */
 }
+
+const anchorDir = join(getTestDataDir(), "audit_anchors");
+const initialAnchorFiles = existsSync(anchorDir)
+  ? readdirSync(anchorDir).map((f) => ({ name: f, content: readFileSync(join(anchorDir, f)) }))
+  : [];
 
 const createdInstanceIds = new Set<string>();
 const createdDefinitionIds = new Set<string>();
@@ -188,6 +193,16 @@ afterAll(async () => {
   // 3. Durable file collections (surgical — only this suite's ids).
   purgeDurableIds("approvals", new Set(addedApprovalIds));
   purgeDurableIds("audits", new Set(addedAuditIds));
+
+  // 3b. Restore anchor checkpoints to pre-test baseline
+  if (existsSync(anchorDir)) {
+    for (const f of readdirSync(anchorDir)) {
+      try { rmSync(join(anchorDir, f), { force: true }); } catch {}
+    }
+    for (const f of initialAnchorFiles) {
+      writeFileSync(join(anchorDir, f.name), f.content);
+    }
+  }
 
   // 4. Database rows (throwaway copy first, then the real dev DB — exact ids).
   await purgeRealDbArtifacts(addedApprovalIds, addedAuditIds, Array.from(createdScheduleIds));

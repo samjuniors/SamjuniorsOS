@@ -38,7 +38,7 @@
  */
 import "./env-setup";
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync, readFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve, isAbsolute } from "path";
 import { WorkflowScheduler } from "../../src/lib/server/workflow/scheduler";
@@ -711,10 +711,20 @@ describe("Phase 4.4C — Activity survives a REAL process restart", () => {
     }
     writeCollection("approvals", apprRows);
     const auditRows: Record<string, unknown> = {};
-    for (const id of (auditStore.audits as Map<string, any>).keys()) {
-      if (!initialAuditIds.has(id)) auditRows[id] = (auditStore.audits as Map<string, any>).get(id);
+    for (const [id, r] of (auditStore.audits as Map<string, any>).entries()) {
+      auditRows[id] = r;
     }
     writeCollection("audits", auditRows);
+
+    // Copy audit_anchors so cold-start audit store verification succeeds
+    const sourceAnchors = join(getTestDataDir(), "audit_anchors");
+    const targetAnchors = join(restartDir, ".data", "audit_anchors");
+    if (existsSync(sourceAnchors)) {
+      mkdirSync(targetAnchors, { recursive: true });
+      for (const f of readdirSync(sourceAnchors)) {
+        copyFileSync(join(sourceAnchors, f), join(targetAnchors, f));
+      }
+    }
 
     // Scheduled items recover from SQLite: copy the CURRENT env DB copy.
     copyFileSync(TEST_DB, join(restartDir, "restart.db"));
@@ -728,6 +738,7 @@ describe("Phase 4.4C — Activity survives a REAL process restart", () => {
           cwd: restartDir,
           env: {
             ...process.env,
+            SAMJUNIORS_TEST_DATA_DIR: dataDir,
             DATABASE_URL: `file:${join(restartDir, "restart.db").replace(/\\/g, "/")}`,
           },
         }
