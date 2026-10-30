@@ -200,6 +200,17 @@
     - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.3.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.4 (Approvals only through panel or phone; voice can propose, never approve):**
+    - Extended `FounderApprovalRecord` and gate types with `channel?: 'panel' | 'phone' | 'voice' | 'api' | string`.
+    - Hardened `SideEffectAuthorizationGate.decideApproval` to fail closed if `channel === 'voice' && decision === 'approved'`: `Voice approval rejected: Consequential actions cannot be approved by voice (Gate G6.4). Approvals must be decided through panel or phone.`.
+    - Hardened both `PostgresApprovalStore` and `InMemoryApprovalStore` to fail closed and preserve approval record in `pending` status on voice approval attempts while recording verified channels (`panel`, `phone`).
+    - Updated `SophiaServerGateway` to immediately refuse `approval_proposal` with `decision === 'approved'` when `channel === 'voice'` or `ingress === 'live_voice' | 'voice'`, returning authoritative refusal and avoiding candidate guessing.
+    - Threaded `channel` through `executeSophiaTurn`, `LiveInteractionServer`, and `/api/realtime/turn`, defaulting `/api/workflow/approvals` desktop requests to `channel: 'panel'`.
+    - Authored automated regression suite `tests/sophia/g6_4_voice_approval_refusal.test.ts` (10/10 PASS) proving spoken approval through `executeSophiaTurn`, `LiveInteractionServer`, `/api/realtime/turn`, and direct store/gate calls cannot satisfy the approval gate, while voice can propose directives and panel/phone can approve.
+    - Verified all 129 test suites under canonical runner (105 passed, 0 failed, 24 Bun-divergent skipped).
+    - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.4.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
