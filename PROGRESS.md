@@ -167,6 +167,19 @@
     - Verified 100% pass across all 124 executable canonical test suites under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G5.4.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.1 (Provider-neutral adapter for streamed open-topic conversation):**
+    - Extended `ConversationProvider` interface in `src/lib/server/ai/types.ts` with optional `streamText(options, onDelta)`.
+    - Implemented `streamText` in `FakeConversationProvider` (`src/lib/server/ai/providers/fake.ts`) breaking tokens into simulated chunks.
+    - Implemented `streamText` in `GeminiConversationProvider` (`src/lib/server/ai/providers/gemini.ts`) using SSE `streamGenerateContent?alt=sse` parsing.
+    - Added `executeStream` and exported `streamConversationReply` in `src/lib/server/ai/adapter.ts`, with circuit-breaking and automatic failover across the candidate chain.
+    - Implemented `FakeRealtimeModelProvider` in `src/lib/server/live/providers/fake-provider.ts` for fast, offline, deterministic testing of realtime turns.
+    - Refactored `src/lib/server/live/providers/index.ts` to register both Gemini and Fake providers, dynamically resolving the active provider via `getActiveRealtimeProviderId()` rather than hardcoding `'gemini'`.
+    - Updated `src/app/api/realtime/turn/route.ts` to make `providerId` parameter optional and resolve through `getRealtimeProvider()` dynamically.
+    - Added 2000 ms timeout and fail-fast network abort to `GeminiRealtimeProvider`, eliminating hang cycles on rate limits or offline conditions.
+    - Authored automated regression suite `tests/sophia/g6_1_provider_neutral_streaming.test.ts` (8/8 PASS).
+    - Verified all 126 test suites under canonical runner (100 executable suites passing, 0 failures, 0 regressions across existing suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.1.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
