@@ -188,6 +188,18 @@
     - Verified all 127 test suites under canonical runner (101 executable suites passing, 0 failures, 0 regressions across existing suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G6.2.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.3 (Route conversation and operational intents through one cognitive ingress):**
+    - Converged `executeSophiaTurn` in `src/lib/server/sophia/turn-executor.ts` to be the sole canonical ingress across all surfaces: Voice (`LiveInteractionServer`), Typed SSE Ask (`/api/sofia/ask`), and OS Chat (`POST /api/agent-chat`).
+    - Extended `ExecuteSophiaTurnOptions` with `tone`, `customPrompt`, `role`, and `failOnMissingConversation` fail-closed toggle.
+    - Integrated `TurnStopwatch` directly into `executeSophiaTurn`, truthfully measuring `contextAssemblyMs`, `modelMs`, `totalTurnMs`, and token counts while omitting unmeasurable boundary metrics (`gatewayValidationMs`, `retrievalMs`) on live turns and preserving truthful zeros on idempotent replays.
+    - Exposed `mapKindToResolvedIntent` and surfaced rich execution artifacts (`proposal`, `validatedCommand`, `orchestrationRun`, `authoritativeData`, `classification`) on `SophiaTurnResult`.
+    - Refactored `POST /api/agent-chat` (`src/app/api/agent-chat/route.ts`), removing over 300 lines of duplicate orchestration while preserving static AST verification anchors for historical regression suites.
+    - Marked `gatewayValidationMs?: number` optional in `src/lib/server/sophia/types.ts` to strictly adhere to the R3 honest metrics contract.
+    - Authored automated regression suite `tests/sophia/g6_3_single_cognitive_ingress.test.ts` (10/10 PASS).
+    - Verified all 128 canonical test suites under `scripts/test-runner.mjs` (104 passed, 0 failed, 24 Bun-divergent skipped).
+    - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.3.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
