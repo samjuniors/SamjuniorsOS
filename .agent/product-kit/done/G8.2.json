@@ -1,0 +1,8 @@
+{
+  "id": "G8.2",
+  "doneAt": "2026-10-30T11:42:58.034Z",
+  "agent": "lead",
+  "branch": "step/G8.2",
+  "commit": "1a8307483d445172d338770cf079e8ef66b40371",
+  "evidence": "docs/accessibility/WCAG_2_2_AA_AUDIT_REPORT.md and tests/frontend/g8_2_accessibility_wcag_audit.test.ts (20/20 PASS)"
+}

@@ -23,25 +23,33 @@ export default function AgentQuickDock({ onSelectAgent }: { onSelectAgent: (id: 
     <div className="fixed left-1/2 z-40 -translate-x-1/2 transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)]" style={{ bottom: collapsed ? "-38px" : "10px" }}>
       <div className="flex flex-col items-center">
         <button
+          type="button"
           onClick={() => { osSound.click(); setCollapsed(!collapsed); }}
           title={collapsed ? "Show workforce" : "Hide workforce"}
-          className="group flex h-5 cursor-pointer items-center justify-center rounded-t-xl border-l border-r border-t border-cyan-400/30 bg-[#070e1c]/90 px-3.5 text-cyan-300 shadow-[0_-4px_16px_rgba(0,0,0,0.6)] backdrop-blur-xl transition hover:border-cyan-300 hover:bg-[#0c182d] hover:text-white active:scale-95"
+          aria-label={collapsed ? "Show workforce dock" : "Hide workforce dock"}
+          aria-expanded={!collapsed}
+          aria-controls="agent-workforce-dock"
+          className="group flex h-5 cursor-pointer items-center justify-center rounded-t-xl border-l border-r border-t border-cyan-400/30 bg-[#070e1c]/90 px-3.5 text-cyan-300 shadow-[0_-4px_16px_rgba(0,0,0,0.6)] backdrop-blur-xl transition hover:border-cyan-300 hover:bg-[#0c182d] hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
         >
           <span className="transition-transform duration-300 group-hover:scale-125">{collapsed ? <ChevronUp size={13} strokeWidth={2.5} /> : <ChevronDown size={13} strokeWidth={2.5} />}</span>
           <span className="ml-1 text-[8.5px] font-bold uppercase tracking-widest text-slate-400 group-hover:text-cyan-200">Workforce{waiting ? ` · ${waiting}` : ""}</span>
         </button>
 
         <div
+          id="agent-workforce-dock"
+          role="toolbar"
+          aria-label="Workforce agents"
           className="flex items-center gap-1.5 rounded-2xl border border-white/12 bg-[#060c18]/95 p-1.5 backdrop-blur-2xl sm:gap-2"
           style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.8)" }}
         >
           {agents.map((a) => (
             <button
               key={a.id}
+              type="button"
               onClick={() => { osSound.open(); onSelectAgent(a.id); }}
               title={`${a.name} — ${a.role} · ${a.current ?? STATE_LABEL[a.state]}`}
               aria-label={`Open ${a.name}, ${STATE_LABEL[a.state]}`}
-              className={`os-dock-btn group relative flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 sm:h-11 sm:w-11 ${a.state === "offline" ? "opacity-50" : ""}`}
+              className={`os-dock-btn group relative flex h-10 w-10 items-center justify-center rounded-xl hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 sm:h-11 sm:w-11 ${a.state === "offline" ? "opacity-50" : ""}`}
             >
               {/* Clean flat identity avatar — dark disc, thin border, flat tint icon */}
               <span

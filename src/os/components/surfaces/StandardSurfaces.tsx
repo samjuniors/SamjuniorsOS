@@ -512,17 +512,19 @@ export function ApprovalSurface({
         <div className="mt-3 flex items-center justify-end gap-2">
           <button
             type="button"
+            aria-label={`Reject ${approval.actionName}`}
             disabled={submitting}
             onClick={() => handleAction("reject")}
-            className="px-3 py-1 rounded-lg text-xs font-medium font-mono uppercase tracking-wider bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-50"
+            className="px-3 py-1 rounded-lg text-xs font-medium font-mono uppercase tracking-wider bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-rose-400 focus-visible:outline-offset-1"
           >
             {submitting ? "..." : "Reject"}
           </button>
           <button
             type="button"
+            aria-label={`Approve ${approval.actionName}`}
             disabled={submitting}
             onClick={() => handleAction("approve")}
-            className="px-3.5 py-1 rounded-lg text-xs font-semibold font-mono uppercase tracking-wider bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.2)] transition-all active:scale-95 disabled:opacity-50"
+            className="px-3.5 py-1 rounded-lg text-xs font-semibold font-mono uppercase tracking-wider bg-cyan-500/20 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400/50 shadow-[0_0_12px_rgba(34,211,238,0.2)] transition-all active:scale-95 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
           >
             {submitting ? "..." : "Approve"}
           </button>
@@ -854,6 +856,7 @@ export function ListSurface<T>({
             <div className="relative">
               <input
                 type="text"
+                aria-label={searchPlaceholder}
                 value={searchQuery ?? ""}
                 onChange={(e) => onSearchChange(e.target.value)}
                 placeholder={searchPlaceholder}
@@ -861,8 +864,10 @@ export function ListSurface<T>({
               />
               {searchQuery && (
                 <button
+                  type="button"
+                  aria-label="Clear search input"
                   onClick={() => onSearchChange("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300 font-mono"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300 font-mono focus-visible:outline-2 focus-visible:outline-cyan-400"
                 >
                   ✕
                 </button>
@@ -875,8 +880,10 @@ export function ListSurface<T>({
               {filterPills.map((pill) => (
                 <button
                   key={pill.id}
+                  type="button"
+                  aria-pressed={activeFilter === pill.id}
                   onClick={() => onFilterChange?.(pill.id)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-wider transition-all whitespace-nowrap ${
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono tracking-wider transition-all whitespace-nowrap focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${
                     activeFilter === pill.id
                       ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold"
                       : "bg-white/[0.03] hover:bg-white/[0.06] text-slate-400 border border-white/10"

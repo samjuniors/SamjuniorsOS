@@ -2155,8 +2155,8 @@ export default function FlowDesktop({
       {/* ============================ header ============================ */}
       <header className="relative z-30 flex h-[54px] shrink-0 items-center justify-between gap-2 rounded-2xl border border-white/[0.08] bg-[#060c18]/90 px-2.5 backdrop-blur-md sm:px-3.5">
         <div className="flex min-w-0 items-center gap-2">
-          <button onClick={() => { osSound.click(); setLeftOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effLeft ? "Hide attention" : "Show attention"} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 ${effLeft ? "text-cyan-200" : "text-slate-500"}`}><PanelLeftClose size={16} /></button>
-          <button onClick={() => { osSound.click(); setCompanyOpen((v) => !v); }} className={`flex items-center gap-2.5 rounded-xl px-1.5 py-1 transition hover:bg-white/[0.05] ${companyOpen ? "bg-white/[0.06]" : ""}`} title="Company context">
+          <button type="button" onClick={() => { osSound.click(); setLeftOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effLeft ? "Hide attention" : "Show attention"} aria-label={effLeft ? "Hide attention rail" : "Show attention rail"} aria-expanded={effLeft} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${effLeft ? "text-cyan-200" : "text-slate-500"}`}><PanelLeftClose size={16} /></button>
+          <button type="button" onClick={() => { osSound.click(); setCompanyOpen((v) => !v); }} aria-label="Toggle company context details" aria-expanded={companyOpen} className={`flex items-center gap-2.5 rounded-xl px-1.5 py-1 transition hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${companyOpen ? "bg-white/[0.06]" : ""}`} title="Company context">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/[0.03]"><Building2 size={16} className="text-white" /></span>
             <span className="hidden text-left leading-none min-[420px]:block">
               <span className="block text-[15px] font-bold tracking-[0.18em] text-white">{company.name.toUpperCase()}</span>
@@ -2176,8 +2176,8 @@ export default function FlowDesktop({
           <div className="mr-1 hidden items-center gap-2 text-[10px] tracking-[0.2em] text-slate-300 sm:flex">
             {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_8px_2px_rgba(252,211,77,0.8)]" /> {attention.length} NEED YOU</> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.8)]" /> ALL QUIET</>}
           </div>
-          <button onClick={() => { osSound.click(); if (onToggleWork) onToggleWork(); else onPanelOpen?.(); }} title="Work drawer (T)" className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 active:scale-95"><Activity size={14} className="text-cyan-300" /><span className="hidden lg:inline">Work</span>{work.length > 0 && <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-200">{work.length}</span>}</button>
-          <button onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effRight ? "Hide workforce" : "Show workforce"} className={`flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 ${effRight ? "text-cyan-200" : "text-slate-500"}`}><PanelRightClose size={16} /></button>
+          <button type="button" onClick={() => { osSound.click(); if (onToggleWork) onToggleWork(); else onPanelOpen?.(); }} title="Work drawer (T)" aria-label="Toggle work drawer" className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10.5px] uppercase tracking-[0.16em] text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Activity size={14} className="text-cyan-300" /><span className="hidden lg:inline">Work</span>{work.length > 0 && <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.2 font-mono text-[9px] text-cyan-200">{work.length}</span>}</button>
+          <button type="button" onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} title={effRight ? "Hide workforce" : "Show workforce"} aria-label={effRight ? "Hide workforce rail" : "Show workforce rail"} aria-expanded={effRight} className={`flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${effRight ? "text-cyan-200" : "text-slate-500"}`}><PanelRightClose size={16} /></button>
         </div>
 
         {companyOpen && (
@@ -2194,6 +2194,8 @@ export default function FlowDesktop({
       <div className="relative flex min-h-0 flex-1 gap-2 sm:gap-2.5">
         {/* ---------------- left rail: attention + system ---------------- */}
         <aside
+          role="region"
+          aria-label="Attention and systems rail"
           className={`z-20 flex w-[256px] shrink-0 flex-col gap-2.5 overflow-y-auto overflow-x-hidden rounded-2xl border border-white/[0.08] bg-[#060c18]/80 p-3 backdrop-blur-md transition-all duration-500 [scrollbar-width:thin] max-lg:absolute max-lg:inset-y-0 max-lg:left-0 max-lg:w-[278px] max-lg:border-white/12 max-lg:bg-[#060c18]/96 max-lg:shadow-[24px_0_60px_rgba(0,0,0,0.65)] ${effLeft ? "max-lg:translate-x-0" : "max-lg:-translate-x-[112%]"}`}
           style={effLeft ? undefined : { marginLeft: -268, opacity: 0, pointerEvents: "none" }}
         >
@@ -2700,8 +2702,8 @@ export default function FlowDesktop({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <button onClick={() => { osSound.click(); if (selected) focusNode(selected); }} title="Center" className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-cyan-200"><Crosshair size={13} /></button>
-                    <button onClick={() => { osSound.click(); setSelected(null); }} title="Close" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-white"><X size={13} /></button>
+                    <button type="button" onClick={() => { osSound.click(); if (selected) focusNode(selected); }} title="Center" aria-label="Center on selected node" className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Crosshair size={13} /></button>
+                    <button type="button" onClick={() => { osSound.click(); setSelected(null); }} title="Close" aria-label="Close inspector" className="rounded-md p-1.5 text-slate-500 transition hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><X size={13} /></button>
                   </div>
                 </div>
 
@@ -3053,20 +3055,20 @@ export default function FlowDesktop({
             )}
 
 
-            <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/85 p-1 backdrop-blur-md">
-              <button onClick={() => { osSound.click(); setGridOn((v) => !v); }} title="Toggle grid" className={`rounded-lg p-1.5 transition active:scale-90 ${gridOn ? "bg-cyan-300/15 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}><Layers size={13} /></button>
-              <button onClick={() => { osSound.click(); setMapOn((v) => !v); }} title="Toggle minimap" className={`hidden rounded-lg p-1.5 transition active:scale-90 sm:block ${mapOn ? "bg-cyan-300/15 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}><MapIcon size={13} /></button>
-              <button onClick={fitView} title="Fit (0)" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"><Maximize size={13} /></button>
-              <button onClick={recenter} title="Recenter" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"><Crosshair size={13} /></button>
+            <div role="toolbar" aria-label="Canvas view controls" className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/85 p-1 backdrop-blur-md">
+              <button type="button" onClick={() => { osSound.click(); setGridOn((v) => !v); }} title="Toggle grid" aria-label="Toggle grid" role="switch" aria-checked={gridOn} className={`rounded-lg p-1.5 transition active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${gridOn ? "bg-cyan-300/15 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}><Layers size={13} /></button>
+              <button type="button" onClick={() => { osSound.click(); setMapOn((v) => !v); }} title="Toggle minimap" aria-label="Toggle minimap" role="switch" aria-checked={mapOn} className={`hidden rounded-lg p-1.5 transition active:scale-90 sm:block focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${mapOn ? "bg-cyan-300/15 text-cyan-200" : "text-slate-500 hover:text-slate-200"}`}><MapIcon size={13} /></button>
+              <button type="button" onClick={fitView} title="Fit (0)" aria-label="Fit canvas to view" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Maximize size={13} /></button>
+              <button type="button" onClick={recenter} title="Recenter" aria-label="Recenter canvas" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Crosshair size={13} /></button>
             </div>
 
-            <button onClick={() => { osSound.click(); setLeftOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} className="absolute left-0 top-1/2 z-10 hidden h-14 w-4 -translate-y-1/2 items-center justify-center rounded-r-lg border border-l-0 border-white/10 bg-[#0a1220]/90 text-[11px] text-slate-400 backdrop-blur-md transition hover:text-cyan-200 lg:flex"><span className={`transition-transform duration-300 ${effLeft ? "" : "rotate-180"}`}>‹</span></button>
-            <button onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} className="absolute right-0 top-1/2 z-10 hidden h-14 w-4 -translate-y-1/2 items-center justify-center rounded-l-lg border border-r-0 border-white/10 bg-[#0a1220]/90 text-[11px] text-slate-400 backdrop-blur-md transition hover:text-cyan-200 lg:flex"><span className={`transition-transform duration-300 ${effRight ? "" : "rotate-180"}`}>›</span></button>
+            <button type="button" onClick={() => { osSound.click(); setLeftOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} aria-label={effLeft ? "Collapse attention panel" : "Expand attention panel"} aria-expanded={effLeft} className="absolute left-0 top-1/2 z-10 hidden h-14 w-4 -translate-y-1/2 items-center justify-center rounded-r-lg border border-l-0 border-white/10 bg-[#0a1220]/90 text-[11px] text-slate-400 backdrop-blur-md transition hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-cyan-400 lg:flex"><span className={`transition-transform duration-300 ${effLeft ? "" : "rotate-180"}`}>‹</span></button>
+            <button type="button" onClick={() => { osSound.click(); setRightOpen((v) => { if (!v) onPanelOpen?.(); return !v; }); }} aria-label={effRight ? "Collapse workforce panel" : "Expand workforce panel"} aria-expanded={effRight} className="absolute right-0 top-1/2 z-10 hidden h-14 w-4 -translate-y-1/2 items-center justify-center rounded-l-lg border border-r-0 border-white/10 bg-[#0a1220]/90 text-[11px] text-slate-400 backdrop-blur-md transition hover:text-cyan-200 focus-visible:outline-2 focus-visible:outline-cyan-400 lg:flex"><span className={`transition-transform duration-300 ${effRight ? "" : "rotate-180"}`}>›</span></button>
 
-            <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/88 p-1 backdrop-blur-md">
-              <button onClick={() => zoomAt(vw / 2, vh / 2, 1 / 1.18)} title="Zoom out (−)" className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-90"><ZoomOut size={14} /></button>
+            <div role="toolbar" aria-label="Canvas zoom controls" className="absolute bottom-3 left-3 z-10 flex items-center gap-1 rounded-xl border border-white/10 bg-[#060c18]/88 p-1 backdrop-blur-md">
+              <button type="button" onClick={() => zoomAt(vw / 2, vh / 2, 1 / 1.18)} title="Zoom out (−)" aria-label="Zoom out" className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><ZoomOut size={14} /></button>
               <span className="tnum min-w-[46px] text-center font-mono text-[11px] font-semibold text-cyan-200">{zoomPct}%</span>
-              <button onClick={() => zoomAt(vw / 2, vh / 2, 1.18)} title="Zoom in (+)" className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-90"><ZoomIn size={14} /></button>
+              <button type="button" onClick={() => zoomAt(vw / 2, vh / 2, 1.18)} title="Zoom in (+)" aria-label="Zoom in" className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><ZoomIn size={14} /></button>
               <span className="mx-0.5 hidden h-4 w-px bg-white/10 sm:block" />
               <span className="tnum hidden px-1.5 font-mono text-[10.5px] text-slate-500 sm:block"><span ref={cursorRef}>–, –</span></span>
             </div>
@@ -3083,6 +3085,8 @@ export default function FlowDesktop({
 
         {/* ---------------- right rail: workforce + decisions ---------------- */}
         <aside
+          role="region"
+          aria-label="Decisions, approvals, and workforce rail"
           className={`z-20 flex w-[272px] shrink-0 flex-col gap-2.5 overflow-y-auto overflow-x-hidden rounded-2xl border border-white/[0.08] bg-[#060c18]/80 p-3 backdrop-blur-md transition-all duration-500 [scrollbar-width:thin] max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:w-[290px] max-lg:border-white/12 max-lg:bg-[#060c18]/96 max-lg:shadow-[-24px_0_60px_rgba(0,0,0,0.65)] ${effRight ? "max-lg:translate-x-0" : "max-lg:translate-x-[112%]"}`}
           style={effRight ? undefined : { marginRight: -284, opacity: 0, pointerEvents: "none" }}
         >

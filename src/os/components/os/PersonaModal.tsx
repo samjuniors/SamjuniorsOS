@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bot, X, Wrench, CheckCircle2, ShieldAlert, ArrowRight, Pause, Play, ChevronDown } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS, agentName, type Agent } from "../../lib/osStore";
@@ -29,6 +29,17 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
   const relationships = generateAgentRelationships().filter((r) => r.fromId === agent.id || r.toId === agent.id);
 
   const close = () => { osSound.close(); onClose(); };
+  // Close on Escape key
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const toggleOffline = () => {
     osSound.click();
     os.setAgentOffline(agent.id, agent.state !== "offline");
@@ -42,6 +53,9 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-3 backdrop-blur-md sm:p-4" onClick={close} style={{ animation: "os-fade 180ms ease" }}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Role specification for ${agent.name}`}
         className="relative flex max-h-[90vh] w-[460px] max-w-[94vw] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#060c18]/95 backdrop-blur-2xl"
         onClick={(e) => e.stopPropagation()}
         style={{ boxShadow: `0 0 50px -10px ${agent.glow}, inset 0 1px 0 rgba(255,255,255,0.15)`, animation: "mac-zoom-in 260ms cubic-bezier(0.16, 1, 0.3, 1)" }}
@@ -49,12 +63,12 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
         {/* Traffic lights header */}
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-4 py-3">
           <div className="flex items-center gap-2">
-            <button onClick={close} className="flex h-3 w-3 rounded-full border border-[#e0443e] bg-[#ff5f57] transition hover:brightness-110 active:scale-90" title="Close" />
+            <button type="button" onClick={close} aria-label="Close role card" className="flex h-3 w-3 rounded-full border border-[#e0443e] bg-[#ff5f57] transition hover:brightness-110 active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1" title="Close" />
             <span className="h-3 w-3 rounded-full border border-[#d89e24] bg-[#febc2e]" />
             <span className="h-3 w-3 rounded-full border border-[#1fa030] bg-[#28c840]" />
             <span className="ml-2 text-[10.5px] font-bold uppercase tracking-[0.2em] text-slate-400">Workforce · Role</span>
           </div>
-          <button onClick={close} className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"><X size={14} /></button>
+          <button type="button" onClick={close} aria-label="Close role card" className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><X size={14} /></button>
         </div>
 
         <div className="os-scroll space-y-4 overflow-y-auto p-4 sm:p-5">
@@ -108,9 +122,9 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
                       <span className="block text-[10px] uppercase tracking-[0.12em] text-slate-500">{w.stage} · {w.state}</span>
                     </span>
                     {w.state === "active" ? (
-                      <button onClick={() => { osSound.click(); os.setWorkState(w.id, "paused"); }} className="rounded-md p-1 text-slate-400 hover:text-white" title="Pause"><Pause size={12} /></button>
+                      <button type="button" onClick={() => { osSound.click(); os.setWorkState(w.id, "paused"); }} aria-label={`Pause workstream ${w.title}`} className="rounded-md p-1 text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1" title="Pause"><Pause size={12} /></button>
                     ) : w.state !== "done" ? (
-                      <button onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} className="rounded-md p-1 text-slate-400 hover:text-white" title="Resume"><Play size={12} /></button>
+                      <button type="button" onClick={() => { osSound.click(); os.setWorkState(w.id, "active"); }} aria-label={`Resume workstream ${w.title}`} className="rounded-md p-1 text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1" title="Resume"><Play size={12} /></button>
                     ) : null}
                   </li>
                 ))}
@@ -138,15 +152,18 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
 
           {/* V2: Tools & Brief — progressive disclosure with Design2 quote style */}
           <button
+            type="button"
+            aria-expanded={more}
+            aria-controls="persona-tools-escalation"
             onClick={() => { osSound.click(); setMore((m) => !m); }}
-            className="flex w-full items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-slate-400 transition hover:text-slate-200"
+            className="flex w-full items-center justify-between rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] uppercase tracking-[0.16em] text-slate-400 transition hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
           >
             Tools & escalation
             <ChevronDown size={13} className={`transition-transform ${more ? "rotate-180" : ""}`} />
           </button>
 
           {more && (
-            <div className="space-y-3">
+            <div id="persona-tools-escalation" className="space-y-3">
               <div className="space-y-1.5">
                 <span className="flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400"><Wrench size={12} className="text-orange-400" /> Works with</span>
                 <div className="flex flex-wrap gap-1.5">
@@ -179,13 +196,13 @@ export default function PersonaModal({ agentId, onClose }: { agentId: string | n
           <span className="text-[10.5px] text-slate-500">Reports to {agent.id === "sophia" ? "you" : agentName("sophia")}</span>
           <div className="flex items-center gap-2">
             {agent.id !== "sophia" && (
-              <button onClick={toggleOffline} className="rounded-xl border border-white/10 px-3 py-1.5 text-[11px] text-slate-300 transition hover:border-white/25 hover:text-white active:scale-95">
+              <button type="button" onClick={toggleOffline} className="rounded-xl border border-white/10 px-3 py-1.5 text-[11px] text-slate-300 transition hover:border-white/25 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1">
                 {agent.state === "offline" ? "Bring online" : "Take offline"}
               </button>
             )}
             <button
               onClick={() => { osSound.open(); const t = window.prompt(`Assign ${agent.name} a workstream:`); if (t && t.trim()) void dispatchDirective(t.trim(), { agents: ["coo", toServerAgentId(agent.id)] }).catch((err: unknown) => { os.log(`Directive failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`); }); }}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 px-3.5 py-1.5 text-[11.5px] font-bold text-slate-950 shadow-[0_0_15px_rgba(56,189,248,0.4)] transition hover:brightness-110 active:scale-95"
+              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-500 px-3.5 py-1.5 text-[11.5px] font-bold text-slate-950 shadow-[0_0_15px_rgba(56,189,248,0.4)] transition hover:brightness-110 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
             >
               Assign work <ArrowRight size={13} strokeWidth={2.5} />
             </button>
