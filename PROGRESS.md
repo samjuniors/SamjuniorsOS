@@ -180,6 +180,14 @@
     - Verified all 126 test suites under canonical runner (100 executable suites passing, 0 failures, 0 regressions across existing suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G6.1.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.2 (Streaming reply into speech with barge-in and a measured latency budget):**
+    - Authored authoritative `docs/adr/0008-voice-orchestration-and-barge-in-pipecat-livekit-evaluation.md` evaluating Pipecat (BSD-2) and LiveKit Agents (Apache-2.0) against the in-tree TypeScript core per `VISION.md` §12.
+    - Decided to retain the in-tree TypeScript Cascaded Streaming Gateway, borrowing client-side pre-roll ring buffering, immediate audio hardware cutoff (< 5ms), generation ID fencing, and spoken text context reconciliation, while rejecting Python sidecar runtimes and external LiveKit Server daemons.
+    - Built and executed latency benchmark runner `scripts/record-voice-latency-g62.ts`: measured 25 consecutive turns on Windows (`win32 x64`), achieving `p50 = 50 ms` (Budget: $\le 100$ ms, PASS) and `p95 = 67.2 ms` (Budget: $\le 200$ ms, PASS), with reports saved to `docs/benchmarks/2026-10-30-voice-loop-streaming-latency-g62.json` and `.md`.
+    - Authored automated regression test suite `tests/voice/g6_2_streaming_reply_barge_in.test.ts` (7/7 PASS) verifying ADR structure, latency budget compliance, sequential audio buffer streaming, immediate audio cutoff (< 5ms), `AbortController` cancellation on in-flight TTS/LLM turns, generation ID fencing, and clean subsequent turn execution.
+    - Verified all 127 test suites under canonical runner (101 executable suites passing, 0 failures, 0 regressions across existing suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.2.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
