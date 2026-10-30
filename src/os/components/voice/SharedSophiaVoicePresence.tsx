@@ -1,16 +1,19 @@
-
 /**
  * OS desktop controls the SAME SofiaOS singleton as the full-screen Sofia tab.
  * Do not create SophiaLiveClient, a second getUserMedia stream, or another
  * WebSocket: doing so reintroduced push-to-talk and superseded Sofia's session.
+ *
+ * Implements Gate G6.5: Panel fallback when voice is unavailable, with honest presence states.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Square, AlertCircle } from "lucide-react";
+import { Mic, MicOff, Square, AlertCircle, MessageSquare } from "lucide-react";
 import { getSophiaOS, type OSStatus } from "@/sofia/sophia/SophiaOS";
 import type { SophiaStateName } from "@/sofia/sophia/types";
 import { ParticleRenderer } from "@/sofia/engine/ParticleRenderer";
 import { VisualDirector } from "@/sofia/engine/VisualDirector";
 import { STAGE_CY_CENTERED } from "@/sofia/engine/layout";
+import { resolvePresenceState } from "@/os/lib/presence";
+import { os } from "@/os/lib/osStore";
 
 export default function SharedSophiaVoicePresence() {
   const sofia = useMemo(() => getSophiaOS(), []);
@@ -21,6 +24,18 @@ export default function SharedSophiaVoicePresence() {
   const [error, setError] = useState<string | null>(null);
   const [rendererUnavailable, setRendererUnavailable] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = sofia.state.subscribe((next) => setState(next));
@@ -86,6 +101,16 @@ export default function SharedSophiaVoicePresence() {
   const connecting = status === "connecting" || starting;
   const interruptible = state === "speaking" || state === "thinking";
 
+  const presence = useMemo(() => {
+    return resolvePresenceState({
+      isOnline,
+      status,
+      state,
+      micDenied,
+      interrupted: Boolean((sofia as any)?.audio?.isInterrupted),
+    });
+  }, [isOnline, status, state, micDenied, sofia]);
+
   const toggleVoice = useCallback(async () => {
     if (sofia.status === "live") {
       sofia.deactivate("os-desktop-voice-off");
@@ -93,8 +118,13 @@ export default function SharedSophiaVoicePresence() {
       return;
     }
     if (starting || sofia.status === "connecting") return;
+    if (!isOnline) {
+      setError("Network offline. Voice session requires internet connectivity. Text chat fallback is available.");
+      os.openChatPanel("sophia");
+      return;
+    }
     if (sofia.audio.micStatus === "denied") {
-      setError("Microphone permission denied. Allow microphone access in browser settings, then retry.");
+      setError("Microphone permission denied. Allow microphone access in browser settings, or use the text chat panel below.");
       return;
     }
     setError(null);
@@ -107,7 +137,7 @@ export default function SharedSophiaVoicePresence() {
     } finally {
       setStarting(false);
     }
-  }, [sofia, starting]);
+  }, [sofia, starting, isOnline]);
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
@@ -122,9 +152,9 @@ export default function SharedSophiaVoicePresence() {
     return () => window.removeEventListener("keydown", onEscape);
   }, [interruptible, sofia]);
 
-  const statusLabel = connecting ? "Connecting" : micDenied ? "Microphone blocked"
-    : live ? (state === "speaking" ? "Speaking" : state === "thinking" ? "Thinking" : "Listening")
-    : status === "error" || status === "denied" || status === "offline" ? "Voice unavailable" : "Voice off";
+  const openFallback = useCallback(() => {
+    os.openChatPanel("sophia");
+  }, []);
 
   return (
     <section aria-label="Sofia live voice" className="fixed bottom-5 left-5 z-40 flex w-[168px] flex-col items-center gap-2 text-slate-100">
@@ -135,13 +165,38 @@ export default function SharedSophiaVoicePresence() {
           disabled={!interruptible} onClick={() => sofia.interrupt()}
           className="absolute inset-0 rounded-full focus-visible:outline-2 focus-visible:outline-cyan-400 disabled:cursor-default" />
       </div>
-      <div role="status" aria-live="polite" className="rounded-full border border-cyan-400/20 bg-[#06101d]/95 px-3 py-1 text-[11px] font-semibold tracking-wide">
-        {statusLabel}
+
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="presence-status-badge"
+        data-presence-state={presence.state}
+        className={`rounded-full border px-3 py-1 text-[11px] font-semibold tracking-wide transition-colors ${presence.badgeClass}`}
+        aria-label={presence.ariaLabel}
+      >
+        {presence.label}
       </div>
+
+      {/* Prominent panel fallback action when voice is unavailable or offline */}
+      {!presence.isVoiceAvailable && (
+        <button
+          type="button"
+          onClick={openFallback}
+          data-testid="presence-panel-fallback-btn"
+          aria-label="Open text chat panel fallback"
+          title="Open text chat with Sophia"
+          className="flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-cyan-500/20 px-3.5 py-1.5 text-[11px] font-semibold text-cyan-100 shadow-[0_0_15px_rgba(56,189,248,0.25)] transition hover:bg-cyan-500/30 active:scale-95"
+        >
+          <MessageSquare size={13} className="text-cyan-300" />
+          <span>Type to Sophia</span>
+        </button>
+      )}
+
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => void toggleVoice()} disabled={connecting}
+        <button type="button" onClick={() => void toggleVoice()} disabled={connecting || (!isOnline && !live)}
           aria-label={live ? "Stop hands-free conversation" : "Start hands-free conversation"}
-          aria-pressed={live} title={live ? "Stop Sofia" : "Talk naturally with Sofia"}
+          aria-pressed={live}
+          title={!isOnline ? "Voice unavailable while offline — click Type to Sophia" : live ? "Stop Sofia" : "Talk naturally with Sophia"}
           className="grid size-12 place-items-center rounded-2xl border border-cyan-400/30 bg-cyan-500/15 text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-50">
           {live ? <Mic size={22} /> : <MicOff size={22} />}
         </button>
@@ -151,6 +206,7 @@ export default function SharedSophiaVoicePresence() {
           <Square size={16} fill="currentColor" />
         </button>
       </div>
+
       {error && <p role="alert" className="max-w-[260px] rounded-lg border border-rose-400/30 bg-[#160b11]/95 p-2 text-xs text-rose-100">
         <AlertCircle size={14} className="mr-1 inline" />{error}
       </p>}

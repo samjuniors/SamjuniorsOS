@@ -1,0 +1,8 @@
+{
+  "id": "G6.5",
+  "doneAt": "2026-10-30T08:31:19.816Z",
+  "agent": "lead",
+  "branch": "step/G6.5",
+  "commit": "c6ce39821c5edba1b554013db898eb9edc0f4a23",
+  "evidence": "tests/frontend/g6_5_presence_states_and_fallback.test.ts 13/13 PASS; tests/sophia/os_shared_voice_contract.test.ts 1/1 PASS; npx tsc --noEmit exit 0; npm run build exit 0"
+}

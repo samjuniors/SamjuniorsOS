@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, X, Send, Bot, Sparkles } from "lucide-react";
-import { useOS } from "../../lib/osStore";
+import { MessageSquare, X, Send, Bot, Sparkles, AlertCircle } from "lucide-react";
+import { useOS, os } from "../../lib/osStore";
 import { osSound } from "../../lib/osAudio";
 import { agentChat, fetchConversation, toServerAgentId } from "../../lib/runtime";
 
@@ -42,6 +42,39 @@ export default function ChatPanel() {
   });
 
   const agents = useOS((s) => s.agents);
+  const storeChatOpen = useOS((s) => s.chatPanelOpen);
+  const storeContactId = useOS((s) => s.chatPanelContactId);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
+
+  // Sync with global osStore triggers (e.g. from VoicePresence panel fallback)
+  useEffect(() => {
+    if (storeChatOpen !== undefined && storeChatOpen !== open) {
+      setOpen(storeChatOpen);
+      if (storeChatOpen) {
+        osSound.open();
+        setMessages((prev) =>
+          prev.map((m) => (m.agentId === (storeContactId || activeContactId) && !m.read ? { ...m, read: true } : m))
+        );
+      }
+    }
+  }, [storeChatOpen]);
+
+  useEffect(() => {
+    if (storeContactId && storeContactId !== activeContactId) {
+      setActiveContactId(storeContactId);
+    }
+  }, [storeContactId]);
 
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -119,13 +152,16 @@ export default function ChatPanel() {
   const toggleOpen = () => {
     if (!open) {
       osSound.open();
+      os.openChatPanel(activeContactId);
       setMessages((prev) =>
         prev.map((m) => (m.agentId === activeContactId && !m.read ? { ...m, read: true } : m))
       );
+      setOpen(true);
     } else {
       osSound.close();
+      os.closeChatPanel();
+      setOpen(false);
     }
-    setOpen((v) => !v);
   };
 
   const selectContact = (id: string) => {
@@ -287,7 +323,7 @@ export default function ChatPanel() {
             </div>
 
             <button
-              onClick={() => { osSound.close(); setOpen(false); }}
+              onClick={() => { osSound.close(); setOpen(false); os.closeChatPanel(); }}
               className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"
               title="Close chat"
             >
@@ -321,6 +357,18 @@ export default function ChatPanel() {
               );
             })}
           </div>
+
+          {/* Offline Presence Fallback Banner */}
+          {!isOnline && (
+            <div
+              role="status"
+              data-testid="chat-offline-banner"
+              className="flex items-center gap-1.5 border-b border-amber-500/25 bg-amber-500/10 px-3.5 py-1.5 text-[10.5px] font-medium text-amber-200"
+            >
+              <AlertCircle size={13} className="shrink-0 text-amber-400" />
+              <span>Offline mode · Voice unavailable · Queries use deterministic local fallback</span>
+            </div>
+          )}
 
           {/* Conversation Thread */}
           <div className="os-scroll flex-1 space-y-3 overflow-y-auto p-3.5">

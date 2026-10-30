@@ -14,6 +14,8 @@
  *     (LiveTranscriptRibbon): cyan listening, amber thinking, emerald
  *     speaking, rose interrupted/blocked — instead of SofiaUI's
  *     emerald-default scheme.
+ *   - Gate G6.5: Honest presence states supporting offline and voice unavailable
+ *     with panel fallback indication.
  */
 
 import type { SophiaStateName } from "@/sofia/engine/types";
@@ -44,12 +46,24 @@ export interface VoiceStatusPillProps {
   micDenied: boolean;
   /** True while the transport reports an interrupted turn. */
   interrupted: boolean;
+  /** Gate G6.5: Network/host is offline */
+  isOffline?: boolean;
+  /** Gate G6.5: Backend voice provider or audio device error */
+  isVoiceUnavailable?: boolean;
   onClick?: () => void;
   className?: string;
 }
 
 /** Dot colour per state, in the destination's voice language. */
-function dotFor(state: SophiaStateName, micDenied: boolean, interrupted: boolean): string {
+function dotFor(
+  state: SophiaStateName,
+  micDenied: boolean,
+  interrupted: boolean,
+  isOffline?: boolean,
+  isVoiceUnavailable?: boolean
+): string {
+  if (isOffline) return "bg-slate-500 shadow-[0_0_6px_rgba(100,116,139,0.7)]";
+  if (isVoiceUnavailable) return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.9)]";
   if (micDenied) return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.9)] animate-pulse";
   if (interrupted) return "bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.9)]";
   switch (state) {
@@ -79,22 +93,28 @@ export function VoiceStatusPill({
   enabled,
   micDenied,
   interrupted,
+  isOffline,
+  isVoiceUnavailable,
   onClick,
   className = "",
 }: VoiceStatusPillProps) {
   const isPaused = state === "paused" || state === "pause";
   const isStandby = state === "ambient" || state === "idle" || state === "completed";
-  const text = micDenied
-    ? "Mic Blocked · Click to Allow"
-    : !enabled
-      ? "Voice Off · Click to Start"
-      : isPaused
-        ? "Paused"
-        : interrupted
-          ? "Interrupted · Listening…"
-          : STATE_MESSAGES[state] || "Active";
+  const text = isOffline
+    ? "Offline · Text Chat Available"
+    : isVoiceUnavailable
+      ? "Voice Unavailable · Click for Text"
+      : micDenied
+        ? "Mic Blocked · Click to Allow"
+        : !enabled
+          ? "Voice Off · Click to Start"
+          : isPaused
+            ? "Paused"
+            : interrupted
+              ? "Interrupted · Listening…"
+              : STATE_MESSAGES[state] || "Active";
 
-  const breathe = enabled && !isPaused && !micDenied && !isStandby;
+  const breathe = enabled && !isPaused && !micDenied && !isStandby && !isOffline && !isVoiceUnavailable;
 
   return (
     <div
@@ -107,7 +127,15 @@ export function VoiceStatusPill({
       } ${className}`}
     >
       <span className="relative flex size-2.5 shrink-0 items-center justify-center">
-        <span className={`relative inline-flex size-2 rounded-full transition-all duration-300 ${dotFor(state, micDenied, interrupted)} ${breathe ? "voice-status-breathe" : ""}`} />
+        <span
+          className={`relative inline-flex size-2 rounded-full transition-all duration-300 ${dotFor(
+            state,
+            micDenied,
+            interrupted,
+            isOffline,
+            isVoiceUnavailable
+          )} ${breathe ? "voice-status-breathe" : ""}`}
+        />
       </span>
       <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-wide text-white/85">
         {text}
@@ -115,3 +143,4 @@ export function VoiceStatusPill({
     </div>
   );
 }
+export default VoiceStatusPill;
