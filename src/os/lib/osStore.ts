@@ -120,6 +120,9 @@ export type OSState = {
   dismissed: string[];
   /** Phase 4C-C — live interaction voice state (ephemeral, not persisted). */
   liveVoice: LiveVoiceState;
+  /** Gate G6.5 — Panel fallback & chat panel control */
+  chatPanelOpen: boolean;
+  chatPanelContactId: string;
 };
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
@@ -207,6 +210,8 @@ const SEED: OSState = {
     lastReply: '',
     error: null,
   },
+  chatPanelOpen: false,
+  chatPanelContactId: 'sophia',
 };
 
 /** Presentation-layer constants for the authoritative roster. Existence and
@@ -499,6 +504,19 @@ export const os = {
         status: 'disconnected',
         error: null,
       },
+    }));
+  },
+
+  openChatPanel(contactId: string = 'sophia') {
+    set({ chatPanelOpen: true, chatPanelContactId: contactId });
+  },
+  closeChatPanel() {
+    set({ chatPanelOpen: false });
+  },
+  toggleChatPanel(contactId?: string) {
+    set((s) => ({
+      chatPanelOpen: !s.chatPanelOpen,
+      chatPanelContactId: contactId ?? s.chatPanelContactId ?? 'sophia',
     }));
   },
 
