@@ -1,0 +1,8 @@
+{
+  "id": "G6.1",
+  "doneAt": "2026-10-30T04:29:03.472Z",
+  "agent": "lead",
+  "branch": "kit/integration",
+  "commit": "5984ef6119b281fad874bc79fb97bd34f1628a9c",
+  "evidence": "npx tsx tests/sophia/g6_1_provider_neutral_streaming.test.ts (8/8 PASS); npx tsx tests/sophia/m1_1_provider_neutral_conversation.test.ts (8/8 PASS); npx tsc --noEmit (PASS)"
+}

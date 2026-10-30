@@ -3,6 +3,7 @@ import { ConversationProvider, GenerateOptions, ProviderGenerateResult } from '.
 /**
  * Fake Conversation Provider for automated testing, CI, and test doubles.
  * Allows setting canned responses or dynamic generator functions without network calls.
+ * Supports synchronous text generation and simulated token streaming.
  */
 export class FakeConversationProvider implements ConversationProvider {
   public readonly id = 'fake';
@@ -56,5 +57,20 @@ export class FakeConversationProvider implements ConversationProvider {
       model: 'fake-v1',
       liveAi: true,
     };
+  }
+
+  public async streamText(
+    options: GenerateOptions,
+    onDelta: (delta: string) => void
+  ): Promise<ProviderGenerateResult> {
+    const res = await this.generateText(options);
+    // Split into words / whitespace chunks to simulate token deltas
+    const chunks = res.text.split(/(\s+)/);
+    for (const chunk of chunks) {
+      if (chunk.length > 0) {
+        onDelta(chunk);
+      }
+    }
+    return res;
   }
 }

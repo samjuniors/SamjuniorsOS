@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const {
       message,
       sessionId = `sess-${Date.now()}`,
-      providerId = 'gemini',
+      providerId,
       personaId = 'friendly',
       cameraSnapshot,
       audioRecording,
@@ -63,8 +63,7 @@ export async function POST(req: NextRequest) {
 
     // Validate Provider Selection (Prevent Provider Spoofing)
     const validProviders = listRealtimeProviders();
-    const isRegistered = validProviders.some((p) => p.id === providerId);
-    if (!isRegistered) {
+    if (providerId && !validProviders.some((p) => p.id === providerId.toLowerCase().trim())) {
       return NextResponse.json(
         {
           error: `Realtime provider '${providerId}' is not registered. Available: ${validProviders.map((p) => p.id).join(', ')}`,
