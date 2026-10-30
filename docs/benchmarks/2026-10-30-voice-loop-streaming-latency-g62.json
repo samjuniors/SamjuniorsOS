@@ -1,0 +1,233 @@
+{
+  "metadata": {
+    "date": "2026-10-30",
+    "timestamp": "2026-10-30T06:36:20.251Z",
+    "step": "G6.2",
+    "gate": "G6 (Voice conversation on any topic)",
+    "milestone": "M5 (Cockpit and voice that feel finished)",
+    "turnsMeasured": 25,
+    "platform": "win32",
+    "arch": "x64",
+    "cpuModel": "Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz",
+    "nodeVersion": "v24.20.0"
+  },
+  "budget": {
+    "targetP50Ms": 100,
+    "targetP95Ms": 200,
+    "actualP50Ms": 50,
+    "actualP95Ms": 67.2,
+    "p50Passed": true,
+    "p95Passed": true,
+    "budgetMet": true
+  },
+  "summary": {
+    "p50EndToEndFromStopMs": 50,
+    "p95EndToEndFromStopMs": 67.2,
+    "p99EndToEndFromStopMs": 64.72,
+    "minEndToEndFromStopMs": 49,
+    "maxEndToEndFromStopMs": 68,
+    "meanEndToEndFromStopMs": 60.8
+  },
+  "records": [
+    {
+      "turnIndex": 1,
+      "turnId": "g62_stream_turn_1_1793342177684",
+      "endToEndFromStopMs": 65,
+      "sttLatencyMs": 18,
+      "cognitionLatencyMs": 30,
+      "ttsLatencyMs": 17
+    },
+    {
+      "turnIndex": 2,
+      "turnId": "g62_stream_turn_2_1793342177797",
+      "endToEndFromStopMs": 49,
+      "sttLatencyMs": 11,
+      "cognitionLatencyMs": 22,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 3,
+      "turnId": "g62_stream_turn_3_1793342177881",
+      "endToEndFromStopMs": 51,
+      "sttLatencyMs": 13,
+      "cognitionLatencyMs": 24,
+      "ttsLatencyMs": 15
+    },
+    {
+      "turnIndex": 4,
+      "turnId": "g62_stream_turn_4_1793342177972",
+      "endToEndFromStopMs": 56,
+      "sttLatencyMs": 17,
+      "cognitionLatencyMs": 22,
+      "ttsLatencyMs": 17
+    },
+    {
+      "turnIndex": 5,
+      "turnId": "g62_stream_turn_5_1793342178064",
+      "endToEndFromStopMs": 59,
+      "sttLatencyMs": 11,
+      "cognitionLatencyMs": 25,
+      "ttsLatencyMs": 23
+    },
+    {
+      "turnIndex": 6,
+      "turnId": "g62_stream_turn_6_1793342178160",
+      "endToEndFromStopMs": 58,
+      "sttLatencyMs": 14,
+      "cognitionLatencyMs": 29,
+      "ttsLatencyMs": 14
+    },
+    {
+      "turnIndex": 7,
+      "turnId": "g62_stream_turn_7_1793342178258",
+      "endToEndFromStopMs": 63,
+      "sttLatencyMs": 10,
+      "cognitionLatencyMs": 37,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 8,
+      "turnId": "g62_stream_turn_8_1793342178361",
+      "endToEndFromStopMs": 68,
+      "sttLatencyMs": 21,
+      "cognitionLatencyMs": 27,
+      "ttsLatencyMs": 20
+    },
+    {
+      "turnIndex": 9,
+      "turnId": "g62_stream_turn_9_1793342178469",
+      "endToEndFromStopMs": 60,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 26,
+      "ttsLatencyMs": 18
+    },
+    {
+      "turnIndex": 10,
+      "turnId": "g62_stream_turn_10_1793342178574",
+      "endToEndFromStopMs": 61,
+      "sttLatencyMs": 17,
+      "cognitionLatencyMs": 29,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 11,
+      "turnId": "g62_stream_turn_11_1793342178669",
+      "endToEndFromStopMs": 53,
+      "sttLatencyMs": 14,
+      "cognitionLatencyMs": 25,
+      "ttsLatencyMs": 15
+    },
+    {
+      "turnIndex": 12,
+      "turnId": "g62_stream_turn_12_1793342178766",
+      "endToEndFromStopMs": 56,
+      "sttLatencyMs": 12,
+      "cognitionLatencyMs": 26,
+      "ttsLatencyMs": 18
+    },
+    {
+      "turnIndex": 13,
+      "turnId": "g62_stream_turn_13_1793342178861",
+      "endToEndFromStopMs": 50,
+      "sttLatencyMs": 10,
+      "cognitionLatencyMs": 25,
+      "ttsLatencyMs": 15
+    },
+    {
+      "turnIndex": 14,
+      "turnId": "g62_stream_turn_14_1793342178952",
+      "endToEndFromStopMs": 61,
+      "sttLatencyMs": 12,
+      "cognitionLatencyMs": 33,
+      "ttsLatencyMs": 17
+    },
+    {
+      "turnIndex": 15,
+      "turnId": "g62_stream_turn_15_1793342179049",
+      "endToEndFromStopMs": 67,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 34,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 16,
+      "turnId": "g62_stream_turn_16_1793342179161",
+      "endToEndFromStopMs": 64,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 17,
+      "turnId": "g62_stream_turn_17_1793342179274",
+      "endToEndFromStopMs": 63,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 18,
+      "turnId": "g62_stream_turn_18_1793342179375",
+      "endToEndFromStopMs": 63,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 32,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 19,
+      "turnId": "g62_stream_turn_19_1793342179486",
+      "endToEndFromStopMs": 66,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 35,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 20,
+      "turnId": "g62_stream_turn_20_1793342179599",
+      "endToEndFromStopMs": 63,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 31,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 21,
+      "turnId": "g62_stream_turn_21_1793342179704",
+      "endToEndFromStopMs": 63,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 31,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 22,
+      "turnId": "g62_stream_turn_22_1793342179814",
+      "endToEndFromStopMs": 62,
+      "sttLatencyMs": 14,
+      "cognitionLatencyMs": 32,
+      "ttsLatencyMs": 16
+    },
+    {
+      "turnIndex": 23,
+      "turnId": "g62_stream_turn_23_1793342179916",
+      "endToEndFromStopMs": 68,
+      "sttLatencyMs": 18,
+      "cognitionLatencyMs": 33,
+      "ttsLatencyMs": 17
+    },
+    {
+      "turnIndex": 24,
+      "turnId": "g62_stream_turn_24_1793342180033",
+      "endToEndFromStopMs": 67,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 37,
+      "ttsLatencyMs": 15
+    },
+    {
+      "turnIndex": 25,
+      "turnId": "g62_stream_turn_25_1793342180147",
+      "endToEndFromStopMs": 64,
+      "sttLatencyMs": 16,
+      "cognitionLatencyMs": 28,
+      "ttsLatencyMs": 20
+    }
+  ]
+}
