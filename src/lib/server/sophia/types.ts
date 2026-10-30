@@ -298,7 +298,7 @@ export interface TurnMetrics {
   contextAssemblyMs: number;
   retrievalMs?: number;
   modelMs: number;
-  gatewayValidationMs: number;
+  gatewayValidationMs?: number;
   totalTurnMs: number;
   estimatedTokens: {
     input: number;
