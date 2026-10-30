@@ -1,0 +1,8 @@
+{
+  "id": "G6.4",
+  "doneAt": "2026-10-30T08:14:36.145Z",
+  "agent": "lead",
+  "branch": "step/G6.4",
+  "commit": "1a248937c208c6cfca6d340d5e6772acc2445d03",
+  "evidence": "tests/sophia/g6_4_voice_approval_refusal.test.ts 10/10 PASS; tests/sophia/ 87 passed 0 failed; npx tsc --noEmit exit 0"
+}

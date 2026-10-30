@@ -105,6 +105,7 @@ export async function POST(req: NextRequest) {
         reason: reason || 'Approved by Founder',
         expiresAt,
         userContext,
+        channel: (body as any).channel || 'panel',
       });
       return NextResponse.json({ success: true, record });
     } else if (action === 'reject') {
