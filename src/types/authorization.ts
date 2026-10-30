@@ -127,6 +127,7 @@ export interface FounderApprovalRecord {
   payload?: any;
   payloadHash?: string; // SHA-256 cryptographic binding of {actionName, target, payload}
   isConsumed?: boolean;
+  channel?: 'panel' | 'phone' | 'voice' | 'api' | string;
 }
 
 export interface AuthorizationEvaluationRequest {

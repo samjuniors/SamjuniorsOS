@@ -243,8 +243,12 @@ export class PostgresApprovalStore implements IApprovalStore {
     decision: 'approved' | 'rejected' | 'request_revision',
     decidedBy: string,
     reason?: string,
-    expiresAt?: string
+    expiresAt?: string,
+    channel?: 'panel' | 'phone' | 'voice' | 'api' | string
   ): Promise<FounderApprovalRecord> {
+    if (channel === 'voice' && decision === 'approved') {
+      throw new Error('Voice approval rejected: Consequential actions cannot be approved by voice (Gate G6.4).');
+    }
     const db = await requireAuthoritativeDatabase();
     const decidedAt = new Date();
     const updated = await db.approvalRecord.update({
@@ -691,10 +695,14 @@ export class InMemoryApprovalStore implements IApprovalStore {
     decision: 'approved' | 'rejected' | 'request_revision',
     decidedBy: string,
     reason?: string,
-    expiresAt?: string
+    expiresAt?: string,
+    channel?: 'panel' | 'phone' | 'voice' | 'api' | string
   ): Promise<FounderApprovalRecord> {
+    if (channel === 'voice' && decision === 'approved') {
+      throw new Error('Voice approval rejected: Consequential actions cannot be approved by voice (Gate G6.4).');
+    }
     if (isAuthoritativeMode()) {
-      return PostgresApprovalStore.getInstance().decide(id, decision, decidedBy, reason, expiresAt);
+      return PostgresApprovalStore.getInstance().decide(id, decision, decidedBy, reason, expiresAt, channel);
     }
 
     const updated = DurableFileStore.getInstance().withCollectionLockStrict('approvals', () => {
@@ -718,6 +726,7 @@ export class InMemoryApprovalStore implements IApprovalStore {
         decidedAt: new Date().toISOString(),
         decidedBy,
         decisionReason: reason ?? record.decisionReason,
+        channel: channel ?? record.channel,
         expiresAt: expiresAt ?? record.expiresAt,
       };
 

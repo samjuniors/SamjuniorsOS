@@ -17,6 +17,8 @@ export interface GatewayProcessOptions {
   metrics?: TurnMetrics;
   executeDirective?: boolean;
   liveAi?: boolean;
+  ingress?: string;
+  channel?: 'panel' | 'phone' | 'voice' | 'api';
 }
 
 /**
@@ -151,6 +153,23 @@ export class SophiaServerGateway {
 
     // 2. APPROVAL PROPOSAL DISPATCH
     if (sanitizedProposal.kind === 'approval_proposal') {
+      const isVoice = opts.channel === 'voice' || opts.ingress === 'live_voice' || opts.ingress === 'voice';
+      if (isVoice && sanitizedProposal.decision === 'approved') {
+        const reply = `[${persona.name} • ${persona.role}]\nVoice approval refused: Consequential actions cannot be approved by voice. Please sign off on the Approvals panel or via verified phone sign-off.`;
+        return {
+          success: true,
+          validatedCommand: {
+            type: 'CONVERSATION_REPLY',
+            reply,
+          },
+          proposal: sanitizedProposal,
+          reply,
+          directiveExecuted: false,
+          liveAi: false,
+          metrics,
+        };
+      }
+
       const approvalStore = InMemoryApprovalStore.getInstance();
       // ApprovalFilter filters on `status` — the historic `{ decision: ... }`
       // key was a no-op that surfaced decided records as pending candidates.
@@ -208,7 +227,7 @@ export class SophiaServerGateway {
         // its own recorded state (never folded into 'rejected'), and ONLY
         // 'approved' ever authorizes execution downstream.
         if (sanitizedProposal.decision === 'approved') {
-          await approvalStore.decide(targetApproval.id, 'approved', verifiedFounderId, sanitizedProposal.note);
+          await approvalStore.decide(targetApproval.id, 'approved', verifiedFounderId, sanitizedProposal.note, undefined, opts.channel || 'panel');
           const reply = `[${persona.name} • ${persona.role}]\nFounder Governance Decision ratified: [Approved] for "${targetApproval.actionName}" (${targetApproval.id}). The bound payload hash and execution gate have been authorized.`;
           return {
             success: true,

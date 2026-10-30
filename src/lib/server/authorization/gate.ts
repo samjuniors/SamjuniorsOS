@@ -52,6 +52,7 @@ export interface DecideApprovalParams {
   reason?: string;
   expiresAt?: string;
   userContext?: { role?: string; userId?: string };
+  channel?: 'panel' | 'phone' | 'voice' | 'api';
 }
 
 export interface RevokeApprovalParams {
@@ -232,12 +233,19 @@ export class SideEffectAuthorizationGate {
       );
     }
 
+    if (params.channel === 'voice' && params.decision === 'approved') {
+      throw new Error(
+        'Voice approval rejected: Consequential actions cannot be approved by voice (Gate G6.4). Approvals must be decided through panel or phone.'
+      );
+    }
+
     return this.approvalStore.decide(
       params.approvalId,
       params.decision,
       params.decidedBy,
       params.reason,
-      params.expiresAt
+      params.expiresAt,
+      params.channel
     );
   }
 

@@ -78,6 +78,11 @@ export interface ExecuteSophiaTurnOptions {
    */
   failOnMissingConversation?: boolean;
   /**
+   * Originating channel for governance and execution gates (Gate G6.4).
+   * 'panel' | 'phone' | 'voice' | 'api'. Defaults to 'voice' when ingress is 'live_voice' or 'voice'.
+   */
+  channel?: 'panel' | 'phone' | 'voice' | 'api';
+  /**
    * Cooperative cancellation (Phase 3 — SofiaUI voice runtime).
    *
    * When aborted, the turn stops at the NEXT stage boundary of this
@@ -1034,6 +1039,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       ? executeDirective
       : (opts.ingress === 'agent_chat' ? false : true);
 
+    const effectiveChannel = opts.channel || (opts.ingress === 'live_voice' || opts.ingress === 'voice' ? 'voice' : undefined);
     const executionPromise = SophiaServerGateway.process({
       proposal: classificationResult.proposal,
       session,
@@ -1041,6 +1047,8 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       context: assembledContext,
       executeDirective: shouldExecute,
       liveAi: classificationResult.liveAi,
+      ingress: opts.ingress,
+      channel: effectiveChannel,
     });
 
     const abortPromise = new Promise<never>((_, reject) => {

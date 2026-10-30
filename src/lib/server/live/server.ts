@@ -527,6 +527,8 @@ export class LiveInteractionServer {
         conversationId: client.session.conversationId,
         turnId,
         signal: controller.signal,
+        ingress: 'live_voice',
+        channel: 'voice',
       });
 
       if (sophiaResult.conversationId) {
