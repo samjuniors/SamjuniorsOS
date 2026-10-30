@@ -34,6 +34,7 @@ import {
   isResumeCommand,
 } from './stop-control';
 import { SpendSettingsManager } from './spend-settings';
+import { BriefingSettingsStore, getProactiveBriefing } from './briefing';
 
 export interface ExecuteSophiaTurnOptions {
   message: string;
@@ -799,6 +800,138 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         sources: priorLog ? [`DecisionLog:${priorLog.id}`] : [],
         sourceIds: priorLog ? [priorLog.id] : [],
         decisionLog: explanationLog,
+      };
+    }
+
+    // Proactive Briefing Settings Command (G6.8)
+    const briefingSettingsCheck = SophiaIntentClassifier.isBriefingSettingsCommand(cleanMessage);
+    if (briefingSettingsCheck.isSettings && typeof briefingSettingsCheck.enabled === 'boolean') {
+      const nextEnabled = briefingSettingsCheck.enabled;
+      await BriefingSettingsStore.getInstance().updateSettings({ enabled: nextEnabled }, founderId);
+      const statusWord = nextEnabled ? 'enabled' : 'disabled';
+      const settingsReply = `[Sophia Vance • COO]\nProactive briefing has been ${statusWord}. ${nextEnabled ? 'I will provide concise operational updates upon opening sessions.' : 'I will not provide automatic summaries upon opening new sessions.'}\n\n[Scopes: governance | Sources: BriefingSettingsStore]`;
+
+      const decStore = DecisionLogStore.getInstance();
+      const settingsLog = await decStore.recordDecision({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'converse',
+        scopes: [],
+        confidence: 1.0,
+        outcome: 'answered',
+        sources: ['BriefingSettingsStore'],
+        reasoning: `Proactive briefing ${statusWord} by Founder directive.`,
+      });
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage({
+          conversationId: conversation.id,
+          sender: 'assistant',
+          role: 'assistant',
+          content: settingsReply,
+          idempotencyKey: assistantIdempotencyKey,
+          intent: 'directive_executed',
+          confidence: 1.0,
+          metadata: {
+            liveAi: false,
+            directiveExecuted: true,
+            ingress: opts.ingress ?? 'text',
+            scopes: [],
+            sources: ['BriefingSettingsStore'],
+            sourceIds: [],
+            decisionLog: settingsLog,
+          },
+        }, founderId);
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist briefing settings reply:', err);
+      }
+
+      return {
+        success: true,
+        reply: settingsReply,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'directive_executed',
+        directiveExecuted: true,
+        liveAi: false,
+        scopes: [],
+        sources: ['BriefingSettingsStore'],
+        sourceIds: [],
+        decisionLog: settingsLog,
+      };
+    }
+
+    // Proactive Briefing Request (G6.8)
+    if (SophiaIntentClassifier.isBriefingQuery(cleanMessage)) {
+      const isVoice = opts.ingress === 'live_voice';
+      const briefingRes = await getProactiveBriefing({
+        force: true,
+        channel: isVoice ? 'voice' : 'panel',
+        founderId,
+      });
+
+      const briefingData = briefingRes.briefing;
+      const replyText = briefingData
+        ? (isVoice ? briefingData.spokenText : briefingData.text)
+        : '[Sophia Vance • COO]\nNo operational updates recorded. All systems standing by.\n\n[Scopes: governance | Sources: DecisionLogStore, InMemoryApprovalStore]';
+
+      const briefingSources = briefingData ? briefingData.sources : ['DecisionLogStore', 'InMemoryApprovalStore'];
+      const decStore = DecisionLogStore.getInstance();
+      const briefingLog = await decStore.recordDecision({
+        turnId: cleanTurnId,
+        conversationId: conversation.id,
+        query: cleanMessage,
+        route: 'recall-company',
+        scopes: [],
+        confidence: 0.95,
+        outcome: 'answered',
+        sources: briefingSources,
+        reasoning: 'Grounded proactive executive briefing synthesized from DecisionLogStore and InMemoryApprovalStore only.',
+      });
+
+      let assistantMessageRecord: ChatMessageRecord | null = null;
+      try {
+        const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
+        assistantMessageRecord = await convStore.saveMessage({
+          conversationId: conversation.id,
+          sender: 'assistant',
+          role: 'assistant',
+          content: replyText,
+          idempotencyKey: assistantIdempotencyKey,
+          intent: 'informational_query',
+          confidence: 0.95,
+          metadata: {
+            liveAi: false,
+            directiveExecuted: false,
+            ingress: opts.ingress ?? 'text',
+            scopes: [],
+            sources: briefingSources,
+            sourceIds: [],
+            decisionLog: briefingLog,
+            briefing: briefingData,
+          },
+        }, founderId);
+      } catch (err) {
+        console.error('[SophiaTurnExecutor] Failed to persist briefing reply:', err);
+      }
+
+      return {
+        success: true,
+        reply: replyText,
+        conversationId: conversation.id,
+        founderMessageId: founderMessageRecord.id,
+        assistantMessageId: assistantMessageRecord?.id,
+        intent: 'informational_query',
+        directiveExecuted: false,
+        liveAi: false,
+        scopes: [],
+        sources: briefingSources,
+        sourceIds: [],
+        decisionLog: briefingLog,
       };
     }
 

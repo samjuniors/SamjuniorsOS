@@ -312,7 +312,7 @@ export class SafeModeManager {
 export function isStopCommand(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
   const trimmed = text.trim();
-  return /^(?:stop|halt|freeze|pause everything|emergency stop|cancel all|shut down|stand down)(?:\s+(?:immediately|now|right now))?[!.\s]*$/i.test(trimmed);
+  return /^(?:stop|halt|freeze|pause everything|emergency stop|cancel all|shut down|stand down|stop briefing|pause briefing|cancel briefing|stop talking|quiet)(?:\s+(?:immediately|now|right now))?[!.\s]*$/i.test(trimmed);
 }
 
 /**

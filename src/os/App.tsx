@@ -3,7 +3,7 @@ import { Sparkles, LayoutGrid, ArrowLeft } from "lucide-react";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
 import { os } from "./lib/osStore";
-import { syncFromServer, fetchGreeting } from "./lib/runtime";
+import { syncFromServer, fetchGreeting, fetchBriefing } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
 import "@/sofia/sofia.css";
 
@@ -45,6 +45,20 @@ export default function App({ onNavigate }: AppProps = {}) {
       })
       .catch((err) => {
         console.warn("[greeting] Failed to fetch honest greeting on open:", err);
+      });
+
+    // Gate G6.8: Proactive briefing built strictly from decision log and approvals only
+    fetchBriefing({ since: lastSessionAt || undefined })
+      .then((res) => {
+        if (res && res.briefing) {
+          os.setBriefing(res.briefing);
+          os.setBriefingEnabled(res.enabled);
+        } else if (res && !res.enabled) {
+          os.setBriefingEnabled(false);
+        }
+      })
+      .catch((err) => {
+        console.warn("[briefing] Failed to fetch proactive briefing on open:", err);
       });
   }, []);
 
