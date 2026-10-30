@@ -479,8 +479,8 @@ Output a JSON code block with your proposal:
     }
 
     // 1. Check for Approval Intent against active pending governance gates.
-    const approveMatch = /^(i )?(approve|ratify|authorize|sign off|proceed with this|approved)\b/i.test(clean);
-    const rejectMatch = /^(i )?(reject|decline|disapprove|veto|cancel this|block this)\b/i.test(clean);
+    const approveMatch = /(?:^|\b)(?:i\s+|go ahead and\s+|please\s+)?(approve|ratify|authorize|sign off|proceed with this|approved)\b/i.test(clean);
+    const rejectMatch = /(?:^|\b)(?:i\s+|go ahead and\s+|please\s+)?(reject|decline|disapprove|veto|cancel this|block this)\b/i.test(clean);
 
     if (approveMatch) {
       return {
@@ -655,10 +655,12 @@ Output a JSON code block with your proposal:
   public static isPersonalQuery(message: string): boolean {
     const clean = message.trim().toLowerCase();
     const personalPatterns = [
-      /\b(my|about me|founder)\s+(preferences?|habits?|favorite|family|kids?|wife|husband|birthday|workout|notes?|routine|schedule|personal|private|secret|pin|dog|cat|pet|hobbies?|coffee|food|drink)\b/i,
+      /\b(my|about me|founder)\s+([a-z0-9_-]+\s+)?(preferences?|habits?|favorite|family|kids?|wife|husband|birthday|workout|notes?|routine|schedule|personal|private|secret|pin|dog|cat|pet|hobbies?|coffee|food|drink)\b/i,
       /\b(what do you remember about me|who am i|what are my preferences|my personal info|remind me about myself|what do you know about me)\b/i,
       /\b(personal memory|personal mind|my memory|about my personal)\b/i,
       /\bwhat('s| is) my (favorite|private|secret|dog|cat|pet|pin|birthday|workout|schedule|routine|preference|hobby|note)\b/i,
+      /\b(do you )?(remember|recall)\s+(what i|when we|our|my|that i|the time|yesterday|last week|last month)\b/i,
+      /\bwhat did i (say|tell you|mention|write|ask)\b/i,
     ];
     return personalPatterns.some(p => p.test(clean));
   }

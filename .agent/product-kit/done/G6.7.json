@@ -1,0 +1,8 @@
+{
+  "id": "G6.7",
+  "doneAt": "2026-10-30T10:01:20.421Z",
+  "agent": "lead",
+  "branch": "step/G6.7",
+  "commit": "cd8c278a3ffecc08e0c5d77a5f8c4c5f4d139daf",
+  "evidence": "Authored docs/SOPHIA_PERSONA_SPECIFICATION.md with single persona invariant and anti-fabrication rules; unified prompts in persona.ts, definitions.ts, gemini-provider.ts; created benchmark/persona suite with baseline in docs/benchmarks/ (14/14 PASS, 0 fabrications); verified by tests/sophia/g6_7_persona_and_fabricated_memory.test.ts (10/10 PASS proving fabricated memory fails the build), m1_5 (8/8 PASS), g6_6 (13/13 PASS), tsc, build, scan:client-secrets."
+}
