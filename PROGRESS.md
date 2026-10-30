@@ -211,6 +211,17 @@
     - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.4.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.5 (Panel fallback when voice is unavailable, with honest presence states):**
+    - Created `src/os/lib/presence.ts` defining canonical presence taxonomy (`VoicePresenceState`: `offline`, `mic_blocked`, `voice_unavailable`, `connecting`, `listening`, `thinking`, `speaking`, `interrupted`, `voice_off`) and pure deterministic resolver `resolvePresenceState`.
+    - Added centralized chat panel visibility and contact controls (`chatPanelOpen`, `chatPanelContactId`, `openChatPanel`, `closeChatPanel`, `toggleChatPanel`) to `osStore`.
+    - Upgraded `SharedSophiaVoicePresence.tsx` with browser `online`/`offline` listeners, honest status badges, and prominent panel fallback button (`data-testid="presence-panel-fallback-btn"`) transitioning the founder seamlessly into text chat when voice is unavailable or offline.
+    - Upgraded `VoiceStatusPill.tsx` with `isOffline` and `isVoiceUnavailable` props and truthful presence text ("Offline · Text Chat Available", "Voice Unavailable · Click for Text").
+    - Enhanced `ChatPanel.tsx` with `osStore` sync and honest offline status banner (`data-testid="chat-offline-banner"`).
+    - Authored automated regression suite `tests/frontend/g6_5_presence_states_and_fallback.test.ts` (13/13 PASS) verifying all 9 presence states, panel fallback triggers, and static AST contracts.
+    - Verified all 130 test suites under canonical runner (106 passed, 0 failed, 24 Bun-divergent skipped).
+    - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.5.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
