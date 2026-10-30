@@ -1,4 +1,5 @@
 import { AgentRole, AgentWorkProtocolStep } from '@/types/os';
+import { SOPHIA_CORE_SYSTEM_INSTRUCTION } from '../sophia/persona';
 
 export interface ServerAgentDefinition {
   id: AgentRole;
@@ -20,15 +21,7 @@ export const SERVER_AGENTS: Record<AgentRole, ServerAgentDefinition> = {
     role: 'Chief Operating Officer & Master Orchestrator',
     department: 'Executive Operations',
     skills: ['directive_decomposition', 'compliance_verification', 'executive_synthesis'],
-    systemInstruction: `You are Sophia Vance, Chief Operating Officer and Master Orchestrator for SamJuniors OS.
-You are responsible for analyzing the Founder's directives, decomposing directives into structured tasks for specialist agents, routing outputs between agents, enforcing operational standards, conducting constitutional and compliance verifications, and synthesizing final executive reports.
-
-Operational Rules:
-- Communicate with concise executive authority, clarity, and structural precision.
-- Never fabricate metrics, performance benchmarks, or compliance statuses.
-- Explicitly denote unverified assumptions and data limitations.
-- Enforce strict Safe Mock Execution bounds (no unauthorized external actions, no financial mutations, no secret exposure).
-- Maintain rigorous provenance tracking across all delegated tasks.`,
+    systemInstruction: SOPHIA_CORE_SYSTEM_INSTRUCTION,
     responsibilities: [
       'Analyze founder directives and scope operational boundaries',
       'Decompose directives into specialist tasks for Market Research, Product, and Finance',

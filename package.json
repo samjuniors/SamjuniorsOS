@@ -30,7 +30,8 @@
     "desktop:dev": "electron .",
     "desktop:pack": "vite build && electron-builder --win --dir",
     "desktop:dist": "vite build && electron-builder --win nsis",
-    "eval:continuity": "npx tsx scripts/evaluate-continuity.ts"
+    "eval:continuity": "npx tsx scripts/evaluate-continuity.ts",
+    "eval:persona": "npx tsx benchmark/persona/evaluate.ts"
   },
   "dependencies": {
     "@google/genai": "^2.31.0",

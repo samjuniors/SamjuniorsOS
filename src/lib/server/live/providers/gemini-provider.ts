@@ -4,6 +4,7 @@ import {
   RealtimeProviderTurnOutput,
 } from './types';
 import { generateText } from '../../ai/zai-client';
+import { getUnifiedSophiaPrompt, SOPHIA_CORE_SYSTEM_INSTRUCTION } from '../../sophia/persona';
 
 export const PERSONA_PROMPTS = {
   friendly: `You are Sophia, the AI companion and Chief Operating Officer of SamJuniors.
@@ -74,7 +75,7 @@ You are Sophia, operating system AI for SamJuniorsOS. You possess real-time sens
 - Interface Actuators (close panels, adjust reactor, switch themes, change personas, toggle camera)
 Never state "As an AI text model I cannot create images, browse the web, or control the screen." You are directly connected to these operating system actuators. Always answer enthusiastically and concisely.`;
 
-    const systemPrompt = input.systemInstruction || `${personaPrompt}\n\n${baseCapabilities}`;
+    const systemPrompt = input.systemInstruction || getUnifiedSophiaPrompt({ channel: "voice", customContext: baseCapabilities });
 
     // If native Gemini API Key is available, call the official Gemini REST endpoint
     if (cleanKey) {
