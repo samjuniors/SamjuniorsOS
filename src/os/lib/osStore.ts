@@ -4,6 +4,7 @@
  * either a user-owned record (decisions, work, attention) or a real runtime state.
  */
 import { useCallback, useRef, useSyncExternalStore } from "react";
+import type { SofiaGreetingResult } from "@/types/greeting";
 
 export type AttentionKind = "decision" | "review" | "blocked" | "message" | "note";
 export type AttentionItem = {
@@ -123,6 +124,9 @@ export type OSState = {
   /** Gate G6.5 — Panel fallback & chat panel control */
   chatPanelOpen: boolean;
   chatPanelContactId: string;
+  /** Gate G6.6 — Honest greeting on open, grounded in real state */
+  greeting: SofiaGreetingResult | null;
+  greetingDismissed: boolean;
 };
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
@@ -212,6 +216,8 @@ const SEED: OSState = {
   },
   chatPanelOpen: false,
   chatPanelContactId: 'sophia',
+  greeting: null,
+  greetingDismissed: false,
 };
 
 /** Presentation-layer constants for the authoritative roster. Existence and
@@ -272,6 +278,8 @@ function load(): OSState {
       syncError: null,
       activitySyncStatus: "idle",
       activitySyncError: null,
+      greeting: null,
+      greetingDismissed: false,
     };
   } catch {
     return SEED;
@@ -513,6 +521,12 @@ export const os = {
   closeChatPanel() {
     set({ chatPanelOpen: false });
   },
+  setGreeting(greeting: SofiaGreetingResult | null) {
+    set({ greeting, greetingDismissed: false });
+  },
+  dismissGreeting() {
+    set({ greetingDismissed: true });
+  },
   toggleChatPanel(contactId?: string) {
     set((s) => ({
       chatPanelOpen: !s.chatPanelOpen,
@@ -732,3 +746,4 @@ export function syncStatusState(s: OSState) { return { status: s.syncStatus, err
 export function activitySyncStatusState(s: OSState) { return { status: s.activitySyncStatus, error: s.activitySyncError }; }
 export function activeWork(_s: OSState) { return cachedWork; }
 export function liveVoiceState(s: OSState) { return s.liveVoice; }
+export function greetingState(s: OSState) { return { greeting: s.greeting, dismissed: s.greetingDismissed }; }

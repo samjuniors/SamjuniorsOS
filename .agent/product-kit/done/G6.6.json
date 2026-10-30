@@ -1,0 +1,8 @@
+{
+  "id": "G6.6",
+  "doneAt": "2026-10-30T09:26:47.846Z",
+  "agent": "lead",
+  "branch": "step/G6.6",
+  "commit": "100807b3f45f9dab803690d62aac5de6a833d8cb",
+  "evidence": "On opening the app Sofia greets within the latency budget (<2ms <= 50ms) using only real state; with no state she greets plainly; tested with empty and full state. Verified prior greeting was NOT present in frontend; integrated grounded greeting bubble and chat seeding; removed Design tab and set default to Cockpit. Verified by tests/frontend/g6_6_greeting_on_open.test.ts (13/13 PASS), m1_5 (8/8 PASS), g6_5 (13/13 PASS), tsc, build, scan:client-secrets."
+}

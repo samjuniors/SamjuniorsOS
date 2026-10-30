@@ -44,6 +44,7 @@ export default function ChatPanel() {
   const agents = useOS((s) => s.agents);
   const storeChatOpen = useOS((s) => s.chatPanelOpen);
   const storeContactId = useOS((s) => s.chatPanelContactId);
+  const greeting = useOS((s) => s.greeting);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
 
   useEffect(() => {
@@ -112,6 +113,30 @@ export default function ChatPanel() {
         // Fail-soft on history hydration; existing UI state intact
       });
   }, [activeContactId]);
+
+  
+  // Gate G6.6: Seed Sophia's honest real-state greeting into the thread if empty
+  useEffect(() => {
+    if (activeContactId === "sophia" && greeting?.text) {
+      setMessages((prev) => {
+        const sophiaMsgs = prev.filter((m) => m.agentId === "sophia");
+        if (sophiaMsgs.length > 0) return prev;
+        return [
+          ...prev,
+          {
+            id: "greeting-seed",
+            sender: "agent",
+            agentId: "sophia",
+            text: greeting.text,
+            at: Date.now(),
+            read: true,
+            liveAi: greeting.liveAi,
+            fallback: greeting.fallback,
+          },
+        ];
+      });
+    }
+  }, [activeContactId, greeting?.text]);
 
   // Scroll to bottom on new message
   useEffect(() => {
