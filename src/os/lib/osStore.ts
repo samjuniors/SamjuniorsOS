@@ -127,6 +127,10 @@ export type OSState = {
   /** Gate G6.6 — Honest greeting on open, grounded in real state */
   greeting: SofiaGreetingResult | null;
   greetingDismissed: boolean;
+  /** Gate G6.8 — Proactive briefing built from decision log and approvals only */
+  briefing: import("@/types/briefing").ProactiveBriefingData | null;
+  briefingDismissed: boolean;
+  briefingEnabled: boolean;
 };
 
 export const STAGES: Stage[] = ["discovery", "build", "review", "ship", "done"];
@@ -218,6 +222,9 @@ const SEED: OSState = {
   chatPanelContactId: 'sophia',
   greeting: null,
   greetingDismissed: false,
+  briefing: null,
+  briefingDismissed: false,
+  briefingEnabled: true,
 };
 
 /** Presentation-layer constants for the authoritative roster. Existence and
@@ -280,6 +287,9 @@ function load(): OSState {
       activitySyncError: null,
       greeting: null,
       greetingDismissed: false,
+      briefing: null,
+      briefingDismissed: false,
+      briefingEnabled: true,
     };
   } catch {
     return SEED;
@@ -527,6 +537,15 @@ export const os = {
   dismissGreeting() {
     set({ greetingDismissed: true });
   },
+  setBriefing(briefing: import("@/types/briefing").ProactiveBriefingData | null) {
+    set({ briefing, briefingDismissed: false });
+  },
+  dismissBriefing() {
+    set({ briefingDismissed: true });
+  },
+  setBriefingEnabled(enabled: boolean) {
+    set({ briefingEnabled: enabled });
+  },
   toggleChatPanel(contactId?: string) {
     set((s) => ({
       chatPanelOpen: !s.chatPanelOpen,
@@ -747,3 +766,4 @@ export function activitySyncStatusState(s: OSState) { return { status: s.activit
 export function activeWork(_s: OSState) { return cachedWork; }
 export function liveVoiceState(s: OSState) { return s.liveVoice; }
 export function greetingState(s: OSState) { return { greeting: s.greeting, dismissed: s.greetingDismissed }; }
+export function briefingState(s: OSState) { return { briefing: s.briefing, dismissed: s.briefingDismissed, enabled: s.briefingEnabled }; }

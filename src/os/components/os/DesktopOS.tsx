@@ -15,7 +15,7 @@ import PersonaModal from "./PersonaModal";
 import { osSound, setOsMuted, setOsVolume } from "../../lib/osAudio";
 import { type FlowNode } from "../../lib/flow";
 import { os, useOS, openAttention, openDecisions, activeWork, agentName, liveVoiceState } from "../../lib/osStore";
-import { dispatchDirective } from "../../lib/runtime";
+import { dispatchDirective, fetchBriefingSettings, updateBriefingSettings } from "../../lib/runtime";
 import { liveBridge } from "../../lib/liveCompanionBridge";
 
 type Win = "max" | "win" | "min";
@@ -139,6 +139,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
   const [h12, setH12] = useState(true);
   const [voice, setVoice] = useState(false);
   const [spendCap, setSpendCap] = useState<number | null>(null);
+  const [briefingEnabled, setBriefingEnabled] = useState(true);
 
   useEffect(() => {
     if (pop === "settings") {
@@ -147,6 +148,15 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
         .then((d) => {
           if (d.success && d.settings) {
             setSpendCap(d.settings.dailySpendCapUsd);
+          }
+        })
+        .catch(() => undefined);
+
+      fetchBriefingSettings()
+        .then((d) => {
+          if (d && d.success && d.settings) {
+            setBriefingEnabled(d.settings.enabled);
+            os.setBriefingEnabled(d.settings.enabled);
           }
         })
         .catch(() => undefined);
@@ -506,6 +516,18 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
                   }}
                   label="Live Voice & STT"
                   hint="Streaming speech recognition with Push-to-Talk"
+                />
+                <Toggle
+                  on={briefingEnabled}
+                  onClick={() => {
+                    const next = !briefingEnabled;
+                    setBriefingEnabled(next);
+                    os.setBriefingEnabled(next);
+                    void updateBriefingSettings({ enabled: next });
+                  }}
+                  label="Proactive Briefing"
+                  hint="Summary of decisions & approvals since last session"
+                  data-testid="toggle-proactive-briefing"
                 />
                 <Toggle on={notifsOn} onClick={() => setNotifsOn((v) => !v)} label="Notifications" hint="When the workforce raises something" />
               </div>

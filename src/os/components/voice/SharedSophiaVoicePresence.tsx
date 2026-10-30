@@ -14,6 +14,7 @@ import { VisualDirector } from "@/sofia/engine/VisualDirector";
 import { STAGE_CY_CENTERED } from "@/sofia/engine/layout";
 import { resolvePresenceState } from "@/os/lib/presence";
 import { os, useOS } from "@/os/lib/osStore";
+import { updateBriefingSettings } from "@/os/lib/runtime";
 
 export default function SharedSophiaVoicePresence() {
   const sofia = useMemo(() => getSophiaOS(), []);
@@ -27,6 +28,9 @@ export default function SharedSophiaVoicePresence() {
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   const greeting = useOS((s) => s.greeting);
   const greetingDismissed = useOS((s) => s.greetingDismissed);
+  const briefing = useOS((s) => s.briefing);
+  const briefingDismissed = useOS((s) => s.briefingDismissed);
+  const briefingEnabled = useOS((s) => s.briefingEnabled);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -160,6 +164,72 @@ export default function SharedSophiaVoicePresence() {
 
   return (
     <section aria-label="Sofia live voice" className="fixed bottom-5 left-5 z-40 flex w-auto flex-col items-start gap-2 text-slate-100">
+      {/* Gate G6.8: Proactive Briefing Card */}
+      {briefing && !briefingDismissed && briefingEnabled && (
+        <aside
+          role="region"
+          aria-label="Sophia executive proactive briefing"
+          data-testid="sofia-briefing-card"
+          className="relative w-[320px] mb-1 rounded-2xl border border-cyan-400/30 bg-[#070e1c]/95 p-3.5 text-xs text-slate-200 shadow-[0_16px_40px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl"
+        >
+          <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+              <span className="font-semibold tracking-wide text-cyan-200 uppercase text-[10px]">
+                Proactive Briefing {briefing.sinceText ? `· ${briefing.sinceText}` : ''}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => os.dismissBriefing()}
+              data-testid="sofia-briefing-dismiss-btn"
+              aria-label="Dismiss briefing"
+              title="Dismiss briefing"
+              className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          <p className="leading-relaxed text-slate-200" data-testid="sofia-briefing-text">
+            {briefing.spokenText}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-1">
+            {briefing.pendingApprovalCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  os.dismissBriefing();
+                  os.openChatPanel('sophia');
+                }}
+                data-testid="sofia-briefing-action-approvals"
+                className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20"
+              >
+                Review Approvals ({briefing.pendingApprovalCount})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                os.dismissBriefing();
+                os.setBriefingEnabled(false);
+                void updateBriefingSettings({ enabled: false });
+              }}
+              data-testid="sofia-briefing-turn-off-btn"
+              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              Turn off briefings
+            </button>
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-1.5 text-[9px] text-slate-400" data-testid="sofia-briefing-sources">
+            <span>Sources: {briefing.sources.join(', ')}</span>
+            <span className="font-mono text-cyan-300/80">{briefing.latencyMs}ms</span>
+          </div>
+        </aside>
+      )}
+
       {/* Gate G6.6: Honest Greeting Bubble on Open */}
       {greeting && !greetingDismissed && (
         <aside

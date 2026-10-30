@@ -558,6 +558,7 @@ Output a JSON code block with your proposal:
     const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec|pricing tier)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
+    const isBriefing = this.isBriefingQuery(clean);
     const hasConversationContext = context?.slices.some(s => s.authority === 'CONVERSATIONAL_RECORD') ?? false;
     const isQuestion = clean.endsWith('?') || /^(what|how|why|who|where|when|do we|is there|are there|tell me about|status of)\b/i.test(clean);
 
@@ -666,6 +667,38 @@ Output a JSON code block with your proposal:
   }
 
   /**
+   * Evaluates if an input is an explicit briefing request (G6.8).
+   */
+  public static isBriefingQuery(message: string): boolean {
+    const clean = message.trim().toLowerCase();
+    const briefingPatterns = [
+      /\b(proactive briefing|executive briefing|briefing summary|daily briefing)\b/i,
+      /\b(give me a briefing|brief me|briefing please|catch me up)\b/i,
+      /\bwhat('?s| has)? changed since (my |the )?(last session|yesterday|earlier)\b/i,
+      /\bwhat changed( since)?\b/i,
+      /\bwhat('?s| is) new since (my |the )?(last session|yesterday|earlier)\b/i,
+      /\b(summary of changes|any new approvals|any new decisions)\b/i,
+    ];
+    return briefingPatterns.some((p) => p.test(clean));
+  }
+
+  /**
+   * Evaluates if an input is a briefing settings control command (G6.8).
+   */
+  public static isBriefingSettingsCommand(message: string): { isSettings: boolean; enabled?: boolean } {
+    const clean = message.trim().toLowerCase();
+    const disableMatch = /\b(turn off|disable|stop giving me|deactivate)\s+(proactive\s+)?briefings?\b/i.test(clean);
+    if (disableMatch) {
+      return { isSettings: true, enabled: false };
+    }
+    const enableMatch = /\b(turn on|enable|activate|resume)\s+(proactive\s+)?briefings?\b/i.test(clean);
+    if (enableMatch) {
+      return { isSettings: true, enabled: true };
+    }
+    return { isSettings: false };
+  }
+
+  /**
    * Authoritative Minimal Router (M1.2 / G12.1).
    * Evaluates the founder's input into exactly one of the 5 canonical routes:
    * 'converse' | 'recall-personal' | 'recall-company' | 'ask-clarify' | 'refuse'
@@ -709,6 +742,24 @@ Output a JSON code block with your proposal:
         proposal,
         liveAi: false,
         confidence: proposal.confidence,
+        reason: proposal.reason,
+      };
+    }
+
+    if (this.isBriefingQuery(opts.message)) {
+      const proposal: CandidateIntentProposal = {
+        kind: 'informational_query',
+        route: 'recall-company',
+        domain: 'company_metrics',
+        query: opts.message,
+        confidence: 0.95,
+        reason: 'Deterministic routing: query requests proactive executive briefing from decision log and approvals.',
+      };
+      return {
+        route: 'recall-company',
+        proposal,
+        liveAi: false,
+        confidence: 0.95,
         reason: proposal.reason,
       };
     }
@@ -1002,8 +1053,9 @@ You must classify the Founder's utterance into exactly one of the following 10 a
     const isKnowledgeQuery = /\b(sop|prd|policy|guardrail|architecture|guideline|procedure|standard operating procedure|sop-001|margin floor|safe mock|protocol|specification|spec|pricing tier)\b/i.test(clean);
     const isPrecedentQuery = /\b(precedent|past incident|lesson|incident|learned|previous decision|ec2|virtual server)\b/i.test(clean);
     const isActivityQuery = /\b(recent activity|what did we do|what happened|event log|audit feed|actions? taken)\b/i.test(clean);
+    const isBriefing = this.isBriefingQuery(clean);
 
-    if (isMetricsQuery || isCompanyStateQuery || isEpistemicQuery || isKnowledgeQuery || isPrecedentQuery || isActivityQuery) {
+    if (isMetricsQuery || isCompanyStateQuery || isEpistemicQuery || isKnowledgeQuery || isPrecedentQuery || isActivityQuery || isBriefing) {
       const proposal: CandidateIntentProposal = {
         kind: 'informational_query',
         route: 'recall-company',

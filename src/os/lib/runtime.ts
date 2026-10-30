@@ -1,4 +1,5 @@
 import type { SofiaGreetingResult, SofiaGreetingOptions } from '@/types/greeting';
+import type { ProactiveBriefingOptions, ProactiveBriefingResult, BriefingSettings } from '@/types/briefing';
 /**
  * SamJuniorsOS — real runtime adapter (Phase 3.4).
  *
@@ -761,4 +762,40 @@ export async function fetchGreeting(opts?: SofiaGreetingOptions): Promise<SofiaG
     throw new Error(`Greeting failed: HTTP ${res.status}`);
   }
   return res.json() as Promise<SofiaGreetingResult>;
+}
+
+export async function fetchBriefing(opts?: ProactiveBriefingOptions): Promise<ProactiveBriefingResult> {
+  const params = new URLSearchParams();
+  if (opts?.since) params.set('since', typeof opts.since === 'string' ? opts.since : opts.since.toISOString());
+  if (opts?.channel) params.set('channel', opts.channel);
+  if (opts?.force) params.set('force', 'true');
+  if (opts?.founderId) params.set('founderId', opts.founderId);
+
+  const qs = params.toString();
+  const url = `/api/sophia/briefing${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Briefing failed: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<ProactiveBriefingResult>;
+}
+
+export async function fetchBriefingSettings(): Promise<{ success: boolean; settings: BriefingSettings }> {
+  const res = await fetch('/api/sophia/briefing/settings', { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch briefing settings: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<{ success: boolean; settings: BriefingSettings }>;
+}
+
+export async function updateBriefingSettings(patch: Partial<BriefingSettings>): Promise<{ success: boolean; settings: BriefingSettings }> {
+  const res = await fetch('/api/sophia/briefing/settings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to update briefing settings: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<{ success: boolean; settings: BriefingSettings }>;
 }

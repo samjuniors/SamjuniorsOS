@@ -1,0 +1,8 @@
+{
+  "id": "G6.8",
+  "doneAt": "2026-10-30T10:52:47.467Z",
+  "agent": "lead",
+  "branch": "step/G6.8",
+  "commit": "cbd4c2b150dbf0e1af2fdd3d3d53bf653e1eb76c",
+  "evidence": "Briefing built from the decision log and approvals only; interruptible by voice; can be turned off."
+}
