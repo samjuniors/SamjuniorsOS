@@ -1,0 +1,8 @@
+{
+  "id": "G6.2",
+  "doneAt": "2026-10-30T06:41:22.759Z",
+  "agent": "lead",
+  "branch": "kit/integration",
+  "commit": "22230784f4089a32042556f5a8b446c5585d53dc",
+  "evidence": "ADR 0008 created in docs/adr/; npx tsx scripts/record-voice-latency-g62.ts (25 turns, p50=50ms, p95=67.2ms); npx tsx tests/voice/g6_2_streaming_reply_barge_in.test.ts (7/7 PASS)"
+}
