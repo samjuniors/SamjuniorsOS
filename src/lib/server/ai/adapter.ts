@@ -150,6 +150,42 @@ export class ConversationAdapterRegistry {
   }
 
   /**
+   * Executes streamed completion across the candidate chain with failover (G6.1).
+   * Streams delta tokens/chunks via onDelta callback.
+   */
+  public async executeStream(
+    options: GenerateOptions,
+    onDelta: (delta: string) => void
+  ): Promise<ProviderGenerateResult> {
+    const chain = this.getCandidateChain();
+    let lastError: Error | null = null;
+
+    for (const provider of chain) {
+      if (this.isCooling(provider.id) && chain.length > 1) {
+        continue;
+      }
+
+      try {
+        let result: ProviderGenerateResult;
+        if (typeof provider.streamText === 'function') {
+          result = await provider.streamText(options, onDelta);
+        } else {
+          result = await provider.generateText(options);
+          onDelta(result.text);
+        }
+        this.heal(provider.id);
+        return result;
+      } catch (err: any) {
+        this.trip(provider.id);
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.warn(`[ConversationAdapter] Stream from provider "${provider.id}" failed: ${lastError.message}`);
+      }
+    }
+
+    throw lastError || new Error('No AI conversation provider available');
+  }
+
+  /**
    * Synchronous check if any live provider is configured.
    */
   public isConfigured(): boolean {
@@ -195,10 +231,15 @@ export class ConversationAdapterRegistry {
 }
 
 /** Convenience singleton helpers */
-const registry = ConversationAdapterRegistry.getInstance();
-
 export async function generateConversationReply(options: GenerateOptions): Promise<ProviderGenerateResult> {
   return ConversationAdapterRegistry.getInstance().execute(options);
+}
+
+export async function streamConversationReply(
+  options: GenerateOptions,
+  onDelta: (delta: string) => void
+): Promise<ProviderGenerateResult> {
+  return ConversationAdapterRegistry.getInstance().executeStream(options, onDelta);
 }
 
 export async function generateText(options: GenerateOptions): Promise<string> {

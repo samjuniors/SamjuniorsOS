@@ -152,6 +152,7 @@ Never state "As an AI text model I cannot create images, browse the web, or cont
                 maxOutputTokens: 1024,
               },
             }),
+            signal: AbortSignal.timeout(2000),
           });
 
           if (response.ok) {
@@ -176,8 +177,11 @@ Never state "As an AI text model I cannot create images, browse the web, or cont
             const errData = await response.json().catch(() => ({}));
             console.warn(`[GeminiRealtimeProvider] Model ${model} returned ${response.status}:`, errData?.error?.message);
           }
-        } catch (err) {
-          console.warn(`[GeminiRealtimeProvider] Error calling ${model}:`, err);
+        } catch (err: any) {
+          console.warn(`[GeminiRealtimeProvider] Error calling ${model}:`, err?.message || err);
+          if (err?.name === 'TimeoutError' || err?.name === 'AbortError' || err?.code === 'UND_ERR_CONNECT_TIMEOUT' || err?.code === 'ENOTFOUND') {
+            break;
+          }
         }
       }
     }

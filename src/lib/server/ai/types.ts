@@ -49,4 +49,8 @@ export interface ConversationProvider {
   readonly label: string;
   isConfigured(): boolean;
   generateText(options: GenerateOptions): Promise<ProviderGenerateResult>;
+  streamText?(
+    options: GenerateOptions,
+    onDelta: (delta: string) => void
+  ): Promise<ProviderGenerateResult>;
 }
