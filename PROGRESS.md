@@ -222,6 +222,25 @@
     - Typecheck (`npx tsc --noEmit`) and Vite production build passed with 0 errors.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.5.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.6 (Greeting on open, grounded in real state: time, last session, pending approvals, alerts. It never invents):**
+    - Created `src/types/greeting.ts` establishing shared typed contracts for `SofiaGreetingOptions`, `SofiaGreetingStateSummary`, and `SofiaGreetingResult` with zero server-client circularity.
+    - Grounded `src/lib/server/sophia/greeting.ts` in real state: time of day (`morning`, `afternoon`, `evening`), client last session delta (`a moment ago`, `X minutes/hours/days ago`), pending approvals from `InMemoryApprovalStore`, active runs from `AgentRunStore`, and attention alerts from `CompanyBrain`.
+    - Maintained empty-state invariant: when no approvals or runs exist, `hasRealState` evaluates false and Sophia greets plainly without inventing metrics or phantom tasks ("Systems are calm, no approvals are pending, and all monitors are standing by").
+    - Enforced latency budget: measured `latencyMs` deterministically on every call, executing in < 2 ms (strictly <= 50 ms).
+    - Updated `/api/sophia/greeting` and `/api/sofia/greeting` to accept `clientTime`, `clientHour`, `lastSessionAt`, and `founderId` query parameters.
+    - Unified UI in `src/os/App.tsx`:
+      - Set default view to `"os"` Cockpit desktop so the user opens directly into the company operating system.
+      - Removed the standalone `[ Design ]` button and specimen divider from the top switcher.
+      - Rendered unified view toggle between `Cockpit` and `Sophia Presence`.
+      - Added floating "Return to Cockpit" button when inside the Sophia neural room.
+      - Fetched honest greeting on mount and persisted `sophia_last_session_time` to `localStorage`.
+    - Enhanced `src/os/components/voice/SharedSophiaVoicePresence.tsx` with a dismissible greeting bubble (`data-testid="sofia-greeting-bubble"`) displaying grounded state summary, execution latency, and quick actions ("Review Approvals", "View Alerts", "Open Chat").
+    - Enhanced `src/os/components/os/ChatPanel.tsx` to seed conversation with Sophia's grounded real-state greeting if the message history is empty.
+    - Authored automated regression suite `tests/frontend/g6_6_greeting_on_open.test.ts` (13/13 PASS).
+    - Verified all 131 test suites under canonical runner (107 passed, 0 failed, 24 Bun-divergent skipped).
+    - Typecheck (`npx tsc --noEmit`), client secrets scan (`npm run scan:client-secrets`), and Vite production build passed with 0 errors.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.6.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
