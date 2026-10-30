@@ -1,0 +1,8 @@
+{
+  "id": "G6.3",
+  "doneAt": "2026-10-30T07:41:18.603Z",
+  "agent": "lead",
+  "branch": "step/G6.3",
+  "commit": "1f0a1ca6dea879639b8811f511fe9d40d92d0f42",
+  "evidence": "tests/sophia/g6_3_single_cognitive_ingress.test.ts 10/10 PASS; npx tsc --noEmit exit 0; full suite 104 PASSED"
+}

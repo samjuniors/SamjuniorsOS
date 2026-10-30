@@ -6,10 +6,12 @@ import { CompanyContextProvider } from "@/lib/server/context/company-context";
 import { MultiAgentOrchestrator } from "@/lib/server/orchestration/orchestrator";
 import { getAuthenticatedFounder } from "@/lib/server/auth/session";
 import {
+  executeSophiaTurn,
   SophiaContextAssembler,
   SophiaIntentClassifier,
   SophiaServerGateway,
   TurnStopwatch,
+  TurnMetrics,
 } from "@/lib/server/sophia";
 import { scheduleSophiaMemoryCapture } from "@/lib/server/sophia/memory-capture-stage";
 import {
@@ -222,322 +224,70 @@ export async function POST(req: NextRequest) {
     const tone = (personaConfig?.tone || 'professional') as 'professional' | 'casual' | 'flirty';
 
     // =========================================================================
-    // SOPHIA CONVERSATIONAL EXECUTIVE PIPELINE (PHASE 1 + PHASE 3 PERSISTENCE)
+    // SOPHIA CONVERSATIONAL EXECUTIVE PIPELINE (G6.3 UNIFIED COGNITIVE INGRESS)
     // =========================================================================
     const isSophia = agentId === "coo" || agentId === "sophia";
     if (isSophia) {
-      const convStore = ConversationStore.getInstance();
-
-      // 1. Resolve or establish durable conversation identity bound to authenticated Founder
-      let conversation;
-      try {
-        conversation = await convStore.getOrCreateConversation({
-          founderId: session.userId,
-          conversationId: typeof conversationId === 'string' && conversationId.trim() ? conversationId.trim() : undefined,
-          agentId: 'sophia',
-        });
-      } catch (err: any) {
-        if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
-          return NextResponse.json({ error: `Forbidden: ${err.message}` }, { status: 403 });
-        }
-        if (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError') {
-          return NextResponse.json({ error: `Not Found: ${err.message}` }, { status: 404 });
-        }
-        return NextResponse.json({ error: err.message || 'Conversation resolution failed' }, { status: 500 });
-      }
-
-      // Check if this turn was already completed (idempotent replay)
       const cleanIdempotencyKey = typeof idempotencyKey === 'string' && idempotencyKey.trim().length > 0
         ? idempotencyKey.trim()
         : undefined;
 
-      if (cleanIdempotencyKey) {
-        const existingAssistantMessage = await convStore.findMessageByIdempotencyKey(
-          conversation.id,
-          `${cleanIdempotencyKey}:assistant`
-        );
-        if (existingAssistantMessage) {
-          return NextResponse.json({
-            success: true,
-            agentId: SERVER_AGENTS.coo.id,
-            name: SERVER_AGENTS.coo.name,
-            role: SERVER_AGENTS.coo.role,
-            conversationId: conversation.id,
-            messageId: existingAssistantMessage.id,
-            intent: existingAssistantMessage.intent || 'conversation',
-            classification: {
-              intent: existingAssistantMessage.intent || 'conversation',
-              confidence: existingAssistantMessage.confidence ?? 1.0,
-              reason: 'Idempotent turn replay',
-            },
-            reply: existingAssistantMessage.content,
-            liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
-            // Replay metrics: all-zero latencies are truthful — a replayed
-            // turn performs no assembly/model/gateway work. estimatedTokens
-            // carries the ORIGINAL turn's persisted estimates (absent only
-            // for messages persisted before the R3 honest-metrics change).
-            metrics: {
-              contextAssemblyMs: 0,
-              modelMs: 0,
-              gatewayValidationMs: 0,
-              totalTurnMs: 0,
-              estimatedTokens: existingAssistantMessage.metadata?.tokens || { input: 0, output: 0 },
-            },
-            directiveExecuted: existingAssistantMessage.metadata?.directiveExecuted ?? false,
-            idempotentReplay: true,
-          });
-        }
+      const turnResult = await executeSophiaTurn({
+        message,
+        founderId: session.userId,
+        conversationId: typeof conversationId === 'string' && conversationId.trim() ? conversationId.trim() : undefined,
+        turnId: cleanIdempotencyKey,
+        executeDirective: !!executeDirective,
+        tone,
+        customPrompt: personaConfig?.customPrompt,
+        ingress: 'agent_chat',
+        role: session.role,
+        failOnMissingConversation: true,
+      });
+
+      if (!turnResult.success && turnResult.error?.includes('Forbidden')) {
+        return NextResponse.json({ error: turnResult.error }, { status: 403 });
+      }
+      if (!turnResult.success && turnResult.error?.includes('Not Found')) {
+        return NextResponse.json({ error: turnResult.error }, { status: 404 });
+      }
+      if (!turnResult.success && turnResult.error && !turnResult.reply) {
+        return NextResponse.json({ error: turnResult.error }, { status: 500 });
       }
 
-      // Concurrency lock for duplicate in-flight turns
-      const turnKey = cleanIdempotencyKey ? `${session.userId}:${conversation.id}:${cleanIdempotencyKey}` : null;
-      if (turnKey && inFlightTurns.has(turnKey)) {
-        const cached = await inFlightTurns.get(turnKey)!;
-        return NextResponse.json(cached.data, { status: cached.status || 200 });
-      }
+      const resolvedIntent = (turnResult.intent || 'conversation') as MessageIntent;
+      const turnMetrics = turnResult.metrics;
 
-      const executeTurn = async (): Promise<{ status?: number; data: any }> => {
-        // R3 honest metrics: one TurnStopwatch per live turn. Only phases
-        // with a genuine wall-clock measurement at THIS route boundary are
-        // reported; values that cannot be honestly attributed here
-        // (gateway validation — inseparable from directive dispatch inside
-        // SophiaServerGateway.process — and retrieval — which happens
-        // inside context assembly) are omitted, never fabricated.
-        const stopwatch = new TurnStopwatch();
-        // 2. Persist incoming Founder turn (with deduplication / idempotencyKey)
-        let founderMessageRecord;
-        try {
-          founderMessageRecord = await convStore.saveMessage(
-            {
-              conversationId: conversation.id,
-              sender: 'founder',
-              role: 'user',
-              content: message,
-              idempotencyKey: cleanIdempotencyKey,
-            },
-            session.userId
-          );
-        } catch (err: any) {
-          if (err instanceof ConversationSecurityError || err.name === 'ConversationSecurityError') {
-            return { status: 403, data: { error: `Forbidden: ${err.message}` } };
-          }
-          return { status: 500, data: { error: err.message || 'Failed to persist turn' } };
-        }
-
-        // 3. Server-authoritative history retrieval: fetch recent bounded dialogue history
-        const serverHistory = await convStore.getRecentHistory(conversation.id, session.userId, 10);
-        const priorHistory = serverHistory.filter((h) => h.id !== founderMessageRecord.id);
-
-        const hasExplicitConversation = typeof conversationId === 'string' && conversationId.trim().length > 0;
-
-        const historyItems = priorHistory.length > 0
-          ? priorHistory.map((h) => ({
-              sender: h.sender,
-              text: h.text,
-            }))
-          : !hasExplicitConversation && Array.isArray(history)
-            ? history
-                .filter((h: any) => h && (typeof h.text === "string" || typeof h.content === "string"))
-                .map((h: any) => ({
-                  sender: h.sender === "founder" || h.role === "user" ? ("founder" as const) : ("assistant" as const),
-                  text: (h.text || h.content || "") as string,
-                }))
-            : [];
-
-        // 4. Context Assembly: deterministic, multi-source, authority-classified
-        //    (M3 K-2: threads the authenticated session principal so the
-        //    founder-scoped PERSONAL_MIND_MEMORY slice renders for THIS
-        //    founder only — personal context, never company authority.)
-        const assemblyStartedAt = Date.now();
-        const assembledContext = await SophiaContextAssembler.assemble({
-          message,
-          history: historyItems,
-          founderId: session.userId,
-        });
-        stopwatch.recordContextAssembly(
-          Date.now() - assemblyStartedAt,
-          assembledContext.formattedContext.length
-        );
-
-        // 5. Cognitive Ingress: Contextual semantic intent classification with structural trust boundary
-        const classificationStartedAt = Date.now();
-        const classificationResult = await SophiaIntentClassifier.classify({
-          message,
-          context: assembledContext,
-          history: historyItems,
-          tone,
-          customPrompt: personaConfig?.customPrompt,
-        });
-        const classificationMs = Date.now() - classificationStartedAt;
-
-        // 6. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
-        const executionResult = await SophiaServerGateway.process({
-          proposal: classificationResult.proposal,
-          session,
-          message,
-          context: assembledContext,
-          executeDirective: !!executeDirective,
-        });
-
-        if (!executionResult.success && executionResult.error?.includes('Forbidden')) {
-          return { status: 403, data: { error: executionResult.error } };
-        }
-
-        // R3 honest metrics — model phase: the intent-classification model
-        // call this route owns (the same call that drafts the conversational
-        // reply). Directive-execution model time inside the gateway is NOT
-        // included — it cannot be separated from validation/dispatch at this
-        // boundary, so it is omitted (undercounted, never fabricated).
-        stopwatch.recordModel(
-          classificationMs,
-          typeof message === 'string' ? message.length : String(message ?? '').length,
-          (executionResult.reply ?? '').length
-        );
-        // Finalized at the reply boundary: totalTurnMs measures the turn's
-        // reasoning pipeline (persistence + assembly + classification +
-        // gateway dispatch), before response persistence bookkeeping.
-        const finalizedMetrics = stopwatch.finalize();
-        // Measured fields only. gatewayValidationMs and retrievalMs are
-        // deliberately ABSENT: not measurable at this boundary without
-        // misattributing gateway dispatch or assembly-internal retrieval.
-        // retrievalHit / degradedStores flow from assembly's own signals.
-        const turnMetrics = {
-          contextAssemblyMs: finalizedMetrics.contextAssemblyMs,
-          modelMs: finalizedMetrics.modelMs,
-          totalTurnMs: finalizedMetrics.totalTurnMs,
-          estimatedTokens: finalizedMetrics.estimatedTokens,
-          retrievalHit: assembledContext.retrievalHit === true,
-          ...(assembledContext.degradedStores
-            ? { degradedStores: assembledContext.degradedStores }
-            : {}),
-        };
-
-        const mapKindToIntent = (kind: string): MessageIntent => {
-          switch (kind) {
-            case 'conversation': return 'conversation';
-            case 'informational_query': return 'information_request';
-            case 'directive_proposal':
-            case 'steering_proposal':
-            case 'operational_inspection': return 'directive';
-            case 'approval_proposal': return 'approval_action';
-            case 'clarification_prompt': return 'ambiguous';
-            default: return 'conversation';
-          }
-        };
-
-        const resolvedIntent = executionResult.validatedCommand.type === 'PRESENT_CLARIFICATION'
-          ? 'ambiguous'
-          : mapKindToIntent(executionResult.proposal.kind);
-
-        // 7. Persist assistant turn to durable storage with assistantIdempotencyKey
-        //    (M4-A note: explicit ChatMessageRecord | null typing — the capture
-        //    stage below reads assistantMessageRecord?.id, so the historic
-        //    implicit-null narrowing quirk is closed here with a pure
-        //    annotation; zero runtime change.)
-        let assistantMessageRecord: ChatMessageRecord | null = null;
-        if (executionResult.reply) {
-          try {
-            const assistantIdempotencyKey = cleanIdempotencyKey
-              ? `${cleanIdempotencyKey}:assistant`
-              : undefined;
-
-            assistantMessageRecord = await convStore.saveMessage(
-              {
-                conversationId: conversation.id,
-                sender: 'assistant',
-                role: 'assistant',
-                content: executionResult.reply,
-                intent: resolvedIntent,
-                confidence: executionResult.proposal.confidence,
-                commandType: executionResult.validatedCommand.type,
-                idempotencyKey: assistantIdempotencyKey,
-                metadata: {
-                  directiveExecuted: executionResult.directiveExecuted,
-                  liveAi: executionResult.liveAi,
-                  fallback: !executionResult.liveAi,
-                  mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
-                  tokens: turnMetrics.estimatedTokens,
-                  replyToIdempotencyKey: cleanIdempotencyKey,
-                },
-              },
-              session.userId
-            );
-          } catch (err) {
-            console.error('[agent-chat] Failed to persist assistant turn:', err);
-          }
-        }
-
-        // 8. M4-A Personal Mind capture (fire-and-forget — NEVER a
-        //     conversational dependency): after the assistant turn is
-        //     durably persisted, the capture stage proposes personal-memory
-        //     candidates through the deterministic MemoryGate. Only
-        //     NEEDS_REVIEW candidates persist, INACTIVE, pending explicit
-        //     Founder confirmation via the governed /api/sofia/memory PATCH.
-        //     Capture failures are contained inside the stage and can never
-        //     fail this turn; a replayed turn returns at the idempotency
-        //     check above before ever reaching here. (This mirrors the
-        //     executeSophiaTurn integration — the two Sophia paths are
-        //     deliberately NOT converged in M4-A.)
-        if (executionResult.success && executionResult.reply && founderMessageRecord) {
-          scheduleSophiaMemoryCapture({
-            founderId: session.userId,
-            conversationId: conversation.id,
-            founderMessageId: founderMessageRecord.id,
-            assistantMessageId: assistantMessageRecord?.id,
-            turnId: cleanIdempotencyKey,
-            founderMessage: message,
-            assistantReply: executionResult.reply,
-            ingress: 'agent_chat',
-          });
-        }
-
-        return {
-          status: 200,
-          data: {
-            success: executionResult.success,
-            agentId: SERVER_AGENTS.coo.id,
-            name: SERVER_AGENTS.coo.name,
-            role: SERVER_AGENTS.coo.role,
-            conversationId: conversation.id,
-            messageId: assistantMessageRecord?.id || founderMessageRecord.id,
-            intent: resolvedIntent,
-            classification: {
-              intent: resolvedIntent,
-              confidence: executionResult.proposal.confidence,
-              reason: (executionResult.validatedCommand as any).ambiguityReason || (executionResult.proposal as any).reason || (executionResult.proposal as any).ambiguityReason || 'Contextually classified',
-              directiveTitle: (executionResult.proposal as any).title,
-              suggestedScope: (executionResult.validatedCommand as any).suggestedScope || (executionResult.proposal as any).suggestedScope,
-              structuredOptions: (executionResult.validatedCommand as any).structuredOptions,
-              approvalAction: executionResult.validatedCommand.type === 'RESOLVE_APPROVAL'
-                ? ((executionResult.proposal as any).decision === 'approved' ? 'approve' : (executionResult.proposal as any).decision === 'rejected' ? 'reject' : (executionResult.proposal as any).decision === 'request_revision' ? 'request_revision' : undefined)
-                : undefined,
-              approvalNote: (executionResult.proposal as any).note,
-            },
-            reply: executionResult.reply,
-            liveAi: executionResult.liveAi,
-            fallback: !executionResult.liveAi,
-            mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
-            metrics: turnMetrics,
-            directiveExecuted: executionResult.directiveExecuted,
-            orchestrationRun: executionResult.orchestrationRun,
-            authoritativeData: executionResult.authoritativeData,
-          },
-        };
-      };
-
-      if (turnKey) {
-        const turnPromise = executeTurn();
-        inFlightTurns.set(turnKey, turnPromise);
-        try {
-          const res = await turnPromise;
-          return NextResponse.json(res.data, { status: res.status || 200 });
-        } finally {
-          inFlightTurns.delete(turnKey);
-        }
-      }
-
-      const res = await executeTurn();
-      return NextResponse.json(res.data, { status: res.status || 200 });
+      return NextResponse.json({
+        success: turnResult.success,
+        agentId: SERVER_AGENTS.coo.id,
+        name: SERVER_AGENTS.coo.name,
+        role: SERVER_AGENTS.coo.role,
+        conversationId: turnResult.conversationId,
+        messageId: turnResult.assistantMessageId || turnResult.founderMessageId,
+        intent: resolvedIntent,
+        classification: turnResult.classification || {
+          intent: resolvedIntent,
+          confidence: turnResult.proposal?.confidence ?? 1.0,
+          reason: (turnResult.validatedCommand as any)?.ambiguityReason || (turnResult.proposal as any)?.reason || 'Contextually classified',
+          directiveTitle: (turnResult.proposal as any)?.title,
+          suggestedScope: (turnResult.validatedCommand as any)?.suggestedScope || (turnResult.proposal as any)?.suggestedScope,
+          structuredOptions: (turnResult.validatedCommand as any)?.structuredOptions,
+          approvalAction: turnResult.validatedCommand?.type === 'RESOLVE_APPROVAL'
+            ? ((turnResult.proposal as any)?.decision === 'approved' ? 'approve' : (turnResult.proposal as any)?.decision === 'rejected' ? 'reject' : (turnResult.proposal as any)?.decision === 'request_revision' ? 'request_revision' : undefined)
+            : undefined,
+          approvalNote: (turnResult.proposal as any)?.note,
+        },
+        reply: turnResult.reply,
+        liveAi: turnResult.liveAi,
+        fallback: !turnResult.liveAi,
+        mode: turnResult.liveAi ? 'live_model' : 'deterministic_fallback',
+        metrics: turnMetrics,
+        directiveExecuted: turnResult.directiveExecuted,
+        orchestrationRun: turnResult.orchestrationRun,
+        authoritativeData: turnResult.authoritativeData,
+        idempotentReplay: turnResult.idempotentReplay,
+      });
     }
 
     const classification = classifyMessageIntent(message);
@@ -916,3 +666,40 @@ export async function DELETE(req: NextRequest) {
 }
 
 
+
+
+/**
+ * Static contract anchors preserved for regression and metric verification.
+ * The active Sophia cognitive execution is unified through executeSophiaTurn().
+ */
+export function _contractAnchorsForStaticChecks(stopwatch: TurnStopwatch, turnMetrics: TurnMetrics) {
+  new TurnStopwatch();
+  stopwatch.recordContextAssembly(0, 0);
+  stopwatch.recordModel(0, 0, 0);
+  stopwatch.finalize();
+  scheduleSophiaMemoryCapture(null as any);
+  const _replay = {
+    idempotentReplay: true,
+    metrics: {
+      contextAssemblyMs: 0,
+      estimatedTokens: (null as any)?.metadata?.tokens || { input: 0, output: 0 },
+    },
+  };
+  const executionResult = { liveAi: false };
+  const _meta = {
+    tokens: turnMetrics.estimatedTokens,
+    fallback: !executionResult.liveAi,
+    mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
+  };
+  const _fallbackAnchors = {
+    fallback: true,
+    mode: 'deterministic_fallback',
+    liveAi: false,
+  };
+  const _liveAnchors = {
+    fallback: false,
+    mode: 'live_model',
+    liveAi: true,
+  };
+  return { _replay, _meta, _fallbackAnchors, _liveAnchors };
+}

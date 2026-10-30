@@ -1,10 +1,23 @@
 import { createHash } from 'crypto';
-import { ConversationStore, ConversationSecurityError, ChatMessageRecord } from '../conversation';
+import {
+  ConversationStore,
+  ConversationSecurityError,
+  ConversationNotFoundError,
+  ChatMessageRecord,
+} from '../conversation';
 import { SophiaContextAssembler } from './context-assembly';
 import { SophiaIntentClassifier } from './intent-classifier';
 import { SophiaServerGateway } from './server-gateway';
 import { scheduleSophiaMemoryCapture } from './memory-capture-stage';
-import { SophiaRoute, MemoryScope } from './types';
+import {
+  SophiaRoute,
+  MemoryScope,
+  CandidateIntentProposal,
+  ValidatedSophiaCommand,
+  TurnMetrics,
+} from './types';
+import { OrchestrationRun } from '@/types/os';
+import { TurnStopwatch } from './metrics';
 import {
   SophiaDecisionLogEntry,
   DecisionOutcome,
@@ -48,6 +61,23 @@ export interface ExecuteSophiaTurnOptions {
    */
   ingress?: string;
   /**
+   * Conversational tone archetype (professional, casual, flirty).
+   */
+  tone?: 'professional' | 'casual' | 'flirty';
+  /**
+   * Custom prompt instructions from founder persona settings.
+   */
+  customPrompt?: string;
+  /**
+   * Authenticated caller role ('FOUNDER' | 'MEMBER' etc.), defaults to 'FOUNDER'.
+   */
+  role?: string;
+  /**
+   * When true, an unknown supplied conversationId fails closed with 404 error
+   * instead of provisioning a fresh conversation (REST API contract / ADR 0002).
+   */
+  failOnMissingConversation?: boolean;
+  /**
    * Cooperative cancellation (Phase 3 — SofiaUI voice runtime).
    *
    * When aborted, the turn stops at the NEXT stage boundary of this
@@ -86,7 +116,7 @@ export interface SophiaTurnResult {
   intent: string;
   directiveExecuted: boolean;
   liveAi: boolean;
-  metrics?: any;
+  metrics?: TurnMetrics;
   error?: string;
   idempotentReplay?: boolean;
   /** True when the turn was stopped at a stage boundary by an aborted
@@ -96,6 +126,41 @@ export interface SophiaTurnResult {
   sources?: string[];
   sourceIds?: string[];
   decisionLog?: SophiaDecisionLogEntry;
+  // G6.3 Single Cognitive Ingress fields
+  proposal?: CandidateIntentProposal;
+  validatedCommand?: ValidatedSophiaCommand;
+  orchestrationRun?: OrchestrationRun;
+  authoritativeData?: any;
+  classification?: {
+    intent: string;
+    confidence: number;
+    reason?: string;
+    directiveTitle?: string;
+    suggestedScope?: string;
+    structuredOptions?: string[];
+    approvalAction?: 'approve' | 'reject' | 'request_revision';
+    approvalNote?: string;
+  };
+}
+
+/**
+ * Normalizes internal proposal kind and command type to the canonical
+ * MessageIntent exposed across OS surfaces (agent-chat, ask, voice).
+ */
+export function mapKindToResolvedIntent(kind: string, commandType?: string): string {
+  if (commandType === 'PRESENT_CLARIFICATION') return 'ambiguous';
+  switch (kind) {
+    case 'conversation': return 'conversation';
+    case 'informational_query': return 'information_request';
+    case 'directive_proposal':
+    case 'steering_proposal':
+    case 'operational_inspection': return 'directive';
+    case 'approval_proposal': return 'approval_action';
+    case 'clarification_prompt': return 'ambiguous';
+    case 'refuse': return 'refuse';
+    case 'stop': return 'stop';
+    default: return kind;
+  }
 }
 
 /** Persisted content of the cancelled-turn assistant marker (Phase 3). */
@@ -253,6 +318,17 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         directiveExecuted: false,
         liveAi: false,
         error: `Forbidden: ${err.message}`,
+      };
+    }
+    if (opts.failOnMissingConversation && (err instanceof ConversationNotFoundError || err.name === 'ConversationNotFoundError')) {
+      return {
+        success: false,
+        reply: 'Conversation not found',
+        conversationId: cleanConversationId || '',
+        intent: 'conversation',
+        directiveExecuted: false,
+        liveAi: false,
+        error: `Not Found: ${err.message}`,
       };
     }
     // S4 remains intentional: an unknown supplied conversationId gets a
@@ -549,6 +625,19 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       `${cleanTurnId}:assistant`
     );
     if (existingAssistantMessage) {
+      const replayTokens = existingAssistantMessage.metadata?.tokens ||
+        existingAssistantMessage.metadata?.metrics?.estimatedTokens ||
+        { input: 0, output: 0 };
+      const replayMetrics: TurnMetrics = {
+        contextAssemblyMs: 0,
+        modelMs: 0,
+        gatewayValidationMs: 0,
+        totalTurnMs: 0,
+        estimatedTokens: replayTokens,
+        retrievalHit: existingAssistantMessage.metadata?.metrics?.retrievalHit,
+        degradedStores: existingAssistantMessage.metadata?.metrics?.degradedStores,
+      };
+
       return {
         success: true,
         reply: existingAssistantMessage.content,
@@ -557,7 +646,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         intent: existingAssistantMessage.intent || 'conversation',
         directiveExecuted: existingAssistantMessage.metadata?.directiveExecuted ?? false,
         liveAi: existingAssistantMessage.metadata?.liveAi ?? false,
-        metrics: existingAssistantMessage.metadata?.metrics,
+        metrics: replayMetrics,
         idempotentReplay: true,
         // A previously cancelled turn replays as cancelled — callers must not
         // present the marker as a live reply (Phase 3).
@@ -566,6 +655,11 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         sources: existingAssistantMessage.metadata?.sources,
         sourceIds: existingAssistantMessage.metadata?.sourceIds,
         decisionLog: existingAssistantMessage.metadata?.decisionLog,
+        proposal: existingAssistantMessage.metadata?.proposal,
+        validatedCommand: existingAssistantMessage.metadata?.validatedCommand,
+        orchestrationRun: existingAssistantMessage.metadata?.orchestrationRun,
+        authoritativeData: existingAssistantMessage.metadata?.authoritativeData,
+        classification: existingAssistantMessage.metadata?.classification,
       };
     }
   }
@@ -577,6 +671,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
   }
 
   const executeCore = async (): Promise<SophiaTurnResult> => {
+    const stopwatch = new TurnStopwatch();
     const internalController = new AbortController();
     if (signal) {
       if (signal.aborted) {
@@ -739,6 +834,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     //    (M3 K-2 / M1.3 / G12.3: scope-aware context partition per route ensures
     //    personal memories are read ONLY for personal queries, and Company Brain
     //    ONLY for company queries. Route and scope are both passed.)
+    const assemblyStartedAt = Date.now();
     const assembledContext = await SophiaContextAssembler.assemble({
       message: cleanMessage,
       history: historyItems,
@@ -747,6 +843,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       route,
       budgetLimit: opts.budgetLimit,
     });
+    stopwatch.recordContextAssembly(
+      Date.now() - assemblyStartedAt,
+      assembledContext.formattedContext.length
+    );
 
     // Check for Personal Mind empty result (M1.3: honest abstention)
     const personalSlice = assembledContext.slices.find((s) => s.authority === 'PERSONAL_MIND_MEMORY');
@@ -768,6 +868,17 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         reasoning: 'Personal memory query with no matching facts abstained honestly.',
       });
 
+      const abstainMetrics: TurnMetrics = {
+        contextAssemblyMs: Math.round(Date.now() - assemblyStartedAt),
+        modelMs: 0,
+        totalTurnMs: Math.round(Date.now() - assemblyStartedAt),
+        estimatedTokens: {
+          input: Math.ceil(cleanMessage.length / 4),
+          output: Math.ceil(abstainReply.length / 4),
+        },
+        retrievalHit: false,
+      };
+
       let assistantMessageRecord: ChatMessageRecord | null = null;
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
@@ -778,16 +889,20 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
             role: 'assistant',
             content: abstainReply,
             idempotencyKey: assistantIdempotencyKey,
-            intent: 'informational_query',
+            intent: 'information_request',
             confidence: 0.9,
             metadata: {
               liveAi: false,
+              fallback: true,
+              mode: 'deterministic_fallback',
               directiveExecuted: false,
               ingress: opts.ingress ?? 'live_voice',
               scopes: ['personal_mind'],
               sources: ['SophiaMemoryStore'],
               sourceIds: [],
               decisionLog: abstainLog,
+              metrics: abstainMetrics,
+              tokens: abstainMetrics.estimatedTokens,
             },
           },
           founderId
@@ -802,9 +917,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         conversationId: conversation.id,
         founderMessageId: founderMessageRecord.id,
         assistantMessageId: assistantMessageRecord?.id,
-        intent: 'informational_query',
+        intent: 'information_request',
         directiveExecuted: false,
         liveAi: false,
+        metrics: abstainMetrics,
         scopes: ['personal_mind'],
         sources: ['SophiaMemoryStore'],
         sourceIds: [],
@@ -836,6 +952,17 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         reasoning: 'Company Brain query with no matching facts or knowledge abstained honestly.',
       });
 
+      const abstainMetrics: TurnMetrics = {
+        contextAssemblyMs: Math.round(Date.now() - assemblyStartedAt),
+        modelMs: 0,
+        totalTurnMs: Math.round(Date.now() - assemblyStartedAt),
+        estimatedTokens: {
+          input: Math.ceil(cleanMessage.length / 4),
+          output: Math.ceil(abstainReply.length / 4),
+        },
+        retrievalHit: false,
+      };
+
       let assistantMessageRecord: ChatMessageRecord | null = null;
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
@@ -846,16 +973,20 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
             role: 'assistant',
             content: abstainReply,
             idempotencyKey: assistantIdempotencyKey,
-            intent: 'informational_query',
+            intent: 'information_request',
             confidence: 0.9,
             metadata: {
               liveAi: false,
+              fallback: true,
+              mode: 'deterministic_fallback',
               directiveExecuted: false,
               ingress: opts.ingress ?? 'live_voice',
               scopes: ['company_brain'],
               sources: ['CompanyKnowledgeStore'],
               sourceIds: [],
               decisionLog: abstainLog,
+              metrics: abstainMetrics,
+              tokens: abstainMetrics.estimatedTokens,
             },
           },
           founderId
@@ -870,9 +1001,10 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         conversationId: conversation.id,
         founderMessageId: founderMessageRecord.id,
         assistantMessageId: assistantMessageRecord?.id,
-        intent: 'informational_query',
+        intent: 'information_request',
         directiveExecuted: false,
         liveAi: false,
+        metrics: abstainMetrics,
         scopes: ['company_brain'],
         sources: ['CompanyKnowledgeStore'],
         sourceIds: [],
@@ -881,25 +1013,33 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     }
 
     // 7. Intent Classification with structural trust boundary
+    const classificationStartedAt = Date.now();
     const classificationResult = await SophiaIntentClassifier.classify({
       message: cleanMessage,
       context: assembledContext,
       history: historyItems,
+      tone: opts.tone,
+      customPrompt: opts.customPrompt,
     });
+    const classificationMs = Date.now() - classificationStartedAt;
 
     // 8. Server Trust Boundary Gateway: Verify principal, evaluate policy, enforce invariants, dispatch
     const session = {
-      role: 'FOUNDER',
+      role: opts.role || 'FOUNDER',
       founderId,
       userId: founderId,
     };
+
+    const shouldExecute = executeDirective !== undefined
+      ? executeDirective
+      : (opts.ingress === 'agent_chat' ? false : true);
 
     const executionPromise = SophiaServerGateway.process({
       proposal: classificationResult.proposal,
       session,
       message: cleanMessage,
       context: assembledContext,
-      executeDirective: executeDirective !== false, // Live interaction default: execute authorized directives
+      executeDirective: shouldExecute,
       liveAi: classificationResult.liveAi,
     });
 
@@ -1001,6 +1141,52 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     const returnSources: string[] = executionResult.sources ?? assembledContext.sources ?? [];
     const returnSourceIds: string[] = executionResult.sourceIds ?? assembledContext.sourceIds ?? [];
 
+    let finalReply = executionResult.reply;
+    if (finalReply && returnScopes.length > 0 && !finalReply.includes('Scopes:')) {
+      finalReply += `\n\n[Scopes: ${returnScopes.join(', ')} | Sources: ${returnSources.join(', ') || 'none'}]`;
+    }
+
+    stopwatch.recordModel(
+      classificationMs,
+      cleanMessage.length,
+      (finalReply ?? '').length
+    );
+    const finalizedMetrics = stopwatch.finalize();
+    const turnMetrics: TurnMetrics = {
+      contextAssemblyMs: finalizedMetrics.contextAssemblyMs,
+      modelMs: finalizedMetrics.modelMs,
+      totalTurnMs: finalizedMetrics.totalTurnMs,
+      estimatedTokens: finalizedMetrics.estimatedTokens,
+      retrievalHit: assembledContext.retrievalHit === true,
+      ...(assembledContext.degradedStores ? { degradedStores: assembledContext.degradedStores } : {}),
+    };
+    executionResult.metrics = turnMetrics;
+
+    const resolvedIntent = mapKindToResolvedIntent(executionResult.proposal.kind, executionResult.validatedCommand?.type);
+
+    const classificationInfo = {
+      intent: resolvedIntent,
+      confidence: executionResult.proposal.confidence,
+      reason: (executionResult.validatedCommand as any)?.ambiguityReason ||
+        (executionResult.proposal as any)?.reason ||
+        (executionResult.proposal as any)?.ambiguityReason ||
+        'Contextually classified',
+      directiveTitle: (executionResult.proposal as any)?.title,
+      suggestedScope: (executionResult.validatedCommand as any)?.suggestedScope ||
+        (executionResult.proposal as any)?.suggestedScope,
+      structuredOptions: (executionResult.validatedCommand as any)?.structuredOptions,
+      approvalAction: executionResult.validatedCommand?.type === 'RESOLVE_APPROVAL'
+        ? ((executionResult.proposal as any)?.decision === 'approved'
+            ? ('approve' as const)
+            : (executionResult.proposal as any)?.decision === 'rejected'
+            ? ('reject' as const)
+            : (executionResult.proposal as any)?.decision === 'request_revision'
+            ? ('request_revision' as const)
+            : undefined)
+        : undefined,
+      approvalNote: (executionResult.proposal as any)?.note,
+    };
+
     const outcome: DecisionOutcome =
       executionResult.proposal.kind === 'refuse' || route === 'refuse'
         ? 'refused'
@@ -1048,7 +1234,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     //    stage below reads assistantMessageRecord?.id, so the historic
     //    implicit-null narrowing quirk is closed here with a pure annotation.)
     let assistantMessageRecord: ChatMessageRecord | null = null;
-    if (executionResult.reply) {
+    if (finalReply) {
       try {
         const assistantIdempotencyKey = cleanTurnId ? `${cleanTurnId}:assistant` : undefined;
         assistantMessageRecord = await convStore.saveMessage(
@@ -1056,20 +1242,28 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
             conversationId: conversation.id,
             sender: 'assistant',
             role: 'assistant',
-            content: executionResult.reply,
+            content: finalReply,
             idempotencyKey: assistantIdempotencyKey,
-            intent: executionResult.proposal.kind,
+            intent: resolvedIntent,
             confidence: classificationResult.proposal.confidence,
             metadata: {
               liveAi: executionResult.liveAi,
+              fallback: !executionResult.liveAi,
+              mode: executionResult.liveAi ? 'live_model' : 'deterministic_fallback',
               directiveExecuted: executionResult.directiveExecuted,
-              metrics: executionResult.metrics,
+              metrics: turnMetrics,
+              tokens: turnMetrics.estimatedTokens,
               voiceIngress: (opts.ingress ?? 'live_voice') !== 'sofia_ask',
               ingress: opts.ingress ?? 'live_voice',
               scopes: returnScopes,
               sources: returnSources,
               sourceIds: returnSourceIds,
               decisionLog,
+              proposal: executionResult.proposal,
+              validatedCommand: executionResult.validatedCommand,
+              orchestrationRun: executionResult.orchestrationRun,
+              authoritativeData: executionResult.authoritativeData,
+              classification: classificationInfo,
             },
           },
           founderId
@@ -1087,7 +1281,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
     //     governed /api/sofia/memory PATCH. Capture failures are contained
     //     inside the stage and can never fail this turn; a replayed turn
     //     returns at the idempotency check above before ever reaching here.
-    if (executionResult.success && executionResult.reply && founderMessageRecord) {
+    if (executionResult.success && finalReply && founderMessageRecord) {
       scheduleSophiaMemoryCapture({
         founderId,
         conversationId: conversation.id,
@@ -1095,7 +1289,7 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
         assistantMessageId: assistantMessageRecord?.id,
         turnId: cleanTurnId,
         founderMessage: cleanMessage,
-        assistantReply: executionResult.reply,
+        assistantReply: finalReply,
         ingress: opts.ingress ?? 'live_voice',
       });
     }
@@ -1109,26 +1303,26 @@ export async function executeSophiaTurn(opts: ExecuteSophiaTurnOptions): Promise
       });
     }
 
-    let finalReply = executionResult.reply;
-    if (finalReply && returnScopes.length > 0 && !finalReply.includes('Scopes:')) {
-      finalReply += `\n\n[Scopes: ${returnScopes.join(', ')} | Sources: ${returnSources.join(', ') || 'none'}]`;
-    }
-
     return {
       success: executionResult.success,
       reply: finalReply,
       conversationId: conversation.id,
       founderMessageId: founderMessageRecord.id,
       assistantMessageId: assistantMessageRecord?.id,
-      intent: executionResult.proposal.kind,
+      intent: resolvedIntent,
       directiveExecuted: executionResult.directiveExecuted,
       liveAi: executionResult.liveAi,
-      metrics: executionResult.metrics,
+      metrics: turnMetrics,
       error: executionResult.error,
       scopes: returnScopes,
       sources: returnSources,
       sourceIds: returnSourceIds,
       decisionLog,
+      proposal: executionResult.proposal,
+      validatedCommand: executionResult.validatedCommand,
+      orchestrationRun: executionResult.orchestrationRun,
+      authoritativeData: executionResult.authoritativeData,
+      classification: classificationInfo,
     };
     } finally {
       safeMode.unregisterInFlightTurn(safeModeKey);
