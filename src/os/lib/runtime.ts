@@ -1,3 +1,4 @@
+import type { SofiaGreetingResult, SofiaGreetingOptions } from '@/types/greeting';
 /**
  * SamJuniorsOS — real runtime adapter (Phase 3.4).
  *
@@ -740,4 +741,24 @@ export function applyOrchestrationRun(run: OrchestrationRun) {
     });
   }
   os.log(`Directive executed: ${titleOf(run.directive)} (${run.executionSummary?.totalTasksExecuted ?? 0} steps, ${run.deliverables.length} deliverables)`);
+}
+
+/**
+ * Gate G6.6: Fetch Sophia's honest greeting grounded strictly in real company state,
+ * time of day, last session, pending approvals, and active alerts. Never invents state.
+ */
+export async function fetchGreeting(opts?: SofiaGreetingOptions): Promise<SofiaGreetingResult> {
+  const params = new URLSearchParams();
+  if (opts?.clientTime) params.set('clientTime', opts.clientTime);
+  if (typeof opts?.clientHour === 'number') params.set('clientHour', opts.clientHour.toString());
+  if (opts?.lastSessionAt) params.set('lastSessionAt', opts.lastSessionAt);
+  if (opts?.founderId) params.set('founderId', opts.founderId);
+
+  const qs = params.toString();
+  const url = `/api/sophia/greeting${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) {
+    throw new Error(`Greeting failed: HTTP ${res.status}`);
+  }
+  return res.json() as Promise<SofiaGreetingResult>;
 }

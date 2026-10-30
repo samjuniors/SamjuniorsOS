@@ -6,14 +6,14 @@
  * Implements Gate G6.5: Panel fallback when voice is unavailable, with honest presence states.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Square, AlertCircle, MessageSquare } from "lucide-react";
+import { Mic, MicOff, Square, AlertCircle, MessageSquare, X } from "lucide-react";
 import { getSophiaOS, type OSStatus } from "@/sofia/sophia/SophiaOS";
 import type { SophiaStateName } from "@/sofia/sophia/types";
 import { ParticleRenderer } from "@/sofia/engine/ParticleRenderer";
 import { VisualDirector } from "@/sofia/engine/VisualDirector";
 import { STAGE_CY_CENTERED } from "@/sofia/engine/layout";
 import { resolvePresenceState } from "@/os/lib/presence";
-import { os } from "@/os/lib/osStore";
+import { os, useOS } from "@/os/lib/osStore";
 
 export default function SharedSophiaVoicePresence() {
   const sofia = useMemo(() => getSophiaOS(), []);
@@ -25,6 +25,8 @@ export default function SharedSophiaVoicePresence() {
   const [rendererUnavailable, setRendererUnavailable] = useState(false);
   const [starting, setStarting] = useState(false);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+  const greeting = useOS((s) => s.greeting);
+  const greetingDismissed = useOS((s) => s.greetingDismissed);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -157,7 +159,84 @@ export default function SharedSophiaVoicePresence() {
   }, []);
 
   return (
-    <section aria-label="Sofia live voice" className="fixed bottom-5 left-5 z-40 flex w-[168px] flex-col items-center gap-2 text-slate-100">
+    <section aria-label="Sofia live voice" className="fixed bottom-5 left-5 z-40 flex w-auto flex-col items-start gap-2 text-slate-100">
+      {/* Gate G6.6: Honest Greeting Bubble on Open */}
+      {greeting && !greetingDismissed && (
+        <aside
+          role="region"
+          aria-label="Sophia executive greeting"
+          data-testid="sofia-greeting-bubble"
+          className="relative w-[300px] mb-1 rounded-2xl border border-cyan-400/30 bg-[#070e1c]/95 p-3.5 text-xs text-slate-200 shadow-[0_16px_40px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl"
+        >
+          <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+              <span className="font-semibold tracking-wide text-cyan-200 uppercase text-[10px]">
+                Sophia Vance · COO
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => os.dismissGreeting()}
+              data-testid="sofia-greeting-dismiss-btn"
+              aria-label="Dismiss greeting"
+              title="Dismiss greeting"
+              className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <X size={13} />
+            </button>
+          </div>
+
+          <p className="leading-relaxed text-slate-200" data-testid="sofia-greeting-text">
+            {greeting.text.replace(/^\[Sophia Vance • Chief Operating Officer\]\n/, '')}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 pt-1">
+            {greeting.stateSummary.pendingApprovalsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  os.dismissGreeting();
+                  os.openChatPanel('sophia');
+                }}
+                data-testid="sofia-greeting-action-approvals"
+                className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20"
+              >
+                Review Approvals ({greeting.stateSummary.pendingApprovalsCount})
+              </button>
+            )}
+            {greeting.stateSummary.openAlertsCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  os.dismissGreeting();
+                  os.openChatPanel('sophia');
+                }}
+                data-testid="sofia-greeting-action-attention"
+                className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/20"
+              >
+                View Alerts ({greeting.stateSummary.openAlertsCount})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                os.dismissGreeting();
+                os.openChatPanel('sophia');
+              }}
+              data-testid="sofia-greeting-action-chat"
+              className="rounded-lg border border-cyan-400/30 bg-cyan-500/15 px-2 py-1 text-[10px] font-semibold text-cyan-200 hover:bg-cyan-500/25"
+            >
+              Open Chat
+            </button>
+          </div>
+
+          <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-1.5 text-[9px] text-slate-400">
+            <span>Real state grounded</span>
+            <span className="font-mono text-cyan-300/80">{greeting.latencyMs}ms</span>
+          </div>
+        </aside>
+      )}
       <div className="relative h-[168px] w-[168px] overflow-hidden rounded-full bg-[#04060f] shadow-[0_10px_40px_rgba(0,0,0,0.55)]">
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
         {rendererUnavailable && <div className="absolute inset-5 rounded-full border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_45px_rgba(56,189,248,0.2)]" aria-hidden="true" />}
