@@ -241,6 +241,15 @@
     - Typecheck (`npx tsc --noEmit`), client secrets scan (`npm run scan:client-secrets`), and Vite production build passed with 0 errors.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.6.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.7 (Persona specification and conversation-quality evaluation: natural, concise, consistent, no fabricated memories, one persona for COO and voice):**
+    - Authored authoritative written persona specification in `docs/SOPHIA_PERSONA_SPECIFICATION.md`: defines Sophia Vance (Chief Operating Officer), single persona invariant (`AGENTS.md` §3, §6), vocal style and conciseness rules (1–3 sentences default for voice, zero filler), anti-fabrication invariants (honest "I do not remember" on unrecorded items), and governance boundaries (voice cannot approve side effects).
+    - Codified canonical persona definitions in `src/lib/server/sophia/persona.ts`: exported `SOPHIA_PERSONA_SPEC`, `SOPHIA_CORE_SYSTEM_INSTRUCTION`, `SOPHIA_VOCAL_STYLE`, `getUnifiedSophiaPrompt({ channel, tone })`, and `evaluateMemoryFabrication(query, reply, groundTruth)`.
+    - Harmonized codebase instructions: updated `SERVER_AGENTS.coo` in `src/lib/server/agents/definitions.ts` and replaced divergent split personas (`creative`, `technical`, `friendly`) in `src/lib/server/live/providers/gemini-provider.ts` with `getUnifiedSophiaPrompt({ channel: 'voice' })`.
+    - Curated persona benchmark battery in `benchmark/persona/labelled-set.json` (14 turns across 5 categories) and runner `benchmark/persona/evaluate.ts`. Recorded baseline in `docs/benchmarks/2026-10-30-persona-and-anti-fabrication-baseline-g67.md` and `benchmark/persona/results/baseline.json` (**14/14 PASS, 100%, 0 fabrications, 100% refusal accuracy**).
+    - Authored regression test suite `tests/sophia/g6_7_persona_and_fabricated_memory.test.ts` (10/10 PASS) demonstrating single persona invariant, anti-fabrication abstentions, concise speech, governance boundary enforcement, and proving that fabricated memories fail the build.
+    - Added `"eval:persona": "npx tsx benchmark/persona/evaluate.ts"` script to `package.json`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.7.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
