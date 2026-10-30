@@ -250,6 +250,18 @@
     - Added `"eval:persona": "npx tsx benchmark/persona/evaluate.ts"` script to `package.json`.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.7.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G6.8 (Proactive briefing: a short, interruptible summary of what changed since the last session):**
+    - Built strict source isolation engine in `src/lib/server/sophia/briefing.ts` (`getProactiveBriefing`): queries strictly `DecisionLogStore` and `InMemoryApprovalStore` only, returning `sources: ['DecisionLogStore', 'InMemoryApprovalStore']`. Never consults web, unverified external items, or synthetic claims.
+    - Honest empty state: when zero decisions or approvals changed, confirms plain operational quiet ("No decisions or approval changes have been recorded since your last session... All systems are standing by.").
+    - Exact real change synthesis: synthesizes exact counts of decisions and pending approvals in concise spoken turns (1–3 sentences) and structured markdown panel text.
+    - Can be turned off: persisted in `BriefingSettingsStore` (durable file store `briefing_settings/current`). When disabled, auto-briefing is suppressed across UI and voice. Toggled via API routes (`/api/sophia/briefing/settings`, `/api/sofia/briefing/settings`), DesktopOS Settings popover toggle switch (`data-testid="toggle-proactive-briefing"`), presence card toggle button (`data-testid="sofia-briefing-turn-off-btn"`), and natural language voice/text commands ("turn off proactive briefing").
+    - Interruptible by voice: added briefing stop directives ("stop briefing", "pause briefing", "cancel briefing", "stop talking", "quiet") to `isStopCommand` in `stop-control.ts`, instantly halting turns and dropping into Safe Mode.
+    - Integrated client stores and surfaces: added `briefing`, `briefingDismissed`, and `briefingEnabled` to `osStore.ts`, mounted automatic fetch in `App.tsx`, and rendered `data-testid="sofia-briefing-card"` in `SharedSophiaVoicePresence.tsx`.
+    - Authored regression test suite `tests/sophia/g6_8_proactive_briefing.test.ts` (12/12 PASS).
+    - Verified all 121 executable canonical test suites pass cleanly with 0 failures under `scripts/test-runner.mjs`.
+    - Typecheck (`npx tsc --noEmit`), client secrets scan (`npm run scan:client-secrets`), and production build passed with 0 errors.
+    - Passed independent verification (`.agent/product-kit/handoffs/G6.8.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
