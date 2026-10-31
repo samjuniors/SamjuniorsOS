@@ -329,7 +329,15 @@
 
 ### Milestone M6 Progress:
 - **Completed Steps:**
-  - *Pending start of ready steps via `kit continue`.*
+  - **G14.1 (ADR: capability registry and single gateway. Every tool, skill and MCP server has a manifest and every call passes the policy engine):**
+    - Authored authoritative architecture decision record `docs/architecture/ADR-0010-capability-registry-and-single-gateway.md` comparing GitLab's AI Catalog and OpenClaw's skill load precedence against SamJuniorsOS's Single Gateway principle.
+    - Defined `CapabilityManifestSchema` and TypeScript interfaces in `src/types/capability.ts` covering all 5 pillars: permissions (`CapabilityPermission`), side-effect classification (`RouteSideEffectClass`), trust tier (`CapabilityTrustTier`: `core`, `verified_partner`, `community`, `untrusted`), version pin (strict semantic versioning regex `^\d+\.\d+\.\d+$`), and cost model (`CapabilityCostModel`).
+    - Implemented `CapabilityRegistry` (`src/lib/server/capabilities/capability-registry.ts`) enforcing manifest schema validation, semantic version pinning, core baseline capability initialization (`tool:workspace:read_file`, `tool:github:read_issue`, `tool:github:create_issue`, `skill:research:competitive_scan`, `mcp:sqlite:query`), and the Anti-Shadowing Invariant (rejecting attempts by community or untrusted tiers to shadow core tools or claim `core:`/`system:` prefixes).
+    - Implemented `CapabilityGateway` (`src/lib/server/capabilities/capability-gateway.ts`) providing a single authoritative execution path: enforces request schema validation, quarantines untrusted capabilities, evaluates `AutonomyPolicyEngine`, routes consequential mutations (`external_hard_to_reverse`, `financial_legal`, `destructive_security`) to `SideEffectAuthorizationGate` returning `awaiting_founder_approval` with `approvalId` and `payloadHash`, computes cost, and commits immutable audit records to `InMemoryAuditStore`.
+    - Created static verification auditor `scripts/verify-capability-gateway.mjs` scanning agent and runtime paths for direct unmediated capability execution bypasses.
+    - Authored automated test suite `tests/capabilities/g14_1_capability_gateway_static_check.test.ts` (14/14 PASS).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.1.verify.md`).
+    - Landed on `kit/integration` (`13a732d`) and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
