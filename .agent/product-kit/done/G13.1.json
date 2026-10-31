@@ -1,0 +1,8 @@
+{
+  "id": "G13.1",
+  "doneAt": "2026-10-31T11:43:50.093Z",
+  "agent": "arch-lead",
+  "branch": "step/G13.1",
+  "commit": "851dc4aaff661828d6df149ea0b9bc92c6490e61",
+  "evidence": "Authored ADR-0011 defining the 7-pillar AI Employee Model, enforcing PRODUCT.md Section 7 (Role Brain != Company Truth) and Section 8 (Self-Improving != Self-Authorizing). Evaluated Paperclip's org chart, hard-stop budgets, and pause/terminate states, and articulated the Second-Engine Risk across 6 architectural dimensions. Reconciled founder input from 2026-10-20 by adopting Paperclip as an external onboarding declaration format while keeping execution 100% native. Codified types and Zod schemas in src/types/employee.ts with deterministic invariant guards. Verified via tests/capabilities/g13_1_employee_model_adr.test.ts (16/16 PASS) and passed independent review."
+}
