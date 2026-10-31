@@ -2,12 +2,20 @@
 <html lang="en" class="dark h-full">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
     <title>SamJuniorsOS — AI-Native Company Operating System</title>
     <meta name="description" content="The internal operating system for SamJuniors operated by Sophia Vance, Chief Operating Officer." />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="theme-color" content="#01040a" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SamJuniorsOS" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="alternate icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.json" />
   </head>
-  <body class="min-h-full bg-[var(--cvl-void,#01040a)] text-[var(--cvl-text,#f1f5f9)] font-sans antialiased">
+  <body class="min-h-full bg-[var(--cvl-void,#01040a)] text-[var(--cvl-text,#f1f5f9)] font-sans antialiased overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
