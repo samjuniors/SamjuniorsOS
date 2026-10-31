@@ -1,0 +1,8 @@
+{
+  "id": "G14.7",
+  "doneAt": "2026-10-31T10:50:36.675Z",
+  "agent": "lead",
+  "branch": "step/G14.7",
+  "commit": "d2a50e5b1aa89549234e785256fa9e86e5e6dabf",
+  "evidence": "14/14 automated tests in tests/capabilities/g14_7_capability_evaluation.test.ts passing; 99/99 capability tests passing; 143/143 canonical suites passing; typecheck clean; build clean; independent review PASS"
+}

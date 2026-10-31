@@ -106,7 +106,9 @@ export type AuthorizationReasonCode =
   | 'FOUNDER_MANUAL_RECONCILIATION'
   | 'AUDIT_RECONCILED'
   | 'FOUNDER_AUTONOMY_LEVEL_UPDATED'
-  | 'DENIED_SAFE_MODE_FROZEN';
+  | 'DENIED_SAFE_MODE_FROZEN'
+  | 'DENIED_BUDGET_CAP_EXCEEDED'
+  | 'DENIED_RUNAWAY_LOOP_DETECTED';
 
 export interface FounderApprovalRecord {
   id: string;
