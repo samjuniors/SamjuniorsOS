@@ -406,6 +406,16 @@
     - Authored automated test suite `tests/capabilities/g14_7_capability_evaluation.test.ts` (14/14 PASS; 99/99 PASS across all capability suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.7.verify.md` with verdict PASS).
     - Landed on `kit/integration` (`864153c`), verified across all 143 executable canonical test suites, and pushed to `origin`.
+  - **QA-M6 (Full Milestone M6 QA Pass):**
+    - Completed comprehensive QA pass for Milestone M6 (`.agent/product-kit/qa/M6.md`) with verdict **PASS**.
+    - Exercised founder test steps T1, T2, T3, T4 with verifiable evidence:
+      - T1: Side-effect tools (`tool:stripe:create_payment_intent`, `tool:resend:send_email`) strictly halt in `awaiting_founder_approval`.
+      - T2: Runtime self-install is impossible (`RuntimeSelfInstallForbiddenError`); third-party tools are quarantined (`trustTier: 'untrusted'`) until explicit founder confirmation.
+      - T3: Malicious instructions injected through tool outputs are neutralized and enveloped (`isUntrusted: true`); unapproved side effects are deterministically blocked.
+      - T4: Cost caps, call limits, rate limits, and failure streak thresholds stop runaway tool loops (`RunawayToolLoopError`, `CapabilityBudgetExceededError`).
+    - Verified Quality Bar items Q-UX-2 (state honesty), Q-UX-3 (real state greeting), Q-UX-5 (epistemic clarity), and Q-A11Y-1 (WCAG 2.2 AA accessibility).
+    - Verified `node .agent/product-kit/kit.mjs qa check M6` with zero errors.
+    - Landed on `kit/integration` (`f956d78`) and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
