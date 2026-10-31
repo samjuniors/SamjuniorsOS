@@ -289,6 +289,15 @@
     - Added automated regression test suite `tests/frontend/g8_4_responsive_and_android.test.ts` (6/6 PASS).
     - Passed independent verification (`.agent/product-kit/handoffs/G8.4.verify.md` with verdict PASS).
     - Merged and landed on `kit/integration`.
+  - **G8.5 (Copy, empty states and error messages pass):**
+    - Created `src/os/lib/errorFormat.ts` providing deterministic sanitization (`formatUserError`, `isRawError`) stripping stack traces, memory addresses, internal URLs, and cryptic exception classes into honest, structured `whatHappened` and `whatToDo` user guidance.
+    - Upgraded `ErrorState` in `src/os/components/surfaces/StandardSurfaces.tsx` to display both what happened and what to do, sanitizing any raw messages.
+    - Created `src/os/components/surfaces/ErrorBoundary.tsx` catching React render exceptions and presenting safe user guidance and reload action.
+    - Hardened copy and empty/error states across OS surfaces: `FlowDesktop.tsx` (Attention, Decision, Approval, Activity, Graph 503, Automation), `ChatPanel.tsx`, `Spotlight.tsx`, `SophiaPanel.tsx`, `TodoDrawer.tsx`, and `SharedSophiaVoicePresence.tsx`.
+    - Added automated test suite `tests/frontend/g8_5_copy_empty_states_errors.test.ts` (16/16 PASS).
+    - Passed all 136 executable test suites under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G8.5.verify.md` with verdict PASS).
+    - Merged and landed on `kit/integration`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
