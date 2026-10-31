@@ -1,0 +1,8 @@
+{
+  "id": "G14.5",
+  "doneAt": "2026-10-31T08:43:09.351Z",
+  "agent": "lead",
+  "branch": "step/G14.5",
+  "commit": "fab55f215e724e57b6bfdf041c4504fa8ef4ba49",
+  "evidence": "15/15 tests in tests/capabilities/g14_5_sandbox_egress_control.test.ts passing; tool cannot reach non-allowlisted host (NetworkEgressViolationError) or private/SSRF target (SSRFViolationError); tool cannot read another tool secret (SecretAccessDeniedError); call-time secret injection and deep output/error/audit redaction verified; independent review PASS in G14.5.verify.md"
+}

@@ -35,6 +35,8 @@ export interface CapabilityExecutionContext {
   userId?: string;
   conversationId?: string;
   reason?: string;
+  sandbox?: import('@/types/sandbox').CapabilitySandbox;
+  secrets?: Readonly<Record<string, string>>;
 }
 
 export type CapabilityExecutor = (

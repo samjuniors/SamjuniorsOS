@@ -1,5 +1,5 @@
 /**
- * SamJuniorsOS — Capability Gateway (Gate G14.1 & G14.2)
+ * SamJuniorsOS — Capability Gateway (Gate G14.1, G14.2 & G14.5)
  *
  * Single authoritative execution gateway for all tools, skills, and MCP servers.
  * Invariant: Every capability call MUST pass through this gateway.
@@ -11,6 +11,11 @@
  * 4. Side-effect authorization gate (SideEffectAuthorizationGate) for consequential mutations.
  * 5. Cost accounting and immutable append-only audit trail.
  * 6. MCP integration: routes mcp_stdio / mcp_sse execution through McpClientAdapter (G14.2).
+ * 7. Sandbox & Egress Control (Gate G14.5):
+ *    - Network allowlist enforcement on all outbound calls (net:outbound:<host>).
+ *    - SSRF prevention (blocking loopback, private subnets, cloud metadata).
+ *    - Call-time secret injection with cross-tool isolation (tools only receive their provisioned secrets).
+ *    - Deep recursive redaction of secrets in returned data, errors, and audit logs.
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -32,10 +37,23 @@ import { AutonomyPolicyEngine } from '@/lib/server/authorization/autonomy-policy
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
 import { McpClientAdapter } from './mcp-client';
+import { CapabilitySecretVault, SecretRedactor } from './secret-vault';
+import { createCapabilitySandbox } from './sandbox-egress';
 
 export class CapabilityGateway {
+  private static customFetchDispatcher?: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | null = null;
+
   /**
-   * Authoritative entrypoint: invokes a capability through policy and approval gates.
+   * Sets an optional custom fetch dispatcher for sandboxed network requests (used in tests or custom transports).
+   */
+  public static setCustomFetchDispatcher(
+    dispatcher: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | null
+  ): void {
+    CapabilityGateway.customFetchDispatcher = dispatcher;
+  }
+
+  /**
+   * Authoritative entrypoint: invokes a capability through policy, sandbox, and approval gates.
    */
   public static async invoke(
     rawRequest: CapabilityInvocationRequest
@@ -137,7 +155,32 @@ export class CapabilityGateway {
       };
     }
 
-    // 5. Execution
+    // 5. Sandbox & Secret Provisioning (Gate G14.5)
+    // Resolve secrets strictly assigned to this capability at call time.
+    let scopedSecrets: Record<string, string> = {};
+    try {
+      const vault = CapabilitySecretVault.getInstance();
+      scopedSecrets = vault.getSecretsForCapability(manifest.id, manifest.secretRefs || []);
+    } catch (secretErr: any) {
+      return {
+        success: false,
+        capabilityId: request.capabilityId,
+        status: 'error',
+        error: SecretRedactor.redact(
+          `Secret provisioning failure for "${request.capabilityId}": ${secretErr?.message || secretErr}`
+        ),
+        durationMs: 0,
+        costChargedCents: 0,
+      };
+    }
+
+    const sandbox = createCapabilitySandbox({
+      manifest,
+      secrets: scopedSecrets,
+      customFetchDispatcher: CapabilityGateway.customFetchDispatcher || undefined,
+    });
+
+    // 6. Execution within Sandbox
     const startTime = performance.now();
     try {
       let data: any;
@@ -147,6 +190,8 @@ export class CapabilityGateway {
           userId: request.userId,
           conversationId: request.conversationId,
           reason: request.reason,
+          sandbox,
+          secrets: scopedSecrets,
         });
       } else if (
         manifest.entrypoint.type === 'mcp_stdio' ||
@@ -159,7 +204,10 @@ export class CapabilityGateway {
           transport: manifest.entrypoint.type === 'mcp_stdio' ? 'stdio' : 'sse',
           command: manifest.entrypoint.target,
           args: manifest.entrypoint.args || [],
-          env: manifest.entrypoint.env,
+          env: {
+            ...manifest.entrypoint.env,
+            ...scopedSecrets, // strictly scoped secrets injected at call time
+          },
           timeoutMs: 10000,
         };
         const toolName =
@@ -186,16 +234,19 @@ export class CapabilityGateway {
         };
       }
 
+      // Redact any secrets that may have been reflected in the output
+      data = SecretRedactor.redact(data);
+
       const durationMs = Math.round(performance.now() - startTime);
       const costChargedCents = manifest.cost?.perCallCents ?? 0;
 
-      // 6. Record immutable audit record
+      // 7. Record immutable audit record with secret redaction
       const reasonCode: AuthorizationReasonCode =
         manifest.sideEffectClass === 'read_only'
           ? 'READ_ONLY_ALLOWED'
           : 'INTERNAL_MUTATION_ALLOWED';
 
-      const auditRecord: SideEffectAuditRecord = {
+      const rawAuditRecord: SideEffectAuditRecord = {
         id: `audit-${uuidv4()}`,
         timestamp: new Date().toISOString(),
         requestId: `req-${uuidv4()}`,
@@ -209,6 +260,8 @@ export class CapabilityGateway {
         reason: `Capability "${manifest.id}" executed via CapabilityGateway.`,
         executed: true,
       };
+
+      const auditRecord = SecretRedactor.redact(rawAuditRecord);
 
       try {
         await InMemoryAuditStore.getInstance().record(auditRecord);
@@ -226,11 +279,14 @@ export class CapabilityGateway {
       };
     } catch (err: any) {
       const durationMs = Math.round(performance.now() - startTime);
+      const redactedError = SecretRedactor.redact(
+        err?.message || 'Capability execution encountered an unhandled error.'
+      );
       return {
         success: false,
         capabilityId: request.capabilityId,
         status: 'error',
-        error: err?.message || 'Capability execution encountered an unhandled error.',
+        error: redactedError,
         durationMs,
         costChargedCents: 0,
       };

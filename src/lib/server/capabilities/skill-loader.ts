@@ -401,6 +401,7 @@ export class SkillLoader {
       trustTier,
       sideEffectClass: "read_only", // Skills are read-only instruction sets
       permissions: [], // STRICT: Skills cannot grant permissions!
+      secretRefs: [], // STRICT: Skills cannot declare or access secrets!
       cost: { perCallCents: 0, currency: "USD" },
       entrypoint: {
         type: "prompt_template",
