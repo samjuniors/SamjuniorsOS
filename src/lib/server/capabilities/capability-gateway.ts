@@ -1,5 +1,5 @@
 /**
- * SamJuniorsOS — Capability Gateway (Gate G14.1)
+ * SamJuniorsOS — Capability Gateway (Gate G14.1 & G14.2)
  *
  * Single authoritative execution gateway for all tools, skills, and MCP servers.
  * Invariant: Every capability call MUST pass through this gateway.
@@ -10,6 +10,7 @@
  * 3. Autonomy policy evaluation (AutonomyPolicyEngine).
  * 4. Side-effect authorization gate (SideEffectAuthorizationGate) for consequential mutations.
  * 5. Cost accounting and immutable append-only audit trail.
+ * 6. MCP integration: routes mcp_stdio / mcp_sse execution through McpClientAdapter (G14.2).
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -17,15 +18,20 @@ import {
   CapabilityInvocationRequest,
   CapabilityInvocationRequestSchema,
   CapabilityInvocationResult,
-  CapabilityInvocationResultSchema,
   RouteSideEffectClass,
 } from '@/types/capability';
 import { AutonomyActionClass } from '@/types/autonomy';
-import { SideEffectClassification, SideEffectAuditRecord, AuthorizationReasonCode } from '@/types/authorization';
-import { CapabilityRegistry, RegisteredCapability } from './capability-registry';
+import {
+  SideEffectClassification,
+  SideEffectAuditRecord,
+  AuthorizationReasonCode,
+} from '@/types/authorization';
+import { McpServerConfig } from '@/types/mcp';
+import { CapabilityRegistry } from './capability-registry';
 import { AutonomyPolicyEngine } from '@/lib/server/authorization/autonomy-policy';
 import { SideEffectAuthorizationGate } from '@/lib/server/authorization/gate';
 import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
+import { McpClientAdapter } from './mcp-client';
 
 export class CapabilityGateway {
   /**
@@ -90,7 +96,9 @@ export class CapabilityGateway {
         success: false,
         capabilityId: request.capabilityId,
         status: 'denied',
-        error: policyResult.reason || `Execution forbidden by company autonomy policy for action class "${autonomyClass}".`,
+        error:
+          policyResult.reason ||
+          `Execution forbidden by company autonomy policy for action class "${autonomyClass}".`,
         durationMs: 0,
         costChargedCents: 0,
       };
@@ -140,6 +148,36 @@ export class CapabilityGateway {
           conversationId: request.conversationId,
           reason: request.reason,
         });
+      } else if (
+        manifest.entrypoint.type === 'mcp_stdio' ||
+        manifest.entrypoint.type === 'mcp_sse'
+      ) {
+        const mcpClient = McpClientAdapter.getInstance();
+        const serverConfig: McpServerConfig = {
+          id: manifest.id,
+          name: manifest.name,
+          transport: manifest.entrypoint.type === 'mcp_stdio' ? 'stdio' : 'sse',
+          command: manifest.entrypoint.target,
+          args: manifest.entrypoint.args || [],
+          env: manifest.entrypoint.env,
+          timeoutMs: 10000,
+        };
+        const toolName =
+          (manifest.metadata?.mcpToolName as string) ||
+          manifest.id.split(':').pop() ||
+          manifest.id;
+
+        const result = await mcpClient.callTool(
+          serverConfig,
+          toolName,
+          request.parameters,
+          {
+            callerAgentId: request.callerAgentId,
+            userId: request.userId,
+            conversationId: request.conversationId,
+          }
+        );
+        data = result;
       } else {
         data = {
           executed: true,
@@ -203,7 +241,9 @@ export class CapabilityGateway {
 /**
  * Maps RouteSideEffectClass to AutonomyActionClass
  */
-function mapSideEffectToAutonomyClass(sideEffectClass: RouteSideEffectClass): AutonomyActionClass {
+function mapSideEffectToAutonomyClass(
+  sideEffectClass: RouteSideEffectClass
+): AutonomyActionClass {
   switch (sideEffectClass) {
     case 'read_only':
       return 'read';
@@ -225,7 +265,9 @@ function mapSideEffectToAutonomyClass(sideEffectClass: RouteSideEffectClass): Au
 /**
  * Maps RouteSideEffectClass to SideEffectClassification
  */
-function mapSideEffectToClassification(sideEffectClass: RouteSideEffectClass): SideEffectClassification {
+function mapSideEffectToClassification(
+  sideEffectClass: RouteSideEffectClass
+): SideEffectClassification {
   switch (sideEffectClass) {
     case 'read_only':
       return 'read_only';
