@@ -67,3 +67,6 @@ jobs:
 
       - name: Memory retrieval benchmark regression gate (G4.4)
         run: npm run benchmark:memory
+
+      - name: Frontend performance budgets and Core Web Vitals gate (G8.3)
+        run: npm run benchmark:perf

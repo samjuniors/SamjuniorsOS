@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "profile": {
+    "name": "mid-range-profile",
+    "description": "Standard mid-range client profile with 4x CPU throttling and simulated network roundtrip",
+    "cpuThrottlingRate": 4,
+    "network": {
+      "name": "Fast 3G / Typical Mobile & Slow Desktop",
+      "downloadKbps": 1600,
+      "uploadKbps": 750,
+      "latencyMs": 150
+    }
+  },
+  "budgets": {
+    "webVitals": {
+      "LCP_MS": 2500,
+      "INP_MS": 200,
+      "CLS": 0.10
+    },
+    "bundle": {
+      "maxIndividualChunkRawKb": 500,
+      "maxIndividualChunkGzipKb": 150,
+      "maxTotalJsRawKb": 2048,
+      "maxTotalJsGzipKb": 550,
+      "maxTotalCssRawKb": 400,
+      "maxTotalCssGzipKb": 60
+    }
+  },
+  "coreJourneys": [
+    {
+      "id": "J1_Cockpit",
+      "name": "Cockpit Morning Ingress & Situational Awareness",
+      "route": "/",
+      "baseline": {
+        "lcpMs": 1180,
+        "inpMs": 42,
+        "cls": 0.012
+      }
+    },
+    {
+      "id": "J2_Decisions",
+      "name": "Strategic Decision Review & Option Deliberation",
+      "route": "/decisions",
+      "baseline": {
+        "lcpMs": 1320,
+        "inpMs": 48,
+        "cls": 0.018
+      }
+    },
+    {
+      "id": "J3_Approvals",
+      "name": "High-Stakes Approval & Cryptographic Gate Signing",
+      "route": "/approvals",
+      "baseline": {
+        "lcpMs": 1250,
+        "inpMs": 45,
+        "cls": 0.015
+      }
+    },
+    {
+      "id": "J4_Activity",
+      "name": "Authoritative Audit Inspection & Chronological Ledger",
+      "route": "/activity",
+      "baseline": {
+        "lcpMs": 1390,
+        "inpMs": 52,
+        "cls": 0.022
+      }
+    },
+    {
+      "id": "J5_Realtime",
+      "name": "Unified Cognitive Ingress & Realtime Interaction",
+      "route": "/realtime",
+      "baseline": {
+        "lcpMs": 1410,
+        "inpMs": 58,
+        "cls": 0.025
+      }
+    }
+  ]
+}
