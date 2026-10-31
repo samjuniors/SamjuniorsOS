@@ -282,6 +282,13 @@
     - Typecheck, lint, build, benchmark, and all 134 executable test suites passed with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G8.3.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G8.4 (Responsive layout and Android path decision: PWA or native client):**
+    - Authored authoritative Architecture Decision Record `docs/architecture/ADR-0009-android-path-decision-pwa-vs-native.md` deciding Option A: Progressive Web Application (PWA) First, preserving Option C (hybrid companion) if low-level hardware background sensory hooks are required later.
+    - Created web app manifest `public/manifest.json` (`display: standalone`, `#01040a` theme/background, standalone app scope, SVG + PNG icon definitions) and updated `index.html` with mobile web app meta tags and viewport fit configuration.
+    - Enhanced responsive layout in `src/os/components/os/DesktopOS.tsx` with dedicated mobile Spotlight button (`data-testid="mobile-spotlight-trigger"`) visible on small viewports (< 640px).
+    - Added automated regression test suite `tests/frontend/g8_4_responsive_and_android.test.ts` (6/6 PASS).
+    - Passed independent verification (`.agent/product-kit/handoffs/G8.4.verify.md` with verdict PASS).
+    - Merged and landed on `kit/integration`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
