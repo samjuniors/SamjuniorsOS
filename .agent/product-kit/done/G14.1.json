@@ -1,0 +1,8 @@
+{
+  "id": "G14.1",
+  "doneAt": "2026-10-31T06:28:53.401Z",
+  "agent": "lead",
+  "branch": "step/G14.1",
+  "commit": "f588ca5a3e0cb46286da3009f2dc0ee1ff6b195a",
+  "evidence": "ADR-0010 comparing GitLab and OpenClaw models, CapabilityManifestSchema with 5 pillars, CapabilityRegistry with anti-shadowing, CapabilityGateway with policy and approval gates, static verification check (scripts/verify-capability-gateway.mjs), 14 passing automated tests"
+}
