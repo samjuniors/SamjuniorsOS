@@ -369,6 +369,22 @@
     - Authored automated test suite `tests/capabilities/g14_4_vetting_and_install_pipeline.test.ts` (13/13 PASS; 56/56 PASS across all capability suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.4.verify.md` with verdict PASS).
     - Landed on `kit/integration` (`3453146`), verified across all 140 executable canonical test suites, and pushed to `origin`.
+  - **G14.5 (Sandbox and egress control: least-privilege tools, network allowlists, secrets injected at call time and never shown to the model):**
+    - Codified sandbox and egress control types in `src/types/sandbox.ts` (`NetworkEgressViolationError`, `SSRFViolationError`, `SecretAccessDeniedError`, `SecretNotFoundError`, `EgressRule`, `EgressEvaluationResult`, `SecretVaultEntry`, `CapabilitySandbox`).
+    - Added optional `secretRefs: z.array(z.string()).optional().default([])` to `CapabilityManifestSchema` in `src/types/capability.ts`.
+    - Built `CapabilitySecretVault` and `SecretRedactor` in `src/lib/server/capabilities/secret-vault.ts`:
+      - Strict least-privilege scoping: tools can only access secrets explicitly mapped to their capability ID. Cross-tool secret access is denied with `SecretAccessDeniedError`.
+      - Call-time injection: secrets are provisioned on demand at invocation time.
+      - Deep recursive redaction: output data, thrown error messages/stack traces, and append-only audit records are sanitized (`[REDACTED_SECRET:<NAME>]`) with cycle detection and short-secret threshold guards.
+    - Built `SandboxEgressGuard` in `src/lib/server/capabilities/sandbox-egress.ts`:
+      - Evaluates destination URLs against declared `net:outbound:<host>` permissions. Tools without outbound permissions are barred from network egress (`NetworkEgressViolationError`).
+      - SSRF protection: blocks loopback (`127.0.0.1`, `localhost`), link-local/cloud metadata (`169.254.169.254`), and private RFC 1918 subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) via `blockedAddress` and IPv6 bracket normalization.
+      - Provides `createSandboxedFetch` dispatcher bound strictly to allowlisted hosts.
+    - Integrated with `CapabilityGateway` (`src/lib/server/capabilities/capability-gateway.ts`): resolves secrets at call time, creates `CapabilitySandbox`, scopes child environment for MCP stdio servers, and redacts returned data and audit trail.
+    - Updated `skill-loader.ts` to strictly enforce that skills cannot declare or hold secrets (`secretRefs: []`).
+    - Authored automated test suite `tests/capabilities/g14_5_sandbox_egress_control.test.ts` (15/15 PASS; 71/71 PASS across all capability suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.5.verify.md` with verdict PASS).
+    - Landed on `kit/integration` (`d9af820`), verified across all 141 executable canonical test suites, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
