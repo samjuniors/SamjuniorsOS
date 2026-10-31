@@ -1,0 +1,8 @@
+{
+  "id": "G14.4",
+  "doneAt": "2026-10-31T08:15:18.826Z",
+  "agent": "lead",
+  "branch": "step/G14.4",
+  "commit": "c2036fb7d8c82135fe7657fcac118fc726bb58d5",
+  "evidence": "13 automated tests in tests/capabilities/g14_4_vetting_and_install_pipeline.test.ts passing; all 56 capability tests passing; typecheck, lint, build clean"
+}
