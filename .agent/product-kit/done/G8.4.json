@@ -1,0 +1,8 @@
+{
+  "id": "G8.4",
+  "doneAt": "2026-10-31T05:02:32.589Z",
+  "agent": "lead",
+  "branch": "step/G8.4",
+  "commit": "f47aa4173f815d7e2308af0fdb6d9cc5c3ff7279",
+  "evidence": "ADR-0009 published; public/manifest.json and mobile index.html added; tests/frontend/g8_4_responsive_and_android.test.ts passes (6/6); typecheck, lint, and build pass"
+}

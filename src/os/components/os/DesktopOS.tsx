@@ -376,7 +376,16 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
           <span className="flex-1 truncate text-left">Search, command, or ask Sophia…</span>
           <span className="flex shrink-0 items-center gap-0.5 rounded-md border border-white/15 bg-white/5 px-1.5 py-0.5 font-mono text-[9px] text-slate-400"><CommandIcon size={8} />K</span>
         </button>
-        <div className="w-[220px] shrink-0 sm:hidden" />
+        <div className="flex items-center gap-1 sm:hidden">
+          <button
+            onClick={() => { osSound.open(); setSpotlight(true); }}
+            aria-label="Search, command, or ask Sophia"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 text-slate-300 transition hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400"
+            title="Search / Ask Sophia"
+          >
+            <Search size={14} className="text-cyan-300" />
+          </button>
+        </div>
 
         <div className="flex items-center gap-1">
           <TrayBtn

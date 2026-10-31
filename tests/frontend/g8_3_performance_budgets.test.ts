@@ -1,8 +1,7 @@
-import { describe, test, expect, beforeAll } from 'bun:test';
+import { describe, test, expect } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -20,20 +19,6 @@ const DIST_DIR = path.join(ROOT_DIR, 'dist');
 const DIST_ASSETS = path.join(DIST_DIR, 'assets');
 
 describe('Gate G8.3: Frontend Performance Budgets & Core Web Vitals CI Gate', () => {
-  beforeAll(() => {
-    // Ensure dist is freshly compiled with production minification & current vite.config.ts chunking
-    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    try {
-      execSync(`${npmCmd} run build`, {
-        cwd: ROOT_DIR,
-        stdio: 'ignore',
-        env: { ...process.env, NODE_ENV: 'production' },
-      });
-    } catch (err) {
-      console.error('Failed to compile production bundle in test beforeAll:', err);
-    }
-  });
-
   test('1. Authoritative budget definition exists and codifies canonical thresholds', () => {
     expect(fs.existsSync(BUDGET_FILE)).toBe(true);
     const config = JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf8'));

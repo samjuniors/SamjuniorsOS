@@ -1,0 +1,25 @@
+{
+  "name": "SamJuniorsOS — AI-Native Company Operating System",
+  "short_name": "SamJuniorsOS",
+  "description": "The internal company operating system for SamJuniors operated by Sophia, Chief Operating Officer.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#01040a",
+  "theme_color": "#01040a",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/sofia-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
