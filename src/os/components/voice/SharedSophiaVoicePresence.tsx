@@ -15,6 +15,7 @@ import { STAGE_CY_CENTERED } from "@/sofia/engine/layout";
 import { resolvePresenceState } from "@/os/lib/presence";
 import { os, useOS } from "@/os/lib/osStore";
 import { updateBriefingSettings } from "@/os/lib/runtime";
+import { formatUserError } from "@/os/lib/errorFormat";
 
 export default function SharedSophiaVoicePresence() {
   const sofia = useMemo(() => getSophiaOS(), []);
@@ -49,11 +50,23 @@ export default function SharedSophiaVoicePresence() {
     const onMicStatus = (event: Event) => {
       const detail = (event as CustomEvent<{ status: string; err?: string }>).detail;
       setMicDenied(detail.status === "denied");
-      if (detail.err) setError(detail.err);
+      if (detail.err) {
+        const formatted = formatUserError(detail.err, {
+          whatHappened: "Microphone permission was denied or device is unavailable.",
+          whatToDo: "Enable microphone in browser settings, or use the text panel below.",
+        });
+        setError(`${formatted.whatHappened} ${formatted.whatToDo}`);
+      }
     };
     const onUnsupported = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string; action?: string }>).detail;
-      if (detail) setError([detail.message, detail.action].filter(Boolean).join(" "));
+      if (detail) {
+        const formatted = formatUserError(detail.message, {
+          whatHappened: detail.message || "Voice capability is unsupported in this browser environment.",
+          whatToDo: detail.action || "Use the text chat panel below.",
+        });
+        setError(`${formatted.whatHappened} ${formatted.whatToDo}`);
+      }
     };
     sofia.addEventListener("status", onStatus);
     sofia.addEventListener("mic-status", onMicStatus);
@@ -139,7 +152,11 @@ export default function SharedSophiaVoicePresence() {
       // User gesture unlocks audio and starts native hands-free Live session.
       await sofia.enterSession("mic-button");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start voice session");
+      const formatted = formatUserError(err, {
+        whatHappened: "Could not start hands-free voice session.",
+        whatToDo: "Allow microphone access in browser settings, or use the text chat panel below.",
+      });
+      setError(`${formatted.whatHappened} ${formatted.whatToDo}`);
     } finally {
       setStarting(false);
     }

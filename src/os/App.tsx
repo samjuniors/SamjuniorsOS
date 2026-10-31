@@ -2,6 +2,7 @@ import { useEffect, useState, lazy, Suspense } from "react";
 import { Sparkles, LayoutGrid, ArrowLeft } from "lucide-react";
 import DesktopOS from "./components/os/DesktopOS";
 import ChatPanel from "./components/os/ChatPanel";
+import ErrorBoundary from "./components/surfaces/ErrorBoundary";
 import { os } from "./lib/osStore";
 import { syncFromServer, fetchGreeting, fetchBriefing } from "./lib/runtime";
 import { osSound } from "./lib/osAudio";
@@ -141,7 +142,9 @@ export default function App({ onNavigate }: AppProps = {}) {
       </div>
 
       <main id="main-content" role="main" aria-label="SamJuniorsOS Cockpit" className="h-full w-full">
-        {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
+        <ErrorBoundary fallbackTitle="SamJuniorsOS Cockpit Disrupted">
+          {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
+        </ErrorBoundary>
       </main>
 
       {/* Retain the canonical text chat surface; do not mount a second

@@ -3,6 +3,7 @@ import { MessageSquare, X, Send, Bot, Sparkles, AlertCircle } from "lucide-react
 import { useOS, os } from "../../lib/osStore";
 import { osSound } from "../../lib/osAudio";
 import { agentChat, fetchConversation, toServerAgentId } from "../../lib/runtime";
+import { formatUserError } from "../../lib/errorFormat";
 
 type Message = {
   id: string;
@@ -261,13 +262,17 @@ export default function ChatPanel() {
       .catch((err: unknown) => {
         // Honest failure — no simulated agent reply.
         setIsTyping(false);
+        const formatted = formatUserError(err, {
+          whatHappened: `Could not reach ${activeAgent.name} on the server. Nothing was simulated.`,
+          whatToDo: "Check your server connection or try sending your message again.",
+        });
         setMessages((prev) => [
           ...prev,
           {
             id: `m-agent-${Date.now()}`,
             sender: "agent",
             agentId: activeContactId,
-            text: `⚠ Couldn't reach ${activeAgent.name} on the server — nothing was simulated. ${err instanceof Error ? err.message : String(err)}`,
+            text: `⚠ ${formatted.whatHappened} What to do: ${formatted.whatToDo}`,
             at: Date.now(),
             read: open,
           },
@@ -411,7 +416,7 @@ export default function ChatPanel() {
               <div className="flex flex-col items-center justify-center p-8 text-center text-[11.5px] text-slate-500">
                 <MessageSquare size={20} className="mb-2 text-slate-600" />
                 <span>No messages yet with {activeAgent.name}.</span>
-                <span className="mt-1 text-[10px] text-slate-600">Type a message below to start a thread.</span>
+                <span className="mt-1 text-[10px] text-slate-500">Type a message below or select a suggested prompt to begin.</span>
               </div>
             ) : (
               activeThread.map((m) => {

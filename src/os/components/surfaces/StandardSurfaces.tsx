@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { formatUserError } from "../../lib/errorFormat";
 import type {
   EntityItem,
   AttentionData,
@@ -81,25 +82,35 @@ export function EmptyState({
 export function ErrorState({
   title = "Telemetry Stream Disrupted",
   message = "Failed to synchronize operational state.",
+  action,
   onRetry,
+  retryLabel = "Retry Sync",
 }: {
   title?: string;
   message?: string;
+  action?: string;
   onRetry?: () => void;
+  retryLabel?: string;
 }) {
+  const formatted = formatUserError(message, {
+    whatHappened: message,
+    whatToDo: action,
+  });
+
   return (
     <div className="p-4 rounded-xl border border-rose-500/40 bg-rose-500/[0.07] backdrop-blur-sm text-left">
       <div className="flex items-start gap-2.5">
-        <span className="text-rose-400 text-sm mt-0.5">⚠️</span>
+        <span className="text-rose-400 text-sm mt-0.5" aria-hidden="true">⚠️</span>
         <div className="flex-1 min-w-0">
           <h4 className="text-xs font-bold text-rose-300 uppercase tracking-wide">{title}</h4>
-          <p className="text-[11px] text-rose-200/70 mt-0.5">{message}</p>
+          <p className="text-[11px] text-rose-200/90 mt-0.5">{formatted.whatHappened}</p>
+          <p className="text-[10.5px] text-rose-300/80 mt-1 font-medium">{formatted.whatToDo}</p>
           {onRetry && (
             <button
               onClick={onRetry}
-              className="mt-2.5 px-2.5 py-1 text-[10px] font-mono tracking-wider uppercase rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-colors"
+              className="mt-2.5 px-2.5 py-1 text-[10px] font-mono tracking-wider uppercase rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-colors focus-visible:outline-2 focus-visible:outline-rose-400 focus-visible:outline-offset-1"
             >
-              Retry Sync
+              {retryLabel}
             </button>
           )}
         </div>
