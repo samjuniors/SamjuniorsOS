@@ -185,7 +185,7 @@ export default function SharedSophiaVoicePresence() {
               data-testid="sofia-briefing-dismiss-btn"
               aria-label="Dismiss briefing"
               title="Dismiss briefing"
-              className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white"
+              className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
             >
               <X size={13} />
             </button>
@@ -270,7 +270,7 @@ export default function SharedSophiaVoicePresence() {
                   os.openChatPanel('sophia');
                 }}
                 data-testid="sofia-greeting-action-approvals"
-                className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20"
+                className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/20 focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-1"
               >
                 Review Approvals ({greeting.stateSummary.pendingApprovalsCount})
               </button>
@@ -283,7 +283,7 @@ export default function SharedSophiaVoicePresence() {
                   os.openChatPanel('sophia');
                 }}
                 data-testid="sofia-greeting-action-attention"
-                className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/20"
+                className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-200 hover:bg-rose-500/20 focus-visible:outline-2 focus-visible:outline-rose-400 focus-visible:outline-offset-1"
               >
                 View Alerts ({greeting.stateSummary.openAlertsCount})
               </button>
@@ -334,7 +334,7 @@ export default function SharedSophiaVoicePresence() {
           data-testid="presence-panel-fallback-btn"
           aria-label="Open text chat panel fallback"
           title="Open text chat with Sophia"
-          className="flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-cyan-500/20 px-3.5 py-1.5 text-[11px] font-semibold text-cyan-100 shadow-[0_0_15px_rgba(56,189,248,0.25)] transition hover:bg-cyan-500/30 active:scale-95"
+          className="flex items-center gap-1.5 rounded-full border border-cyan-400/40 bg-cyan-500/20 px-3.5 py-1.5 text-[11px] font-semibold text-cyan-100 shadow-[0_0_15px_rgba(56,189,248,0.25)] transition hover:bg-cyan-500/30 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
         >
           <MessageSquare size={13} className="text-cyan-300" />
           <span>Type to Sophia</span>
@@ -346,12 +346,12 @@ export default function SharedSophiaVoicePresence() {
           aria-label={live ? "Stop hands-free conversation" : "Start hands-free conversation"}
           aria-pressed={live}
           title={!isOnline ? "Voice unavailable while offline — click Type to Sophia" : live ? "Stop Sofia" : "Talk naturally with Sophia"}
-          className="grid size-12 place-items-center rounded-2xl border border-cyan-400/30 bg-cyan-500/15 text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-50">
+          className="grid size-12 place-items-center rounded-2xl border border-cyan-400/30 bg-cyan-500/15 text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2">
           {live ? <Mic size={22} /> : <MicOff size={22} />}
         </button>
         <button type="button" disabled={!interruptible} onClick={() => sofia.interrupt()}
           aria-label="Interrupt Sofia speaking" title="Interrupt (Escape)"
-          className="grid size-11 place-items-center rounded-2xl border border-rose-400/20 bg-rose-500/10 text-rose-200 disabled:opacity-30">
+          className="grid size-11 place-items-center rounded-2xl border border-rose-400/20 bg-rose-500/10 text-rose-200 disabled:opacity-30 focus-visible:outline-2 focus-visible:outline-rose-400 focus-visible:outline-offset-2">
           <Square size={16} fill="currentColor" />
         </button>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity } from "lucide-react";
 import { osSound } from "../../lib/osAudio";
 import { os, useOS } from "../../lib/osStore";
@@ -34,6 +34,18 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
     return w.title.toLowerCase().includes(q) || w.owner.toLowerCase().includes(q) || w.stage.toLowerCase().includes(q);
   });
 
+  // Close on Escape key when drawer is open
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        osSound.close();
+        onToggle(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onToggle]);
   const filterPills = [
     { id: "open", label: "Open", count: work.filter((w) => w.state !== "done").length },
     { id: "blocked", label: "Blocked", count: blocked },
@@ -77,14 +89,16 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
       <button
         onClick={() => { osSound.click(); onToggle(!open); }}
         title={open ? "Close work (T)" : "Open work (T)"}
-        className={`fixed z-40 flex items-center gap-1.5 rounded-l-2xl border-b border-l border-t border-cyan-400/40 bg-[#07101d]/95 py-2 pl-2 pr-1.5 backdrop-blur-xl transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-cyan-300 hover:bg-[#0c1a2e] active:scale-95 ${open ? "border-cyan-400 bg-cyan-950/90" : "hover:-translate-x-1"}`}
+        aria-label={open ? "Close work drawer" : "Open work drawer"}
+        aria-expanded={open}
+        aria-controls="work-drawer-panel"
+        className={`fixed z-40 flex items-center gap-1.5 rounded-l-2xl border-b border-l border-t border-cyan-400/40 bg-[#07101d]/95 py-2 pl-2 pr-1.5 backdrop-blur-xl transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-cyan-300 hover:bg-[#0c1a2e] active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 ${open ? "border-cyan-400 bg-cyan-950/90" : "hover:-translate-x-1"}`}
         style={{
           top: "36%",
           transform: "translateY(-50%)",
           right: open ? "min(290px, 85vw)" : "0px",
           boxShadow: open ? "-6px 0 24px rgba(56,189,248,0.45), inset 0 1px 0 rgba(255,255,255,0.2)" : "-6px 0 18px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.12)",
         }}
-        aria-label="Toggle work drawer"
       >
         <span className={`flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400/20 text-cyan-200 transition-transform duration-350 ${open ? "" : "-rotate-180"}`}>
           {open ? <ChevronRight size={12} strokeWidth={2.5} /> : <ChevronLeft size={12} strokeWidth={2.5} />}
@@ -99,6 +113,9 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
       </button>
 
       <div
+        id="work-drawer-panel"
+        role="region"
+        aria-label="Work streams and tasks"
         className={`fixed bottom-16 right-0 top-12 z-40 flex w-[290px] max-w-[85vw] flex-col overflow-hidden rounded-l-2xl border-b border-l border-t border-white/12 bg-[#060c18]/96 backdrop-blur-2xl transition-transform duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] sm:bottom-18 ${open ? "translate-x-0" : "pointer-events-none translate-x-full"}`}
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), -20px 0 50px -10px rgba(0,0,0,0.85)" }}
       >
@@ -111,7 +128,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
               <p className="tnum text-[9.5px] tracking-wider text-slate-400">{active} ACTIVE{blocked ? ` · ${blocked} BLOCKED` : ""}</p>
             </div>
           </div>
-          <button onClick={() => { osSound.close(); onToggle(false); }} className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90" title="Close"><X size={14} /></button>
+          <button type="button" onClick={() => { osSound.close(); onToggle(false); }} aria-label="Close work drawer" className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1" title="Close"><X size={14} /></button>
         </div>
 
         {/* Workstream list via standardized ListSurface */}
@@ -158,7 +175,8 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
                     os.removeWork(w.id);
                   }}
                   title="Remove workstream"
-                  className="absolute top-2 right-2 p-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-label={`Remove workstream ${w.title}`}
+                  className="absolute top-2 right-2 p-1 text-slate-500 hover:text-rose-300 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-rose-400 transition-opacity"
                 >
                   <Trash2 size={11} />
                 </button>
@@ -170,14 +188,16 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
         {/* Add workstream form */}
         <form onSubmit={add} className="border-t border-white/10 bg-black/40 p-2.5">
           <div className="flex items-center gap-1.5">
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New workstream…" className="flex-1 rounded-lg border border-white/12 bg-white/5 px-2.5 py-1.5 text-[11.5px] text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/[0.08]" />
-            <button type="submit" disabled={!draft.trim()} className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 font-bold text-slate-950 transition hover:brightness-110 active:scale-95 disabled:opacity-40"><Plus size={14} strokeWidth={2.6} /></button>
+            <input aria-label="New workstream title" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New workstream…" className="flex-1 rounded-lg border border-white/12 bg-white/5 px-2.5 py-1.5 text-[11.5px] text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/[0.08]" />
+            <button type="submit" aria-label="Add workstream" disabled={!draft.trim()} className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 font-bold text-slate-950 transition hover:brightness-110 active:scale-95 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Plus size={14} strokeWidth={2.6} /></button>
           </div>
           <div className="mt-1.5 flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-slate-500">Owner</span>
-            <div className="flex items-center gap-1">
+            <div role="radiogroup" aria-label="Workstream owner" className="flex items-center gap-1">
               <button
                 type="button"
+                role="radio"
+                aria-checked={owner === "sophia"}
                 onClick={() => setOwner("sophia")}
                 className={`rounded px-1.5 py-0.5 text-[8.5px] font-medium uppercase transition ${
                   owner === "sophia"
@@ -193,6 +213,8 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
                   <button
                     key={a.id}
                     type="button"
+                    role="radio"
+                    aria-checked={owner === a.id}
                     onClick={() => setOwner(a.id)}
                     className={`rounded px-1.5 py-0.5 text-[8.5px] font-medium uppercase transition ${
                       owner === a.id

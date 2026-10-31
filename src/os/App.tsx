@@ -64,13 +64,24 @@ export default function App({ onNavigate }: AppProps = {}) {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#01040a] text-slate-200">
+      {/* Skip link for screen reader and keyboard accessibility (WCAG 2.4.1) */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:rounded-lg focus:bg-cyan-400 focus:px-3 focus:py-1.5 focus:text-xs focus:font-bold focus:text-black focus:shadow-lg focus:outline-none"
+      >
+        Skip to main content
+      </a>
+
       {/* ---------------- Persistent Top View Switcher (One Unified App) ---------------- */}
-      <div className="fixed left-1/2 top-2 z-[60] -translate-x-1/2">
-        <div className="os-mode-switcher flex items-center rounded-full p-0.5">
+      <nav aria-label="Operating system view switcher" className="fixed left-1/2 top-2 z-[60] -translate-x-1/2">
+        <div className="os-mode-switcher flex items-center rounded-full p-0.5" role="tablist" aria-label="View modes">
           <button
+            role="tab"
+            aria-selected={tab === "os"}
+            aria-controls="main-content"
             onClick={() => { osSound.click(); setTab("os"); }}
             data-testid="mode-switcher-cockpit"
-            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
+            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 ${
               tab === "os"
                 ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
                 : "text-slate-400 hover:text-slate-200"
@@ -80,9 +91,12 @@ export default function App({ onNavigate }: AppProps = {}) {
             <span>Cockpit</span>
           </button>
           <button
+            role="tab"
+            aria-selected={tab === "sophia"}
+            aria-controls="sophia-surface"
             onClick={() => { osSound.click(); setTab("sophia"); }}
             data-testid="mode-switcher-sophia"
-            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 ${
+            className={`flex items-center gap-1.5 rounded-full px-3.5 py-1 text-[11px] font-semibold tracking-[0.14em] uppercase transition-all duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 ${
               tab === "sophia"
                 ? "bg-cyan-400/20 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4),0_0_14px_rgba(56,189,248,0.4)]"
                 : "text-slate-400 hover:text-slate-200"
@@ -92,15 +106,16 @@ export default function App({ onNavigate }: AppProps = {}) {
             <span>Sophia Presence</span>
           </button>
         </div>
-      </div>
+      </nav>
 
       {/* Return to Cockpit button when viewing Sophia presence */}
       {tab === "sophia" && (
         <div className="fixed top-3 left-4 z-50">
           <button
             onClick={() => { osSound.click(); setTab("os"); }}
-            className="flex items-center gap-1.5 rounded-full border border-cyan-800/60 bg-black/60 px-3.5 py-1.5 text-xs font-semibold tracking-wider text-cyan-300 uppercase shadow-lg backdrop-blur-md transition-all hover:bg-black/90 active:scale-95"
+            className="flex items-center gap-1.5 rounded-full border border-cyan-800/60 bg-black/60 px-3.5 py-1.5 text-xs font-semibold tracking-wider text-cyan-300 uppercase shadow-lg backdrop-blur-md transition-all hover:bg-black/90 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2"
             title="Return to SamJuniorsOS Cockpit"
+            aria-label="Return to SamJuniorsOS Cockpit"
           >
             <ArrowLeft size={13} />
             <span>Return to Cockpit</span>
@@ -114,6 +129,9 @@ export default function App({ onNavigate }: AppProps = {}) {
           Inside the scope, the surface is verbatim SofiaUI — nothing from
           the destination renders inside her tab. */}
       <div
+        id="sophia-surface"
+        role="tabpanel"
+        aria-label="Sophia Presence full surface"
         className={`sofia-scope${tab === "sophia" ? "" : " sofia-scope-hidden"}`}
         aria-hidden={tab !== "sophia"}
       >
@@ -122,7 +140,9 @@ export default function App({ onNavigate }: AppProps = {}) {
         </Suspense>
       </div>
 
-      {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
+      <main id="main-content" role="main" aria-label="SamJuniorsOS Cockpit" className="h-full w-full">
+        {tab === "os" && <DesktopOS onOpenNeural={() => setTab("sophia")} />}
+      </main>
 
       {/* Retain the canonical text chat surface; do not mount a second
           microphone/voice WebSocket when switching to the OS desktop. */}

@@ -22,6 +22,17 @@ export default function Spotlight({ open, commands, onClose }: {
   useEffect(() => {
     if (open) { setQ(""); setSel(0); setTimeout(() => inputRef.current?.focus(), 20); }
   }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -46,6 +57,9 @@ export default function Spotlight({ open, commands, onClose }: {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
       className="absolute inset-0 z-[80] flex items-start justify-center pt-[14vh]"
       onPointerDown={onClose}
       style={{ animation: "os-fade 140ms ease" }}
@@ -68,18 +82,27 @@ export default function Spotlight({ open, commands, onClose }: {
               else if (e.key === "Enter") { e.preventDefault(); pick(results[sel]); }
               else if (e.key === "Escape") { onClose(); }
             }}
+            role="combobox"
+            aria-expanded="true"
+            aria-autocomplete="list"
+            aria-controls="spotlight-results"
+            aria-activedescendant={results[sel] ? `spotlight-item-${results[sel].id}` : undefined}
+            aria-label="Search apps, actions, settings"
             placeholder="Search apps, actions, settings…"
             className="w-full bg-transparent text-[16px] text-white outline-none placeholder:text-slate-500"
           />
           <kbd className="rounded border border-white/12 bg-white/5 px-1.5 py-0.5 text-[10px] tracking-wide text-slate-400">ESC</kbd>
         </div>
 
-        <div className="max-h-[46vh] overflow-y-auto p-2 os-scroll">
+        <div id="spotlight-results"
+        role="listbox"
+        aria-label="Command suggestions"
+        className="max-h-[46vh] overflow-y-auto p-2 os-scroll">
           {results.length === 0 && (
             <div className="px-3 py-8 text-center text-[13px] text-slate-500">No results for “{q}”</div>
           )}
           {Object.entries(grouped).map(([group, cmds]) => (
-            <div key={group} className="mb-1">
+            <div key={group} role="group" aria-label={group} className="mb-1">
               <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">{group}</div>
               {cmds.map((c) => {
                 const idx = flat++;
@@ -87,9 +110,13 @@ export default function Spotlight({ open, commands, onClose }: {
                 return (
                   <button
                     key={c.id}
+                    id={`spotlight-item-${c.id}`}
+                    role="option"
+                    aria-selected={active}
+                    type="button"
                     onMouseEnter={() => setSel(idx)}
                     onClick={() => pick(c)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? "bg-cyan-300/12" : "hover:bg-white/[0.04]"}`}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${active ? "bg-cyan-300/12" : "hover:bg-white/[0.04]"}`}
                   >
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${active ? "border-cyan-200/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-white/5 text-slate-300"}`}>
                       {c.icon}

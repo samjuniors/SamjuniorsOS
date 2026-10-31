@@ -60,36 +60,58 @@ function useDevice() {
 /* ------------------------------------------------------------------ chrome */
 
 function Traffic({ onClose, onMin, onMax }: { onClose: () => void; onMin: () => void; onMax: () => void }) {
-  const btn = "h-[12px] w-[12px] rounded-full transition active:scale-90 hover:brightness-125 shadow-sm";
+  const btn = "h-[12px] w-[12px] rounded-full transition active:scale-90 hover:brightness-125 shadow-sm focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1";
   return (
     <div className="flex items-center gap-2 pl-1" role="group" aria-label="Window controls">
-      <button className={`${btn} border border-[#e0443e] bg-[#ff5f57]`} onClick={onClose} title="Close" />
-      <button className={`${btn} border border-[#d89e24] bg-[#febc2e]`} onClick={onMin} title="Minimize" />
-      <button className={`${btn} border border-[#1fa030] bg-[#28c840]`} onClick={onMax} title="Restore" />
+      <button className={`${btn} border border-[#e0443e] bg-[#ff5f57]`} onClick={onClose} title="Close" aria-label="Close window" />
+      <button className={`${btn} border border-[#d89e24] bg-[#febc2e]`} onClick={onMin} title="Minimize" aria-label="Minimize window" />
+      <button className={`${btn} border border-[#1fa030] bg-[#28c840]`} onClick={onMax} title="Restore" aria-label="Restore window" />
     </div>
   );
 }
 
 function TrayBtn({ active, onClick, title, children }: { active?: boolean; onClick: () => void; title: string; children: ReactNode }) {
   return (
-    <button title={title} onClick={() => { osSound.click(); onClick(); }} className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-slate-300 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-95 sm:h-8 ${active ? "bg-white/15 text-white shadow-[0_0_12px_rgba(255,255,255,0.15)]" : ""}`}>
+    <button
+      title={title}
+      aria-label={title}
+      aria-haspopup="dialog"
+      aria-expanded={Boolean(active)}
+      onClick={() => { osSound.click(); onClick(); }}
+      className={`flex h-7 items-center gap-1.5 rounded-lg px-2 text-slate-300 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 sm:h-8 ${active ? "bg-white/15 text-white shadow-[0_0_12px_rgba(255,255,255,0.15)]" : ""}`}
+    >
       {children}
     </button>
   );
 }
 
-function Popover({ children, className = "" }: { children: ReactNode; className?: string }) {
+function Popover({ children, className = "", label = "Menu" }: { children: ReactNode; className?: string; label?: string }) {
   return (
-    <div className={`absolute top-[48px] overflow-hidden rounded-2xl border border-white/12 bg-[#08101e]/95 backdrop-blur-2xl ${className}`} style={{ animation: "os-in 180ms cubic-bezier(.16,1,.3,1)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 24px 60px rgba(0,0,0,0.8)" }} onPointerDown={(e) => e.stopPropagation()}>
+    <div
+      role="dialog"
+      aria-label={label}
+      aria-modal="false"
+      className={`absolute top-[48px] overflow-hidden rounded-2xl border border-white/12 bg-[#08101e]/95 backdrop-blur-2xl ${className}`}
+      style={{ animation: "os-in 180ms cubic-bezier(.16,1,.3,1)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 24px 60px rgba(0,0,0,0.8)" }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {children}
     </div>
   );
 }
 
-function Toggle({ on, onClick, label, hint }: { on: boolean; onClick: () => void; label: string; hint?: string }) {
+function Toggle({ on, onClick, label, hint, "data-testid": testId }: { on: boolean; onClick: () => void; label: string; hint?: string; "data-testid"?: string }) {
   return (
-    <button onClick={onClick} className="flex w-full items-center justify-between py-2 text-left transition hover:opacity-90">
-      <span><span className="block text-[13px] text-slate-200">{label}</span>{hint && <span className="block text-[10.5px] text-slate-500">{hint}</span>}</span>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      data-testid={testId}
+      onClick={onClick}
+      className="flex w-full items-center justify-between py-2 text-left transition hover:opacity-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 rounded-lg"
+    >
+      <span><span className="block text-[13px] text-slate-200">{label}</span>{hint && <span className="block text-[10.5px] text-slate-400">{hint}</span>}</span>
       <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition duration-300 ${on ? "bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]" : "bg-slate-700"}`}><span className={`block h-4 w-4 rounded-full bg-white transition-transform duration-300 ${on ? "translate-x-4" : ""}`} /></span>
     </button>
   );
@@ -105,9 +127,9 @@ function CalendarCard({ now }: { now: Date }) {
   return (
     <div className="w-[280px] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <button className="rounded-md p-1 text-slate-300 transition hover:bg-white/10 active:scale-95" onClick={() => setCursor(new Date(y, m - 1, 1))}><ChevronLeft size={16} /></button>
+        <button aria-label="Previous month" className="rounded-md p-1 text-slate-300 transition hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400" onClick={() => setCursor(new Date(y, m - 1, 1))}><ChevronLeft size={16} /></button>
         <div className="text-[13px] font-medium tracking-wide text-white">{cursor.toLocaleString(undefined, { month: "long", year: "numeric" })}</div>
-        <button className="rounded-md p-1 text-slate-300 transition hover:bg-white/10 active:scale-95" onClick={() => setCursor(new Date(y, m + 1, 1))}><ChevronRight size={16} /></button>
+        <button aria-label="Next month" className="rounded-md p-1 text-slate-300 transition hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400" onClick={() => setCursor(new Date(y, m + 1, 1))}><ChevronRight size={16} /></button>
       </div>
       <div className="mb-1 grid grid-cols-7 text-center text-[10px] uppercase tracking-wider text-slate-500">{["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => <div key={d}>{d}</div>)}</div>
       <div className="grid grid-cols-7 gap-y-1 text-center text-[12px]">
@@ -331,14 +353,14 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
       {/* ----------------- top menu bar ----------------- */}
       <div className="os-shell-topbar fixed inset-x-0 top-0 z-50 flex h-11 items-center justify-between border-b px-3 backdrop-blur-2xl sm:px-4" onPointerDown={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1.5 sm:gap-2">
-          <button onClick={() => toggle("start")} className={`group flex h-8 items-center gap-1.5 rounded-lg px-2 text-slate-200 transition-all duration-200 hover:bg-white/10 active:scale-95 sm:px-2.5 ${pop === "start" ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-100 shadow-[0_0_12px_rgba(56,189,248,0.3)]" : "border border-white/5"}`} title="Menu">
+          <button onClick={() => toggle("start")} aria-label="Application menu" aria-haspopup="dialog" aria-expanded={pop === "start"} className={`group flex h-8 items-center gap-1.5 rounded-lg px-2 text-slate-200 transition-all duration-200 hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 sm:px-2.5 ${pop === "start" ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-100 shadow-[0_0_12px_rgba(56,189,248,0.3)]" : "border border-white/5"}`} title="Menu">
             <span className="flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400 to-sky-500 font-bold text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.5)] transition-transform duration-300 group-hover:scale-105"><LayoutGrid size={12} /></span>
             <span className="text-[11.5px] font-bold tracking-wider text-white">SamJuniorsOS</span>
           </button>
           <div className="hidden items-center gap-1.5 rounded-full border border-white/5 bg-white/[0.02] px-2.5 py-1 text-[10.5px] text-slate-400 lg:flex" title={attention.length ? `${attention.length} items need you` : "Nothing needs you"}>
             {attention.length ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-300 shadow-[0_0_6px_rgba(252,211,77,0.8)]" /><span className="font-mono text-[10px] tracking-[0.14em] text-amber-100">{attention.length} NEED YOU</span></> : <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" /><span className="font-mono text-[10px] tracking-[0.14em]">ALL QUIET</span></>}
           </div>
-          <button onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`hidden h-7.5 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition active:scale-95 md:flex ${focus ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-white"}`} title="Focus mode (F)">
+          <button onClick={() => { osSound.click(); setFocus((v) => !v); }} aria-label={focus ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focus} className={`hidden h-7.5 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 md:flex ${focus ? "border border-cyan-400/30 bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/10 hover:text-white"}`} title="Focus mode (F)">
             <PanelRightClose size={13} className={focus ? "text-cyan-300" : ""} /><span className="hidden xl:inline">Focus</span>
           </button>
         </div>
@@ -346,7 +368,8 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
         {/* Center — Spotlight entry (primary command entry) */}
         <button
           onClick={() => { osSound.open(); setSpotlight(true); }}
-          className="group hidden min-w-0 flex-1 max-w-[420px] items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[12px] text-slate-400 transition-all duration-200 hover:border-cyan-300/40 hover:bg-white/[0.07] hover:text-slate-200 active:scale-[0.99] sm:flex"
+          aria-label="Search, command, or ask Sophia (Press Command+K)"
+          className="group hidden min-w-0 flex-1 max-w-[420px] items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-[12px] text-slate-400 transition-all duration-200 hover:border-cyan-300/40 hover:bg-white/[0.07] hover:text-slate-200 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2 sm:flex"
           title="Search / Ask Sophia (⌘K)"
         >
           <Search size={13} className="shrink-0 text-cyan-300 transition-transform group-hover:scale-110" />
@@ -377,7 +400,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
             <span className={`h-1.5 w-1.5 rounded-full ${device.online ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" : "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]"}`} />
             {device.online ? "SYNCED" : "OFFLINE"}
           </div>
-          <button title="Calendar" onClick={() => { osSound.click(); toggle("cal"); }} className={`ml-1 flex h-7.5 items-center gap-1.5 rounded-lg px-2 transition-all duration-200 hover:bg-white/10 active:scale-95 ${pop === "cal" ? "bg-white/15 text-white" : ""}`}>
+          <button title="Calendar" aria-label="Calendar view" aria-haspopup="dialog" aria-expanded={pop === "cal"} onClick={() => { osSound.click(); toggle("cal"); }} className={`ml-1 flex h-7.5 items-center gap-1.5 rounded-lg px-2 transition-all duration-200 hover:bg-white/10 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1 ${pop === "cal" ? "bg-white/15 text-white" : ""}`}>
             <span className="tnum text-[12px] font-bold tracking-tight text-white">{fmtTime(now, h12)}</span>
             <span className="tnum hidden text-[10px] text-slate-500 md:inline">{now.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
           </button>
@@ -439,7 +462,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
               <span>Sound</span>
               <button onClick={() => { setMuted((m) => !m); osSound.click(); }} className="rounded-lg p-1 text-white transition hover:bg-white/10 active:scale-95">{muted ? <VolumeX size={15} className="text-rose-400" /> : <Volume2 size={15} className="text-cyan-300" />}</button>
             </div>
-            <input type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume} onChange={(e) => { setMuted(false); setVolume(parseFloat(e.target.value)); }} className="slider h-1.5 w-full cursor-pointer appearance-none rounded-full bg-cyan-300/20" />
+            <input type="range" role="slider" min={0} max={1} step={0.01} value={muted ? 0 : volume} onChange={(e) => { setMuted(false); setVolume(parseFloat(e.target.value)); }} className="slider h-1.5 w-full cursor-pointer appearance-none rounded-full bg-cyan-300/20" />
             <div className="mt-1.5 text-right font-mono text-[10.5px] font-bold text-cyan-200">{Math.round((muted ? 0 : volume) * 100)}%</div>
             <div className="mt-2.5 border-t border-white/10 pt-2">
               <Toggle on={uiSounds} onClick={() => { setUiSounds((s) => !s); osSound.click(); }} label="Interface sounds" />
@@ -482,7 +505,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
                         <span className="text-slate-600">{new Date(a.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                     </div>
-                    <button onClick={() => os.handleAttention(a.id)} className="rounded-md p-1 text-slate-500 opacity-0 transition hover:text-cyan-200 group-hover:opacity-100" title="Handled"><CheckCircle2 size={13} /></button>
+                    <button onClick={() => os.handleAttention(a.id)} className="rounded-md p-1 text-slate-500 opacity-0 transition hover:text-cyan-200 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-cyan-400" title="Handled" aria-label={`Mark handled: ${a.title}`}><CheckCircle2 size={13} /></button>
                   </div>
                 );
               })}
@@ -537,7 +560,7 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
                 <Toggle on={uiSounds} onClick={() => setUiSounds((v) => !v)} label="Interface sounds" />
                 <div className="flex items-center gap-3 py-1">
                   <Volume2 size={14} className="text-slate-400" />
-                  <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="slider h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-cyan-300/20" />
+                  <input type="range" min={0} max={1} step={0.01} value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} aria-label="System volume" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(volume * 100)} aria-valuetext={`${Math.round(volume * 100)} percent`} className="slider h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-cyan-300/20 focus-visible:outline-2 focus-visible:outline-cyan-400" />
                   <span className="w-8 text-right font-mono text-[10.5px] font-bold text-cyan-200">{Math.round(volume * 100)}</span>
                 </div>
               </div>
@@ -621,10 +644,10 @@ export default function DesktopOS({ onOpenNeural }: { onOpenNeural: () => void }
                 {company.name.toUpperCase()} · WORKSPACE
               </div>
               <div className="flex items-center gap-1.5 text-slate-400">
-                <button title="Focus (F)" onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95 ${focus ? "bg-cyan-400/15 text-cyan-300" : ""}`}><PanelRightClose size={13} /></button>
-                <button className="rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95" onClick={minWin} title="Minimize"><Minus size={13} /></button>
-                <button className="rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95" onClick={maxWin} title="Maximize"><Maximize2 size={12} /></button>
-                <button className="rounded-lg p-1 transition hover:bg-rose-500/20 hover:text-rose-300 active:scale-95" onClick={closeWin} title="Close"><X size={13} /></button>
+                <button title="Focus (F)" aria-label={focus ? "Exit focus mode" : "Enter focus mode"} aria-pressed={focus} onClick={() => { osSound.click(); setFocus((v) => !v); }} className={`rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 ${focus ? "bg-cyan-400/15 text-cyan-300" : ""}`}><PanelRightClose size={13} /></button>
+                <button className="rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400" onClick={minWin} title="Minimize" aria-label="Minimize window"><Minus size={13} /></button>
+                <button className="rounded-lg p-1 transition hover:bg-white/10 hover:text-white active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400" onClick={maxWin} title="Maximize" aria-label="Maximize window"><Maximize2 size={12} /></button>
+                <button className="rounded-lg p-1 transition hover:bg-rose-500/20 hover:text-rose-300 active:scale-95 focus-visible:outline-2 focus-visible:outline-rose-400" onClick={closeWin} title="Close" aria-label="Close window"><X size={13} /></button>
               </div>
             </div>
           )}

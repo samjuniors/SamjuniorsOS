@@ -284,12 +284,14 @@ export default function ChatPanel() {
         <button
           onClick={toggleOpen}
           title={open ? "Close chat (C)" : "Open agent messages & chat (C)"}
+          aria-label={open ? "Close agent chat" : "Open agent messages and chat"}
+          aria-expanded={open}
+          aria-haspopup="dialog"
           className={`group relative flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-2xl transition-all duration-300 hover:scale-105 active:scale-95 ${
             open
               ? "border-cyan-300 bg-cyan-950/90 text-white shadow-[0_0_24px_rgba(56,189,248,0.5)]"
               : "border-cyan-400/30 bg-[#07101e]/90 text-cyan-200 shadow-[0_8px_25px_rgba(0,0,0,0.7),0_0_18px_rgba(56,189,248,0.3)] hover:border-cyan-300 hover:bg-[#0c1a2e]"
-          }`}
-          aria-label="Toggle agent chat"
+          }`} focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-2
         >
           {open ? (
             <X size={19} strokeWidth={2.2} className="transition-transform group-hover:rotate-90" />
@@ -309,6 +311,9 @@ export default function ChatPanel() {
       {/* ---------------- Small Handy Chat Panel ---------------- */}
       {open && (
         <div
+          role="dialog"
+          aria-label={`Chat with ${activeAgent.name}`}
+          aria-modal="false"
           className="fixed bottom-20 right-5 z-50 flex h-[510px] max-h-[calc(100vh-6.5rem)] w-[360px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#060c18]/96 shadow-[0_25px_70px_rgba(0,0,0,0.9)] backdrop-blur-2xl"
           style={{ animation: "os-in 220ms cubic-bezier(.16,1,.3,1)" }}
           onPointerDown={(e) => e.stopPropagation()}
@@ -348,8 +353,10 @@ export default function ChatPanel() {
             </div>
 
             <button
+              type="button"
               onClick={() => { osSound.close(); setOpen(false); os.closeChatPanel(); }}
-              className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90"
+              aria-label="Close chat panel"
+              className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white active:scale-90 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
               title="Close chat"
             >
               <X size={14} />
@@ -357,7 +364,7 @@ export default function ChatPanel() {
           </div>
 
           {/* Contact / Sender Selector Bar */}
-          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-white/5 bg-[#040813]/60 px-3 py-2 [scrollbar-width:none]">
+          <div role="tablist" aria-label="Agent chat contacts" className="flex items-center gap-1.5 overflow-x-auto border-b border-white/5 bg-[#040813]/60 px-3 py-2 [scrollbar-width:none]">
             <span className="mr-0.5 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-500">Contact:</span>
             {agents.map((ag) => {
               const unreadInContact = messages.some((m) => m.agentId === ag.id && !m.read && m.sender === "agent");
@@ -365,12 +372,15 @@ export default function ChatPanel() {
               return (
                 <button
                   key={ag.id}
+                  role="tab"
+                  aria-selected={isSelected}
+                  aria-label={`Chat with ${ag.name}, ${ag.role}`}
                   onClick={() => selectContact(ag.id)}
                   title={`${ag.name} (${ag.role})`}
                   className={`group relative flex items-center gap-1 rounded-xl px-2 py-1 text-[10.5px] font-medium transition active:scale-95 ${
                     isSelected
                       ? "border border-cyan-400/40 bg-cyan-400/20 text-cyan-100 shadow-[0_0_12px_rgba(56,189,248,0.3)]"
-                      : "border border-white/5 bg-white/[0.03] text-slate-400 hover:border-white/15 hover:bg-white/10 hover:text-slate-200"
+                      : "border border-white/5 bg-white/[0.03] text-slate-400 hover:border-white/15 hover:bg-white/10 hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
                   }`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${isSelected ? "bg-cyan-300" : "bg-slate-500"}`} />
@@ -396,7 +406,7 @@ export default function ChatPanel() {
           )}
 
           {/* Conversation Thread */}
-          <div className="os-scroll flex-1 space-y-3 overflow-y-auto p-3.5">
+          <div role="log" aria-label={`Conversation with ${activeAgent.name}`} aria-live="polite" className="os-scroll flex-1 space-y-3 overflow-y-auto p-3.5">
             {activeThread.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center text-[11.5px] text-slate-500">
                 <MessageSquare size={20} className="mb-2 text-slate-600" />
@@ -477,12 +487,12 @@ export default function ChatPanel() {
 
           {/* Quick Prompts */}
           {PROMPTS[activeContactId] && (
-            <div className="flex items-center gap-1.5 overflow-x-auto border-t border-white/5 bg-white/[0.015] px-3 py-1.5 [scrollbar-width:none]">
+            <div aria-label="Suggested quick messages" className="flex items-center gap-1.5 overflow-x-auto border-t border-white/5 bg-white/[0.015] px-3 py-1.5 [scrollbar-width:none]">
               {PROMPTS[activeContactId].map((p) => (
                 <button
                   key={p}
                   onClick={() => handleSend(p)}
-                  className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] text-slate-400 transition hover:border-cyan-300/40 hover:bg-cyan-400/10 hover:text-cyan-200 active:scale-95"
+                  className="whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[10px] text-slate-400 transition hover:border-cyan-300/40 hover:bg-cyan-400/10 hover:text-cyan-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
                 >
                   {p}
                 </button>
@@ -503,13 +513,15 @@ export default function ChatPanel() {
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                aria-label={`Message ${activeAgent.name}`}
                 placeholder={`Message ${activeAgent.name}...`}
                 className="min-w-0 flex-1 bg-transparent py-1 text-[12px] text-white outline-none placeholder:text-slate-500"
               />
               <button
                 type="submit"
+                aria-label="Send message"
                 disabled={!input.trim()}
-                className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.4)] transition hover:brightness-110 active:scale-90 disabled:opacity-30 disabled:shadow-none"
+                className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-sky-500 text-slate-950 shadow-[0_0_10px_rgba(56,189,248,0.4)] transition hover:brightness-110 active:scale-90 disabled:opacity-30 disabled:shadow-none focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"
               >
                 <Send size={12} strokeWidth={2.5} />
               </button>
