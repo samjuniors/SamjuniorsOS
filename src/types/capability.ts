@@ -114,6 +114,7 @@ export const CapabilityManifestSchema = z.object({
   trustTier: CapabilityTrustTierSchema,
   sideEffectClass: RouteSideEffectClassSchema,
   permissions: z.array(CapabilityPermissionSchema).default([]),
+  secretRefs: z.array(z.string()).optional().default([]),
   cost: CapabilityCostModelSchema.default({ perCallCents: 0, currency: "USD" }),
   entrypoint: CapabilityEntrypointSchema,
   inputSchema: z.record(z.string(), z.any()).optional(),
