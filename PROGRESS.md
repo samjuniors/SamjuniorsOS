@@ -397,6 +397,15 @@
     - Authored automated test suite `tests/capabilities/g14_6_first_integrations.test.ts` (14/14 PASS; 85/85 PASS across all capability suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.6.verify.md` with verdict PASS).
     - Landed on `kit/integration` (`d7991ea`), verified across all 142 executable canonical test suites, and pushed to `origin`.
+  - **G14.7 (Capability evaluation: contract tests, injection through tool output, cost caps):**
+    - Codified runaway budget models and evaluation schemas in `src/types/budget.ts` (`RunawayBudgetConfigSchema`, `ToolOutputEnvelopeSchema`, `RunawayToolLoopError`, `CapabilityBudgetExceededError`).
+    - Implemented `CapabilityBudgetGuard` (`src/lib/server/capabilities/budget-guard.ts`): tracks per-run invocation count, cumulative financial cost (cents), 60s sliding-window rate limit, and consecutive failure streaks; halts runaway loops with `status: 'budget_exceeded'`.
+    - Implemented `ToolOutputSanitizer` (`src/lib/server/capabilities/tool-output-sanitizer.ts`): scans and neutralizes 10 indirect prompt injection vectors across strings and deeply nested payloads; envelopes tool outputs with `isUntrusted: true` provenance and lexical isolation delimiters (`<<<UNTRUSTED_EXTERNAL_TOOL_OUTPUT>>>`).
+    - Integrated with `CapabilityGateway` (`src/lib/server/capabilities/capability-gateway.ts`): pre-invocation budget and loop checks halt overruns with `status: 'budget_exceeded'` and log `DENIED_BUDGET_CAP_EXCEEDED` or `DENIED_RUNAWAY_LOOP_DETECTED` to `InMemoryAuditStore`; tool outputs are sanitized and enveloped before returning.
+    - Added reason codes `DENIED_BUDGET_CAP_EXCEEDED` and `DENIED_RUNAWAY_LOOP_DETECTED` to `AuthorizationReasonCode` (`src/types/authorization.ts`).
+    - Authored automated test suite `tests/capabilities/g14_7_capability_evaluation.test.ts` (14/14 PASS; 99/99 PASS across all capability suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.7.verify.md` with verdict PASS).
+    - Landed on `kit/integration` (`864153c`), verified across all 143 executable canonical test suites, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
