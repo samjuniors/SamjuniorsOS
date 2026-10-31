@@ -385,6 +385,18 @@
     - Authored automated test suite `tests/capabilities/g14_5_sandbox_egress_control.test.ts` (15/15 PASS; 71/71 PASS across all capability suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.5.verify.md` with verdict PASS).
     - Landed on `kit/integration` (`d9af820`), verified across all 141 executable canonical test suites, and pushed to `origin`.
+  - **G14.6 (First integrations chosen by the founder (for example email, calendar, social, payments, code host), each approval-by-default):**
+    - Codified integration types, contracts, and error hierarchies in `src/types/integrations.ts` (`IntegrationError`, `IntegrationValidationError`, `IntegrationAuthError`, `IntegrationRateLimitError`, `IntegrationServerError`, `ResendEmailInputSchema`, `ResendEmailResultSchema`, `StripePaymentIntentInputSchema`, `StripePaymentIntentResultSchema`).
+    - Implemented `ResendAdapter` (`src/lib/server/integrations/resend-adapter.ts`) for transactional email: strict Zod contract validation, distributed `IdempotencyStore` key tracking, deterministic 4xx vs 5xx/network error classification, `UnknownExternalResultError` on network drops, and truthful `reconcileOutcome`.
+    - Implemented `StripeAdapter` (`src/lib/server/integrations/stripe-adapter.ts`) for payment intent billing: strict Zod contract validation, distributed `IdempotencyStore` key tracking, deterministic 4xx (including 402 card declined) vs 5xx/network drop classification, `UnknownExternalResultError` on timeouts, and truthful `reconcileOutcome`.
+    - Registered founder-selected core integration tools in `CapabilityRegistry` (`src/lib/server/capabilities/capability-registry.ts`) and scoped secrets in `CapabilitySecretVault`:
+      - `tool:github:read_issue` (`read_only` -> autonomous execution)
+      - `tool:github:create_issue` (`external_reversible` -> halts in `awaiting_founder_approval`)
+      - `tool:resend:send_email` (`external_hard_to_reverse` -> halts in `awaiting_founder_approval`)
+      - `tool:stripe:create_payment_intent` (`financial_legal` -> halts in `awaiting_founder_approval`)
+    - Authored automated test suite `tests/capabilities/g14_6_first_integrations.test.ts` (14/14 PASS; 85/85 PASS across all capability suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.6.verify.md` with verdict PASS).
+    - Landed on `kit/integration` (`d7991ea`), verified across all 142 executable canonical test suites, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
