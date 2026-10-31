@@ -158,7 +158,7 @@ export class SecretRedactor {
     const redactString = (str: string): string => {
       let result = str;
       for (const { name, value } of secrets) {
-        if (!value || value.length === 0) continue;
+        if (!value || value.length < 4) continue;
         // Escape special regex characters in the secret value
         const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(escaped, 'g');

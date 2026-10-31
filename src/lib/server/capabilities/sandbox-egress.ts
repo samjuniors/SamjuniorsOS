@@ -87,7 +87,8 @@ export function evaluateEgress(
     };
   }
 
-  const hostname = parsedUrl.hostname.toLowerCase();
+  const rawHostname = parsedUrl.hostname.toLowerCase();
+  const hostname = rawHostname.replace(/^\[|\]$/g, '');
   const port = parsedUrl.port
     ? parseInt(parsedUrl.port, 10)
     : parsedUrl.protocol === 'https:'
