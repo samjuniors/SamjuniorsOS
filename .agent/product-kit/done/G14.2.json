@@ -1,0 +1,8 @@
+{
+  "id": "G14.2",
+  "doneAt": "2026-10-31T07:09:34.886Z",
+  "agent": "lead",
+  "branch": "step/G14.2",
+  "commit": "061f1728ea4bb8ab00ae9ab10325202904bbf43d",
+  "evidence": "Confirmed MCP spec 2026-07-28 stateless core, McpMemoryTransport fake server, McpStdioTransport real child-process server, self-contained calls with _meta and timeouts, CapabilityGateway integration with immutable audit logging per call, 12 passing tests"
+}
