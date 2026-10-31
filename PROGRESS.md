@@ -438,6 +438,30 @@
   4. Revoke its access; it stops at once. Roll back a version.
 - **Gate steps:** G0.6, G13.1, G13.2, G13.3, G13.4, G13.5, G13.6, G13.7, G13.8.
 
+### Milestone M7 Progress:
+- **Completed Steps:**
+  - **G0.6 (DECISION: first AI employee roles, their order, and each role's autonomy ceiling):**
+    - Founder approved recommended Option C: equip the existing 4 core employees (Sophia, Dr. Aris Thorne/Research, Maya Lin/PM, Julian Cruz/Finance) with tools/skills first; hire additional roles sequentially (Engineer at L2 on isolated branch, production deploy founder-only; Support L1 drafts) only when an evaluation demonstrates a concrete capability gap.
+    - Recorded in `.agent/product-kit/done/G0.6.json` with founder quote `"use recomendation"`.
+    - Committed and pushed to `origin/kit/integration` (`851dc4a`).
+  - **G13.1 (ADR: employee model - identity and charter, permissions, Role Brain, budget, supervisor, performance record, version history):**
+    - Authored authoritative architecture decision record `docs/architecture/ADR-0011-employee-model-and-execution-substrate.md` detailing the 7-pillar model:
+      1. Identity & Charter (bounded mission, prohibited actions, L0-L3 autonomy ceiling).
+      2. Permissions & Least Privilege (explicit capability allowlists, domain egress filters, transient secret injection).
+      3. Role Brain & Memory Partitioning (G11.5 isolated working/experience memory, zero personal mind access).
+      4. Budget & Hard-Stop Controls (deterministic daily and monthly spend caps in cents, per-task call caps, immediate halt on breach).
+      5. Supervisor Hierarchy & Reporting Lines (Sophia as persistent COO/CEO supervisor, structured delegation protocol).
+      6. Performance Record & Evaluation Metrics (task metrics, error rates, benchmarking gate before promotion).
+      7. Immutable Version History & Deterministic Rollback (semantic versioning `vX.Y.Z`, full state snapshots, single-command rollback).
+    - Formally enforced safety invariants from `PRODUCT.md`:
+      - Section 7: `Role Brain != Company Truth` (subjective scratchpads cannot claim canonical fact status without founder verification or epistemic consensus).
+      - Section 8: `Self-Improving != Self-Authorizing` (employees can learn and propose improvements, but can never self-grant capabilities, elevate budgets, or raise autonomy ceilings).
+    - Formally evaluated Paperclip: identified and articulated the Second-Engine Risk across 6 architectural dimensions; reconciled founder guidance (2026-10-20) by adopting Paperclip as an external onboarding declaration format while keeping execution 100% native on SamJuniorsOS.
+    - Codified contracts into Zod schemas and TypeScript interfaces in `src/types/employee.ts` with deterministic invariant guards (`assertSelfImprovingNotSelfAuthorizing`, `assertRoleBrainNotCompanyTruth`, `checkEmployeeBudgetHardStop`).
+    - Authored automated test suite `tests/capabilities/g13_1_employee_model_adr.test.ts` (16/16 PASS; 115/115 capability tests pass).
+    - Passed independent verification (`.agent/product-kit/handoffs/G13.1.verify.md` with verdict **PASS**).
+    - Landed on `kit/integration` (`2268b41`), verified across all 144 canonical test suites, pushed to `origin`, and claim released.
+
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
   - **G12.1 (Decision contract and route taxonomy: converse, recall personal, recall company, research, use tool, delegate, schedule, ask to clarify, propose for approval, refuse):**
