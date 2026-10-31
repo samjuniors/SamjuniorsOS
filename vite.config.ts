@@ -21,21 +21,30 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
     sourcemap: true,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('three') || id.includes('@react-three')) {
+          const nid = id.replace(/\\/g, '/');
+          if (nid.includes('node_modules')) {
+            if (nid.includes('/three/') || nid.includes('/@react-three/')) {
               return 'vendor-three';
             }
-            if (id.includes('lucide-react')) {
+            if (nid.includes('/lucide-react/')) {
               return 'vendor-icons';
             }
-            if (id.includes('@radix-ui')) {
+            if (nid.includes('/@radix-ui/')) {
               return 'vendor-radix';
             }
-            if (id.includes('react-dom') || id.includes('react/') || id.includes('scheduler')) {
+            if (nid.includes('/recharts/') || nid.includes('/d3-')) {
+              return 'vendor-charts';
+            }
+            if (nid.includes('/framer-motion/') || nid.includes('/motion/')) {
+              return 'vendor-motion';
+            }
+            if (nid.includes('/react/') || nid.includes('/react-dom/') || nid.includes('/scheduler/')) {
               return 'vendor-react';
             }
           }
