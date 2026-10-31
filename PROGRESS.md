@@ -83,12 +83,28 @@
   - WORM audit-log integrity checkpoints detecting truncation, tampering, and gaps.
   - Full QA pass (`QA-M4`) passing all automated checks and 6 founder walkthrough scenarios.
 
-## Now — Active Milestone M5 (Cockpit and voice that feel finished)
+## Milestone M5 — Cockpit and voice that feel finished (CLOSED)
 
-- **Baseline:** Milestone M4 closed on `kit/integration`.
-- **Goal:** The cockpit you look at all day, and voice that feels like talking to a person in the room.
+- **Status:** CLOSED on 2026-10-31 (18/18 steps complete, founder accepted with `ack/MS-M5.json`).
+- **Founder Acceptance Quote:** `"ok continue"`
+- **Steps Verified & Closed:** G8.1, G0.2, G5.1, G5.2, G5.3, G5.4, G6.1, G6.2, G6.3, G6.4, G6.5, G6.6, G6.7, G6.8, G8.2, G8.3, G8.4, G8.5.
+- **Capabilities Delivered:**
+  - Standardized visual language tokens across all Cockpit, Canvas, and Persona surfaces matching DESIGN.md with 0 arbitrary hex drifts.
+  - Ratified Founder Operating Loop (FOL) v1 release direction with 5 core acceptance journeys and quantitative latency/safety budgets.
+  - Complete vertical slice for Cockpit, Decisions, Approvals, and Activity feeds with real backend routes, durable SQLite persistence, and 0 fabricated optimistic cards.
+  - Low-latency barge-in on streaming voice replies using sentence-chunked Web Audio playback and instant speech interruption (< 200 ms).
+  - Single cognitive ingress (`executeSophiaTurn`) routing voice, typed SSE, and chat interactions through unified intent classification and truthful turn stopwatch telemetry.
+  - Deterministic voice approval refusal: consequential side-effects strictly require visual panel/phone cryptographic sign-off with SHA-256 bound payload hashing; voice approval attempts fail closed with 0% voice authorization.
+  - Honest voice presence resolver (`resolvePresenceState`) with 9 explicit operational states and seamless "Type to Sophia" panel fallback when voice or network is offline.
+  - Grounded real-state greeting on open and proactive briefing derived strictly from DecisionLogStore and InMemoryApprovalStore without hallucinated tasks.
+  - Unified Sophia COO persona specification with rigorous anti-fabrication baseline (14/14 PASS, 0 memory fabrications).
+  - WCAG 2.2 AA accessibility compliance across core flows (skip link, accessible tabs, dialog focus traps, roving tabindex).
+  - Enforced Core Web Vitals performance budgets in CI (LCP <= 2500ms, INP <= 200ms, CLS <= 0.10; Rollup manualChunks vendor splitting with max JS chunk 387.15 kB).
+  - Authoritative ADR-0009 adopting Progressive Web Application (PWA) First with installable manifest, standalone theme, and mobile Spotlight trigger.
+  - Centralized error sanitization (`src/os/lib/errorFormat.ts`), ErrorBoundary component, and guaranteed "what happened" + "what to do" guidance across all error and empty states.
+  - Full QA pass (`QA-M5`) passing all automated checks (136/136 suites) and founder walkthrough scenarios.
 
-### Milestone M5 Progress:
+### Milestone M5 Archive Details:
 - **Completed Steps:**
   - **G8.1 (Design-system audit against the canonical visual language and fix drift):**
     - Performed comprehensive audit against `DESIGN.md` Section 2 (Colors, Borders, Accents, Semantics, Glows, Agent Tints), Section 3 (Typography), and Section 5 (Surfaces).
@@ -305,6 +321,15 @@
     - Verified Quality Bar items Q-UX-2 (state honesty), Q-UX-3 (real state greeting), Q-UX-5 (epistemic clarity), and Q-A11Y-1 (WCAG 2.2 AA accessibility).
     - Verified `node .agent/product-kit/kit.mjs qa check M5` with zero errors.
     - Landed on `kit/integration` and pushed to `origin`.
+
+## Now — Active Milestone M6 (Tools, skills and MCP)
+
+- **Baseline:** Milestone M5 closed on `kit/integration`.
+- **Goal:** Connect one tool and see Sofia use it with your approval; see that nothing installs itself.
+
+### Milestone M6 Progress:
+- **Completed Steps:**
+  - *Pending start of ready steps via `kit continue`.*
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
