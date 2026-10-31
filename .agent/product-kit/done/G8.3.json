@@ -1,0 +1,8 @@
+{
+  "id": "G8.3",
+  "doneAt": "2026-10-31T04:26:50.542Z",
+  "agent": "lead",
+  "branch": "step/G8.3",
+  "commit": "c664613bcf97c27b04499e6dc0cabeab7b287bee",
+  "evidence": "npm run benchmark:perf passes; tests/frontend/g8_3_performance_budgets.test.ts passes (8/8); typecheck, lint, and build pass"
+}
