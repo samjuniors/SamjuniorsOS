@@ -322,12 +322,22 @@
     - Verified `node .agent/product-kit/kit.mjs qa check M5` with zero errors.
     - Landed on `kit/integration` and pushed to `origin`.
 
-## Now — Active Milestone M6 (Tools, skills and MCP)
+## Milestone M6 — Tools, skills and MCP (CLOSED)
 
-- **Baseline:** Milestone M5 closed on `kit/integration`.
-- **Goal:** Connect one tool and see Sofia use it with your approval; see that nothing installs itself.
+- **Status:** CLOSED on 2026-10-31 (7/7 steps complete, founder accepted with `ack/MS-M6.json`).
+- **Founder Acceptance Quote:** `"ok close and check point all"`
+- **Steps Verified & Closed:** G14.1, G14.2, G14.3, G14.4, G14.5, G14.6, G14.7.
+- **Capabilities Delivered:**
+  - Capability Registry & Gateway (ADR-0010): Single authoritative entry point for all tools, skills, and MCP servers with strict schema validation, version pinning, permission checks, and immutable audit logging.
+  - MCP Client Adapter: Modernized MCP client supporting specification revision `2026-07-28` (stateless per-call metadata) with in-memory test transport and resilient stdio child-process transport.
+  - Skills Loader: Markdown-based skill parser (`SKILL.md`) enforcing semantic versioning, step validation, and read-only instructions tier (instructions, never execution authority).
+  - Vetting & Install Pipeline: Deterministic quarantine of third-party capabilities (`untrusted` tier), verification of integrity hashes, and guaranteed rejection of runtime self-installation (`RuntimeSelfInstallForbiddenError`).
+  - Sandbox & Egress Control: Least-privilege capability execution, domain allowlists, runtime secret injection (secrets never exposed to model or saved to disk), and command sanitization.
+  - First-Party Integrations: GitHub (read/create issues with idempotency), Resend (email delivery), and Stripe (payment intent creation), with side-effect mutations strictly halting in `awaiting_founder_approval`.
+  - Capability Evaluation & Runaway Defense: Multi-layer protection stopping prompt injections in tool output (`<<<UNTRUSTED_EXTERNAL_TOOL_OUTPUT>>>`), call caps (25 max), cost caps (500¢), rate limits (30 calls/min), and failure streak halts (5 consecutive failures).
+  - Full QA pass (`QA-M6`) passing all automated checks (143/143 suites, 99 capability tests) and founder walkthrough scenarios.
 
-### Milestone M6 Progress:
+### Milestone M6 Archive Details:
 - **Completed Steps:**
   - **G14.1 (ADR: capability registry and single gateway. Every tool, skill and MCP server has a manifest and every call passes the policy engine):**
     - Authored authoritative architecture decision record `docs/architecture/ADR-0010-capability-registry-and-single-gateway.md` comparing GitLab's AI Catalog and OpenClaw's skill load precedence against SamJuniorsOS's Single Gateway principle.
@@ -416,6 +426,17 @@
     - Verified Quality Bar items Q-UX-2 (state honesty), Q-UX-3 (real state greeting), Q-UX-5 (epistemic clarity), and Q-A11Y-1 (WCAG 2.2 AA accessibility).
     - Verified `node .agent/product-kit/kit.mjs qa check M6` with zero errors.
     - Landed on `kit/integration` (`f956d78`) and pushed to `origin`.
+
+## Now — Active Milestone M7 (Sofia's first employee)
+
+- **Baseline:** Milestone M6 closed on `kit/integration`.
+- **Goal:** One AI employee with a charter, tools, budget and its own memory, hired with your approval and managed by Sofia.
+- **You test:**
+  1. Approve one hire. See its charter, tools, budget and memory.
+  2. Give it a task. Get a structured result with evidence.
+  3. Open the team view; it matches the decision log and shows cost.
+  4. Revoke its access; it stops at once. Roll back a version.
+- **Gate steps:** G0.6, G13.1, G13.2, G13.3, G13.4, G13.5, G13.6, G13.7, G13.8.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
