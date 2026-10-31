@@ -39,6 +39,9 @@ import { InMemoryAuditStore } from '@/lib/server/authorization/approval-store';
 import { McpClientAdapter } from './mcp-client';
 import { CapabilitySecretVault, SecretRedactor } from './secret-vault';
 import { createCapabilitySandbox } from './sandbox-egress';
+import { CapabilityBudgetGuard } from './budget-guard';
+import { ToolOutputSanitizer } from './tool-output-sanitizer';
+import { RunawayToolLoopError, CapabilityBudgetExceededError } from '@/types/budget';
 
 export class CapabilityGateway {
   private static customFetchDispatcher?: ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | null = null;
@@ -155,7 +158,56 @@ export class CapabilityGateway {
       };
     }
 
-    // 5. Sandbox & Secret Provisioning (Gate G14.5)
+    // 5. Budget & Runaway Tool Loop Guard (Gate G14.7)
+    const runId = request.runId || request.conversationId || `run-${request.callerAgentId}`;
+    const estimatedCostCents = manifest.cost?.perCallCents ?? 0;
+    const budgetGuard = CapabilityBudgetGuard.getInstance();
+
+    try {
+      budgetGuard.checkPreInvocation({
+        runId,
+        capabilityId: manifest.id,
+        costCents: estimatedCostCents,
+        customConfig: request.budgetConfig as any,
+      });
+    } catch (budgetErr: any) {
+      const isLoop = budgetErr instanceof RunawayToolLoopError;
+      const reasonCode: AuthorizationReasonCode = isLoop
+        ? 'DENIED_RUNAWAY_LOOP_DETECTED'
+        : 'DENIED_BUDGET_CAP_EXCEEDED';
+
+      const rawAuditRecord: SideEffectAuditRecord = {
+        id: `audit-${uuidv4()}`,
+        timestamp: new Date().toISOString(),
+        requestId: `req-${uuidv4()}`,
+        employeeRole: (request.callerAgentId as any) || 'system',
+        requestedBy: request.callerAgentId,
+        skillId: manifest.id,
+        actionClassification: sideEffectClassification,
+        actionName: manifest.id,
+        decision: 'denied',
+        reasonCode,
+        reason: budgetErr.message,
+        executed: false,
+      };
+
+      try {
+        await InMemoryAuditStore.getInstance().record(rawAuditRecord);
+      } catch (auditErr) {
+        console.error('[CapabilityGateway] Failed to persist budget audit record:', auditErr);
+      }
+
+      return {
+        success: false,
+        capabilityId: request.capabilityId,
+        status: 'budget_exceeded',
+        error: budgetErr.message,
+        durationMs: 0,
+        costChargedCents: 0,
+      };
+    }
+
+    // 6. Sandbox & Secret Provisioning (Gate G14.5)
     // Resolve secrets strictly assigned to this capability at call time.
     let scopedSecrets: Record<string, string> = {};
     try {
@@ -237,7 +289,20 @@ export class CapabilityGateway {
       // Redact any secrets that may have been reflected in the output
       data = SecretRedactor.redact(data);
 
+      // Update budget tracking on successful execution
+      budgetGuard.recordPostInvocation({
+        runId,
+        capabilityId: manifest.id,
+        costCents: manifest.cost?.perCallCents ?? 0,
+        success: true,
+      });
+
+      // Envelop and sanitize tool output (Gate G14.7)
+      const envelope = ToolOutputSanitizer.wrap(data, manifest.id);
+      data = envelope.data;
+
       const durationMs = Math.round(performance.now() - startTime);
+
       const costChargedCents = manifest.cost?.perCallCents ?? 0;
 
       // 7. Record immutable audit record with secret redaction
@@ -274,11 +339,19 @@ export class CapabilityGateway {
         capabilityId: request.capabilityId,
         status: 'executed',
         data,
+        envelope,
         durationMs,
         costChargedCents,
       };
     } catch (err: any) {
       const durationMs = Math.round(performance.now() - startTime);
+      budgetGuard.recordPostInvocation({
+        runId,
+        capabilityId: manifest.id,
+        costCents: 0,
+        success: false,
+      });
+
       const redactedError = SecretRedactor.redact(
         err?.message || 'Capability execution encountered an unhandled error.'
       );

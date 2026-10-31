@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ToolOutputEnvelopeSchema, ToolOutputEnvelope, RunawayBudgetConfig } from "./budget";
 import type { RouteSideEffectClass } from "./decision";
 
 /**
@@ -132,6 +133,8 @@ export const CapabilityInvocationRequestSchema = z.object({
   callerAgentId: z.string().min(1),
   userId: z.string().optional(),
   conversationId: z.string().optional(),
+  runId: z.string().optional(),
+  budgetConfig: z.record(z.string(), z.any()).optional(),
   parameters: z.record(z.string(), z.any()).default({}),
   reason: z.string().optional(),
 });
@@ -148,9 +151,11 @@ export const CapabilityInvocationResultSchema = z.object({
     "executed",
     "awaiting_founder_approval",
     "denied",
+    "budget_exceeded",
     "error",
   ]),
   data: z.any().optional(),
+  envelope: ToolOutputEnvelopeSchema.optional(),
   error: z.string().optional(),
   approvalId: z.string().optional(),
   payloadHash: z.string().optional(),
