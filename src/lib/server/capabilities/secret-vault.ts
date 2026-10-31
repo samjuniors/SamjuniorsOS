@@ -119,10 +119,30 @@ export class CapabilitySecretVault {
         value: process.env.GITHUB_TOKEN,
         allowedCapabilityIds: [
           'tool:github:read',
+          'tool:github:read_issue',
+          'tool:github:create_issue',
           'tool:github:repository_read',
           'tool:github:issues_read',
         ],
         description: 'GitHub integration token',
+      });
+    }
+
+    if (process.env.RESEND_API_KEY) {
+      this.registerSecret({
+        name: 'RESEND_API_KEY',
+        value: process.env.RESEND_API_KEY,
+        allowedCapabilityIds: ['tool:resend:send_email'],
+        description: 'Resend email API key',
+      });
+    }
+
+    if (process.env.STRIPE_SECRET_KEY) {
+      this.registerSecret({
+        name: 'STRIPE_SECRET_KEY',
+        value: process.env.STRIPE_SECRET_KEY,
+        allowedCapabilityIds: ['tool:stripe:create_payment_intent'],
+        description: 'Stripe secret key',
       });
     }
   }
