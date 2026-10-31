@@ -1,0 +1,8 @@
+{
+  "id": "G14.3",
+  "doneAt": "2026-10-31T07:52:44.731Z",
+  "agent": "lead",
+  "branch": "step/G14.3",
+  "commit": "580dc98cdd4f788425be92af1c67aac21003c8a2",
+  "evidence": "17 automated tests in tests/capabilities/g14_3_skill_loader.test.ts passing; full capability suites 43/43 passing; typecheck, lint, build clean"
+}
