@@ -272,6 +272,16 @@
     - Typecheck, lint, build, and all 133 executable test suites passed with 0 failures under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G8.2.verify.md` with verdict PASS).
     - Merged and landed on `kit/integration`.
+  - **G8.3 (Performance budgets enforced in CI: LCP, INP, CLS, JavaScript size):**
+    - Established authoritative performance budget definitions and baselines in `benchmark/performance/performance-budgets.json` for Core Web Vitals (LCP <= 2500ms, INP <= 200ms, CLS <= 0.10) and bundle sizes across all 5 core journeys on a mid-range profile (4x CPU throttling, simulated network RTT).
+    - Configured Rollup `manualChunks` and path normalization in `vite.config.ts` to split vendor dependencies (`vendor-react`, `vendor-motion`, `vendor-icons`, `vendor-radix`, `vendor-three`), dropping the largest chunk to 378.6 kB and eliminating all build chunk size warnings.
+    - Added runtime Web Vitals observer and registry in `src/os/lib/vitals.ts` using browser `PerformanceObserver` API for LCP, INP, and CLS with typed journey validation.
+    - Authored automated CI gate script `scripts/verify-performance-budgets.mjs` verifying bundle asset sizes and Core Web Vitals against the mid-range profile.
+    - Wired `npm run benchmark:perf` into `package.json` and added the gate check to `.github/workflows/ci.yml`.
+    - Added automated test suite `tests/frontend/g8_3_performance_budgets.test.ts` (8/8 PASS).
+    - Typecheck, lint, build, benchmark, and all 134 executable test suites passed with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G8.3.verify.md` with verdict PASS).
+    - Merged, landed on `kit/integration`, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
