@@ -1,6 +1,7 @@
 ---
 name: product-kit
 description: Use when working on the SamJuniorsOS roadmap, resuming interrupted work ("recover", "continue"), claiming steps for parallel agents, landing work on main, running a milestone QA pass, or recording a founder decision. Gives the milestone roadmap, the resume, git-sync and QA tool, the multi-agent protocol and the quality bar.
+version: 1.0.0
 ---
 
 # Product kit
