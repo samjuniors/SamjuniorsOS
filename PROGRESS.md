@@ -298,6 +298,13 @@
     - Passed all 136 executable test suites under `scripts/test-runner.mjs`.
     - Passed independent verification (`.agent/product-kit/handoffs/G8.5.verify.md` with verdict PASS).
     - Merged and landed on `kit/integration`.
+  - **QA-M5 (Milestone M5 Complete QA Pass):**
+    - Full QA pass executed and documented in `.agent/product-kit/qa/M5.md`.
+    - Verified all 4 automated check suites: typecheck (0 errors), lint (0 errors), build (clean, largest chunk 387.15 kB), and test runner (136/136 executable test suites pass).
+    - Exercised founder test steps T1, T3, T4, T5, T6 with verifiable evidence; identified T2 (physical microphone barge-in) as FOUNDER-ONLY per protocol rules.
+    - Verified Quality Bar items Q-UX-2 (state honesty), Q-UX-3 (real state greeting), Q-UX-5 (epistemic clarity), and Q-A11Y-1 (WCAG 2.2 AA accessibility).
+    - Verified `node .agent/product-kit/kit.mjs qa check M5` with zero errors.
+    - Landed on `kit/integration` and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
