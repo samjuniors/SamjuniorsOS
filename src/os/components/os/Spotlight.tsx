@@ -99,7 +99,10 @@ export default function Spotlight({ open, commands, onClose }: {
         aria-label="Command suggestions"
         className="max-h-[46vh] overflow-y-auto p-2 os-scroll">
           {results.length === 0 && (
-            <div className="px-3 py-8 text-center text-[13px] text-slate-500">No results for “{q}”</div>
+            <div className="px-3 py-8 text-center text-slate-500">
+              <p className="text-[13px] text-slate-400">No results found for “{q}”.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Try a different keyword, or press ESC to dismiss.</p>
+            </div>
           )}
           {Object.entries(grouped).map(([group, cmds]) => (
             <div key={group} role="group" aria-label={group} className="mb-1">

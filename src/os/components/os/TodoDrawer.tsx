@@ -3,6 +3,7 @@ import { Plus, Trash2, X, ChevronRight, ChevronLeft, Activity } from "lucide-rea
 import { osSound } from "../../lib/osAudio";
 import { os, useOS } from "../../lib/osStore";
 import { dispatchDirective, toServerAgentId } from "../../lib/runtime";
+import { formatUserError } from "../../lib/errorFormat";
 
 import { ListSurface, WorkSurface } from "../surfaces/StandardSurfaces";
 import { workstreamToWork } from "../../lib/surfaceSchema";
@@ -17,6 +18,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
   const [owner, setOwner] = useState("sophia");
   const [filter, setFilter] = useState<Filter>("open");
   const [search, setSearch] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const active = work.filter((w) => w.state === "active").length;
   const blocked = work.filter((w) => w.state === "blocked").length;
@@ -63,6 +65,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
     if (!t) return;
     osSound.open();
     setDraft("");
+    setAddError(null);
     const agents = owner === "sophia"
       ? ["coo", "researcher", "pm", "finance"]
       : ["coo", toServerAgentId(owner)];
@@ -71,6 +74,11 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
         os.log(`Directive "${t}" completed: ${run.executionSummary?.totalTasksExecuted ?? 0} real protocol steps.`);
       })
       .catch((err: unknown) => {
+        const formatted = formatUserError(err, {
+          whatHappened: `Failed to dispatch directive "${t}".`,
+          whatToDo: "Check server connectivity and retry.",
+        });
+        setAddError(`${formatted.whatHappened} ${formatted.whatToDo}`);
         os.log(`Directive "${t}" failed: ${err instanceof Error ? err.message : String(err)} — no work was started.`);
       });
   };
@@ -191,6 +199,7 @@ export default function TodoDrawer({ open, onToggle }: { open: boolean; onToggle
             <input aria-label="New workstream title" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New workstream…" className="flex-1 rounded-lg border border-white/12 bg-white/5 px-2.5 py-1.5 text-[11.5px] text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:bg-white/[0.08]" />
             <button type="submit" aria-label="Add workstream" disabled={!draft.trim()} className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 to-sky-400 font-bold text-slate-950 transition hover:brightness-110 active:scale-95 disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-cyan-400 focus-visible:outline-offset-1"><Plus size={14} strokeWidth={2.6} /></button>
           </div>
+          {addError && <p className="mt-1 text-[9.5px] text-rose-300/90 leading-tight">{addError}</p>}
           <div className="mt-1.5 flex items-center justify-between">
             <span className="text-[9px] uppercase tracking-wider text-slate-500">Owner</span>
             <div role="radiogroup" aria-label="Workstream owner" className="flex items-center gap-1">

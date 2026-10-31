@@ -178,7 +178,7 @@ function MemoryReview({ onCount }: { onCount?: (n: number) => void }) {
   if (status === "error") {
     return (
       <div className="space-y-1.5">
-        <p className="text-[11.5px] text-rose-300/90">Couldn't load the memory review queue.</p>
+        <p className="text-[11.5px] text-rose-300/90">Couldn't load the memory review queue. Check server connectivity or click Retry to reload.</p>
         <button onClick={() => load(0, false)} className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white">
           <RefreshCw size={11} /> Retry
         </button>

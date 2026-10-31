@@ -13,6 +13,7 @@ import {
   type AttentionKind, type Agent, STAGES,
 } from "../lib/osStore";
 import { LoadingState, EmptyState, ErrorState, MetricSurface, TimelineSurface, ActivitySurface, ApprovalSurface } from "./surfaces/StandardSurfaces";
+import { formatUserError } from "../lib/errorFormat";
 import { generateSystemMetrics, generateCompanyMilestones } from "../lib/surfaceSchema";
 import {
   Phase4Node,
@@ -914,6 +915,7 @@ function AttentionList() {
       <ErrorState
         title="Telemetry Stream Disrupted"
         message={sync.error || "Could not synchronize state with authoritative server."}
+        action="Check your network connection and select 'Retry Sync' to reconnect."
         onRetry={() => syncFromServer().catch(() => undefined)}
       />
     );
@@ -967,7 +969,8 @@ function DecisionList({ onVoice }: { onVoice?: (on: boolean) => void }) {
     return (
       <ErrorState
         title="Governance Queue Inaccessible"
-        message="Failed to retrieve decision inbox. Governance queue inaccessible."
+        message="Failed to retrieve decision inbox from authoritative server."
+        action="Check server connectivity and select 'Retry Sync' to review open decision briefs."
         onRetry={() => syncFromServer().catch(() => undefined)}
       />
     );
@@ -1020,6 +1023,7 @@ function ApprovalList() {
       <ErrorState
         title="Authorization Gate Unreachable"
         message="Authorization gate unreachable. Consequential operations held locked."
+        action="Check network connectivity and select 'Retry Sync' to verify pending approvals."
         onRetry={() => syncFromServer().catch(() => undefined)}
       />
     );
@@ -1097,6 +1101,7 @@ function CompanyActivityList() {
       <ErrorState
         title="Audit Stream Unavailable"
         message="Audit stream unavailable. System activity view temporarily disconnected."
+        action="Select 'Retry Sync' to reconnect and stream from the immutable audit ledger."
         onRetry={() => syncFromServer().catch(() => undefined)}
       />
     );
@@ -1682,7 +1687,11 @@ export default function FlowDesktop({
         if (res.success) setAutoStatus({ status: "ok", data: res.data, error: null });
       }).catch(() => undefined);
     } catch (err) {
-      setSchedError(err instanceof Error ? err.message : String(err));
+      const formatted = formatUserError(err, {
+        whatHappened: "Failed to create scheduled directive.",
+        whatToDo: "Check server connectivity and verify schedule parameters.",
+      });
+      setSchedError(`${formatted.whatHappened} ${formatted.whatToDo}`);
     } finally {
       setSchedulesBusy(false);
     }
@@ -1700,7 +1709,11 @@ export default function FlowDesktop({
         if (res.success) setAutoStatus({ status: "ok", data: res.data, error: null });
       }).catch(() => undefined);
     } catch (err) {
-      setSchedError(err instanceof Error ? err.message : String(err));
+      const formatted = formatUserError(err, {
+        whatHappened: `Failed to ${action} automation schedule.`,
+        whatToDo: "Check server connectivity and retry.",
+      });
+      setSchedError(`${formatted.whatHappened} ${formatted.whatToDo}`);
     } finally {
       setSchedulesBusy(false);
     }
@@ -2375,13 +2388,22 @@ export default function FlowDesktop({
                   <AlertTriangle size={14} className="text-amber-400" />
                   AUTHORITATIVE PERSISTENCE UNAVAILABLE (503 FAIL-CLOSED)
                 </div>
-                <p className="mt-1 text-[11px] text-slate-400">
-                  {graphState.error || "Database unavailable. OS fail-closed policy active — refusing to fabricate optimistic state."}
+                <p className="mt-1 text-[11px] text-slate-300">
+                  {formatUserError(graphState.error, {
+                    whatHappened: "Authoritative persistence is temporarily unavailable. OS fail-closed policy active — refusing to fabricate optimistic state.",
+                    whatToDo: "Check database connectivity, then select Retry Connection to restore live topology.",
+                  }).whatHappened}
+                </p>
+                <p className="mt-0.5 text-[10.5px] text-amber-300/80 font-medium">
+                  {formatUserError(graphState.error, {
+                    whatHappened: "Authoritative persistence is temporarily unavailable.",
+                    whatToDo: "Check database connectivity, then select Retry Connection to restore live topology.",
+                  }).whatToDo}
                 </p>
                 <div className="mt-2 flex justify-center gap-2">
                   <button
                     onClick={() => { osSound.click(); loadGraph(true); }}
-                    className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[10.5px] font-semibold text-amber-200 hover:bg-amber-400/20 active:scale-95"
+                    className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[10.5px] font-semibold text-amber-200 hover:bg-amber-400/20 active:scale-95 focus-visible:outline-2 focus-visible:outline-amber-400 focus-visible:outline-offset-1"
                   >
                     Retry Connection
                   </button>
@@ -2475,9 +2497,20 @@ export default function FlowDesktop({
                 </div>
 
                 {autoStatus.status === "unavailable" ? (
-                  <p className="mt-2.5 text-[10.5px] leading-relaxed text-rose-300/90">
-                    Scheduler status unavailable — {autoStatus.error ?? "the authoritative projection could not be read."} Nothing is fabricated here.
-                  </p>
+                  <div className="mt-2.5 text-[10.5px] leading-relaxed text-rose-300/90 space-y-0.5">
+                    <p>
+                      {formatUserError(autoStatus.error, {
+                        whatHappened: "Scheduler status is currently unavailable — the authoritative projection could not be read. Nothing is fabricated.",
+                        whatToDo: "Check server automation background workers and refresh the view.",
+                      }).whatHappened}
+                    </p>
+                    <p className="text-[10px] text-rose-300/75 font-medium">
+                      {formatUserError(autoStatus.error, {
+                        whatHappened: "Scheduler status is unavailable.",
+                        whatToDo: "Check server automation background workers and refresh the view.",
+                      }).whatToDo}
+                    </p>
+                  </div>
                 ) : (
                   <div className="mt-2.5 space-y-2.5">
                     {/* Last evaluation */}
