@@ -1,0 +1,8 @@
+{
+  "id": "G14.6",
+  "doneAt": "2026-10-31T10:19:20.108Z",
+  "agent": "lead",
+  "branch": "step/G14.6",
+  "commit": "aeaf806d0c545f69d948de222abb92f434111a37",
+  "evidence": "14/14 automated tests in tests/capabilities/g14_6_first_integrations.test.ts passing; 85/85 capability tests passing; all 142 canonical suites passing; typecheck clean; build clean; independent review PASS"
+}

@@ -194,6 +194,7 @@ export class CapabilityRegistry {
       trustTier: 'core',
       sideEffectClass: 'read_only',
       permissions: ['net:outbound:api.github.com'],
+      secretRefs: ['GITHUB_TOKEN'],
       cost: { perCallCents: 0, currency: 'USD' },
       entrypoint: {
         type: 'internal_function',
@@ -213,13 +214,57 @@ export class CapabilityRegistry {
       trustTier: 'core',
       sideEffectClass: 'external_reversible',
       permissions: ['net:outbound:api.github.com'],
+      secretRefs: ['GITHUB_TOKEN'],
       cost: { perCallCents: 0, currency: 'USD' },
       entrypoint: {
         type: 'internal_function',
         target: 'github.create_issue',
       },
     }, async (params) => {
-      return { created: true, issueNumber: 101, url: 'https://github.com/mock/repo/issues/101' };
+      const { GitHubAdapter } = await import('../integrations/github-adapter');
+      return await GitHubAdapter.getInstance().createIssue(params as any);
+    });
+
+    // 4. Core Resend email sender (external_hard_to_reverse)
+    this.register({
+      id: 'tool:resend:send_email',
+      name: 'Resend Send Email',
+      description: 'Dispatches transactional emails through Resend API.',
+      kind: 'tool',
+      version: '1.0.0',
+      trustTier: 'core',
+      sideEffectClass: 'external_hard_to_reverse',
+      permissions: ['net:outbound:api.resend.com'],
+      secretRefs: ['RESEND_API_KEY'],
+      cost: { perCallCents: 1, currency: 'USD' },
+      entrypoint: {
+        type: 'internal_function',
+        target: 'resend.send_email',
+      },
+    }, async (params) => {
+      const { ResendAdapter } = await import('../integrations/resend-adapter');
+      return await ResendAdapter.getInstance().sendEmail(params);
+    });
+
+    // 5. Core Stripe payment creator (financial_legal)
+    this.register({
+      id: 'tool:stripe:create_payment_intent',
+      name: 'Stripe Create Payment Intent',
+      description: 'Creates a payment intent for billing and subscriptions.',
+      kind: 'tool',
+      version: '1.0.0',
+      trustTier: 'core',
+      sideEffectClass: 'financial_legal',
+      permissions: ['net:outbound:api.stripe.com'],
+      secretRefs: ['STRIPE_SECRET_KEY'],
+      cost: { perCallCents: 30, currency: 'USD' },
+      entrypoint: {
+        type: 'internal_function',
+        target: 'stripe.create_payment_intent',
+      },
+    }, async (params) => {
+      const { StripeAdapter } = await import('../integrations/stripe-adapter');
+      return await StripeAdapter.getInstance().createPaymentIntent(params);
     });
 
     // 4. Core competitive research skill (skill / prompt template)
