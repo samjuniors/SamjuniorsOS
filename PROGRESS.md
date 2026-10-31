@@ -338,6 +338,15 @@
     - Authored automated test suite `tests/capabilities/g14_1_capability_gateway_static_check.test.ts` (14/14 PASS).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.1.verify.md`).
     - Landed on `kit/integration` (`13a732d`) and pushed to `origin`.
+  - **G14.2 (MCP client behind the gateway on the current spec revision):**
+    - Confirmed current MCP specification revision `2026-07-28` (stateless request/response core eliminating legacy `2024-11-05` stateful initialization handshake) and codified schemas in `src/types/mcp.ts`.
+    - Implemented dual transports in `src/lib/server/capabilities/mcp-transports.ts`: `McpMemoryTransport` (in-memory fake server with mock tools for zero-IO deterministic testing) and `McpStdioTransport` (real child-process stdio transport with line framing, request ID mapping, and timeout guards).
+    - Built `McpClientAdapter` (`src/lib/server/capabilities/mcp-client.ts`) managing self-contained calls carrying per-call protocol version metadata (`_meta: { protocolVersion: '2026-07-28', requestId: '...' }`).
+    - Implemented reference stdio MCP server in `scripts/mcp-sample-server.mjs` exposing `sqlite_query` and `system_echo`.
+    - Integrated MCP tool invocation into `CapabilityGateway` (`src/lib/server/capabilities/capability-gateway.ts`): routes `mcp_stdio` and `mcp_sse` entrypoints through `McpClientAdapter`, evaluates autonomy policy and founder approvals, and commits an immutable `SideEffectAuditRecord` to `InMemoryAuditStore` for every call.
+    - Added automated test suite `tests/capabilities/g14_2_mcp_client_gateway.test.ts` (12/12 PASS).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.2.verify.md`).
+    - Landed on `kit/integration` (`957976a`) and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
