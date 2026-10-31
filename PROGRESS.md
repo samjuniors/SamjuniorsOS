@@ -262,6 +262,16 @@
     - Typecheck (`npx tsc --noEmit`), client secrets scan (`npm run scan:client-secrets`), and production build passed with 0 errors.
     - Passed independent verification (`.agent/product-kit/handoffs/G6.8.verify.md` with verdict PASS).
     - Merged, landed on `kit/integration`, and pushed to `origin`.
+  - **G8.2 (Accessibility audit to WCAG 2.2 AA and fixes):**
+    - Audited core user journeys across document structure, navigation shell, Spotlight, work drawer, workforce chat, presence surfaces, and canvas against WCAG 2.2 Level AA.
+    - Added document title, confirmed `lang="en"`, and verified non-blocking scalable viewport in `index.html`.
+    - Added skip-to-content bypass link (`#main-content`), accessible operating system view switcher navigation with `role="tablist"` / `role="tab"`, and `<main role="main">` landmark in `src/os/App.tsx`.
+    - Hardened keyboard and screen reader accessibility across `DesktopOS.tsx`, `Spotlight.tsx`, `TodoDrawer.tsx`, `ChatPanel.tsx`, `PersonaModal.tsx`, `AgentQuickDock.tsx`, `FlowDesktop.tsx`, `StandardSurfaces.tsx`, and `SharedSophiaVoicePresence.tsx`.
+    - Published full WCAG 2.2 AA audit report in `docs/accessibility/WCAG_2_2_AA_AUDIT_REPORT.md` (24 criteria, 6 journeys, 0 open AA failures).
+    - Added automated regression test suite `tests/frontend/g8_2_accessibility_wcag_audit.test.ts` (20/20 checks passed).
+    - Typecheck, lint, build, and all 133 executable test suites passed with 0 failures under `scripts/test-runner.mjs`.
+    - Passed independent verification (`.agent/product-kit/handoffs/G8.2.verify.md` with verdict PASS).
+    - Merged and landed on `kit/integration`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
