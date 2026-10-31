@@ -358,6 +358,17 @@
     - Authored automated test suite `tests/capabilities/g14_3_skill_loader.test.ts` (17/17 PASS; 43/43 PASS across all capability suites).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.3.verify.md` with verdict PASS).
     - Landed on `kit/integration` (`c2eb33e`), verified by 139 passing test suites, and pushed to `origin`.
+  - **G14.4 (Vetting and install pipeline for third-party tools, skills, and MCP servers: provenance, permission review, sandbox, pin; no runtime self-install):**
+    - Codified third-party vetting schemas in `src/types/vetting.ts` (`CapabilityProvenanceSchema`, `SecurityFindingSchema`, `CapabilityRiskAssessmentSchema`, `CapabilityVettingProposalSchema`, `CapabilityVettingRecordSchema`, and strict domain error types).
+    - Built `CapabilityVettingPipeline` (`src/lib/server/capabilities/vetting-pipeline.ts`):
+      - Strictly enforced zero runtime self-install: agents/LLMs cannot install capabilities; `attemptRuntimeSelfInstall` throws `RuntimeSelfInstallForbiddenError` and proposals halt in `pending_founder_confirmation`.
+      - Automated security vetting: enforces strict semver pinning (`UnpinnedVersionForbiddenError`), disallows wildcard permissions (`WildcardPermissionForbiddenError`), forbids skills from declaring any permissions (`SkillPermissionsForbiddenError`), and detects malicious prompt injection / code execution signatures.
+      - Untrusted community quarantine: candidate manifests are forced to `trustTier: "untrusted"` until cryptographic founder confirmation.
+      - Mandatory cryptographic founder confirmation: `confirmInstall` validates `role: "founder"` and `payloadHash = sha256(canonical(manifest, provenance, riskLevel))` before registering in `CapabilityRegistry` and producing an immutable `CapabilityVettingRecord`.
+      - Committed audit records to `InMemoryAuditStore` for both proposal and confirmation stages.
+    - Authored automated test suite `tests/capabilities/g14_4_vetting_and_install_pipeline.test.ts` (13/13 PASS; 56/56 PASS across all capability suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.4.verify.md` with verdict PASS).
+    - Landed on `kit/integration` (`3453146`), verified across all 140 executable canonical test suites, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
