@@ -347,6 +347,17 @@
     - Added automated test suite `tests/capabilities/g14_2_mcp_client_gateway.test.ts` (12/12 PASS).
     - Passed independent verification (`.agent/product-kit/handoffs/G14.2.verify.md`).
     - Landed on `kit/integration` (`957976a`) and pushed to `origin`.
+  - **G14.3 (Skills loader for the SKILL.md format: versioned, reviewed, loaded on demand; skills are instructions, never authority):**
+    - Codified open Agent Skills specification (`agentskills.io`) schemas in `src/types/skill.ts` (`SkillFrontmatterSchema`, `SkillReviewRecordSchema`, `SkillDefinition`).
+    - Enforced the critical security invariant that skills are instructions, never authority: frontmatter attempting to declare `permissions`, `privileges`, or `roles` is strictly rejected by schema validation.
+    - Implemented zero-dependency YAML frontmatter parser and markdown parser with prototype pollution protection in `src/lib/server/capabilities/skill-loader.ts`.
+    - Implemented `SkillReviewStore` and `SkillLoader` enforcing that skill activation requires an explicit `SkillReviewRecord` with status `approved`, exact pinned semantic version matching, and SHA-256 cryptographic content integrity check to detect tampering.
+    - Enforced untrusted community skill quarantine: third-party skills default to `trustTier: "community"` or `"untrusted"`, and `CapabilityGateway` halts and quarantines untrusted capabilities unless promoted by a signed founder/security review.
+    - Integrated with `CapabilityRegistry` and `CapabilityGateway`: activated skills execute as read-only prompt instruction templates with zero authority elevation (`permissions: []`) and immutable audit logging in `InMemoryAuditStore`.
+    - Created sample skills adhering to `LAYOUT.md`: core first-party (`.agent/skills/market-intelligence/SKILL.md`) and community (`.agent/skills/community-web-scraper/SKILL.md`).
+    - Authored automated test suite `tests/capabilities/g14_3_skill_loader.test.ts` (17/17 PASS; 43/43 PASS across all capability suites).
+    - Passed independent verification (`.agent/product-kit/handoffs/G14.3.verify.md` with verdict PASS).
+    - Landed on `kit/integration` (`c2eb33e`), verified by 139 passing test suites, and pushed to `origin`.
 
 ### Milestone M4 Archive Details:
 - **Completed Steps:**
